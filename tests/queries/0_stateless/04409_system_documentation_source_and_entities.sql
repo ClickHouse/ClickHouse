@@ -40,19 +40,25 @@ SELECT DISTINCT source FROM system.documentation WHERE type = 'Current Metric';
 -- and always lives under `src/`.
 SELECT count() FROM system.documentation WHERE type = 'Asynchronous Metric' AND (source = '' OR source NOT LIKE 'src/%');
 
--- Each system table that has a captured source points to its own storage source file, under `src/Storages/`. Some
--- tables may have no source in aggressively size-optimized builds (the registration static initializer is dropped),
--- so we only require that the captured sources are valid and that the mechanism works for at least some tables.
-SELECT count() FROM system.documentation WHERE type = 'System Table' AND source != '' AND source NOT LIKE 'src/Storages/%';
+-- Each system table that has a captured documentation source points to a repository source file. Empty remains valid
+-- for dynamically attached tables whose documentation owner is unknown; the representative rows below test each owner.
+SELECT count() FROM system.documentation WHERE type = 'System Table' AND source != '' AND source NOT LIKE 'src/%';
 SELECT count() > 0 FROM system.documentation WHERE type = 'System Table' AND source != '';
+
+-- System-table sources point to where the documentation text is defined: regular table comments are owned by
+-- `attachSystemTables.cpp`, system-log comments by `SystemLog.h`, and the separately owned asynchronous-metrics
+-- comment by `StorageSystemAsynchronousMetrics.cpp`.
+SELECT name, source FROM system.documentation
+WHERE type = 'System Table' AND name IN ('asynchronous_metrics', 'documentation', 'query_log')
+ORDER BY name;
 
 -- The source of a documentation object points to the source file that defines the component, relative to the
 -- repository root: a function to its file, and a compression codec to its file.
 SELECT source FROM system.documentation WHERE type = 'Function' AND name = 'moduloOrNull';
 SELECT source FROM system.documentation WHERE type = 'Compression Codec' AND name = 'LZ4';
 
--- A system table documents itself with its table comment and the list of its columns.
-SELECT description LIKE '%**Columns**%' FROM system.documentation WHERE type = 'System Table' AND name = 'documentation';
+-- A system table documents itself with a consistently named Columns section.
+SELECT description LIKE '%## Columns {#columns}%' FROM system.documentation WHERE type = 'System Table' AND name = 'documentation';
 
 -- The documentation of a setting (of any kind) includes its type and default value.
 SELECT description LIKE '%**Type:**%' AND description LIKE '%**Default:**%'

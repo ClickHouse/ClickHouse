@@ -56,12 +56,12 @@ void IMergingTransformBase::onNewInput()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "onNewInput is not implemented for {}", getName());
 }
 
-void IMergingTransformBase::addInput()
+void IMergingTransformBase::addInput(const Block & input_header)
 {
     if (have_all_inputs)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IMergingTransform already have all inputs.");
 
-    inputs.emplace_back(outputs.front().getHeader(), this);
+    inputs.emplace_back(input_header, this);
     onNewInput();
 }
 

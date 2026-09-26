@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 
@@ -17,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 namespace
@@ -37,9 +37,29 @@ namespace
         T result{};
         if (common::mulOverflow(int_value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
         {
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot convert {} to {}: Overflow, the number is too big",
                             int_value, getTypeName<T>());
+        }
+        return result;
+    }
+
+    template <is_decimal T>
+    T getFromDecimal(Int64 decimal_value, UInt32 decimal_scale, UInt32 scale)
+    {
+        T result{};
+        if (scale > decimal_scale)
+        {
+            if (common::mulOverflow(decimal_value, DecimalUtils::scaleMultiplier<T>(scale - decimal_scale), result.value))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot convert {} to {}: Overflow, the number is too big",
+                                toString(Decimal64{decimal_value}, decimal_scale), getTypeName<T>());
+            }
+        }
+        else
+        {
+            result.value = decimal_value / DecimalUtils::scaleMultiplier<T>(decimal_scale - scale);
         }
         return result;
     }
@@ -59,7 +79,7 @@ namespace
         if ((scaled_value >= static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
             (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
         {
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot convert {} to {}: Overflow, the number is too big",
                             float_value, getTypeName<T>());
         }
@@ -73,7 +93,7 @@ namespace
         Int64 scale_multiplier = 1;
         Int64 scale_divisor = 1;
 
-        switch (interval_kind.kind)
+        switch (interval_kind)
         {
             case IntervalKind::Kind::Nanosecond:
             {
@@ -147,7 +167,7 @@ namespace
         if (common::mulOverflow(intervals, unit_multiplier, result.value)
             || common::mulOverflow(result.value, scale_multiplier, result.value))
         {
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot convert {} {}s to {}: Overflow, the number is too big",
                             intervals, interval_kind.toString(), getTypeName<T>());
         }
@@ -165,7 +185,8 @@ namespace
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {
-            if (PrometheusQueryParsingUtil::tryParseTimestamp(str, scale, result, &error_message, &error_pos))
+            if (PrometheusQueryParsingUtil::tryParseTimestamp(
+                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
 
             /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
@@ -177,7 +198,8 @@ namespace
         }
         else
         {
-            if (PrometheusQueryParsingUtil::tryParseDuration(str, scale, result, &error_message, &error_pos))
+            if (PrometheusQueryParsingUtil::tryParseDuration(
+                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
         }
 
@@ -202,7 +224,7 @@ namespace
                 UInt64 uint_value = field.safeGet<UInt64>();
                 if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 {
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Cannot convert {} to {}: Overflow, the number is too big",
                                     uint_value, getTypeName<T>());
                 }
@@ -215,12 +237,12 @@ namespace
             case Field::Types::Decimal32:
             {
                 auto decimal32 = field.safeGet<Decimal32>();
-                return DecimalUtils::convertTo<T>(scale, decimal32.getValue(), decimal32.getScale());
+                return getFromDecimal<T>(decimal32.getValue().value, decimal32.getScale(), scale);
             }
             case Field::Types::Decimal64:
             {
                 auto decimal64 = field.safeGet<Decimal64>();
-                return DecimalUtils::convertTo<T>(scale, decimal64.getValue(), decimal64.getScale());
+                return getFromDecimal<T>(decimal64.getValue().value, decimal64.getScale(), scale);
             }
             case Field::Types::String:
             {

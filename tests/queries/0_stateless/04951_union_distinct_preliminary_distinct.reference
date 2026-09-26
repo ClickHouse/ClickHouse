@@ -7,9 +7,6 @@
 -- analyzer: INTERSECT/EXCEPT DISTINCT keep a single DISTINCT
 0
 0
--- old analyzer: UNION DISTINCT has one preliminary DISTINCT per branch
-2
-3
 -- results match the rewrite, per type
 300	13284647348874942505
 300	13284647348874942505
@@ -37,8 +34,6 @@
 -- max_threads = 1: no preliminary step is added, and the result is unchanged
 0
 1
-300	13284647348874942505
-0
 300	13284647348874942505
 -- size limits are enforced the same way as in the rewrite
 100
