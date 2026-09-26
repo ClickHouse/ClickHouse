@@ -32,6 +32,16 @@ echo "IN subquery not allowed: $(run "$QUERY" "enable_parallel_replicas = 1, par
 $CLICKHOUSE_CLIENT -q "CREATE TABLE in_set (x UInt64) ENGINE = MergeTree ORDER BY x; INSERT INTO in_set VALUES (1), (3);" --multiquery
 echo "IN table not allowed: $(run "SELECT sum(n) FROM $URL WHERE n IN in_set" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 echo "IN CTE not allowed: $(run "WITH c AS (SELECT x FROM in_set) SELECT sum(n) FROM $URL WHERE n IN c" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+
+# `IN` that appears only while the query is resolved: through an alias of the WITH section, the body of a SQL
+# user-defined function, and `EXISTS`, which is rewritten to `IN` unless it is executed as a scalar subquery.
+echo "IN in a WITH alias not allowed: $(run "WITH n IN (SELECT arrayJoin([1, 3])) AS cond SELECT sum(n) FROM $URL WHERE cond" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+echo "IN in a WITH alias used in a subquery not allowed: $(run "WITH n IN (SELECT arrayJoin([1, 3])) AS cond SELECT * FROM (SELECT sum(n) FROM $URL WHERE cond)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+UDF="in_udf_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "CREATE FUNCTION $UDF AS (v) -> v IN (SELECT arrayJoin([1, 3]))"
+echo "IN in a SQL UDF not allowed: $(run "SELECT sum(n) FROM $URL WHERE $UDF(n)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+$CLICKHOUSE_CLIENT -q "DROP FUNCTION $UDF"
+echo "EXISTS rewritten to IN not allowed: $(run "SELECT sum(n) FROM $URL WHERE EXISTS (SELECT arrayJoin([1, 3]) AS v WHERE v = 1)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0, execute_exists_as_scalar_subquery = 0")"
 # In force mode the combination is still rejected.
 echo "IN subquery not allowed, force mode: $(run "$QUERY" "enable_parallel_replicas = 2, parallel_replicas_allow_in_with_subquery = 0")"
 # `IN` with a set of constants is not a subquery.

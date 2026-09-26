@@ -4,6 +4,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFile.h>
 
@@ -23,17 +24,31 @@ public:
             ++subquery_count;
         else if (node->getNodeType() == QueryTreeNodeType::JOIN)
             has_join = true;
-        else if (const auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
+        else if (const auto * function_node = node->as<FunctionNode>())
         {
-            /// The tree is not resolved yet, so `x IN t` and `x IN cte` are only identifiers here. Count every identifier:
-            /// it can also be an alias of a constant set, but then the read merely stays local.
+            const auto & function_name = function_node->getFunctionName();
             const auto & arguments = function_node->getArguments().getNodes();
-            if (arguments.size() == 2)
+            if (isNameOfInFunction(function_name))
             {
-                const auto set_type = arguments[1]->getNodeType();
-                if (set_type == QueryTreeNodeType::QUERY || set_type == QueryTreeNodeType::UNION
-                    || set_type == QueryTreeNodeType::IDENTIFIER || set_type == QueryTreeNodeType::TABLE_FUNCTION)
-                    has_in_with_subquery = true;
+                /// The tree is not resolved yet, so `x IN t` and `x IN cte` are only identifiers here. Count every identifier:
+                /// it can also be an alias of a constant set, but then the read merely stays local.
+                if (arguments.size() == 2)
+                {
+                    const auto set_type = arguments[1]->getNodeType();
+                    if (set_type == QueryTreeNodeType::QUERY || set_type == QueryTreeNodeType::UNION
+                        || set_type == QueryTreeNodeType::IDENTIFIER || set_type == QueryTreeNodeType::TABLE_FUNCTION)
+                        has_in_with_subquery = true;
+                }
+            }
+            else if (function_name == "exists" && arguments.size() == 1
+                && (arguments[0]->getNodeType() == QueryTreeNodeType::QUERY || arguments[0]->getNodeType() == QueryTreeNodeType::UNION))
+            {
+                has_exists_with_subquery = true;
+            }
+            /// The body of a SQL user-defined function is expanded only while resolving, so it may hide an `IN`.
+            else if (UserDefinedSQLFunctionFactory::instance().has(function_name))
+            {
+                calls_sql_user_defined_function = true;
             }
         }
     }
@@ -41,8 +56,11 @@ public:
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
 
     /// Whether the query may have `IN` with a subquery (`x IN (SELECT ...)`, `x IN t`, `x IN cte`), which a cluster engine would
-    /// execute on every replica.
-    bool hasInWithSubquery() const { return has_in_with_subquery; }
+    /// execute on every replica. `EXISTS (subquery)` is rewritten to `IN` unless it is executed as a scalar subquery.
+    bool mayHaveInWithSubquery(bool exists_is_rewritten_to_in) const
+    {
+        return has_in_with_subquery || calls_sql_user_defined_function || (exists_is_rewritten_to_in && has_exists_with_subquery);
+    }
 
     bool shouldReplaceWithClusterAlternatives() const
     {
@@ -57,6 +75,8 @@ private:
 
     bool has_join = false;
     bool has_in_with_subquery = false;
+    bool has_exists_with_subquery = false;
+    bool calls_sql_user_defined_function = false;
 };
 
 }
