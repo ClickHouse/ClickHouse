@@ -185,3 +185,46 @@ GTEST_TEST(DataTypesCache, HashDeepObjectSharedValue)
     SipHash hash;
     EXPECT_NO_THROW(object->updateHashWithValue(0, hash));
 }
+
+GTEST_TEST(DataTypesCache, RoundTripDeepDynamicField)
+{
+    /// Nested `String` arrays are not used by other tests, so each depth below starts with a cold cache.
+    auto make_field = [](size_t depth)
+    {
+        Field field = String("a");
+        for (size_t i = 0; i < depth; ++i)
+            field = Array{std::move(field)};
+        return field;
+    };
+
+    auto serialization = std::make_shared<DataTypeDynamic>()->getDefaultSerialization();
+
+    /// `serializeBinary(const Field &)` with a cold cache, then read the value back.
+    {
+        Field field = make_field(301);
+        WriteBufferFromOwnString out;
+        ASSERT_NO_THROW(serialization->serializeBinary(field, out, {}));
+
+        ReadBufferFromString in(out.str());
+        Field result;
+        ASSERT_NO_THROW(serialization->deserializeBinary(result, in, {}));
+        EXPECT_TRUE(result == field);
+    }
+
+    /// `deserializeBinary(Field &)` with a cold cache: encode the value directly, bypassing the cache.
+    {
+        DataTypePtr type = std::make_shared<DataTypeString>();
+        for (size_t i = 0; i < 302; ++i)
+            type = std::make_shared<DataTypeArray>(type);
+
+        Field field = make_field(302);
+        WriteBufferFromOwnString out;
+        encodeDataType(type, out);
+        type->getDefaultSerialization()->serializeBinary(field, out, {});
+
+        ReadBufferFromString in(out.str());
+        Field result;
+        ASSERT_NO_THROW(serialization->deserializeBinary(result, in, {}));
+        EXPECT_TRUE(result == field);
+    }
+}
