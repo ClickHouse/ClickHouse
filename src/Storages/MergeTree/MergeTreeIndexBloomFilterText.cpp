@@ -573,6 +573,14 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
+/// `has`, `mapContainsKey` and `mapContainsValue` compare a `FixedString` element zero-padded, so the needle's trailing zero bytes are not terms.
+void stripNeedlePaddingForFixedStringElements(const DataTypePtr & indexed_type, String & needle)
+{
+    const auto * array_type = typeid_cast<const DataTypeArray *>(indexed_type.get());
+    if (array_type && isFixedString(array_type->getNestedType()))
+        needle.resize(needle.find_last_not_of('\0') + 1);
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -762,6 +770,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             auto & value = const_value.safeGet<String>();
+            stripNeedlePaddingForFixedStringElements(index_data_types[*map_key_index], value);
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
@@ -785,6 +794,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             auto & value = const_value.safeGet<String>();
+            stripNeedlePaddingForFixedStringElements(index_data_types[*map_value_index], value);
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
@@ -826,6 +836,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_HAS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         auto & value = const_value.safeGet<String>();
+        stripNeedlePaddingForFixedStringElements(index_data_types[*key_index], value);
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
