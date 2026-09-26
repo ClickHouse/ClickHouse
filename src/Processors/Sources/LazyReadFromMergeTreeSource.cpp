@@ -9,6 +9,11 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Processors/Sources/MergeTreePointReadSource.h>
+#include <Compression/CompressionCodecQuantized.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <algorithm>
 
@@ -26,6 +31,61 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// The vector column a point read can serve, with the dimension count its `Quantized(...)` codec declares.
+struct PointReadVectorColumn
+{
+    NameAndTypePair column;
+    size_t dimensions;
+};
+
+/// The single vector column the point read may serve, if the lazy header holds exactly one. The step is not told which
+/// column the search ranks by, so with several we could point-read payload and leave the rescored one on the granule read.
+std::optional<PointReadVectorColumn> findPointReadEligibleVectorColumn(const Block & lazy_header, const ColumnsDescription & columns_desc)
+{
+    std::optional<PointReadVectorColumn> found;
+
+    for (const auto & col : lazy_header)
+    {
+        if (!columns_desc.has(col.name))
+            continue;
+
+        if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
+        {
+            if (found)
+                return {};
+            found = PointReadVectorColumn{NameAndTypePair(col.name, col.type), params->dimensions};
+        }
+    }
+
+    return found;
+}
+
+/// Whether `part` may be point-read: it addresses base `.bin` files directly and applies none of the read-time machinery
+/// of `MergeTreeReadTask`, so require a part needing no conversion at all (not a stale list) that stores every lazy column.
+bool canPointReadPart(
+    const RangesInDataPart & part,
+    const PointReadVectorColumn & vector_column,
+    const Block & lazy_header,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context);
+    if (alter_conversions->hasAnyConversions() || part.data_part->hasLightweightDelete())
+        return false;
+
+    for (const auto & col : lazy_header)
+        if (col.name != vector_column.column.name && !part.data_part->hasColumnFiles(NameAndTypePair(col.name, col.type)))
+            return false;
+
+    /// Finally the layout itself: the vector column must be stored one vector per compressed block.
+    return MergeTreePointReadSource::isEligible(part, vector_column.column, vector_column.dimensions);
+}
+
 }
 
 
@@ -219,11 +279,82 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
+void LazyReadFromMergeTreeSource::buildPointReadSourcesForEligibleParts(RangesInDataParts & parts, SourcesByPart & sources)
+{
+    const Block & lazy_header = outputs.front().getHeader();
+
+    auto vector_column = findPointReadEligibleVectorColumn(lazy_header, storage_snapshot->metadata->getColumns());
+    if (!vector_column)
+        return;
+
+    /// The remaining lazy columns (in header order, minus the vector column) are read with a standard reader.
+    NamesAndTypesList other_columns;
+    for (const auto & col : lazy_header)
+        if (col.name != vector_column->column.name)
+            other_columns.emplace_back(col.name, col.type);
+
+    auto mark_cache = context->getMarkCache();
+    auto lazy_header_ptr = std::make_shared<const Block>(lazy_header);
+
+    RangesInDataParts not_taken;
+    not_taken.reserve(parts.size());
+
+    for (auto & part_with_ranges : parts)
+    {
+        /// Each part is judged on its own: a part the point read cannot serve - a Compact one from a recent insert,
+        /// a pending mutation, an unaligned layout.
+        if (!canPointReadPart(part_with_ranges, *vector_column, lazy_header, mutations_snapshot, context))
+        {
+            not_taken.push_back(std::move(part_with_ranges));
+            continue;
+        }
+
+        auto & offsets = lazy_materializing_rows->rows_in_parts[part_with_ranges.part_index_in_query];
+        const size_t total_rows = offsets.size();
+        const UInt64 part_starting_offset = part_with_ranges.part_starting_offset_in_query;
+        auto source = std::make_shared<MergeTreePointReadSource>(
+            lazy_header_ptr,
+            part_with_ranges,
+            std::move(offsets),
+            vector_column->column,
+            vector_column->dimensions,
+            other_columns,
+            storage_snapshot,
+            reader_settings,
+            mark_cache,
+            max_block_size);
+        source->addTotalRowsApprox(total_rows);
+        sources.emplace(part_starting_offset, std::move(source));
+    }
+
+    /// If point read activated, we don't support statistics updater.
+    if (updater && !sources.empty())
+        updater->markUnsupportedCase();
+
+    parts = std::move(not_taken);
+}
+
 Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
-    size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
-    size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
+
+    auto & parts = lazy_materializing_rows->ranges_in_data_parts;
+    SourcesByPart sources;
+    buildPointReadSourcesForEligibleParts(parts, sources);
+
+    auto collect = [&sources]
+    {
+        Processors processors;
+        for (auto & source : sources)
+            processors.push_back(std::move(source.second));
+        return processors;
+    };
+
+    if (parts.empty())
+        return collect();
+
+    size_t sum_marks = parts.getMarksCountAllParts();
+    size_t sum_rows = parts.getRowsCountAllParts();
 
     MergeTreeReadPoolBase::PoolSettings pool_settings{
         .threads = max_threads,
@@ -240,7 +371,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .preferred_max_column_in_block_size_bytes = ctx_settings[Setting::preferred_max_column_in_block_size_bytes]};
 
-    auto ranges_in_data_parts = splitRanges(std::move(lazy_materializing_rows->ranges_in_data_parts), sum_marks);
+    auto ranges_in_data_parts = splitRanges(std::move(parts), sum_marks);
     /// Why this is needed?
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
@@ -268,7 +399,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         context,
         updater);
 
-    Processors processors;
     for (size_t i = 0; i < ranges_in_data_parts.size(); ++i)
     {
         const auto & part_with_ranges = ranges_in_data_parts[i];
@@ -290,9 +420,9 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
         source->addTotalRowsApprox(total_rows);
 
-        processors.emplace_back(std::move(source));
+        sources.emplace(part_with_ranges.part_starting_offset_in_query, std::move(source));
     }
-    return processors;
+    return collect();
 }
 
 }

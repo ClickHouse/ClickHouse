@@ -3,6 +3,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
@@ -236,8 +237,23 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (column_desc)
             if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
                 max_compress_block_size = value->safeGet<UInt64>();
+
+        /// For a `Quantized(...)` column a per-column `max_compress_block_size` applies ONLY to the `Array` elements
+        /// substream - set it to one vector's bytes for the point read (see MergeTreePointReadSource). Companions gain nothing.
+        if (max_compress_block_size && tryExtractQuantizedCodecParams(effective_codec_desc))
+        {
+            bool is_array_elements = false;
+            for (const auto & elem : substream_path)
+                if (elem.type == ISerialization::Substream::ArrayElements)
+                    is_array_elements = true;
+
+            if (!is_array_elements)
+                max_compress_block_size = 0; /// use the default for the offsets / codes / codebook substreams
+        }
+
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
+
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 

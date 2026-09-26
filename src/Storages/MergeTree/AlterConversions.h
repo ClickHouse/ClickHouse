@@ -56,6 +56,14 @@ public:
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
     bool hasLightweightDelete() const;
+
+    /// True if the part needs any read-time conversion (mutation, patch, lightweight delete, rename, dropped column).
+    /// Readers bypassing `MergeTreeReadTask` must refuse such parts rather than enumerate the kinds they know about.
+    bool hasAnyConversions() const
+    {
+        return !mutation_commands.empty() || !patch_parts.empty() || !rename_map.empty() || !dropped_columns.empty()
+            || hasLightweightDelete();
+    }
     /// True if a pending ALTER DELETE filters out rows on read without touching any column.
     /// Such a delete is not reflected in all_updated_columns or _row_exists, so callers that
     /// reason about per-part data staleness (e.g. minmax-based top-k granule selection) must
