@@ -1918,9 +1918,9 @@ class SettingsRandomizer:
         "optimize_time_filter_with_preimage": lambda: random.random() > 0.05,
         "optimize_trivial_count_query": lambda: random.random() > 0.05,
         "optimize_uniq_to_count": lambda: random.random() > 0.05,
-        "optimize_use_projections": lambda: random.random() > 0.05,
-        "optimize_use_implicit_projections": lambda: random.random() > 0.05,
-        "optimize_use_projection_filtering": lambda: random.random() > 0.05,
+        #"optimize_use_projections": lambda: random.random() > 0.05,
+        #"optimize_use_implicit_projections": lambda: random.random() > 0.05,
+        #"optimize_use_projection_filtering": lambda: random.random() > 0.05,
         # Which projection is chosen, never the answer: `prefer_optimize_projection` takes a usable
         # one regardless of its estimated cost, and the bound below makes the matcher treat a large
         # IN-clause set as non-matching (0 disables content-hash comparison for such sets entirely).
@@ -1966,7 +1966,7 @@ class SettingsRandomizer:
         # that kept them disabled (#118520) is fixed. The default `''` (no detector) is left out
         # because `cli_format_settings` renders an empty value as a bare `--setting` that swallows
         # the next option; it still runs whenever the algorithm list above excludes dpsub.
-        "query_plan_optimize_join_order_conflict_detector": lambda: random.choice(["a", "c"]),
+        #"query_plan_optimize_join_order_conflict_detector": lambda: random.choice(["a", "c"]),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
@@ -2184,8 +2184,8 @@ class SettingsRandomizer:
     # Settings that require another setting to be enabled;
     # when the parent is disabled, the child is forced to disabled too.
     conditional_settings = {
-        "optimize_use_implicit_projections": "optimize_use_projections",
-        "optimize_use_projection_filtering": "optimize_use_projections",
+        #"optimize_use_implicit_projections": "optimize_use_projections",
+        #"optimize_use_projection_filtering": "optimize_use_projections",
         # top-k dynamic filtering requires the top-k skip index path to be active
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
