@@ -1413,9 +1413,6 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
     if (global_ctx.metadata_snapshot->hasAnyColumnTTL())
         return false;
 
-    if (hasLightweightDelete(global_ctx.future_part))
-        return false;
-
     return global_ctx.metadata_snapshot->hasRowsTTL() || global_ctx.metadata_snapshot->hasAnyRowsWhereTTL();
 }
 
@@ -3055,8 +3052,10 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_)
+        bool force_,
+        const std::optional<String> & preexist_filter_column_)
         : ITransformingStep(input_header_, input_header_, getTraits())
+        , preexist_filter_column(preexist_filter_column_)
     {
         /// Build TTL expressions once and share them across all per-stream
         /// transform instances created by `addSimpleTransform`. This ensures the
@@ -3078,9 +3077,9 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        pipeline.addSimpleTransform([state = shared_state](const SharedHeader & header)
+        pipeline.addSimpleTransform([state = shared_state, preexist_filter = preexist_filter_column](const SharedHeader & header)
         {
-            return std::make_shared<TTLDeleteFilterTransform>(header, state);
+            return std::make_shared<TTLDeleteFilterTransform>(header, state, preexist_filter);
         });
     }
 
@@ -3106,6 +3105,7 @@ private:
     }
 
     std::shared_ptr<const TTLDeleteFilterTransform::SharedState> shared_state;
+    const std::optional<String> preexist_filter_column;
 };
 
 class TTLStep : public ITransformingStep
@@ -3509,6 +3509,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// For vertical merge with TTL delete, add a step that evaluates TTL expressions and attaches
     /// the resulting mask to every chunk. This must be before the merge step, so that the merging
     /// algorithm sees the mask of each input stream.
+    /// The merging algorithm applies one predicate per merge, so a lightweight delete reaches it either
+    /// as the TTL mask's preexisting filter or as the merge step's filter column - never both.
+    const bool row_exists_as_preexist_filter = global_ctx->vertical_lightweight_delete && global_ctx->vertical_ttl_delete;
+    const bool filter_merge_by_row_exists = global_ctx->vertical_lightweight_delete && !global_ctx->vertical_ttl_delete;
+
     ContextPtr ttl_context = global_ctx->context;
     if (global_ctx->vertical_ttl_delete)
     {
@@ -3520,13 +3525,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         context_with_sets_cache->setPreparedSetsCache(std::make_shared<PreparedSetsCache>());
         ttl_context = std::move(context_with_sets_cache);
 
+        std::optional<String> preexist_filter_column;
+        if (row_exists_as_preexist_filter)
+            preexist_filter_column = RowExistsColumn::name;
+
         auto ttl_filter_step = std::make_unique<TTLDeleteFilterStep>(
             merge_parts_query_plan.getCurrentHeader(),
             ttl_context,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
-            ctx->force_ttl);
+            ctx->force_ttl,
+            preexist_filter_column);
 
         ttl_filter_step->setStepDescription("TTL delete filter");
         merge_parts_query_plan.addStep(std::move(ttl_filter_step));
@@ -3560,9 +3570,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         bool cleanup = global_ctx->cleanup && global_ctx->future_part->final;
-        /// Lightweight delete filters on a stored column; a TTL merge's mask rides on the chunks.
         std::optional<String> filter_column_name;
-        if (global_ctx->vertical_lightweight_delete)
+        if (filter_merge_by_row_exists)
             filter_column_name = RowExistsColumn::name;
 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;

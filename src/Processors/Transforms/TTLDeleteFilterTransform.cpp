@@ -1,4 +1,6 @@
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Interpreters/Context.h>
@@ -86,11 +88,14 @@ TTLDeleteFilterTransform::build(
 
 TTLDeleteFilterTransform::TTLDeleteFilterTransform(
     const SharedHeader & header_,
-    std::shared_ptr<const SharedState> shared_state_)
+    std::shared_ptr<const SharedState> shared_state_,
+    const std::optional<String> & preexist_filter_column)
     : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/ false)
     , shared_state(std::move(shared_state_))
     , date_lut(DateLUT::instance())
 {
+    if (preexist_filter_column)
+        preexist_filter_column_position = header_->getPositionByName(*preexist_filter_column);
 }
 
 void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column)
@@ -114,11 +119,24 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
         return;
     }
 
-    IColumnFilter filter_vec(num_rows, 1);
-
     auto chunk_infos = std::move(chunk.getChunkInfos());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+    IColumnFilter filter_vec;
+
+    if (preexist_filter_column_position == -1)
+    {
+        filter_vec.assign(num_rows, static_cast<UInt8>(1));
+    }
+    else
+    {
+        /// Runs before the merging algorithm, which is where merge inputs lose their const and sparse forms.
+        auto preexist_filter = block.getByPosition(preexist_filter_column_position)
+            .column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+        const auto & preexist_filter_data = assert_cast<const ColumnUInt8 &>(*preexist_filter).getData();
+        filter_vec.assign(preexist_filter_data.begin(), preexist_filter_data.end());
+    }
 
     for (const auto & entry : shared_state->entries)
     {

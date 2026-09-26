@@ -10,6 +10,7 @@
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 0;
 SET optimize_on_insert = 0;
+SET lightweight_delete_mode = 'alter_update';
 
 -- Test 1: collapsing keeps up to two rows of a key - the first negative and the last positive - and
 -- the TTL is applied to each of them on its own.
@@ -50,6 +51,7 @@ ALTER TABLE t_ttl_vert_coll_off MODIFY SETTING vertical_merge_optimize_ttl_delet
 -- order, so a kept invalid row must reach the output between the selected rows it was read between.
 -- A background TTL merge would delete rows before the control copies them.
 SYSTEM STOP TTL MERGES t_ttl_vert_coll;
+SYSTEM STOP TTL MERGES t_ttl_vert_coll_off;
 
 INSERT INTO t_ttl_vert_coll VALUES
     (1,  1, '2100-01-01 00:00:00', 101, 201, 301),
@@ -76,7 +78,12 @@ INSERT INTO t_ttl_vert_coll VALUES
     (11, 0, '2100-01-01 00:00:00', 121, 221, 321);
 
 INSERT INTO t_ttl_vert_coll_off SELECT * FROM t_ttl_vert_coll;
+
+-- Deleting one side of pairs 6 and 9 leaves key 6's negative row and brings back key 9's positive row.
+DELETE FROM t_ttl_vert_coll WHERE c1 IN (116, 119);
+DELETE FROM t_ttl_vert_coll_off WHERE c1 IN (116, 119);
 SYSTEM START TTL MERGES t_ttl_vert_coll;
+SYSTEM START TTL MERGES t_ttl_vert_coll_off;
 
 OPTIMIZE TABLE t_ttl_vert_coll FINAL;
 OPTIMIZE TABLE t_ttl_vert_coll_off FINAL;
@@ -134,6 +141,7 @@ ALTER TABLE t_ttl_vert_vcoll_off MODIFY SETTING vertical_merge_optimize_ttl_dele
 -- Key 1 survives, key 2 expires. Key 3 cancels out before the TTL is consulted. Keys 4 and 5 hold
 -- two versions that cannot cancel, and the TTL removes one of them and then both.
 SYSTEM STOP TTL MERGES t_ttl_vert_vcoll;
+SYSTEM STOP TTL MERGES t_ttl_vert_vcoll_off;
 
 INSERT INTO t_ttl_vert_vcoll VALUES
     (1,  1, 1, '2100-01-01 00:00:00', 101, 201, 301),
@@ -146,7 +154,12 @@ INSERT INTO t_ttl_vert_vcoll VALUES
     (5,  1, 2, '2000-01-01 00:00:00', 115, 215, 315);
 
 INSERT INTO t_ttl_vert_vcoll_off SELECT * FROM t_ttl_vert_vcoll;
+
+-- Deleting key 3's negative row brings its positive one back; key 4 falls back to an expired version.
+DELETE FROM t_ttl_vert_vcoll WHERE c1 IN (113, 114);
+DELETE FROM t_ttl_vert_vcoll_off WHERE c1 IN (113, 114);
 SYSTEM START TTL MERGES t_ttl_vert_vcoll;
+SYSTEM START TTL MERGES t_ttl_vert_vcoll_off;
 
 OPTIMIZE TABLE t_ttl_vert_vcoll FINAL;
 OPTIMIZE TABLE t_ttl_vert_vcoll_off FINAL;

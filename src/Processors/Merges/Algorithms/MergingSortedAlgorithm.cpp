@@ -158,12 +158,16 @@ void MergingSortedAlgorithm::addInput()
     virtual_row_boundary.emplace_back();
 }
 
+/// TODO(murphy-4o): attach the lightweight delete as a `RowFilterInfo` too, from a step of its own,
+/// so that this function and `filter_column_name` leave the merging interface. Needs `Replacing` and
+/// `Collapsing` to read the mask when they choose a candidate rather than when they emit one, or a
+/// key whose newest version was deleted disappears instead of reverting to an older live version.
 const IColumnFilter * MergingSortedAlgorithm::resolveRowFilterMask(const Chunk & chunk) const
 {
     if (filter_column_position != -1)
     {
-        /// One merge filters on one predicate: `canVerticalTTLDelete` gives up when a source part
-        /// has a lightweight delete, so a merge never gets a mask from both directions.
+        /// One merge filters on one predicate: when a lightweight delete and a TTL apply to the same
+        /// merge, the TTL mask absorbs `_row_exists` upstream and `filter_column_name` is unset.
         chassert(!chunk.getChunkInfos().has<RowFilterInfo>());
         return &assert_cast<const ColumnUInt8 &>(*chunk.getColumns()[filter_column_position]).getData();
     }

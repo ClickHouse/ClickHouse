@@ -1,7 +1,7 @@
 test1_count	100
-test1_id_range	100	199
-test1_versions	[2]
-test1_cols	200	200	200
+test1_id_range	0	199
+test1_versions	[1,2]
+test1_cols	190	190	190
 test1_expired_left	0
 test1_parts	1
 test1_control_same_rows	1
