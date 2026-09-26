@@ -1821,7 +1821,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     }
 
     const auto & argument_nodes = resolved_function->getArguments().getNodes();
-    if (argument_nodes.size() != 2 && !array_join_parent_column->isEqual(*argument_nodes.at(0)))
+    if (argument_nodes.size() != 2 || !array_join_parent_column->isEqual(*argument_nodes.at(0)))
         return {};
 
     const auto * second_argument = argument_nodes.at(1)->as<ConstantNode>();
