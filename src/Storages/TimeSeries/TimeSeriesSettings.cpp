@@ -23,6 +23,7 @@ namespace ErrorCodes
 
 
 #define LIST_OF_TIME_SERIES_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
     DECLARE(DataType, id_type, String{}, "The type of the 'id' column of the target tables. Normally it's declared in the INNER COLUMNS clauses of the inner tables or in an external 'tags' table; the setting is set automatically when the table is created if the type isn't kept in the definition otherwise: if the 'tags' target is an external table, or if the 'id_generator' setting is set. Requires 'version' to be at least 2", 0) \
     DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags. If the 'tags' target is an external table and 'version' is at least 2, the setting is set automatically when the table is created: to the DEFAULT expression of the 'id' column of that table if any, otherwise to the expression chosen automatically for the 'id' type", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
@@ -35,7 +36,10 @@ namespace ErrorCodes
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
-    DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
+    DECLARE(UInt64, tags_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'tags' table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. A non-zero value requires 'store_min_time_and_max_time' to be disabled, see 'tags_deduplication_cache_size_bytes'. Set to 0 to disable the cache", 0) \
+    DECLARE(UInt64, tags_deduplication_cache_size_bytes, 104857600, "Maximum size in bytes of the deduplication cache of the 'tags' table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). A non-zero value requires 'store_min_time_and_max_time' to be disabled, because otherwise every insert changes 'min_time' and 'max_time'. Set to 0 to disable the cache, see also 'tags_deduplication_cache_expiration_seconds'", 0) \
+    DECLARE(UInt64, metric_families_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'metric families' table expires, counted from the moment the metric family was written. So every metric family is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. Set to 0 to disable the cache", 0) \
+    DECLARE(UInt64, metric_families_deduplication_cache_size_bytes, 10485760, "Maximum size in bytes of the deduplication cache of the 'metric families' table. The cache remembers the descriptions of the metric families written recently, so they aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). Set to 0 to disable the cache, see also 'metric_families_deduplication_cache_expiration_seconds'", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
@@ -101,6 +105,11 @@ void TimeSeriesSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+bool TimeSeriesSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
+}
+
 bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 {
     return TimeSeriesSettingsImpl::hasBuiltin(name);
@@ -116,11 +125,34 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
             "A table definition with another version was written by a different version of ClickHouse",
             version, TimeSeriesVersion::MIN_SUPPORTED, TimeSeriesVersion::LATEST);
 
-    /// A table of an earlier version must be readable by a server which doesn't know the `id_type` setting.
-    if ((version < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING) && settings[TimeSeriesSetting::id_type].value)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting `id_type` requires `version` to be at least {}, but the table has version {}",
-            TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING, version);
+    /// A table of an earlier version must be readable by a server which doesn't know a setting introduced later.
+    auto check_setting_requires_version = [&](std::string_view setting_name, UInt64 min_version)
+    {
+        if ((version < min_version) && settings.isChanged(setting_name))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `{}` requires `version` to be at least {}, but the table has version {}", setting_name, min_version, version);
+    };
+
+    check_setting_requires_version("id_type", TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING);
+    check_setting_requires_version("metric_families_deduplication_cache_size_bytes", TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES);
+    check_setting_requires_version("metric_families_deduplication_cache_expiration_seconds", TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES);
+    check_setting_requires_version("tags_deduplication_cache_size_bytes", TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES);
+    check_setting_requires_version("tags_deduplication_cache_expiration_seconds", TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES);
+
+    if (settings[TimeSeriesSetting::store_min_time_and_max_time])
+    {
+        /// Every insert changes `min_time` and `max_time` of a time series, so the rows of the tags table can't be deduplicated.
+        /// Reject only an explicit enabling value, the defaults are just ignored and an explicit zero is harmless.
+        auto check_tags_cache_setting_is_not_enabled = [&](std::string_view setting_name, const auto & setting)
+        {
+            if (setting.isChanged() && setting.value)
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting `{}` cannot be used when `store_min_time_and_max_time` is enabled", setting_name);
+        };
+
+        check_tags_cache_setting_is_not_enabled("tags_deduplication_cache_size_bytes", settings[TimeSeriesSetting::tags_deduplication_cache_size_bytes]);
+        check_tags_cache_setting_is_not_enabled("tags_deduplication_cache_expiration_seconds", settings[TimeSeriesSetting::tags_deduplication_cache_expiration_seconds]);
+    }
 
     if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
     {

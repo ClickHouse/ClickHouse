@@ -7,6 +7,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -105,6 +106,14 @@ private:
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
+
+    /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache;
+
+    /// Rows of the "tags" and "metric families" tables which this insert is going to write, they are marked as written when the insert is finished.
+    TimeSeriesDeduplicationCache::PendingRows pending_tags;
+    TimeSeriesDeduplicationCache::PendingRows pending_metric_families;
 };
 
 }

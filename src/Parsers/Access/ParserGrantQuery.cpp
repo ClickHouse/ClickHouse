@@ -503,6 +503,7 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `SYSTEM DROP QUERY CACHE`
       - `SYSTEM DROP S3 CLIENT CACHE`
       - `SYSTEM DROP SCHEMA CACHE`
+      - `SYSTEM DROP TIME SERIES CACHES`
       - `SYSTEM DROP UNCOMPRESSED CACHE`
     - `SYSTEM DROP REPLICA`
     - `SYSTEM FAILPOINT`

@@ -4,11 +4,15 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <base/defines.h>
 #include <array>
+#include <mutex>
 
 
 namespace DB
 {
+class TimeSeriesDeduplicationCache;
+using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
@@ -64,6 +68,16 @@ public:
     {
         return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
     }
+
+    /// Return the caches used to skip the rows already written to the "tags" and "metric families" tables,
+    /// or null if the cache is disabled by the settings (see `tags_deduplication_cache_size_bytes`
+    /// and `metric_families_deduplication_cache_size_bytes`).
+    TimeSeriesDeduplicationCachePtr getTagsDeduplicationCache() const;
+    TimeSeriesDeduplicationCachePtr getMetricFamiliesDeduplicationCache() const;
+
+    /// Clears the caches used by inserts, so that the next insert writes all its rows to the target tables.
+    /// It's called by `TRUNCATE TABLE` and by `SYSTEM DROP TIME SERIES CACHES`.
+    void clearCaches();
 
     void readImpl(
         QueryPlan & query_plan,
@@ -142,10 +156,19 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    /// Apply the current settings to the caches: a cache is created when its settings enable it, reset to null
+    /// when they disable it, and keeps its entries when only its limits change.
+    void applySettingsToTagsDeduplicationCache();
+    void applySettingsToMetricFamiliesDeduplicationCache();
+
     MultiVersion<TimeSeriesSettings> storage_settings;
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+
+    mutable std::mutex caches_mutex;
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache TSA_GUARDED_BY(caches_mutex);
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache TSA_GUARDED_BY(caches_mutex);
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

@@ -1,0 +1,39 @@
+--- the same metric family is written once, a changed description is a new row, rows without a metric family are skipped ---
+m	2
+m2	1
+--- a description written before is written again after a different one, so the table gets the latest ---
+f1	3
+f2	3
+--- one insert writes a repeated metric family once, within the cache capacity ---
+r1	1
+r2	1
+r3	1
+--- SYSTEM CLEAR TIME SERIES CACHES makes the next insert write its rows again ---
+3
+--- TRUNCATE TABLE clears the caches ---
+1
+--- changing the limits of a cache keeps its entries ---
+1
+--- the least recently used entry is evicted when the cache is full, a used entry survives ---
+e1	1
+e2	2
+e3	1
+e4	1
+--- an entry expires after the expiration period ---
+2
+--- the cache is disabled by setting its size to 0 ---
+2
+--- the cache is enabled again by resetting its size, it starts empty ---
+3
+--- the tags table is not deduplicated if min_time and max_time are stored ---
+2
+--- the same time series is written to the tags table once if min_time and max_time are not stored ---
+2
+3
+3
+--- tables of earlier versions have no caches and cannot set them ---
+2
+--- two tables have separate caches for a shared external metric families table ---
+2
+--- a failed insert does not fill the cache ---
+1
