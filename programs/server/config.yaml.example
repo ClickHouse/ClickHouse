@@ -343,12 +343,22 @@ ldap_servers: ''
 # verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
 # to be successfully authenticated for all consecutive requests without contacting the LDAP server.
 # Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
+# operation_timeout - maximum time, in seconds, to wait for the result of a bind or of a StartTLS negotiation on an
+# established connection. Searches are bounded by search_timeout instead. Must be greater than 0. Default is 40.
+# network_timeout - maximum time, in seconds, to wait for the TCP connection to the LDAP server, including the TLS
+# handshake, to be established. Must be greater than 0. Default is 30.
+# search_timeout - time limit, in seconds, for each LDAP search request (user DN detection and role mapping), requested
+# from the server and enforced on the client as well; operation_timeout does not apply to searches.
+# Must be greater than 0. Default is 20.
 # enable_tls - flag to trigger use of secure connection to the LDAP server.
 # Specify 'no' for plain text (ldap://) protocol (not recommended).
 # Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
 # Specify 'starttls' for legacy StartTLS protocol (plain text (ldap://) protocol, upgraded to TLS).
 # tls_minimum_protocol_version - the minimum protocol version of SSL/TLS.
-# Accepted values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2' (the default).
+# Accepted values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2' (the default), 'tls1.3'.
+# tls_maximum_protocol_version - the maximum protocol version of SSL/TLS.
+# Accepted values are the same as for tls_minimum_protocol_version; must not be lower than the minimum.
+# Unset by default, which negotiates the newest version supported by both sides.
 # tls_require_cert - SSL/TLS peer certificate verification behavior.
 # Accepted values are: 'never', 'allow', 'try', 'demand' (the default).
 # tls_cert_file - path to certificate file.
@@ -362,6 +372,9 @@ ldap_servers: ''
 #     port: 636
 #     bind_dn: 'uid={user_name},ou=users,dc=example,dc=com'
 #     verification_cooldown: 300
+#     operation_timeout: 40
+#     network_timeout: 30
+#     search_timeout: 20
 #     enable_tls: yes
 #     tls_minimum_protocol_version: tls1.2
 #     tls_require_cert: demand
