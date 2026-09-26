@@ -68,8 +68,8 @@ bool isDeterministic(const ActionsDAG::Node * node);
 
 /// Like `isDeterministic`, but treats the internal `__topKFilter` function as deterministic.
 ///
-/// `__topKFilter` is the dynamic filter that `tryOptimizeTopK` composes into the read of an
-/// `ORDER BY ... LIMIT n` query. Its non-determinism is bounded: for a fixed plan and data, the
+/// `__topKFilter` is the dynamic filter that `installTopKDynamicFilter` merges into the PREWHERE of
+/// the read of an `ORDER BY ... LIMIT n` query. Its non-determinism is bounded: for a fixed plan and data, the
 /// running threshold only tightens, so any row whose sort-column value lies in the final top-N
 /// passes the filter at every point during execution. Consequently a granule none of whose rows
 /// survive the filter is one that has no row that could have reached the final result, regardless
