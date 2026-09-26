@@ -481,7 +481,12 @@ private:
 
     void executeLocally(const QueryRunnerJob & job, ContextMutablePtr job_context) const
     {
-        auto io = executeQuery(job.query, job_context, QueryFlags{ .internal = true }).second;
+        /// The job is nested, hence `internal` - which is also what marks these queries with
+        /// `is_internal = 1` in `system.query_log`. Its text comes from the user who inserted it,
+        /// hence `user_initiated`: without it the access checks of `CREATE` jobs would be skipped, so
+        /// a job would not be limited to the privileges of the principal it runs as.
+        auto io
+            = executeQuery(job.query, job_context, QueryFlags{ .internal = true, .user_initiated = true }).second;
         try
         {
             if (io.pipeline.initialized())
@@ -647,7 +652,7 @@ private:
             element.is_internal = true;
 
             if (settings[Setting::log_query_settings])
-                element.query_settings = settings.changedToFlatMap();
+                element.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
             {

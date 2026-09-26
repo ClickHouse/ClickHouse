@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <utility>
 #include <set>
 #include <string>
@@ -7,6 +8,7 @@
 #include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/StepIntervalTimings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBuffer.h>
@@ -31,16 +33,21 @@ class AnalyzeStepsStats
     using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
     using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
+    AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
+
+    /// Empty when the work intervals were not collected, that is without the `time` setting.
+    std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
 
 private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
+    void computeJoinBranchCosts(const QueryPlan & plan);
 
     StepStatsContext makeContext(const IQueryPlanStep * step) const;
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
@@ -49,6 +56,10 @@ private:
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
+
+    ReportsByStep join_raw_reports;
+
+    std::optional<StepIntervalTimings> interval_timings;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;
