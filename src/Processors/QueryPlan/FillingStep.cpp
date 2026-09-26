@@ -281,6 +281,14 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
             result_columns_order.push_back(column.name);
         }
 
+        /// `FillingTransform` finds these columns in its input header by name, so each must be there once.
+        UnorderedSetWithMemoryTracking<std::string> interpolate_header_columns;
+        for (const auto & column : input_header)
+            if ((result_column_names.contains(column.name) || required_columns_map.contains(column.name))
+                && !interpolate_header_columns.emplace(column.name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' is present in the input header more than once", column.name);
+
         interpolate_description = std::make_shared<InterpolateDescription>(
             std::move(actions), std::move(required_columns_map), std::move(result_columns_order));
     }
