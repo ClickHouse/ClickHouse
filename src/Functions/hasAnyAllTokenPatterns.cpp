@@ -40,6 +40,7 @@ namespace
 {
 
 /// Each matcher checks one token against one pattern, as the text index does for each token of its dictionary.
+/// `startValue` gets each value before its tokens, which are its substrings, and returns false if none of them can match.
 
 bool containsLiteral(std::string_view haystack, std::string_view literal)
 {
@@ -51,6 +52,7 @@ bool containsLiteral(std::string_view haystack, std::string_view literal)
 struct TokenPrefixMatcher
 {
     TokenPrefixMatcher(const String & prefix_, size_t /*regexp_jit_min_count*/) : prefix(prefix_) {}
+    bool startValue(std::string_view value, bool check_literal) const { return !check_literal || containsLiteral(value, prefix); }
     bool operator()(std::string_view token) const { return token.starts_with(prefix); }
 
     String prefix;
@@ -73,8 +75,13 @@ struct TokenLikeMatcher
         else if (affix.is_perfect)
             kind = has_leading_percent ? Kind::Contains : Kind::StartsWith;
         else
+        {
             regexp.emplace(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(pattern));
+            literal = regexp->getRequiredSubstring();
+        }
     }
+
+    bool startValue(std::string_view value, bool check_literal) const { return !check_literal || containsLiteral(value, literal); }
 
     bool operator()(std::string_view token) const
     {
@@ -96,6 +103,7 @@ struct TokenLikeMatcher
 
     enum class Kind : uint8_t { Equals, StartsWith, EndsWith, Contains, Regexp };
     Kind kind = Kind::Regexp;
+    /// The literal of the byte comparison, or for `regexp` a substring of every match.
     String literal;
     std::optional<OptimizedRegularExpression> regexp;
 };
@@ -109,6 +117,11 @@ struct TokenRegexpMatcher
         , capture_starts(jit.num_captures)
         , capture_ends(jit.num_captures)
     {
+    }
+
+    bool startValue(std::string_view value, bool check_literal) const
+    {
+        return !check_literal || containsLiteral(value, regexp.getRequiredSubstring());
     }
 
     bool operator()(std::string_view token) const
@@ -250,10 +263,14 @@ public:
         /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
         const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
         const ITokenizer & tokenizer = cloned_tokenizer ? *cloned_tokenizer : *shared_tokenizer;
+        /// With the `array` tokenizer the value is the only token, so looking for the literal first is wasted work.
+        const bool check_literals = tokenizer.getType() != ITokenizer::Type::Array;
 
         /// For `match_all`: the patterns already matched by a token of the current row.
         VectorWithMemoryTracking<UInt8> matched(matchers.size());
         size_t num_matched = 0;
+        /// The patterns not matched yet that a token of the current value can match.
+        VectorWithMemoryTracking<UInt8> active(matchers.size());
 
         auto start_row = [&]
         {
@@ -261,24 +278,43 @@ public:
             num_matched = 0;
         };
 
+        auto & res = col_res->getData();
+        const IColumn & col_input = *arguments[0].column;
+        const bool is_value_whole_row = isColumnStringOrFixedString(col_input);
+
         /// Adds the tokens of one value to the current row, returns true once the row matches.
         auto add_value = [&](std::string_view value)
         {
+            bool has_active = false;
+            for (size_t i = 0; i < matchers.size(); ++i)
+            {
+                active[i] = !matched[i] && matchers[i].startValue(value, check_literals);
+                has_active |= active[i];
+
+                /// With `match_all`, a pattern that no token of the row can match fails the row.
+                if (Traits::match_all && is_value_whole_row && !active[i])
+                    return false;
+            }
+
+            if (!has_active)
+                return false;
+
             bool row_matches = false;
             forEachToken(tokenizer, value.data(), value.size(), [&](const char * token_data, size_t length)
             {
                 const std::string_view token(token_data, length);
                 for (size_t i = 0; i < matchers.size(); ++i)
                 {
+                    if (!active[i] || !matchers[i](token))
+                        continue;
+
                     if constexpr (Traits::match_all)
                     {
-                        if (!matched[i] && matchers[i](token))
-                        {
-                            matched[i] = 1;
-                            ++num_matched;
-                        }
+                        active[i] = 0;
+                        matched[i] = 1;
+                        ++num_matched;
                     }
-                    else if (matchers[i](token))
+                    else
                     {
                         row_matches = true;
                         break;
@@ -292,10 +328,7 @@ public:
             return row_matches;
         };
 
-        auto & res = col_res->getData();
-        const IColumn & col_input = *arguments[0].column;
-
-        if (isColumnStringOrFixedString(col_input))
+        if (is_value_whole_row)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
