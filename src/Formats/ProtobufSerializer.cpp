@@ -1395,7 +1395,12 @@ namespace
             ReadBufferFromString buf(str);
             DecimalType decimal{0};
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
+            {
                 readDateTime64Text(decimal, scale, buf);
+                /// The field is a complete value, so a leftover such as the ` April 4` of `2024 April 4`
+                /// must be an error instead of silently yielding the unix timestamp `2024`.
+                assertEOF(buf);
+            }
             else
                 SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
             return decimal;
@@ -1722,6 +1727,9 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf, lut);
+            /// The field is a complete value, so a leftover such as the ` April 4` of `2024 April 4`
+            /// must be an error instead of silently yielding the unix timestamp `2024`.
+            assertEOF(buf);
             return std::max<time_t>(tm, 0);
         }
     };
