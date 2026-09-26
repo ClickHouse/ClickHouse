@@ -1,7 +1,5 @@
 import re
 
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
-
 
 def targeted_variants(jobs, allow_failure=True):
     """Run one repeated targeted check per build and settings configuration."""
@@ -51,22 +49,3 @@ def targeted_variants(jobs, allow_failure=True):
         source_flavors[parameter] = flavor
     return list(variants.values())
 
-
-def targeted_matrix(jobs):
-    eligible, exemptions = [], {}
-    for job in jobs:
-        if "llvm_coverage" in job.parameter:
-            exemptions[job.name] = (
-                "LLVM coverage collection disables randomized settings and owns profdata artifacts"
-            )
-        elif "azure" in job.parameter:
-            exemptions[job.name] = (
-                "Azurite runner currently disables randomized settings"
-            )
-        else:
-            eligible.append(job)
-    return targeted_variants(eligible), exemptions
-
-
-def rollout_targeted_jobs(existing, proposed):
-    return proposed if SELECTION_CONFIG.expanded_targeted_matrix else existing
