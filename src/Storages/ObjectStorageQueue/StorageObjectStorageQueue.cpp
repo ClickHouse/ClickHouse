@@ -152,6 +152,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
+    extern const ObjectStorageQueueSettingsBool use_native_copy;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 metadata_cache_size_bytes;
     extern const ObjectStorageQueueSettingsUInt64 metadata_cache_size_elements;
@@ -391,6 +392,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
+    /// The table setting, when given, decides whether this queue's Azure copies use native copy.
+    if ((*queue_settings_)[ObjectStorageQueueSetting::use_native_copy].changed)
+        object_storage_context->setSetting("azure_use_native_copy", (*queue_settings_)[ObjectStorageQueueSetting::use_native_copy].value);
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
