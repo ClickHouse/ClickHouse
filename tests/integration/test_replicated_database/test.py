@@ -1855,13 +1855,16 @@ def test_sync_database_replica_strict(started_cluster):
         # the DEFAULT *server-side* TIMEOUT_EXCEEDED with a generous read window
         # instead of coupling it to the native client's socket timeout, which fires
         # at the same `receive_timeout` and would make the timeout's origin a flaky
-        # client/server race.
+        # client/server race. The requests use POST: `SYSTEM SYNC DATABASE REPLICA`
+        # requires the `SYSTEM SYNC DATABASE REPLICA` grant, which a readonly (GET)
+        # request never has.
         sync_params = {"receive_timeout": 3}
 
         # DEFAULT: needs the frozen snapshot fully processed -> times out.
         default_error = dummy_node.http_query_and_get_error(
             "system sync database replica strict_sync",
             params=sync_params,
+            method="POST",
             timeout=60,
         )
         assert "TIMEOUT_EXCEEDED" in default_error, default_error
@@ -1874,6 +1877,7 @@ def test_sync_database_replica_strict(started_cluster):
         dummy_node.http_query(
             "system sync database replica strict_sync strict",
             params=sync_params,
+            method="POST",
             timeout=60,
         )
     finally:
