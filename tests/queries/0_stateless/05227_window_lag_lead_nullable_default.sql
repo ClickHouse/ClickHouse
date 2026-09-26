@@ -1,5 +1,6 @@
 -- { echo }
 
+-- Regression coverage for analyzer-side lag/lead type binding.
 -- A NULL default widens the result type and keeps values from the input column.
 SELECT
     toTypeName(lag(number, 1, NULL) OVER (ORDER BY number)),
