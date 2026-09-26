@@ -398,7 +398,13 @@ void TransactionManager::tryFinalizeUnknownStateTransactions()
         std::lock_guard lock{running_list_mutex};
         std::swap(list, unknown_state_list);
         std::swap(list, unknown_state_list_loaded);
+        unknown_state_finalizing = !list.empty();
     }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{running_list_mutex};
+        unknown_state_finalizing = false;
+    });
 
     for (auto & [txn, state_guard] : list)
     {
@@ -838,6 +844,12 @@ void TransactionManager::assertTIDIsNotOutdated(const TransactionID & tid)
         return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);
+}
+
+bool TransactionManager::hasUnknownStateTransactions() const
+{
+    std::lock_guard lock{running_list_mutex};
+    return !unknown_state_list.empty() || !unknown_state_list_loaded.empty() || unknown_state_finalizing;
 }
 
 CSN TransactionManager::getOldestSnapshot() const

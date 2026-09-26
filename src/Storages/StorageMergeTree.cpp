@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -3883,14 +3884,6 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
     const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
-    /// TODO(unique-key): sidecar-aware check. The per-part delete-bitmap
-    /// sidecars are not enumerated as part artifacts, so checkDataPart treats
-    /// them as UNEXPECTED_FILE_IN_DATA_PART. Reject for now.
-    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "CHECK TABLE is not supported for UNIQUE KEY tables yet: delete-bitmap "
-            "sidecars are not yet recognized as part artifacts.");
-
     DataPartsVector data_parts;
     if (const auto * partition_opt = std::get_if<ASTPtr>(&check_task_filter))
     {
@@ -3971,13 +3964,11 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
-    /// TODO(unique-key): sidecar-aware backup. The per-part delete-bitmap
-    /// sidecars are not enumerated as part artifacts, so BACKUP would silently
-    /// omit them and restore would resurrect deleted rows. Reject for now.
+    /// TODO(unique-key): sidecar-aware restore
     if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
-            "are not preserved across backup/restore.");
+            "BACKUP is not supported for UNIQUE KEY tables yet: a restored part is renamed, and "
+            "the delete bitmaps held for it are filed under its old name.");
 
     DataPartsVector data_parts;
     if (partitions)
