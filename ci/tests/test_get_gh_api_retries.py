@@ -18,7 +18,7 @@ the shim.
   * every other 4xx keeps its existing behaviour, including the 403/404 auth failover and
     the 403 bodies the rate-limit predicate does not match.
 
-`get_gh_api` is not the only unauthenticated GitHub HTTP call in `tests/ci`
+`get_gh_api` is not the only unauthenticated GitHub HTTP call in `ci/tools`
 (`ci_utils.py` and `github_helper.py` have their own); it is the one the release-tag
 lookup and PR info resolution go through.
 """
@@ -37,11 +37,11 @@ import requests
 import ci.praktika.gh as gh_module
 from ci.praktika.gh import GH
 
-# Load the shim directly from its file so we do not have to put the whole `tests/ci`
+# Load the shim directly from its file so we do not have to put the whole `ci/tools`
 # directory on `sys.path` for the entire pytest session (which would risk shadowing
 # equally-named modules in other tests).
 _BDH_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "tests", "ci", "build_download_helper.py"
+    os.path.dirname(__file__), "..", "tools", "build_download_helper.py"
 )
 _spec = importlib.util.spec_from_file_location("build_download_helper", _BDH_PATH)
 bdh = importlib.util.module_from_spec(_spec)
