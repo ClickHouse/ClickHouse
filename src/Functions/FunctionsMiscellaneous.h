@@ -100,6 +100,125 @@ private:
     SignaturePtr signature;
 };
 
+/// Whether the function a column stands for and the functions of its captured columns all satisfy the predicate.
+/// This is about a `ColumnFunction`, which is what constant folding turns a lambda without non-constant
+/// captured columns into; a lambda nested in it becomes one of its captured columns.
+template <typename Predicate>
+bool allColumnFunctions(const IColumn & column, const Predicate & predicate)
+{
+    const IColumn * data = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(data))
+        data = &column_const->getDataColumn();
+
+    const auto * column_function = typeid_cast<const ColumnFunction *>(data);
+    if (!column_function)
+        return true;
+
+    if (!predicate(*column_function->getFunction()))
+        return false;
+
+    for (const auto & captured : column_function->getCapturedColumns())
+        if (captured.column && !allColumnFunctions(*captured.column, predicate))
+            return false;
+
+    return true;
+}
+
+/// Whether every function a node stands for satisfies the predicate: the function of a FUNCTION node, or, for a
+/// COLUMN node holding a constant-folded lambda, the lambda and the lambdas nested in it.
+template <typename Predicate>
+bool allNodeFunctions(const ActionsDAG::Node & node, const Predicate & predicate)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+        return predicate(*node.function_base);
+
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+        return allColumnFunctions(*node.column, predicate);
+
+    return true;
+}
+
+/// Whether every function in the body of a lambda satisfies the predicate. Nested lambdas are covered by
+/// recursion through their own `FunctionCapture` or `FunctionExpression`.
+template <typename Predicate>
+bool allLambdaBodyFunctions(const ExpressionActions & expression_actions, const Predicate & predicate)
+{
+    for (const auto & inner_node : expression_actions.getActionsDAG().getNodes())
+        if (!allNodeFunctions(inner_node, predicate))
+            return false;
+    return true;
+}
+
+/// A lambda is exactly as deterministic and as stateful as the functions in its body.
+/// Without this, a higher-order function like `arrayExists(x -> rand() % 2 = 0, arr)` looks like an
+/// ordinary deterministic function, and an optimization that moves expressions across a row-multiplying
+/// step such as `ARRAY JOIN` (`liftUpArrayJoin`, filter pushdown) changes how many times the
+/// non-deterministic function is drawn.
+inline bool isLambdaBodyDeterministic(const ExpressionActions & expression_actions)
+{
+    return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministic(); });
+}
+
+inline bool isLambdaBodyDeterministicInScopeOfQuery(const ExpressionActions & expression_actions)
+{
+    return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+}
+
+inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
+{
+    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
+}
+
+/// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
+/// Every function in the body has to allow constant folding, and it also has to keep the same value for the
+/// whole query: a folded lambda becomes a constant `ColumnFunction`, which makes the higher-order function
+/// around it constant as well, so a single draw of `rand` decides the value of every row. This is what
+/// `arrayExists(y -> rand(y) % 2 = 0, [1])` in a `WHERE` used to do: it either kept all rows or dropped them
+/// all, while `rand(y) % 2 = 0` outside a lambda is drawn per row.
+/// Nested lambdas are covered as well - the body of a lambda nested in this one is either a `FUNCTION` node
+/// standing for its own `FunctionCapture`, or, once constant folding got to it, a `COLUMN` node holding a
+/// `ColumnFunction` carrier, and both recurse back here.
+inline bool isLambdaBodySuitableForConstantFolding(const ExpressionActions & expression_actions)
+{
+    auto function_can_be_folded = [](const IFunctionBase & function)
+    { return function.isSuitableForConstantFolding() && function.isDeterministicInScopeOfQuery(); };
+
+    for (const auto & inner_node : expression_actions.getActionsDAG().getNodes())
+    {
+        switch (inner_node.type)
+        {
+            case ActionsDAG::ActionType::FUNCTION:
+                if (!function_can_be_folded(*inner_node.function_base))
+                    return false;
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+                if (inner_node.column)
+                {
+                    /// Same check getFunctionArguments does for direct children: an IN set
+                    /// that has not been built yet cannot be substituted at plan time.
+                    if (const auto * column_set = typeid_cast<const ColumnSet *>(&inner_node.column->getDataColumn()))
+                    {
+                        auto future_set = column_set->getData();
+                        if (!future_set || !future_set->get())
+                            return false;
+                    }
+
+                    /// A nested lambda, folded into a constant `ColumnFunction`, together with the lambdas nested in it.
+                    if (!allColumnFunctions(*inner_node.column, function_can_be_folded))
+                        return false;
+                }
+                break;
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                return false;
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::ALIAS:
+                break;
+        }
+    }
+    return true;
+}
+
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression final : public IFunctionBase
 {
@@ -133,6 +252,11 @@ public:
     String getName() const override { return "FunctionExpression"; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
+    bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
+    bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
+    bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return capture->return_type; }
@@ -258,39 +382,11 @@ public:
     /// Without this, a higher-order function like arrayMap with a constant array and a lambda
     /// whose body contains a non-deterministic call (e.g. a non-deterministic WASM UDF) or an
     /// unbuilt ColumnSet would be folded to a stale value at analysis time.
-    bool isSuitableForConstantFolding() const override
-    {
-        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
-        {
-            switch (inner_node.type)
-            {
-                case ActionsDAG::ActionType::FUNCTION:
-                    if (!inner_node.function_base->isSuitableForConstantFolding())
-                        return false;
-                    break;
-                case ActionsDAG::ActionType::COLUMN:
-                    /// Same check getFunctionArguments does for direct children: an IN set
-                    /// that has not been built yet cannot be substituted at plan time.
-                    if (inner_node.column)
-                    {
-                        if (const auto * column_set = typeid_cast<const ColumnSet *>(&inner_node.column->getDataColumn()))
-                        {
-                            auto future_set = column_set->getData();
-                            if (!future_set || !future_set->get())
-                                return false;
-                        }
-                    }
-                    break;
-                case ActionsDAG::ActionType::ARRAY_JOIN:
-                case ActionsDAG::ActionType::PLACEHOLDER:
-                    return false;
-                case ActionsDAG::ActionType::INPUT:
-                case ActionsDAG::ActionType::ALIAS:
-                    break;
-            }
-        }
-        return true;
-    }
+    bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
+
+    bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
+    bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
+    bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

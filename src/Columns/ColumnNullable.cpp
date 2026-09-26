@@ -11,6 +11,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -247,15 +248,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
         getNestedColumn().deserializeAndInsertFromArena(in, settings);
     else
         getNestedColumn().insertDefault();
-}
-
-void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 val = 0;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    if (val == 0)
-        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -939,8 +931,10 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
             "Null map of size {} at offset {} does not match ColumnNullable of size {}",
             map.size(), offset, arr.size());
 
+    /// Any non-zero byte means NULL, so reduce the map before negating it: `negative ^ 2` would
+    /// yield 3 and mark a row the map leaves present.
     for (size_t i = 0, size = map.size(); i < size; ++i)
-        arr[offset + i] |= negative ^ map[i];
+        arr[offset + i] |= negative ^ !!map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
@@ -1217,4 +1211,18 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     return removeNullable(column);
 }
 
+bool ColumnNullable::hasOnlyTypeDefaults() const
+{
+    const auto & data = getNullMapData();
+    if (data.empty())
+        return true;
+    return memoryIsByte(data.data(), 0, data.size(), 1);
+}
+
+ColumnPlanes ColumnNullable::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    planes.children = {&getNestedColumn()};
+    return planes;
+}
 }
