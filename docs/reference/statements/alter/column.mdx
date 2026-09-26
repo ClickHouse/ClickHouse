@@ -174,7 +174,7 @@ For examples of column-level settings modifying, see [Column-level Settings](/re
 
 If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
 
-When changing the type, values are converted as if the [toType](/reference/functions/regular-functions/type-conversion-functions) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
+When changing the type, values are converted as if the [toType](/reference/functions/regular-functions/type-conversion-functions) functions were applied to them. If only the default expression is changed, the query changes metadata only.
 
 Example:
 
@@ -182,7 +182,9 @@ Example:
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
+Some type changes are metadata-only because their on-disk representation is unchanged. These include extending an enum and conversions between `Date` and `UInt16` or between `DateTime` and `UInt32`; the same rule applies recursively inside `Array` and `Nullable` types. Some JSON type-hint changes and named-tuple additions can also avoid an immediate rewrite when the corresponding settings are enabled.
+
+Other type changes create a `READ_COLUMN` mutation that rewrites the affected column in existing parts. Wait behavior follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync): it defaults to `1` in ClickHouse and to `0` in ClickHouse Cloud. Monitor progress in [`system.mutations`](/reference/system-tables/mutations).
 
 The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#add-column) description, but column type is mandatory in this case.
 

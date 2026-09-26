@@ -898,7 +898,7 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
+Such integers are output without quotes by default. Enabling this setting encloses them in quotes, which is compatible with most JavaScript implementations.
 
 Possible values:
 
@@ -1507,8 +1507,49 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
+    DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
+What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
+
+- `throw` — reject the query;
+- `text` — one text-form value per row (what `CAST(col AS String)` would produce), as an Arrow `Utf8` column;
+- `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
+
+An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
+
+A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - a `Dynamic` holding a `String` of arbitrary bytes, for example. Use `binary` mode when the bytes have to be preserved exactly.
+
+`output_format_arrow_string_as_string` does not apply to these columns, only to real `String` and `FixedString` ones. That keeps the Arrow type of an opaque column a statement about which encoding it holds: `Utf8` is the text form and `Binary` is the binary one, whatever that setting says.
+
+The same applies to an aggregate state held in a `Dynamic`: the column is typed from `Dynamic`, which says nothing about what its rows hold, and the Arrow schema is fixed before any value is seen, so the state cannot be given a `Binary` column of its own the way an `AggregateFunction` column is. In `text` mode it is therefore lossy. `binary` mode keeps it. A `Variant` is not affected - it lists its alternatives, so an `AggregateFunction` among them gets its own `Binary` child.
+
+In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
+
+ClickHouse reads such a column back into the type the tag names only where the reading side already knows that type, because a table declares it or a structure argument such as the one `file` and `s3` take names it; it then does so inside `Array`, `Tuple`, `Map` and `Nullable` as well. Schema inference does not consult the tag, so a column read without a type named for it still arrives as `String` holding the raw payload. An alternative of a `Variant` never reads back, even with the type named, because the Arrow union its alternatives form is decoded without consulting the tags. The data written is well formed for other Arrow readers in every case.
+
+Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
+)", 0) \
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
-Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+Output types having no conversion as raw binary data. If false - such types would raise an exception.
+
+Superseded by `output_format_arrow_unsupported_types`: `0` means `throw` and `1` means `binary`. Only consulted when `output_format_arrow_unsupported_types` is not set explicitly.
+)", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size, 0, R"(
+Target number of rows per record batch for the `Arrow` and `ArrowStream` output formats. Combining small blocks reduces metadata and buffer-padding overhead, particularly for queries with selective filters.
+
+Blocks accumulate until this target or [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes) is reached. A block that already meets the row or byte target is written separately, without splitting. If you set a row target, combined batches contain fewer than twice that many rows, but a single input block can be larger.
+
+Buffering blocks can increase memory use and delay output. If the result never reaches either target, `ArrowStream` writes the first record batch only when the query finishes, though it can write the schema earlier. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the row target. Try `65409` as a starting value.
+)", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size_bytes, 0, R"(
+Target record batch size for the `Arrow` and `ArrowStream` output formats, measured in bytes of accumulated block data. This uses the same measure as [min_insert_block_size_bytes](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes). A batch is written when either this target or [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) is reached.
+
+Note that `LowCardinality` columns can produce Arrow batches much larger or smaller than this byte target. Repeated values expand in the output unless [output_format_arrow_low_cardinality_as_dictionary](#output_format_arrow_low_cardinality_as_dictionary) is enabled. Filtered blocks can also retain large dictionaries, so even a block with very few rows can reach the target and be written separately. For these columns, use [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) to control the row count and set the byte target to `0`.
+
+Buffering blocks can increase memory use and delay the first record batch until the query finishes. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
 )", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
@@ -1603,7 +1644,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 

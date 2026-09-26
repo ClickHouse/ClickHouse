@@ -1263,7 +1263,8 @@ void registerStorageNATS(StorageFactory & factory)
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
-        nats_settings->loadFromQuery(*args.storage_def);
+        if (args.storage_def->settings)
+            nats_settings->loadFromQuery(*args.storage_def);
 
         /// A credential source assigned in the `SETTINGS` clause is query-level even when the named
         /// collection provides the same key: the clause is applied on top of the collection values,

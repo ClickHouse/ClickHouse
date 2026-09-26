@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- The statistics-based choice of the IEJoin key conditions with Nullable key columns, key
 -- columns of different numeric types, tied estimates, and conditions without an estimate.
 

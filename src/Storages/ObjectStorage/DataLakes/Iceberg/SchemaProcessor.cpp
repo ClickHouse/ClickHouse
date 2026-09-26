@@ -393,10 +393,18 @@ namespace Iceberg
 
 std::string IcebergSchemaProcessor::default_link{};
 
-void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
+void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 {
-    std::lock_guard lock(mutex);
+    iceberg_table_schemas_by_ids.erase(schema_id);
+    clickhouse_table_schemas_by_ids.erase(schema_id);
+    std::erase_if(transform_dags_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
+    std::erase_if(clickhouse_types_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
+    std::erase_if(clickhouse_ids_by_source_names, [schema_id](const auto & item) { return item.first.first == schema_id; });
+}
 
+void IcebergSchemaProcessor::addIcebergTableSchema(
+    Poco::JSON::Object::Ptr schema_ptr, SchemaSource source, bool tolerate_conflicting_manifest_schemas)
+{
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
 
     /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
@@ -404,54 +412,124 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
         return;
 
-    current_schema_id = schema_id;
+    std::unordered_map<String, String> type_mapping;
+    if (allow_geo_parser)
+    {
+        type_mapping[f_geography] = f_binary;
+        type_mapping[f_geometry] = f_binary;
+    }
+
+    Poco::JSON::Object::Ptr registered_schema;
+    {
+        SharedLockGuard lock(mutex);
+        auto it = iceberg_table_schemas_by_ids.find(schema_id);
+        if (it != iceberg_table_schemas_by_ids.end()
+            && (source == SchemaSource::ManifestFile || !manifest_sourced_schema_ids.contains(schema_id)))
+            registered_schema = it->second;
+    }
+    if (registered_schema && schemasAreIdentical(*registered_schema, *schema_ptr, type_mapping))
+        return;
+
+    std::lock_guard lock(mutex);
+
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
+        if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
         {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
+            /// An identical metadata.json copy confirms a copy that was registered from a manifest header.
+            if (source == SchemaSource::Metadata)
+                manifest_sourced_schema_ids.erase(schema_id);
+            return;
         }
-        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
-        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
+
+        /// The 'schema' key in a manifest file header is only a copy of the table schema at the
+        /// time the manifest was written; metadata.json is the authoritative source. Broken writers
+        /// have been observed storing degraded copies in manifest headers under an already-used
+        /// schema-id (e.g. AWS S3 Tables maintenance jobs writing `timestamp` instead of
+        /// `timestamptz`, or a schema containing only the partition source columns). Other engines
+        /// (Spark, Trino, PyIceberg, DuckDB) resolve schemas from metadata.json and ignore such
+        /// divergent copies that came from a manifest.
+        const bool registered_from_manifest = manifest_sourced_schema_ids.contains(schema_id);
+        if (registered_from_manifest)
+        {
+            if (source == SchemaSource::Metadata)
+            {
+                /// A read registers the metadata.json schemas before it walks any manifest, but the
+                /// maintenance entrypoints (`remove_orphan_files`, `expire_snapshots`, manifest
+                /// compaction, mutation validation) can reach a manifest header first on an empty
+                /// processor. A schema that came from a manifest is never authoritative, so the
+                /// metadata.json copy replaces it, along with everything that was derived from it.
+                LOG_WARNING(
+                    getLogger("IcebergSchemaProcessor"),
+                    "Schema-id {} was registered from a manifest file header and differs from the schema "
+                    "metadata.json binds to that id; replacing the schema that came from the manifest",
+                    schema_id);
+                dropCachedSchema(schema_id);
+                manifest_sourced_schema_ids.erase(schema_id);
+            }
+            else
+            {
+                /// Two manifest headers disagree on a schema-id that metadata.json has not defined:
+                /// there is no authoritative copy to decide which one the data was written with.
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg schema with schema-id {} is bound to two different schemas by manifest file headers, "
+                    "and metadata.json does not define it",
+                    schema_id);
+            }
+        }
+        else
+        {
+            if (source == SchemaSource::ManifestFile && tolerate_conflicting_manifest_schemas)
+            {
+                LOG_WARNING(
+                    getLogger("IcebergSchemaProcessor"),
+                    "Manifest file header carries schema-id {} which differs from the schema already "
+                    "registered for that id from metadata.json; ignoring the manifest header copy "
+                    "(disable setting `iceberg_tolerate_conflicting_manifest_schemas` to make this an error)",
+                    schema_id);
+                return;
+            }
+            /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
                 schema_id);
-    }
-    else
-    {
-        auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
-        /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
-        for (size_t i = 0; i != fields->size(); ++i)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(i));
-            if (field->getValue<String>(f_name).empty())
-                throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Iceberg schema with schema-id {} has a field with id {} whose name is empty",
-                    schema_id,
-                    field->getValue<Int32>(f_id));
         }
+    }
 
-        auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
-        String current_full_name{};
-        for (size_t i = 0; i != fields->size(); ++i)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(i));
-            auto name = field->getValue<String>(f_name);
-            bool required = field->getValue<bool>(f_required);
-            current_full_name = name;
-            auto type = getFieldType(field, f_type, required, current_full_name, true);
-            clickhouse_schema->push_back(NameAndTypePair{name, type});
-            clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
-            clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
-        }
-        clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
-        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+    auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+    /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        if (field->getValue<String>(f_name).empty())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg schema with schema-id {} has a field with id {} whose name is empty",
+                schema_id,
+                field->getValue<Int32>(f_id));
     }
+
+    current_schema_id = schema_id;
+    auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
+    String current_full_name{};
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        auto name = field->getValue<String>(f_name);
+        bool required = field->getValue<bool>(f_required);
+        current_full_name = name;
+        auto type = getFieldType(field, f_type, required, current_full_name, true);
+        clickhouse_schema->push_back(NameAndTypePair{name, type});
+        clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
+        clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+    }
+    clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
+    iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+    if (source == SchemaSource::ManifestFile)
+        manifest_sourced_schema_ids.insert(schema_id);
     current_schema_id = std::nullopt;
 }
 
