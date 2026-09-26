@@ -139,6 +139,10 @@ sqlite('db_path', 'table_name')
 
 - A table object with the same columns as in the original `SQLite` table.
 
+## Query push-down {#query-push-down}
+
+When reading a SQLite table by name, simple `WHERE` conditions are executed on the SQLite side. The `LIMIT` clause is pushed to SQLite only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse. Joins, aggregations and sorting are always executed in ClickHouse.
+
 ## Passing a query instead of a table name {#passing-a-query}
 
 Instead of a table name, the second argument can be a `SELECT` query that is passed to SQLite as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
