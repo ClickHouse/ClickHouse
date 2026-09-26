@@ -318,6 +318,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
             bool is_first_substream = true;
+            const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -348,6 +349,14 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
+                else if (prev_stream && settings.compress_per_substream_in_compact_parts && index_granularity_info.mark_type.with_substreams
+                    && prev_stream->hashing_buf.offset() >= min_compress_block_size)
+                {
+                    /// Cut a new block at a substream boundary only once it's worth closing: a subcolumn read
+                    /// then doesn't decompress the column's other substreams, while small substreams keep
+                    /// sharing a block.
+                    prev_stream->hashing_buf.next();
+                }
 
                 /// We have 2 types of marks in Compact part. With or without substreams.
                 /// In format without substreams we write single mark per column (here once on the first requested substream).
@@ -376,7 +385,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             };
 
             auto serialize_settings = getSerializationSettings();
-            serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
+            serialize_settings.min_compress_block_size = min_compress_block_size;
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
