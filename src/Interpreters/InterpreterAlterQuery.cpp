@@ -139,7 +139,7 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
     if (context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value != DDLLogEntry::OLDEST_VERSION)
         return;
 
-    bool changes_column_type = false;
+    bool has_modify_column = false;
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
@@ -150,20 +150,14 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
                 "Projection column CODEC declarations in ON CLUSTER DDL require "
                 "distributed_ddl_entry_format_version >= 2, because version 1 does not carry codec validation settings");
 
-        /// `ADD ENUM VALUES` has no explicit type AST, but `AlterCommands::prepare` builds a new `Enum` type for it.
         if (command.type == ASTAlterCommand::MODIFY_COLUMN)
-        {
-            const auto * declaration = command.col_decl ? command.col_decl->as<const ASTColumnDeclaration>() : nullptr;
-            if ((declaration && declaration->getType()) || command.add_enum_values)
-                changes_column_type = true;
-        }
+            has_modify_column = true;
     }
 
-    if (!changes_column_type)
+    if (!has_modify_column)
         return;
 
-    /// A changed SELECT output type makes the worker validate a stored projection codec again.
-    /// If the table is absent on this host, its projection definitions cannot be checked safely.
+    /// A missing table cannot be inspected for projection codecs.
     if (!table)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MODIFY COLUMN ... ON CLUSTER with distributed_ddl_entry_format_version = 1 requires the table "
@@ -191,6 +185,8 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
                 break;
             }
 
+    /// `MODIFY COLUMN` can acquire a new type during preparation (for example, `ADD ENUM VALUES`).
+    /// The initiator's metadata cannot prove that the command is type-preserving on every worker.
     if (has_existing_codec)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MODIFY COLUMN ... ON CLUSTER can revalidate an existing projection CODEC on the worker; "
