@@ -40,15 +40,17 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 -- so there are no exchanges above ReadFromMerge. Aggregating to the mergeable state promises results
 -- in bucket order, and the shuffle strategy cannot keep that promise, so each child plan carries a
 -- partial aggregation and its merge around a gather rather than an aggregation over a shuffle.
-EXPLAIN SELECT count(_table) FROM m107946 WHERE _table = 'base107946_1' GROUP BY _table;
+-- The IN filter names both Merge children, so the child pruning keeps both plans.
+EXPLAIN SELECT count(_table) FROM m107946 WHERE _table IN ('d107946_1', 'd107946_4') GROUP BY _table;
 
--- The reproducer from the issue. It must not throw; no rows match because _table exposes the
--- underlying table names (base107946_*), same as without make_distributed_plan.
+-- The reproducer from the issue. It must not throw; _table carries the name of the Merge table's
+-- own child (the Distributed table), so the count matches the table size, same as without
+-- make_distributed_plan.
 SELECT count(_table) FROM m107946 WHERE _table = 'd107946_1' GROUP BY _table;
+SELECT count(_table) FROM m107946 WHERE _table = 'd107946_4' GROUP BY _table;
 
--- Filter on the underlying table names so rows survive; the counts must match the table sizes.
+-- The underlying tables are not children of the Merge table, so their names match no rows.
 SELECT count(_table) FROM m107946 WHERE _table = 'base107946_1' GROUP BY _table;
-SELECT count(_table) FROM m107946 WHERE _table = 'base107946_4' GROUP BY _table;
 
 DROP TABLE m107946;
 DROP TABLE d107946_1;

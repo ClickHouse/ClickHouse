@@ -8,12 +8,12 @@ SHOW CREATE TABLE 01902_db_repr.t_merge
 CREATE TABLE `01902_db_repr`.t_merge\n(\n    `n` Int8\n)\nENGINE = Merge(REGEXP(\'^01902_db_repr\'), \'^t\')
 SELECT _database, _table, n FROM merge(REGEXP(^01902_db_repr), ^t) ORDER BY _database, _table, n
 01902_db_repr	t	0
-01902_db_repr	t	0
-01902_db_repr1	t1	0
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	0
 01902_db_repr1	t1	0
 01902_db_repr2	t2	0
-01902_db_repr2	t2	0
-01902_db_repr3	t3	0
 01902_db_repr3	t3	0
 SELECT _database, _table, n FROM 01902_db_repr.t_merge WHERE _database = 01902_db_repr1 ORDER BY _database, _table, n
 01902_db_repr1	t1	0
