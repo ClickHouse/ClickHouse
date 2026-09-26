@@ -126,6 +126,16 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 要禁用对 `Resize` 节点的拆分，请将此设置设为 0。这样会阻止在管道生成期间拆分 `Resize` 节点，使其保留原有结构，而不会被拆分为更小的节点。
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "新增设置，用于控制允许将哈希 join 载荷转换为行存储格式所需的 join 输出行数与构建端行数的最小估计比率。0 表示始终允许转换。"}]}]} />
+
+允许将哈希 join 载荷转换为行存储格式所需的 join 输出行数与构建端行数的最小估计比率。0 表示始终允许转换。
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>

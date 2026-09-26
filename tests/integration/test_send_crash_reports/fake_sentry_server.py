@@ -1,11 +1,16 @@
 import http.server
 
 RESULT_PATH = "/result.txt"
+PAYLOAD_PATH = "/payload.json"
 
 
 class SentryHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
-        self.__read_and_decode_post_data()
+        decoded = self.__read_and_decode_post_data()
+        # Written before RESULT_PATH: a reader that polls RESULT_PATH for "OK" is then
+        # guaranteed to see a complete payload.
+        with open(PAYLOAD_PATH, "wb") as f:
+            f.write(decoded)
         with open(RESULT_PATH, "w") as f:
             f.write("OK")
         self.send_response(200)
@@ -28,6 +33,8 @@ class SentryHandler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    with open(PAYLOAD_PATH, "w") as f:
+        f.write("")
     with open(RESULT_PATH, "w") as f:
         f.write("INITIAL_STATE")
     httpd = http.server.HTTPServer(

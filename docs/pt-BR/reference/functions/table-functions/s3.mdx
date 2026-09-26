@@ -41,20 +41,20 @@ s3(named_collection[, option=value [,..]])
 
 A função de tabela `s3` aceita os seguintes parâmetros simples:
 
-| Parâmetro                               | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                                   | URL do bucket com o caminho para o arquivo. Aceita os seguintes caracteres curinga no modo somente leitura: `*`, `**`, `?`, `{abc,def}` e `{N..M}`, em que `N`, `M` — números, `'abc'`, `'def'` — strings. Para mais informações, veja [aqui](/pt-BR/reference/engines/table-engines/integrations/s3#wildcards-in-path).                                                                                                                                                                                                                                                                                                                                                                           |
-| `NOSIGN`                                | Se esta palavra-chave for fornecida no lugar das credenciais, nenhuma requisição será assinada.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `access_key_id` and `secret_access_key` | Chaves que especificam as credenciais a serem usadas com o endpoint informado. Opcional.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `session_token`                         | Token de sessão a ser usado com as chaves fornecidas. Opcional ao informar chaves.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `format`                                | O [formato](/pt-BR/reference/formats/index) do arquivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `structure`                             | Estrutura da tabela. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `compression_method`                    | O parâmetro é opcional. Valores aceitos: `none`, `gzip` ou `gz`, `brotli` ou `br`, `xz` ou `LZMA`, `zstd` ou `zst`. Por padrão, o método de compressão é detectado automaticamente pela extensão do arquivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `headers`                               | O parâmetro é opcional. Permite passar cabeçalhos na requisição ao S3. Informe-os no formato `headers(key=value)`, por exemplo `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `partition_strategy`                    | O parâmetro é opcional. Valores aceitos: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no caminho, que é substituído pela chave de partição. `hive` não permite caracteres curinga, presume que o caminho é a raiz da tabela e gera diretórios particionados no estilo Hive com IDs Snowflake como nomes de arquivo e o formato do arquivo como extensão. Se o caminho contiver um placeholder `{_partition_id}`, o padrão será `wildcard` — a única estratégia compatível com esse caminho. Caso contrário, o padrão é a configuração `file_like_engine_default_partition_strategy` (`wildcard` em configurações `compatibility` anteriores à `26.6`, `hive` caso contrário). |
-| `partition_columns_in_data_file`        | O parâmetro é opcional. Usado apenas com a estratégia de particionamento `hive`. Informa ao ClickHouse se deve esperar que as colunas de partição sejam gravadas no arquivo de dados. O padrão é `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `extra_credentials`                     | O parâmetro é opcional. Usado para passar um `role_arn` para controle de acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `storage_class_name`                    | O parâmetro é opcional. Valores aceitos: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Há suporte apenas a storage classes do S3 que permitem recuperação imediata (classes de arquivamento como `GLACIER` e `DEEP_ARCHIVE` não são compatíveis). Permite especificar o [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). O padrão é `STANDARD`.                                                                                                                                                                                                                        |
+| Parâmetro                               | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                   | URL do bucket com o caminho para o arquivo. Aceita os seguintes caracteres curinga no modo somente leitura: `*`, `**`, `?`, `{abc,def}` e `{N..M}`, em que `N`, `M` — números, `'abc'`, `'def'` — strings. Para mais informações, veja [aqui](/pt-BR/reference/engines/table-engines/integrations/s3#wildcards-in-path).                                                                                                                                                                                                                                                                                                                                                                                   |
+| `NOSIGN`                                | Se esta palavra-chave for fornecida no lugar das credenciais, nenhuma requisição será assinada.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `access_key_id` and `secret_access_key` | Chaves que especificam as credenciais a serem usadas com o endpoint informado. Opcional.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `session_token`                         | Token de sessão a ser usado com as chaves fornecidas. Opcional ao informar chaves.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `format`                                | O [formato](/pt-BR/reference/formats/index) do arquivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `structure`                             | Estrutura da tabela. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `compression_method`                    | O parâmetro é opcional. Valores aceitos: `none`, `gzip` ou `gz`, `brotli` ou `br`, `xz` ou `LZMA`, `zstd` ou `zst`. Por padrão, o método de compressão é detectado automaticamente pela extensão do arquivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `headers`                               | O parâmetro é opcional. Permite passar cabeçalhos na requisição ao S3. Informe-os no formato `headers(key=value)`, por exemplo `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `partition_strategy`                    | O parâmetro é opcional. Valores aceitos: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no caminho, que é substituído pela chave de partição. `hive` não permite caracteres curinga, presume que o caminho é a raiz da tabela e gera diretórios particionados no estilo Hive com IDs Snowflake como nomes de arquivo e o formato do arquivo como extensão. Sem uma estratégia explícita, um caminho com `{_partition_id}` usa `wildcard`. Um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento. |
+| `partition_columns_in_data_file`        | O parâmetro é opcional. Usado apenas com a estratégia de particionamento `hive`. Informa ao ClickHouse se deve esperar que as colunas de partição sejam gravadas no arquivo de dados. O padrão é `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `extra_credentials`                     | O parâmetro é opcional. Usado para passar um `role_arn` para controle de acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `storage_class_name`                    | O parâmetro é opcional. Valores aceitos: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Há suporte apenas a storage classes do S3 que permitem recuperação imediata (classes de arquivamento como `GLACIER` e `DEEP_ARCHIVE` não são compatíveis). Permite especificar o [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). O padrão é `STANDARD`.                                                                                                                                                                                                                                |
 
 <Info>
   **GCS**
@@ -93,6 +93,7 @@ Selecionando as 5 primeiras linhas da tabela a partir do arquivo S3 `https://dat
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -114,7 +115,8 @@ LIMIT 5;
   ```sql
   SELECT *
   FROM s3(
-     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+     NOSIGN
   )
   LIMIT 5;
   ```
@@ -157,7 +159,7 @@ Conte o número de linhas em arquivos cujos nomes terminam com números de 1 a 3
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -170,7 +172,7 @@ Conte o número total de linhas em todos os arquivos nestes dois diretórios:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -183,11 +185,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
   Se a lista de arquivos contiver intervalos numéricos com zeros à esquerda, use a construção com chaves para cada dígito separadamente ou use `?`.
 </Tip>
 
-Conte o número total de linhas nos arquivos chamados `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
+Conte o número total de linhas nos arquivos chamados `file-1.csv`, ..., `file-4.csv`:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -213,19 +215,19 @@ SELECT name, value FROM existing_table;
 O Glob ** pode ser usado para percorrer diretórios recursivamente. Considere o exemplo abaixo: ele buscará todos os arquivos do diretório `my-test-bucket-768` de forma recursiva:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 O exemplo abaixo obtém dados de todos os arquivos `test-data.csv.gz` em qualquer pasta dentro do diretório `my-test-bucket`, de forma recursiva:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Nota. É possível especificar mapeadores de URL personalizados no arquivo de configuração do servidor. Exemplo:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 A URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` seria substituída por `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
@@ -267,7 +269,9 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 Compatível apenas com consultas `INSERT`.
 
-`wildcard`: substitui o curinga `{_partition_id}` no caminho do arquivo pela chave de partição correspondente. É selecionada por padrão quando o caminho contém um marcador `{_partition_id}` (a única estratégia compatível com esse caminho) e, caso contrário, em configurações de `compatibility` anteriores à `26.6`; nos casos restantes, o padrão é `hive` (consulte a configuração `file_like_engine_default_partition_strategy`).
+`wildcard`: substitui o curinga `{_partition_id}` no caminho do arquivo pela chave de partição correspondente. É selecionada por padrão quando o caminho contém `{_partition_id}`.
+
+Quando nenhum `partition_strategy` é definido, um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento.
 
 `hive` implementa o particionamento no estilo Hive para leituras &amp; gravações. Gera arquivos usando o seguinte formato: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -368,7 +372,8 @@ Suponha que temos vários arquivos compactados com os seguintes URIs no S3:
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -441,7 +446,7 @@ A configuração também se aplica ao mecanismo de tabela [S3](/pt-BR/reference/
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 <div id="storage-settings">

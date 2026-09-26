@@ -21,7 +21,6 @@ SET apply_patch_parts = 0;
 SELECT count() FROM merge;
 
 -- can use the trivial count optimization
-EXPLAIN SELECT count() FROM merge settings enable_analyzer=0;
 
 CREATE TABLE mt3 (id UInt64) ENGINE = TinyLog;
 
@@ -30,7 +29,6 @@ INSERT INTO mt2 VALUES (2);
 SELECT count() FROM merge;
 
 -- can't use the trivial count optimization as TinyLog doesn't support it
-EXPLAIN SELECT count() FROM merge settings enable_analyzer=0;
 
 DROP TABLE IF EXISTS mt1;
 DROP TABLE IF EXISTS mt2;

@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-ClickPipes는 Avro 및 Protobuf로 인코딩된 토픽을 디코딩할 수 있도록 스키마 레지스트리 통합을 지원합니다.
+ClickPipes는 Avro 및 Protobuf로 인코딩된 레코드 값과 [구조화된 Kafka 키](/ko/integrations/clickpipes/kafka/reference#structured-message-keys)를 디코딩할 수 있도록 스키마 레지스트리 통합을 지원합니다.
 
 <div id="supported-schema-registries">
   ## Kafka ClickPipes에서 지원하는 스키마 레지스트리
@@ -59,11 +59,13 @@ Kafka 브로커에 [reverse private endpoint](/ko/integrations/clickpipes/networ
 
 ClickPipes는 구성된 스키마 레지스트리에서 스키마를 동적으로 가져와 적용합니다.
 
-* 메시지에 스키마 ID가 포함되어 있으면 이를 사용해 스키마를 가져옵니다.
-* 메시지에 스키마 ID가 포함되어 있지 않으면 ClickPipe 구성에 지정된 스키마 ID 또는 subject 이름을 사용해 스키마를 가져옵니다.
-* 메시지가 내장된 스키마 ID 없이 작성되었고 ClickPipe 구성에도 스키마 ID 또는 subject 이름이 지정되지 않은 경우, 스키마를 가져오지 않으며 해당 메시지는 건너뜁니다. 이때 ClickPipes 오류 테이블에 `SOURCE_SCHEMA_ERROR`가 기록됩니다.
-* 메시지가 스키마를 준수하지 않으면 해당 메시지는 건너뜁니다. 이때 ClickPipes 오류 테이블에 `DATA_PARSING_ERROR`가 기록됩니다.
+* 레코드 값에 스키마 ID가 포함되어 있으면 이를 사용해 스키마를 가져옵니다.
+* 레코드 값에 스키마 ID가 포함되어 있지 않으면 ClickPipe 구성에 지정된 스키마 ID 또는 subject 이름을 사용해 스키마를 가져옵니다.
+* 레코드 값이 내장된 스키마 ID 없이 작성되었고 ClickPipe 구성에도 스키마 ID 또는 subject 이름이 지정되지 않은 경우, 스키마를 가져오지 않으며 해당 메시지는 건너뜁니다. 이때 ClickPipes 오류 테이블에 `SOURCE_SCHEMA_ERROR`가 기록됩니다.
+* 레코드 값이 스키마를 준수하지 않으면 해당 메시지는 건너뜁니다. 이때 ClickPipes 오류 테이블에 `DATA_PARSING_ERROR`가 기록됩니다.
 * Protobuf 스키마에만 해당: ClickPipes는 종속성으로 정의된 가져온 스키마를 모두 로드합니다. 외부 참조가 있는 Avro 스키마는 아직 지원되지 않습니다.
+
+`_key.id`와 같은 필드의 매핑이 구성되면 ClickPipes는 Kafka 키에 포함된 스키마 ID를 레코드 값과 독립적으로 해석합니다. 키는 다른 스키마 ID를 사용할 수 있지만, 값과 동일한 레지스트리 제품군 및 직렬화 형식을 사용해야 합니다. 해석된 키 스키마는 캐시되며 스키마 변경 사항은 자동으로 감지됩니다.
 
 <div id="aws-glue-schema-registry">
   ## AWS Glue 스키마 레지스트리
@@ -213,7 +215,7 @@ Kafka ClickPipe가 이미 IAM을 통해 MSK에 인증하는 경우, ClickPipes�
   ## 스키마 매핑
 </div>
 
-다음 규칙은 Confluent 호환 레지스트리와 AWS Glue 스키마 레지스트리 모두에 적용됩니다. 이 규칙은 가져온 스키마와 ClickHouse 대상 테이블 간의 매핑에 적용됩니다.
+다음 규칙은 Confluent 호환 레지스트리와 AWS Glue 스키마 레지스트리 모두에 적용됩니다. 이 규칙은 가져온 값 스키마와 ClickHouse 대상 테이블 간의 매핑에 적용되며, `_key.` 접두사가 있는 구조화된 키에서 매핑된 레코드 또는 메시지 필드에도 적용됩니다.
 
 * 스키마에 ClickHouse 대상 매핑에 포함되지 않은 필드가 있으면 해당 필드는 무시됩니다.
 * 스키마에 ClickHouse 대상 매핑에 정의된 필드가 없으면 ClickHouse 컬럼은 0 또는 빈 문자열과 같은 &quot;제로&quot; 값으로 채워집니다. `DEFAULT` 표현식은 지원되지 않습니다.

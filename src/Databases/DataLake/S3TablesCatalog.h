@@ -38,6 +38,8 @@ public:
 
     CatalogTables getTables() const override;
 
+    bool managesTableLocation() const override { return true; }
+
     bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,

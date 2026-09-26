@@ -27,7 +27,6 @@ namespace ProfileEvents
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
-    extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
@@ -176,7 +175,6 @@ String FileSegment::tryGetPath() const
 
 FileSegmentGuard::Lock FileSegment::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 
@@ -601,6 +599,9 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
+        std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
+        SCOPE_EXIT({ cv_lk.release(); });
+
         /// Wait for the download in short slices so that cancellation of the waiting query
         /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
         /// is observed promptly. The condition variable is only notified on download progress, so a
@@ -627,7 +628,7 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
                 break;
             }
             const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
-            if (cv.wait_for(lk, slice, downloaded))
+            if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
         }
     }
