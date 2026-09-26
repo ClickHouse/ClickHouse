@@ -464,7 +464,20 @@ ClusterPtr DatabaseReplicated::updateCluster(bool all_groups, bool force_overwri
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    auto new_cluster = std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
+    /// The shard-scope identity (see `Cluster::getShardScopeIdentity`) is keyed by the Keeper name and
+    /// path rather than by `cluster_name`: `<db>` and `all_groups.<db>` are two spellings of this one
+    /// database, and while both see the same ordered shards a `_shard_num` produced through either denotes
+    /// the same shard, so a parallel replicas read must not be declined for crossing from one spelling to
+    /// the other. The key also survives `RENAME DATABASE` and differing local names on other replicas,
+    /// and it separates two databases that happen to share a local name and their shard names. The path
+    /// alone is not enough: it is unique only inside one Keeper, and two unrelated databases mounted at
+    /// the same path on two auxiliary Keepers must not authenticate each other's shard numbers.
+    auto new_cluster = std::make_shared<Cluster>(
+        getContext()->getSettingsRef(),
+        shards,
+        params,
+        db_settings[DatabaseReplicatedSetting::internal_replication],
+        /* shard_scope_key = */ Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path));
 
     if (all_groups)
     {
@@ -3126,7 +3139,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true}, Documentation{
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true, .has_builtin_setting_fn = DatabaseReplicatedSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The engine is based on the [Atomic](/reference/engines/database-engines/atomic) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
