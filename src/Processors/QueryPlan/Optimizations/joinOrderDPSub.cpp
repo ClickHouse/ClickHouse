@@ -115,6 +115,11 @@ private:
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
 
+        /// Whether the relations fall apart once cross products are set aside, computed in
+        /// `initDPsubScratch` from the masks below. DPsub builds the full set out of connected
+        /// pieces, so such a graph is one it cannot plan.
+        bool disconnected_graph = false;
+
         /// Per-operator conflict descriptors (CD-A or CD-C), populated in `initDPsubScratch` only
         /// when a conflict detector is enabled. When non-empty, `isValidJoinOrderMaskConflict` uses
         /// these (per-operator required-set + conflict rules) instead of the per-relation
@@ -211,6 +216,59 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
+
+    /// Connectivity, over exactly the links `initDPTable` seeds: every two-relation predicate, plus,
+    /// with a conflict detector, one per operator whose predicate does not span its two sides.
+    /// Cross products are left out - they join on nothing, so a graph they alone hold together is
+    /// disconnected. A query whose other predicates tie the same relations together still counts as
+    /// connected, which is what lets DPsub plan a cross product feeding an inner join.
+    std::vector<size_t> component(num_relations);
+    for (size_t i = 0; i < num_relations; ++i)
+        component[i] = i;
+
+    auto find = [&component](size_t x)
+    {
+        while (component[x] != x)
+        {
+            component[x] = component[component[x]];
+            x = component[x];
+        }
+        return x;
+    };
+    auto unite = [&](UInt32 a_mask, UInt32 b_mask)
+    {
+        if (!a_mask || !b_mask)
+            return;
+        const size_t ra = find(static_cast<size_t>(std::countr_zero(a_mask)));
+        const size_t rb = find(static_cast<size_t>(std::countr_zero(b_mask)));
+        if (ra != rb)
+            component[rb] = ra;
+    };
+
+    for (const UInt32 sources : dpsub_data.edge_source_mask)
+    {
+        if (std::popcount(sources) != 2)
+            continue;
+        const UInt32 lowest = sources & (~sources + 1);
+        unite(lowest, sources & ~lowest);
+    }
+
+    for (const auto & op : dpsub_data.conflict_operators)
+    {
+        if (isCrossOrComma(op.kind))
+            continue;
+        unite(op.left_relations, op.relations & ~op.left_relations);
+    }
+
+    dpsub_data.disconnected_graph = false;
+    for (size_t i = 1; i < num_relations; ++i)
+    {
+        if (find(i) != find(0))
+        {
+            dpsub_data.disconnected_graph = true;
+            break;
+        }
+    }
 }
 
 std::optional<JoinKind> DPSubJoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const
@@ -542,6 +600,14 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     /// That is, we don't have to convert Bitvector -> BitSet -> Bitvector for every subset S
     /// and its subcomponents S1, S2
     initDPsubScratch();
+
+    /// Turn down a graph that only cross products hold together, before enumerating anything: DPsub
+    /// cannot stitch its components, so the next algorithm in the chain plans the query instead.
+    if (dpsub_data.disconnected_graph)
+    {
+        LOG_TRACE(log, "Join graph is disconnected apart from cross products, leaving it to the next algorithm");
+        return nullptr;
+    }
 
     Checker checker(n, *this);
     Enumerator enumerator(n, max_nr_ccps, log);
