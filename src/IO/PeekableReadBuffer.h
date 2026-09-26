@@ -51,6 +51,9 @@ public:
         checkpoint.emplace(pos);
     }
 
+    /// Number of bytes read since the checkpoint was set.
+    size_t offsetFromCheckpoint() const;
+
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
     {
@@ -106,7 +109,6 @@ private:
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
 
     size_t offsetFromCheckpointInOwnMemory() const;
-    size_t offsetFromCheckpoint() const;
 
 
     ReadBuffer * sub_buf;
