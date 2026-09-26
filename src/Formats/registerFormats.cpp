@@ -109,6 +109,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
+void registerInputFormatFreeform(FormatFactory & factory);
 void registerInputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatPCAP(FormatFactory & factory);
@@ -157,6 +158,7 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
+void registerFreeformSchemaReader(FormatFactory & factory);
 void registerPuffinSchemaReaders(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerPCAPSchemaReader(FormatFactory & factory);
@@ -278,6 +280,7 @@ void registerFormats()
 
     registerInputFormatCapnProto(factory);
     registerInputFormatMySQLDump(factory);
+    registerInputFormatFreeform(factory);
 
     registerInputFormatParquetMetadata(factory);
     registerInputFormatPuffin(factory);
@@ -323,6 +326,7 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
+    registerFreeformSchemaReader(factory);
     registerPuffinSchemaReaders(factory);
     registerDWARFSchemaReader(factory);
     registerPCAPSchemaReader(factory);
