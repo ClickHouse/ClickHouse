@@ -4,7 +4,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,7 +14,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/TokenizerFactory.h>
 
 #include <mutex>
@@ -25,6 +29,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsBool compile_regular_expressions;
+    extern const SettingsUInt64 min_count_to_compile_regular_expression;
+}
+
 namespace
 {
 
@@ -32,26 +42,74 @@ namespace
 
 struct TokenPrefixMatcher
 {
-    explicit TokenPrefixMatcher(const String & prefix_) : prefix(prefix_) {}
+    TokenPrefixMatcher(const String & prefix_, size_t /*regexp_jit_min_count*/) : prefix(prefix_) {}
     bool operator()(std::string_view token) const { return token.starts_with(prefix); }
 
     String prefix;
 };
 
+/// The patterns `abc`, `abc%`, `%abc` and `%abc%` are compared as bytes, the others use re2.
 struct TokenLikeMatcher
 {
-    explicit TokenLikeMatcher(const String & pattern) : regexp(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(pattern)) {}
-    bool operator()(std::string_view token) const { return regexp.match(token.data(), token.size()); }
+    TokenLikeMatcher(const String & pattern, size_t /*regexp_jit_min_count*/)
+    {
+        std::string_view rest = pattern;
+        while (rest.starts_with('%'))
+            rest.remove_prefix(1);
+        const bool has_leading_percent = rest.size() != pattern.size();
 
-    OptimizedRegularExpression regexp;
+        auto affix = extractFixedPrefixFromLikePattern(rest, /*requires_perfect_prefix*/ true);
+        literal = std::move(affix.prefix);
+        if (affix.is_exact)
+            kind = has_leading_percent ? Kind::EndsWith : Kind::Equals;
+        else if (affix.is_perfect)
+            kind = has_leading_percent ? Kind::Contains : Kind::StartsWith;
+        else
+            regexp.emplace(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(pattern));
+    }
+
+    bool operator()(std::string_view token) const
+    {
+        switch (kind)
+        {
+            case Kind::Equals: return token == literal;
+            case Kind::StartsWith: return token.starts_with(literal);
+            case Kind::EndsWith: return token.ends_with(literal);
+            case Kind::Contains: return token.find(literal) != std::string_view::npos;
+            case Kind::Regexp: return regexp->match(token.data(), token.size());
+        }
+    }
+
+    enum class Kind : uint8_t { Equals, StartsWith, EndsWith, Contains, Regexp };
+    Kind kind = Kind::Regexp;
+    String literal;
+    std::optional<OptimizedRegularExpression> regexp;
 };
 
+/// Uses the JIT-compiled matcher of `match` if the pattern supports it, and re2 otherwise.
 struct TokenRegexpMatcher
 {
-    explicit TokenRegexpMatcher(const String & pattern) : regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern)) {}
-    bool operator()(std::string_view token) const { return regexp.match(token.data(), token.size()); }
+    TokenRegexpMatcher(const String & pattern, size_t regexp_jit_min_count)
+        : regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern))
+        , jit(getRegexpJITMatcher(pattern, /*case_insensitive*/ false, /*dot_all*/ true, regexp_jit_min_count))
+        , capture_starts(jit.num_captures)
+        , capture_ends(jit.num_captures)
+    {
+    }
+
+    bool operator()(std::string_view token) const
+    {
+        if (!jit)
+            return regexp.match(token.data(), token.size());
+
+        const auto * begin = reinterpret_cast<const uint8_t *>(token.data());
+        return jit.func(begin, begin + token.size(), begin, capture_starts.data(), capture_ends.data()) == 1;
+    }
 
     OptimizedRegularExpression regexp;
+    RegexpJITMatcher jit;
+    mutable VectorWithMemoryTracking<const uint8_t *> capture_starts;
+    mutable VectorWithMemoryTracking<const uint8_t *> capture_ends;
 };
 
 struct HasAnyTokenPrefixTraits
@@ -110,7 +168,13 @@ class FunctionHasAnyAllTokenPatterns : public IFunction
 public:
     static constexpr auto name = Traits::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(context); }
+
+    explicit FunctionHasAnyAllTokenPatterns(ContextPtr context)
+    {
+        if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
+            regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -167,7 +231,7 @@ public:
         VectorWithMemoryTracking<typename Traits::Matcher> matchers;
         matchers.reserve(patterns.size());
         for (const auto & pattern : patterns)
-            matchers.emplace_back(pattern);
+            matchers.emplace_back(pattern, regexp_jit_min_count);
 
         /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
         const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
@@ -257,6 +321,9 @@ private:
     {
         return checkAndGetColumn<ColumnString>(&column) || checkAndGetColumn<ColumnFixedString>(&column);
     }
+
+    /// As for `match`, the threshold to JIT-compile a regular expression, or the maximum to disable it.
+    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 
     mutable std::once_flag init_flag;
     mutable std::unique_ptr<ITokenizer> shared_tokenizer;
