@@ -27,6 +27,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageTableProxy.h>
 
 
 namespace DB
@@ -110,13 +111,23 @@ BlockIO InterpreterDeleteQuery::execute()
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+
+    /// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in, which both
+    /// defeats a downcast to the engine and answers metadata queries from the columns cached out of the
+    /// `CREATE TABLE` query alone - without the projections, which the guard below has to see. A
+    /// `DELETE` materializes the table in any case, so resolve it to the real storage right away.
+    StoragePtr engine_table = materializeLazyTable(table);
+
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
     /// metadata is not loaded until the first access.  Initialize it now so that
-    /// supportsDelete() and subsequent mutation checks see valid metadata.
-    table->updateExternalDynamicMetadataIfExists(getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    /// supportsDelete() and subsequent mutation checks see valid metadata. The refresh is a hook of the
+    /// engine that the stand-in does not forward, so it has to be asked of the real storage - and so does
+    /// everything below that reasons about the snapshot, or the validation and the execution of the
+    /// mutation would look at two different states of an external table.
+    engine_table->updateExternalDynamicMetadataIfExists(getContext());
+    auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(getContext(), false);
 
-    if (table->supportsDelete())
+    if (engine_table->supportsDelete())
     {
         /// This pipeline serializes only the predicate into the mutation command, and the storages
         /// that take it (`KeeperMap`, `EmbeddedRocksDB`, Iceberg, `system.wasm_modules`, ...) have
@@ -124,7 +135,7 @@ BlockIO InterpreterDeleteQuery::execute()
         /// mutating a wider scope than the query requested.
         if (delete_query.partition || delete_query.partitions)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
+                "DELETE ... IN PARTITION is not supported for table {}", engine_table->getStorageID().getFullTableName());
 
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
@@ -140,18 +151,18 @@ BlockIO InterpreterDeleteQuery::execute()
 
         mutation_commands.emplace_back(mut_command);
 
-        table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
+        engine_table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         /// Checked ahead of the full validation below, which repeats it, so that a
         /// nondeterministic mutation is reported as such even when the predicate also fails
         /// to analyze.
-        MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
+        MutationsInterpreter::validateNonDeterministicMutationsForStorage(engine_table, mutation_commands, getContext());
         MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
-        table->mutate(mutation_commands, getContext());
+        MutationsInterpreter(engine_table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        engine_table->mutate(mutation_commands, getContext());
         return {};
     }
 
-    if (table->supportsLightweightDelete())
+    if (engine_table->supportsLightweightDelete())
     {
         if (!settings[Setting::enable_lightweight_delete])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -159,7 +170,9 @@ BlockIO InterpreterDeleteQuery::execute()
 
         if (metadata_snapshot->hasProjections())
         {
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+            /// Note that the downcast is of the storage behind a possible lazy-load stand-in: otherwise
+            /// the guard is silently skipped and the `THROW` mode drops the projections instead.
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(engine_table.get()))
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "
@@ -196,7 +209,7 @@ BlockIO InterpreterDeleteQuery::execute()
             if (!settings[Setting::enable_lightweight_update])
                 return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them"));
 
-            return table->supportsLightweightUpdate();
+            return engine_table->supportsLightweightUpdate();
         }();
 
         if (!supports_lightweight_update && lightweight_delete_mode == LIGHTWEIGHT_UPDATE_FORCE)
