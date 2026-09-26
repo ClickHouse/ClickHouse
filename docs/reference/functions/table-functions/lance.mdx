@@ -65,7 +65,7 @@ The arguments for `lanceS3` follow the same S3 argument rules as other S3 data l
 - `LIMIT` pushdown and count fast paths may force a single pack, so cluster parallelism may not help those queries.
 - Prefer single-node `lanceS3` for small datasets.
 
-Fragment packing is controlled by the same settings as single-node multi-stream reads (`lance_enable_fragment_parallelism`, `lance_fragment_pack_mode`, `lance_max_fragment_packs`, and related options). See [Lance table engine](/engines/table-engines/integrations/lance#read-parallelism).
+Fragment packing is controlled by the same settings as single-node multi-stream reads (`lance_enable_fragment_parallelism`, `lance_fragment_pack_mode`, `lance_max_fragment_packs`, and related options). See [Lance table engine](/reference/engines/table-engines/integrations/lance#read-parallelism).
 
 Named arguments such as `access_key_id`, `secret_access_key`, `session_token`, `region`, `no_sign_request`, and `use_environment_credentials` are routed through the existing S3 configuration path.
 
@@ -178,6 +178,6 @@ For data lake reads, `_data_lake_snapshot_version` contains the Lance dataset ve
 
 ## See also {#see-also}
 
-- [`LanceLocal` / `LanceS3` table engines](/engines/table-engines/integrations/lance)
-- [`s3` table function](/sql-reference/table-functions/s3)
-- [`icebergS3` table function](/sql-reference/table-functions/iceberg)
+- [`LanceLocal` / `LanceS3` table engines](/reference/engines/table-engines/integrations/lance)
+- [`s3` table function](/reference/functions/table-functions/s3)
+- [`icebergS3` table function](/reference/functions/table-functions/iceberg)

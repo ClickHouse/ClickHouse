@@ -98,7 +98,7 @@ If an explicit column is missing from the dataset or has an incompatible type, C
 
 `LanceS3` supports primitive numeric and string types, decimals, `Date32`, timestamps, time and duration types, `Array`, named `Tuple`, and `Map`. Nullability is preserved recursively where the corresponding ClickHouse type can represent it.
 
-Container-level `NULL` values in `Array` and `Map` are rejected because ClickHouse cannot represent them without losing information. Nullable `Struct` values require `enable_nullable_tuple_type = 1`. See the [`lanceS3` data type mapping](/sql-reference/table-functions/lance#data-types) for the complete mapping and unsupported types.
+Container-level `NULL` values in `Array` and `Map` are rejected because ClickHouse cannot represent them without losing information. Nullable `Struct` values require `enable_nullable_tuple_type = 1`. See the [`lanceS3` data type mapping](/reference/functions/table-functions/lance#data-types) for the complete mapping and unsupported types.
 
 ## Snapshot state {#snapshot-state}
 
@@ -175,10 +175,10 @@ Related `ProfileEvents`: `LanceFragmentsListed`, `LanceFragmentPacks`, `LanceFra
 
 ## Cluster table function {#cluster-table-function}
 
-For multi-node parallel reads, use [`lanceS3Cluster`](/sql-reference/table-functions/lance#cluster-reads). There is no separate `LanceS3Cluster` table engine; the cluster table function builds a distributed read on top of the same Lance metadata path as `lanceS3`.
+For multi-node parallel reads, use [`lanceS3Cluster`](/reference/functions/table-functions/lance#cluster-reads). There is no separate `LanceS3Cluster` table engine; the cluster table function builds a distributed read on top of the same Lance metadata path as `lanceS3`.
 
 ## See also {#see-also}
 
-- [`lanceLocal` / `lanceS3` / `lanceS3Cluster` table functions](/sql-reference/table-functions/lance)
-- [`S3` table engine](/engines/table-engines/integrations/s3)
-- [`IcebergS3` table engine](/engines/table-engines/integrations/iceberg)
+- [`lanceLocal` / `lanceS3` / `lanceS3Cluster` table functions](/reference/functions/table-functions/lance)
+- [`S3` table engine](/reference/engines/table-engines/integrations/s3)
+- [`IcebergS3` table engine](/reference/engines/table-engines/integrations/iceberg)
