@@ -54,7 +54,6 @@ ASTPtr exchangeExtractSecondArgument(const String & func_name, const ASTFunction
     return res;
 }
 
-/// An empty result means there is no zero of this value's type to compare the value against.
 std::optional<Field> zeroField(const Field & value)
 {
     switch (value.getType())
