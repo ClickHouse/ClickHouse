@@ -230,6 +230,10 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
+<Warning>
+Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
+</Warning>
+
 **Example**
 
 ```xml
@@ -1613,7 +1617,7 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 
 The server's time zone.
 
-Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
+Specified as a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, for example `Africa/Abidjan` - or as a fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, for example `Fixed/UTC+05:30:00`. A name that only the operating system's time zone database has is rejected, because ClickHouse ships its own copy of the database so that results do not depend on the host.
 
 The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
