@@ -1,10 +1,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -41,6 +42,11 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -1153,7 +1159,42 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+/// Whether a condition might fix a column to a single value, which is what could let the fragment's
+/// read go in order and so change the coordination mode the initiator announces: `WHERE tenant = 42`
+/// can, while `WHERE tenant > 42`, a bare boolean or a join runtime filter leave the decision alone.
+///
+/// Deliberately structural, and not `appendFixedColumnsFromFilterExpression` - the analysis
+/// read-in-order itself uses - because the two want their errors to point opposite ways. That analysis
+/// is an under-approximation by design: it descends only `and`, takes only an `equals` with a single
+/// non-constant child, and reads nothing out of an `isNotDistinctFrom` or anything below an `or`. Each
+/// miss costs it one optimization. A miss here would let the fragment read in order off a condition the
+/// replicas do not have, so this stays a superset of whatever that analysis can find.
+static bool mayFixColumn(const ActionsDAG::Node * condition)
+{
+    std::vector<const ActionsDAG::Node *> stack{condition};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "equals" || name == "isNotDistinctFrom")
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1426,8 +1467,43 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        if (!settings.parallel_replicas_filter_pushdown)
+        /// The way out if this push-down misbehaves in production: the condition stays above the read
+        /// and the fragment is left as it was, which is what versions before 26.10 did. Asked of the
+        /// fragment's own context, the same one the splice answers to, so that the two cannot disagree
+        /// about whether the condition travels.
+        if (!parallel_replicas_local_plan->getContext()->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
             return 0;
+
+        /// Only the initiator's share of the read gets the condition here; the replicas get it as well
+        /// spliced into their query by the rewrite, which refuses some fragments and drops a predicate
+        /// it cannot express. A join runtime filter is one of those - `__applyFilter` is
+        /// non-deterministic, so the rewrite drops it and only this replica ever has it.
+        ///
+        /// What the condition may not do without the replicas having it is decide how this fragment
+        /// reads: an equality fixes a sort key column, the read goes in order, and the initiator
+        /// announces `WithOrder` to the shared coordinator against the replicas' `Default`. Pruning is
+        /// not in question - it changes which rows this replica reads, not the order it reads them in -
+        /// so push the condition either way and take only that one consequence away from it.
+        ///
+        /// The condition is spliced into the query the replicas run, so they filter by it as well and
+        /// both sides fix the same columns. What has to be asked is whether that splice reaches this
+        /// fragment, because where it does not only this replica has the condition, and only this
+        /// replica would order its read by it.
+        ///
+        /// Whether it reaches them is not decided here: it is decided where the fragment is shipped,
+        /// by the rewrite that splices the condition into their query, and the answer is carried on
+        /// this step.
+        ///
+        /// One answer for the whole fragment, though the splice works conjunct by conjunct and can
+        /// drop some of them. That is enough because the two lists do not meet: what fixes a column
+        /// is an `equals` against a constant reached through `and`
+        /// (`appendFixedColumnsFromFilterExpression`), and what the splice drops is the
+        /// non-deterministic, the stateful and what it cannot name (`tryBuildAdditionalFilterAST`) -
+        /// a constant is none of those. Teach either side something new - an `in` against a
+        /// one-element set, say - and this has to be revisited; test 05255 pins it.
+        const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+        if (!parallel_replicas_local_plan->replicasGetPushedConditions() && condition && mayFixColumn(condition))
+            parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
