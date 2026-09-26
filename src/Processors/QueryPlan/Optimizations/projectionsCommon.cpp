@@ -1,11 +1,11 @@
 #include <DataTypes/IDataType.h>
-#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
+#include <algorithm>
+#include <functional>
 
 namespace DB
 {
@@ -28,7 +30,6 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
@@ -43,7 +44,7 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
+std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
     /// Reading through a projection part bypasses the parent table's
     /// delete-bitmap filter, so logically-deleted rows would resurface. Decline
@@ -61,11 +62,11 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     {
         const auto metadata = reading->getStorageMetadata();
         if (metadata->hasUniqueKey() && metadata->hasProjections())
-            return false;
+            return std::unexpected("the table has a UNIQUE KEY");
     }
 
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
-        return false;
+        return std::unexpected("the read is already served by a projection");
 
     /// A distributed read (make_distributed_plan) was already turned into a sharded read by an
     /// earlier optimization pass. A projection match would replace this single read with a Union of
@@ -73,23 +74,28 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     /// flag -> the branches expose different shard lists and makeDistributedPlan asserts on the
     /// mismatch. Keep the read whole; the projection optimization is a no-op for distributed reads.
     if (reading->getDistributedReadBucketCount() > 0)
-        return false;
+        return std::unexpected("the read is part of a distributed plan");
+
+    /// A streaming read resolves which rows it returns at runtime, from the subscription bounds and
+    /// the cursor; plan-time part selection is skipped for it. A projection describes the whole
+    /// table, so an answer derived from one ignores those bounds.
+    if (reading->getQueryInfo().isStream())
+        return std::unexpected("the query uses STREAM");
 
     if (reading->isQueryWithFinal())
-        return false;
+        return std::unexpected("the query uses FINAL");
 
     if (reading->isQueryWithSampling())
-        return false;
+        return std::unexpected("the query uses SAMPLE");
 
     if (reading->readsInOrder())
-        return false;
+        return std::unexpected("the read is in order of the sorting key");
 
     const auto & query_settings = reading->getContext()->getSettingsRef();
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::allow_experimental_analyzer]
-            && query_settings[Setting::parallel_replicas_local_plan]
+        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
             && query_settings[Setting::parallel_replicas_support_projection];
 
         /// AggregationInOrder may cause local and remote replicas to use different CoordinationModes, which is currently unsupported.
@@ -97,21 +103,41 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
             || query_settings[Setting::force_aggregation_in_order];
 
         if (!support_projection || enable_aggregation_in_order)
-            return false;
+            return std::unexpected("parallel replicas are enabled without projection support or with aggregation in order");
     }
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
     if (query_settings[Setting::aggregate_functions_null_for_empty])
-        return false;
+        return std::unexpected("setting aggregate_functions_null_for_empty is enabled");
 
     auto mutations_snapshot = reading->getMutationsSnapshot();
 
     /// Don't use projections if have mutations to apply
     /// because we need to apply them on original data.
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
-        return false;
+        return std::unexpected("the table has unmaterialized mutations or patch parts");
 
-    return true;
+    return {};
+}
+
+void rejectProjections(
+    std::unordered_map<String, String> & reject_reasons,
+    const std::vector<const ProjectionDescription *> & projections,
+    const std::vector<const ProjectionDescription *> & kept,
+    const String & reason)
+{
+    for (const auto * projection : projections)
+        if (!std::ranges::contains(kept, projection))
+            reject_reasons.try_emplace(projection->name, reason);
+}
+
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name)
+{
+    auto is_preferred = [&](const auto * projection) { return projection->name == preferred_name; };
+    if (std::ranges::none_of(projections, is_preferred))
+        return;
+
+    std::erase_if(projections, std::not_fn(is_preferred));
 }
 
 PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
