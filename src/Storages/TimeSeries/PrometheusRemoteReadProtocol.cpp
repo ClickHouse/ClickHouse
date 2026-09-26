@@ -163,7 +163,7 @@ namespace
 
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
-        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
+        /// The type of the second column is Array(Tuple(timestamp_data_type, value_data_type)).
         const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
