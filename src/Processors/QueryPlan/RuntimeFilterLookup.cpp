@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -24,6 +26,7 @@
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -179,20 +182,33 @@ bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & da
     return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
 }
 
+/// The histogram buckets an order-preserving UInt64 coordinate, which covers the integral and
+/// date types but not `DateTime64` (a `Decimal`) or `LowCardinality`. Those keep the plain envelope.
+bool detail::RuntimeFilterIndexAnalysis::supportsHistogram(const DataTypePtr & data_type)
+{
+    if (!data_type)
+        return false;
+
+    WhichDataType which(removeNullable(data_type));
+    return which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()
+        || which.isInt8() || which.isInt16() || which.isInt32() || which.isInt64()
+        || which.isDate() || which.isDate32() || which.isDateTime();
+}
+
 detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_)
     : range_supported(supportsDataType(data_type))
     , positive_filter(positive_filter_)
+    , histogram_supported(supportsHistogram(data_type))
 {
 }
 
-void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
+void detail::RuntimeFilterIndexAnalysis::setRanges(const std::vector<Range> & ranges)
 {
     if (!enabled || !range_supported || !positive_filter)
         return;
 
-    range_min = range.left;
-    range_max = range.right;
-    has_range = true;
+    for (const auto & range : ranges)
+        range_cover.emplace_back(range.left, range.right);
 }
 
 void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, const Field & new_max)
@@ -211,33 +227,98 @@ void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, cons
         range_max = new_max;
 }
 
-void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
-{
-    if (!enabled || !range_supported || !positive_filter || values.empty())
-        return;
-
-    Field column_min;
-    Field column_max;
-    values.getExtremes(column_min, column_max, 0, values.size());
-    if (!column_min.isNull() && !column_max.isNull())
-        extendRange(column_min, column_max);
-}
-
-void detail::RuntimeFilterIndexAnalysis::mergeFrom(const RuntimeFilterIndexAnalysis & source)
-{
-    if (enabled && range_supported && positive_filter && source.has_range)
-        extendRange(source.range_min, source.range_max);
-}
-
-std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
-{
-    if (!enabled || !range_supported || !positive_filter || !has_range || range_min.isNull() || range_max.isNull())
-        return {};
-    return Range(range_min, true, range_max, true);
-}
-
 namespace
 {
+
+using KeyInterval = std::pair<Field, Field>;
+using KeyCover = std::vector<KeyInterval>;
+
+/// Only ever used to compare interval and gap sizes; the emitted bounds stay the exact `Field`s.
+Float64 toNumber(const Field & field)
+{
+    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
+}
+
+/// Keys the gap actually excludes; every supported key type is integral, so neighbours exclude nothing.
+Float64 excludedBetween(const KeyInterval & left, const KeyInterval & right)
+{
+    return std::max(0.0, toNumber(right.first) - toNumber(left.second) - 1);
+}
+
+/// Sort by left bound and fuse intervals that overlap or touch.
+void normalize(KeyCover & cover)
+{
+    if (cover.size() < 2)
+        return;
+
+    ::sort(cover.begin(), cover.end(), [](const auto & lhs, const auto & rhs) { return accurateLess(lhs.first, rhs.first); });
+
+    size_t kept = 0;
+    for (size_t i = 1; i < cover.size(); ++i)
+    {
+        if (excludedBetween(cover[kept], cover[i]) > 0)
+            cover[++kept] = std::move(cover[i]);
+        else if (accurateLess(cover[kept].second, cover[i].second))
+            cover[kept].second = std::move(cover[i].second);
+    }
+    cover.resize(kept + 1);
+}
+
+/// Keep the `budget - 1` widest gaps; one pass, since the histogram can hand this thousands of runs.
+void coalesceToBudget(KeyCover & cover, size_t budget)
+{
+    if (cover.size() <= budget || budget == 0)
+        return;
+
+    /// Gap i separates interval i from i + 1.
+    std::vector<std::pair<Float64, size_t>> gaps;
+    gaps.reserve(cover.size() - 1);
+    for (size_t i = 0; i + 1 < cover.size(); ++i)
+        gaps.emplace_back(excludedBetween(cover[i], cover[i + 1]), i);
+
+    const size_t keep = budget - 1;
+    std::nth_element(
+        gaps.begin(),
+        gaps.begin() + keep,
+        gaps.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.first > rhs.first; });
+    gaps.resize(keep);
+    ::sort(gaps.begin(), gaps.end(), [](const auto & lhs, const auto & rhs) { return lhs.second < rhs.second; });
+
+    KeyCover result;
+    result.reserve(budget);
+    size_t begin = 0;
+    for (const auto & [gap, split_after] : gaps)
+    {
+        result.emplace_back(std::move(cover[begin].first), std::move(cover[split_after].second));
+        begin = split_after + 1;
+    }
+    result.emplace_back(std::move(cover[begin].first), std::move(cover.back().second));
+    cover = std::move(result);
+}
+
+/// A split only earns its extra OR branch if it excludes a real part of the span.
+constexpr Float64 min_excluded_ratio_to_split = 0.01;
+
+/// Undo splits not worth making; when none qualifies this leaves the plain [min, max] envelope.
+void dropUselessSplits(KeyCover & cover)
+{
+    if (cover.size() < 2)
+        return;
+
+    const Float64 threshold = min_excluded_ratio_to_split * (toNumber(cover.back().second) - toNumber(cover.front().first));
+
+    size_t kept = 0;
+    for (size_t i = 1; i < cover.size(); ++i)
+    {
+        if (excludedBetween(cover[kept], cover[i]) < threshold)
+            cover[kept].second = std::move(cover[i].second);
+        else
+            cover[++kept] = std::move(cover[i]);
+    }
+    cover.resize(kept + 1);
+}
+
 
 /// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
 /// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
@@ -312,6 +393,227 @@ struct Overloaded : Ts...
 template <typename... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
+}
+
+/// Bitmap over a bucketed key domain; recording a key is one bit set, hence order-independent.
+struct KeyRangeHistogram
+{
+    /// 1 KiB of bits; resolves a 55M-id span to ~16k, far finer than the clusters it must separate.
+    static constexpr size_t buckets = 8192;
+    static constexpr size_t words = buckets / 64;
+    /// Flipping the sign bit maps a signed key to a UInt64 of the same ordering.
+    static constexpr UInt64 sign_bias = UInt64(1) << 63;
+
+    UInt64 bits[words] = {};
+    UInt64 base = 0;        /// coordinate where bucket 0 starts
+    unsigned shift = 0;     /// bucket width is 1 << shift
+    UInt64 min_coordinate = 0;
+    UInt64 max_coordinate = 0;
+    bool is_signed = false;
+    bool initialized = false;
+
+    bool isSet(size_t bucket) const { return (bits[bucket >> 6] >> (bucket & 63)) & 1; }
+    size_t lastBucket() const { return std::min<size_t>((max_coordinate - base) >> shift, buckets - 1); }
+    Field toField(UInt64 coordinate) const
+    {
+        return is_signed ? Field(static_cast<Int64>(coordinate ^ sign_bias)) : Field(coordinate);
+    }
+
+    /// Widen the buckets, and move the base down, until `coordinate` fits; then remap what we have.
+    void rescale(UInt64 coordinate)
+    {
+        const UInt64 low = std::min(coordinate, min_coordinate);
+        const UInt64 high = std::max(coordinate, max_coordinate);
+
+        /// Window twice the span, starting a quarter in, or descending input rescales on every key.
+        unsigned new_shift = shift;
+        while (new_shift < 63 && ((high - low) >> new_shift) >= buckets / 2)
+            ++new_shift;
+
+        const UInt64 margin = static_cast<UInt64>(buckets / 4) << new_shift;
+        const UInt64 new_base = low > margin ? low - margin : 0;
+
+        const UInt64 width = UInt64(1) << shift;
+        UInt64 remapped[words] = {};
+        for (size_t bucket = 0, last = lastBucket(); bucket <= last; ++bucket)
+        {
+            if (!isSet(bucket))
+                continue;
+
+            /// A widened bucket can straddle two new ones; set both, the cover must stay a superset.
+            const UInt64 bucket_low = base + (static_cast<UInt64>(bucket) << shift);
+            /// Saturate: a wrapped high edge would remap the bucket wrongly, or drop its keys.
+            const UInt64 bucket_high = std::numeric_limits<UInt64>::max() - bucket_low < width - 1
+                ? std::numeric_limits<UInt64>::max()
+                : bucket_low + width - 1;
+            const size_t from = static_cast<size_t>((bucket_low - new_base) >> new_shift);
+            const size_t to = std::min<size_t>((bucket_high - new_base) >> new_shift, buckets - 1);
+            for (size_t i = from; i <= to; ++i)
+                remapped[i >> 6] |= UInt64(1) << (i & 63);
+        }
+
+        memcpy(bits, remapped, sizeof(bits));
+        base = new_base;
+        shift = new_shift;
+    }
+
+    void addCoordinate(UInt64 coordinate)
+    {
+        if (!initialized)
+        {
+            initialized = true;
+            base = min_coordinate = max_coordinate = coordinate;
+        }
+
+        min_coordinate = std::min(min_coordinate, coordinate);
+        max_coordinate = std::max(max_coordinate, coordinate);
+
+        if (coordinate < base || ((coordinate - base) >> shift) >= buckets)
+            rescale(coordinate);
+
+        const size_t bucket = static_cast<size_t>((coordinate - base) >> shift);
+        bits[bucket >> 6] |= UInt64(1) << (bucket & 63);
+    }
+
+    template <typename T>
+    bool addTypedColumn(const IColumn & column, const NullMap * null_map)
+    {
+        const auto * typed = typeid_cast<const ColumnVector<T> *>(&column);
+        if (!typed)
+            return false;
+
+        is_signed = is_signed_v<T>;
+        const auto & data = typed->getData();
+        for (size_t i = 0, size = data.size(); i < size; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+
+            if constexpr (is_signed_v<T>)
+                addCoordinate(static_cast<UInt64>(static_cast<Int64>(data[i])) ^ sign_bias);
+            else
+                addCoordinate(static_cast<UInt64>(data[i]));
+        }
+        return true;
+    }
+
+    /// False for a key type it cannot bucket, so the caller falls back to the per-block extremes.
+    bool add(const IColumn & column)
+    {
+        const IColumn * values = &column;
+        const NullMap * null_map = nullptr;
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(values))
+        {
+            null_map = &nullable->getNullMapData();
+            values = &nullable->getNestedColumn();
+        }
+
+        return addTypedColumn<UInt8>(*values, null_map) || addTypedColumn<UInt16>(*values, null_map)
+            || addTypedColumn<UInt32>(*values, null_map) || addTypedColumn<UInt64>(*values, null_map)
+            || addTypedColumn<Int8>(*values, null_map) || addTypedColumn<Int16>(*values, null_map)
+            || addTypedColumn<Int32>(*values, null_map) || addTypedColumn<Int64>(*values, null_map);
+    }
+
+    /// Every run of set buckets becomes one interval, clamped to the exact extremes at the edges.
+    void appendIntervals(KeyCover & cover) const
+    {
+        if (!initialized)
+            return;
+
+        for (size_t bucket = 0, last = lastBucket(); bucket <= last;)
+        {
+            if (!isSet(bucket))
+            {
+                ++bucket;
+                continue;
+            }
+
+            const size_t from = bucket;
+            while (bucket <= last && isSet(bucket))
+                ++bucket;
+
+            /// From the last set bucket, and saturated: either would wrap and invert the interval.
+            const UInt64 width = UInt64(1) << shift;
+            const UInt64 run_last_low = base + (static_cast<UInt64>(bucket - 1) << shift);
+            const UInt64 run_high = std::numeric_limits<UInt64>::max() - run_last_low < width - 1
+                ? std::numeric_limits<UInt64>::max()
+                : run_last_low + width - 1;
+
+            const UInt64 low = std::max(min_coordinate, base + (static_cast<UInt64>(from) << shift));
+            const UInt64 high = std::min(max_coordinate, run_high);
+            cover.emplace_back(toField(low), toField(high));
+        }
+    }
+};
+
+void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
+{
+    if (!enabled || !range_supported || !positive_filter || values.empty())
+        return;
+
+    /// The histogram sees the keys; per-block extremes are blind within a block.
+    bool recorded_in_histogram = false;
+    if (histogram_supported)
+    {
+        if (!range_histogram)
+            range_histogram = std::make_shared<KeyRangeHistogram>();
+        recorded_in_histogram = range_histogram->add(values);
+    }
+
+    /// Keys the histogram declined must still land somewhere, or the cover misses them.
+    if (!recorded_in_histogram)
+    {
+        Field column_min;
+        Field column_max;
+        values.getExtremes(column_min, column_max, 0, values.size());
+        if (!column_min.isNull() && !column_max.isNull())
+            extendRange(column_min, column_max);
+    }
+}
+
+void detail::RuntimeFilterIndexAnalysis::appendRangeCover(std::vector<std::pair<Field, Field>> & out) const
+{
+    out.insert(out.end(), range_cover.begin(), range_cover.end());
+    if (range_histogram)
+        range_histogram->appendIntervals(out);
+    if (has_range && !range_min.isNull() && !range_max.isNull())
+        out.emplace_back(range_min, range_max);
+}
+
+void detail::RuntimeFilterIndexAnalysis::mergeFrom(const RuntimeFilterIndexAnalysis & source)
+{
+    if (!enabled || !range_supported || !positive_filter)
+        return;
+
+    /// Separate grids, so merge as intervals; reducing here would cost a walk and sort per stream.
+    source.appendRangeCover(range_cover);
+}
+
+std::vector<Range> detail::RuntimeFilterIndexAnalysis::getRanges() const
+{
+    if (!enabled || !range_supported || !positive_filter)
+        return {};
+
+    if (cached_ranges)
+        return *cached_ranges;
+
+    KeyCover cover;
+    appendRangeCover(cover);
+    normalize(cover);
+    coalesceToBudget(cover, RuntimeFilter::max_key_range_intervals);
+    dropUselessSplits(cover);
+
+    std::vector<Range> ranges;
+    ranges.reserve(cover.size());
+    for (const auto & [low, high] : cover)
+    {
+        if (low.isNull() || high.isNull())
+            return {};
+        ranges.emplace_back(low, /*left_included=*/true, high, /*right_included=*/true);
+    }
+
+    cached_ranges = ranges;
+    return ranges;
 }
 
 static size_t countPassedStats(ColumnPtr values);
@@ -712,10 +1014,10 @@ void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
-    const DataTypePtr & filter_column_target_type_, ProbeFn probe_fn_, std::optional<Range> key_range_, ColumnPtr recorded_key_values_)
+    const DataTypePtr & filter_column_target_type_, ProbeFn probe_fn_, std::vector<Range> key_ranges_, ColumnPtr recorded_key_values_)
     : filter_column_target_type(filter_column_target_type_)
     , probe_fn(std::move(probe_fn_))
-    , key_range(std::move(key_range_))
+    , key_ranges(std::move(key_ranges_))
     , recorded_key_values(std::move(recorded_key_values_))
 {
 }
@@ -830,12 +1132,19 @@ ColumnPtr RuntimeFilter::getRecordedKeyValues() const
     return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
 }
 
-std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
+std::vector<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
-    SharedLockGuard lock(mutex);
-    if (!data.build_state.isFinished())
-        return {};
-    return data.index_analysis.getRange();
+    /// Called once per part, and the cover cannot change after the build finished, so memoize it.
+    {
+        SharedLockGuard lock(mutex);
+        if (!data.build_state.isFinished())
+            return {};
+        if (auto cached = data.index_analysis.getCachedRanges())
+            return std::move(*cached);
+    }
+
+    std::lock_guard lock(mutex);
+    return data.index_analysis.getRanges();
 }
 
 template class ExactSetRuntimeFilter<false>;
@@ -914,13 +1223,14 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup()
     return std::make_shared<RuntimeFilterLookup>();
 }
 
-/// Build a pruning predicate on the column: exact IN values when available, otherwise a range.
+/// Build a pruning predicate on the column: exact IN values when available, otherwise the recorded
+/// key ranges.
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const RuntimeFilter & filter, const String & column_name, const DataTypePtr & column_type, ActionsDAG & dag, const ContextPtr & context)
 {
     auto exact_values = filter.getRecordedKeyValues();
-    auto range = exact_values ? std::optional<Range>{} : filter.getRecordedKeyRanges();
-    if (!exact_values && !range)
+    auto ranges = exact_values ? std::vector<Range>{} : filter.getRecordedKeyRanges();
+    if (!exact_values && ranges.empty())
         return nullptr;
 
     const auto target_type = filter.getFilterColumnTargetType();
@@ -945,24 +1255,44 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
         return &dag.addFunction(FunctionFactory::instance().get("in", context), {&key_casted, &set_node}, {});
     }
 
-    if (range)
     {
-        const auto & min_node
-            = dag.addColumn(target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + column_name);
-        const auto & max_node
-            = dag.addColumn(target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + column_name);
-        const auto & ge_node = dag.addFunction(FunctionFactory::instance().get("greaterOrEquals", context), {&key_casted, &min_node}, {});
-        const auto & le_node = dag.addFunction(FunctionFactory::instance().get("lessOrEquals", context), {&key_casted, &max_node}, {});
+        WriteBufferFromOwnString ranges_description;
+        for (size_t i = 0; i < ranges.size(); ++i)
+            ranges_description << (i ? " OR " : "") << ranges[i].toString();
         LOG_DEBUG(
             getLogger("JoinRuntimeFilterIndexAnalysis"),
-            "Index analysis engaged on join key '{}': pruning by range {}",
+            "Index analysis engaged on join key '{}': pruning by {} range(s) {}",
             column_name,
-            range->toString());
-        FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-        return &dag.addFunction(and_func, {&ge_node, &le_node}, {});
+            ranges.size(),
+            ranges_description.str());
     }
 
-    return nullptr;
+    auto ge_func = FunctionFactory::instance().get("greaterOrEquals", context);
+    auto le_func = FunctionFactory::instance().get("lessOrEquals", context);
+    FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+    /// One `BETWEEN` per interval, ORed together. `KeyCondition` turns a disjunction of ranges over
+    /// a primary key column into a union of mark ranges, and a `minmax` index keeps a granule when
+    /// its own [min, max] intersects any of the intervals.
+    ActionsDAG::NodeRawConstPtrs or_args;
+    or_args.reserve(ranges.size());
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        const auto suffix = "_" + toString(i) + "_" + column_name;
+        const auto & min_node
+            = dag.addColumn(target_type->createColumnConst(1, ranges[i].left), target_type, "__runtime_filter_min" + suffix);
+        const auto & max_node
+            = dag.addColumn(target_type->createColumnConst(1, ranges[i].right), target_type, "__runtime_filter_max" + suffix);
+        const auto & ge_node = dag.addFunction(ge_func, {&key_casted, &min_node}, {});
+        const auto & le_node = dag.addFunction(le_func, {&key_casted, &max_node}, {});
+        or_args.push_back(&dag.addFunction(and_func, {&ge_node, &le_node}, {}));
+    }
+
+    if (or_args.size() == 1)
+        return or_args.front();
+
+    FunctionOverloadResolverPtr or_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+    return &dag.addFunction(or_func, std::move(or_args), {});
 }
 
 const ActionsDAG::Node * buildRuntimeRangePredicate(

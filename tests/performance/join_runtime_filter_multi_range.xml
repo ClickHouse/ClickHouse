@@ -1,0 +1,71 @@
+<test>
+    <!-- JOIN runtime filter index analysis on a build side that falls into two clusters far apart
+         in the key domain.
+
+         The shape is the common one for keys minted in insertion order (auto-increment, IDENTITY,
+         Snowflake): `rf_orders.id` ascends with `order_date`, so restricting the parent to two
+         disjoint periods restricts the child to two disjoint key ranges. Measured on the real
+         Stack Overflow dataset, `corr(posts.Id, posts.CreationDate)` is 0.9995, and two months
+         nine years apart leave 97% of the key span between them empty.
+
+         Once the build side exceeds `join_runtime_filter_exact_values_limit` the filter can no
+         longer enumerate its keys, so the left side is pruned by the recorded key ranges. A single
+         [min, max] envelope spans both clusters and the gap between them, which here is the whole
+         table; a bounded set of intervals keeps only the clusters. -->
+
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <enable_join_runtime_filters>1</enable_join_runtime_filters>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <join_runtime_filter_min_probe_rows>0</join_runtime_filter_min_probe_rows>
+        <!-- The pruning depends on which side builds the filter, so pin the join order. -->
+        <query_plan_optimize_join_order_randomize>0</query_plan_optimize_join_order_randomize>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+        <!-- Left-side join pruning is disabled under parallel replicas. -->
+        <enable_parallel_replicas>0</enable_parallel_replicas>
+    </settings>
+
+    <create_query>CREATE TABLE rf_orders(id UInt64, order_date Date) ENGINE MergeTree ORDER BY order_date</create_query>
+    <create_query>CREATE TABLE rf_line_items(order_id UInt64, amount UInt64, tax UInt64, discount UInt64) ENGINE MergeTree ORDER BY order_id</create_query>
+
+    <!-- 20M orders over 2000 days, 10k per day, ids handed out in date order. -->
+    <fill_query>INSERT INTO rf_orders SELECT number, toDate('2015-01-01') + intDiv(number, 10000) FROM numbers(20000000)</fill_query>
+    <!-- 3 line items per order. -->
+    <fill_query>INSERT INTO rf_line_items SELECT intDiv(number, 3), number % 997, number % 31, number % 7 FROM numbers(60000000)</fill_query>
+
+    <!-- Two 10-day windows at opposite ends of the table: 200k build keys (past the exact-values
+         limit) in two clusters, together 1% of the line items, with the envelope spanning 100%. -->
+    <query>
+        SELECT sum(l.amount), sum(l.tax), sum(l.discount)
+        FROM rf_line_items AS l
+        INNER JOIN rf_orders AS o ON l.order_id = o.id
+        WHERE (o.order_date BETWEEN toDate('2015-01-01') AND toDate('2015-01-01') + 9)
+           OR (o.order_date BETWEEN toDate('2015-01-01') + 1990 AND toDate('2015-01-01') + 1999)
+        SETTINGS enable_join_runtime_filters_index_analysis = 1
+    </query>
+
+    <!-- Same query without index analysis: unaffected by the range representation, so it stands as
+         a noise baseline. If this one moves too, the result above is environmental. -->
+    <query>
+        SELECT sum(l.amount), sum(l.tax), sum(l.discount)
+        FROM rf_line_items AS l
+        INNER JOIN rf_orders AS o ON l.order_id = o.id
+        WHERE (o.order_date BETWEEN toDate('2015-01-01') AND toDate('2015-01-01') + 9)
+           OR (o.order_date BETWEEN toDate('2015-01-01') + 1990 AND toDate('2015-01-01') + 1999)
+        SETTINGS enable_join_runtime_filters_index_analysis = 0
+    </query>
+
+    <!-- One contiguous 20-day window: the same number of build keys and the same number of matching
+         rows, but a single cluster, so the intervals collapse to the envelope and nothing should
+         change. Guards against the first query improving for reasons other than the clustering. -->
+    <query>
+        SELECT sum(l.amount), sum(l.tax), sum(l.discount)
+        FROM rf_line_items AS l
+        INNER JOIN rf_orders AS o ON l.order_id = o.id
+        WHERE o.order_date BETWEEN toDate('2015-01-01') AND toDate('2015-01-01') + 19
+        SETTINGS enable_join_runtime_filters_index_analysis = 1
+    </query>
+
+    <drop_query>DROP TABLE rf_orders</drop_query>
+    <drop_query>DROP TABLE rf_line_items</drop_query>
+</test>

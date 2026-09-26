@@ -25,6 +25,8 @@
 namespace DB
 {
 
+struct KeyRangeHistogram;
+
 class RuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<RuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<RuntimeFilter>;
@@ -80,19 +82,36 @@ public:
     bool canUseExactValues() const { return enabled && positive_filter; }
     void insert(const IColumn & values);
     void mergeFrom(const RuntimeFilterIndexAnalysis & source);
-    void setRange(const Range & range);
-    std::optional<Range> getRange() const;
+    void setRanges(const std::vector<Range> & ranges);
+
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
+    /// Must only be called after the build finished: the result is memoized.
+    std::vector<Range> getRanges() const;
+    /// The memoized result of `getRanges`, if it was computed already.
+    std::optional<std::vector<Range>> getCachedRanges() const { return cached_ranges; }
 
 private:
     static bool supportsDataType(const DataTypePtr & data_type);
+    static bool supportsHistogram(const DataTypePtr & data_type);
     void extendRange(const Field & new_min, const Field & new_max);
+    /// Everything recorded so far, unreduced: histogram runs, merged-in intervals, and the envelope.
+    void appendRangeCover(std::vector<std::pair<Field, Field>> & out) const;
 
     const bool range_supported;
     const bool positive_filter;
+    /// Whether the histogram can bucket this key type; if not, the envelope is used.
+    const bool histogram_supported;
     bool enabled = false;
+    /// Envelope, for key types the histogram cannot bucket.
     bool has_range = false;
     Field range_min{};
     Field range_max{};
+    /// Closed intervals, carried over from a replaced filter or merged in from other streams.
+    std::vector<std::pair<Field, Field>> range_cover;
+    /// Keys as bits over a bucketed domain; order-independent (see `KeyRangeHistogram`).
+    std::shared_ptr<KeyRangeHistogram> range_histogram;
+    /// Memoized `getRanges`; mutable for the const getter, guarded by the owning RuntimeFilter's mutex.
+    mutable std::optional<std::vector<Range>> cached_ranges;
 };
 
 /// Thread-safe, nonnegative row budget used to throttle runtime-filter evaluation.
@@ -282,7 +301,7 @@ public:
     SharedFixedHashTableRuntimeFilter(
         const DataTypePtr & filter_column_target_type_,
         ProbeFn probe_fn_,
-        std::optional<Range> key_range_ = {},
+        std::vector<Range> key_ranges_ = {},
         ColumnPtr recorded_key_values_ = {});
 
     /// All build entry points are no-ops: the data was built inside `HashJoin` already.
@@ -292,12 +311,12 @@ public:
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
     DataTypePtr getTargetType() const { return filter_column_target_type; }
-    const std::optional<Range> & getInitialKeyRange() const { return key_range; }
+    const std::vector<Range> & getInitialKeyRanges() const { return key_ranges; }
 
 private:
     const DataTypePtr filter_column_target_type;
     ProbeFn probe_fn;
-    std::optional<Range> key_range;
+    std::vector<Range> key_ranges;
     ColumnPtr recorded_key_values;
 };
 
@@ -331,8 +350,8 @@ private:
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis.enable();
-            if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
-                result.index_analysis.setRange(*range);
+            /// Carry over the replaced filter's cover so left-side pruning survives the switch.
+            result.index_analysis.setRanges(std::get<SharedFixedHashTable>(result.filter).getInitialKeyRanges());
         }
         return result;
     }
@@ -368,7 +387,11 @@ public:
     /// Opt in to collecting build-side metadata for storage index analysis.
     void enableIndexAnalysis();
     ColumnPtr getRecordedKeyValues() const;
-    std::optional<Range> getRecordedKeyRanges() const;
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
+    std::vector<Range> getRecordedKeyRanges() const;
+
+    /// Intervals the cover may keep; each is another OR branch and mark-range trim per part.
+    static constexpr size_t max_key_range_intervals = 8;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
 
     /// Usage statistics
