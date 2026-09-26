@@ -1,0 +1,241 @@
+---
+title: 'دمج ClickHouse مع Kafka باستخدام المجموعات المسماة'
+description: 'كيفية استخدام المجموعات المسماة لربط ClickHouse بـ Kafka'
+keywords: ['مجموعة مسماة', 'كيفية', 'Kafka']
+slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
+doc_type: 'guide'
+---
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+في هذا الدليل، سنستعرض كيفية توصيل ClickHouse بـ Kafka باستخدام المجموعات المسماة. ويوفّر استخدام ملف التكوين الخاص بالمجموعات المسماة عدة مزايا:
+
+* إدارة مركزية وأسهل لإعدادات التكوين.
+* يمكن إجراء تغييرات على الإعدادات دون تعديل تعريفات جداول SQL.
+* سهولة أكبر في مراجعة التكوينات واستكشاف المشكلات وإصلاحها من خلال فحص ملف تكوين واحد.
+
+تم اختبار هذا الدليل على Apache Kafka 3.4.1 وClickHouse 24.5.1.
+
+<div id="assumptions">
+  ## الافتراضات
+</div>
+
+يفترض هذا المستند أن لديك:
+
+1. عنقود Kafka يعمل.
+2. عنقود ClickHouse مُعدّ ويعمل.
+3. معرفة أساسية بلغة SQL وإلمامًا بإعدادات ClickHouse وKafka.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+تأكد من أن المستخدم الذي ينشئ المجموعة المسماة لديه أذونات الوصول اللازمة:
+
+```xml
+<access_management>1</access_management>
+<named_collection_control>1</named_collection_control>
+<show_named_collections>1</show_named_collections>
+<show_named_collections_secrets>1</show_named_collections_secrets>
+```
+
+راجع [دليل إدارة المستخدمين](/ar/concepts/features/security/access-rights) لمزيد من التفاصيل حول تمكين التحكم بالوصول.
+
+<div id="configuration">
+  ## الإعداد
+</div>
+
+أضِف القسم التالي إلى ملف `config.xml` في ClickHouse:
+
+```xml
+<!-- Named collections for Kafka integration -->
+<named_collections>
+    <cluster_1>
+        <!-- ClickHouse Kafka engine parameters -->
+        <kafka_broker_list>c1-kafka-1:9094,c1-kafka-2:9094,c1-kafka-3:9094</kafka_broker_list>
+        <kafka_topic_list>cluster_1_clickhouse_topic</kafka_topic_list>
+        <kafka_group_name>cluster_1_clickhouse_consumer</kafka_group_name>
+        <kafka_format>JSONEachRow</kafka_format>
+        <kafka_commit_every_batch>0</kafka_commit_every_batch>
+        <kafka_num_consumers>1</kafka_num_consumers>
+        <kafka_thread_per_consumer>1</kafka_thread_per_consumer>
+
+        <!-- Kafka extended configuration -->
+        <kafka>
+            <security_protocol>SASL_SSL</security_protocol>
+            <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+            <sasl_mechanism>PLAIN</sasl_mechanism>
+            <sasl_username>kafka-client</sasl_username>
+            <sasl_password>kafkapassword1</sasl_password>
+            <debug>all</debug>
+            <auto_offset_reset>latest</auto_offset_reset>
+        </kafka>
+    </cluster_1>
+
+    <cluster_2>
+        <!-- ClickHouse Kafka engine parameters -->
+        <kafka_broker_list>c2-kafka-1:29094,c2-kafka-2:29094,c2-kafka-3:29094</kafka_broker_list>
+        <kafka_topic_list>cluster_2_clickhouse_topic</kafka_topic_list>
+        <kafka_group_name>cluster_2_clickhouse_consumer</kafka_group_name>
+        <kafka_format>JSONEachRow</kafka_format>
+        <kafka_commit_every_batch>0</kafka_commit_every_batch>
+        <kafka_num_consumers>1</kafka_num_consumers>
+        <kafka_thread_per_consumer>1</kafka_thread_per_consumer>
+
+        <!-- Kafka extended configuration -->
+        <kafka>
+            <security_protocol>SASL_SSL</security_protocol>
+            <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+            <sasl_mechanism>PLAIN</sasl_mechanism>
+            <sasl_username>kafka-client</sasl_username>
+            <sasl_password>kafkapassword2</sasl_password>
+            <debug>all</debug>
+            <auto_offset_reset>latest</auto_offset_reset>
+        </kafka>
+    </cluster_2>
+</named_collections>
+```
+
+<div id="configuration-notes">
+  ### ملاحظات التهيئة
+</div>
+
+1. عدِّل عناوين Kafka والإعدادات ذات الصلة بما يتوافق مع إعداد عنقود Kafka لديك.
+2. يحتوي القسم السابق لـ `<kafka>` على معلمات محرك Kafka في ClickHouse. للحصول على قائمة كاملة بالمعلمات، راجع [معلمات محرك Kafka ](/ar/reference/engines/table-engines/integrations/kafka).
+3. يحتوي القسم داخل `<kafka>` على خيارات تهيئة Kafka الموسَّعة. ولمزيد من الخيارات، راجع [تهيئة librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
+4. يستخدم هذا المثال بروتوكول الأمان `SASL_SSL` وآلية `PLAIN`. عدِّل هذه الإعدادات وفقًا لتهيئة عنقود Kafka لديك.
+
+<div id="creating-tables-and-databases">
+  ## إنشاء الجداول وقواعد البيانات
+</div>
+
+أنشئ قواعد البيانات والجداول اللازمة على عنقود ClickHouse لديك. إذا كنت تشغّل ClickHouse كعقدة واحدة، فتجاوز جزء العنقود من أمر SQL واستخدم أي محرك آخر بدلًا من `ReplicatedMergeTree`.
+
+<div id="create-the-database">
+  ### أنشئ قاعدة البيانات
+</div>
+
+```sql
+CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
+```
+
+<div id="create-kafka-tables">
+  ### إنشاء جداول Kafka
+</div>
+
+أنشئ أول جدول Kafka لعنقود Kafka الأول:
+
+```sql
+CREATE TABLE kafka_testing.first_kafka_table ON CLUSTER LAB_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+)
+ENGINE = Kafka(cluster_1);
+```
+
+أنشئ جدول Kafka الثاني لعنقود Kafka الثاني:
+
+```sql
+CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+)
+ENGINE = Kafka(cluster_2);
+```
+
+<div id="create-replicated-tables">
+  ### إنشاء الجداول ذات النسخ المتماثل
+</div>
+
+أنشئ جدولًا لجدول Kafka الأول:
+
+```sql
+CREATE TABLE kafka_testing.first_replicated_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+) ENGINE = ReplicatedMergeTree()
+ORDER BY id;
+```
+
+أنشئ جدولًا لجدول Kafka الثاني:
+
+```sql
+CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+) ENGINE = ReplicatedMergeTree()
+ORDER BY id;
+```
+
+<div id="create-materialized-views">
+  ### إنشاء العروض المادية
+</div>
+
+أنشئ عرضًا ماديًا لإدراج البيانات من جدول Kafka الأول إلى الجدول المكرَّر الأول:
+
+```sql
+CREATE MATERIALIZED VIEW kafka_testing.cluster_1_mv ON CLUSTER STAGE_CLICKHOUSE_CLUSTER TO first_replicated_table AS
+SELECT 
+    id,
+    first_name,
+    last_name
+FROM first_kafka_table;
+```
+
+أنشئ عرضًا ماديًا لإدراج البيانات من جدول Kafka الثاني في الجدول المكرّر الثاني:
+
+```sql
+CREATE MATERIALIZED VIEW kafka_testing.cluster_2_mv ON CLUSTER STAGE_CLICKHOUSE_CLUSTER TO second_replicated_table AS
+SELECT 
+    id,
+    first_name,
+    last_name
+FROM second_kafka_table;
+```
+
+<div id="verifying-the-setup">
+  ## التحقق من الإعداد
+</div>
+
+يُفترض أن ترى الآن مجموعات المستهلكين ذات الصلة في عناقيد Kafka لديك:
+
+* `cluster_1_clickhouse_consumer` على `cluster_1`
+* `cluster_2_clickhouse_consumer` على `cluster_2`
+
+شغّل الاستعلامات التالية على أي عقدة من عُقد ClickHouse لديك لعرض البيانات في كلا الجدولين:
+
+```sql
+SELECT * FROM first_replicated_table LIMIT 10;
+```
+
+```sql
+SELECT * FROM second_replicated_table LIMIT 10;
+```
+
+<div id="note">
+  ### ملاحظة
+</div>
+
+في هذا الدليل، البيانات التي تم إدخالها إلى موضوعَي Kafka هي نفسها. في حالتك، ستكون مختلفة. يمكنك إضافة أي عدد تريده من عناقيد Kafka.
+
+مخرجات المثال:
+
+```response
+┌─id─┬─first_name─┬─last_name─┐
+│  0 │ FirstName0 │ LastName0 │
+│  1 │ FirstName1 │ LastName1 │
+│  2 │ FirstName2 │ LastName2 │
+└────┴────────────┴───────────┘
+```
+
+يكتمل بذلك إعداد تكامل ClickHouse مع Kafka باستخدام المجموعات المُسمّاة. ومن خلال تركيز إعدادات Kafka في ملف `config.xml` الخاص بـ ClickHouse، يمكنك إدارة الإعدادات وتعديلها بسهولة أكبر، مما يضمن تكاملًا أكثر سلاسة وكفاءة.

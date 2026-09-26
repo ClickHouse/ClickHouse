@@ -1,6 +1,9 @@
 #include <Common/Base58.cpp> // NOLINT(bugprone-suspicious-include)
 
+#include <exception>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -26,43 +29,43 @@ static std::string slowEncode64(std::string_view src)
 static std::string scalarEncode32(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_32_LEN];
-    size_t len = TargetSpecific::Default::encodeBase58_32(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_32_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 
 static std::string scalarEncode64(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_64_LEN];
-    size_t len = TargetSpecific::Default::encodeBase58_64(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_64_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 static std::string avxEncode32(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_32_LEN];
-    size_t len = TargetSpecific::x86_64_v3::encodeBase58_32(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_32_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 
 static std::string avxEncode64(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_64_LEN];
-    size_t len = TargetSpecific::x86_64_v3::encodeBase58_64(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_64_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 #endif
 
 struct TestData32
 {
-    int id;
+    int id = 0;
     std::string_view decoded; /// 32 bytes
     std::string_view encoded; /// base58
 };
 
 struct TestData64
 {
-    int id;
+    int id = 0;
     std::string_view decoded; /// 64 bytes
     std::string_view encoded; /// base58
 };
@@ -178,9 +181,11 @@ TEST(Base58, Scalar32)
         EXPECT_EQ(encoded, v.encoded) << "id=" << v.id;
         EXPECT_EQ(encoded, slowEncode32(v.decoded)) << "id=" << v.id;
 
-        uint8_t decoded[32] = {};
+        /// `decodeBase58` holds its intermediate words in `dst`, so the buffer follows the documented
+        /// `src_length` capacity rather than the 32 bytes the result occupies.
+        UInt8 decoded[BASE58_ENCODED_32_LEN] = {};
         auto result
-            = TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
+            = decodeBase58(reinterpret_cast<const UInt8 *>(v.encoded.data()), v.encoded.size(), decoded);
         ASSERT_TRUE(result.has_value()) << "id=" << v.id;
         EXPECT_EQ(*result, 32u) << "id=" << v.id;
         EXPECT_EQ(0, memcmp(decoded, v.decoded.data(), 32)) << "id=" << v.id;
@@ -195,109 +200,303 @@ TEST(Base58, Scalar64)
         EXPECT_EQ(encoded, v.encoded) << "id=" << v.id;
         EXPECT_EQ(encoded, slowEncode64(v.decoded)) << "id=" << v.id;
 
-        uint8_t decoded[64] = {};
+        UInt8 decoded[BASE58_ENCODED_64_LEN] = {};
         auto result
-            = TargetSpecific::Default::decodeBase58_64(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
+            = decodeBase58(reinterpret_cast<const UInt8 *>(v.encoded.data()), v.encoded.size(), decoded);
         ASSERT_TRUE(result.has_value()) << "id=" << v.id;
         EXPECT_EQ(*result, 64u) << "id=" << v.id;
         EXPECT_EQ(0, memcmp(decoded, v.decoded.data(), 64)) << "id=" << v.id;
     }
 }
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 
 TEST(Base58, Avx32)
 {
-    if (!isArchSupported(TargetArch::x86_64_v3))
-        GTEST_SKIP() << "AVX2 not supported on this CPU";
-
     for (const auto & v : test_data_32)
         EXPECT_EQ(avxEncode32(v.decoded), scalarEncode32(v.decoded)) << "id=" << v.id;
 }
 
 TEST(Base58, Avx64)
 {
-    if (!isArchSupported(TargetArch::x86_64_v3))
-        GTEST_SKIP() << "AVX2 not supported on this CPU";
-
     for (const auto & v : test_data_64)
         EXPECT_EQ(avxEncode64(v.decoded), scalarEncode64(v.decoded)) << "id=" << v.id;
 }
 
-#endif // USE_MULTITARGET_CODE
+#endif // defined(__AVX2__)
 
 /// Decode must reject invalid characters, overlong strings, and overflowing values.
-TEST(Base58, DecodeInvalid)
+namespace
 {
-    uint8_t out32[32] = {};
-    uint8_t out64[64] = {};
 
-    // Characters excluded from the base58 alphabet.
-    for (std::string_view bad : {
-             "0111111111111111111111111111111111111111111"sv, // '0'
-             "O111111111111111111111111111111111111111111"sv, // 'O'
-             "I111111111111111111111111111111111111111111"sv, // 'I'
-             "l111111111111111111111111111111111111111111"sv, // 'l'
+/// Declared here rather than reused from Base58.cpp so that this reference shares no table with the
+/// code it checks (and because the file-scope copy there only exists in non-AVX2 builds).
+constexpr char reference_alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/// One digit per element, the textbook algorithm, independent of the tables under test.
+std::string referenceEncode(const std::string & src)
+{
+    size_t zeros = 0;
+    while (zeros < src.size() && static_cast<UInt8>(src[zeros]) == 0)
+        ++zeros;
+
+    std::vector<unsigned> digits;
+    for (size_t i = zeros; i < src.size(); ++i)
+    {
+        unsigned carry = static_cast<UInt8>(src[i]);
+        for (unsigned & digit : digits)
+        {
+            carry += digit << 8;
+            digit = carry % 58;
+            carry /= 58;
+        }
+        for (; carry; carry /= 58)
+            digits.push_back(carry % 58);
+    }
+
+    std::string out(zeros, '1');
+    for (size_t i = digits.size(); i-- > 0;)
+        out.push_back(reference_alphabet[digits[i]]);
+    return out;
+}
+
+std::string referenceDecode(const std::string & src)
+{
+    size_t zeros = 0;
+    while (zeros < src.size() && src[zeros] == '1')
+        ++zeros;
+
+    std::vector<unsigned> bytes;
+    for (size_t i = zeros; i < src.size(); ++i)
+    {
+        const char * found = src[i] == '\0' ? nullptr : strchr(reference_alphabet, src[i]);
+        if (!found)
+            return {}; /// unreachable for the encodings this reference is fed; the caller compares and fails
+        unsigned carry = static_cast<unsigned>(found - reference_alphabet);
+        for (unsigned & byte : bytes)
+        {
+            carry += byte * 58;
+            byte = carry & 0xFF;
+            carry >>= 8;
+        }
+        for (; carry; carry >>= 8)
+            bytes.push_back(carry & 0xFF);
+    }
+
+    std::string out(zeros, '\0');
+    for (size_t i = bytes.size(); i-- > 0;)
+        out.push_back(static_cast<char>(bytes[i]));
+    return out;
+}
+
+/// The buffer is sized to exactly the size the header documents, followed by guard bytes: writing
+/// outside the documented bound is the one thing a SQL test cannot observe.
+constexpr size_t GUARD_SIZE = 32;
+constexpr UInt8 GUARD_BYTE = 0xCD;
+
+void expectGuardIntact(const std::vector<UInt8> & buffer, size_t bound, const std::string & what)
+{
+    for (size_t i = bound; i < buffer.size(); ++i)
+        ASSERT_EQ(buffer[i], GUARD_BYTE) << what << " wrote " << i - bound << " bytes past its bound";
+}
+
+void checkGenericRoundTrip(const std::string & body)
+{
+    const std::string expected_encoded = referenceEncode(body);
+
+    const size_t encode_bound = 2 * body.size() + 1;
+    std::vector<UInt8> encoded(encode_bound + GUARD_SIZE, GUARD_BYTE);
+    const size_t encoded_size
+        = encodeBase58(reinterpret_cast<const UInt8 *>(body.data()), body.size(), encoded.data());
+    ASSERT_EQ(std::string(reinterpret_cast<const char *>(encoded.data()), encoded_size), expected_encoded)
+        << "encode of " << body.size() << " bytes";
+    expectGuardIntact(encoded, encode_bound, "encodeBase58");
+
+    ASSERT_EQ(referenceDecode(expected_encoded), body) << "reference is not self-consistent";
+
+    const size_t decode_bound = expected_encoded.size();
+    std::vector<UInt8> decoded(decode_bound + GUARD_SIZE, GUARD_BYTE);
+    const auto decoded_size = decodeBase58(
+        reinterpret_cast<const UInt8 *>(expected_encoded.data()), expected_encoded.size(), decoded.data());
+    ASSERT_TRUE(decoded_size.has_value()) << "decode of " << expected_encoded.size() << " characters";
+    ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), body)
+        << "decode of " << expected_encoded.size() << " characters";
+    expectGuardIntact(decoded, decode_bound, "decodeBase58");
+}
+
+std::string bodyOfLength(size_t length, size_t leading_zeros)
+{
+    std::string body(length, '\0');
+    /// Deterministic and dense enough to exercise every carry path.
+    for (size_t i = leading_zeros; i < length; ++i)
+        body[i] = static_cast<char>(i == leading_zeros ? 1 + (i * 37) % 255 : (i * 137 + 29) % 256);
+    return body;
+}
+
+}
+
+/// The generic path is what every input that is not a 32- or 64-byte encode, and every decode without
+/// a size hint, goes through.
+TEST(Base58, Generic)
+{
+    std::vector<size_t> lengths;
+    for (size_t length = 0; length <= 64; ++length)
+        lengths.push_back(length);
+    /// 467 and 697 are the stack-array cutoffs, where the words move from the stack into `dst`.
+    for (size_t length : {100UL, 127UL, 128UL, 200UL, 255UL, 256UL, 400UL, 466UL, 467UL, 468UL, 511UL, 512UL,
+                          696UL, 697UL, 698UL, 1000UL, 1024UL})
+        lengths.push_back(length);
+
+    for (size_t length : lengths)
+    {
+        checkGenericRoundTrip(bodyOfLength(length, 0));
+        checkGenericRoundTrip(std::string(length, '\0'));
+        checkGenericRoundTrip(std::string(length, '\xFF'));
+        if (length >= 1)
+            checkGenericRoundTrip(bodyOfLength(length, 1));
+        if (length >= 2)
+            checkGenericRoundTrip(bodyOfLength(length, length - 1));
+    }
+}
+
+/// Eleven characters is the only body length whose value may exceed a `UInt64`, since
+/// 58^10 <= 2^64 - 1 < 58^11, so it is the only length the short decode path can decline for size.
+/// Ten and twelve bracket it: ten is the largest length that always fits, and twelve is the shortest
+/// input the general path handles outright, with a two-character leading pass.
+TEST(Base58, GenericShortDecodeBoundary)
+{
+    for (std::string_view encoded : {
+             "2111111111",  /// ten characters, the largest length whose value always fits a `UInt64`
+             "zzzzzzzzzz",  /// 58^10 - 1, the largest ten-character value
+             "21111111111", /// 58^10, the smallest eleven-character value, and it still fits a `UInt64`
+             "jpXCZedGfVQ", /// 2^64 - 1, the largest value the short path may hold
+             "jpXCZedGfVR", /// 2^64, the smallest it may not
+             "jpXCZedGfVS", /// 2^64 + 1
+             "sQm6nKp8qFD", /// midway between 2^64 and 58^11
+             "zzzzzzzzzzz", /// 58^11 - 1, the largest eleven-character value
+             "211111111111", /// 58^11, the smallest twelve-character value
+             "jpXCZedGfVR1", /// twelve characters whose leading pass is not all zeros
+             "zzzzzzzzzzzz", /// 58^12 - 1, the largest twelve-character value
          })
     {
-        EXPECT_FALSE(TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(bad.data()), bad.size(), out32).has_value())
-            << bad;
+        const std::string expected = referenceDecode(std::string(encoded));
+        ASSERT_FALSE(expected.empty()) << "reference rejected " << encoded;
+
+        std::vector<UInt8> decoded(encoded.size() + GUARD_SIZE, GUARD_BYTE);
+        const auto decoded_size
+            = decodeBase58(reinterpret_cast<const UInt8 *>(encoded.data()), encoded.size(), decoded.data());
+        ASSERT_TRUE(decoded_size.has_value()) << encoded << " was rejected";
+        ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), expected) << encoded;
+        expectGuardIntact(decoded, expected.size(), "decodeBase58");
     }
 
-    // Too short for 32-byte output: minimum is 32 chars (all-zero input encodes to 32 '1's).
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_32(
-            reinterpret_cast<const uint8_t *>("1111111111111111111111111111111"), 31, out32)
-            .has_value());
+    /// Declining for size and rejecting an invalid character leave the same empty result, so the general
+    /// path must still reject at this length.
+    UInt8 out[16];
+    EXPECT_FALSE(decodeBase58(reinterpret_cast<const UInt8 *>("jpXCZedGfV0"), 11, out).has_value());
+}
 
-    // Too long for 32-byte output (BASE58_ENCODED_32_LEN = 44).
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_32(
-            reinterpret_cast<const uint8_t *>("111111111111111111111111111111111111111111111"), 45, out32)
-            .has_value());
+/// The most significant word's digit count is what sets the output length, `10 * (words - 1) + digits`,
+/// so an encoded length of 1 modulo 10 is a top word that expanded to a single digit and one of 0 modulo
+/// 10 is a top word that expanded to all ten. Both are searched for rather than assumed.
+TEST(Base58, GenericTopWordDigits)
+{
+    bool saw_one_digit = false;
+    bool saw_all_digits = false;
 
-    // 44 'z's: value overflows 32 bytes (58^44 > 2^256), must be rejected.
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_32(
-            reinterpret_cast<const uint8_t *>("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"), 44, out32)
-            .has_value());
+    for (size_t length = 9; length <= 300; ++length)
+        for (const std::string & body : {bodyOfLength(length, 0), std::string(length, '\xFF'), std::string(length, '\x01')})
+        {
+            const size_t digits = (referenceEncode(body).size() - 1) % BASE58_ENCODE_WORD_DIGITS + 1;
+            if (digits == 1)
+                saw_one_digit = true;
+            else if (digits == BASE58_ENCODE_WORD_DIGITS)
+                saw_all_digits = true;
+            else
+                continue;
+            checkGenericRoundTrip(body);
+        }
 
-    // Too many leading '1's: 31 zeros + 0x01 encodes to 31 '1's + '2', so 32 '1's + '2' must fail.
+    EXPECT_TRUE(saw_one_digit);
+    EXPECT_TRUE(saw_all_digits);
+}
+
+/// The callback fires on accumulated inner-loop work, and the accounting scales with the pass width, so
+/// widening a pass keeps a comparable interval rather than checking less often. The count is an integer
+/// function of the exact input, so it is asserted exactly.
+TEST(Base58, GenericCancellationInterval)
+{
+    /// Encode and decode accumulate their work over different inputs, so the two counts are separate
+    /// functions and are not required to agree; they coincide at this input, and at others they do not.
+    constexpr size_t expected_encode_calls = 63;
+    constexpr size_t expected_decode_calls = 63;
+
+    const std::string body = bodyOfLength(10000, 0);
+
+    std::vector<UInt8> encoded(2 * body.size() + 1);
+    size_t encode_calls = 0;
+    const size_t encoded_size = encodeBase58(
+        reinterpret_cast<const UInt8 *>(body.data()), body.size(), encoded.data(), [&] { ++encode_calls; });
+    const std::string encoded_text(reinterpret_cast<const char *>(encoded.data()), encoded_size);
+
+    std::vector<UInt8> decoded(encoded_text.size());
+    size_t decode_calls = 0;
+    const auto decoded_size = decodeBase58(
+        reinterpret_cast<const UInt8 *>(encoded_text.data()), encoded_text.size(), decoded.data(),
+        [&] { ++decode_calls; });
+    ASSERT_TRUE(decoded_size.has_value());
+    ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), body);
+
+    EXPECT_EQ(encode_calls, expected_encode_calls);
+    EXPECT_EQ(decode_calls, expected_decode_calls);
+
+    /// The callback is expected to throw once the query is cancelled or out of time, which is only
+    /// useful if the throw leaves the conversion.
+    struct Cancelled : std::exception
     {
-        std::string extra = "1" + std::string(test_data_32[1].encoded);
-        EXPECT_FALSE(
-            TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(extra.data()), extra.size(), out32).has_value());
-    }
+    };
+    EXPECT_THROW(
+        encodeBase58(
+            reinterpret_cast<const UInt8 *>(body.data()), body.size(), encoded.data(), [] { throw Cancelled{}; }),
+        Cancelled);
+    EXPECT_THROW(
+        decodeBase58(
+            reinterpret_cast<const UInt8 *>(encoded_text.data()), encoded_text.size(), decoded.data(),
+            [] { throw Cancelled{}; }),
+        Cancelled);
+}
 
-    // Too short for 64-byte output: minimum is 64 chars (all-zero input encodes to 64 '1's).
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
-            reinterpret_cast<const uint8_t *>("1111111111111111111111111111111111111111111111111111111111111111"), 63, out64)
-            .has_value());
+TEST(Base58, DecodeInvalid)
+{
+    /// The generic decoder must reject an invalid character wherever it appears, including inside the
+    /// short leading pass and at a pass boundary.
+    for (size_t length = 1; length <= 12; ++length)
+        for (size_t position = 0; position < length; ++position)
+            for (char bad : {'0', 'O', 'I', 'l', ' ', '\0', '\x7F', '\xFF'})
+            {
+                std::string input(length, 'z');
+                input[position] = bad;
+                std::vector<UInt8> out(length + GUARD_SIZE, GUARD_BYTE);
+                EXPECT_FALSE(
+                    decodeBase58(reinterpret_cast<const UInt8 *>(input.data()), input.size(), out.data()).has_value())
+                    << "length " << length << " position " << position;
+                expectGuardIntact(out, length, "decodeBase58 (invalid input)");
+            }
 
-    // Too long for 64-byte output (BASE58_ENCODED_64_LEN = 88).
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
-            reinterpret_cast<const uint8_t *>("11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"),
-            89,
-            out64)
-            .has_value());
-
-    // 88 'z's: value overflows 64 bytes (58^88 > 2^512), must be rejected.
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
-            reinterpret_cast<const uint8_t *>("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"),
-            88,
-            out64)
-            .has_value());
-
-    // Invalid character in 64-byte input.
-    EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
-            reinterpret_cast<const uint8_t *>("0111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"),
-            88,
-            out64)
-            .has_value());
+    /// The same in a long input, where 44 characters are a four-character leading pass and four full
+    /// passes: the positions below put the invalid character in the leading pass, inside the second and
+    /// the fourth full pass, and last, so rejection is exercised after several passes have run.
+    for (size_t position : {size_t{0}, size_t{4}, size_t{13}, size_t{30}, size_t{43}})
+        for (char bad : {'0', 'O', 'I', 'l'})
+        {
+            std::string input(44, 'z');
+            input[position] = bad;
+            std::vector<UInt8> out(input.size() + GUARD_SIZE, GUARD_BYTE);
+            EXPECT_FALSE(
+                decodeBase58(reinterpret_cast<const UInt8 *>(input.data()), input.size(), out.data()).has_value())
+                << "position " << position << " character " << bad;
+            expectGuardIntact(out, input.size(), "decodeBase58 (invalid input)");
+        }
 }
 
 } // namespace DB

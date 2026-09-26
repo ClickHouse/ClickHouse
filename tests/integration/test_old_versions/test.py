@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 node_oldest = cluster.add_instance(
     "node_oldest",
     image="clickhouse/clickhouse-server",
-    tag="25.12",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
 )

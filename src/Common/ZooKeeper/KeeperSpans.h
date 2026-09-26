@@ -91,7 +91,8 @@ public:
         auto & maybe_span = maybe_spans[operation];
 
         chassert(maybe_span.start_time_us != 0);
-        getSpanDescriptor(operation).histogram.observe((finish_time_us - maybe_span.start_time_us) / 1000);
+        const auto latency_ms = static_cast<HistogramMetrics::Value>(finish_time_us - maybe_span.start_time_us) / 1000.0;
+        getSpanDescriptor(operation).histogram.observe(latency_ms);
 
         if (!maybe_span.span)
             return;

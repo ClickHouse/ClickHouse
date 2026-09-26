@@ -17,7 +17,7 @@ FROM
     (SELECT number AS x FROM system.numbers) AS a -- all rows are read and filtered out by runtime filter
     INNER JOIN (SELECT toUInt64(1) AS y WHERE 0) AS b
     ON a.x = b.y
-SETTINGS enable_join_runtime_filters = 1, query_plan_join_swap_table = 0;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_join_swap_table = 0;
 
 SELECT count()
 FROM

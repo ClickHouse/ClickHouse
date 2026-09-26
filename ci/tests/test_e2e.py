@@ -1,9 +1,9 @@
 """
-End-to-end test for the CI report pipeline.
+Tests for the CI report pipeline.
 
-Seeds a synthetic workspace (logs, status file, fake core dump) and runs the
-fuzzer job to verify that the artifact collection and encryption pipeline
-produces `.zst.enc` and `.rsa` files in the result JSON.
+Seeds a synthetic workspace, runs the job, and verifies that the artifact
+collection and encryption pipeline produces `.zst.enc` and `.rsa` files in
+the result JSON and never leaks a raw `aes.key`.
 """
 
 import json
@@ -15,19 +15,86 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.ast_fuzzer_job import JOB_ARTIFACTS, WORKSPACE_PATH
+import tempfile
+
+import pytest
+
+from ci.jobs.ast_fuzzer_job import (
+    JOB_ARTIFACTS,
+    WORKSPACE_PATH,
+    _format_status_error,
+    _read_fuzzer_status,
+)
 from ci.praktika.utils import Utils
 
-DEFAULT_JOB = "AST fuzzer (amd_debug)"
+FUZZER_JOB = "AST fuzzer (amd_debug)"
 
 
-def test_fuzzer():
+def test_read_fuzzer_status_valid():
+    with tempfile.TemporaryDirectory() as d:
+        status = Path(d) / "status.tsv"
+        status.write_text("1\t0\t137\n")
+        assert _read_fuzzer_status(status) == (True, 0, 137)
+
+
+def test_read_fuzzer_status_missing_or_empty():
+    # The runner aborts (timeout / OOM / docker failure) before writing
+    # status.tsv. A missing or empty file must be reported as an early abort,
+    # not as an opaque parse crash.
+    with tempfile.TemporaryDirectory() as d:
+        with pytest.raises(FileNotFoundError):
+            _read_fuzzer_status(Path(d) / "status.tsv")
+        empty = Path(d) / "status.tsv"
+        empty.write_text("")
+        with pytest.raises(FileNotFoundError):
+            _read_fuzzer_status(empty)
+
+
+def test_read_fuzzer_status_malformed():
+    with tempfile.TemporaryDirectory() as d:
+        bad = Path(d) / "status.tsv"
+        bad.write_text("garbage line\n")
+        with pytest.raises(ValueError):
+            _read_fuzzer_status(bad)
+
+
+def test_format_status_error_missing_is_neutral_with_log_tail():
+    # Missing status.tsv -> neutral early-abort message, no traceback, log tail.
+    # It must NOT assert infra / "re-run clears it": a missing file can also be
+    # a server-startup or harness regression, so we point at the logs instead.
+    with tempfile.TemporaryDirectory() as d:
+        fuzzer_log = Path(d) / "fuzzer.log"
+        fuzzer_log.write_text("\n".join(f"line{i}" for i in range(200)))
+        msg = _format_status_error(
+            FileNotFoundError("status.tsv was not produced"),
+            [fuzzer_log, Path(d) / "absent.log"],
+        )
+        assert "aborted before writing status.tsv" in msg
+        assert "re-run" not in msg.lower()
+        assert "Traceback" not in msg
+        assert "fuzzer.log (last lines)" in msg
+        assert "line199" in msg  # tail, not head
+        assert "line0\n" not in msg  # head bounded out
+
+
+def test_format_status_error_malformed_keeps_traceback():
+    # Malformed status.tsv -> harness bug; keep the traceback for debugging.
+    try:
+        raise ValueError("expected 3 tab-separated fields")
+    except ValueError as e:
+        msg = _format_status_error(e, [])
+    assert "harness bug" in msg
+    assert "Traceback" in msg
+
+
+def test_report():
     ci_tmp = Path(WORKSPACE_PATH.parent)
     ci_backup = Path(ci_tmp.parent / "tmp_backup")
     ci_result = Path(ci_tmp.parent / "tmp_result")
     shutil.rmtree(ci_backup, ignore_errors=True)
     shutil.rmtree(ci_result, ignore_errors=True)
-    ci_tmp.rename(ci_backup)
+    if ci_tmp.exists():
+        ci_tmp.rename(ci_backup)
 
     try:
         WORKSPACE_PATH.mkdir(parents=True, exist_ok=True)
@@ -42,10 +109,10 @@ def test_fuzzer():
     """)
 
         subprocess.run(
-            [sys.executable, "-m", "ci.praktika", "run", DEFAULT_JOB],
+            [sys.executable, "-m", "ci.praktika", "run", FUZZER_JOB],
         )
 
-        result_file = Path(f"ci/tmp/result_{Utils.normalize_string(DEFAULT_JOB)}.json")
+        result_file = Path(f"ci/tmp/result_{Utils.normalize_string(FUZZER_JOB)}.json")
         assert result_file.exists(), f"result JSON not found: {result_file}"
         report = json.loads(result_file.read_text())
 
@@ -60,8 +127,10 @@ def test_fuzzer():
             f"raw AES key must not appear in report files: {files}"
         )
     finally:
-        ci_tmp.rename(ci_result)
-        ci_backup.rename(ci_tmp)
+        if ci_tmp.exists():
+            ci_tmp.rename(ci_result)
+        if ci_backup.exists():
+            ci_backup.rename(ci_tmp)
 
 
 if __name__ == "__main__":

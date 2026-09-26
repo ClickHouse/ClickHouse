@@ -1,0 +1,12 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/bad</url>
+            <methods>GET</methods>
+            <handler>
+                <type>no_such_handler_type</type>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>
