@@ -39,11 +39,13 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
-    void createTable(
+    bool createTable(
         const String & namespace_name,
         const String & table_name,
-        const String & table_location,
-        Poco::JSON::Object::Ptr metadata_content) const override;
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;

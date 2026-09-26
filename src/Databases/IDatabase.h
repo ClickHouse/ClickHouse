@@ -32,6 +32,7 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+class ASTFunction;
 struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
@@ -214,6 +215,8 @@ public:
 
     virtual bool isDatalakeCatalog() const { return false; }
 
+    virtual void validateCreateTableEngine(const ASTFunction & /*engine*/) const {}
+
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
     virtual bool isRemoteDatabase() const { return false; }
@@ -387,7 +390,8 @@ public:
     virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool sync = false);
+        [[maybe_unused]] bool sync = false,
+        [[maybe_unused]] bool if_exists = false);
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///

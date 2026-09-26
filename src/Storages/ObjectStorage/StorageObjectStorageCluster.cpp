@@ -36,7 +36,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool iceberg_delete_data_on_drop;
+    extern const SettingsBool data_lake_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
@@ -298,16 +298,15 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, getStorageID());
 }
 
+void StorageObjectStorageCluster::prepareForDrop(ContextPtr query_context)
+{
+    delete_data_on_drop = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+}
+
 void StorageObjectStorageCluster::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
-    if (catalog)
-    {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
-    }
-    configuration->drop(drop_context);
+    StorageObjectStorage::dropImpl(
+        delete_data_on_drop.load(), catalog, configuration, getStorageID(), getLogger("StorageObjectStorageCluster"));
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
