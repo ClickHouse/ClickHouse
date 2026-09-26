@@ -306,6 +306,11 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
+    Block source_block;
+    for (const auto & column : metadata_snapshot->getColumns().getByNames(
+             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
+        source_block.insert({column.type->createColumn(), column.type, column.name});
+
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
@@ -316,7 +321,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(metadata_snapshot->getSampleBlockWithSubcolumns()))),
+        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
@@ -1632,7 +1637,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
         if (candidates.has_filter && best_candidate->has_filter)
         {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
+            /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
+            const String result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
