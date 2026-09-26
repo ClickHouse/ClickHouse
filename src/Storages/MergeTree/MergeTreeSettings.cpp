@@ -1954,12 +1954,13 @@ When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
 rows in that part have expired according to their `TTL` settings.
 
 For a column `TTL`, the counterpart of dropping a whole part is dropping the
-whole column from a part: when this setting is enabled, the values of a column
-are not cleared while some of them have not expired yet, and the column is
-dropped from the part once all of them have expired. If that is all a merge of
-the part has to do, the files of the other columns are hardlinked instead of
-rewritten. A merge that is assigned anyway because of a row `TTL` also removes
-the rows that have expired in the part.
+whole column from a part: when this setting is enabled, a column `TTL` does
+not cause a merge while some values of the column have not expired yet, and the
+column is dropped from the part once all of them have expired. If that is all a
+merge of the part has to do, the files of the other columns are hardlinked
+instead of rewritten. A merge that rewrites the part anyway, for example because
+of a row `TTL`, may also remove the rows and clear the column values that have
+expired in the part.
 )", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL

@@ -1222,6 +1222,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->text_indexes_to_merge.clear();
     }
 
+    /// A column fully expired by TTL is not read, so a text index that depends on it can be neither built
+    /// from its values nor taken from the source parts, which describe the values before they expired.
+    /// The new part is left without such an index, as a part cleared by `createTaskToClearExpiredColumns`.
+    if (!global_ctx->columns_fully_expired_by_ttl.empty())
+    {
+        auto is_expired = [&](const String & name)
+        {
+            return Nested::tryGetColumnNameInStorage(name, global_ctx->columns_fully_expired_by_ttl).has_value();
+        };
+
+        auto depends_on_expired_column = [&](const IndexDescription & index)
+        {
+            return std::ranges::any_of(index.expression->getRequiredColumns(), is_expired);
+        };
+
+        auto & text_indexes = global_ctx->text_indexes_to_merge;
+        text_indexes.erase(std::remove_if(text_indexes.begin(), text_indexes.end(), depends_on_expired_column), text_indexes.end());
+    }
+
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
     bool use_const_adaptive_granularity = (*merge_tree_settings)[MergeTreeSetting::use_const_adaptive_granularity];
 
@@ -1490,8 +1509,9 @@ bool MergeTask::isAnyTTLDue(const GlobalRuntimeContext & global_ctx, const Merge
     if (!global_ctx.metadata_snapshot->hasAnyTTL())
         return false;
 
-    /// With `ttl_only_drop_parts`, a column TTL is applied only by dropping the column from the part once
-    /// all of its values have expired (see `getColumnsFullyExpiredByTTL`), not by rewriting the part.
+    /// With `ttl_only_drop_parts`, a column TTL does not make the merge rewrite the part to clear its values:
+    /// the column is dropped from the part once all of its values have expired (see `getColumnsFullyExpiredByTTL`).
+    /// A merge that rewrites the part anyway (e.g. because of a row TTL) still clears the expired values.
     const time_t min_ttl = (*global_ctx.data_settings)[MergeTreeSetting::ttl_only_drop_parts]
         ? ttl_infos.getMinimalNonFinishedRowTTL()
         : ttl_infos.part_min_ttl;
