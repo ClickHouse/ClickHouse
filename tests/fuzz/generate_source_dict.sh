@@ -54,7 +54,8 @@ TMP_FILE=$(mktemp)
 LABEL_FRAGMENTS_FILE=$(mktemp)
 DEAD_CODE_NAMES_FILE=$(mktemp)
 INTERNAL_REGISTERED_FILE=$(mktemp)
-trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE" "$DEAD_CODE_NAMES_FILE" "$INTERNAL_REGISTERED_FILE"' EXIT
+LOOP_REGISTERED_FILE=$(mktemp)
+trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE" "$DEAD_CODE_NAMES_FILE" "$INTERNAL_REGISTERED_FILE" "$LOOP_REGISTERED_FILE"' EXIT
 
 # The trees holding the registration code: every pass below scans a subset of
 # them.
@@ -338,6 +339,24 @@ done >> "$LABEL_FRAGMENTS_FILE"
         "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp" \
         | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"'
 
+    # The same registration with the name arriving through a loop variable
+    # instead of a literal argument, e.g. the grouping specializations
+    # (src/Functions/grouping.cpp):
+    #     for (const auto & [name, variant] : std::initializer_list<...>{
+    #             {"__groupingOrdinary", GroupingVariant::Ordinary}, ...})
+    #         factory.registerFunction(name, ...);
+    # What ties the literals to a registration is the register* call reached
+    # from the loop header, so both are required in one match; a name-shaped
+    # loop variable alone also names sets of columns, files and settings.
+    optional_grep -rhozE 'for[[:space:]]*\([^;]*\b[A-Za-z_]*[Nn]ame[A-Za-z_]*\b[^;]*:[^;]*\{[^;]*"[^;]*\}[^;]*\)[^;]*register[A-Za-z]*[[:space:]]*\(' \
+        "$SOURCE_ROOT/src/Functions" \
+        "$SOURCE_ROOT/src/AggregateFunctions" \
+        "$SOURCE_ROOT/src/TableFunctions" \
+        "$SOURCE_ROOT/src/DataTypes" \
+        "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp" \
+        | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only \
+        | tee "$LOOP_REGISTERED_FILE"
+
     # Combinator-expanded aggregate function names, e.g. sumIf, avgIf,
     # groupArrayArray, uniqState. The authoritative binary path generates these
     # by crossing system.functions (is_aggregate = 1) with
@@ -410,5 +429,36 @@ done >> "$LABEL_FRAGMENTS_FILE"
         | sed 's/.*/"&"/'
     cat "$SOURCE_ROOT/tests/fuzz/dictionaries/old.dict"
 } | LC_ALL=C sort -u > "$OUTPUT_FILE"
+
+# update_dict.sh verifies the whole output against a binary, but only the nightly
+# libFuzzer job has one. These two checks need no binary, so they also run in the
+# fuzzers build, where a non-zero exit here is a FATAL_ERROR (CMakeLists.txt). They
+# cover the loop-registration pass, whose pattern is the one that has to match two
+# things at once - a range-for header and the register* call reached from it - and
+# whose names are internal, so the __ filter above can drop them again.
+if [ ! -s "$LOOP_REGISTERED_FILE" ]
+then
+    echo "error: no name was extracted from a loop registration." \
+         "The pattern no longer matches the form it was written for" \
+         "(the specializations in src/Functions/grouping.cpp): fix it," \
+         "or drop the pass if no registration of that form is left." >&2
+    exit 1
+fi
+while IFS= read -r loop_registered_name
+do
+    # A name whose only carrier is an #if 0 region is not registered by any build,
+    # so the dead code filter above drops it and the output is right without it.
+    if grep -Fxq "$loop_registered_name" "$DEAD_CODE_NAMES_FILE"
+    then
+        continue
+    fi
+    if ! grep -Fxq "\"$loop_registered_name\"" "$OUTPUT_FILE"
+    then
+        echo "error: $loop_registered_name is registered through a loop variable and was" \
+             "extracted, but it is missing from $OUTPUT_FILE, so a filter between the two" \
+             "dropped it. That is the state the nightly libFuzzer job failed in." >&2
+        exit 1
+    fi
+done < "$LOOP_REGISTERED_FILE"
 
 echo "Generated $OUTPUT_FILE: $(wc -l < "$OUTPUT_FILE") tokens"
