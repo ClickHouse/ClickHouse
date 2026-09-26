@@ -1075,8 +1075,7 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 /// How a function treats the trailing zero bytes of a `FixedString` needle.
 enum class FixedStringPaddingSemantics
 {
-    NeedleAsTyped,   /// `has`, `mapContainsKey`, `mapContainsValue`
-    NeedleStripped,  /// `hasAny`, `hasAll`: the needle is cast to `String`
+    NeedleAsTyped,   /// `has`, `hasAny`, `hasAll`, `mapContainsKey`, `mapContainsValue`: the bytes are compared as is
     BothStripped,    /// `equals`, `IN`: the value loses its trailing zero bytes as well
 };
 
@@ -1092,9 +1091,8 @@ static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(co
 {
     if (function_name == "equals")
         return FixedStringPaddingSemantics::BothStripped;
-    if (function_name == "hasAny" || function_name == "hasAll")
-        return FixedStringPaddingSemantics::NeedleStripped;
-    if (function_name == "has" || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
+        || function_name == "mapContainsKey" || function_name == "mapContainsValue")
         return FixedStringPaddingSemantics::NeedleAsTyped;
     return std::nullopt;
 }
@@ -1121,12 +1119,14 @@ static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_stri
 
     if (context.indexed_fixed_string_size)
     {
+        /// The functions that compare the bytes as is cast a needle of another width to `String`, which
+        /// keeps the padding of both sides, so only a needle of exactly N bytes can match. The dictionary
+        /// cast of a `LowCardinality` element pads a shorter needle instead, so no single form covers both.
+        if (!both_stripped)
+            return needle.size() == *context.indexed_fixed_string_size;
+
         /// The column stores its values padded to N and compares them without the padding.
-        if (both_stripped || needle_is_fixed_string)
-            needle.resize(stripped_size);
-        /// A `String` needle keeps its zero bytes for these functions and then matches nothing.
-        else if (needle.ends_with('\0'))
-            return false;
+        needle.resize(stripped_size);
 
         if (needle.size() > *context.indexed_fixed_string_size)
             return false;
@@ -1135,11 +1135,11 @@ static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_stri
         return true;
     }
 
-    if (!needle_is_fixed_string || context.semantics == FixedStringPaddingSemantics::NeedleAsTyped)
+    if (!needle_is_fixed_string || !both_stripped)
         return true;
 
     /// A value with any number of trailing zero bytes matches, so one lookup covers them only if none can end up in a term.
-    if (both_stripped && stripped_size != needle.size() && !context.padding_never_in_terms)
+    if (stripped_size != needle.size() && !context.padding_never_in_terms)
         return false;
 
     needle.resize(stripped_size);
