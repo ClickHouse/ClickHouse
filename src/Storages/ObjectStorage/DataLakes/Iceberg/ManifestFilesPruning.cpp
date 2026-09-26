@@ -68,13 +68,21 @@ namespace
     constexpr const char * last_sequence_number_column = "_last_updated_sequence_number";
 }
 
-std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
+namespace
+{
+
+/// `names_context` resolves the column names of the current schema (presentation timezone),
+/// `types_context` resolves the types of the target schema (UTC for `timestamptz`, Iceberg physical).
+/// A null context means the context the schema processor was created with.
+std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIdsImpl(
     const IcebergSchemaProcessor & schema_processor,
     Int32 current_schema_id,
     Int32 target_schema_id,
     const DB::ActionsDAG * source_dag,
     std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter)
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter,
+    DB::ContextPtr names_context,
+    DB::ContextPtr types_context)
 {
     const auto & inputs = source_dag->getInputs();
 
@@ -107,7 +115,8 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
             continue;
         }
 
-        auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id);
+        /// Names follow the presentation timezone; types follow UTC (Iceberg physical).
+        auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id, names_context);
 
         /// Columns which we dropped and don't exist in current schema
         /// cannot be queried in WHERE expression.
@@ -115,7 +124,7 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(target_schema_id, column_id);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(target_schema_id, column_id, types_context);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -129,16 +138,39 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
     return result;
 }
 
+}
+
+std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 current_schema_id,
+    Int32 target_schema_id,
+    const DB::ActionsDAG * source_dag,
+    std::vector<Int32> & used_columns_in_filter,
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter)
+{
+    return renameFilterDagColumnsToFieldIdsImpl(
+        schema_processor,
+        current_schema_id,
+        target_schema_id,
+        source_dag,
+        used_columns_in_filter,
+        row_lineage_columns_in_filter,
+        /*names_context=*/nullptr,
+        /*types_context=*/nullptr);
+}
+
 ManifestFilesPruner::ManifestFilesPruner(
     const IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const ManifestFileIterator & manifest_file,
-    DB::ContextPtr context)
+    DB::ContextPtr context_)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
+    , context(context_)
+    , physical_context(createIcebergPhysicalContext(context_))
 {
     if (filter_dag == nullptr)
     {
@@ -147,16 +179,23 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
-    transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
+    transformed_dag = renameFilterDagColumnsToFieldIdsImpl(
+        schema_processor,
+        current_schema_id,
+        initial_schema_id,
+        filter_dag,
+        used_columns_in_filter,
+        row_lineage_columns,
+        context,
+        physical_context);
     chassert(transformed_dag != nullptr);
 
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), physical_context, /* boolean_context */ true);
         partition_key_condition.emplace(
-            inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            inverted_dag, physical_context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -168,7 +207,7 @@ ManifestFilesPruner::ManifestFilesPruner(
         }
         else
         {
-            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id, physical_context);
             if (!name_and_type.has_value())
                 continue;
 
@@ -176,10 +215,11 @@ ManifestFilesPruner::ManifestFilesPruner(
         }
 
         ExpressionActionsPtr expression
-            = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
+            = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(physical_context));
 
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
-        min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), physical_context, /* boolean_context */ true);
+        min_max_key_conditions.emplace(
+            used_column_id, KeyCondition(inverted_dag, physical_context, {name_and_type->name}, expression));
     }
 }
 
@@ -190,6 +230,10 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     DB::ContextPtr context)
 {
     PartitionKeyFromSpec result;
+
+    /// Partition keys must use UTC `timestamptz` types (Iceberg physical), not the
+    /// presentation timezone from `iceberg_timezone_for_timestamptz`.
+    auto physical_context = createIcebergPhysicalContext(context);
 
     DB::NamesAndTypesList partition_columns_description;
     std::unordered_set<String> partition_columns_seen;
@@ -206,7 +250,7 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        std::optional<DB::NameAndTypePair> column_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, source_id);
+        std::optional<DB::NameAndTypePair> column_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, source_id, physical_context);
         if (!column_characteristics.has_value())
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
@@ -227,7 +271,7 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
 
     if (!partition_columns_description.empty())
         result.key_description.emplace(DB::KeyDescription::getKeyFromAST(
-            std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context));
+            std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, physical_context));
 
     return result;
 }
@@ -468,7 +512,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         }
         else
         {
-            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
+            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, physical_context);
 
             if (!name_and_type.has_value())
             {

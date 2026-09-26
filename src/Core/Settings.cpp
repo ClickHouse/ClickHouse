@@ -9802,6 +9802,23 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0, \
         {"26.1", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."}) \
+    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
+Timezone used to present Iceberg `timestamptz` as ClickHouse `DateTime64` on reads (`SELECT`, `DESCRIBE`, `SHOW CREATE`).
+
+Must remain `UTC` for Iceberg writes (INSERT, mutations, `OPTIMIZE ... MANIFEST`): partition transforms and written `timestamptz` Avro metadata are UTC-based.
+
+Partition pruning and min-max index filtering always use UTC typing for `timestamptz`, regardless of this setting.
+
+Full `OPTIMIZE` rematerializes `timestamptz` types under UTC before rewriting manifests, so a stale presentation sample cannot flip `adjust-to-utc` or partition calendars.
+
+Possible values:
+
+- Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+- `` (empty value) - use session timezone
+
+Default value is `UTC`.
+)", 0, \
+        {"26.10", "UTC", "UTC", "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 

@@ -450,15 +450,17 @@ bool UnityV2Catalog::updateSchema(
 void UnityV2Catalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!tryGetTableMetadata(namespace_name, table_name, result))
+    if (!tryGetTableMetadata(namespace_name, table_name, context_, result))
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from Unity catalog");
 }
 
 bool UnityV2Catalog::tryGetTableMetadata(
     const std::string & schema_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
@@ -492,7 +494,7 @@ bool UnityV2Catalog::tryGetTableMetadata(
             /// Covers `getIcebergRestCatalog`: the `RestCatalog` constructor fetches `/v1/config`.
             return requestWithRetry([&](bool force_refresh)
             {
-                return getIcebergRestCatalog(force_refresh)->tryGetTableMetadata(schema_name, table_name, result);
+                return getIcebergRestCatalog(force_refresh)->tryGetTableMetadata(schema_name, table_name, context_, result);
             });
         }
         catch (...)

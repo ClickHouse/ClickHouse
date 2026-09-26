@@ -186,3 +186,115 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
             data_entries_checked += 1
 
     assert data_entries_checked > 0
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_timestamptz_adjust_to_utc_despite_stale_sample(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """
+    Full OPTIMIZE must rematerialize timestamptz under UTC even if a prior SELECT with
+    iceberg_timezone_for_timestamptz='' left a non-explicit DateTime64 sample in memory.
+    Otherwise rewritten identity partitions get adjust-to-utc=false.
+    """
+    import os
+    from avro.datafile import DataFileReader
+    from avro.io import DatumReader
+
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_tz_sample_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, ts timestamp) USING iceberg
+        PARTITIONED BY (ts)
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} VALUES "
+        f"(1, TIMESTAMP '2024-01-01 23:30:00'), "
+        f"(2, TIMESTAMP '2024-01-01 23:30:00'), "
+        f"(3, TIMESTAMP '2024-01-02 01:30:00')"
+    )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # Stale the in-memory sample with a non-explicit DateTime64 timestamptz presentation.
+    assert int(
+        instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            settings={"iceberg_timezone_for_timestamptz": ""},
+        )
+    ) == 3
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    local_metadata_dir = f"{table_dir}metadata"
+
+    def download_and_list_manifests():
+        default_download_directory(
+            started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir
+        )
+        return {
+            os.path.join(local_metadata_dir, name)
+            for name in os.listdir(local_metadata_dir)
+            if name.endswith(".avro") and not name.startswith("snap-")
+        }
+
+    manifests_before = download_and_list_manifests()
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME}",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_timezone_for_timestamptz": "UTC",
+        },
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
+
+    new_manifests = download_and_list_manifests() - manifests_before
+    assert new_manifests, "OPTIMIZE TABLE did not rewrite any manifest files"
+
+    found_adjust_to_utc_true = False
+    for manifest_path in new_manifests:
+        with open(manifest_path, "rb") as f:
+            reader = DataFileReader(f, DatumReader())
+            try:
+                for key, value in reader.meta.items():
+                    if isinstance(key, bytes):
+                        key = key.decode("utf-8")
+                    if isinstance(value, bytes):
+                        value = value.decode("utf-8")
+                    if "adjust-to-utc" not in str(value):
+                        continue
+                    compact = value.replace(" ", "").replace("\n", "")
+                    assert "\"adjust-to-utc\":false" not in compact
+                    if "\"adjust-to-utc\":true" in compact:
+                        found_adjust_to_utc_true = True
+            finally:
+                reader.close()
+
+    assert found_adjust_to_utc_true, (
+        "Rewritten manifests must keep adjust-to-utc=true for timestamptz identity partitions"
+    )

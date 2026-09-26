@@ -1080,6 +1080,8 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+    checkIcebergTimezoneSettingForWrite(context_);
+
     /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
     /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
     /// rather than let the first commit build on a file the table never committed.

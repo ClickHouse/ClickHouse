@@ -7,6 +7,7 @@
 #include <Databases/DataLake/Common.h>
 
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
 #include <optional>
@@ -72,7 +73,8 @@ void registerDeltaTableInCatalog(
                 };
                 DataLake::TableMetadata existing;
                 existing.withLocation();
-                if (catalog->tryGetTableMetadata(namespace_name, table_name, existing)
+                /// Only the location is requested, which does not depend on query settings.
+                if (catalog->tryGetTableMetadata(namespace_name, table_name, Context::getGlobalContextInstance(), existing)
                     && strip_trailing_slash(existing.getLocation()) == strip_trailing_slash(location))
                 {
                     LOG_DEBUG(

@@ -169,9 +169,10 @@ CatalogTables S3TablesCatalog::getTables() const
 bool S3TablesCatalog::tryGetTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, result))
+    if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, context_, result))
         return false;
 
     /// For S3 Tables the catalog and the underlying data live in AWS S3 under the same

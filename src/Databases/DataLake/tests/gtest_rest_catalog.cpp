@@ -516,16 +516,16 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         context);
 
     auto existing = TableMetadata().withLocation();
-    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", getContext().context, existing));
     EXPECT_EQ(existing.getLocation(), "s3://bucket/table_a");
     EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
 
     TableMetadata missing;
-    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", getContext().context, missing));
     EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
 
     TableMetadata unauthorized;
-    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
+    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", getContext().context, unauthorized), DB::HTTPException);
     EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);
 }
 
@@ -555,7 +555,7 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
     TableMetadata metadata;
     try
     {
-        catalog.tryGetTableMetadata("namespace", "expired_token_table", metadata);
+        catalog.tryGetTableMetadata("namespace", "expired_token_table", getContext().context, metadata);
         FAIL() << "expected the HTTP 401 from the catalog to propagate";
     }
     catch (const DB::HTTPException & e)
@@ -921,7 +921,7 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
 
     TableMetadata metadata;
     metadata.withLocation();
-    catalog.getTableMetadata("namespace", "table_a", metadata);
+    catalog.getTableMetadata("namespace", "table_a", getContext().context, metadata);
     EXPECT_TRUE(metadata.hasLocation());
     EXPECT_EQ(metadata.getLocation(), "s3://bucket/table_a");
 }
