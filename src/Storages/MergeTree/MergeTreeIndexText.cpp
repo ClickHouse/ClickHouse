@@ -1849,8 +1849,7 @@ void callWithLowCardinalityIndexes(const ColumnLowCardinality & column, Func && 
     }
 }
 
-/// Adds values of a LowCardinality column as documents. A dictionary value is tokenized at its first
-/// occurrence only; later occurrences add the row to the cached posting list builders of its tokens.
+/// Caches the posting list builders of the tokens of each dictionary value for its later occurrences.
 class LowCardinalityDocumentsAdder
 {
 public:
