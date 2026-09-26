@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: Managed Postgres OpenAPI
-description: 'OpenAPI で Managed Postgres サービスを操作する'
-keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ']
+title: 'ClickHouse Managed Postgres OpenAPI'
+description: 'OpenAPI で ClickHouse Managed Postgres サービスを操作する'
+keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ', 'サーバーログ', 'ログ']
 doc_type: 'guide'
 ---
 
@@ -11,12 +11,12 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-[ClickHouse OpenAPI](/ja/products/cloud/features/admin-features/api/index) を使用すると、
-ClickHouse サービスと同様に Managed Postgres サービスをプログラムから
+[ClickHouse OpenAPI](/ja/products/cloud/features/admin-features/api/api-overview) を使用すると、
+ClickHouse サービスと同様に ClickHouse Managed Postgres サービスをプログラムから
 操作できます。同じ API では、サービスのメトリクスをスクレイピングするための
 [Prometheus エンドポイント] も公開されています。
 すでに [OpenAPI] に慣れている場合は、[API キー] を取得して
-[Managed Postgres API リファレンス][pg-openapi] に直接進んでください。
+[ClickHouse Managed Postgres API リファレンス][pg-openapi] に直接進んでください。
 そうでない場合は、このまま簡単な概要をご確認ください。
 
 <div id="api-keys">
@@ -83,13 +83,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-Postgres サービスのライフサイクルを見ていきましょう。
-
-<Warning>
-  **2026年7月31日以降の認証情報のマスキング**
-
-  **2026年7月31日**以降、APIはレスポンスで `password` および `connectionString` のプロパティを返さなくなります。これらが含まれるのは、[create](#create) レスポンスと、リクエストにパスワードが含まれていなかった場合の [password reset] レスポンスのみです。[create](#create) レスポンスから認証情報を取得しておくことを推奨します。Terraform でサービスを管理している場合は、2026年7月31日までにプロバイダを **v3.21.0 以降**にアップグレードしてください ([Terraform reference](/ja/products/managed-postgres/terraform) を参照) 。
-</Warning>
+Postgres サービス のライフサイクルを見ていきましょう。
 
 <div id="create">
   ### 作成
@@ -114,7 +108,8 @@ create_data='{
 }'
 ```
 
-次に、このデータを使用して新しいインスタンスを作成します。なお、そのためにはContent-Typeヘッダーの内容が必要です。返される認証情報にアクセスできるよう、レスポンスを保存してください：
+次に、このデータを使用して新しいインスタンスを作成します。なお、そのためにはContent-Typeヘッダーの内容が必要です。レスポンスを保存してください。serviceの
+認証情報が含まれるのはこのレスポンスだけです (リクエストでpasswordを指定しない場合、[password reset] のレスポンスでも返されます) ：
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -163,7 +158,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-出力は作成時に返されるJSONと似ています (ただし、2026年7月31日以降は `password` と `connectionString` プロパティは含まれません) が、`state` を確認して
+出力は作成時に返されるJSONと似ていますが、認証情報は含まれません。`state` を確認して
 ください。これが `running` に変わったら、サーバーの準備完了です。
 
 ```bash
@@ -223,9 +218,7 @@ curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' 
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
@@ -300,7 +293,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## 監視
 </div>
 
-Prometheus 互換のエンドポイントが 2 つあり、Managed Postgres サービスの CPU、メモリ、I/O、接続、
+Prometheus 互換のエンドポイントが 2 つあり、ClickHouse Managed Postgres サービスの CPU、メモリ、I/O、接続、
 およびトランザクションのメトリクスを公開しています。1 つは組織内のすべてのサービスの
 メトリクスを返し、もう 1 つは単一のサービスのメトリクスを返します。設定については
 [Prometheus エンドポイント] ページを、メトリクスの一覧については
@@ -380,7 +373,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 </div>
 
 リストレスポンスの `queryId` を [低速クエリパターン API] に渡すと、その
-パターンの集計メトリクスと、直近の個別実行結果を取得できます。
+パターンの集約メトリクスと、直近の個別実行結果を取得できます。
 パターンの識別に必要な `db_name`、`db_user`、`db_operation` は
 必須です。
 
@@ -434,10 +427,63 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 }
 ```
 
-この例では簡潔にするため、両方のオブジェクトを一部省略しています。API は
-[per-execution counters] で説明している完全なカウンター セットを返します。
+この例では簡潔にするため、両方のオブジェクトをトリムしています。API は
+[per-execution counters] に記載されている完全なカウンター セットを返します。
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+<div id="server-logs">
+  ## サーバーログ
+</div>
+
+Cloud Console のログビューアで表示される PostgreSQL サーバーログは、
+プログラムからも利用できます。[logs API] は、指定した期間内のサービスの個々のログエントリを
+返します。クエリインサイトと同様に、この期間の指定は必須のため、
+`from_date` と `to_date` を RFC 3339 形式のタイムスタンプとして渡します。期間は
+30 日を超えることはできず、`to_date` は `from_date` より後でなければなりません。
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+エントリは新しい順に返されます。`sort_order` (`asc` または
+`desc`) で順序を反転できます。`severity` (例: `ERROR`、
+`WARNING`、`LOG`) で単一の重大度に絞り込み、`body_contains` で
+ログボディ内の大文字・小文字を区別する部分文字列を検索し、`limit` と `offset` で
+結果をページングできます。
+
+各エントリには `timestamp`、`severity`、生データの `body` が含まれます。ボディは
+常に文字列です。構造化ログ行は JSON エンコードされて返され、プレーンな行は
+そのまま返されます。
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+エンドポイントでは合計件数を返すのではなく、`limit` と `offset` を使用してページ分割します。
+ページが `limit` 未満のエントリを返すまで、`offset` を増やしてください。
+
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
@@ -463,16 +509,18 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres サービスの superuser パスワードをリセット"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus エンドポイント"
+[Prometheus エンドポイント]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus エンドポイント"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Managed Postgres メトリクス リファレンス"
+[メトリクス リファレンス]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres メトリクス リファレンス"
 
-[Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
+[クエリインサイト]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
 
 [detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "クエリインサイトの詳細フライアウト"
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "クエリインサイトの実行ごとのカウンター"
 
-[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリパターンを一覧表示"
+[スローパターン API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリパターンを一覧表示"
 
-[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "最近の実行結果を含む Postgres の低速クエリパターンを取得"
+[低速クエリパターン API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "最近の実行結果を含む Postgres の低速クエリパターンを取得"
+
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Postgres サーバーログを一覧表示"

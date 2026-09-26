@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/fr/clickpipes/_iam_authentication.mdx";
 
 Voici un guide pas à pas expliquant comment configurer votre instance RDS MariaDB pour répliquer ses données via le MySQL ClickPipe.
 
@@ -111,6 +112,16 @@ Connectez-vous à votre instance RDS MariaDB en tant qu&#39;administrateur, puis
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### Utiliser l’authentification IAM (facultatif)
+</div>
+
+<Note>
+  AWS [a introduit l’authentification IAM pour les bases de données RDS for MariaDB dans la version 10.6.5](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). La prise en charge dépend de la version exacte du moteur et de la région AWS. Consultez les [régions actuellement prises en charge et les versions de moteur compatibles indiquées par AWS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html) avant d’utiliser cette option.
+</Note>
+
+<IAMAuthentication engine="mysql" service="rds" />
+
 <div id="configure-network-access">
   ## Configurer l’accès réseau
 </div>
@@ -119,7 +130,7 @@ Connectez-vous à votre instance RDS MariaDB en tant qu&#39;administrateur, puis
   ### Contrôle d’accès basé sur l’adresse IP
 </div>
 
-Si vous souhaitez restreindre le trafic vers votre instance RDS, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips) aux `Inbound rules` du groupe de sécurité de votre instance RDS.
+Si vous souhaitez restreindre le trafic vers votre instance RDS, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux `Inbound rules` du groupe de sécurité de votre instance RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Où trouver le groupe de sécurité dans RDS ?" size="lg" border />
 

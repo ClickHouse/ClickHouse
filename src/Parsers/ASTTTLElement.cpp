@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTAssignment.h>
@@ -32,8 +33,37 @@ ASTPtr ASTTTLElement::clone() const
         expr = expr->clone();
     for (auto & expr : clone->group_by_assignments)
         expr = expr->clone();
+    /// Not a child either, so the copy constructor left it shared with the source.
+    if (clone->recompression_codec)
+        clone->recompression_codec = clone->recompression_codec->clone();
 
     return clone;
+}
+
+void ASTTTLElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 120, "If members were added to ASTTTLElement, hash them here unless they are purely cosmetic.");
+    hash_state.update(mode);
+    hash_state.update(destination_type);
+    hash_state.update(destination_name.size());
+    hash_state.update(destination_name);
+    hash_state.update(if_exists);
+
+    /// `group_by_key`, `group_by_assignments` and `recompression_codec` are not stored
+    /// in `children`, so the generic tree walk does not reach them.
+    hash_state.update(group_by_key.size());
+    for (const auto & expr : group_by_key)
+        expr->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(group_by_assignments.size());
+    for (const auto & expr : group_by_assignments)
+        expr->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(recompression_codec != nullptr);
+    if (recompression_codec)
+        recompression_codec->updateTreeHash(hash_state, ignore_aliases);
+
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTTTLElement::writeJSON(WriteBuffer & out) const
@@ -83,12 +113,12 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     destination_name = r.getString("destination_name");
     if_exists = r.getBool("if_exists");
 
-    auto ttl_child = r.readChild("ttl_expr");
+    auto ttl_child = r.readExpressionChild("ttl_expr");
     if (!ttl_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'ttl_expr' is missing in JSON AST for TTLElement");
     setTTL(std::move(ttl_child));
 
-    auto where_child = r.readChild("where_expr");
+    auto where_child = r.readExpressionChild("where_expr");
     if (where_child)
         setWhere(std::move(where_child));
 

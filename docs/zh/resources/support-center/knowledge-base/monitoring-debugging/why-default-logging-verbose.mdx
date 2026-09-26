@@ -24,7 +24,7 @@ ClickHouse 的开发者认为，一旦出现问题，`trace` 能提供大量有�
   ## 更改日志级别
 </div>
 
-可用的各个日志级别记录在[这里](/zh/reference/settings/server-settings/settings#logger)。
+可用的各个日志级别记录在[这里](/zh/reference/settings/server-settings/settings/other#logger)。
 
 你需要编辑 ClickHouse 服务器配置文件 (`/etc/clickhouse-server/config.xml`) 来修改日志级别。
 
@@ -33,9 +33,9 @@ ClickHouse 的开发者认为，一旦出现问题，`trace` 能提供大量有�
 ```
 <clickhouse>
     <logger>
-        {/* 可用级别 [1]：
+        {/* Possible levels [1]:
 
-          - none（关闭日志）
+          - none (turns off logging)
           - fatal
           - critical
           - error
@@ -44,10 +44,10 @@ ClickHouse 的开发者认为，一旦出现问题，`trace` 能提供大量有�
           - information
           - debug
           - trace
-          - test（不适用于生产环境）
+          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
         <level>trace</level>
-... 配置文件其余部分
+... Rest of the configuration file
 </clickhouse>
 ```

@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,7 +16,6 @@
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -29,12 +29,12 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
@@ -45,6 +45,7 @@ namespace Setting
 namespace ErrorCodes
 {
 
+extern const int ACCESS_DENIED;
 extern const int UNSUPPORTED_METHOD;
 extern const int UNKNOWN_FUNCTION;
 
@@ -156,16 +157,8 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
 
 void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context)
 {
-    SharedHeader sample_block;
-    if (settings[Setting::allow_experimental_analyzer])
-    {
-        SelectQueryOptions select_query_options;
-        sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
-    }
-    else
-    {
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context);
-    }
+    SelectQueryOptions select_query_options;
+    SharedHeader sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
 
     for (auto && column : *sample_block)
         columns.emplace_back(column.name, column.type);
@@ -248,6 +241,10 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+    if (const auto * alias = table->as<StorageAlias>();
+        alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
 
     if (auto * storage_view = table->as<StorageView>())
     {

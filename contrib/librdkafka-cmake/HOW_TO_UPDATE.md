@@ -1,5 +1,36 @@
 In our fork of librdkafka we have a few patches that are not yet merged to upstream and we might also have to do some thing differently than in upstream librdkafka. For this reasons here are the steps we did to upgrade to new librdkafka versions.
 
+# 2.14.1 -> 2.15.1
+
+## Fixes to apply
+
+Same set as for 2.14.1, except `Fix data race in timers` (https://github.com/confluentinc/librdkafka/pull/5089),
+which is included in upstream 2.15.1 and was dropped together with its `Fix style` follow-up.
+
+- pthread_set_name_np on freebsd - https://github.com/confluentinc/librdkafka/pull/4982 (no CH PR)
+- Do not set _POSIX_C_SOURCE for FreeBSD (makes clang-15 happy) - https://github.com/confluentinc/librdkafka/pull/4157 (no CH PR)
+- Race in rd_kafka_fetch_pos2str - https://github.com/confluentinc/librdkafka/pull/4788 (no CH PR)
+- Fix possible data-race for statistics - https://github.com/confluentinc/librdkafka/pull/4630 (https://github.com/ClickHouse/librdkafka/pull/11)
+- Fix data race in rd_kafka_broker_fetch_toppars - https://github.com/confluentinc/librdkafka/pull/5266 (https://github.com/ClickHouse/librdkafka/pull/14)
+- Fix lock-order-inversion in queue refcount operations - https://github.com/confluentinc/librdkafka/pull/5445 (https://github.com/ClickHouse/librdkafka/pull/15)
+- Fix lock-order-inversion in rd_kafka_q_concat0 and rd_kafka_q_prepend0 - https://github.com/confluentinc/librdkafka/pull/5446 (https://github.com/ClickHouse/librdkafka/pull/16)
+
+## ClickHouse only fixes
+
+- Prefix librdkafka cJSON functions with `kafka_` prefix to separate them from AWS cJSON functions.
+  Upstream 2.15.1 re-imported a newer cJSON, so the rename had to be redone on the new `src/cJSON.[ch]`.
+  Note the newly added non-static helpers, in particular `cJSON_Duplicate_rec`: a missed one is only
+  visible at the final link, as a duplicate symbol against `aws-c-common`'s copy of cJSON.
+- Uncurlify: ClickHouse does not compile `src/rdhttp.c`; `contrib/librdkafka-cmake/rdhttp_poco.c` implements
+  the HTTP client on top of Poco and `src/rdhttp_curl_compat.h` declares the few remaining curl names.
+
+## ClickHouse-side changes
+
+New upstream sources have to be added to `contrib/librdkafka-cmake/CMakeLists.txt`, which lists them explicitly:
+`rdkafka_share_acknowledgement.c`, `rdkafka_mock_sharegrp.c`, `rdunittest_acknowledge.c`, `rdunittest_fetcher.c`
+and `rdunittest_msgset_errors.c`. The `rdunittest_*.c` files are not optional: `rdunittest.c` references their
+symbols.
+
 # 2.8.0 -> 2.14.1
 
 ## Fixes to apply

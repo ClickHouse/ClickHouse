@@ -342,6 +342,10 @@ struct Reader
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
+        /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
+        /// bitset) the file claims to have. Upper bound if the file didn't say (see
+        /// need_to_find_bloom_filter_lengths_the_hard_way).
+        size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
@@ -461,11 +465,23 @@ struct Reader
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
+
+        /// Lazy materialization: set iff FormatFilterInfo::rows_to_read is set.
+        /// Half-open range of indexes in `rows_to_read` that fall into this row group.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
+
+        /// TopN dynamic filtering: min/max of the sort column in this row group, set only when the
+        /// statistics are complete and prove the chunk has no nulls (see getTopKSortColumnRange).
+        /// Compared against the running top-K threshold right before column data is read, to skip
+        /// the row group when it provably contains no row that can enter the top-K
+        /// (see topKShouldSkipRowGroup).
+        std::optional<Range> top_k_sort_column_range;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -553,6 +569,14 @@ struct Reader
 
     std::optional<KeyCondition> bloom_filter_condition;
 
+    /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
+    /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
+    std::optional<size_t> top_k_primitive_idx;
+    /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
+    /// the reader only produces type defaults for it while the threshold comes from the values the
+    /// pipeline puts in their place, so the filter must not be applied at all.
+    bool top_k_column_is_read = false;
+
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
@@ -592,6 +616,16 @@ struct Reader
     /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
     /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
+
+    /// TopN dynamic filtering: min/max of the sort column decoded from row-group statistics, or
+    /// nullopt when the statistics are missing or don't prove the absence of nulls (statistics
+    /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
+    /// are present but cannot be decoded throw, as in the static min/max pruning path.
+    std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
+    /// True if the running top-K threshold proves that no row of this row group can enter the
+    /// top-K heap, so the row group can be skipped without reading its column data. The threshold
+    /// only ever tightens, so a `false` result is safely revisited by the row filter later.
+    bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);

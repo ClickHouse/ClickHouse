@@ -1,0 +1,18 @@
+-- select on the outermost query (SETTINGS on the inner SELECT)
+0
+1
+2
+-- select on the outermost query (FORMAT-suffix SETTINGS, stored on the union node)
+0
+1
+2
+-- filter on the outermost query is applied exactly once
+8
+9
+-- order on the outermost query is applied exactly once
+2
+1
+0
+-- select + filter + order together on the outermost query
+8
+9

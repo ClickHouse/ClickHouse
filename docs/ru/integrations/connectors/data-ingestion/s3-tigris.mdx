@@ -1,0 +1,64 @@
+---
+sidebar_label: 'Tigris'
+sidebar_position: 7
+sidebarTitle: 'Tigris'
+slug: /integrations/tigris
+description: 'Используйте S3-совместимое объектное хранилище Tigris с ClickHouse'
+title: 'Использование Tigris'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'tigris', 'объектное хранилище', 'загрузка данных', 'совместимое хранилище']
+---
+
+import SelfManaged from '/snippets/ru/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+Табличная функция ClickHouse `s3` и тип диска `S3` совместимы с [Tigris](https://www.tigrisdata.com) — S3-совместимым объектным хранилищем. Tigris предоставляет единую глобальную конечную точку `https://t3.storage.dev`, а чтение выполняется из региона, ближайшего к вызывающему клиенту. Поэтому мультирегиональный кластер ClickHouse может использовать один URL бакета без реплик в каждом регионе и межрегионального исходящего трафика.
+
+Конфигурация backed merge tree совместима после небольших изменений:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://your-bucket.t3.storage.dev/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region>auto</region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  Укажите `<region>auto</region>`. Tigris использует единую глобальную конечную точку вместо отдельных бакетов для каждого региона, однако для подписи запросов AWS SigV4, используемой ClickHouse, всё равно требуется значение региона, и по соглашению используется `auto`.
+</Tip>
+
+Табличная функция `s3` работает с той же конечной точкой:
+
+```sql
+SELECT *
+FROM s3(
+    'https://your-bucket.t3.storage.dev/path/to/file.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+Ключи доступа можно создать в [консоли Tigris](https://console.storage.dev/). Идентификаторы ключей доступа начинаются с `tid_`, а секреты — с `tsec_`.
