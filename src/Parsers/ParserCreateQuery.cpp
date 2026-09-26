@@ -24,6 +24,7 @@
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserViewTargets.h>
 #include <Common/typeid_cast.h>
+#include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/StatementFactory.h>
@@ -132,7 +133,21 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserFunction().parse(pos, node, expected);
+    /// Keep the name as written: the function parser can normalize the names of special functions, e.g. `OVERLAY` to `overlay`,
+    /// but it is the name of an engine here, like `Overlay`.
+    ASTPtr name;
+    auto begin = pos;
+    if (!ParserIdentifier().parse(pos, name, expected))
+        return false;
+    pos = begin;
+
+    if (!ParserFunction().parse(pos, node, expected))
+        return false;
+
+    String written_name = getIdentifierName(name);
+    if (auto * function = node->as<ASTFunction>(); function && Poco::toLower(function->name) == Poco::toLower(written_name))
+        function->name = std::move(written_name);
+    return true;
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

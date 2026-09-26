@@ -3,21 +3,39 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
+#include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/UUID.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
 }
@@ -598,5 +616,169 @@ void DatabaseOverlay::checkTableNameLength(const String & table_name) const
     }
 }
 
+
+namespace
+{
+
+/// Sources are resolved by name on every access, so a source database can be dropped and recreated.
+/// A missing source contributes no tables. An `Overlay` source is rejected, because it could form a cycle.
+DatabasePtr tryGetOverlaySource(const String & name)
+{
+    auto database = DatabaseCatalog::instance().tryGetDatabase(name);
+    if (typeid_cast<const DatabaseOverlayReadOnly *>(database.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "An Overlay database cannot use another Overlay database {} as a source", backQuoteIfNeed(name));
+    return database;
+}
+
+}
+
+DatabaseOverlayReadOnly::DatabaseOverlayReadOnly(const String & name_, Strings source_databases_, ContextPtr context_)
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), source_databases(std::move(source_databases_))
+{
+}
+
+String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, ContextPtr context_) const
+{
+    for (const auto & source : source_databases)
+        if (auto database = tryGetOverlaySource(source); database && database->isTableExist(table_name, context_))
+            return source;
+    return {};
+}
+
+bool DatabaseOverlayReadOnly::isTableExist(const String & table_name, ContextPtr context_) const
+{
+    return !findSourceDatabase(table_name, context_).empty();
+}
+
+StoragePtr DatabaseOverlayReadOnly::tryGetTable(const String & table_name, ContextPtr context_) const
+{
+    String source = findSourceDatabase(table_name, context_);
+    if (source.empty())
+        return nullptr;
+    return std::make_shared<StorageAlias>(StorageID(getDatabaseName(), table_name), getContext(), source, table_name);
+}
+
+DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIterator(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+{
+    Tables tables;
+    for (const auto & source : source_databases)
+    {
+        auto database = tryGetOverlaySource(source);
+        if (!database)
+            continue;
+        for (auto it = database->getTablesIterator(context_, filter_by_table_name); it->isValid(); it->next())
+            if (!tables.contains(it->name()))
+                tables.emplace(it->name(), std::make_shared<StorageAlias>(StorageID(getDatabaseName(), it->name()), getContext(), source, it->name()));
+    }
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+}
+
+ASTPtr DatabaseOverlayReadOnly::getCreateTableQueryImpl(const String & table_name, ContextPtr context_, bool throw_on_error) const
+{
+    String source = findSourceDatabase(table_name, context_);
+    if (source.empty())
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name));
+        return nullptr;
+    }
+
+    const auto & settings = getContext()->getSettingsRef();
+    String query = fmt::format("CREATE TABLE {}.{} ENGINE = Alias({}, {})",
+        backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), quoteString(source), quoteString(table_name));
+    ParserCreateQuery parser;
+    return parseQuery(parser, query, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+}
+
+ASTPtr DatabaseOverlayReadOnly::getCreateDatabaseQueryImpl() const
+{
+    Strings quoted_sources;
+    for (const auto & source : source_databases)
+        quoted_sources.push_back(quoteString(source));
+
+    String query = fmt::format("CREATE DATABASE {} ENGINE = Overlay({})", backQuoteIfNeed(database_name), fmt::join(quoted_sources, ", "));
+    if (!comment.empty())
+        query += " COMMENT " + quoteString(comment);
+
+    const auto & settings = getContext()->getSettingsRef();
+    ParserCreateQuery parser;
+    return parseQuery(parser, query, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+}
+
+void registerDatabaseOverlay(DatabaseFactory & factory);
+void registerDatabaseOverlay(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        Strings sources;
+        for (auto & arg : args.engine_args)
+        {
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, args.context);
+            sources.push_back(checkAndGetLiteralArgument<String>(arg, "database"));
+        }
+        if (sources.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overlay database requires at least one source database");
+
+        if (args.mode <= LoadingStrictnessLevel::CREATE)
+            for (const auto & source : sources)
+                if (!tryGetOverlaySource(source))
+                    throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(source));
+
+        return std::make_shared<DatabaseOverlayReadOnly>(args.database_name, std::move(sources), args.context);
+    };
+
+    factory.registerDatabase("Overlay", create_fn, {.supports_arguments = true}, Documentation{
+        .description = R"DOCS_MD(
+The `Overlay` database engine exposes the union of the tables of several existing databases.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+A table name is resolved in the source databases in the order they are listed: the first database that has a table with this name wins.
+
+The database owns no tables. Every table of the overlay database behaves as an [`Alias`](/reference/engines/table-engines/special/alias) table to the table of the source database: reading and writing go to the source table.
+`CREATE`, `DROP`, `RENAME`, `ATTACH` and `DETACH` of tables inside the overlay database are not supported.
+
+The source databases are resolved by name on every access: when a source database is dropped, its tables disappear from the overlay database, and they reappear when it is created again.
+An `Overlay` database cannot be used as a source of another `Overlay` database.
+
+## Access control {#access-control}
+
+As for an `Alias` table, working with a table of the overlay database requires the grants both on the overlay database and on the source table, and the row policies of both apply.
+The names of the tables of the source databases are visible to anyone who can list the tables of the overlay database.
+)DOCS_MD",
+        .syntax = "ENGINE = Overlay(db1[, db2, ...])",
+        .examples = {{
+            "Combining the tables of two databases",
+            R"(
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+DROP DATABASE overlay_db;
+DROP DATABASE db1;
+DROP DATABASE db2;
+            )",
+            R"(
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+            )"
+        }},
+        .introduced_in = {26, 10}});
+}
 
 }
