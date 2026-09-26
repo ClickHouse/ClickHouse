@@ -1,0 +1,6 @@
+3	qc_04833_nopolicy
+no policy stored	1
+1	qc_04833_filtered
+non-trivial policy not stored	1
+3	qc_04833_trivial
+always-true policy stored	1
