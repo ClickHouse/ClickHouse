@@ -128,6 +128,31 @@ SELECT
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['a%', '%a', 'a_', 'a\\', '\\', 'a%b', 'é', 'aé', 'x'][(x * 5 + number * 2) % 9 + 1], range(number % 5)), ' ') AS s FROM numbers(1000));
 SELECT hasAnyTokenLike('ab', 'a\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 
+SELECT '-- a value without the literal of a pattern has no token that matches it';
+SELECT hasAnyTokenLike('ab cd', '%b c%'), hasAnyTokenLike('fa iled', 'fail_d'), hasAnyTokenRegexp('fail ed', 'l e'), hasAnyTokenRegexp('failed', '(?i)FAIL'), hasAnyTokenRegexp('user ok', 'fail|ok');
+SELECT hasAllTokenLike('charged twice', ['ch%', 'tw%']), hasAllTokenLike('charged once', ['ch%', 'tw%']), hasAllTokenLike(['charged', 'twice'], ['ch%', 'tw%']), hasAllTokenLike(['charged', 'once'], ['ch%', 'tw%']);
+
+SELECT '-- long tokens';
+SELECT
+    countIf(hasAnyTokenLike(s, '%needle%', 'array') != like(s, '%needle%')),
+    countIf(hasAnyTokenLike(s, '%eedle x%', 'array') != like(s, '%eedle x%')),
+    countIf(hasAnyTokenLike(s, '%needle', 'array') != like(s, '%needle')),
+    countIf(hasAnyTokenLike(s, '%needle%', 'splitByString([\' \'])') != arrayExists(t -> like(t, '%needle%'), tokens(s, 'splitByString([\' \'])'))),
+    countIf(hasAnyTokenLike(s, '%needle%', 'array'))
+FROM (SELECT concat(repeat('x', number % 97), if(number % 3 = 0, 'needle', 'needl'), repeat(' x', number % 13)) AS s FROM numbers(1000));
+
+SELECT '-- the JIT and re2 give the same result, also on invalid UTF-8';
+SELECT
+    countIf(hasAnyTokenRegexp(s, '^a[^b]+$')), countIf(hasAnyTokenRegexp(s, '^.+$')), countIf(hasAnyTokenRegexp(s, '^[^b]*b$')),
+    countIf(hasAnyTokenRegexp(s, '^a.*$')), countIf(hasAnyTokenRegexp(s, '^0x[0-9a-f]{2}$'))
+FROM (SELECT multiIf(number % 7 = 0, 'b a\xFF', number % 7 = 1, 'x\xFFb c', number % 3 = 0, concat('b a', char(113 + number % 5), ' 0x1f'), 'b') AS s FROM numbers(1000))
+SETTINGS compile_regular_expressions = 1, min_count_to_compile_regular_expression = 0;
+SELECT
+    countIf(hasAnyTokenRegexp(s, '^a[^b]+$')), countIf(hasAnyTokenRegexp(s, '^.+$')), countIf(hasAnyTokenRegexp(s, '^[^b]*b$')),
+    countIf(hasAnyTokenRegexp(s, '^a.*$')), countIf(hasAnyTokenRegexp(s, '^0x[0-9a-f]{2}$'))
+FROM (SELECT multiIf(number % 7 = 0, 'b a\xFF', number % 7 = 1, 'x\xFFb c', number % 3 = 0, concat('b a', char(113 + number % 5), ' 0x1f'), 'b') AS s FROM numbers(1000))
+SETTINGS compile_regular_expressions = 0;
+
 SELECT '-- many blocks and threads with a stateful tokenizer';
 SELECT
     countIf(hasAnyTokenPrefix(s, '12', 'sparseGrams(3, 5)') != arrayExists(t -> startsWith(t, '12'), tokens(s, 'sparseGrams', 3, 5))),

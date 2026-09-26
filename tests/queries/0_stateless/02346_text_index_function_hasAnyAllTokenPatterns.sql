@@ -329,6 +329,55 @@ ORDER BY log_comment;
 
 DROP TABLE tab;
 
+SELECT '-- a scan of the whole dictionary is skipped if it holds more tokens than the cap and half the rows';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 128)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+-- 6000 tokens in one part of 3000 rows. '%2999%' matches 2 tokens, and 'a299' seeks to 11.
+INSERT INTO tab SELECT number, concat('a', toString(number), ' b', toString(number)) FROM numbers(3000);
+OPTIMIZE TABLE tab FINAL;
+
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_scan_size_whole';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'a299') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_scan_size_seek';
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS log_comment = 'has_any_all_token_patterns_scan_size_default';
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_any_all_token_patterns_scan_size_unlimited';
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%2999%') SETTINGS use_skip_indexes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE 'has_any_all_token_patterns_scan_size_%'
+ORDER BY log_comment;
+
+DROP TABLE tab;
+
+SELECT '-- regular expressions give the same result with and without the index, also on invalid UTF-8';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab SELECT number, multiIf(number % 100 = 7, 'b a\xFF', number % 3 = 0, concat('b a', char(113 + number % 5)), 'b') FROM numbers(1000);
+
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$');
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS text_index_like_max_matched_tokens = 2, min_count_to_compile_regular_expression = 0;
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS use_skip_indexes = 0, min_count_to_compile_regular_expression = 0;
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS use_skip_indexes = 0, compile_regular_expressions = 0;
+
+DROP TABLE tab;
+
 SELECT '-- the result does not depend on settings';
 
 CREATE TABLE tab_array

@@ -171,6 +171,21 @@ has_any_all_token_patterns_matched_tokens_prefix	1
 has_any_all_token_patterns_matched_tokens_starts_with	0
 has_any_all_token_patterns_matched_tokens_token_like	1
 has_any_all_token_patterns_matched_tokens_unlimited	0
+-- a scan of the whole dictionary is skipped if it holds more tokens than the cap and half the rows
+1
+11
+1
+1
+1
+has_any_all_token_patterns_scan_size_default	0
+has_any_all_token_patterns_scan_size_seek	0
+has_any_all_token_patterns_scan_size_unlimited	0
+has_any_all_token_patterns_scan_size_whole	1
+-- regular expressions give the same result with and without the index, also on invalid UTF-8
+331
+331
+331
+331
 -- the result does not depend on settings
 hasAnyTokenPrefix(tag, \'env:prod\')	8
 hasAnyTokenPrefix(tag, \'env:prod\')	8
