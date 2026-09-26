@@ -1882,16 +1882,21 @@ void checkProjectionColumnListReplicationCompatibility(
         if ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree"))
         {
             const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
-            for (const auto & projection : source_metadata->getProjections())
+            auto inspect_projection = [&](const ASTPtr & definition)
             {
-                if (const auto * declaration = projection.definition_ast
-                        ? projection.definition_ast->as<ASTProjectionDeclaration>() : nullptr;
+                if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
                     declaration && declaration->columns)
                 {
                     has_projection_column_list = true;
                     has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
                 }
-            }
+            };
+
+            for (const auto & projection : source_metadata->getProjections())
+                inspect_projection(projection.definition_ast);
+            /// `ProjectionsDescription::clone` copies unavailable declarations too.
+            for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
+                inspect_projection(definition);
         }
     }
 

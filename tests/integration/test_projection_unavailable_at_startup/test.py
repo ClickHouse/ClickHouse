@@ -231,6 +231,42 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
+    # `CREATE TABLE ... AS` copies unavailable projection declarations too. Reject them before
+    # publishing the copied column list to replicated metadata or a format-1 DDL queue.
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t6_replicated_copy AS dl.t6 "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t6_replicated_copy', 'r1') "
+        "ORDER BY a"
+    )
+    assert "Projection column lists in replicated metadata require setting" in error
+
+    old_format = {
+        "distributed_ddl_entry_format_version": 1,
+        "distributed_ddl_task_timeout": 0,
+        "distributed_ddl_output_mode": "none",
+    }
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t6_cluster_list_copy ON CLUSTER test_shard_localhost AS dl.t6 "
+        "ENGINE = MergeTree ORDER BY a",
+        settings=old_format,
+    )
+    assert "Projection column lists in replicated metadata require setting" in error
+
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t6_cluster_copy ON CLUSTER test_shard_localhost AS dl.t6 "
+        "ENGINE = MergeTree ORDER BY a",
+        settings={
+            **old_format,
+            "allow_projection_column_list_in_replicated_metadata": 1,
+            "allow_suspicious_codecs": 1,
+        },
+    )
+    assert "distributed_ddl_entry_format_version >= 2" in error
+    assert node.query(
+        "SELECT count() FROM system.tables WHERE database = 'dl' "
+        "AND name IN ('t6_replicated_copy', 't6_cluster_list_copy', 't6_cluster_copy')"
+    ).strip() == "0"
+
     # An ALTER is validated against fewer projections than the table declares, so one that invalidated
     # the unanalyzable declaration would be accepted; it is refused while such a declaration exists.
     error = node.query_and_get_error("ALTER TABLE dl.t MODIFY COMMENT 'x'")
