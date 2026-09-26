@@ -1,0 +1,18 @@
+-- dpsub alone declines an unconditioned join
+-- cross join, no detector
+Type: cross
+-- cross join, CD-A
+Type: cross
+-- cross join, CD-C
+Type: cross
+-- comma join with no predicate, CD-C
+Type: cross
+-- transitive inner join stays inner, CD-C
+Type: inner
+Type: inner
+-- query_log reports CROSS, CD-C
+['CROSS']
+-- query_log reports INNER for a real inner join, CD-C
+['INNER']
+-- results are unaffected
+12
