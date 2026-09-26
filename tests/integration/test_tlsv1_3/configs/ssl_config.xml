@@ -34,6 +34,9 @@
         <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
             <cacheSessions>false</cacheSessions>
             <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <!-- remoteSecure dials the instances by host name, while server-cert.pem names only
+                 integration-tests.clickhouse.com. -->
+            <extendedVerification>false</extendedVerification>
             <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <preferServerCiphers>true</preferServerCiphers>
