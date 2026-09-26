@@ -1893,6 +1893,8 @@ clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<lat
 
 Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
 
+Setting the cursor is safe while a read is in flight. That read's commit is conditioned on the cursor it started from, so it fails with `INVALID_STATE`, delivers nothing, and leaves the value you set in place for the next read to resume from.
+
 Do not delete or replace `processing_lock` manually. It is an ephemeral node owned by the ClickHouse Keeper session that is running the incremental read; its lifecycle is not an operator recovery interface.
 
 ### When a snapshot cannot be read {#when-a-snapshot-cannot-be-read}

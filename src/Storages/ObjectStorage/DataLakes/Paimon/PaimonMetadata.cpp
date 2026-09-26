@@ -633,20 +633,25 @@ ObjectIterator PaimonMetadata::iterate(
         /// on destruction, so every exit path below is fenced and leaves no orphan lock.
         PaimonProcessingLockPtr processing_lock = stream_state->acquireProcessingLock();
 
+        /// The batch is computed from this observation and the commit is conditioned on it,
+        /// so a watermark reset externally while this read is in flight is never overwritten.
+        const PaimonCommittedSnapshot committed_snapshot = stream_state->readCommittedSnapshot(*processing_lock);
+
         std::optional<Int64> last_consumed_snapshot_id;
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
-        data_files = collectIncrementalDataFiles(state, partition_pruner, max_consume_snapshots, last_consumed_snapshot_id);
+        data_files = collectIncrementalDataFiles(
+            state, partition_pruner, max_consume_snapshots, committed_snapshot.snapshot_id, last_consumed_snapshot_id);
 
         if (last_consumed_snapshot_id)
         {
             /// Test-only pause before the watermark is advanced: the batch is collected but
             /// nothing is committed yet. Tests use this window to expire the owning session
             /// or modify the guarded watermark, and pin down that the commit below fails
-            /// instead of overwriting another consumer's progress.
+            /// instead of overwriting another consumer's progress or an operator's reset.
             FailPointInjection::pauseFailPoint(
                 FailPoints::paimon_incremental_read_pause_before_watermark_commit);
 
-            stream_state->setCommittedSnapshot(*processing_lock, *last_consumed_snapshot_id);
+            stream_state->setCommittedSnapshot(*processing_lock, committed_snapshot, *last_consumed_snapshot_id);
             /// Test-only pause inside the at-most-once window: the watermark is
             /// committed, the collected batch has not been delivered yet. A crash
             /// here loses the batch; the failpoint lets tests pin that semantics
@@ -671,12 +676,6 @@ bool PaimonMetadata::isIncrementalReadEnabled() const
     return persistent_components.hasStreamState();
 }
 
-std::optional<Int64> PaimonMetadata::getCommittedSnapshotId() const
-{
-    if (!persistent_components.hasStreamState())
-        return std::nullopt;
-    return persistent_components.stream_state->getCommittedSnapshotId();
-}
 
 void PaimonMetadata::scheduleBackgroundRefresh()
 {
@@ -895,13 +894,11 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
     const PaimonTableStatePtr & state,
     const std::optional<PartitionPruner> & partition_pruner,
     UInt64 max_consume_snapshots,
+    std::optional<Int64> committed_snapshot_id,
     std::optional<Int64> & last_consumed_snapshot_id) const
 {
     Strings data_files;
     last_consumed_snapshot_id.reset();
-
-    /// Get last committed snapshot ID from Keeper
-    auto committed_snapshot_id = getCommittedSnapshotId();
 
     if (!committed_snapshot_id.has_value())
     {

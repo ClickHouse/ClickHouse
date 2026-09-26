@@ -90,9 +90,6 @@ public:
     /// Check if incremental read mode is enabled
     bool isIncrementalReadEnabled() const;
 
-    /// Get the last committed snapshot ID from Keeper (for incremental read)
-    std::optional<Int64> getCommittedSnapshotId() const;
-
 private:
     enum class ManifestKind : UInt8
     {
@@ -146,11 +143,13 @@ private:
     /// Validate configuration
     void checkSupportedConfiguration() const;
 
-    /// Collect data files for incremental read (from committed snapshot to current)
+    /// Collect data files for incremental read (from committed snapshot to current).
+    /// `committed_snapshot_id` is the watermark observed under the processing lock.
     Strings collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         UInt64 max_consume_snapshots,
+        std::optional<Int64> committed_snapshot_id,
         std::optional<Int64> & last_consumed_snapshot_id) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)

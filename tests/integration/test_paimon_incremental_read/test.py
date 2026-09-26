@@ -20,6 +20,7 @@ CH_TABLE_NAME_WITH_LIMIT = "paimon_inc_read_with_limit"
 CH_TABLE_NAME_AT_MOST_ONCE = "paimon_inc_read_at_most_once"
 CH_TABLE_NAME_SESSION_LOSS = "paimon_inc_read_session_loss"
 CH_TABLE_NAME_MONOTONIC = "paimon_inc_read_monotonic"
+CH_TABLE_NAME_OPERATOR_RESET = "paimon_inc_read_operator_reset"
 CH_TABLE_NAME_CURSOR_AHEAD = "paimon_inc_read_cursor_ahead"
 CH_TABLE_NAME_TRANSIENT_ERROR = "paimon_inc_read_transient_error"
 CH_TABLE_NAME_CONCURRENT = "paimon_inc_read_concurrent"
@@ -477,8 +478,10 @@ def test_paimon_incremental_read_watermark_is_monotonic(started_cluster):
     The read holds `processing_lock` at that point, so a competing consumer cannot be
     what moves the cursor - it could not acquire the lock. What reaches the cursor
     anyway is the documented operator recovery, `set '<paimon_keeper_path>/committed_snapshot'`,
-    which is a plain Keeper write and does not consult the lock. This check is the only
-    thing standing between that and a silently rewound cursor."""
+    which is a plain Keeper write and does not consult the lock. Conditioning the commit
+    on the watermark the read started from is the only thing standing between that and
+    a silently rewound cursor. The opposite direction, an operator moving the cursor
+    back, is `test_paimon_incremental_read_operator_reset_is_not_overwritten`."""
     writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
 
     warehouse_name = "warehouse_monotonic"
@@ -535,6 +538,88 @@ def test_paimon_incremental_read_watermark_is_monotonic(started_cluster):
         reader.join(timeout=60)
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_MONOTONIC} SYNC;")
+
+
+def test_paimon_incremental_read_operator_reset_is_not_overwritten(started_cluster):
+    """An operator rewinding the cursor mid-read wins over the read's commit.
+
+    A read is parked before its commit while an operator moves the cursor *back* to
+    re-read a snapshot. The read's own commit is still forward of the rewound value,
+    so a plain monotonicity check would let it through and silently discard the
+    rewind. The commit is conditioned on the watermark the read started from, so it
+    must fail, deliver nothing, and leave the next read to resume from the rewind."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_operator_reset"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_operator_reset_{uuid.uuid4().hex}"
+
+    # Snapshots 1 and 2 with one row each; the initial full read consumes both.
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=2)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_OPERATOR_RESET, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_OPERATOR_RESET}"
+    _drain_baseline(count_query, "2\n")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2"
+
+    node.query(
+        "SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+    )
+    # Snapshot 3 with ten rows: the parked read collects it and would commit 3.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=2, rows_per_commit=10, commit_times=1)
+
+    reader_result = {}
+    reader = threading.Thread(
+        target=lambda: reader_result.update(
+            zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+        )
+    )
+    reader.start()
+
+    try:
+        _wait_for_znode(zk, f"{keeper_path}/processing_lock", present=True)
+        assert reader.is_alive(), (
+            f"the reader returned before the cursor was rewound: {reader_result!r}"
+        )
+        # An operator rewinds the cursor to re-read snapshot 2 while this read is in flight.
+        zk.set(f"{keeper_path}/committed_snapshot", b"1")
+
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+        )
+        reader.join(timeout=120)
+        assert not reader.is_alive(), "the reader thread never finished"
+
+        assert "INVALID_STATE" in reader_result.get("err", ""), (
+            f"the read committed over the operator's rewind: {reader_result!r}"
+        )
+        assert "modified externally" in reader_result["err"], (
+            f"the error does not say the cursor was changed externally: {reader_result!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"1", (
+            "the operator's rewind was overwritten"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+        )
+        reader.join(timeout=60)
+
+    try:
+        # The failed read delivered nothing, so the next one resumes from the rewind:
+        # snapshot 2 (one row) again, plus snapshot 3 (ten rows).
+        _wait_until_query_result(count_query, "11\n", database="default")
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3"
+    finally:
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_OPERATOR_RESET} SYNC;")
 
 
 def test_paimon_incremental_read_cursor_ahead_of_warehouse(started_cluster):
