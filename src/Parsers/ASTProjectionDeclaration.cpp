@@ -70,7 +70,7 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     /// `ProjectionIndexCommitOrder::fillProjectionDescription` clones `index` straight into the
     /// projection SELECT slot, and `ASTProjectionSelectQuery::cloneToASTSelect` throws a logical
     /// error unless that slot is an `ASTExpressionList` — so reject any other shape at the boundary.
-    auto index_child = r.readChildOfType<ASTExpressionList>("index");
+    auto index_child = r.readScreenedChildOfType<ASTExpressionList>("index");
     if (index_child)
     {
         if (index_child->children.empty())
