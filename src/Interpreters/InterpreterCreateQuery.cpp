@@ -2133,8 +2133,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
     /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
+    /// RESTORE supplies a fresh definition despite using SECONDARY_CREATE for other checks.
     /// A secondary replay or stored ATTACH must keep accepting metadata already written.
-    bool check_replication_compatibility = isFreshTableDefinition(mode, create.attach_short_syntax)
+    bool check_replication_compatibility = (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
         && !getContext()->isRecoveryFromStoredMetadata()
         && !getContext()->getClientInfo().is_replicated_database_internal;
     if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())

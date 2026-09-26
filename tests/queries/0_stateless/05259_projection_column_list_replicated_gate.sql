@@ -73,4 +73,20 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_alter
     MODIFY PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x)
     WITH SETTINGS (index_granularity = 8192); -- { serverError SUPPORT_IS_DISABLED }
 
+-- RESTORE supplies a fresh definition even though it uses SECONDARY_CREATE loading mode.
+-- Refuse to publish that definition into the Replicated database log without the override.
+BACKUP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_create
+    TO Memory('05259_projection_column_list_restore') FORMAT Null;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_create SYNC;
+RESTORE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_create
+    FROM Memory('05259_projection_column_list_restore') FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM system.tables
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_create';
+
+SET allow_projection_column_list_in_replicated_metadata = 1;
+RESTORE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_create
+    FROM Memory('05259_projection_column_list_restore') FORMAT Null;
+SELECT count() FROM system.projections
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_create';
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
