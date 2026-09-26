@@ -63,6 +63,12 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    /// Only `loadMetadata` may set this: it is the sole caller that executes a definition this server wrote.
+    void setIsMetadataReplay(bool is_metadata_replay_)
+    {
+        is_metadata_replay = is_metadata_replay_;
+    }
+
     void setDontNeedDDLGuard()
     {
         need_ddl_guard = false;
@@ -107,7 +113,7 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
+    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -202,6 +208,7 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+    bool is_metadata_replay = false;
 
     String as_database_saved;
     String as_table_saved;

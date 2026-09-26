@@ -110,8 +110,17 @@
               "group": "2026",
               "pages": [
                 {
+                  "group": "September",
+                  "pages": [
+                    "clickstack/demo-days/2026/2026-09-17",
+                    "clickstack/demo-days/2026/2026-09-10",
+                    "clickstack/demo-days/2026/2026-09-04"
+                  ]
+                },
+                {
                   "group": "August",
                   "pages": [
+                    "clickstack/demo-days/2026/2026-08-28",
                     "clickstack/demo-days/2026/2026-08-21",
                     "clickstack/demo-days/2026/2026-08-15",
                     "clickstack/demo-days/2026/2026-08-07"
@@ -167,6 +176,7 @@
         "clickstack/managing/admin",
         "clickstack/managing/config",
         "clickstack/managing/estimating-resources",
+        "clickstack/managing/isolating-read-write",
         "clickstack/managing/materialized-views",
         "clickstack/managing/performance-tuning",
         "clickstack/managing/production",
@@ -269,7 +279,8 @@
         "clickstack/integration-partners/index",
         "clickstack/integration-partners/bindplane",
         "clickstack/integration-partners/bitdrift",
-        "clickstack/integration-partners/odigos"
+        "clickstack/integration-partners/odigos",
+        "clickstack/integration-partners/telflo"
       ]
     },
     {
