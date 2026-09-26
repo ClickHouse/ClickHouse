@@ -8,7 +8,7 @@
 -- optimizations. Correlated subqueries require the analyzer, so keep it enabled.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET convert_query_to_cnf = 1;
 SET optimize_and_compare_chain = 1;
 
