@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
@@ -240,10 +241,13 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
 ///   re-enable what the outer query turned off, and the read below it is then made with replicas
 ///   although the outer context forbids it. The root's own clause is not a problem - it is in the
 ///   context the walk is handed.
-/// - A `View`: the walk stops at the view unless `parallel_replicas_allow_view_over_mergetree` lets it
-///   unwrap one, but the body is planned by its own interpreter either way, and `getViewContext`
-///   disables replicas inside it only in the case the walk does unwrap. With the setting at its
-///   default, `SELECT sum(a) FROM view_over_mergetree` reads the view's body with replicas.
+/// - A `View`, including one reached through an `Alias`, which forwards `read` to its target with the
+///   same context: the walk stops at the view unless `parallel_replicas_allow_view_over_mergetree`
+///   lets it unwrap one, but the body is planned by its own interpreter either way, and
+///   `getViewContext` disables replicas inside it only in the case the walk does unwrap. With the
+///   setting at its default, `SELECT sum(a) FROM view_over_mergetree` reads the view's body with
+///   replicas. An `Alias` to a `MergeTree` needs nothing here: it reports its target's `isMergeTree`,
+///   so the walk accepts it by itself.
 ///   A `MaterializedView` reads its target table rather than planning a body, so it needs none of
 ///   this: with `parallel_replicas_allow_materialized_views = 0` that read is not parallelized
 ///   either, which is what the walk says.
@@ -263,8 +267,20 @@ static bool walkCannotAnswerFor(const IQueryTreeNode * root)
                 return true;
 
         if (const auto * table_node = node->as<TableNode>())
-            if (typeid_cast<const StorageView *>(table_node->getStorage().get()))
+        {
+            /// One link is enough: an `Alias` to another `Alias` is rejected when it is created. A
+            /// target that does not resolve is unknown.
+            auto storage = table_node->getStorage();
+            if (const auto * alias = typeid_cast<const StorageAlias *>(storage.get()))
+            {
+                storage = alias->tryGetTargetTable();
+                if (!storage)
+                    return true;
+            }
+
+            if (typeid_cast<const StorageView *>(storage.get()))
                 return true;
+        }
 
         for (const auto & child : node->getChildren())
             if (child)
