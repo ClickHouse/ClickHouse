@@ -222,17 +222,16 @@
                 "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/adbc",
-                "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
+                "concepts/features/interfaces/prometheus-metrics",
                 "concepts/features/interfaces/ssh",
                 "concepts/features/interfaces/grpc",
                 "concepts/features/interfaces/arrowflight"
               ]
             },
-            "concepts/features/interfaces/cpp",
             "concepts/features/interfaces/schema-inference",
             "concepts/features/interfaces/documentation-search",
             "concepts/features/interfaces/web-sql",

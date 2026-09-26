@@ -103,7 +103,7 @@ std::optional<WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expect
         return std::nullopt;
 
     WatermarkSettings watermark;
-    watermark.column = getIdentifierName(column_ast);
+    watermark.time_attribute_column = getIdentifierName(column_ast);
     watermark.expression = std::move(expression_ast);
 
     ParserKeyword s_idle_timeout{Keyword::IDLE_TIMEOUT};
