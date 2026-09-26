@@ -19,6 +19,7 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
+    std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }

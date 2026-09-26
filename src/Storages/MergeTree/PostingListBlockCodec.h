@@ -20,6 +20,9 @@ namespace DB
 class IPostingListBlockCodec
 {
 public:
+    /// Number of delta values in a full block.
+    static constexpr size_t BLOCK_SIZE = 128;
+
     virtual ~IPostingListBlockCodec() = default;
 
     /// Append one encoded block of `deltas` (1..BLOCK_SIZE values) to `out`. Returns the number of bytes appended.

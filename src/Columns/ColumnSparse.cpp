@@ -1037,8 +1037,9 @@ ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
     if (!column)
         return column;
 
-    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    auto res = recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    /// Order matters: the BLOB holds the serialized form of everything below it, and we can have
+    /// only Replicated(Sparse) but not Sparse(Replicated).
+    auto res = recursiveRemoveSparse(column->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated());
     /// Also materialize non-native LowCardinality columns (automatic LowCardinality serialization),
     /// so a column always matches its data type at boundaries that require a full column.
     /// Genuine LowCardinality(T) columns are left intact.

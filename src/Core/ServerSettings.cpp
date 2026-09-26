@@ -1230,7 +1230,7 @@ The replica name in ZooKeeper.
 <default_replica_name>{replica}</default_replica_name>
 ```
 )", 0) \
-    DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. The limit applies to the disks connections.)", 0) \
+    DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. While the number of connections in the group, in use and idle together, is at or above this limit, reads from S3 disks stop keeping a connection open between buffer fills: each fill is a separate request whose connection returns to the pool as soon as the fill completes. This bounds the connections held by readers that keep many streams open at once, such as merges of parts with a `JSON` column, at the cost of one request per fill. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_warn_limit, 8000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_store_limit, 10000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the disks connections.)", 0) \
@@ -2024,18 +2024,11 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
-        try
-        {
-            if (config.has(*path_or_name))
-                set(name, config.getString(*path_or_name));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
-                set(name, config.getString("profiles.default." + *path_or_name));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while parsing setting '{}' value", name);
-            throw;
-        }
+        /// `set` names the setting and the value it was given, so nothing has to be added here.
+        if (config.has(*path_or_name))
+            set(name, config.getString(*path_or_name));
+        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+            set(name, config.getString("profiles.default." + *path_or_name));
     }
 }
 
@@ -2327,6 +2320,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "server_uuid_from_replica_name",
         "cloud",
         "default_user_for_system_dictionaries",
+        "default_user_for_backups",
 
         /// Miscellaneous
         "core_dump",
@@ -2364,7 +2358,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "warning_supress_regexp",
         "enable_system_unfreeze",
         "disable_insertion_and_mutation",
-        "use_analyzer_for_mutations",
         "streaming_storage_shutdown_threads",
         "local_disk_check_period_ms",
         "page_cache_size",
