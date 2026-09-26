@@ -5,8 +5,6 @@ ENGINE = MergeTree
 ORDER BY id
 AS select *, '2023-12-25' from numbers(100);
 
-SET automatic_parallel_replicas_mode = 0;
-
 -- when the query plan is serialized for distributed query, parallel replicas are not enabled because
 -- (with prefer_localhost_replica) because all reading steps are ReadFromTable instead of ReadFromMergeTree
 SET serialize_query_plan = 0;

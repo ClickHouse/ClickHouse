@@ -53,7 +53,7 @@ SELECT SUM(value) FROM t WHERE value = 42 FORMAT Null;
 
 SELECT SUM(value) FROM t WHERE value = 42 FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_3'; -- stats available, don't apply since no benefit
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

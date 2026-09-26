@@ -63,7 +63,7 @@ SETTINGS log_comment='supported_aggregation';
 SELECT * FROM t lhs INNER JOIN t rhs ON lhs.number = rhs.number FORMAT Null
 SETTINGS query_plan_optimize_join_order_randomize=0, log_comment='supported_join';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

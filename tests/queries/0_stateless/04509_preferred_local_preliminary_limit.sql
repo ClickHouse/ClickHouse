@@ -62,7 +62,6 @@ FROM
     ORDER BY sort_key DESC
     LIMIT 10
     SETTINGS
-        automatic_parallel_replicas_mode = 0,
         enable_parallel_replicas = 1,
         max_parallel_replicas = 3,
         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
