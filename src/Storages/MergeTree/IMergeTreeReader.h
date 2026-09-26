@@ -189,6 +189,11 @@ protected:
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
 
+    /// Returns true if the column at position @pos in columns_to_read is a subcolumn that the part's own
+    /// column type does not have. Such a subcolumn must not be read from the part: its streams belong to a
+    /// different shape of the parent, so it is derived from the converted parent by evaluateMissingDefaults.
+    bool isSubcolumnMissingInPart(size_t pos) const;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
