@@ -29,9 +29,9 @@ Returns the path without query string from a URL.
 SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
         )",
         R"(
-┌─path('https://clickhouse.com/en/sql-reference/functions/url-functions/?query=value')─┐
-│ /docs/sql-reference/functions/url-functions/                                         │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value')─┐
+│ /docs/reference/functions/regular-functions/url-functions                                           │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

@@ -4,7 +4,11 @@
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 
+#include <cstdio>
+#include <unistd.h>
+
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/copyData.h>
@@ -23,6 +27,8 @@
 #include <Parsers/ParserOptimizeQuery.h>
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+
+#include <algorithm>
 
 #if USE_BUZZHOUSE
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
@@ -50,6 +56,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
+extern const int AST_FUZZER_ORACLE_MISMATCH;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
 extern std::string_view getName(ErrorCode error_code);
@@ -131,6 +138,35 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
         client_exception.reset();
         return true;
     }
+    /// The server-side AST fuzzer oracle reports a wrong-result bug by throwing
+    /// `AST_FUZZER_ORACLE_MISMATCH`. Treat this as fatal: print the reproducer
+    /// to stderr (so it lands in fuzzer.log for CI) and terminate the client
+    /// immediately, so the CI run fails fast with logs attached instead of
+    /// running for the full FUZZ_TIME_LIMIT and being classified as a clean
+    /// timeout.
+    ///
+    /// We deliberately do NOT use `LOGICAL_ERROR` for oracle mismatches: in
+    /// sanitizer / debug builds `LOGICAL_ERROR` triggers `abortOnFailedAssertion`
+    /// from inside the `Exception` constructor, which crashes the server before
+    /// the message can even propagate back here.
+    if (have_error
+        && exception->code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+    {
+        fmt::print(
+            stderr,
+            "\n\n"
+            "=== AST FUZZER ORACLE MISMATCH (fatal) ===\n"
+            "Client-side seed query (the server may have mutated it further):\n"
+            "  {}\n"
+            "Server-side oracle reproducer (includes the actual fuzzed query):\n"
+            "{}\n"
+            "==========================================\n",
+            parsed_query->formatForErrorMessage(),
+            exception->message());
+        (void)std::fflush(stderr);
+        (void)std::fflush(stdout);
+        _exit(49);
+    }
     if (have_error)
     {
         fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatForErrorMessage(), exception->message());
@@ -164,22 +200,18 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         return true;
     }
 
+    /// Do not let a corpus query change the session parser for later fuzzing inputs. The AST
+    /// fuzzer serializes ASTs as ClickHouse SQL, so retaining `dialect = 'kusto'` would make a
+    /// later replay use the wrong parser.
+    if (const auto * set = orig_ast->as<ASTSetQuery>(); set
+        && std::any_of(set->changes.begin(), set->changes.end(), [](const auto & change) { return change.name == "dialect"; }))
+        return true;
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
         return true;
-    }
-
-    // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef()[Setting::dialect] == DB::Dialect::kusto)
-    {
-        return true;
-    }
-    if (auto * q = orig_ast->as<ASTSetQuery>())
-    {
-        if (auto * set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
-            return true;
     }
 
     // Don't repeat:

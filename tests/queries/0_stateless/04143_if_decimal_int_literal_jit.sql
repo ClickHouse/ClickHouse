@@ -45,7 +45,7 @@ WITH materialize(3::Decimal(38, 30)) AS r, materialize(2) AS k SELECT sum(multiI
 WITH materialize(1::Decimal(76, 60)) AS r, materialize(1) AS k SELECT sum(if(k != 1, r, 1));
 WITH materialize(1::Decimal(76, 73)) AS r, materialize(1) AS k SELECT sum(if(k != 1, r, 1));
 
--- `Float` -> `Decimal` branch lift (the analyzer promotes the result to `Decimal`).
+-- A float branch is never lifted: the result is `Variant(Decimal(18, 4), Float64)`, which is not compiled.
 WITH materialize(toDecimal64(1.5, 4)) AS r, materialize(1) AS k SELECT if(k != 1, r, 2.5::Float64);
 
 -- Sanity check: the non-JIT path produces the same answers.

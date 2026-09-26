@@ -239,9 +239,9 @@ When the query contains several of these functions, using `uniq` is almost as fa
 
 </details>
 
-:::tip
+<Tip>
 We recommend using this function over other variants in almost all scenarios.
-:::
+</Tip>
     )";
     FunctionDocumentation::Syntax syntax_uniq = R"(
 uniq(x[, ...])
@@ -301,9 +301,9 @@ FROM example_table;
     FunctionDocumentation::Description description_uniqHLL12 = R"(
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
-:::warning
+<Warning>
 We do not recommend using this function. In most cases, use the [uniq](/reference/functions/aggregate-functions/uniq) or [uniqCombined](/reference/functions/aggregate-functions/uniqCombined) function.
-:::
+</Warning>
 
 <details>
 <summary>Implementation details</summary>
@@ -374,11 +374,11 @@ FROM example_hll;
     FunctionDocumentation::Description description_uniqExact = R"(
 Calculates the exact number of different argument values.
 
-:::warning
+<Warning>
 The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 Use the `uniqExact` function if you absolutely need an exact result.
 Otherwise use the [`uniq`](/reference/functions/aggregate-functions/uniq) function.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_uniqExact = R"(
 uniqExact(x[, ...])

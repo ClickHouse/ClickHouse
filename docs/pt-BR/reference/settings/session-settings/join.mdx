@@ -17,9 +17,9 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' foi descontinuado em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Adicionado `ie_join` à lista padrão; assim, uma junção cuja seção `ON` tenha apenas condições de desigualdade é executada com IEJoin em vez de um `CROSS JOIN` com filtro. Por estar por último, ele é usado apenas quando os outros algoritmos não se aplicam."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' foi descontinuado em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash"}]}]} />
 
 Especifica qual algoritmo de [JOIN](/pt-BR/reference/statements/select/join) é usado.
 
@@ -28,7 +28,7 @@ Vários algoritmos podem ser especificados, e um deles será escolhido para uma 
 A maioria dos algoritmos afeta uma consulta apenas quando é selecionada para ela. Alguns, no entanto, alteram o planejamento apenas por estarem listados — mesmo como uma alternativa de menor prioridade que não é selecionada ao final — porque a decisão é tomada antes da escolha do algoritmo. Há dois efeitos desse tipo:
 
 * A inferência de tipo da chave de junção se torna mais restritiva (uma junção merge não pode unir chaves de tipos diferentes, por exemplo, `String` e `Nullable(String)`). Isso pode alterar os tipos de resultado das colunas `USING` e pode fazer com que uma junção com uma tabela do mecanismo `Join` falhe com `TYPE_MISMATCH`. Acionado por `full_sorting_merge` e `parallel_full_sorting_merge`.
-* `ORDER BY ... LIMIT` no lado preservado de uma junção recebe uma ordenação explícita em vez de uma leitura na ordem da chave primária, pois presume-se que a junção interrompa a leitura ordenada (uma junção merge insere sua própria ordenação antes da junção; uma partial merge join reordena os blocos da esquerda; uma junção que pode produzir blocos atrasados também não propaga a leitura ordenada). O resultado é o mesmo, mas o plano é menos eficiente. Acionado por `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` e `auto`, e também por um valor diferente de zero em `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
+* `ORDER BY ... LIMIT` no lado preservado de uma junção recebe uma ordenação explícita em vez de uma leitura na ordem da chave primária, pois presume-se que a junção interrompa a leitura ordenada (uma junção merge insere sua própria ordenação antes da junção; uma partial junção merge reordena os blocos da esquerda; uma junção que pode produzir blocos atrasados também não propaga a leitura ordenada). O resultado é o mesmo, mas o plano é menos eficiente. Acionado por `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` e `auto`, e também por um valor diferente de zero em `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
 
 Ambos se aplicam mesmo quando a consulta acaba sendo executada com `hash` ou outro algoritmo. Se isso for indesejável, não liste os algoritmos acima em `join_algorithm` para as consultas afetadas.
 
@@ -60,7 +60,7 @@ Uma variação do [algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-merg
 
 `RIGHT JOIN` e `FULL JOIN` têm suporte apenas com strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não têm suporte).
 
-Ao usar o algoritmo `partial_merge`, o ClickHouse ordena os dados e os grava em disco. O algoritmo `partial_merge` no ClickHouse difere ligeiramente da implementação clássica. Primeiro, o ClickHouse ordena a tabela da direita pelas chaves de junção em blocos e cria um índice min-max para os blocos ordenados. Em seguida, ordena partes da tabela da esquerda pela `join key` e faz a junção com a tabela da direita. O índice min-max também é usado para ignorar blocos desnecessários da tabela da direita.
+Ao usar o algoritmo `partial_merge`, o ClickHouse ordena os dados e os grava no disco. O algoritmo `partial_merge` no ClickHouse difere ligeiramente da implementação clássica. Primeiro, o ClickHouse ordena a tabela da direita pelas chaves de junção em blocos e cria um índice min-max para os blocos ordenados. Em seguida, ele ordena partes da tabela da esquerda pela `chave de junção` e faz a junção delas com a tabela da direita. O índice min-max também é usado para ignorar blocos desnecessários da tabela da direita.
 
 * direct
 
@@ -83,7 +83,7 @@ Quando definido como `auto`, `hash` join é tentado primeiro, e o algoritmo é a
 
 O algoritmo [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) baseado em ordenação para um `JOIN` cuja seção `ON` tem duas comparações de desigualdade (`<`, `<=`, `>`, `>=`) entre expressões das tabelas unidas. Oferece suporte a `ALL INNER/LEFT/RIGHT/FULL JOIN` e `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-A posição na lista define a prioridade: listado após outros algoritmos, IEJoin é usado somente quando eles não se aplicam (a seção `ON` não tem condições de igualdade); listado primeiro, ele é usado sempre que a seção `ON` tiver duas condições de desigualdade. As condições restantes (incluindo igualdades) são aplicadas como filtro sobre o resultado da junção para `ALL INNER JOIN` e avaliadas dentro do operador como uma condição residual que afeta a correspondência para os outros tipos. Sem `ie_join` na lista, um `INNER JOIN` apenas com condições de desigualdade é executado como um `CROSS JOIN` com um filtro, e os outros tipos não têm suporte.
+A posição na lista define a prioridade: listado após outros algoritmos, como no valor padrão, IEJoin é usado somente quando eles não se aplicam (a seção `ON` não tem condições de igualdade); listado primeiro, ele é usado sempre que a seção `ON` tiver duas condições de desigualdade. As condições restantes (incluindo igualdades) são aplicadas como filtro sobre o resultado da junção para `ALL INNER JOIN` e avaliadas dentro do operador como uma condição residual que afeta a correspondência para os outros tipos. Sem `ie_join` na lista, um `INNER JOIN` apenas com condições de desigualdade é executado como um `CROSS JOIN` com um filtro, e os outros tipos não têm suporte.
 
 Ambas as entradas são acumuladas na memória antes da junção: [`max_rows_in_join`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) e [`max_bytes_in_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitam juntas a entrada acumulada de ambos os lados (não apenas do lado direito), com a ação em caso de overflow definida por [`join_overflow_mode`](/pt-BR/reference/settings/session-settings/join#join_overflow_mode); os índices de ordenação que o operador cria sobre a entrada acumulada não são contabilizados no limite. O próprio operador de junção é executado em uma única thread; apenas as ordenações das entradas anteriores à junção são paralelizadas.
 

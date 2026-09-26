@@ -16,7 +16,7 @@ SET use_reader_executor = 1;
 SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage
 SET enable_filesystem_cache = 0;               -- avoid the filesystem-cache stage so the executor engages
 SET max_read_buffer_size = 65536;              -- small transport buffer
-SET reader_executor_window_size = 65536;       -- small serve windows -> many sequential reads per object
+SET reader_executor_window_size = 131072;      -- smallest allowed serve window -> many sequential reads per object
 SET max_threads = 1;
 
 -- A direct s3() read opens a held source connection (the limit reaches the direct path now).

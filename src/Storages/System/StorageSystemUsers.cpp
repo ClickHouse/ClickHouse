@@ -25,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -256,6 +257,10 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
             "the stored value `0` (the Unix epoch, rendered as `1970-01-01 00:00:00` on a server in `UTC`) "
             "is the sentinel meaning the credentials never expire."
         },
+        {"auth_grants", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "For each authentication method: the limit of the access rights specified in the `GRANTS` clause, "
+            "or an empty string if the access rights are not limited."
+        },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "IP addresses of hosts that are allowed to connect to the ClickHouse server."
         },
@@ -302,6 +307,8 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_valid_until = assert_cast<ColumnDateTime64 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_valid_until_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_auth_grants = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_auth_grants_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_names = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
@@ -394,11 +401,24 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             if (valid_until)
                 valid_until = std::clamp<time_t>(valid_until, 1, MAX_VALID_UNTIL_TIME);
             column_valid_until.insertValue(static_cast<Int64>(valid_until));
+
+            const auto & grants = auth_data.getGrants();
+            String grants_str;
+            if (!grants.structurallyEmpty())
+            {
+                /// Render precisely, matching `SHOW CREATE USER` (see `ASTAuthenticationData::formatImpl`):
+                /// the backward-compatibility widening must never apply to auth-method grants.
+                WriteBufferFromOwnString buffer;
+                grants.formatElementsWithoutOptions(buffer, /*precise=*/true);
+                grants_str = buffer.str();
+            }
+            column_auth_grants.insertData(grants_str.data(), grants_str.size());
         }
 
         column_auth_params_offsets.push_back(column_auth_params.size());
         column_auth_type_offsets.push_back(column_auth_type.size());
         column_valid_until_offsets.push_back(column_valid_until.size());
+        column_auth_grants_offsets.push_back(column_auth_grants.size());
 
         if (allowed_hosts.containsAnyHost())
         {
