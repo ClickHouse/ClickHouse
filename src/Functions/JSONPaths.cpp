@@ -41,10 +41,8 @@ namespace
 struct PathNullCheck
 {
     std::string_view path;
-    /// ColumnDynamic::isNullAt(n) is ColumnVariant::isNullAt(n), i.e. the row is NULL exactly when its
-    /// local discriminator is NULL_DISCRIMINATOR.
+    /// ColumnDynamic::isNullAt(n) is true exactly when the local discriminator of row n is NULL_DISCRIMINATOR.
     const ColumnVariant::Discriminator * dynamic_discriminators = nullptr;
-    /// A typed path is checked only when type_json_skip_null_typed_paths is enabled.
     const IColumn * typed_column_to_check = nullptr;
 
     static PathNullCheck dynamic(std::string_view path, const IColumn & column)
@@ -207,7 +205,6 @@ private:
         }
 
         /// Collect all paths: typed, dynamic and paths from shared data.
-        /// Dynamic paths are skipped when NULL. Typed paths are also skipped when NULL if the setting is enabled.
         VectorWithMemoryTracking<PathNullCheck> sorted_dynamic_and_typed_paths;
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
@@ -234,6 +231,7 @@ private:
                 while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index].path < shared_data_path)
                 {
                     const auto & entry = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                    /// Dynamic paths are skipped when NULL. Typed paths are also skipped when NULL if the setting is enabled.
                     if (!entry.isNullAt(i))
                         data.insertData(entry.path.data(), entry.path.size());
                     ++sorted_paths_index;

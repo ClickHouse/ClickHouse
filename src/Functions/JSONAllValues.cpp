@@ -97,8 +97,7 @@ private:
 
         const ColumnVariant * variant_column = nullptr;
         const ColumnVariant::Discriminator * local_discriminators = nullptr;
-        /// Indexed by the local discriminator. nullptr for the shared variant: its values carry their own type and are
-        /// decoded one by one by SerializationDynamic.
+        /// Indexed by the local discriminator. nullptr for the shared variant: its values carry their own type.
         VectorWithMemoryTracking<SerializationPtr> variant_serializations{};
         VectorWithMemoryTracking<const ColumnString *> variant_string_columns{};
     };
