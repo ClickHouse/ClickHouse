@@ -6,7 +6,6 @@
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>
-#include <Common/quoteString.h>
 
 #include "config.h"
 
@@ -684,7 +683,7 @@ namespace
                             const size_t error_pos = convertCodePointPositionToByteOffset(
                                 promql_query, grouping->getStart()->getStartIndex());
                             error_listener.setError(
-                                "label " + doubleQuoteString(label) + " must not occur in ON and GROUP clause at once",
+                                "label " + PrometheusQueryParsingUtil::quoteStringLiteral(label) + " must not occur in ON and GROUP clause at once",
                                 error_pos);
                             break;
                         }
