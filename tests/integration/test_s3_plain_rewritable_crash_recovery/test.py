@@ -238,6 +238,63 @@ def test_drop_table_killed_before_finalize(
     assert node.contains_in_log("orphaned objects left by")
 
 
+def removed_directory_names(keys):
+    """The reserved names that `RemoveRecursive` moved subtrees under, as written into `prefix.path`."""
+    return {
+        read_key(key).split("/")[0]
+        for key in keys
+        if key.endswith("/prefix.path")
+        and read_key(key).startswith(REMOVED_NAME_PREFIX)
+    }
+
+
+def test_failed_cleanup_is_not_loaded_back():
+    """The objects of a committed removal are deleted after the commit, in best-effort mode: a failure there is
+    only logged. The leftovers must not come back as metadata when it is reloaded, and the next start reclaims them.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    node.query("DROP TABLE IF EXISTS t_probe SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("SYSTEM STOP MERGES t")
+    for i in range(3):
+        node.query(f"INSERT INTO t VALUES ({i})")
+
+    node.query("SYSTEM ENABLE FAILPOINT plain_object_storage_fail_on_finalize")
+    try:
+        # The removal is committed, so the query succeeds even though the objects are not deleted.
+        node.query("DROP TABLE t SYNC")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT plain_object_storage_fail_on_finalize")
+
+    keys = list_keys()
+    assert tombstone_markers(keys) != []
+    removed_names = removed_directory_names(keys)
+    assert removed_names != set()
+
+    # A reload that is not the initial one keeps the leftovers in the bucket, but does not load them.
+    node.query("SYSTEM DROP DISK METADATA CACHE disk_s3_plain_rewritable")
+    assert list_keys() == keys
+
+    # A new entry with a reserved name is accepted only if that name already exists in the loaded metadata
+    # (see `test_existing_look_alike_directory_stays_usable`), so the rejection shows that it was not loaded.
+    node.query("CREATE TABLE t_probe (x UInt64) ENGINE = Memory")
+    for name in removed_names:
+        error = node.query_and_get_error(
+            f"BACKUP TABLE t_probe TO Disk('disk_s3_plain_rewritable', '{name}')"
+        )
+        assert "are reserved" in error
+    node.query("DROP TABLE t_probe SYNC")
+    assert list_keys() == keys
+
+    node.restart_clickhouse()
+    wait_for_empty_prefix()
+    assert node.contains_in_log("orphaned objects left by")
+
+
 def test_names_that_only_look_reserved_are_kept():
     """A reserved name denotes an unfinished removal only while it has a marker object. Any name of that
     shape, the exact one included, could have been created as ordinary data by a version that reserved

@@ -48,6 +48,7 @@ namespace FailPoints
     extern const char plain_object_storage_pause_before_unlink_file_finalize[];
     extern const char plain_object_storage_pause_before_remove_recursive_finalize[];
     extern const char plain_object_storage_pause_before_remove_recursive_metadata[];
+    extern const char plain_object_storage_fail_on_finalize[];
 }
 
 namespace
@@ -528,6 +529,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
 
     if (blob_removal_attempted)
     {
+        fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
+        });
+
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
         /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
         /// leaves either nothing or a marked leftover, never an unmarked one.
@@ -791,6 +796,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 
     if (blob_move_attempted)
     {
+        fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the move from '{}' to '{}'", path_from, path_to);
+        });
+
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
         /// The markers outlive the objects they mark, so that a process that dies in the middle of this always
@@ -876,6 +885,10 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         return;
 
     FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_finalize);
+
+    fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
+    });
 
     /// The `prefix.path` object of a directory is the only thing that lets the next load find the objects of this
     /// subtree, so it has to outlive them: the data objects are deleted first, and the `prefix.path` objects only
