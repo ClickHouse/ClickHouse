@@ -34,7 +34,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | `'UserID UInt64, Name String'` フォーマットで指定するテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                                                                                                                                                                                            |
 | `headers`   | `'headers('key1'='value1', 'key2'='value2')'` フォーマットのヘッダーです。HTTP 呼び出し用のヘッダーを設定できます。                                                                                                                                                                                                                                                   |
 
-<div id="returned_value">
+<div id="returned-value">
   ## 戻り値
 </div>
 
@@ -74,9 +74,9 @@ SELECT * FROM test_table;
 
 追加設定なしで S3 URI mapper が具体的なエンドポイントに解決できる S3 スキーム (`s3` と `gs`/`gcs`/`oss`) のみが振り分けの対象です。その他の S3-compatible ベンダーのスキーム (`cos`、`obs`、`eos`、…) はリージョン固有で、デフォルトのエンドポイントマッピングがありません。そのため、`cos://…` URL は認識されないスキームとして扱われ、エラーとして報告されます。これらのバックエンドでは、[`s3`](/ja/reference/functions/table-functions/s3) 関数を直接使用してください (`url_scheme_mappers` を設定したうえで) 。
 
-`file://` の場合、相対パス (`file://data.csv`) は [user&#95;files](/ja/reference/settings/server-settings/settings#user_files_path) ディレクトリ内で解決され、絶対パス (`file:///home/user/data.csv`) は通常どおりその配下を指している必要があります。
+`file://` の場合、相対パス (`file://data.csv`) は [user&#95;files](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ内で解決され、絶対パス (`file:///home/user/data.csv`) は通常どおりその配下を指している必要があります。
 
-`format`、`structure`、`compression_method` の引数と [url&#95;base](#resolving-relative-urls) 設定は、振り分け先にかかわらず同じように機能します。
+`フォーマット`、`構造`、`compression_method` の引数と [url&#95;base](#resolving-relative-urls) 設定は、振り分け先にかかわらず同じように機能します。
 
 ```sql
 SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
@@ -90,7 +90,7 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 </div>
 
 `{ }` 内のパターンは、分片のセットを生成したり、フェイルオーバー先のアドレスを指定したりするために使用されます。サポートされているパターンの種類と例については、[remote](/ja/reference/functions/table-functions/remote#globs-in-addresses) 関数の説明を参照してください。
-パターン内の文字 `|` は、フェイルオーバー先のアドレスを指定するために使用されます。これらは、パターンに記載された順序どおりに順番に試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings#glob_expansion_max_elements) 設定によって制限されます。
+パターン内の文字 `|` は、フェイルオーバー先のアドレスを指定するために使用されます。これらは、パターンに記載された順序どおりに順番に試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings/other#glob_expansion_max_elements) 設定によって制限されます。
 URL パスでの glob 構文 (`*`、`{a,b}`、`{N..M}`、`**` など) については、[パス内の globs](/ja/reference/functions/table-functions/file#globs-in-path) を参照してください。なお、`?` は URL ではクエリ文字列の開始を表すため、パス部分ではワイルドカードとして使用できません。
 
 <div id="wildcards-with-http-index-pages">
@@ -107,8 +107,8 @@ URL パスでの glob 構文 (`*`、`{a,b}`、`{N..M}`、`**` など) につい�
 * ワイルドカードの照合は、URL のパス部分に適用されます。
 * 一覧に含まれる URL にすでにクエリ文字列またはフラグメントが含まれている場合は、ソース URL のものよりそちらが優先されます。含まれていない場合は、ソース URL のクエリ文字列とフラグメントが使用されます。
 * 空の一覧も許可されます。インデックスページに対する HTTP エラー (例: 404) は例外を発生させます。
-* インデックスページの最大サイズは、[max&#95;http&#95;index&#95;page&#95;size](/ja/reference/settings/server-settings/settings#max_http_index_page_size) によって制限されます。
-* 再帰的な展開中に読み取るディレクトリの最大数は、[url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/ja/reference/settings/session-settings#url_wildcard_max_directories_to_read) によって制限されます。
+* インデックスページの最大サイズは、[max&#95;http&#95;index&#95;page&#95;size](/ja/reference/settings/server-settings/settings/max#max_http_index_page_size) によって制限されます。
+* 再帰的な展開中に読み取るディレクトリの最大数は、[url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/ja/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) によって制限されます。
 
 例:
 
@@ -146,7 +146,7 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE da
   ## 相対 URL の解決
 </div>
 
-[url&#95;base](/ja/reference/settings/session-settings#url_base) 設定を使用すると、`url` 関数に相対 URL を渡せます。`url_base` が設定されていて、関数の引数が相対参照である場合、その参照は [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従ってベース URL を基準に解決されます。
+[url&#95;base](/ja/reference/settings/session-settings/url#url_base) 設定を使用すると、`url` 関数に相対 URL を渡せます。`url_base` が設定されていて、関数の引数が相対参照である場合、その参照は [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従ってベース URL を基準に解決されます。
 
 解決規則は次のとおりです。
 
@@ -156,7 +156,8 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE da
 * **クエリのみ** (例: `?x=1`) : 完全なベースパスに付加され、既存のクエリやフラグメントは置き換えられます。
 * **フラグメントのみ** (例: `#frag`) : ベース URL に付加され、クエリは保持されたまま、既存のフラグメントは置き換えられます。
 * **空**: フラグメントを除いたベース URL を返します。
-* **絶対 URL**: 変更せずそのまま渡されます。`url_base` は無視されます。
+* **絶対 URL**: 変更せずそのまま渡されます。`url_base` は無視されます。URL が絶対 URL と見なされるのは、`scheme://` で始まる場合のみです。最初のパスセグメントにコロンを含む名前 (例: `report:2026.csv`) は、RFC 3986 ではスキーム `report` を持つ絶対 URI として解析されますが、そのような名前は使用可能な URL ではないため、代わりにパス相対参照として解決されます。
+* **スキームのみのベース** (例: `file://`) : パス相対 URL はベースに直接付加されます。`file://` + `data.csv` = `file://data.csv` となり、`file://` スキームではこれは [user&#95;files](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ (clickhouse-local では現在のディレクトリ) を基準とするパスを意味します。この場合、ドットセグメントはそのまま保持されます。
 
 **例**
 
@@ -169,9 +170,9 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
   ## ストレージ設定
 </div>
 
-* [engine&#95;url&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings#engine_url_skip_empty_files) - 読み取り時に空のファイルをスキップできます。デフォルトでは無効です。
-* [enable&#95;url&#95;encoding](/ja/reference/settings/session-settings#enable_url_encoding) - URI 内のパスのデコード/エンコードを有効または無効にできます。デフォルトでは有効です。
-* [url&#95;base](/ja/reference/settings/session-settings#url_base) - `url` 関数に渡された相対 URL を解決するためのベース URL です。
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/other#engine_url_skip_empty_files) - 読み取り時に空のファイルをスキップできます。デフォルトでは無効です。
+* [enable&#95;url&#95;encoding](/ja/reference/settings/session-settings/enable#enable_url_encoding) - URI 内のパスのデコード/エンコードを有効または無効にできます。デフォルトでは有効です。
+* [url&#95;base](/ja/reference/settings/session-settings/url#url_base) - `url` 関数に渡された相対 URL を解決するためのベース URL です。
 
 <div id="permissions">
   ## 権限

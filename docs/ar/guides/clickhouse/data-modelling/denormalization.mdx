@@ -69,7 +69,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 *في كل مثال من الأمثلة التالية، افترض وجود استعلام يتطلب استخدام الجدولين معًا في عملية join.*
 
 <div id="posts-and-votes">
-  ### Posts and Votes
+  ### Posts وVotes
 </div>
 
 تُمثَّل Votes المرتبطة بـ Posts في جداول منفصلة. ويظهر أدناه المخطط المُحسَّن لذلك، إلى جانب أمر insert المستخدم لتحميل البيانات:
@@ -87,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -188,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,7 +196,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
@@ -227,7 +227,7 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
   ### Posts وPostLinks
 </div>
 
-يربط `PostLinks` بين عناصر `Posts` التي يعتبرها المستخدمون ذات صلة أو مكررة. يوضّح الاستعلام التالي البنية وأمر التحميل:
+يربط `PostLinks` بين عناصر `Posts` التي يعتبرها المستخدمون ذات صلة أو مكررة. يوضّح الاستعلام التالي المخطط وأمر التحميل:
 
 ```sql
 CREATE TABLE postlinks
@@ -241,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
@@ -290,7 +290,7 @@ FROM
 └──────────────────┴──────────────────┘
 ```
 
-سنستخدم هذا مثالًا على إلغاء التطبيع فيما يلي.
+سنستخدم هذا مثالًا لإلغاء التطبيع أدناه.
 
 <div id="simple-statistic-example">
   ### مثال بسيط على إحصائية

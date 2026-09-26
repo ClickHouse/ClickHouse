@@ -22,7 +22,8 @@
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <base/scope_guard.h>
-extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
+#include <Common/FiberLocal.h>
+extern constinit FiberLocal<bool, FiberLocalSlot::MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION> memory_tracker_always_throw_logical_error_on_allocation;
 
 /// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
@@ -89,6 +90,12 @@ private:
 
         /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
         /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
+        /// Requires acquire-release:
+        /// 1. Thread A constructs MemoryTracker object and attaches MemoryTracker pointer
+        ///    (e.g. ProcessList::insert where the user's MemoryTracker is constructed right before calling setParent).
+        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
+        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
+        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
         std::atomic<MemoryTracker *> parent {};
 
         /// You could specify custom metric to track memory usage.
@@ -130,8 +137,11 @@ private:
     };
 #pragma clang diagnostic pop
 
-    bool updatePeak(Int64 will_be, bool log_memory_usage);
+    bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
+    Int64 decrementLocalUsage(Int64 size) noexcept;
+    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
+    void traceLargeAllocation(Int64 size) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
@@ -196,6 +206,16 @@ public:
         return soft_limit.load(std::memory_order_relaxed);
     }
 
+    /// `amount / hard_limit` for this tracker, or 0 without a hard limit. Lock-free.
+    double getPressure() const
+    {
+        const Int64 limit = hard_limit.load(std::memory_order_relaxed);
+        if (limit <= 0)
+            return 0.0;
+        const Int64 used = amount.load(std::memory_order_relaxed);
+        return used <= 0 ? 0.0 : static_cast<double>(used) / static_cast<double>(limit);
+    }
+
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
@@ -232,7 +252,7 @@ public:
                 probability,
                 min_allocation_size_bytes.load(std::memory_order_relaxed),
                 max_allocation_size_bytes.load(std::memory_order_relaxed)};
-        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        if (auto * loaded_next = parent.load(std::memory_order_acquire))
             return loaded_next->getResolvedSampleConfig();
         return {};
     }
@@ -268,7 +288,7 @@ public:
 
     MemoryTracker * getParent()
     {
-        return parent.load(std::memory_order_relaxed);
+        return parent.load(std::memory_order_acquire);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
@@ -326,6 +346,15 @@ public:
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
+
+    /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
+    /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not
+    /// necessarily one allocation. 0 disables; coerced to 0 when no TraceCollector is running.
+    static void setMinAllocationSizeToLogStackTrace(UInt64 value);
+    static UInt64 getMinAllocationSizeToLogStackTrace();
+
+    /// Resets the budget for the traces above. Called once per TraceCollector, see its constructor.
+    static void resetLargeAllocationTraceBudget();
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

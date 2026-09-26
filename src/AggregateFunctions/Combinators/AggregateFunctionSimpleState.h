@@ -103,12 +103,12 @@ public:
         nested_func->insertResultInto(place, to, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        return nested_func->getArgumentsThatCanBeOnlyNull();
+        nested_func->rollbackInsertResult(place, to);
     }
+
+    bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };

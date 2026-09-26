@@ -859,6 +859,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/regex/regexec.c"
     "${MUSL_SOURCE_DIR}/src/regex/tre-mem.c"
     "${MUSL_SOURCE_DIR}/src/sched/affinity.c"
+    "${MUSL_SOURCE_DIR}/src/sched/rseq.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_cpucount.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_get_priority_max.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_getcpu.c"
@@ -1499,6 +1500,10 @@ elseif (MUSL_ARCH STREQUAL "aarch64")
         "${MUSL_SOURCE_DIR}/src/signal/restore.c"
         "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
         "${MUSL_SOURCE_DIR}/src/string/memcpy.c"
+        # memcpy.S handles overlaps and provides memmove as a second entry
+        # point (upstream musl has no aarch64 memmove asm; the generic C
+        # memmove sends only non-overlapping copies to the asm memcpy).
+        "${MUSL_SOURCE_DIR}/src/string/memmove.c"
         "${MUSL_SOURCE_DIR}/src/string/memset.c"
         "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
         "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"
@@ -1658,8 +1663,12 @@ target_compile_options(musl PRIVATE
     -std=c99
     -ffreestanding
     -fno-builtin
-    -fno-stack-protector
     -fomit-frame-pointer
+
+    # Never instrument libc: its early-init code (__init_libc, CRT) runs before
+    # sanitizer runtimes are initialized, and sanitizers hook the public libc
+    # functions with interceptors instead (same model as with uninstrumented glibc).
+    -fno-sanitize=all
 
     # Unwind tables: required for C++ exceptions and stack traces through musl.
     -funwind-tables
@@ -1691,6 +1700,25 @@ target_compile_definitions(musl PRIVATE
     -D_XOPEN_SOURCE=700
 )
 
+# The rest of libc is compiled with the global -fstack-protector-strong, but the objects below
+# must not be: they run before the canary exists, or they are what installs it. This is upstream
+# musl's own NOSSP_OBJS list (Makefile), minus the objects this build compiles from assembly.
+# __init_ssp writes the canary into the thread pointer, so a function that reads it on entry and
+# again on return would see two different values; __init_tls and __set_thread_area set up the
+# thread pointer the canary is read through; memcpy and memset are called from that path.
+set_source_files_properties(
+    "${MUSL_SOURCE_DIR}/src/env/__init_tls.c"
+    "${MUSL_SOURCE_DIR}/src/env/__libc_start_main.c"
+    "${MUSL_SOURCE_DIR}/src/env/__stack_chk_fail.c"
+    "${MUSL_SOURCE_DIR}/src/string/memcpy.c"
+    "${MUSL_SOURCE_DIR}/src/string/memset.c"
+    "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
+    "${MUSL_SOURCE_DIR}/src/thread/aarch64/__set_thread_area.c"
+    "${MUSL_SOURCE_DIR}/ldso/dlstart.c"
+    "${MUSL_SOURCE_DIR}/ldso/dynlink.c"
+    PROPERTIES COMPILE_OPTIONS "-fno-stack-protector"
+)
+
 target_compile_definitions(musl PUBLIC
     -D__MUSL__=1
 )
@@ -1715,7 +1743,9 @@ target_include_directories(musl-crt1 PRIVATE
 target_compile_options(musl-crt1 PRIVATE
     -std=c99
     -ffreestanding
+    # Runs before the thread pointer and the canary exist (upstream musl NOSSP_OBJS covers all CRT objects).
     -fno-stack-protector
+    -fno-sanitize=all
     -fno-builtin
 )
 add_dependencies(musl-crt1 musl-headers)
