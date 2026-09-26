@@ -3,12 +3,14 @@
 #include <memory>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace DB
 {
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 struct DataTypeWithConstInfo
 {
@@ -16,6 +18,6 @@ struct DataTypeWithConstInfo
     bool is_const;
 };
 
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
+using DataTypesWithConstInfo = VectorWithMemoryTracking<DataTypeWithConstInfo>;
 
 }

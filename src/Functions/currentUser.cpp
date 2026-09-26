@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -89,6 +90,7 @@ SELECT CURRENT_USER
     factory.registerFunction<FunctionCurrentUser>(documentation);
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("session_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }
 
 }

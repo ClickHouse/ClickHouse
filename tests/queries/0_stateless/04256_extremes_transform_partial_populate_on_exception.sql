@@ -1,15 +1,7 @@
--- Regression for ExtremesTransform partial-population abort (STID 2286-2cea).
--- Pre-fix, `extremes_columns` was resized to N null entries then filled
--- column-by-column. A throw mid-loop left the vector partially populated;
--- the next `work()` call ran `Chunk::setColumns` on the broken vector and the
--- row-count diagnostic dereferenced one of the still-null intrusive pointers
--- via `Chunk::dumpStructure`, aborting the server with
--- `Assertion 'px != 0' failed`. The fix builds into a local vector and moves
--- it on success, so a mid-loop throw leaves `extremes_columns` empty.
---
--- The exact memory budget that triggers the throw inside the partial-population
--- loop varies by build (debug/release/sanitizer), so run several variants:
--- at least one will hit the bug path on each environment.
+-- Regression for the ExtremesTransform partial-population abort (STID 2286-2cea).
+-- Each variant uses a different memory budget so that at least one trips the
+-- mid-population throw on every build flavor (debug/release/sanitizer); the
+-- expected outcome is a clean MEMORY_LIMIT_EXCEEDED, not a server abort.
 
 SELECT DISTINCT 1025, toFixedString('%', 1048576), 100 UNION ALL
 SELECT 9223372036854775807, '\0', materialize(toLowCardinality(1025))

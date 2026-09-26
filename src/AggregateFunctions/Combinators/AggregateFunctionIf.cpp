@@ -28,9 +28,17 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
+        /** The last argument is the condition, and saying only that its type is illegal helps nobody: the
+          * most common way to get here is forgetting the condition altogether - `sumIf(x)` - where the
+          * argument being blamed is a perfectly good argument of `sum`. Name what the argument is for and
+          * what it has to be.
+          */
         if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of last argument for "
-                            "aggregate function with {} suffix", arguments.back()->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the last argument of an aggregate function with the {} "
+                            "suffix: the last argument is the condition and must be UInt8. If the condition "
+                            "is missing, it goes after the arguments of the aggregate function",
+                            arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
@@ -173,7 +181,8 @@ public:
         /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
         /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
 
-        auto final_nulls = std::make_unique<UInt8[]>(row_end);
+        /// Default-init: the loops below fill [row_begin, row_end) and nothing reads the rest.
+        auto final_nulls = std::make_unique_for_overwrite<UInt8[]>(row_end);
 
         if (filter_null_map)
             for (size_t i = row_begin; i < row_end; ++i)
@@ -320,7 +329,8 @@ public:
         if (filter_is_only_null)
             return;
 
-        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique<UInt8[]>(row_end);
+        /// Default-init: the loops below fill [row_begin, row_end) and nothing reads the rest.
+        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
         const size_t filter_column_num = number_of_arguments - 1;
 
         if (is_nullable[filter_column_num])
@@ -513,7 +523,10 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumIf`), it adds an extra `UInt8` condition argument; only rows for which the condition is non-zero are aggregated.",
+        .syntax = "<aggregate_function>If",
+        .related = {"Array", "Map"}});
 }
 
 }

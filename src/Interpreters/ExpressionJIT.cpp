@@ -106,7 +106,7 @@ public:
         if (input_rows_count)
         {
             std::vector<ColumnData> columns(arguments.size() + 1);
-            std::vector<ColumnPtr> columns_backup;
+            Columns columns_backup;
 
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -339,7 +339,7 @@ static FunctionBasePtr compile(
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
+    return node.column && canBeNativeType(*node.result_type);
 }
 
 static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
@@ -385,6 +385,14 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
 
         const auto & type = argument_types[i];
         if (!canBeNativeType(*type))
+        {
+            return false;
+        }
+
+        /// Declared argument types can disagree with the children: a DAG rewrite may repoint a child
+        /// without updating `function_base`, and an alias carries its own copy of the type, which a
+        /// rewrite can leave behind. Compilation lowers the type the argument actually holds.
+        if (i < node.children.size() && !canBeNativeType(*removeAliasIfNecessary(node.children[i])->result_type))
         {
             return false;
         }
@@ -463,9 +471,7 @@ static CompileDAG getCompilableDAG(
             }
 
             bool skip_compile = std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end();
-            if (skip_compile
-                && (!child->column || !isColumnConst(*child->column)
-                    || dynamic_cast<const ColumnConst *>(child->column.get())->getField().isNull()))
+            if (skip_compile && (!child->column || child->column->onlyNull()))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Only constant nodes with non-null value could skip compilation");
 
             stack.emplace(Frame{.node = child, .skip_compile = skip_compile});

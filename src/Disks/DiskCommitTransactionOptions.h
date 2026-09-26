@@ -20,7 +20,7 @@ struct MetaInKeeperCommitOptions
 {
     bool need_rollback_blobs = true;
     bool may_retry = false;
-    ZooKeeperConnection * zookeeper;
+    ZooKeeperConnection * zookeeper = nullptr;
     Coordination::Requests additional_requests;
 };
 

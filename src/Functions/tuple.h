@@ -2,6 +2,7 @@
 
 #include <Functions/IFunction.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>

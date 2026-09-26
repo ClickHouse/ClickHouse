@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Settings.h>
@@ -10,7 +11,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -21,12 +21,10 @@ class FunctionIsNullable final : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionIsNullable>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNullable>();
     }
-
-    explicit FunctionIsNullable(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     String getName() const override
     {
@@ -35,10 +33,6 @@ public:
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
-        /// isNullable(column) triggers a bug in old analyzer when it is replaced to constant.
-        if (!use_analyzer)
-            return nullptr;
-
         const ColumnWithTypeAndName & elem = arguments[0];
         if (elem.type->onlyNull() || canContainNull(*elem.type))
             return result_type->createColumnConst(1, UInt8(1));
@@ -75,7 +69,6 @@ public:
     }
 
 private:
-    bool use_analyzer;
 };
 
 }
@@ -104,11 +97,11 @@ INSERT INTO tab (ordinary_col, nullable_col) VALUES (1,1), (2, 2), (3,3);
 SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
         )",
         R"(
-┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
-│                           0 │                           1 │
-│                           0 │                           1 │
-│                           0 │                           1 │
-└─────────────────────────────┴─────────────────────────────┘
+┌─isNullable(ordinary_col)─┬─isNullable(nullable_col)─┐
+│                        0 │                        1 │
+│                        0 │                        1 │
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
         )"
     }
     };

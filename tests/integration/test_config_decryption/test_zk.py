@@ -1,6 +1,5 @@
 import logging
 import pytest
-import os
 from helpers.cluster import ClickHouseCluster
 
 def create_params_in_zk(zk):

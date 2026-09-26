@@ -1,9 +1,13 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Common/quoteString.h>
+#include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -11,6 +15,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <Core/Defines.h>
 
@@ -26,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 String ConstraintsDescription::toString() const
@@ -37,7 +43,7 @@ String ConstraintsDescription::toString() const
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ConstraintsDescription ConstraintsDescription::parse(const String & str)
@@ -81,10 +87,23 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
     return res;
 }
 
+ASTs ConstraintsDescription::filterConstraintsForOptimization() const
+{
+    ASTs res;
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    {
+        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
+        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
+            continue;
+        res.push_back(constraint);
+    }
+    return res;
+}
+
 std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildConstraintData() const
 {
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    for (const auto & constraint : filterConstraintsForOptimization())
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
@@ -98,7 +117,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
 std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
 {
     std::vector<CNFQueryAtomicFormula> constraint_data;
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    for (const auto & constraint : filterConstraintsForOptimization())
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
              .pullNotOutFunctions();
@@ -136,6 +155,13 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
+    /// The columns that are physically available when the constraint is checked (the top-level table columns).
+    /// A constraint expression may reference subcolumns (e.g. `x.null` of a `Nullable` column, `arr.size0` of an
+    /// `Array`) that are not present in this block; they have to be extracted from their parent columns first.
+    Block available_columns;
+    for (const auto & column : source_columns_)
+        available_columns.insert({column.type->createColumn(), column.type, column.name});
+
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
@@ -146,10 +172,29 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
             ASTPtr expr = constraint_ptr->expr->clone();
             auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
+            auto constraint_dag = ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActionsDAG(false, true);
+
+            /// Prepend actions that extract the required subcolumns from their parent columns, so the expression
+            /// can be evaluated on a block that contains only the top-level columns.
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), context);
+            res.push_back(std::make_shared<ExpressionActions>(
+                ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag)),
+                ExpressionActionsSettings(context, CompileExpressions::yes)));
         }
     }
     return res;
+}
+
+void ConstraintsDescription::checkExpressionsPreserveRowCount() const
+{
+    for (const auto & constraint : constraints)
+    {
+        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
+        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
+                backQuote(declaration.name));
+    }
 }
 
 const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
@@ -184,14 +229,14 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomsById(const Co
     return result;
 }
 
-ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
+ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const
 {
     QueryTreeData data;
     std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;
 
     QueryAnalysisPass pass(table_node);
 
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    for (const auto & constraint : filterConstraintsForOptimization())
     {
         auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".

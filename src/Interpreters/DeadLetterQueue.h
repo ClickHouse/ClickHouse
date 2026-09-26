@@ -28,8 +28,8 @@ struct DeadLetterQueueElement
     struct KafkaDetails
     {
         String topic_name;
-        Int64 partition;
-        Int64 offset;
+        Int64 partition = 0;
+        Int64 offset = 0;
         String key;
     };
     struct RabbitMQDetails
