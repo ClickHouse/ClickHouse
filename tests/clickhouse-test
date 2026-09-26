@@ -1789,6 +1789,31 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        # Replaces the read-buffer stack with the experimental ReaderExecutor, falling back to the
+        # legacy path where unsupported - a different way to read the same bytes, so any output
+        # change is a bug. Kept below 0.5 while it is experimental.
+        "use_reader_executor": lambda: random.random() < 0.3,
+        "reader_executor_use_long_connections": lambda: random.randint(0, 1),
+        # 0 never bridges a forward gap on the open connection, a huge value always does
+        "reader_executor_min_bytes_for_seek": lambda: random.choice(
+            [0, 1024, 2 * 1024 * 1024, 40 * 1024 * 1024]
+        ),
+        # 0 never drains a dropped long connection, so none of them return to the pool reusable
+        "reader_executor_max_tail_for_drain": lambda: random.choice(
+            [0, 1024, 1024 * 1024, 16 * 1024 * 1024]
+        ),
+        # Context::getReadSettings validates the three sizes below even when the executor is off:
+        # each must be within [128 KiB, 40 MiB] and plan_look_ahead >= block_size, so no block_size
+        # draw exceeds the smallest plan_look_ahead draw.
+        "reader_executor_window_size": lambda: random.choice(
+            [128 * 1024, 1024 * 1024, 8 * 1024 * 1024, 40 * 1024 * 1024]
+        ),
+        "reader_executor_block_size": lambda: random.choice(
+            [128 * 1024, 256 * 1024, 1024 * 1024]
+        ),
+        "reader_executor_plan_look_ahead": lambda: random.choice(
+            [1024 * 1024, 16 * 1024 * 1024, 40 * 1024 * 1024]
+        ),
         "filesystem_cache_segments_batch_size": lambda: random.choice(
             [0, 1, 2, 3, 5, 10, 50, 100]
         ),
@@ -1981,6 +2006,29 @@ class SettingsRandomizer:
         # Capped below a typical probe side: a threshold above it suppresses the runtime filter for
         # every test, which is a blanket feature-disable rather than coverage.
         "join_runtime_filter_min_probe_rows": lambda: 0 if random.random() < 0.1 else random.randint(1, 10000),
+        # Sizing of the runtime filter above. It may never drop a matching row, so a badly sized
+        # one only costs performance - any result change is a soundness bug. 0 means "use the
+        # default" for both bloom knobs; above 16 MiB / 10 they throw PARAMETER_OUT_OF_BOUND.
+        "join_runtime_bloom_filter_bytes": lambda: random.choice(
+            [0, 1024, 512 * 1024, 16 * 1024 * 1024]
+        ),
+        "join_runtime_bloom_filter_hash_functions": lambda: random.choice([0, 1, 3, 10]),
+        # 0 disables the filter as soon as any bit is set, 1.0 keeps it whatever its fill rate
+        "join_runtime_bloom_filter_max_ratio_of_set_bits": lambda: random.choice(
+            [0.0, 0.5, 0.7, 1.0]
+        ),
+        # Picks between the two filter implementations, which must agree: 0 is always a bloom
+        # filter, a huge limit is always an exact set
+        "join_runtime_filter_exact_values_limit": lambda: random.choice(
+            [0, 1, 10000, 100000000]
+        ),
+        # 0 disables a filter after the first checked block, 1.0 never does
+        "join_runtime_filter_pass_ratio_threshold_for_disabling": lambda: random.choice(
+            [0.0, 0.7, 1.0]
+        ),
+        "join_runtime_filter_blocks_to_skip_before_reenabling": lambda: random.choice(
+            [0, 1, 30, 1000000]
+        ),
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
@@ -1995,6 +2043,9 @@ class SettingsRandomizer:
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
         "materialize_statistics_on_insert": lambda: random.random() > 0.05,
+        # The skip-index sibling of the line above. Off, an inserted part carries no skip index, so
+        # nothing prunes until a merge builds one - plans and granule counts move, results must not.
+        "materialize_skip_indexes_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
@@ -2076,6 +2127,12 @@ class SettingsRandomizer:
         "use_parquet_metadata_cache": lambda: random.randint(0, 1),
         # Caches parsed Paimon manifest lists and manifests, like `use_parquet_metadata_cache` above.
         "use_paimon_metadata_files_cache": lambda: random.randint(0, 1),
+        # The Iceberg member of the same family, plus the row-count cache the file/s3/url/hdfs
+        # table functions keep for count queries. A cache must not change an answer.
+        "use_iceberg_metadata_files_cache": lambda: random.randint(0, 1),
+        "use_cache_for_count_from_files": lambda: random.randint(0, 1),
+        # Two implementations of the same positional deletes, so they must agree.
+        "use_roaring_bitmap_iceberg_positional_deletes": lambda: random.randint(0, 1),
         # Eager aggregation below a join in the Cascades optimizer - a rewrite, so any output change
         # is a bug.
         "cascades_aggregation_pushdown": lambda: random.random() > 0.05,
@@ -2089,8 +2146,14 @@ class SettingsRandomizer:
         "iceberg_manifest_decode_concurrency": lambda: random.choice([1, 2, 4, 16]),
         "iceberg_file_entries_queue_size": lambda: random.choice([1, 10, 100, 1000]),
         # Skips whole manifest files by their partition summaries, so an unsound bound is a
-        # wrong-results bug. Its gate `use_iceberg_partition_pruning` defaults on.
+        # wrong-results bug. Gated on `use_iceberg_partition_pruning` below.
         "use_iceberg_manifest_list_partition_pruning": lambda: random.randint(0, 1),
+        # Lake partition pruning, the same wrong-results class as the manifest-list skip above.
+        # The Iceberg gate stays on almost always: it suppresses the skip above with it, and a
+        # run without any pruning is the baseline every reference was written against anyway.
+        "use_iceberg_partition_pruning": lambda: random.random() > 0.05,
+        # Paimon's equivalent is off by default, so drawing it on is added coverage
+        "use_paimon_partition_pruning": lambda: random.randint(0, 1),
         "allow_key_condition_coalesce_rewrite": lambda: random.random() > 0.05,
         # "use_constant_folding_in_index_analysis": lambda: random.random() < 0.5,
         "allow_aggregate_partitions_independently": lambda: random.random() > 0.05,
@@ -2197,6 +2260,11 @@ class SettingsRandomizer:
         "optimize_read_in_reverse_order_final": "optimize_read_in_order",
         # the top-k variant of the query condition cache needs the cache itself to be on
         "use_query_condition_cache_for_top_k": "use_query_condition_cache",
+        # connection reuse only exists inside the reader executor. The three sizes are not listed
+        # here: this forces a child to 0, which they reject.
+        "reader_executor_use_long_connections": "use_reader_executor",
+        # skipping manifest files by partition summary is part of Iceberg partition pruning
+        "use_iceberg_manifest_list_partition_pruning": "use_iceberg_partition_pruning",
         # forcing independent DISTINCT/window/set building is a no-op when not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
         "force_window_partitions_independently": "allow_window_partitions_independently",
@@ -2271,6 +2339,10 @@ class MergeTreeSettingsRandomizer:
         "allow_vertical_merges_from_compact_to_wide_parts": lambda: random.randint(
             0, 1
         ),
+        # The master switch for the three knobs above, which could only ever force vertical merges
+        # on. A vertical merge must produce the same part as a horizontal one. Rarely off: drawing
+        # it off makes those three inert, and the thresholds already reach horizontal merges.
+        "enable_vertical_merge_algorithm": lambda: random.random() > 0.05,
         "min_merge_bytes_to_use_direct_io": threshold_generator(
             0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -2283,6 +2355,11 @@ class MergeTreeSettingsRandomizer:
         "compress_primary_key": lambda: random.randint(0, 1),
         "marks_compress_block_size": lambda: random.randint(8000, 100000),
         "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
+        # Which codec, not just whether to compress. No parenthesised form (the default is
+        # `ZSTD(3)`): cli_format_settings emits a bare `--key value` into a shell command line,
+        # where `ZSTD(3)` is a syntax error.
+        "marks_compression_codec": lambda: random.choice(["NONE", "LZ4", "ZSTD", "LZ4HC"]),
+        "primary_key_compression_codec": lambda: random.choice(["NONE", "LZ4", "ZSTD", "LZ4HC"]),
         "replace_long_file_name_to_hash": lambda: random.randint(0, 1),
         "max_file_name_length": threshold_generator(0.3, 0.3, 0, 128),
         "min_bytes_for_full_part_storage": threshold_generator(
@@ -2306,6 +2383,17 @@ class MergeTreeSettingsRandomizer:
         "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
+        # When the primary key reaches memory, not what it contains. Rarely off: MergeTreeData
+        # getPrimaryIndexCache needs use_primary_key_cache AND this, so drawing it off takes the
+        # two cache settings above out of play with it.
+        "primary_key_lazy_load": lambda: random.random() > 0.05,
+        # Whether derived data is built at insert or merge time. A part without a projection,
+        # skip index or statistics must still answer with the base data, so only plans and
+        # ProfileEvents may move.
+        "materialize_projections_on_insert": lambda: random.randint(0, 1),
+        "materialize_projections_on_merge": lambda: random.randint(0, 1),
+        "materialize_skip_indexes_on_merge": lambda: random.randint(0, 1),
+        "materialize_statistics_on_merge": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
             ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
@@ -2314,6 +2402,8 @@ class MergeTreeSettingsRandomizer:
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
+        # Compact discriminators for Variant, like the serialization versions around it
+        "use_compact_variant_discriminators_serialization": lambda: random.randint(0, 1),
         "auto_statistics_types": auto_statistics_generator(),
         # Don't add with_missing_columns: it is the only version under which
         # skip_empty_columns_on_insert below does anything, and enabling the pair loses skip-index
@@ -2324,9 +2414,14 @@ class MergeTreeSettingsRandomizer:
         # Omits all-type-default columns from a written part, so reading one back has to
         # reconstruct it from the type default rather than from data on disk.
         "skip_empty_columns_on_insert": lambda: random.randint(0, 1),
+        # Permutes rows within equal-sorting-key runs for compressibility. Physical order among
+        # equal keys is not guaranteed anyway, so a test it flips was relying on unspecified order.
+        "optimize_row_order": lambda: random.randint(0, 1),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
         "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000),
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
+        # Part-header storage format in ZooKeeper; only the layout changes, not the parts
+        "use_minimalistic_part_header_in_zookeeper": lambda: random.randint(0, 1),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
         "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas": lambda: random.randint(0, 1),
