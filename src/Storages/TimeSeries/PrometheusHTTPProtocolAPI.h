@@ -98,16 +98,16 @@ private:
     /// with their tags registered for timeSeriesIdToTags.
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
+    /// UNION ALL of `SELECT <select_list> FROM <tags> WHERE <matchers and time bounds>` for each `match[]` selector.
+    ASTPtr makeFilteredTagsUnionQuery(const ASTs & select_list, const Strings & match_params, const String & start_param, const String & end_param);
+
     /// Shared implementation of getLabels and getLabelValues: executes a query aggregating `array_expression`
-    /// (a sorted array of unique strings) over the series matched by the `match[]` selectors
-    /// (or over all series if no selectors are given) and writes the result as a JSON array, capped by `limit`
+    /// (a sorted array of unique strings) over `source_query` and writes the result as a JSON array, capped by `limit`
     /// (0 means no limit).
     void getLabelsOrLabelValues(
         WriteBuffer & response,
         ASTPtr array_expression,
-        const Strings & match_params,
-        const String & start_param,
-        const String & end_param,
+        ASTPtr source_query,
         UInt64 limit,
         QueryFinishCallback query_finish_callback);
 

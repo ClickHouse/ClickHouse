@@ -646,21 +646,6 @@ namespace
         return select_with_union_query;
     }
 
-    /// Makes a mapping from a tag name to a column name.
-    std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & storage_settings)
-    {
-        std::unordered_map<String, String> res;
-        const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
-        for (const auto & tag_name_and_column_name : tags_to_columns)
-        {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-            const auto & tag_name = tuple.at(0).safeGet<String>();
-            const auto & column_name = tuple.at(1).safeGet<String>();
-            res[tag_name] = column_name;
-        }
-        return res;
-    }
-
     /// Constant ASTs for the minimum and the maximum value of one component of a multi-component
     /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
     std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
@@ -922,6 +907,40 @@ namespace
 }
 
 
+std::unordered_map<String, String> StorageTimeSeriesSelector::makeColumnNameByTagNameMap(const TimeSeriesSettings & time_series_settings)
+{
+    std::unordered_map<String, String> res;
+    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+    for (const auto & tag_name_and_column_name : tags_to_columns)
+    {
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        const auto & tag_name = tuple.at(0).safeGet<String>();
+        const auto & column_name = tuple.at(1).safeGet<String>();
+        res[tag_name] = column_name;
+    }
+    return res;
+}
+
+
+ASTPtr StorageTimeSeriesSelector::makeWhereFilterForTagsTable(
+    const PrometheusQueryTree::MatcherList & matchers,
+    const std::unordered_map<String, String> & column_name_by_tag_name,
+    const std::optional<DateTime64> & min_time,
+    const std::optional<DateTime64> & max_time,
+    const DataTypePtr & table_timestamp_type,
+    UInt32 time_scale)
+{
+    /// If the time range contains no timestamp of the table, no series can have samples in it.
+    const auto table_time_range = makeTableTimeRange(table_timestamp_type, min_time, max_time, time_scale);
+    if (table_time_range.empty())
+        return make_intrusive<ASTLiteral>(false);
+
+    /// The helper from the anonymous namespace, which takes the time range with the scale of `table_timestamp_type`.
+    return DB::makeWhereFilterForTagsTable(
+        matchers, column_name_by_tag_name, table_time_range.min_time, table_time_range.max_time, table_timestamp_type);
+}
+
+
 ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     const StorageID & tags_table_id,
     const TimeSeriesSettings & time_series_settings,
@@ -982,7 +1001,7 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
-    auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
+    auto column_name_by_tag_name = StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_settings);
 
     /// The samples are compared with the bounds at the scale of the table, so the index of the samples table is used as is.
     const auto table_time_range = makeTableTimeRange(config.table_timestamp_type, config.min_time, config.max_time, config.time_scale);
