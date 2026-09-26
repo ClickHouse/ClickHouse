@@ -195,7 +195,7 @@
             --enable_join_transitive_predicates True \
             --use_streaming_marks_compression 0 \
             --text_index_posting_list_apply_mode materialize \
-            --text_index_lazy_intersection_density_threshold 0.7667576975245328 \
+            --text_index_postings_intersection_algorithm auto \
             --allow_distinct_partitions_independently True \
             --force_distinct_partitions_independently True \
             --max_number_of_partitions_for_independent_distinct 101 \
