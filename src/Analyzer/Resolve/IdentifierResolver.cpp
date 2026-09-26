@@ -48,6 +48,8 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool semi_join_compatibility;
+    extern const SettingsBool anti_join_compatibility;
 }
 
 namespace ErrorCodes
@@ -59,6 +61,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
+    extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -702,6 +705,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
         if (table_expression_node.get() == table_expression_node_to_ignore.get())
             continue;
 
+        /// The columns of a hidden SEMI/ANTI JOIN side are not visible here, so they must not make a
+        /// name of the preserved side ambiguous: otherwise `SELECT *` over `t1 LEFT SEMI JOIN t2` with
+        /// a column `a` on both sides would keep the only surviving column named `t1.a`, and an outer
+        /// query could no longer refer to it as `a` although `t2` is not part of the result at all.
+        if (isTableExpressionHiddenBySemiAntiJoin(table_expression_node.get(), scope))
+            continue;
+
         can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(identifier_lookup, table_expression_node, scope);
         if (can_bind_identifier_to_table_expression)
             break;
@@ -1308,9 +1318,9 @@ static bool innerJoinKeyColumnsAreEquated(
  * Example, for "SELECT id FROM t1 FULL JOIN t2 USING (id)"
  * this creates "SELECT firstNonDefault(t1.id, t2.id) AS id FROM ..." to coalesce the values appropriately.
  */
-QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope);
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope, std::optional<JoinTableSide> preserved_side);
 
-QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope, std::optional<JoinTableSide> preserved_side)
 {
     const auto & using_expression = using_column_node.getExpression();
     if (!using_expression)
@@ -1321,13 +1331,25 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 arguments for USING projection, but got {}", arguments.size());
 
-    for (size_t i = 0; i < arguments.size(); ++i)
+    /** When `semi_join_compatibility` / `anti_join_compatibility` hides one side of the JOIN, the
+      * visible `USING` key must keep the preserved side's own type: widening it to the `USING`
+      * supertype would expose the type of a table that is not part of the result at all.
+      * The preserved side never needs `join_use_nulls` either - a `SEMI`/`ANTI` JOIN only preserves
+      * rows of that side, so nothing of it can become NULL - so the conversion is skipped entirely.
+      */
+    if (!preserved_side)
     {
-        auto resolved_side = (i + 1 == arguments.size()) ? JoinTableSide::Right : JoinTableSide::Left;
-        auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], using_column_node.getResultType(), join_kind, resolved_side, scope);
-        if (converted_argument)
-            arguments[i] = converted_argument;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            auto resolved_side = (i + 1 == arguments.size()) ? JoinTableSide::Right : JoinTableSide::Left;
+            auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], using_column_node.getResultType(), join_kind, resolved_side, scope);
+            if (converted_argument)
+                arguments[i] = converted_argument;
+        }
     }
+
+    if (preserved_side == JoinTableSide::Right)
+        return arguments.back();
 
     if (join_kind == JoinKind::Right)
         return arguments.back();
@@ -1348,6 +1370,165 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     function_node->setAlias(using_column_node.getColumnName());
 
     return function_node;
+}
+
+/// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
+static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNode * target)
+{
+    if (!root)
+        return false;
+
+    if (root == target)
+        return true;
+
+    if (const auto * join = root->as<JoinNode>())
+        return joinSubtreeContains(join->getLeftTableExpressionNode().get(), target)
+            || joinSubtreeContains(join->getRightTableExpressionNode().get(), target);
+
+    if (const auto * cross_join = root->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join->getTableExpressions())
+            if (joinSubtreeContains(table_expression.get(), target))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_join = root->as<ArrayJoinNode>())
+        return joinSubtreeContains(array_join->getTableExpressionNode().get(), target);
+
+    return false;
+}
+
+SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
+    const JoinNode & join_node,
+    JoinStrictness strictness,
+    JoinKind kind,
+    const ContextPtr & context,
+    const IQueryTreeNode * resolving_join_on_expression)
+{
+    is_semi = strictness == JoinStrictness::Semi;
+    is_anti = strictness == JoinStrictness::Anti;
+    if (!is_semi && !is_anti)
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    const bool skip_non_preserved_side = (is_semi && settings[Setting::semi_join_compatibility])
+        || (is_anti && settings[Setting::anti_join_compatibility]);
+    skip_left = skip_non_preserved_side && isRight(kind);
+    skip_right = skip_non_preserved_side && isLeft(kind);
+
+    /// An inner JOIN's ON expression needs both sides of that inner join. An ancestor may only
+    /// relax the restriction for the ancestor side which contains that inner JOIN; relaxing the
+    /// other side would expose a sibling table outside the current ON expression.
+    if (resolving_join_on_expression)
+    {
+        if (resolving_join_on_expression == &join_node)
+        {
+            skip_left = false;
+            skip_right = false;
+            return;
+        }
+
+        if (skip_left && joinSubtreeContains(join_node.getLeftTableExpressionNode().get(), resolving_join_on_expression))
+            skip_left = false;
+        if (skip_right && joinSubtreeContains(join_node.getRightTableExpressionNode().get(), resolving_join_on_expression))
+            skip_right = false;
+    }
+}
+
+bool SemiAntiJoinSideChecker::shouldSkipSide(JoinTableSide side) const
+{
+    return (skip_left && side == JoinTableSide::Left) || (skip_right && side == JoinTableSide::Right);
+}
+
+std::optional<JoinTableSide> SemiAntiJoinSideChecker::preservedSideOrNone() const
+{
+    if (skip_left)
+        return JoinTableSide::Right;
+    if (skip_right)
+        return JoinTableSide::Left;
+    return {};
+}
+
+bool IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(
+    const IQueryTreeNode * table_expression_node,
+    const IdentifierResolveScope & scope)
+{
+    const auto & settings = scope.context->getSettingsRef();
+    if (!settings[Setting::semi_join_compatibility] && !settings[Setting::anti_join_compatibility])
+        return false;
+
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (!nearest_query_scope)
+        return false;
+
+    const auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
+    if (!query_node || !query_node->getJoinTreeNode())
+        return false;
+
+    /// Follow the path from the root of the join tree down to the table expression. Every SEMI/ANTI
+    /// JOIN on that path hides the side which contains the table expression if the compatibility
+    /// setting says so, unless its own ON expression is being resolved (`SemiAntiJoinSideChecker`).
+    const IQueryTreeNode * current = query_node->getJoinTreeNode().get();
+    while (current && current != table_expression_node)
+    {
+        if (const auto * join_node = current->as<JoinNode>())
+        {
+            const auto * left = join_node->getLeftTableExpressionNode().get();
+            const auto * right = join_node->getRightTableExpressionNode().get();
+            const bool is_from_left = joinSubtreeContains(left, table_expression_node);
+            const bool is_from_right = !is_from_left && joinSubtreeContains(right, table_expression_node);
+            if (!is_from_left && !is_from_right)
+                return false;
+
+            SemiAntiJoinSideChecker checker(*join_node, join_node->getStrictness(), join_node->getKind(), scope.context, scope.resolving_join_on_expression);
+            if (checker.shouldSkipSide(is_from_left ? JoinTableSide::Left : JoinTableSide::Right))
+                return true;
+
+            current = is_from_left ? left : right;
+        }
+        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
+        {
+            const IQueryTreeNode * next = nullptr;
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+            {
+                if (joinSubtreeContains(table_expression.get(), table_expression_node))
+                {
+                    next = table_expression.get();
+                    break;
+                }
+            }
+            current = next;
+        }
+        else if (const auto * array_join_node = current->as<ArrayJoinNode>())
+        {
+            current = array_join_node->getTableExpressionNode().get();
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
+    JoinTableSide side,
+    const IQueryTreeNode & node_for_error_message,
+    const IQueryTreeNode & scope_node) const
+{
+    if (!shouldSkipSide(side))
+        return;
+
+    const char * join_type_str = is_semi ? "SEMI" : "ANTI";
+    const char * side_str = side == JoinTableSide::Left ? "left" : "right";
+    throw Exception(ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED,
+        "Cannot access columns from the {} side of {} JOIN in this context. Expression {} is not available. In scope {}",
+        side_str,
+        join_type_str,
+        node_for_error_message.formatASTForErrorMessage(),
+        scope_node.formatASTForErrorMessage());
 }
 
 /// With `database_qualified = false`, the qualifier is the first identifier part matched against
@@ -1426,6 +1607,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
     JoinKind join_kind = from_join_node.getKind();
+    JoinStrictness join_strictness = from_join_node.getStrictness();
 
     bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
@@ -1440,9 +1622,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
+    SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
+    /// Set when one side of this JOIN is hidden by `semi_join_compatibility` / `anti_join_compatibility`.
+    const auto using_preserved_side = side_checker.preservedSideOrNone();
+    std::optional<JoinTableSide> denied_qualified_access;
+
     bool ambiguous_in_join_tree = false;
-    auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column)
+    auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column, JoinTableSide side)
     {
+        if (side_checker.shouldSkipSide(side))
+        {
+            const bool is_table_lookup = identifier_lookup.isTableExpressionLookup();
+            const bool is_qualified_expr = identifier_lookup.isExpressionLookup()
+                && identifier_lookup.identifier.getPartsSize() > 1;
+            /// A fully qualified reference names the skipped table just as well as an alias or a bare
+            /// table name does, so it must be attributed to the skipped side too. Otherwise the
+            /// reference degrades to `UNKNOWN_IDENTIFIER`, which a statically-dead `if(false, ...)`
+            /// branch silently folds away instead of reporting the access violation.
+            /// The `db.table` prefix takes two parts, so it is the whole identifier of a table
+            /// expression lookup (`db.table.*` is looked up by its qualifier `db.table`), while an
+            /// expression lookup needs a third part for the column name (`db.table.column`).
+            const size_t min_database_qualified_parts = is_table_lookup ? 2 : 3;
+            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false)
+                || (identifier_lookup.identifier.getPartsSize() >= min_database_qualified_parts
+                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/true));
+            if ((is_table_lookup || is_qualified_expr) && binds_qualifier)
+                denied_qualified_access = side;
+            return QueryTreeNodePtr{};
+        }
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
         /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
         /// statically-dead if/multiIf branch is caught and swallowed during resolution, and a
@@ -1487,9 +1694,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     QueryTreeNodePtr left_resolved_identifier = nullptr;
     QueryTreeNodePtr right_resolved_identifier = nullptr;
     if (binds_left || !binds_right)
-        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
     if (!binds_left || binds_right)
-        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
+        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
 
     if (ambiguous_in_join_tree)
         return IdentifierResolveResult::ambiguousInJoinTree();
@@ -1504,12 +1711,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
     {
         if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
-            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
+            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
         else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
-            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
 
         if (ambiguous_in_join_tree)
             return IdentifierResolveResult::ambiguousInJoinTree();
+    }
+
+    /// Report the access violation only after every remaining preserved-side interpretation has
+    /// failed: a skipped-side alias or table name equal to the database part of a fully qualified
+    /// `db.table.column` reference must not deny the reference while the database-qualified
+    /// fallback above can still resolve it from the preserved side.
+    if (!left_resolved_identifier && !right_resolved_identifier && denied_qualified_access)
+    {
+        side_checker.throwIfTableAccessDenied(*denied_qualified_access, *table_expression_node, *scope.scope_node);
     }
 
     if (!identifier_lookup.isExpressionLookup())
@@ -1675,7 +1891,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
             const auto & using_column_node = using_column_node_it->second->as<const ColumnNode &>();
-            resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope);
+            resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope, using_preserved_side);
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
@@ -1737,7 +1953,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            convert_resolved_result_type_if_needed(left_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
+            /// The right side is hidden by the compatibility settings, so the `USING` key must keep
+            /// the preserved left side's type instead of the `USING` supertype.
+            if (using_preserved_side != JoinTableSide::Left)
+                convert_resolved_result_type_if_needed(left_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
     else if (right_resolved_identifier)
@@ -1751,7 +1970,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            convert_resolved_result_type_if_needed(right_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
+            /// Same as above, with the left side hidden and the right side preserved.
+            if (using_preserved_side != JoinTableSide::Right)
+                convert_resolved_result_type_if_needed(right_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
 
