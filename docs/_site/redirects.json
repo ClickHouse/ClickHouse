@@ -1,5 +1,9 @@
 [
   {
+    "destination": "/integrations/language-clients/cpp",
+    "source": "/concepts/features/interfaces/cpp"
+  },
+  {
     "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/get-started/quickstarts/tutorial"
   },
