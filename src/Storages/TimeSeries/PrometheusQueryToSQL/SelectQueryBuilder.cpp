@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -22,6 +23,14 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
     auto select_list_exp = make_intrusive<ASTExpressionList>();
     select_list_exp->children = select_list;
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+
+    if (!settings_changes.empty())
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        settings_ast->changes = settings_changes;
+        select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_ast));
+    }
 
     if (!from_table.empty() || from_table_function)
     {

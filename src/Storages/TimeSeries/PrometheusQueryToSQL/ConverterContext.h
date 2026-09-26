@@ -16,6 +16,13 @@ struct ConverterContext
     const std::shared_ptr<const PrometheusQueryTree> promql_tree;
 
     const StorageID time_series_storage_id;
+
+    /// Set when the target is a Distributed table over per-shard TimeSeries tables, see PrometheusQueryEvaluationSettings.
+    const String cluster_name;
+    const StorageID remote_time_series_storage_id;
+    const bool skip_unavailable_shards;
+    const String skip_unavailable_shards_mode;
+
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
 
     /// Data type of the column `timestamp` returned by the query built by the converter.

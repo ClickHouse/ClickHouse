@@ -1,5 +1,5 @@
 ---
-description: 'Prometheus HTTP API support in ClickHouse: remote write, remote read, and PromQL queries over a TimeSeries table.'
+description: 'Prometheus HTTP API support in ClickHouse: remote write, remote read, and PromQL queries over a TimeSeries table, with the query endpoints and remote write also accepting a Distributed table over per-shard TimeSeries tables.'
 sidebarTitle: 'Prometheus API and PromQL'
 slug: /interfaces/prometheus
 title: 'Prometheus HTTP API and PromQL'
@@ -10,9 +10,38 @@ import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge/>
 
-ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
+ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table, and its query endpoints and remote write over a `Distributed` table of per-shard `TimeSeries` tables as well. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
 
 To expose ClickHouse's own metrics for a Prometheus server to scrape, see the [Prometheus metrics endpoint](/concepts/features/interfaces/prometheus-metrics).
+
+The query endpoints, remote write, and the `prometheusQuery`/`prometheusQueryRange` table functions also accept a `Distributed` table over per-shard `TimeSeries` tables: samples are selected on every shard and the PromQL is evaluated on the initiator, and writes are routed through the `Distributed` sink. Remote read and the metadata endpoints (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`) remain `TimeSeries`-only and refuse a `Distributed` target.
+
+Every shard-local table behind such a `Distributed` table must be a `TimeSeries` table declaring the outer samples column under the same name and of the same type as the `Distributed` table itself. That column is named `samples` on `TimeSeries` tables of version 3 and later and `time_series` on older ones; a `Distributed` table has no version of its own, so whichever of the two it declares is the name its sink sends and the name every shard has to answer to, and a remote write to a shard naming the other is refused as having no target there. A mismatch of either name or type is refused rather than rounded.
+
+The check asks every replica of every shard on every request, so a shard-local table swapped for another under the same name is caught by the next request rather than read:
+
+- It asks each replica with `SHOW CREATE TABLE` and `DESC TABLE`, so it reads nothing of `system` on the shard and a row policy or filter there cannot blind it. Both statements ask for `SHOW COLUMNS` on the whole table, which a grant on only some of its columns does not carry, so a replica can refuse to answer them.
+- A replica that refuses to answer it, because the cluster's user holds only the column-level `INSERT` the write itself needs, is left to the check its own `INSERT` makes on the target it resolves, so the check never asks for a right the write does not.
+- A read is not failed by a replica the check cannot reach or that has no table of that name: whether the read itself fails is decided, as before, by its own `skip_unavailable_shards` settings.
+- Remote write, however, is refused (with a retryable `5xx`) while a shard has no verified target, because a replica the check could not see would still receive the samples unchecked. A replica is unverified when it is unreachable, has no table of that name, or does not show that table's samples column. On a shard with `<internal_replication>`, where the sink writes one replica chosen by failover, one verified replica is enough; on any other shard, where it writes every replica, each of them has to be one.
+- Remote write also sets `insert_expected_table_engine` to `TimeSeries` and `insert_expected_column_types` to the samples column the table declares, by that name and type, on the `INSERT` it dispatches, so a shard-local table swapped after that check, whether for another engine or for a `TimeSeries` table of another type, is refused where the `INSERT` resolves it on the shard, rather than taking the batch and having the sink convert the samples into it. The write then fails with a retryable `5xx`, Prometheus resends it, and the next check refuses it.
+
+When the `Distributed` table declares no database, each shard resolves the name in its own default database, except a shard that is this server itself, which is always read and written in-process (`prefer_localhost_replica` is pinned on for both, and parallel replicas off for the reads) and so resolves it in the requesting user's current database, exactly as any query here would. The check resolves that shard's table in-process on the requesting user's context too, so the cluster's connection credentials play no part for it, and the write goes to the table so resolved, as any query keeps the tables it resolved even if a concurrent `RENAME` or `EXCHANGE` moves the name, so long as that table's database assigns UUIDs (`Atomic`, `Replicated`); where it does not, the write re-resolves the name and is refused, as on any other shard.
+
+The grants such a table asks for, each checked before the shard-local check above runs, except the shard-local `INSERT` of the last, for which that check skips the replica that is this server itself rather than reporting on its table, so a caller without one is refused with a plain access error rather than told what that table holds:
+
+- Reading needs `SELECT` on the `Distributed` table and `READ ON REMOTE`, because the query is rewritten into a `cluster()` call.
+- The `prometheusQuery`/`prometheusQueryRange` table functions need `CREATE TEMPORARY TABLE` on top of those, as they do over a `TimeSeries` table: that is the caller's own grant for naming a table function that is not readonly. The selector the rewrite names inside the `cluster()` call is readonly, so neither the cluster's user nor a caller of the query endpoints is ever asked for it.
+- A shard that is this server itself is read in-process, so reading through such a cluster also needs `SELECT` on that shard's table.
+- Writing needs `INSERT` on the `Distributed` table for the columns the request names: `metric_name`, `tags` and the samples column, and the four metadata columns as well when the request brings metadata. Whenever the table's sharding key routes a row of the batch to a shard that is this server itself, it also needs `INSERT` on that shard's own table for every column the sink sends, which is every column the `Distributed` table declares. That grant is asked for by the local delivery itself rather than before the check above, so a batch whose every row routes to other shards is accepted without it, and one that routes a row there is refused with a `403` by that delivery.
+
+An aggregation over a sharded target is not bit-reproducible: the shards' values are summed in whatever order they arrive, so a result can differ in its last place between two identical requests, as it does between two runs of any parallel aggregation. `topk` and `bottomk` break a tie between equal values by the order the series were read in, so with tied values they can return different series on two identical requests.
+
+The `Distributed` table need not declare every outer column of a `TimeSeries` table: one declaring only `metric_name`, `tags` and the samples column carries samples. It cannot carry metric metadata, though, because the sink sends exactly the columns the table declares, so a remote write that brings metadata is refused up front unless the table also declares `metric_family`, `type`, `unit` and `help`. A metadata row carries only those four columns, its `metric_name` and `tags` being empty, so the sink routes it by the sharding key applied to those empty values, and a key computed from either of them gives every metadata row the same value and puts the whole set on one shard. Nothing a Prometheus client reads depends on where they land, as the samples and the PromQL over them are unaffected and the metadata endpoints refuse a `Distributed` target, but a plain `SELECT` of the four metadata columns through the `Distributed` table reads each shard on its own, so it returns them only for the series that live on the shard holding the family row.
+
+Remote write into a `Distributed` target is an `INSERT` through that table's sink with [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) forced on and [`async_insert`](/reference/settings/session-settings/async-insert#async_insert) forced off, whatever the handler's user profile or the `remote_write` URL says: the samples are not queued on the initiator, by the sink or by the asynchronous insert queue, but delivered to the shards before the response, so a `204` means every shard (one replica per shard under `internal_replication`) has accepted them, and a shard that fails the insert fails the write with a retryable `5xx`, which Prometheus answers by resending the batch. A batch left in either queue would be flushed after the check above, into whatever answers to the shard-local name by then, which is why background delivery is not offered on this path. [`skip_unavailable_shards`](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards) is forced off on this path too, whatever the URL or the profile says: a shard the sink skipped would be samples dropped under a `204`. The routing settings `insert_shard_id` and `insert_distributed_one_random_shard` are refused on this path, whether they come from the URL or from the profile: a batch goes where the table's sharding key sends it, so a `Distributed` table with several shards and no key cannot be written through remote write.
+
+PromQL reads a `TimeSeries` table through its selector rather than as an ordinary table, and the selector reads the inner tables directly, so a row policy or an `additional_table_filters` entry attached to the `TimeSeries` table, which a plain `SELECT` from it applies, would not apply to the read. Rather than answer past them, PromQL refuses such a table: a `TimeSeries` table with either, a `Distributed` table with a row policy or an entry keyed to it, and a shard-local table with either, which the shard checks itself for the user it runs the query as. Remote read and the `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` and `/api/v1/metadata` endpoints, which read the inner tables directly too, refuse them the same way. A policy or filter that is a literal true restricts nothing and is not refused. Restrict the data a user can read through the inner tables instead.
 
 ## Prerequisites {#prerequisites}
 
@@ -64,7 +93,7 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/series` | Series metadata |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
 
-The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
+The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple tables.
 
 To use one fixed table for every request, configure it in the handler:
 
@@ -83,7 +112,7 @@ Routing and handler settings:
 | Name | Default | Description |
 |---|---|---|
 | `url_prefix` | none | Rule filter that matches every request path that starts with the configured prefix. |
-| `table` | none | The name of a `TimeSeries` table. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
+| `table` | none | The name of a `TimeSeries` table, or of a `Distributed` table over per-shard `TimeSeries` tables, which the query endpoints and remote write accept but remote read and the metadata endpoints refuse. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
 | `database` | none | The database containing the table. A request can provide it as a query parameter. When omitted, ClickHouse uses a database from a qualified `table` value or falls back to `default`. |
 
 ### Create a TimeSeries table {#create-a-timeseries-table}
@@ -116,7 +145,7 @@ remote_write:
   - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
 ```
 
-ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it.
+ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it. A `Distributed` target ignores `async_insert` altogether: a write into one is always delivered to the shards before the response, as described above.
 
 ## Query with PromQL {#promql-query-support}
 

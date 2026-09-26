@@ -3,10 +3,12 @@
 #include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
@@ -23,10 +25,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
@@ -43,10 +47,19 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
+}
+
+namespace FailPoints
+{
+    extern const char prometheus_remote_write_before_insert[];
 }
 
 namespace
@@ -168,6 +181,64 @@ Block makeTimeSeriesBlock(
     return block;
 }
 
+/// Metadata is stored in columns of its own, which a Distributed table declaring only the sample columns has not got:
+/// the sink sends what the wrapper declares, so metadata it cannot name could not reach a shard that would store it.
+void checkTableAcceptsMetricsMetadata(const StorageInMemoryMetadata & metadata, const StorageID & storage_id)
+{
+    for (const auto * column :
+         {TimeSeriesColumnNames::MetricFamily, TimeSeriesColumnNames::Type, TimeSeriesColumnNames::Unit, TimeSeriesColumnNames::Help})
+    {
+        if (!metadata.columns.has(column))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} does not declare column `{}`, so remote write cannot store the metric metadata sent with the samples: "
+                "declare `{}`, `{}`, `{}` and `{}` on it, or send the samples without metadata",
+                storage_id.getNameForLogs(),
+                column,
+                TimeSeriesColumnNames::MetricFamily,
+                TimeSeriesColumnNames::Type,
+                TimeSeriesColumnNames::Unit,
+                TimeSeriesColumnNames::Help);
+    }
+}
+
+/// The type a TimeSeries table's outer columns are generated with (`generateOuterColumns`), or empty for the
+/// samples column, whose type varies per table and which the shard-target check holds every shard to.
+std::string_view timeSeriesOuterColumnType(const String & column_name)
+{
+    if (column_name == TimeSeriesColumnNames::Tags)
+        return "Map(String, String)";
+    if ((column_name == TimeSeriesColumnNames::MetricName) || (column_name == TimeSeriesColumnNames::MetricFamily)
+        || (column_name == TimeSeriesColumnNames::Type) || (column_name == TimeSeriesColumnNames::Unit)
+        || (column_name == TimeSeriesColumnNames::Help))
+        return "String";
+    return {};
+}
+
+/// The blocks below are filled with the types the table declares, and a Distributed table declares its own: a column
+/// retyped away from the outer schema would carry the reinterpreted bytes of a label or a metadata field to a shard.
+void checkTableDeclaresOuterColumnTypes(
+    const StorageInMemoryMetadata & metadata, const StorageID & storage_id, const Names & columns_to_write)
+{
+    for (const auto & column_name : columns_to_write)
+    {
+        const auto expected_type = timeSeriesOuterColumnType(column_name);
+        if (expected_type.empty())
+            continue;
+        /// A column the table has not got throws here as it would in `makeBlock`, which this runs before.
+        const auto & declared_type = metadata.columns.get(column_name).type;
+        if (declared_type->getName() != expected_type)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares column `{}` as {} while remote write fills it as {}: a Distributed table taking "
+                "remote write must declare the outer columns of a TimeSeries table",
+                storage_id.getNameForLogs(),
+                column_name,
+                declared_type->getName(),
+                expected_type);
+    }
+}
+
 Block makeMetricsMetadataBlock(
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
     size_t num_time_series_rows,
@@ -238,7 +309,50 @@ Block makeBlock(
     return block;
 }
 
-void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
+/// The columns makeBlock() names. Derived from the request alone, so the grant it implies can be
+/// checked before anything that would describe the target table.
+Names columnsToWrite(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
+    const String & samples_column_name)
+{
+    Names names;
+    if (!time_series.empty())
+        names.insert(names.end(), {TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags, samples_column_name});
+    if (!metrics_metadata.empty())
+        names.insert(
+            names.end(),
+            {TimeSeriesColumnNames::MetricFamily,
+             TimeSeriesColumnNames::Type,
+             TimeSeriesColumnNames::Unit,
+             TimeSeriesColumnNames::Help});
+    return names;
+}
+
+/// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the async
+/// insert queue, would be flushed after the shard-target check, into whatever answers to the name by then.
+void forceDeliveryToShards(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextMutablePtr & context)
+{
+    context->setSetting("distributed_foreground_insert", true);
+    context->setSetting("async_insert", false);
+    /// Either makes a shard's sink commit its part inside consume(), leaving the rows of a shard that
+    /// took its half of the batch behind once a later shard refuses its own.
+    context->setSetting("input_format_max_block_wait_ms", Field(UInt64(0)));
+    context->setSetting("wait_for_part_commit_in_dependent_materialized_views", false);
+    /// A shard the sink skipped is a silent drop under a 204: fail the write closed, as the check does.
+    context->setSetting("skip_unavailable_shards", false);
+    /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
+    context->setSetting("prefer_localhost_replica", true);
+    /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table of this type: the
+    /// check on the initiator runs first, so a table swapped in under the name after it is not taken.
+    context->setSetting("insert_expected_table_engine", String("TimeSeries"));
+    /// Named as the wrapper declares it, which is the name the sink sends and the probe holds every shard to.
+    const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(storage, metadata));
+    const auto & samples_type = metadata.columns.get(samples_column).type;
+    context->setSetting("insert_expected_column_types", Field{Map{Tuple{String(samples_column), samples_type->getName()}}});
+}
+
+void insertBlock(Block block, const IStorage & storage, const ContextMutablePtr & context)
 {
     if (!block.rows())
         return;
@@ -303,10 +417,9 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
 PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     StoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext(context_)
-    , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
+    , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
-    checkTimeSeriesVersionIsWritable(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
@@ -324,9 +437,62 @@ void PrometheusRemoteWriteProtocol::write(
         time_series.size(),
         metrics_metadata.size());
 
+    /// Nothing to write, so no grant to ask for, no target to classify and no shard to ask about.
+    if (time_series.empty() && metrics_metadata.empty())
+        return;
+
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    /// A Distributed wrapper has no version of its own, so the column it declares names it.
+    const auto * samples_column_name
+        = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *metadata));
+    const auto columns_to_write = columnsToWrite(time_series, metrics_metadata, samples_column_name);
+    /// The grant the INSERT below makes, asked for before anything that classifies the target: a caller
+    /// without it is told it lacks the grant, and never which engine, version or columns the table has.
+    getContext()->checkAccess(AccessType::INSERT, storage_id, columns_to_write);
+
+    const auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// A shard-local table's version is checked by its own write on the shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionIsWritable(*storagePtrToTimeSeries(time_series_storage));
+
+    /// Refused before the shards are asked anything: no wrapper of that shape could take this request.
+    if (!metrics_metadata.empty())
+        checkTableAcceptsMetricsMetadata(*metadata, storage_id);
+
+    /// Refused there too: a TimeSeries table's outer columns are generated rather than declared, so this
+    /// holds only a Distributed wrapper to anything.
+    checkTableDeclaresOuterColumnTypes(*metadata, storage_id, columns_to_write);
+
+    auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
+    chassert(block.getNames() == columns_to_write);
+
+    if (distributed_target)
+        forceDeliveryToShards(*time_series_storage, *metadata, getContext());
+
+    /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
+    /// own shard choice; checked here, not on construction, with no request body read in between.
+    checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
+
+    FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
+    try
+    {
+        insertBlock(std::move(block), *time_series_storage, getContext());
+    }
+    catch (const Exception & e)
+    {
+        /// A shard-local table that went away between the check and the INSERT is as transient as a
+        /// shard that stopped answering, but `UNKNOWN_TABLE` is a 404, which Prometheus drops instead
+        /// of resending. Reported the way the check reports a shard with no verified target.
+        if (!distributed_target || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE))
+            throw;
+        throw Exception(
+            ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+            /// The cause goes last: a remote exception carries its stack trace after a newline, and
+            /// anything appended after it is cut off with the trace.
+            "Remote write over table {} is refused while a shard has no target, retry once it has one: {}",
+            storage_id.getNameForLogs(),
+            e.message());
+    }
 
     LOG_TRACE(
         log,
