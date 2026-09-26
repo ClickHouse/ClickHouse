@@ -591,7 +591,8 @@ SharedHeader serializationHeader()
     return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), type, "x")});
 }
 
-BuildRuntimeFilterStep makeBuildStep(bool with_topology, const String & filter_key = "rendezvous-key")
+BuildRuntimeFilterStep
+makeBuildStep(bool with_topology, const String & filter_key = "rendezvous-key", const RuntimeFilterGeometry & geometry = makeGeometry())
 {
     auto header = serializationHeader();
     BuildRuntimeFilterStep step(
@@ -601,7 +602,7 @@ BuildRuntimeFilterStep makeBuildStep(bool with_topology, const String & filter_k
         "f",
         filter_key,
         RuntimeFilterBuildOptions{
-            .geometry = makeGeometry(),
+            .geometry = geometry,
             .polarity = RuntimeFilterPolarity::Contains,
             .track_key_range = false,
             .distinct_keys_hint = std::nullopt,
@@ -717,7 +718,9 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
         EXPECT_EQ(e.code(), ErrorCodes::SUPPORT_IS_DISABLED);
     }
 
-    auto without_topology = makeBuildStep(/*with_topology=*/false);
+    auto sender_geometry = makeGeometry();
+    sender_geometry.exact_bytes_limit = 2 * BLOOM_BYTES;
+    auto without_topology = makeBuildStep(/*with_topology=*/false, "rendezvous-key", sender_geometry);
     ASSERT_FALSE(without_topology.hasFilterExchanges());
     auto restored_ptr = roundTripBuildStep(without_topology, pre_exchanges_version);
     auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
@@ -726,8 +729,8 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
     EXPECT_TRUE(restored->getFilterKey().empty());
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
-    /// A stream below the filter-exchanges version omits `join_runtime_filter_exact_bytes_limit`, so
-    /// the reader bounds the exact phase by the bloom filter size.
+    /// A stream below the filter-exchanges version omits `join_runtime_filter_exact_bytes_limit`. The
+    /// reader then bounds the exact phase by the bloom filter size, not by the sender's `2 * BLOOM_BYTES`.
     expectGeometryMatches(restored->getGeometry(), makeGeometry());
 }
 

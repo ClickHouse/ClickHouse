@@ -55,11 +55,12 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'rf_merg
 
 -- The executor logs every task's exchange streams (logger `executeDistributedQuery`, message
 -- `Task '...' input exchange streams: [...]`). A task that receives a filter lists the broadcast
--- exchange of that filter's `rf_merge_%` root among its inputs. Every task that receives a filter
--- must be in one stage, receive both filters, and have no other input exchange. A task without a
--- data input exchange reads storage, and the only scan here that applies the filters is `fact`.
--- The stage is not found by its read step, whose name differs between table engines.
-SELECT '-- both filters are wired to every fact-scan task';
+-- exchange of that filter's `rf_merge_%` root among its inputs. All tasks that receive a filter
+-- must belong to one stage. Each must receive both filters and no other input exchange. Such a
+-- task has no data input exchange, so it reads storage. The only scan here that applies the
+-- filters reads `fact`. The check does not look the stage up by its read step, because Cloud
+-- builds name that step differently.
+SELECT '-- every task that receives a filter is in one stage and receives both filters';
 WITH
     (
         SELECT groupUniqArrayArray(extractAll(extract(message, 'output exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'))
@@ -70,15 +71,15 @@ WITH
               SELECT query_id FROM system.query_log
               WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
                 AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
-    ) AS filter_exchanges
+    ) AS filter_exchanges,
+    extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__') AS input_exchanges
 SELECT length(filter_exchanges) = 2 AND count() >= 1
    AND uniqExact(extract(message, '^Task \'(stage_\\d+)_')) = 1
-   AND min(arraySort(arrayDistinct(extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__')))
-       = arraySort(filter_exchanges))
+   AND min(arraySort(arrayDistinct(input_exchanges)) = arraySort(filter_exchanges))
 FROM system.text_log
 WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
   AND startsWith(message, 'Task \'stage_')
-  AND hasAny(extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'), filter_exchanges)
+  AND hasAny(input_exchanges, filter_exchanges)
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()

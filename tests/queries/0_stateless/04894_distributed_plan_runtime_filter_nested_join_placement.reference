@@ -3,5 +3,5 @@
 100
 -- both filters transported, each through its own merge tree
 1
--- both filters are wired to every fact-scan task
+-- every task that receives a filter is in one stage and receives both filters
 1

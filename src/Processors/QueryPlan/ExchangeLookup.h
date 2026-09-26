@@ -58,8 +58,8 @@ struct IExchangeLookup : boost::noncopyable
     /// chunk, for the processors of `createDeserializer` to turn into data; only an exchange kind that
     /// returns such processors accepts true.
     /// An advisory source reads data the query can do without (a runtime filter). If the producer
-    /// disconnects after the stream is established, the source ends the stream without data instead
-    /// of throwing. A failed connect or handshake still throws. Data streams must pass false. Only a
+    /// disconnects after the stream is established, the source ends the stream early instead of
+    /// throwing. A failed connect or handshake still throws. Data streams must pass false. Only a
     /// streaming source has a peer that can disconnect; persisted and in-memory sources ignore it.
     virtual std::shared_ptr<ISource>
     createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) = 0;
