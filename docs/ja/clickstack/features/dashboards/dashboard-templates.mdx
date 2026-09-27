@@ -41,16 +41,16 @@ ClickStack には、一般的なインフラストラクチャやアプリケー
 
 組み込みの OTel ランタイムメトリクス テンプレートは、[OpenTelemetry runtime metrics](https://opentelemetry.io/docs/specs/semconv/runtime/) でインストルメントされたアプリケーション向けに設計されています。
 
-| Template                    | Description                                              |
+| テンプレート                      | 説明                                                       |
 | --------------------------- | -------------------------------------------------------- |
 | **.NET Runtime Metrics**    | .NET アプリケーション向けの GC コレクション、ヒープサイズ、スレッドプールの使用状況、アセンブリ数    |
-| **Go Runtime Metrics**      | Go アプリケーション向けの Goroutine 数、GC の一時停止時間、ヒープ使用量、メモリー統計      |
-| **JVM Runtime Metrics**     | JVM ベースのアプリケーション向けのヒープおよび非ヒープメモリー、GC の継続時間、スレッド数、クラス読み込み |
-| **Node.js Runtime Metrics** | Node.js アプリケーション向けのイベントループ遅延、ヒープ使用量、CPU 使用率、V8 メモリー      |
+| **Go Runtime Metrics**      | Go アプリケーション向けの goroutine 数、GC 一時停止時間、ヒープ使用量、メモリ統計        |
+| **JVM Runtime Metrics**     | JVM ベースのアプリケーション向けのヒープおよび非ヒープメモリ、GC の継続時間、スレッド数、クラスの読み込み |
+| **Node.js Runtime Metrics** | Node.js アプリケーション向けのイベントループ遅延、ヒープ使用量、CPU 使用率、V8 メモリ       |
 
 注記:
 
-* 各テンプレートは、[`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) リソース属性がダッシュボードのランタイムと一致するサービス向けの [カスタムフィルター](/ja/clickstack/features/dashboards/overview#custom-filters) で設定されています。
-  * ClickHouse のメトリクス テーブル スキーマをカスタマイズしている環境では、正しい Service Name カラムと Resource Attributes カラムをクエリできるよう、このフィルターの調整が必要になる場合があります。
-  * 高ボリューム環境では、`ResourceAttributes['telemetry.sdk.language']` カラムを [マテリアライズ](/ja/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) することで、フィルターのロード時間を短縮できます。
-* テンプレートは公開時点で最新の OTel Semantic Conventions を参照しており、OTel Spec の更新に合わせて定期的に更新されます。古い OTel SDK でインストルメントされたサービスでは、古いメトリクス名を参照するように [可視化を編集](/ja/clickstack/features/dashboards/overview#dashboards-editing-visualizations) する必要がある場合があります。
+* 各テンプレートには、ダッシュボードのランタイムに一致する [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) リソース属性を持つサービス向けの[カスタムフィルター](/ja/clickstack/features/dashboards/overview#custom-filters)が設定されています。
+  * カスタムの ClickHouse メトリクステーブルスキーマを使用する環境では、正しい Service Name カラムと Resource Attributes カラムをクエリできるよう、このフィルターを調整する必要がある場合があります。
+  * 大規模な環境では、`ResourceAttributes['telemetry.sdk.language']` カラムを[マテリアライズ](/ja/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes)することで、フィルターの読み込み時間を短縮できます。
+* テンプレートは公開時点で最新の OTel Semantic Conventions を参照しており、OTel Spec の更新に合わせて定期的に更新されます。古い OTel SDK でインストルメントされたサービスでは、古いメトリクス名を参照するように可視化を[編集](/ja/clickstack/features/dashboards/overview#dashboards-editing-visualizations)する必要がある場合があります。

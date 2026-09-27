@@ -8,7 +8,7 @@ keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-شغّل Agentic Data Stack بالكامل محليًا باستخدام Docker Compose لطرح أسئلة على بياناتك منذ أول تسجيل دخول. يتيح لك أمر واحد فقط، وهو `docker compose up`، تشغيل [LibreChat](/ar/products/agentic-data-stack/components/librechat) و[خادم MCP من ClickHouse](/ar/products/agentic-data-stack/components/mcp-server) و[ClickHouse](/ar/get-started/setup/install) و[Langfuse](/ar/products/agentic-data-stack/components/langfuse) لأغراض المراقبة.
+شغّل Agentic Data Stack بالكامل محليًا باستخدام Docker Compose لطرح أسئلة على بياناتك منذ أول تسجيل دخول. يتيح لك أمر واحد فقط، وهو `docker compose up`، تشغيل [LibreChat](/ar/products/agentic-data-stack/components/librechat) و[خادم ClickHouse MCP](/ar/products/agentic-data-stack/components/mcp-server) و[ClickHouse](/ar/get-started/setup/install) و[Langfuse](/ar/products/agentic-data-stack/components/langfuse) لأغراض المراقبة.
 
 <div id="prerequisites">
   ## المتطلبات الأساسية
@@ -29,10 +29,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     cd agentic-data-stack
     ```
 
-    يتضمّن المستودع ملف `docker-compose.yml` في المستوى الأعلى، لذا يمكنك تشغيل المكدس بالكامل بأمر واحد. راجع [البنية](#how-it-is-wired) للاطلاع على القائمة الكاملة للخدمات.
+    يتضمّن المستودع ملف `docker-compose.yml` في المستوى الأعلى، لذا يمكنك تشغيل المكدس بالكامل بأمر واحد. راجع [معمارية](#how-it-is-wired) للاطلاع على القائمة الكاملة للخدمات.
   </Step>
 
-  <Step title="شغّل سكربت إعداد العرض التوضيحي">
+  <Step title="شغّل البرنامج النصي لإعداد العرض التوضيحي">
     ```bash
     ./scripts/prepare-demo.sh
     ```

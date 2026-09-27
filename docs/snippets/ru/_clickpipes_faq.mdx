@@ -11,14 +11,18 @@ title: FAQ по ClickPipes
   Для стриминговых ClickPipes реплики ClickPipes обращаются к удалённым источникам данных (например, к брокеру Kafka),
   забирают данные, обрабатывают их и загружают в целевой сервис ClickHouse.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="Реплики ClickPipes — стриминговые ClickPipes" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" alt="Реплики ClickPipes — стриминговые ClickPipes" />
+  </Frame>
 
   В случае ClickPipes для объектного хранилища
   реплика ClickPipes координирует задачу загрузки данных
   (определяет, какие файлы копировать, отслеживает состояние и перемещает партиции),
   при этом данные напрямую забираются сервисом ClickHouse.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="Реплики ClickPipes — ClickPipes для объектного хранилища" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" alt="Реплики ClickPipes — ClickPipes для объектного хранилища" />
+  </Frame>
 </Accordion>
 
 <Accordion title="Каково количество реплик по умолчанию и каков их размер?">
@@ -38,7 +42,9 @@ title: FAQ по ClickPipes
   Имейте в виду, что для Kafka ClickPipes также нужно соответствующим образом масштабировать партиции брокера Kafka.
   Параметры масштабирования доступны в разделе &quot;settings&quot; для каждого стримингового ClickPipe.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="Реплики ClickPipes — сколько реплик ClickPipes мне нужно?" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" alt="Реплики ClickPipes — сколько реплик ClickPipes мне нужно?" />
+  </Frame>
 </Accordion>
 
 <Accordion title="Как выглядит структура цен ClickPipes?">

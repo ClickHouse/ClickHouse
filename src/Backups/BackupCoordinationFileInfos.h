@@ -38,13 +38,11 @@ public:
     void addFileInfos(BackupFileInfos && file_infos, const String & host_id);
 
     /// Returns file infos for the specified host after preparation.
-    BackupFileInfos getFileInfos(const String & host_id) const;
+    /// Returned by reference; the referenced storage is immutable after prepare() (see addFileInfos()).
+    const BackupFileInfos & getFileInfos(const String & host_id) const;
 
     /// Iterates the file infos of all hosts in place, without copying them into a vector.
     void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const;
-
-    /// Returns a file info by data file index (see BackupFileInfo::data_file_index).
-    BackupFileInfo getFileInfoByDataFileIndex(size_t data_file_index) const;
 
     /// Returns the number of files after deduplication and excluding empty files.
     size_t getNumFiles() const;

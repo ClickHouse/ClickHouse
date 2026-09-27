@@ -12,7 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 import { Image } from "/snippets/ja/components/Image.jsx";
-import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -34,8 +34,8 @@ Astrato は Pushdown SQL を使用して、ClickHouse Cloud またはオンプ�
   ## ClickHouse へのデータ接続の作成
 </div>
 
-* サイドバーで **Data** を選択し、**Data Connection** タブを選択します
-   (または、次のリンクにアクセスします: https://app.astrato.io/data/sources) 
+* サイドバーで **Data** を選択し、**データ接続** タブを選択します
+  (または、次のリンクにアクセスします: https://app.astrato.io/data/sources)
   ​
 * 画面右上の **New Data Connection** ボタンをクリックします。
 
@@ -51,7 +51,7 @@ Astrato は Pushdown SQL を使用して、ClickHouse Cloud またはオンプ�
 
 * **Test Connection** をクリックします。接続に成功したら、データ接続に **名前** を付けて **Next.** をクリックします。
 
-* データ接続の **user access** を設定し、**connect.** をクリックします。
+* データ接続の **ユーザーアクセス** を設定し、**connect.** をクリックします。
 
 <Image size="md" img="/images/integrations/data-visualization/astrato_3_user_access.webp" alt="Astrato connect to ClickHouse User Access" border />
 
@@ -86,11 +86,11 @@ Astrato は Pushdown SQL を使用して、ClickHouse Cloud またはオンプ�
 わずか数ステップで、Astrato で最初のチャートを作成できます。
 
 1. Visuals パネルを開きます
-2. ビジュアルを選択します (まずは Column Bar Chart を選びましょう) 
+2. ビジュアルを選択します (まずは Column Bar Chart を選びましょう)
 3. 次元を追加します
 4. メジャーを追加します
 
-<Image size="lg" img="/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp" alt="Astrato を ClickHouse の User Access に接続" border />
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp" alt="Astrato を ClickHouse の ユーザーアクセス に接続" border />
 
 <div id="view-generated-sql-supporting-each-visualization">
   ### 各可視化に対応する生成された SQL を表示する
@@ -98,7 +98,7 @@ Astrato は Pushdown SQL を使用して、ClickHouse Cloud またはオンプ�
 
 透明性と正確性は Astrato の中核を成しています。生成されたすべてのクエリを確認できるため、常に完全な制御を維持できます。すべてのコンピュートは ClickHouse 上で直接実行されるため、その高速性を活かしながら、強固なセキュリティとガバナンスも確保できます。
 
-<Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="ClickHouse の User Access に接続する Astrato" border />
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="ClickHouse の ユーザーアクセス に接続する Astrato" border />
 
 <div id="example-completed-dashboard">
   ### 完成したダッシュボードの例

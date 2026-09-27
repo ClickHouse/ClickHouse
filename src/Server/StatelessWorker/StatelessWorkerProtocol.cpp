@@ -12,6 +12,7 @@ void DistributedQueryTaskStatus::write(WriteBuffer & out, UInt64 version) const
     writeStringBinary(status, out);
     writeStringBinary(error_message, out);
     progress.write(out, version);
+    writeIntBinary(error_code, out);
 }
 
 void DistributedQueryTaskStatus::read(ReadBuffer & in, UInt64 version)
@@ -19,6 +20,7 @@ void DistributedQueryTaskStatus::read(ReadBuffer & in, UInt64 version)
     readStringBinary(status, in);
     readStringBinary(error_message, in);
     progress.read(in, version);
+    readIntBinary(error_code, in);
 }
 
 }

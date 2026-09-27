@@ -35,10 +35,11 @@ export const SectionSearch = ({ section = '/reference/statements', label = 'Stat
     // ship in the browser).
     const KEY_STAGING = 'd3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54';
     const KEY_LOCAL = 'b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b';
-    const apiKey = /\.mintlify\.app$/.test(window.location.hostname) ? KEY_STAGING : KEY_LOCAL;
+    const apiKey = /\.mintlify\.(?:app|site)$/.test(window.location.hostname) ? KEY_STAGING : KEY_LOCAL;
     const EMBED = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5/dist/embed.js';
-    const PREVIEW_HOST = 'private-7c7dfe99.mintlify.app';
-    const PREVIEW_RE = new RegExp('^https?://' + PREVIEW_HOST.replace(/\./g, '\\.') + '/');
+    // The legacy *.mintlify.app source exposed pages at the host root, while
+    // the *.mintlify.site source includes a /docs prefix.
+    const PREVIEW_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/;
 
     // Reduce any result URL (preview host or canonical) to a bare docs path.
     const toPath = (u) => (u || '')

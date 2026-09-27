@@ -1,0 +1,18 @@
+_file equality, match
+1
+2
+3
+_file equality, excluded
+_path equality, match
+1
+2
+3
+_file GLOBAL IN, match
+1
+2
+3
+_file GLOBAL IN, excluded
+missing archive, excluded by _file GLOBAL IN before opening
+missing archive, excluded by _path GLOBAL IN before opening
+missing archive without a filter still throws
+OK

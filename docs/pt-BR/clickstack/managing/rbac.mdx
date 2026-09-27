@@ -27,11 +27,11 @@ O ClickStack autentica via ClickHouse Cloud. Antes de atribuir funções do Clic
 1. **Ser convidado para a sua organização do ClickHouse Cloud.** Um administrador da organização convida usuários pelo console do Cloud. Consulte [Gerenciar usuários do Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) para mais detalhes.
 2. **Ter acesso ao SQL Console no serviço.** Acesse **Settings** → **SQL Console Access** no seu serviço e defina o nível de permissão apropriado:
 
-| Acesso ao SQL Console no Cloud              | Acesso ao ClickStack                                                                          |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Acesso ao SQL Console no Cloud              | Acesso ao ClickStack                                                                                |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | **SQL Console Admin** (Acesso total)        | Acesso total ao ClickStack. Necessário para habilitar [alertas](/pt-BR/clickstack/features/alerts). |
-| **SQL Console Read Only** (Somente leitura) | Pode visualizar dados de observabilidade e criar dashboards.                                  |
-| **No access**                               | Não pode acessar o ClickStack.                                                                |
+| **SQL Console Read Only** (Somente leitura) | Pode visualizar dados de observabilidade e criar dashboards.                                        |
+| **No access**                               | Não pode acessar o ClickStack.                                                                      |
 
 Quando um usuário tem acesso ao Cloud, ele aparece na página **Team Settings** do ClickStack, onde você pode atribuir uma função do ClickStack.
 
@@ -40,8 +40,8 @@ Quando um usuário tem acesso ao Cloud, ele aparece na página **Team Settings**
     <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="Página de usuários e funções do ClickHouse Cloud" size="lg" />
   </Tab>
 
-  <Tab title="Configurações da equipe do ClickStack">
-    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Página Configurações da equipe do ClickStack mostrando os membros da equipe e suas funções" size="lg" />
+  <Tab title="Team Settings do ClickStack">
+    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Página Team Settings do ClickStack mostrando os membros da equipe e suas funções" size="lg" />
   </Tab>
 </Tabs>
 
@@ -81,23 +81,17 @@ Você pode definir uma função padrão para novos usuários em [Políticas de s
 </div>
 
 <Steps>
-  <Step>
-    ### Navegue até Team Settings
-
+  <Step title="Navegue até Team Settings" id="step-navigate">
     Abra **Team Settings** e role até **RBAC Roles**.
 
     <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
   </Step>
 
-  <Step>
-    ### Adicione uma nova função
-
+  <Step title="Adicione uma nova função" id="step-add-role">
     Clique em **+ Add Role**. Insira um **Role Name** e, opcionalmente, adicione uma **Description**.
   </Step>
 
-  <Step>
-    ### Configure as permissões e salve
-
+  <Step title="Configure as permissões e salve" id="step-configure">
     Defina as permissões da função e, em seguida, clique em **Create Role**.
 
     <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="modal Add Role" size="md" />

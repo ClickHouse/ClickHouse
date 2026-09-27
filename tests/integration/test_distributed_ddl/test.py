@@ -492,10 +492,24 @@ def test_rename(test_cluster):
 
 def test_socket_timeout(test_cluster):
     instance = test_cluster.instances["ch1"]
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "The sampling query profiler is disabled under Memory Sanitizer "
+            "(QUERY_PROFILER_SUPPORTED), so there are no profiler signals "
+            "and the EINTR path under test is never taken"
+        )
     # queries should not fail with "Timeout exceeded while reading from socket" in case of EINTR caused by query profiler
     for i in range(0, 100):
         instance.query(
-            "select hostName() as host, count() from cluster('cluster', 'system', 'settings') group by host"
+            "select hostName() as host, count() from cluster('cluster', 'system', 'settings') group by host",
+            settings={
+                # This is to activate as many signals as possible to trigger EINTR.
+                # With the default period of 1 second, this short query is
+                # interrupted only in about 5% of the runs.
+                "query_profiler_real_time_period_ns": 1,
+                # This is to use MultiplexedConnections, where the EINTR under test is handled.
+                "use_hedged_requests": 0,
+            },
         )
 
 

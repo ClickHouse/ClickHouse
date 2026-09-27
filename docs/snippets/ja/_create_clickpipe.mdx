@@ -1,103 +1,83 @@
 ---
-title: ClickPipeを作成
+title: ClickPipe を作成
 ---
 
-import S3DataSource from '/snippets/es/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
-import GCSSDataSource from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+<Step title="データフォーマットを選択" id="3-select-data-format">
+  UI に、指定した bucket 内のファイル一覧が表示されます。
+  データフォーマット (現在対応しているのは ClickHouse のフォーマットの一部です) と、継続的インジェストを有効にするかどうかを選択してください。
+  詳細は、概要ページの「continuous ingest」セクションを参照してください。
 
-import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
-import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="データフォーマットと topic を設定" />
+  </Frame>
+</Step>
 
-<Steps>
-  <Step>
-    ## データソースを選択する
+<Step title="テーブル、スキーマ、設定を構成" id="5-configure-table-schema-settings">
+  次のステップでは、新しい ClickHouse テーブルにデータを取り込むか、既存のテーブルを再利用するかを選択できます。
+  画面の指示に従って、テーブル名、スキーマ、設定を変更してください。
+  上部のサンプルテーブルで、変更内容のリアルタイムプレビューを確認できます。
 
-    **1.** ClickHouse Cloud のメインナビゲーションメニューで **Data sources** を選択し、**Create ClickPipe** をクリックします。
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="テーブル、スキーマ、設定を設定" />
+  </Frame>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+  用意されているコントロールを使って、高度な設定をカスタマイズすることもできます。
 
-    {props.provider === 's3' && <S3DataSource />}
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="高度なコントロールを設定" />
+  </Frame>
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
-  </Step>
+  または、既存の ClickHouse テーブルにデータを取り込むこともできます。
+  その場合、UI でソースのフィールドを、選択した宛先テーブル内の ClickHouse のフィールドにマッピングできます。
 
-  <Step>
-    ## ClickPipe 接続を設定する
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存のテーブルを使用" />
+  </Frame>
 
-    **1.** 新しい ClickPipe を設定するには、オブジェクトストレージサービスへの接続方法と認証情報を指定する必要があります。
+  <Info>
+    [仮想カラム](/ja/reference/functions/table-functions/s3#virtual-columns) (`_path` や `_size` など) をフィールドにマッピングすることもできます。
+  </Info>
+</Step>
 
-    {props.provider === 's3' && <S3Connection />}
+<Step title="権限を構成" id="6-configure-permissions">
+  最後に、内部 ClickPipes ユーザーの権限を構成できます。
 
-    {props.provider === 'gcs' && <GCSConnection />}
+  **権限:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロール、または事前定義されたロールのいずれかを使って、この内部ユーザーに割り当てるロールを選択できます。
 
-    **2.** **Incoming data** をクリックします。ClickPipes は次のステップに向けてバケットからメタデータを取得します。
-  </Step>
+  * `Full access`: クラスターへのフルアクセス。宛先テーブルで materialized view または Dictionary を使用する場合に必要です。
+  * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみ。
 
-  <Step>
-    ## データフォーマットを選択する
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" />
+  </Frame>
+</Step>
 
-    UI に、指定したバケット内のファイル一覧が表示されます。
-    データフォーマット (現在サポートされているのは ClickHouse フォーマットの一部です) を選択し、継続的インジェストを有効にするかどうかを指定します。
-    詳細は、概要ページの「continuous ingest」セクションを参照してください。
+<Step title="セットアップを完了" id="7-complete-setup">
+  「Complete Setup」をクリックすると、システムに ClickPipe が登録され、サマリーテーブルに表示されるようになります。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="データフォーマットと topic を設定" size="lg" border />
-  </Step>
+  <div className="ch-image-sm">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" />
+    </Frame>
+  </div>
 
-  <Step>
-    ## テーブル、スキーマ、設定を構成する
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="削除通知" />
+  </Frame>
 
-    次のステップでは、新しい ClickHouse テーブルにデータを取り込むか、既存のテーブルを再利用するかを選択できます。
-    画面の指示に従って、テーブル名、スキーマ、設定を変更してください。
-    上部のサンプルテーブルで、変更内容をリアルタイムでプレビューできます。
+  サマリーテーブルには、ソースまたは ClickHouse 内の宛先テーブルからサンプルデータを表示するためのコントロールがあります。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="テーブル、スキーマ、設定を行う" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="宛先を表示" />
+  </Frame>
 
-    提供されているコントロールを使って、詳細設定をカスタマイズすることもできます。
+  また、ClickPipe を削除したり、インジェストジョブの概要を表示したりするためのコントロールもあります。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="詳細コントロールを設定" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="概要を表示" />
+  </Frame>
 
-    また、既存の ClickHouse テーブルにデータを取り込むこともできます。
-    その場合、UI ではソースのフィールドを、選択した宛先テーブル内の ClickHouse フィールドにマッピングできます。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存のテーブルを使用" size="lg" border />
-
-    <Info>
-      `_path` や `_size` などの[仮想カラム](/ja/reference/functions/table-functions/s3#virtual-columns)もフィールドにマッピングできます。
-    </Info>
-  </Step>
-
-  <Step>
-    ## 権限を設定する
-
-    最後に、ClickPipes の内部ユーザーに対する権限を設定できます。
-
-    **Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロールまたは事前定義済みロールのいずれかを使って、この内部ユーザーのロールを選択できます。
-
-    * `Full access`: クラスターへのフルアクセス権を付与します。宛先テーブルで materialized view または Dictionary を使用する場合に必要です。
-    * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを付与します。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" size="lg" border />
-  </Step>
-
-  <Step>
-    ## セットアップを完了する
-
-    「Complete Setup」をクリックすると、システムに ClickPipe が登録され、一覧テーブルに表示されるようになります。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="削除通知" size="lg" border />
-
-    一覧テーブルには、ソースまたは ClickHouse 内の宛先テーブルのサンプルデータを表示するためのコントロールが用意されています。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="宛先を表示" size="lg" border />
-
-    また、ClickPipe を削除したり、インジェストジョブの概要を表示したりするためのコントロールもあります。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="概要を表示" size="lg" border />
-
-    **おめでとうございます！** これで最初の ClickPipe の設定は完了です。
-    継続的インジェスト用に構成された ClickPipe の場合は継続的に実行され、リモートのデータソースからリアルタイムでデータを取り込みます。
-    そうでない場合は、バッチを取り込んで完了します。
-  </Step>
-</Steps>
+  **おめでとうございます！** 最初の ClickPipe のセットアップが正常に完了しました。
+  この ClickPipe が継続的インジェスト用に構成されている場合は、継続的に稼働し、リモートのデータソースからデータをリアルタイムで取り込み続けます。
+  それ以外の場合は、Batch を取り込んで完了します。
+</Step>

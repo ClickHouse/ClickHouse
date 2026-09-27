@@ -31,17 +31,7 @@
 2	A	500
 2	B	600
 3	C	700
-SELECT
-    id,
-    category,
-    value,
-    rand() AS r
-FROM test_limit_by_all
-ORDER BY
-    id ASC,
-    category ASC,
-    value ASC
-LIMIT 1 BY ALL
+SELECT\n    id,\n    category,\n    value,\n    rand() AS r\nFROM test_limit_by_all\nORDER BY\n    id ASC,\n    category ASC,\n    value ASC\nLIMIT 1 BY ALL
 QUERY id: 0
   PROJECTION COLUMNS
     id Int32
@@ -106,20 +96,7 @@ QUERY id: 0
 2	A
 3	C
 2	B
-SELECT
-    t.id,
-    tag,
-    sum(value) AS s
-FROM test_limit_by_all AS t
-ALL LEFT JOIN test_limit_by_all_tags AS g USING (id)
-ARRAY JOIN g.tags AS tag
-GROUP BY
-    t.id,
-    tag
-ORDER BY
-    t.id ASC,
-    tag ASC
-LIMIT 1 BY ALL
+SELECT\n    t.id,\n    tag,\n    sum(value) AS s\nFROM test_limit_by_all AS t\nALL LEFT JOIN test_limit_by_all_tags AS g USING (id)\nARRAY JOIN g.tags AS tag\nGROUP BY\n    t.id,\n    tag\nORDER BY\n    t.id ASC,\n    tag ASC\nLIMIT 1 BY ALL
 1	x
 1	y
 2	y
@@ -135,19 +112,7 @@ LIMIT 1 BY ALL
 1	B	300
 2	A	500
 2	B	600
-SELECT
-    id,
-    category,
-    value
-FROM test_limit_by_all
-ORDER BY
-    1 ASC,
-    2 ASC,
-    3 ASC
-LIMIT 2 BY
-    1,
-    2
-SETTINGS enable_positional_arguments = 1
+SELECT\n    id,\n    category,\n    value\nFROM test_limit_by_all\nORDER BY\n    1 ASC,\n    2 ASC,\n    3 ASC\nLIMIT 2 BY\n    1,\n    2\nSETTINGS enable_positional_arguments = 1
 2	B	600
 3	C	700
 2	A	500
