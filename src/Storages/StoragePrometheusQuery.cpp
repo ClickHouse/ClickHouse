@@ -56,9 +56,8 @@ String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, st
     return String(value.getDataAt());
 }
 
-/// Rewrites the argument(s) naming the TimeSeries table to its resolved `database.table`, keeping the
-/// argument count. A single argument becomes a compound identifier, the node the parser itself produces
-/// for `database.table`; a table identifier there would be resolved as an expression and rejected.
+/// A single argument becomes a compound identifier, the node the parser produces for `database.table`:
+/// an `ASTTableIdentifier` there would be resolved as an expression and rejected.
 void setResolvedTableArgument(ASTs & args, size_t num_table_args, const StorageID & storage_id)
 {
     if (num_table_args == 1)
@@ -121,16 +120,14 @@ StoragePrometheusQuery::Arguments StoragePrometheusQuery::parseArgumentsOnly(AST
 
     size_t num_table_args = argument_index;
 
-    /// Fill in the database name while the creating context is still available and write it back into
-    /// the argument: a stored definition is replayed against the loader's current database. Resolving
-    /// the table itself here would wait for its startup job, which a load job cannot do.
+    /// A stored definition is replayed against the loader's current database, so the name is qualified and
+    /// written back now. Resolving the table here would wait for its startup job, which a load job cannot do.
     if (auto temporary_table_id = context->tryResolveStorageID(time_series_storage_id, Context::ResolveExternal))
     {
-        /// A temporary table carries its own UUID and cannot appear in a stored definition.
+        /// The resolved id of a temporary table names an internal database, so the argument keeps the name as written.
         time_series_storage_id = std::move(temporary_table_id);
     }
-    /// An empty table name names nothing: qualifying it would form the database-without-table pair
-    /// `StorageID::assertNotEmpty()` rejects, and a compound identifier cannot hold an empty part.
+    /// An empty name stays as written: `StorageID` rejects a database without a table, and identifier parts cannot be empty.
     else if (!time_series_storage_id.empty())
     {
         if (time_series_storage_id.database_name.empty())
@@ -165,7 +162,6 @@ StoragePrometheusQuery::Arguments StoragePrometheusQuery::parseArgumentsOnly(AST
 StoragePrometheusQuery::Configuration
 StoragePrometheusQuery::resolveConfiguration(const Arguments & parsed_args, const ContextPtr & context)
 {
-    /// The parsed identifier carries a database name but no UUID: `parseArgumentsOnly` may not read the catalog.
     auto time_series_storage_id = context->tryResolveStorageID(parsed_args.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);

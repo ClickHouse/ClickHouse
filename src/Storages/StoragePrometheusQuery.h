@@ -19,9 +19,8 @@ public:
         PrometheusQueryEvaluationSettings evaluation_settings;
     };
 
-    /// Everything the arguments of prometheusQuery() / prometheusQueryRange() determine without reading
-    /// the catalog. The query is kept as text and the times as written, because parsing the query and
-    /// converting the times both need the scale of the TimeSeries table's timestamps.
+    /// What the arguments of prometheusQuery() / prometheusQueryRange() determine without reading the catalog.
+    /// The query and the times stay unparsed: parsing them needs the scale of the TimeSeries table's timestamps.
     struct Arguments
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
@@ -36,9 +35,8 @@ public:
         DataTypePtr step_type;
     };
 
-    /// `parseArgumentsOnly()` must not read the catalog: a stored `AS prometheusQuery(...)` definition
-    /// is replayed through it while metadata is loaded, so it has to succeed even when the objects it
-    /// names are gone. Reading them is `resolveConfiguration()`'s job.
+    /// `parseArgumentsOnly()` must not read the catalog: a stored `AS prometheusQuery(...)` definition is replayed
+    /// through it while metadata is loaded, and has to load even when the objects it names are gone.
     static Arguments parseArgumentsOnly(ASTs & args, const ContextPtr & context, bool over_range);
     static Configuration resolveConfiguration(const Arguments & parsed_args, const ContextPtr & context);
 
