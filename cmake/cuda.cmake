@@ -35,7 +35,7 @@ if (ENABLE_GPU)
     endif ()
 
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-        set (CMAKE_CUDA_ARCHITECTURES "75" CACHE STRING "CUDA architectures to generate code for")
+        set (CMAKE_CUDA_ARCHITECTURES "75-real" CACHE STRING "CUDA architectures to generate code for")
     endif ()
 
     if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER)
@@ -107,9 +107,15 @@ if (ENABLE_GPU)
     # pthread_*, dl* and clock_gettime. Threads::Threads arrives with
     # cmake/linux/default_libs.cmake, later than this file - fine, it is resolved at
     # generate time.
+    #
+    # The include dir too: rmm's public headers include <cuda_runtime_api.h>, so an ordinary
+    # C++ consumer of ch_contrib::rmm needs it, not only the island's own CUDA sources.
     add_library (ch_gpu::cudart INTERFACE IMPORTED GLOBAL)
-    set_target_properties (ch_gpu::cudart PROPERTIES INTERFACE_LINK_LIBRARIES
-        "${GPU_CUDART_LIBRARY};${GPU_CULIBOS_LIBRARY};Threads::Threads;${CMAKE_DL_LIBS};rt")
+    set_target_properties (ch_gpu::cudart PROPERTIES
+        INTERFACE_LINK_LIBRARIES
+            "${GPU_CUDART_LIBRARY};${GPU_CULIBOS_LIBRARY};Threads::Threads;${CMAKE_DL_LIBS};rt"
+        INTERFACE_INCLUDE_DIRECTORIES "${GPU_CUDA_ROOT}/include"
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GPU_CUDA_ROOT}/include")
 
     set (CMAKE_CUDA_RUNTIME_LIBRARY None)
 
@@ -126,8 +132,16 @@ if (ENABLE_GPU)
     # no-op here - CMake emits -std=c++20 for nvcc either way.
     string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIC -Xcompiler -std=gnu++20")
 
+    option (ENABLE_GPU_KERNEL_LINEINFO "Emit CUDA line info, for profiling kernels in Nsight Compute" OFF)
+
+    if (ENABLE_GPU_KERNEL_LINEINFO)
+        set (GPU_LINEINFO_FLAG " -lineinfo")
+    else ()
+        set (GPU_LINEINFO_FLAG "")
+    endif ()
+
     set (CMAKE_CUDA_FLAGS_DEBUG          "-G -g")
-    set (CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O3 -lineinfo")
+    set (CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O3${GPU_LINEINFO_FLAG}")
     set (CMAKE_CUDA_FLAGS_RELEASE        "-O3")
 
     # Puts a target on the cuDF island: one libstdc++ shared with the device code, and none
@@ -165,12 +179,36 @@ if (ENABLE_GPU)
         endforeach ()
     endfunction ()
 
+    # An island executable links through the host compiler with its own defaults: ClickHouse's
+    # linker flags and its libc++ and glibc-compatibility are wrong for code built against
+    # libstdc++. Link a ClickHouse archive into such a tool by file, not by target.
+    set (CMAKE_CUDA_LINK_EXECUTABLE "<CMAKE_CUDA_HOST_LINK_LAUNCHER> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
+
+    function (gpu_island_executable target)
+        gpu_island_target (${target})
+        set_target_properties (${target} PROPERTIES LINKER_LANGUAGE CUDA LINK_OPTIONS "")
+        target_link_libraries (${target} PRIVATE ch_gpu::cudart)
+    endfunction ()
+
+    # The island's host code is built against gcc's libstdc++, so a binary carrying it needs that
+    # library as well - shared, and appended last; cmake/linux/default_libs.cmake has the order.
+    # Its newer glibc symbols come from base/glibc-compatibility.
+    execute_process (
+        COMMAND "${CMAKE_CUDA_HOST_COMPILER}" -print-file-name=libstdc++.so
+        OUTPUT_VARIABLE GPU_LIBSTDCXX_LIBRARY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY)
+    if (NOT IS_ABSOLUTE "${GPU_LIBSTDCXX_LIBRARY}" OR NOT EXISTS "${GPU_LIBSTDCXX_LIBRARY}")
+        message (FATAL_ERROR "${CMAKE_CUDA_HOST_COMPILER} has no libstdc++.so (got '${GPU_LIBSTDCXX_LIBRARY}').")
+    endif ()
+
     message (STATUS "GPU engine: ENABLED")
     message (STATUS "  CUDA:          ${CMAKE_CUDA_COMPILER_VERSION} at ${GPU_CUDA_ROOT}")
     message (STATUS "  nvcc:          ${CMAKE_CUDA_COMPILER}")
     message (STATUS "  host compiler: ${CMAKE_CUDA_HOST_COMPILER}")
     message (STATUS "  architectures: ${CMAKE_CUDA_ARCHITECTURES}")
     message (STATUS "  cudart:        ${GPU_CUDART_LIBRARY}")
+    message (STATUS "  libstdc++:     ${GPU_LIBSTDCXX_LIBRARY}")
 else ()
     message (STATUS "GPU engine: disabled (use -DENABLE_GPU=1)")
 endif ()

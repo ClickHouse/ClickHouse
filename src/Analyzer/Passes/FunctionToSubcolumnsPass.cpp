@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
@@ -33,10 +34,12 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Common/SipHash.h>
@@ -144,6 +147,46 @@ struct IdentifiersToOptimize
     ColumnInSourceSet filter_only;
 
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
+};
+
+/// The correlated columns of every subquery on the way down, one entry per query or union level.
+/// A column of an outer query that a subquery lists among its correlated columns must never be
+/// replaced by a subcolumn inside that subquery: the list would keep naming the whole column,
+/// and decorrelation would then look for the subcolumn in a join that carries only the whole
+/// column - the query fails with `NOT_FOUND_COLUMN_IN_BLOCK`. Both passes consult this stack,
+/// because the second pass can rewrite an identifier that the first pass put into `filter_only`
+/// on account of a non-correlated use of the same column elsewhere in the query.
+class CorrelatedColumnsStack
+{
+public:
+    void enter(const ListNode & correlated_columns)
+    {
+        ColumnInSourceSet columns;
+        for (const auto & correlated_column : correlated_columns.getNodes())
+        {
+            const auto * column_node = correlated_column->as<ColumnNode>();
+            if (!column_node)
+                continue;
+
+            columns.insert(makeColumnInSource(column_node->getColumnSource(), column_node->getColumnName()));
+        }
+
+        stack.push_back(std::move(columns));
+    }
+
+    void leave() { stack.pop_back(); }
+
+    bool contains(const ColumnInSource & column_in_source) const
+    {
+        for (const auto & columns : stack)
+            if (columns.contains(column_in_source))
+                return true;
+
+        return false;
+    }
+
+private:
+    std::vector<ColumnInSourceSet> stack;
 };
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
@@ -605,6 +648,79 @@ void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node,
     }
 }
 
+template <size_t map_element>
+void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    static_assert(map_element <= 1);
+
+    const auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    /// The Map LIKE adapter evaluates the pattern once per input row before traversing the Map.
+    /// Keep arbitrary expressions out of the synthesized lambda, where they would be evaluated
+    /// once per Map element (or not at all for an empty Map). Only physical columns and constants
+    /// preserve the original evaluation scope. An expression-backed ColumnNode, such as an ALIAS
+    /// column, has the same evaluation-scope problem as any other expression.
+    const auto & pattern_node = function_arguments_nodes[1];
+    if (const auto * pattern_column_node = pattern_node->as<ColumnNode>())
+    {
+        if (pattern_column_node->hasExpression())
+            return;
+
+        const auto pattern_source = pattern_column_node->getColumnSource();
+        if (!pattern_source->as<TableNode>() && !pattern_source->as<TableFunctionNode>())
+            return;
+    }
+    else if (!pattern_node->as<ConstantNode>())
+        return;
+
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+    auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
+    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep the
+    /// original path when the searched Map element or pattern is LowCardinality;
+    /// the unused Map element is not passed to LIKE.
+    /// It also propagates a NULL pattern, while arrayExists treats a NULL lambda result as false.
+    const auto & pattern_type = function_arguments_nodes[1]->getResultType();
+    if (WhichDataType(map_element_type).isLowCardinality()
+        || WhichDataType(pattern_type).isLowCardinality()
+        || WhichDataType(pattern_type).isNullable())
+        return;
+
+    auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
+
+    NameAndTypePair subcolumn{ctx.column.name + (map_element == 0 ? ".keys" : ".values"), subcolumn_type};
+    /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
+    if (sourceHasColumn(ctx.column_source, subcolumn.name)
+        || !canOptimizeToExpectedSubcolumn(
+            ctx,
+            subcolumn.name,
+            map_element == 0 ? SerializationMap::isKeysSubcolumn : SerializationMap::isValuesSubcolumn,
+            subcolumn.type))
+        return;
+
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"x"});
+    lambda_arguments->resolve(DataTypes{map_element_type});
+
+    auto lambda_element = std::make_shared<ColumnNode>(NameAndTypePair{"x", map_element_type}, lambda_arguments);
+
+    auto like_function = std::make_shared<FunctionNode>("like");
+    like_function->markAsOperator();
+    /// The resolved Map LIKE node may be shared by multiple alias references. Keep its pattern
+    /// argument intact while attaching the same node to the synthesized lambda.
+    like_function->getArguments().getNodes() = {std::move(lambda_element), function_arguments_nodes[1]};
+    resolveOrdinaryFunctionNodeByName(*like_function, "like", ctx.context);
+
+    auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{map_element_type}, like_function->getResultType());
+    auto lambda = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(like_function), true, std::move(lambda_type));
+
+    auto array_exists = std::make_shared<FunctionNode>("arrayExists");
+    array_exists->getArguments().getNodes() = {std::move(lambda), std::make_shared<ColumnNode>(subcolumn, ctx.column_source)};
+    resolveOrdinaryFunctionNodeByName(*array_exists, "arrayExists", ctx.context);
+
+    node = std::move(array_exists);
+}
+
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
@@ -692,6 +808,12 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
         },
+    },
+    {
+        {TypeIndex::Map, "mapContainsKeyLike"}, optimizeFunctionMapContainsLike<0>,
+    },
+    {
+        {TypeIndex::Map, "mapContainsValueLike"}, optimizeFunctionMapContainsLike<1>,
     },
     {
         {TypeIndex::Nullable, "count"},
@@ -813,6 +935,10 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Map, "notHas"},
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
+    /// Map LIKE rewrites only read the searched subcolumn, so they remain safe
+    /// when the full Map is read separately, for example by SELECT.
+    {TypeIndex::Map, "mapContainsKeyLike"},
+    {TypeIndex::Map, "mapContainsValueLike"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
@@ -1261,6 +1387,13 @@ public:
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
+            correlated_columns.enter(query_node->getCorrelatedColumns());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns.enter(union_node->getCorrelatedColumns());
             return;
         }
     }
@@ -1271,7 +1404,14 @@ public:
             return;
 
         if (node->as<QueryNode>())
+        {
             in_where_prewhere_stack.pop_back();
+            correlated_columns.leave();
+        }
+        else if (node->as<UnionNode>())
+        {
+            correlated_columns.leave();
+        }
     }
 
     bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
@@ -1364,6 +1504,8 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
+    CorrelatedColumnsStack correlated_columns;
+
     std::unordered_set<const IQueryTreeNode *> processed_sources;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
@@ -1423,6 +1565,14 @@ private:
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
+        /// The column belongs to an outer query, and the subquery reading it lists it among its
+        /// correlated columns. Replacing the function with a subcolumn of that column would leave
+        /// that list naming a column the subquery no longer reads, and decorrelation would then look
+        /// for the subcolumn in a join that carries the whole column - the query fails with
+        /// `NOT_FOUND_COLUMN_IN_BLOCK`. Leave every use of such a column alone.
+        if (correlated_columns.contains(qualified_name))
+            return;
+
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
         if (node_transformers.contains(transformer_key))
         {
@@ -1443,13 +1593,22 @@ private:
             return;
 
         const auto & column = first_argument_column_node.getColumn();
+        auto qualified_name = makeColumnInSource(column_source, column.name);
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
+        /// The same reasoning as for a direct match: a chained rewrite of a correlated column, such as
+        /// `json.a[1].b` into a subcolumn of `json.a`, would leave the subquery's list of correlated
+        /// columns naming a column the subquery no longer reads. Such a rewrite is currently also kept
+        /// away by the use counting - the list of correlated columns is itself a use of the whole
+        /// column - but that is an accident of the counting, so state the invariant here as well.
+        if (correlated_columns.contains(qualified_name))
+            return;
+
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
         {
-            ++optimized_identifiers_count[makeColumnInSource(column_source, column.name)];
+            ++optimized_identifiers_count[qualified_name];
 
             /// Mark intermediate nodes to prevent double-counting.
             for (auto * func : intermediates)
@@ -1471,6 +1630,8 @@ private:
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
+
+    CorrelatedColumnsStack correlated_columns;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
@@ -1504,9 +1665,16 @@ public:
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
-        if (node->as<QueryNode>())
+        if (const auto * query_node = node->as<QueryNode>())
         {
             in_where_prewhere_stack.push_back(false);
+            correlated_columns.enter(query_node->getCorrelatedColumns());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns.enter(union_node->getCorrelatedColumns());
             return;
         }
 
@@ -1518,6 +1686,11 @@ public:
         {
             auto column = first_argument_column_node->getColumn();
             auto qualified_name = makeColumnInSource(column_source, column.name);
+
+            /// The first pass never counts a correlated use, but the identifier can still be in
+            /// `filter_only` because of a use of the same column in the outer query's WHERE.
+            if (correlated_columns.contains(qualified_name))
+                return;
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
             /// The permission is intentionally scoped to the whole identifier,
@@ -1552,8 +1725,9 @@ public:
         if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
+            auto qualified_name = makeColumnInSource(chain_source, column.name);
 
-            if (!identifiers_to_optimize.everywhere.contains(makeColumnInSource(chain_source, column.name)))
+            if (correlated_columns.contains(qualified_name) || !identifiers_to_optimize.everywhere.contains(qualified_name))
                 return;
 
             auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
@@ -1576,7 +1750,14 @@ public:
             return;
 
         if (node->as<QueryNode>())
+        {
             in_where_prewhere_stack.pop_back();
+            correlated_columns.leave();
+        }
+        else if (node->as<UnionNode>())
+        {
+            correlated_columns.leave();
+        }
     }
 };
 

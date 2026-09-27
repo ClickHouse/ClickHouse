@@ -1,20 +1,21 @@
-#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/Operators.h>
-#include <base/defines.h>
-#include <boost/algorithm/string/split.hpp>
-#include <Interpreters/Context.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/IDataType.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <base/defines.h>
+#include <boost/algorithm/string/split.hpp>
 
 
 namespace DB
@@ -86,8 +87,6 @@ Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, 
 
     return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
-
-RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
 
 /// Statistics hint can be passed in JSON as query parameter. `avg_row_bytes` and `column_bytes`
 /// (average bytes of one value per column) are optional:

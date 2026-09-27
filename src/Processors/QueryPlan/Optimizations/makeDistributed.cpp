@@ -3,44 +3,53 @@
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/BlocksMarshallingStep.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
-#include <Processors/QueryPlan/SortingStep.h>
+#include <algorithm>
+#include <Columns/ColumnConst.h>
+#include <Core/Block.h>
+#include <Core/Settings.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/ScatterExchangeStep.h>
-#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <fmt/ranges.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Block.h>
-#include <Core/Settings.h>
 #include <Common/logger_useful.h>
-#include <algorithm>
 
 
 namespace DB
@@ -56,40 +65,92 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// True if the step cannot be shipped to a worker as part of a serialized fragment.
+/// Here we are using the same code which will run on worker to resolve DEFAULT / MATERIALIZED columns and if
+/// resolution needs some of the objects which are not shipped (like dictionaries) the query falls back
+/// to local execution.
+std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
+    const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (optimization_settings.distributed_plan_local_object  == nullptr)
+    {
+        LOG_TRACE(getLogger("makeDistributed"), "Could not evaluate default columns on initiator due to missing tracker for local objects");
+        return std::nullopt;
+    }
+    const auto & columns = read.getStorageMetadata()->getColumns();
+
+    /// For columns which are not default we assume they will be present on workers
+    Block columns_present_in_parts;
+    for (const auto & column : columns.getAllPhysical())
+        if (!columns.getDefault(column.name))
+            columns_present_in_parts.insert(ColumnWithTypeAndName(column.type, column.name));
+
+    /// What this read produces; virtual columns have no metadata entry and are skipped.
+    NamesAndTypesList required_columns;
+    for (const auto & name : read.getAllColumnNames())
+        if (auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
+            required_columns.push_back(*column);
+    try
+    {
+        /// Resolution records additional object usages
+        if (!resolveMissingDefaults(columns_present_in_parts, required_columns, columns, read.getContext()))
+            return std::nullopt;
+    }
+    catch (const Exception & e)
+    {
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: a column default of table {} does not resolve ({})",
+            read.getStorageID().getFullTableName(), e.message());
+    }
+
+    const auto & used = optimization_settings.distributed_plan_local_object;
+    if (!used)
+        return std::nullopt;
+    if (const auto entry = used->get())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
+            DistributedPlanLocalObject::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
+    return std::nullopt;
+}
+
+/// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
 /// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
 /// connection: its callback holds the connection's protocol version and codec. A `ReadFromMergeTree`
 /// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
 /// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
 /// to those two.
-bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
+std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-    if (typeid_cast<const BlocksMarshallingStep *>(&step))
-        return true;
+
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
-        return false;
-    return !step.isSerializable();
+        return std::nullopt;
+
+    if (typeid_cast<const BlocksMarshallingStep *>(&step) || !step.isSerializable())
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
+            step.getName());
+
+    return std::nullopt;
 }
 
-/// The first step of an optimized plan that cannot execute remotely, or nullptr. Nothing is
-/// tolerated here: the placeholders the decision skips have been materialized away by now.
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root)
+/// The reason the first step of an optimized plan cannot execute remotely, or nullopt.
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
-        if (isStepUnsupportedForRemoteExecution(*node->step))
-            return node->step.get();
+        if (auto reason = getReasonStepUnsupportedForRemoteExecution(*node->step); reason.has_value())
+            return reason;
         for (const auto * child : node->children)
             stack.push_back(child);
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -302,10 +363,8 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     if (typeid_cast<const CommonSubplanStep *>(&step) || typeid_cast<const CommonSubplanReferenceStep *>(&step))
         return std::nullopt;
 
-    if (isStepUnsupportedForRemoteExecution(step))
-        return PreformattedMessage::create(
-            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
-            step.getName());
+    if (auto reason = getReasonStepUnsupportedForRemoteExecution(step); reason.has_value())
+        return reason;
 
     /// Sets backed by an external table cannot be shipped with the worker tasks.
     if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(&step))
@@ -316,8 +375,12 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
     /// `_part_starting_offset`.
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+    {
         if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
             return reason;
+        if (auto reason = getReasonColumnDefaultsCannotBeShipped(*read, optimization_settings); reason.has_value())
+            return reason;
+    }
 
     /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
     /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
@@ -403,6 +466,23 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         for (auto * child : node->children)
             stack.push_back(child);
     }
+
+
+    /// A dictionary, embedded dictionary or `Join` table the query resolved by name while it was analyzed exists on
+    /// the initiator, not necessarily on a worker, and the fragment ships only the name. Read before the walk; the
+    /// column-default check inside the walk records for reads whose defaults the query text never touched.
+    const auto & used = optimization_settings.distributed_plan_local_object;
+    if (!used)
+    {
+        /// No query context, so nothing could have been recorded; the plan is taken as free of such objects.
+        LOG_TRACE(getLogger("makeDistributedPlan"), "No record of the server-local objects the query resolved; assuming none");
+        return std::nullopt;
+    }
+    if (const auto entry = used->get())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator",
+            DistributedPlanLocalObject::kindName(entry->kind), entry->name);
+
     return std::nullopt;
 }
 
