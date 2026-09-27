@@ -10492,6 +10492,11 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    \
+    DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
+Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
+)", PRIVATE_PREVIEW, \
+        {"26.10", 0, 11000, "New setting to limit the resolution of a range query in the Prometheus HTTP API, as in Prometheus."}) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \

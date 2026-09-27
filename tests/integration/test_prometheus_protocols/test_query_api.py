@@ -13,6 +13,7 @@ from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     extract_error_from_http_api_response,
     get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     send_protobuf_to_remote_write,
 )
 
@@ -156,6 +157,30 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
         1,
     )
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
+
+
+# As in Prometheus, a range query is rejected with 400 bad_data if (end - start) / step is greater than 11000.
+def test_range_query_max_points_per_series():
+    def range_query(end, params=None):
+        return get_response_to_http_api_range_query(
+            node.ip_address, 9093, "/api/v1/query_range", "vector(1)", 0, end, 1, params
+        )
+
+    response = range_query(11001)
+    assert response.status_code == 400
+    assert response.json()["errorType"] == "bad_data"
+    assert response.json()["error"] == (
+        "exceeded maximum resolution of 11000 points per timeseries. "
+        "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series"
+    )
+
+    response = range_query(11000)
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 11001
+
+    response = range_query(20000, {"promql_max_points_per_series": 0})
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 20001
 
 
 def test_query_lookback_delta():
