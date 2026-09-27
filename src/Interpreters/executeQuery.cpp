@@ -2745,7 +2745,15 @@ static BlockIO executeQueryImpl(
             if (const String & database_setting = settings[Setting::database];
                 !database_setting.empty() && database_setting != context->getCurrentDatabase())
             {
-                context->setCurrentDatabase(database_setting);
+                /// The client mirrors `USE <name>` into this setting as written, so resolve it the way `USE`
+                /// does under `database_and_table_name_matching = 'standard'`. An existing exact name wins:
+                /// the value may be a canonical name that the server itself put there.
+                const auto & catalog = DatabaseCatalog::instance();
+                String database_name = database_setting;
+                if (!catalog.isDatabaseExist(database_name))
+                    database_name = catalog.resolveDatabaseNameSpelling(database_name, IdentifierPartQuote::Unquoted, context);
+                if (database_name != context->getCurrentDatabase())
+                    context->setCurrentDatabase(database_name);
             }
 
             const auto client_interface = context->getClientInfo().interface;
