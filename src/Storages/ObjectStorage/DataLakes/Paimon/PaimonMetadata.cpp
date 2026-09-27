@@ -586,7 +586,6 @@ ObjectIterator PaimonMetadata::iterate(
             "superseded by later writes.",
             fmt::join(primary_keys, ", "));
 
-    /// Deletion vectors are not applied either, so rows they mark as deleted would be returned.
     const auto options = persistent_components.schema_processor->getOptions(state->schema_id);
     if (auto it = options.find(PAIMON_DELETION_VECTORS_ENABLED); it != options.end() && equalsCaseInsensitive(it->second, "true"))
         throw Exception(
