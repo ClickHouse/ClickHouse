@@ -9,9 +9,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # tests that run concurrently, so reading that row back would be racy and could validate a stack
 # trace this test doesn't own. Use a dedicated custom error code instead so the row is ours alone:
 # `system.errors` (unlike `system.error_log`) skips any code without a registered name, and a code
-# above `ErrorCodes::END` collapses onto one shared overflow slot, so it has to be a real, but
-# obscure and unlikely-to-fire-concurrently, registered error code.
-custom_error_code=1013 # AMBIGUOUS_HANDLER
+# above `ErrorCodes::END` collapses onto one shared overflow slot, so it has to be a real, registered
+# error code that no other code path throws, not merely one that is rare (an obscure-but-live code,
+# such as `AMBIGUOUS_HANDLER`, can still collide with another parallel stateless test that hits it).
+custom_error_code=775 # STATELESS_WORKER_DISCOVERY_ERROR: registered, but no code path throws it
 
 # Force an error to populate system.errors.
 $CLICKHOUSE_CLIENT -q "SELECT throwIf(true, '04040_errors_table_symbols_lines', toInt16($custom_error_code)) SETTINGS allow_custom_error_code_in_throwif = 1" 2>/dev/null
