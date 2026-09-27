@@ -121,84 +121,9 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     #endif
 
     factory.registerSource("mongodb", create_dictionary_source, Documentation{
-        .description = R"DOCS_MD(
-# MongoDB dictionary source
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(MONGODB(
-    host 'localhost'
-    port 27017
-    user ''
-    password ''
-    db 'test'
-    collection 'dictionary_source'
-    options 'ssl=true'
-))
-```
-
-Or using a URI:
-
-```sql
-SOURCE(MONGODB(
-    uri 'mongodb://localhost:27017/clickhouse'
-    collection 'dictionary_source'
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <mongodb>
-        <host>localhost</host>
-        <port>27017</port>
-        <user></user>
-        <password></password>
-        <db>test</db>
-        <collection>dictionary_source</collection>
-        <options>ssl=true</options>
-    </mongodb>
-</source>
-```
-
-Or using a URI:
-
-```xml
-<source>
-    <mongodb>
-        <uri>mongodb://localhost:27017/test?ssl=true</uri>
-        <collection>dictionary_source</collection>
-    </mongodb>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `host` | The MongoDB host. |
-| `port` | The port on the MongoDB server. |
-| `user` | Name of the MongoDB user. |
-| `password` | Password of the MongoDB user. |
-| `db` | Name of the database. |
-| `collection` | Name of the collection. |
-| `options` | MongoDB connection string options. Optional. |
-| `uri` | URI for establishing the connection (alternative to individual host/port/db fields). |
-
-[More information about the engine](/reference/engines/table-engines/integrations/mongodb)
-)DOCS_MD"
+        .description = "Reads dictionary data from a collection in a MongoDB server."
 #if !USE_MONGODB
-            "\n\nCurrently unavailable, because this ClickHouse build does not include MongoDB support."
+            " Currently unavailable, because this ClickHouse build does not include MongoDB support."
 #endif
         ,
         .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",

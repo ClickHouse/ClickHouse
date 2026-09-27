@@ -21,7 +21,6 @@ release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="CreateRelease",
-    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
@@ -42,15 +41,22 @@ workflow = Workflow.Config(
             default_value="",
         ),
         Workflow.Config.InputConfig(
-            name="skip-repo",
-            description="Skip repo updates (package export/test); for recovery/rerun",
+            name="type",
+            description="Release type - new for a new release branch, patch for a patch release",
+            is_required=True,
+            default_value="patch",
+            options=["patch", "new"],
+        ),
+        Workflow.Config.InputConfig(
+            name="only-repo",
+            description="Run only repo updates including docker (repo-recovery, tests)",
             is_required=False,
             default_value="false",
             is_boolean=True,
         ),
         Workflow.Config.InputConfig(
-            name="skip-docker",
-            description="Skip docker image builds; for recovery/rerun",
+            name="only-docker",
+            description="Run only docker builds (repo-recovery, tests)",
             is_required=False,
             default_value="false",
             is_boolean=True,

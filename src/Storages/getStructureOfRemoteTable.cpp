@@ -3,7 +3,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,10 +15,8 @@
 #include <Parsers/parseQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NetException.h>
-#include <Common/config_version.h>
 #include <Common/quoteString.h>
 
 
@@ -36,7 +33,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 
@@ -68,14 +64,6 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
         {
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-
-            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
-            /// privilege on the target that describing the target requires.
-            if (const auto * alias = storage_ptr->as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
-
             auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
             return metadata_snapshot->getColumns();
         }
@@ -96,16 +84,6 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
         new_settings[Setting::describe_compact_output] = false;
         new_context->setSettings(new_settings);
     }
-
-    /// This host initiates the service query, so it must report a known initiator version:
-    /// the source context may carry no client version at all - e.g. `StorageDistributed`
-    /// fetches the structure of the remote table at CREATE time under the global context -
-    /// and `RemoteQueryExecutor` rejects a zero initiator version (the remote would apply
-    /// legacy version compatibility downgrades to it otherwise).
-    if (new_context->getClientInfo().client_version_major == 0
-        && new_context->getClientInfo().client_version_minor == 0
-        && new_context->getClientInfo().client_version_patch == 0)
-        new_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     auto sample_block = std::make_shared<const Block>(Block

@@ -103,8 +103,6 @@ static String quoteExternalIdentifier(const String & name, IdentifierQuotingStyl
         return backQuoteMySQL(name);
     if (identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
         return doubleQuoteString(name);
-    if (identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotesPostgreSQL)
-        return doubleQuoteStringPostgreSQL(name);
     return backQuote(name);
 }
 

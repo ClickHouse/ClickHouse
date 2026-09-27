@@ -6,8 +6,6 @@
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -64,15 +62,16 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
     }
 }
 
-void StorageSystemResources::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+void StorageSystemResources::backupData(BackupEntriesCollector & /*backup_entries_collector*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
 {
-    backup_entries_collector.getContext()->getWorkloadEntityStoragePtr()->backup(
-        backup_entries_collector, data_path_in_backup, WorkloadEntityType::Resource);
+    // TODO(serxa): add backup for resources
+    // storage.backup(backup_entries_collector, data_path_in_backup);
 }
 
-void StorageSystemResources::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+void StorageSystemResources::restoreDataFromBackup(RestorerFromBackup & /*restorer*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
 {
-    restorer.getContext()->getWorkloadEntityStoragePtr()->restore(restorer, data_path_in_backup, WorkloadEntityType::Resource);
+    // TODO(serxa): add restore for resources
+    // storage.restore(restorer, data_path_in_backup);
 }
 
 }

@@ -21,10 +21,6 @@ struct RowReadExtension
     std::vector<UInt8> read_columns;
 };
 
-/// How often a row loop asks whether the query was cancelled. One `read` can parse a whole insert
-/// block, so cancellation must be observed inside it. Shared with `ValuesBlockInputFormat::read`.
-static constexpr size_t CANCELLATION_CHECK_PERIOD_ROWS = 8192;
-
 /// Common parameters for generating blocks.
 struct RowInputFormatParams
 {

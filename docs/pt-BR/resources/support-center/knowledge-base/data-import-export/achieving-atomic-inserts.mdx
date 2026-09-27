@@ -1,10 +1,14 @@
 ---
 title: Inserções atômicas e consistência entre múltiplas tabelas no ClickHouse Cloud
-description: Como carregar dados de forma atômica e manter a consistência entre várias tabelas no ClickHouse Cloud sem transações com múltiplas instruções, usando tabelas de staging e operações em nível de partição.
+description: Como carregar dados de forma atômica e manter a consistência entre múltiplas tabelas no ClickHouse Cloud sem transações com múltiplas instruções, usando tabelas de staging e operações em nível de partição.
 date: 2026-06-01
 tags: ['Ingestão de dados', 'Boas práticas']
 keywords: ['inserção atômica', 'tabela de staging', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', 'consistência entre múltiplas tabelas']
 ---
+
+{frontMatter.description}
+
+{/* truncate */}
 
 <div id="problem">
   ## Problema
@@ -39,7 +43,9 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
 </div>
 
 <Steps>
-  <Step title="Crie uma tabela de staging" id="create-staging-table">
+  <Step>
+    ### Crie uma tabela de staging
+
     Use o mesmo esquema, a mesma chave de partição, `ORDER BY` e a mesma política de armazenamento da tabela de produção.
 
     ```sql
@@ -47,7 +53,9 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     ```
   </Step>
 
-  <Step title="Insira dados na tabela de staging" id="insert-into-staging">
+  <Step>
+    ### Insira dados na tabela de staging
+
     Execute o insert na tabela de staging em vez da tabela de produção.
 
     ```sql
@@ -55,7 +63,9 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     ```
   </Step>
 
-  <Step title="Se o insert falhar, trunque e tente novamente" id="on-failure">
+  <Step>
+    ### Se o insert falhar, trunque e tente novamente
+
     Trunque a tabela de staging e execute a carga novamente. Nenhum dado de produção terá sido afetado.
 
     ```sql
@@ -63,7 +73,9 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     ```
   </Step>
 
-  <Step title="Se o insert for bem-sucedido, mova as partições para produção" id="on-success">
+  <Step>
+    ### Se o insert for bem-sucedido, mova as partições para produção
+
     Para mover os dados para produção e removê-los da tabela de staging, use `MOVE PARTITION`.
 
     ```sql
@@ -79,7 +91,9 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     Ambas as operações são alterações no nível dos metadados na mesma política de armazenamento e são concluídas quase instantaneamente.
   </Step>
 
-  <Step title="Limpe a tabela de staging" id="clean-up">
+  <Step>
+    ### Limpe a tabela de staging
+
     Quando todas as partições tiverem sido movidas, trunque a tabela de staging para deixá-la vazia para a próxima carga.
 
     ```sql

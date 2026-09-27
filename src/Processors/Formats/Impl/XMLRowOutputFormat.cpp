@@ -1,11 +1,9 @@
-#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/XMLRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/registerWithNamesAndTypes.h>
 
 
 namespace DB
@@ -266,24 +264,6 @@ void registerOutputFormatXML(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("XML");
     factory.markFormatHasNoAppendSupport("XML");
     factory.setContentType("XML", "application/xml; charset=UTF-8");
-
-    /// `writePrefix` serializes the column names and type names into `<name>` / `<type>` elements
-    /// through `writeXMLStringForTextElement`, which escapes XML metacharacters but does not
-    /// validate UTF-8. The UTF-8 validation adaptor installs its validating buffer only when some
-    /// column's value type may itself emit invalid UTF-8, so a header whose names or type names
-    /// carry invalid bytes (for example a named `Tuple` element) while all value types are
-    /// UTF-8-only leaks them verbatim. It is knowable from the header, so text framings reject
-    /// or base64-encode the output (see `checkIfOutputFormatMayProduceRawBytes`).
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "XML",
-        [](const FormatSettings &, const Block & header)
-        {
-            for (const auto & type : header.getDataTypes())
-                if (!type->textCanContainOnlyValidUTF8())
-                    return false;
-
-            return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ true);
-        });
 
     factory.setDocumentation("XML", Documentation{
         .description = R"DOCS_MD(

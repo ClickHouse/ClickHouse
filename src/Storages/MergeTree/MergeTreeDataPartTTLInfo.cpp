@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
@@ -245,63 +244,33 @@ time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
     return max;
 }
 
-namespace
-{
-
-bool hasAnyNonFinishedTTLInMap(const TTLInfoMap & map)
-{
-    for (const auto & [name, info] : map)
-        if (info.initialized() && !info.finished())
-            return true;
-
-    return false;
-}
-
-}
-
-bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowTTLs() const
-{
-    if (table_ttl.initialized() && !table_ttl.finished())
-        return true;
-
-    return hasAnyNonFinishedTTLInMap(rows_where_ttl) || hasAnyNonFinishedTTLInMap(group_by_ttl);
-}
-
-bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedColumnTTLs() const
-{
-    return hasAnyNonFinishedTTLInMap(columns_ttl);
-}
-
-time_t MergeTreeDataPartTTLInfos::getMinimalNonFinishedColumnTTL() const
-{
-    time_t min_ttl = 0;
-
-    for (const auto & [name, info] : columns_ttl)
-        if (info.initialized() && !info.finished())
-            if (info.min && (!min_ttl || info.min < min_ttl))
-                min_ttl = info.min;
-
-    return min_ttl;
-}
-
 bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
 {
+    auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
+    {
+        for (const auto & [name, info] : map)
+            if (info.initialized() && !info.finished())
+                return true;
+
+        return false;
+    };
+
     if (table_ttl.initialized() && !table_ttl.finished())
         return true;
 
-    if (hasAnyNonFinishedTTLInMap(columns_ttl))
+    if (has_non_finished_ttl(columns_ttl))
         return true;
 
-    if (hasAnyNonFinishedTTLInMap(rows_where_ttl))
+    if (has_non_finished_ttl(rows_where_ttl))
         return true;
 
-    if (hasAnyNonFinishedTTLInMap(moves_ttl))
+    if (has_non_finished_ttl(moves_ttl))
         return true;
 
-    if (hasAnyNonFinishedTTLInMap(recompression_ttl))
+    if (has_non_finished_ttl(recompression_ttl))
         return true;
 
-    if (hasAnyNonFinishedTTLInMap(group_by_ttl))
+    if (has_non_finished_ttl(group_by_ttl))
         return true;
 
     return false;
@@ -364,12 +333,5 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
     return best_ttl_time ? *best_entry_it : std::optional<TTLDescription>();
 }
 
-bool isExplicitRecompression(
-    const TTLDescriptions & recompression_ttl_entries, const TTLInfoMap & recompression_ttl_info, time_t current_time)
-{
-    auto best_ttl_entry
-        = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, recompression_ttl_info, current_time, /*use_max=*/true);
-    return best_ttl_entry && !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec);
-}
 
 }

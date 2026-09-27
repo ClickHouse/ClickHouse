@@ -8,11 +8,7 @@ title: Избегайте OPTIMIZE FINAL
 
 Со временем фоновые процессы сливают более мелкие части в более крупные, чтобы уменьшить фрагментацию и повысить производительность запросов.
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/bestpractices/simple_merges.webp" alt="Простые слияния" />
-  </Frame>
-</div>
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Простые слияния" />
 
 Хотя может возникнуть соблазн вручную запустить такое слияние с помощью:
 
@@ -53,7 +49,7 @@ OPTIMIZE TABLE <table> FINAL;
   ### Он игнорирует защитные ограничения
 </div>
 
-Обычно ClickHouse избегает слияния частей размером более ~150 ГБ (это настраивается через [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)). Но `OPTIMIZE FINAL` **игнорирует это ограничение**, а это означает следующее:
+Обычно ClickHouse избегает слияния частей размером более ~150 ГБ (это настраивается через [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ru/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)). Но `OPTIMIZE FINAL` **игнорирует это ограничение**, а это означает следующее:
 
 * Он может попытаться слить **несколько частей по 150 ГБ** в одну огромную часть
 * Это может привести к **длительным слияниям**, **нехватке памяти** или даже к **ошибкам out-of-memory**

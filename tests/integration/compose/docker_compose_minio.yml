@@ -1,10 +1,8 @@
 services:
   minio1:
-    # Mirror of pgsty/minio:RELEASE.2026-08-04T00-00-00Z (see compose/mirror-images.sh).
-    # pgsty/minio is a maintained community fork of MinIO, published on Docker Hub, which
-    # replaced the deleted minio/minio repository; we re-host it under clickhouse/ so pulls
-    # go through the dockerhub-proxy cache and survive the upstream repo disappearing.
-    image: clickhouse/minio-minio:RELEASE.2026-08-04T00-00-00Z
+    # Mirror of quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z (see compose/mirror-images.sh).
+    # The minio/minio Docker Hub repository was deleted upstream; quay.io is not behind the proxy.
+    image: clickhouse/minio-minio:RELEASE.2024-09-13T20-26-02Z
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs

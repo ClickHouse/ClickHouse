@@ -1,0 +1,40 @@
+---
+noindex: true
+title: "Component Versions"
+sidebarTitle: "Component versions"
+description: "Current stable versions for all ClickHouse Private components."
+---
+
+Current stable versions for all ClickHouse Private components. Use these tags when copying artifacts to your registry and installing via Helm.
+
+## Container Images
+
+| Component | Image Tag | Description |
+|----|----|----|
+| clickhouse-server | `25.12.1.1497` | ClickHouse server (standard) |
+| clickhouse-server (FIPS) | `25.12.1.1497-fips` | ClickHouse server with FIPS 140-2 compliance |
+| clickhouse-keeper | `26.2.1.258` | Distributed coordination service (ZooKeeper alternative) |
+| clickhouse-keeper (FIPS) | `26.2.1.258-fips` | ClickHouse keeper with FIPS 140-2 compliance |
+| clickhouse-operator | `main-1.18587.1` | Kubernetes operator for cluster lifecycle management |
+
+## Helm Charts
+
+| Chart | Version | Description |
+|----|----|----|
+| helm/clickhouse-operator-helm | `1.18587.1` | Installs the ClickHouse operator |
+| helm/onprem-clickhouse-cluster | `1.1.311` | Creates a ClickHouseCluster custom resource |
+| helm/airgap-management | `1.165.1` | Optional management API |
+| helm/preflight-check | `1.31.0` | Pre-installation validation checks |
+| helm/support-bundle | `1.11.0` | Collects diagnostic data for troubleshooting |
+
+## API
+
+| Component         | Version   |
+|-------------------|-----------|
+| airgap-management | `1.165.1` |
+
+## Notes
+
+- The **operator Helm chart version** (`1.18587.1`) differs from the operator **image tag** (`main-1.18587.1`). Use the Helm chart version when installing via `helm install` and the image tag when copying container images.
+- **FIPS builds** append `-fips` to the standard image tags for both server and keeper.
+- Version tags are substituted automatically when these docs are built. If you see raw template variables (e.g., `25.12.1.1497`), the build step has not run.

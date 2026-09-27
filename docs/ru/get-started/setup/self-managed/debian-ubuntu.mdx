@@ -13,11 +13,15 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
 > Рекомендуется использовать официальные предварительно собранные `deb`-пакеты для **Debian** или **Ubuntu**.
 
 <Steps>
-  <Step title="Ознакомьтесь с рекомендациями" id="review-recommendations">
+  <Step>
+    ## Ознакомьтесь с рекомендациями
+
     <Recommendations />
   </Step>
 
-  <Step title="Настройте репозиторий Debian" id="setup-the-debian-repository">
+  <Step>
+    ## Настройте репозиторий Debian
+
     Чтобы установить ClickHouse, выполните следующие команды:
 
     ```bash
@@ -57,10 +61,10 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
       # Обновите списки пакетов apt
       sudo apt-get update
 
-      # Установите пакеты сервера ClickHouse и client
+      # Установите пакеты сервер ClickHouse и client
       sudo apt-get install -y clickhouse-server clickhouse-client
 
-      # Запустите сервис сервера ClickHouse
+      # Запустите сервис сервер ClickHouse
       sudo service clickhouse-server start
 
       # Запустите клиент командной строки ClickHouse
@@ -69,13 +73,17 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step title="Установите сервер ClickHouse и client" id="install-clickhouse-server-and-client">
+  <Step>
+    ## Установите сервер ClickHouse и client
+
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step title="Запустите ClickHouse" id="start-clickhouse-server">
+  <Step>
+    ## Запустите ClickHouse
+
     Чтобы запустить сервер ClickHouse, выполните:
 
     ```bash
@@ -95,11 +103,13 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Установите автономный ClickHouse Keeper" id="install-standalone-clickhouse-keeper">
+  <Step>
+    ## Установите автономный ClickHouse Keeper
+
     <Tip>
       В средах продакшн мы настоятельно рекомендуем запускать ClickHouse Keeper на выделенных узлах.
       В тестовых средах, если вы решите запускать ClickHouse Server и ClickHouse Keeper на одном сервере,
-      устанавливать ClickHouse Keeper не нужно, так как он входит в состав сервера ClickHouse.
+      устанавливать ClickHouse Keeper не нужно, так как он входит в состав сервер ClickHouse.
     </Tip>
 
     Чтобы установить `clickhouse-keeper` на серверах с автономным ClickHouse Keeper, выполните:
@@ -109,7 +119,9 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Включите и запустите ClickHouse Keeper" id="enable-and-start-clickhouse-keeper">
+  <Step>
+    ## Включите и запустите ClickHouse Keeper
+
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

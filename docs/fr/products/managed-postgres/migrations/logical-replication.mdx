@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/migrations/logical-replication
 sidebarTitle: 'Réplication logique'
-title: 'Migrer vers ClickHouse Managed Postgres avec la réplication logique'
+title: 'Migrer vers Managed Postgres avec la réplication logique'
 description: 'Découvrez comment migrer vos données PostgreSQL vers ClickHouse Managed Postgres avec la réplication logique'
 keywords: ['postgres', 'postgresql', 'réplication logique', 'migration', 'transfert de données', 'managed postgres']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 Ce guide fournit des instructions détaillées, étape par étape, pour migrer votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de la réplication logique native de Postgres.
@@ -20,7 +20,7 @@ Ce guide fournit des instructions détaillées, étape par étape, pour migrer v
 
 * Accès à votre base de données PostgreSQL source.
 * `psql`, `pg_dump` et `pg_restore` installés sur votre machine locale. Ils servent à créer des tables vides dans votre base de données cible. Ils sont généralement inclus dans les installations de PostgreSQL. Sinon, vous pouvez les télécharger depuis le [site officiel de PostgreSQL](https://www.postgresql.org/download/).
-* Votre base de données source doit être accessible depuis ClickHouse Managed Postgres. Assurez-vous que toutes les règles de pare-feu ou tous les paramètres de groupe de sécurité nécessaires autorisent cette connectivité. Vous pouvez obtenir l’adresse IP de sortie de votre instance ClickHouse Managed Postgres comme suit :
+* Votre base de données source doit être accessible depuis ClickHouse Managed Postgres. Assurez-vous que toutes les règles de pare-feu ou tous les paramètres de groupe de sécurité nécessaires autorisent cette connectivité. Vous pouvez obtenir l’adresse IP de sortie de votre instance Managed Postgres comme suit :
 
 ```shell
 dig +short <your-managed-postgres-hostname>
@@ -79,10 +79,10 @@ Dans notre cas, nous avons deux tables : `events` et `users`. `events` contient
 <Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Configuration des tables PostgreSQL sources" size="xl" border />
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### Créez une instance ClickHouse Managed Postgres
+  ### Créez une instance Managed Postgres
 </div>
 
-Assurez-vous d’abord d’avoir configuré une instance ClickHouse Managed Postgres, de préférence dans la même région que la base source. Vous pouvez suivre le guide de démarrage rapide [ici](/fr/products/managed-postgres/quickstart#create-postgres-database). Voici ce que nous allons provisionner pour ce guide :
+Assurez-vous d’abord d’avoir configuré une instance Managed Postgres, de préférence dans la même région que la base source. Vous pouvez suivre le guide de démarrage rapide [ici](/fr/products/managed-postgres/quickstart#create-postgres-database). Voici ce que nous allons provisionner pour ce guide :
 
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Création d’une instance ClickHouse Managed Postgres" size="md" border />
 
@@ -159,9 +159,9 @@ Les nouvelles lignes insérées dans la base de données source seront désormai
 * Selon votre cas d’usage, vous pouvez envisager de mettre en place une supervision et des alertes pour le processus de réplication.
 
 <div id="migration-pgdump-pg-restore-next-steps">
-  ## Prochaines étapes
+  ## Étapes suivantes
 </div>
 
-Félicitations ! Vous avez migré avec succès votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de pg&#95;dump et pg&#95;restore. Vous êtes désormais prêt à découvrir les fonctionnalités de ClickHouse Managed Postgres et son intégration avec ClickHouse. Voici un guide de démarrage rapide de 10 minutes pour bien démarrer :
+Félicitations ! Vous avez migré avec succès votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de pg&#95;dump et pg&#95;restore. Vous pouvez maintenant découvrir les fonctionnalités de Managed Postgres et son intégration avec ClickHouse. Voici un quickstart de 10 minutes pour bien démarrer :
 
-* [Guide de démarrage rapide de ClickHouse Managed Postgres](/fr/products/managed-postgres/quickstart)
+* [Guide de quickstart de Managed Postgres](/fr/products/managed-postgres/quickstart)

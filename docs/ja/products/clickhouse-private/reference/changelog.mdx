@@ -1,0 +1,239 @@
+---
+noindex: true
+title: "変更履歴"
+---
+
+***
+
+<div id="airgap-2026-06-09">
+  ## airgap-2026-06-09
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.311        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+<div id="new-features">
+  ### 新機能
+</div>
+
+* feat(airgap): plainRewritableDiskForSystemTables フラグを公開 (#35033)
+* feat(operator): arm64 ビルドを追加 (#34389)
+* feat(preflight): cache比率チェックを追加 [AIR-127] (#34709)
+* feat(airgap): Shared Catalog 移行のプレフライトチェックを追加 (#34708)
+* feat(onprem): ネームスペースごとに ClickHouseCluster を 1 つのみに制限するため、ResourceQuota を追加 (#34615)
+
+<div id="bug-fixes">
+  ### バグ修正
+</div>
+
+* fix(airgap): クラスターのインストール前に、CRD が確立されるまで待機する (#34834)
+* fix(onprem): Hydra の子で Keeper レプリカを 0 に設定できるようにする (#34693)
+* fix(operator): 公開された FIPS ビルドで正しいビルド引数が欠けていた問題を修正 (#34600)
+* fix(onprem-clickhouse-cluster): 非推奨の フィーチャーフラグ を operator の想定するデフォルト値に固定する (#34417)
+
+***
+
+<div id="airgap-2026-05-28">
+  ## airgap-2026-05-28
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+***
+
+<div id="airgap-2026-05-27">
+  ## airgap-2026-05-27
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.302        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新機能
+</div>
+
+<div id="new-features">
+  ### 新機能
+</div>
+
+* feat(airgap): プライベートドキュメントに Git SHA を追加 (#34183)
+* feat(airgap): Helm チャートで BackupConfiguration をサポート (#33746)
+* feat(airgap): プレフライトチェックに非推奨のフィーチャーフラグを追加 (#33545)
+
+<div id="bug-fixes">
+  ### バグ修正
+</div>
+
+* fix(docs): airgap の単一ページドキュメント表示 (#34288)
+* fix(airgap): 非公開ドキュメント内のアンカーリンクを修正 (#34122)
+
+***
+
+<div id="airgap-2026-05-21">
+  ## airgap-2026-05-21
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新機能
+</div>
+
+* feat(clickhouse-operator): FIPS 準拠のビルドフラグとランタイムのサポート (#29677)
+* feat(onprem-clickhouse-cluster): onprem Helm チャートで gcp ベース設定のサポートを追加 (#33501)
+
+<div id="bug-fixes">
+  ### バグ修正
+</div>
+
+* 修正(onprem-clickhouse-cluster): `enableDynamicSSDCacheConfiguration` を無効化 (#33700)
+* 修正(onprem-clickhouse-cluster): 未使用の `openssl.fips` 設定を削除 (#33881))
+* 修正(onprem-clickhouse-cluster): TLS が必要な場合、`extraConfig` から `cloud.port` を削除 (#33548)
+* 修正(clickhouse-operator): `SsdCacheConfiguration.IsOnEmptyDir` を任意項目に変更 (#33570)
+
+***
+
+<div id="airgap-2026-04-23">
+  ## airgap-2026-04-23
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18231.1 |
+| helm/clickhouse-operator-helm  | 1.18231.1      |
+| helm/onprem-clickhouse-cluster | 1.1.260        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="bug-fixes">
+  ### バグ修正
+</div>
+
+* fix(onprem-helm-chart): storageClass パラメータと allowedTopologies を使用できるようにする (#32776)
+
+***
+
+<div id="airgap-2026-04-15">
+  ## airgap-2026-04-15
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.245        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新機能
+</div>
+
+* feat(airgap): Shared Catalog と ステートレスサーバー がデフォルトで有効になります (#32481) — [破壊的変更](/ja/products/clickhouse-private/reference/breaking-changes) および [Shared Catalog への移行](/ja/products/clickhouse-private/guides/migrate-to-shared-catalog) を参照してください
+
+<div id="bug-fixes">
+  ### バグ修正
+</div>
+
+* fix(airgap-management): バックアップの復元にソース クラスターの S3 接続を使用する (#32612)
+
+***
+
+<div id="airgap-2026-04-14">
+  ## airgap-2026-04-14
+</div>
+
+<div id="component-versions">
+  ### コンポーネントのバージョン
+</div>
+
+| コンポーネント                        | バージョン          |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.234        |
+| airgap-management              | 1.83.1         |
+| helm/airgap-management         | 1.83.1         |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 新機能
+</div>
+
+* feat(airgap): onprem-clickhouse-cluster Helm チャートで Shared Catalog のサポートを追加 (#31779)
+* feat(airgap): onprem-clickhouse-cluster Helm チャートにステートレスサーバーのサポートを追加 (#32202)
+* feat(airgap): support-bundle Helm チャートを追加 (#32271)
+* feat(airgap): airgap API を FIPS 準拠化 (#31811)

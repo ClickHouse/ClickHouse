@@ -12,7 +12,7 @@ ClickHouse は、幅広い JOIN アルゴリズムを備え、[`JOIN` を完全�
 
 * 最適なパフォーマンスを得るには、クエリ内の `JOIN` の数をできるだけ減らすことを目指してください。特に、ミリ秒単位の性能が求められるリアルタイム分析ワークロードでは重要です。1 つのクエリでの `JOIN` は最大 3～4 個を目安にしてください。[データモデリングのセクション](/ja/guides/clickhouse/data-modelling/schema-design)では、非正規化、Dictionaries、materialized view など、JOIN を最小限に抑えるためのさまざまな手法を詳しく説明しています。
 * ClickHouse 24.12 以降では、クエリプランナーが 2 テーブルの JOIN を自動的に並べ替え、最適なパフォーマンスが得られるよう小さいテーブルを右側に配置します。バージョン 25.9 では、これが 3 つ以上のテーブルを JOIN するクエリの JOIN 順序の最適化にも拡張されました。
-* クエリで direct JOIN、つまり以下に示す `LEFT ANY JOIN` が必要な場合は、可能であれば [Dictionaries](/ja/concepts/features/dictionaries/index) を使用することを推奨します。
+* クエリで direct join、つまり以下に示す `LEFT ANY JOIN` が必要な場合は、可能であれば [Dictionaries](/ja/concepts/features/dictionaries/index) を使用することを推奨します。
 
 <Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join" />
 
@@ -76,7 +76,7 @@ WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.
 1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
 ```
 
-このJOINの順序を入れ替えると、パフォーマンスが劇的に改善し、1.5秒になります:
+このjoinの順序を入れ替えると、パフォーマンスが劇的に改善し、1.5秒になります:
 
 ```sql
 SELECT countIf(VoteTypeId = 2) AS upvotes

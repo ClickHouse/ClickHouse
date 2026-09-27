@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
@@ -154,7 +154,6 @@ void MergePlainMergeTreeTask::prepare()
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    new_part->getDataPartStorage().commitTransaction();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
@@ -192,7 +191,7 @@ void MergePlainMergeTreeTask::finish()
     if (auto txn_ = txn_holder.getTransaction())
     {
         /// Explicitly commit the transaction if we own it (it's a background merge, not OPTIMIZE)
-        TransactionManager::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
+        TransactionLog::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }

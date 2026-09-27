@@ -126,26 +126,6 @@ SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial'
 INSERT INTO tab_codec_arg SELECT number, 'foo bar' FROM numbers(512);
 SELECT count() FROM tab_codec_arg WHERE hasToken(str, 'foo');
 
-SELECT '-- the pfor codec also overrides the v0_initial preference, and combines with positions';
--- The header records any codec from 'v1_with_codec' on, so `pfor` needs no version of its own.
-DROP TABLE IF EXISTS tab_pfor_positions;
-CREATE TABLE tab_pfor_positions
-(
-    id UInt32,
-    str String,
-    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1, posting_list_codec = 'pfor')
-)
-ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', allow_experimental_text_index_phrase_search = 1;
-
-INSERT INTO tab_pfor_positions SELECT number, 'foo bar baz' FROM numbers(512);
-INSERT INTO tab_pfor_positions SELECT number, 'foo baz bar' FROM numbers(512);
-OPTIMIZE TABLE tab_pfor_positions FINAL;
-
-SELECT count() FROM tab_pfor_positions WHERE hasToken(str, 'foo');
-SELECT count() FROM tab_pfor_positions WHERE hasPhrase(str, 'foo bar');
-SELECT count() FROM tab_pfor_positions WHERE hasPhrase(str, 'baz bar');
-
 SELECT '-- a phrase search index overrides an older version preference on CREATE';
 -- Positions cannot be represented in 'v1_with_codec', so the index
 -- is silently written in 'v2_with_positions' and phrase search works.
@@ -192,4 +172,3 @@ DROP TABLE tab_alter;
 DROP TABLE tab_codec_arg;
 DROP TABLE tab_positions_pinned;
 DROP TABLE tab_add_index;
-DROP TABLE tab_pfor_positions;

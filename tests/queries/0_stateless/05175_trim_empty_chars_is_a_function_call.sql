@@ -16,7 +16,6 @@ SELECT 1 SETTINGS max_threads = trim(BOTH '' FROM 'x'); -- { clientError SYNTAX_
 CREATE NAMED COLLECTION nc_05175 AS k = trim(BOTH '' FROM 'x'); -- { clientError SYNTAX_ERROR }
 CREATE TABLE t_alter (c Int64) ENGINE = MergeTree ORDER BY c;
 ALTER TABLE t_alter ADD STATISTICS c TYPE trim(BOTH '' FROM 'x'); -- { serverError INCORRECT_QUERY }
-ALTER TABLE t_alter MODIFY COLUMN c Int64 STATISTICS(trim(BOTH '' FROM 'x')); -- { serverError INCORRECT_QUERY }
 DROP TABLE t_alter;
 -- The operand reaches the function's argument checks.
 SELECT trim(BOTH '' FROM 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -44,7 +43,7 @@ CREATE DICTIONARY d (k UInt64, v String) PRIMARY KEY k SOURCE(CLICKHOUSE(HOST tr
 SELECT position(create_table_query, 'SOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 TABLE \'x\' DB \'y\'))') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'd';
 DROP DICTIONARY d;
 -- Ordinary spellings of the same slots still parse.
-CREATE TABLE ok (c Int64 STATISTICS(tdigest) CODEC(ZSTD(3)), d Int64 STATISTICS(uniq, minmax) CODEC(NONE), INDEX i c TYPE minmax) ENGINE = MergeTree ORDER BY c SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE ok (c Int64 CODEC(ZSTD(3)) STATISTICS(tdigest), d Int64 CODEC(NONE) STATISTICS(uniq, minmax), INDEX i c TYPE minmax) ENGINE = MergeTree ORDER BY c SETTINGS auto_statistics_types = 'basic, uniq_v2';
 SELECT position(create_table_query, '`c` Int64 CODEC(ZSTD(3)) STATISTICS(tdigest)') > 0, position(create_table_query, '`d` Int64 CODEC(NONE) STATISTICS(uniq, minmax)') > 0, position(create_table_query, 'INDEX i c TYPE minmax') > 0, position(create_table_query, 'auto_statistics_types = \'basic, uniq_v2\'') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'ok';
 DROP TABLE ok;
 SELECT 1 SETTINGS max_threads = 4;

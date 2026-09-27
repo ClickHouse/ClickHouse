@@ -16,9 +16,9 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 非同期 INSERT に関する情報が含まれます。各エントリは、非同期 INSERT 用にバッファリングされた INSERT クエリを表します。
 
-ログ記録を開始するには、[asynchronous&#95;insert&#95;log](/ja/reference/settings/server-settings/settings/asynchronous#asynchronous_insert_log) セクションでパラメータを設定します。
+ログ記録を開始するには、[asynchronous&#95;insert&#95;log](/ja/reference/settings/server-settings/settings#asynchronous_insert_log) セクションでパラメータを設定します。
 
-データのフラッシュ間隔は、[asynchronous&#95;insert&#95;log](/ja/reference/settings/server-settings/settings/asynchronous#asynchronous_insert_log) サーバー設定セクションの `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
+データのフラッシュ間隔は、[asynchronous&#95;insert&#95;log](/ja/reference/settings/server-settings/settings#asynchronous_insert_log) サーバー設定セクションの `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
 
 ClickHouse はテーブルからデータを自動的に削除しません。詳しくは、[Introduction](/ja/reference/system-tables/overview#system-tables-introduction) を参照してください。
 

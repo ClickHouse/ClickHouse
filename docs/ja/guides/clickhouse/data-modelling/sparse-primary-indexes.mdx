@@ -310,7 +310,7 @@ ClickHouse client の出力から、次のことがわかります。
   ClickHouse では、主キーカラムの値が同一の複数の行を挿入できます。この場合 (下図の行 1 と行 2 を参照) 、最終的な順序は指定されたソートキー、つまり `EventTime` カラムの値によって決まります。
 </Note>
 
-ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">カラム指向データベース管理システム</a>です。以下の図に示すとおり、
+ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">カラム指向データベース管理システム</a>です。以下の図に示すとおり、
 
 * ディスク上の表現では、テーブルの各カラムごとに 1 つのデータファイル (*.bin) があり、そのカラムのすべての値が<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>フォーマットで保存されます。
 * 887 万行は、主キーカラム (および追加のソートキーカラム) に従って、辞書式順序の昇順でディスク上に保存されます。つまり、この場合は
@@ -329,7 +329,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
 </Note>
 
 <div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### データは並列データ処理のためにグラニュールに編成されます
+  ### データは並列処理のためにグラニュールに編成されます
 </div>
 
 データ処理の観点では、テーブルのカラム値は論理的にグラニュールへ分割されます。
@@ -356,7 +356,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
 
     そのため、サンプルテーブルのすべてのグラニュール (最後のものを除く) は同じサイズになっています。
 
-  * アダプティブインデックス粒度を持つテーブルでは、index granularity は [デフォルト](/ja/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes) でアダプティブであるため、行データのサイズに応じて、一部のグラニュールは 8192 行未満になることがあります。
+  * アダプティブインデックス粒度を持つテーブルでは、index granularity は[デフォルト](/ja/reference/settings/merge-tree-settings#index_granularity_bytes)でアダプティブであるため、行データのサイズに応じて、一部のグラニュールは 8192 行未満になることがあります。
 
   * 主キーのキーカラム (`UserID`、`URL`) の一部のカラム値をオレンジ色で示しています。
     これらのオレンジ色で示したカラム値は、各グラニュールの先頭行にある主キーのキーカラム値です。
@@ -390,83 +390,68 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
   * プライマリインデックスファイルは全体が主記憶に読み込まれます。ファイルサイズが利用可能な空きメモリ容量を超えると、ClickHouse はエラーを返します。
 </Note>
 
-<Accordion title="プライマリインデックスの内容を確認する">
-  セルフマネージドの ClickHouse クラスターでは、[file table function](/ja/reference/functions/table-functions/file) を使って、サンプルテーブルのプライマリインデックスの内容を確認できます。
+<Accordion title="プライマリインデックスの内容を調べる">
+  <p>
+    セルフマネージドのClickHouseクラスターでは、サンプルテーブルのプライマリインデックスの内容を調べるために、<a href="/ja/reference/functions/table-functions/file" target="_blank">file table function</a>を使用できます。
 
-  そのためには、まずプライマリインデックスファイルを、稼働中のクラスター内のノードの [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings/user#user_files_path) にコピーする必要があります。
+    そのためには、まず実行中のクラスター内のノードの<a href="/ja/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a>にプライマリインデックスファイルをコピーする必要があります:
 
-  **ステップ 1: プライマリインデックスファイルを含む part-path を取得する**
+    <ul>
+      <li>ステップ 1: プライマリインデックスファイルを含むパーツのパスを取得する</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
 
-  ```sql
-  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
-  ```
+      テストマシンでは、`/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`が返されます。
 
-  テストマシンでは `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` が返されます。
+      <li>ステップ 2: user&#95;files&#95;path を取得する</li>
+      Linux での<a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">デフォルトの user&#95;files&#95;path</a>は
+      `/var/lib/clickhouse/user_files/`
 
-  **ステップ 2: user&#95;files&#95;path を取得する**
+      です。Linux では、変更されているかどうかを次のように確認できます: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  Linux での[デフォルトの user&#95;files&#95;path](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) は `/var/lib/clickhouse/user_files/` です。
+      テストマシンでのパスは`/Users/tomschreiber/Clickhouse/user_files/`です。
 
-  また、Linux では次のようにして変更されているか確認できます: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+      <li>ステップ 3: プライマリインデックスファイルを user&#95;files&#95;path にコピーする</li>
 
-  テストマシンでは、このパスは `/Users/tomschreiber/ClickHouse/user_files/` です。
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
 
-  **ステップ 3: プライマリインデックスファイルを user&#95;files&#95;path にコピーする**
+    <br />
 
-  ```bash
-  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
-  ```
+    これで、SQL 経由でプライマリインデックスの内容を調べられます:
 
-  これで、SQL でプライマリインデックスの内容を確認できます。
+    <ul>
+      <li>エントリ数を取得する</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      `1083`が返されます。
 
-  **エントリ数を取得する**
+      <li>最初の 2 つのインデックスマークを取得する</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
 
-  ```sql
-  SELECT count()
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
-  ```
+      結果は次のとおりです。
 
-  `1083` が返されます。
+      `240923, http://showtopics.html%3...<br/>
+                  4073710, http://mk.ru&pos=3_0`
 
-  **最初の 2 つのインデックスマークを取得する**
+      <li>最後のインデックスマークを取得する</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      結果は次のとおりです。
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
 
-  ```sql
-  SELECT UserID, URL
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 0, 2;
-  ```
+    <br />
 
-  結果:
-
-  ```response
-  240923, http://showtopics.html%3...
-  4073710, http://mk.ru&pos=3_0
-  ```
-
-  **最後のインデックスマークを取得する**
-
-  ```sql
-  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 1082, 1;
-  ```
-
-  結果:
-
-  ```response
-  4292714039 │ http://sosyal-mansetleri...
-  ```
-
-  これは、サンプルテーブルのプライマリインデックス内容を示した図と完全に一致します。
+    これは、サンプルテーブルのプライマリインデックスの内容を示した図と完全に一致しています:
+  </p>
 </Accordion>
 
-主キーのエントリは、各索引エントリが特定のデータ範囲の開始位置を示すことから、インデックスマークと呼ばれます。サンプルテーブルでは、具体的には次のようになります。
+主キーのエントリは インデックスマーク と呼ばれます。各 索引エントリ は特定のデータ範囲の開始位置を示すためです。サンプルテーブルでは、具体的には次のようになります:
 
 * UserID インデックスマーク:
 
-  プライマリインデックスに格納されている `UserID` の値は昇順にソートされています。<br />
-  したがって、上の図の &#39;mark 1&#39; は、グラニュール 1 内のすべてのテーブル行と、それ以降のすべてのグラニュールにおける `UserID` の値が、4.073.710 以上であることを示しています。
+  プライマリインデックスに格納されている`UserID`の値は昇順に並んでいます。<br />
+  したがって、上の図の「mark 1」は、グラニュール 1 のすべてのテーブル行と、それ以降のすべての グラニュール に含まれる`UserID`の値が、4.073.710 以上であることを示しています。
 
-[後で説明するように](#the-primary-index-is-used-for-selecting-granules)、この全体的な順序により、主キーの最初のカラムでクエリをフィルタリングする場合、ClickHouse は最初のキーカラムのインデックスマークに対して <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索アルゴリズムを使用</a>できます。
+[後で説明するように](#the-primary-index-is-used-for-selecting-granules)、この全体的な順序により、主キーの先頭カラムでクエリを絞り込む場合、ClickHouse は先頭キーカラムの インデックスマーク に対して<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索アルゴリズムを使用</a>できます。
 
 * URL インデックスマーク:
 
@@ -515,7 +500,7 @@ Processed 8.19 thousand rows,
 
 ClickHouse client の出力では、フルテーブルスキャンを実行する代わりに、わずか 8,190 行だけが ClickHouse にストリーミングされたことが示されるようになりました。
 
-<a href="/ja/reference/settings/server-settings/settings/other#logger" target="_blank">トレースログ</a>が有効になっている場合、ClickHouse のサーバーログファイルには、`749927693` の UserID カラム値を持つ行を含む可能性があるグラニュールを特定するために、1083 個の UserID 索引マーク に対して ClickHouse が<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索</a>を実行していたことが表示されます。これには、平均時間計算量 `O(log2 n)` で 19 ステップが必要です:
+<a href="/ja/reference/settings/server-settings/settings#logger" target="_blank">トレースログ</a>が有効になっている場合、ClickHouse のサーバーログファイルには、`749927693` の UserID カラム値を持つ行を含む可能性があるグラニュールを特定するために、1083 個の UserID インデックスマーク に対して ClickHouse が<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索</a>を実行していたことが表示されます。これには、平均時間計算量 `O(log2 n)` で 19 ステップが必要です:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -528,15 +513,11 @@ ClickHouse client の出力では、フルテーブルスキャンを実行す�
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-:::note
-ClickHouse の最近のバージョンでは、`Running binary search on index range`、`Found (LEFT) boundary mark`、`Found (RIGHT) boundary mark` のメッセージは、`trace` ではなく `test` レベル (最も詳細なレベル) でログに記録されます。これらを確認するには、ログの詳細度を `test` に上げてください (例: client で `SET send_logs_level = 'test'` を実行するか、サーバー設定で `<logger><level>test</level></logger>` を指定します) 。上記の残りの行は引き続き `trace` でログに記録されます。これは、このガイド内のすべての二分探索ログの例に適用されます。
-:::
-
 上のトレースログを見ると、既存の1083個のマークのうち、クエリ条件を満たしたのは1つだけであることがわかります。
 
 <Accordion title="トレースログの詳細">
   <p>
-    マーク176が特定され (&#39;found left boundary mark&#39; は境界を含み、&#39;found right boundary mark&#39; は境界を含みません) 、その結果、グラニュール176の8192行すべてが (これは行1.441.792から始まります。これについてはこのガイドの後半で説明します) 、UserIDカラムの値が `749927693` である実際の行を見つけるために ClickHouse にストリーミングされます。
+    マーク176が特定され (&#39;found left boundary mark&#39; は境界を含み、&#39;found right boundary mark&#39; は境界を含みません) 、その結果、グラニュール176の8192行すべてが (これは行1.441.792から始まります。これについてはこのガイドの後半で説明します) 、UserIDカラムの値が `749927693` である実際の行を見つけるために ClickHouse に読み込まれます。
   </p>
 </Accordion>
 
@@ -603,7 +584,7 @@ LIMIT 10;
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="スパースプライマリインデックス 04" />
 
-前述のとおり、索引内の 1083 個の UserID mark に対して 二分探索 を行った結果、mark 176 が特定されました。したがって、対応する グラニュール 176 には、UserID カラムの値が 749.927.693 の行が含まれている可能性があります。
+前述のとおり、索引内の 1083 個の UserID mark に対して binary search を行った結果、mark 176 が特定されました。したがって、対応する グラニュール 176 には、UserID カラムの値が 749.927.693 の行が含まれている可能性があります。
 
 <Accordion title="グラニュール の選択の詳細">
   <p>
@@ -629,20 +610,20 @@ ClickHouse が、クエリに一致する行を含む可能性がある グラ�
 
 特定のカラムに対応する各 マークファイル エントリには、offset の形で 2 つの位置が格納されています。
 
-* 1 つ目の offset (上図の &#39;block&#95;offset&#39;) は、選択された グラニュール の圧縮版を含む、<a href="/ja/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> の位置を、<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>されたカラムデータファイル内で示します。この圧縮 block には、複数の圧縮された グラニュール が含まれている可能性があります。特定された圧縮ファイル block は、読み取り時にメインメモリ上で展開されます。
+* 1 つ目の offset (上図の &#39;block&#95;offset&#39;) は、選択された グラニュール の圧縮版を含む、<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>されたカラムデータファイル内の <a href="/ja/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> の位置を示します。この圧縮 block には、複数の圧縮された グラニュール が含まれている可能性があります。特定された圧縮ファイル block は、読み取り時にメインメモリ上で展開されます。
 
 * 2 つ目の offset (上図の &#39;granule&#95;offset&#39;) は マークファイル から取得され、非圧縮の block data 内における グラニュール の位置を示します。
 
 その後、特定された非圧縮 グラニュール に属する 8192 行すべてが、後続の処理のために ClickHouse にストリーミングされます。
 
 <Note>
-  * [ワイド形式](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) を使用し、[アダプティブインデックス粒度](/ja/resources/changelogs/oss/2019#experimental-features-1) を使用しないテーブルでは、ClickHouse は上図のように `.mrk` マークファイルを使用します。このファイルには、各エントリに 8 バイトのアドレスが 2 つ含まれています。これらのエントリは、いずれも同じサイズであるグラニュールの物理的位置を表します。
+  * [ワイド形式](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) で、かつ [アダプティブインデックス粒度](/ja/resources/changelogs/oss/2019#experimental-features-1) を使用しないテーブルでは、ClickHouse は上図のような `.mrk` マークファイル を使用します。これには、各エントリに 8 バイト長のアドレスが 2 つ含まれています。これらのエントリは、いずれも同じサイズを持つ グラニュール の物理的位置を表します。
 
-  Index granularity は [default](/ja/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes) でアダプティブですが、このガイドの例で使用するテーブルでは、説明を簡潔にし、図と結果を再現可能にするために、アダプティブインデックス粒度を無効にしています。このテーブルが ワイド形式 を使用しているのは、データサイズが [min&#95;bytes&#95;for&#95;wide&#95;part](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) を超えているためです (セルフマネージドクラスターではデフォルトで 10 MB) 。
+  Index granularity は [default](/ja/reference/settings/merge-tree-settings#index_granularity_bytes) で adaptive ですが、この例のテーブルでは アダプティブインデックス粒度 を無効にしています (このガイドでの説明を簡単にし、図と結果を再現可能にするためです) 。このテーブルが ワイド形式 を使用しているのは、データサイズが [min&#95;bytes&#95;for&#95;wide&#95;part](/ja/reference/settings/merge-tree-settings#min_bytes_for_wide_part) より大きいためです (セルフマネージドクラスターではデフォルトで 10 MB) 。
 
-  * ワイド形式 を使用し、アダプティブインデックス粒度を使用するテーブルでは、ClickHouse は `.mrk2` マークファイルを使用します。これには `.mrk` マークファイルと同様のエントリが含まれますが、各エントリには 3 つ目の値として、そのエントリに対応するグラニュールの行数が追加されています。
+  * ワイド形式でアダプティブインデックス粒度を使用するテーブルでは、ClickHouse は `.mrk2` マークファイル を使用します。これには `.mrk` マークファイル と同様のエントリが含まれますが、各エントリには追加の 3 つ目の値として、そのエントリに対応する グラニュール の行数が格納されます。
 
-  * [compact format](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) を使用するテーブルでは、ClickHouse は `.mrk3` マークファイルを使用します。
+  * [compact パーツ](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) のテーブルでは、ClickHouse は `.mrk3` マークファイル を使用します。
 </Note>
 
 <Info>
@@ -743,7 +724,7 @@ Processed 8.81 million rows,
 
 クライアントの出力は、[URL カラムが複合主キーの一部である](#a-table-with-a-primary-key)にもかかわらず、ClickHouse がテーブルのほぼ全体をスキャンしたことを示しています。ClickHouse は、テーブルの 887 万行のうち 881 万行を読み取っています。
 
-[trace&#95;logging](/ja/reference/settings/server-settings/settings/other#logger) が有効な場合、ClickHouse server のログファイルには、ClickHouse が 1083 個の URL 索引マークに対して<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">汎用排除検索</a>を使用し、URL カラムの値が &quot;http://public&#95;search&quot; である行を含む可能性のあるグラニュールを特定したことが表示されます。
+[trace&#95;logging](/ja/reference/settings/server-settings/settings#logger) が有効な場合、ClickHouse サーバーのログファイルには、ClickHouse が 1083 個の URL 索引マーク に対して<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">汎用排除検索</a>を使用し、URL カラムの値が &quot;http://public&#95;search&quot; である行を含む可能性のあるグラニュールを特定したことが表示されます。
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -763,7 +744,7 @@ Processed 8.81 million rows,
 
 複合主キー (UserID, URL) に基づくプライマリインデックスは、特定のUserID値を持つ行で絞り込むクエリを高速化するうえで非常に有用でしたが、特定のURL値を持つ行で絞り込むクエリの高速化には、この索引はそれほど役立っていません。
 
-その理由は、URLカラムがキーの先頭カラムではないためです。そのためClickHouseは、URLカラムの索引マークに対して二分探索ではなく汎用排除検索アルゴリズムを使用しており、**そのアルゴリズムの有効性は**、URLカラムと、その直前のキーカラムであるUserIDとのカーディナリティの差に依存します。
+その理由は、URLカラムがキーの先頭カラムではないためです。そのためClickHouseは、URLカラムの索引マークに対してbinary searchではなく汎用排除検索アルゴリズムを使用しており、**そのアルゴリズムの有効性は**、URLカラムと、その直前のキーカラムであるUserIDとのカーディナリティの差に依存します。
 
 これを示すために、汎用排除検索がどのように機能するかを少し詳しく見ていきます。
 
@@ -980,7 +961,7 @@ Processed 319.49 thousand rows,
 UserID が最初、URL が 2 番目のキーカラムだった [元のテーブル](#a-table-with-a-primary-key) のプライマリインデックスでは、ClickHouse はそのクエリの実行時に索引マークに対して [汎用排除検索](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) を使用していましたが、UserID と URL はどちらも同程度にカーディナリティが高いため、あまり効果的ではありませんでした。
 
 プライマリインデックスの先頭カラムが URL になったことで、ClickHouse は索引マークに対して <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索</a> を行うようになりました。
-対応するサーバーログからも、そのことが確認できます (最近のバージョンでは、二分探索メッセージは `test` レベルでログに記録されます。詳細は[上記の注記](#the-primary-index-is-used-for-selecting-granules)を参照してください)。
+ClickHouse server のログファイル内の対応するトレースログからも、そのことが確認できます。
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1119,9 +1100,9 @@ Processed 335.87 thousand rows,
 13.54 MB (12.91 million rows/s., 520.38 MB/s.)
 ```
 
-実質的には、materialized view を支えるために暗黙的に作成されるテーブル (およびそのプライマリインデックス) は、[明示的に作成したセカンダリテーブル](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) と同一であるため、クエリは明示的に作成したテーブルの場合と実質的に同じ方法で実行されます。
+実質的には、materialized view を支えるために暗黙的に作成されるテーブル (およびそのプライマリインデックス) は、[明示的に作成した secondary table](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) と同一であるため、クエリは明示的に作成したテーブルの場合と実質的に同じ方法で実行されます。
 
-対応するサーバーログから、ClickHouse が索引マークに対して二分探索を実行していることが確認できます (最近のバージョンでは、二分探索メッセージは `test` レベルで記録されます。 [上記の注記](#the-primary-index-is-used-for-selecting-granules)を参照) :
+ClickHouse server のログファイル内の対応するトレースログから、ClickHouse が索引マークに対して二分探索を実行していることが確認できます:&quot;
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1134,10 +1115,10 @@ Processed 335.87 thousand rows,
 ```
 
 <div id="option-3-projections">
-  ### オプション 3: PROJECTION
+  ### オプション 3: プロジェクション
 </div>
 
-既存のテーブルにPROJECTIONを作成します：
+既存のテーブルにプロジェクションを作成します：
 
 ```sql
 ALTER TABLE hits_UserID_URL
@@ -1148,7 +1129,7 @@ ALTER TABLE hits_UserID_URL
     );
 ```
 
-次に、PROJECTIONをマテリアライズします：
+次に、プロジェクションをマテリアライズします：
 
 ```sql
 ALTER TABLE hits_UserID_URL
@@ -1156,22 +1137,22 @@ ALTER TABLE hits_UserID_URL
 ```
 
 <Note>
-  * PROJECTIONは、PROJECTIONで指定された `ORDER BY` 句に基づく行順序とプライマリインデックスを持つ**非表示テーブル**を作成します
+  * プロジェクションは、プロジェクションで指定された `ORDER BY` 句に基づく行順序とプライマリインデックスを持つ**非表示テーブル**を作成します
   * この非表示テーブルは、`SHOW TABLES` クエリの一覧には表示されません
   * `MATERIALIZE` キーワードを使うことで、ソーステーブル [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key) の 887 万行すべてを直ちに非表示テーブルに格納します
   * ソーステーブル hits&#95;UserID&#95;URL に新しい行が挿入されると、その行は自動的に非表示テーブルにも挿入されます
   * クエリは常に (構文上は) ソーステーブル hits&#95;UserID&#95;URL を対象としますが、非表示テーブルの行順序とプライマリインデックスを使うことでより効率的にクエリを実行できる場合は、代わりにその非表示テーブルが使用されます
-  * `ORDER BY` がPROJECTIONの `ORDER BY` ステートメントと一致していても、PROJECTIONによって `ORDER BY` を使用するクエリが効率化されるわけではない点に注意してください (https://github.com/ClickHouse/ClickHouse/issues/47333 を参照)
-  * 実際には、暗黙的に作成される非表示テーブルは、[明示的に作成したセカンダリテーブル](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) と同じ行順序およびプライマリインデックスを持ちます。
+  * `ORDER BY` がプロジェクションの `ORDER BY` ステートメントと一致していても、プロジェクションによって `ORDER BY` を使用するクエリが効率化されるわけではない点に注意してください (https://github.com/ClickHouse/ClickHouse/issues/47333 を参照)
+  * 実際には、暗黙的に作成される非表示テーブルは、[明示的に作成した secondary table](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) と同じ行順序およびプライマリインデックスを持ちます。
 
   <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-1.webp" size="lg" alt="Sparse Primary Indices 12c1" />
 
-  ClickHouse は、非表示テーブルの [カラムデータファイル](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin) 、[mark files](#mark-files-are-used-for-locating-granules) (*.mrk2) 、および [プライマリインデックス](#the-primary-index-has-one-entry-per-granule) (primary.idx) を、ソーステーブルのデータファイル、mark files、プライマリインデックスファイルの隣にある特別なフォルダー (下のスクリーンショットではオレンジ色で示されています) に保存します。
+  ClickHouse は、非表示テーブルの [column data files](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin) 、[mark files](#mark-files-are-used-for-locating-granules) (*.mrk2) 、および [プライマリインデックス](#the-primary-index-has-one-entry-per-granule) (primary.idx) を、ソーステーブルのデータファイル、mark files、プライマリインデックスファイルの隣にある特別なフォルダー (下のスクリーンショットではオレンジ色で示されています) に保存します。
 
   <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-2.webp" size="sm" alt="Sparse Primary Indices 12c2" />
 </Note>
 
-PROJECTIONによって作成された非表示テーブル (およびそのプライマリインデックス) は、URL カラムでフィルタリングするこの例のクエリの実行を大幅に高速化するために、今後は (暗黙的に) 利用できるようになります。なお、このクエリは構文上はPROJECTIONのソーステーブルを対象としています。
+プロジェクションによって作成された非表示テーブル (およびそのプライマリインデックス) は、URL カラムでフィルタリングするこの例のクエリの実行を大幅に高速化するために、今後は (暗黙的に) 利用できるようになります。なお、このクエリは構文上はプロジェクションのソーステーブルを対象としています。
 
 ```sql highlight={2}
 SELECT UserID, count(UserID) AS Count
@@ -1203,9 +1184,9 @@ Processed 319.49 thousand rows, 1
 1.38 MB (11.05 million rows/s., 393.58 MB/s.)
 ```
 
-PROJECTION によって作成される非表示テーブル (およびそのプライマリインデックス) は、実質的に [明示的に作成したセカンダリテーブル](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) と同一であるため、クエリも明示的に作成したテーブルの場合と実質的に同じ方法で実行されます。
+projection によって作成される非表示テーブル (およびそのプライマリインデックス) は、実質的に [明示的に作成した secondary table](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) と同一であるため、クエリも明示的に作成したテーブルの場合と実質的に同じ方法で実行されます。
 
-対応するサーバーログから、ClickHouse が索引マークに対して二分探索を実行していることが確認できます (最近のバージョンでは、二分探索メッセージは `test` レベルでログに記録されます。 [上記の注記](#the-primary-index-is-used-for-selecting-granules) を参照してください) ：
+これに対応する ClickHouse server のログファイル内のトレースログから、ClickHouse が索引マークに対して二分探索を実行していることが確認できます。
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

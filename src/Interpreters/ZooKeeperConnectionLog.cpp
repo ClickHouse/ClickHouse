@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Poco/NumberParser.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -41,8 +40,6 @@ ColumnsDescription ZooKeeperConnectionLogElement::getColumnsDescription()
 
     return ColumnsDescription{
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server which is connected to or disconnected from ZooKeeper."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(type_enum), "The type of the event. Possible values: Connected, Disconnected."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry"},
@@ -92,8 +89,6 @@ void ZooKeeperConnectionLogElement::appendToBlock(MutableColumns & columns) cons
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(event_type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
@@ -121,8 +116,7 @@ void ZooKeeperConnectionLog::addWithEventType(
     const zkutil::ZooKeeper & zookeeper,
     const std::string_view reason)
 {
-    add([&](ZooKeeperConnectionLogElement & element)
-    {
+    ZooKeeperConnectionLogElement element;
     element.event_type = type;
 
     std::chrono::time_point<std::chrono::system_clock> current_time = std::chrono::system_clock::now();
@@ -146,6 +140,7 @@ void ZooKeeperConnectionLog::addWithEventType(
     element.enabled_feature_flags = getEnabledFeatureFlags(zookeeper);
     element.availability_zone = zookeeper.getConnectedHostAvailabilityZone();
     element.reason = reason;
-    });
+
+    add(std::move(element));
 }
 }

@@ -1,5 +1,0 @@
-t_lazy	TableProxy
-t_lazy_memory	TableProxy
-CREATE TABLE default_1.t_lazy\n(\n    `key` UInt64,\n    `v` Float64 STATISTICS(tdigest),\n    `s` String TTL d + toIntervalMonth(1),\n    `d` DateTime\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
-TableProxy
-CREATE TABLE default_1.t_lazy\n(\n    `key` UInt64,\n    `v` Float64 STATISTICS(tdigest),\n    `s` String TTL d + toIntervalMonth(1),\n    `d` DateTime,\n    `v2` Float64 STATISTICS(uniq)\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192

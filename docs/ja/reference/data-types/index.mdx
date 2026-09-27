@@ -4,63 +4,10 @@ sidebarTitle: 'データ型の一覧'
 slug: /sql-reference/data-types/
 title: 'ClickHouseのデータ型'
 doc_type: 'reference'
-mode: wide
 ---
 
 このセクションでは、ClickHouseでサポートされているデータ型について説明します。たとえば、[整数](/ja/reference/data-types/int-uint)、[浮動小数点数](/ja/reference/data-types/float)、[文字列](/ja/reference/data-types/string) があります。
 
-データ型によっては、異なる[圧縮コーデック](/ja/reference/statements/create/table/codec)の恩恵を受けることがあります。
-
 システムテーブル [system.data&#95;type&#95;families](/ja/reference/system-tables/data_type_families) では、
 利用可能なすべてのデータ型の概要を確認できます。
 また、あるデータ型が別のデータ型のエイリアスであるかどうかや、その名前で大文字と小文字が区別されるかどうか (例: `bool` と `BOOL`) も示されます。
-
-<div id="data-type-categories">
-  ## データ型のカテゴリ
-</div>
-
-<CardGroup cols={2}>
-  <Card title="数値型">
-    [整数](/ja/reference/data-types/int-uint)、[浮動小数点値](/ja/reference/data-types/float)、固定精度の [`Decimal` 値](/ja/reference/data-types/decimal)、および [`Bool` フラグ](/ja/reference/data-types/boolean)を格納します。
-  </Card>
-
-  <Card title="String 型">
-    可変長の [`String` 値](/ja/reference/data-types/string)または固定長の [`FixedString` 値](/ja/reference/data-types/fixedstring)を格納します。
-  </Card>
-
-  <Card title="日付と時刻の型">
-    日付は [`Date`](/ja/reference/data-types/date) および [`Date32`](/ja/reference/data-types/date32)、タイムスタンプは [`DateTime`](/ja/reference/data-types/datetime) および [`DateTime64`](/ja/reference/data-types/datetime64)、時刻値は [`Time`](/ja/reference/data-types/time) および [`Time64`](/ja/reference/data-types/time64)で表します。
-  </Card>
-
-  <Card title="ネットワーク型">
-    [`IPv4`](/ja/reference/data-types/ipv4) および [`IPv6`](/ja/reference/data-types/ipv6) アドレスをコンパクトなバイナリ形式で格納します。
-  </Card>
-
-  <Card title="複合型">
-    [`Array`](/ja/reference/data-types/array)、[`Tuple`](/ja/reference/data-types/tuple)、[`Map`](/ja/reference/data-types/map)、および [`Nested`](/ja/reference/data-types/nested-data-structures/index) 構造で値を組み合わせます。
-  </Card>
-
-  <Card title="半構造化型">
-    [`JSON`](/ja/reference/data-types/newjson)、[`Dynamic`](/ja/reference/data-types/dynamic)、および [`Variant`](/ja/reference/data-types/variant) を使用して、変化するデータや異種データを格納します。
-  </Card>
-
-  <Card title="Nullable 型とオプション型">
-    [`Nullable`](/ja/reference/data-types/nullable) で欠損値を表現するか、[`LowCardinality`](/ja/reference/data-types/lowcardinality) で繰り返し値のストレージ使用量を削減します。
-  </Card>
-
-  <Card title="特殊型">
-    [`UUID` 値](/ja/reference/data-types/uuid)、[`Enum` 値](/ja/reference/data-types/enum)、[地理オブジェクト](/ja/reference/data-types/geo)、[近似検索用ベクトル](/ja/reference/data-types/qbit)、および [ドメイン](/ja/reference/data-types/domains/index)をモデル化します。
-  </Card>
-
-  <Card title="集約関数型">
-    [`AggregateFunction`](/ja/reference/data-types/aggregatefunction) および [`SimpleAggregateFunction`](/ja/reference/data-types/simpleaggregatefunction) で中間的な集約状態を格納します。
-  </Card>
-
-  <Card title="特殊データ型">
-    中間クエリ結果に使用される [`Expression`](/ja/reference/data-types/special-data-types/expression)、[`Interval`](/ja/reference/data-types/special-data-types/interval)、[`Nothing`](/ja/reference/data-types/special-data-types/nothing)、および [`Set`](/ja/reference/data-types/special-data-types/set) について説明します。
-  </Card>
-
-  <Card title="バイナリエンコーディング">
-    各データ型のシリアル化表現については、[バイナリエンコーディング仕様](/ja/reference/data-types/data-types-binary-encoding)を参照してください。
-  </Card>
-</CardGroup>

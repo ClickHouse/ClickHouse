@@ -9,14 +9,10 @@ function start_minio()
         cd $tmp_dir || exit 1
         # Check minio is run
         if ! lsof -i :"11111" > /dev/null 2>&1; then
-            rm -rf "${tmp_dir:?}"/minio_data "${tmp_dir:?}"/seaweedfs_data
+            rm -rf "${tmp_dir:?}"/minio_data
             echo "Setup minio"
-            # Different ClickHouse versions have the S3 setup script in different locations
-            if [[ -f "$WORK_TREE/ci/jobs/scripts/functional_tests/setup_seaweedfs.sh" ]]; then
-                file_path="$WORK_TREE/ci/jobs/scripts/functional_tests/setup_seaweedfs.sh"
-                export TEST_DIR=$WORK_TREE/tests
-                export TEMP_DIR=$tmp_dir
-            elif [[ -f "$WORK_TREE/tests/docker_scripts/setup_minio.sh" ]]; then
+            # Different ClickHouse versions have setup_minio.sh in different locations
+            if [[ -f "$WORK_TREE/tests/docker_scripts/setup_minio.sh" ]]; then
                 file_path="$WORK_TREE/tests/docker_scripts/setup_minio.sh"
             elif [[ -f "$WORK_TREE/ci/jobs/scripts/functional_tests/setup_minio.sh" ]]; then
                 file_path="$WORK_TREE/ci/jobs/scripts/functional_tests/setup_minio.sh"

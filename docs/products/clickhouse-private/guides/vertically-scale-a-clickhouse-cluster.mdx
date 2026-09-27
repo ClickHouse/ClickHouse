@@ -1,0 +1,83 @@
+---
+noindex: true
+title: "Vertically Scale a ClickHouse Cluster"
+sidebarTitle: "Scale a cluster"
+description: "Adjust CPU and memory resources for a ClickHouse cluster using the Private API."
+---
+
+Adjust CPU and memory resources for a ClickHouse cluster using the Private API.
+
+## Prerequisites
+
+- ClickHouse Private API installed and accessible (e.g., via port-forward to `http://localhost:8080/`)
+- At least one ClickHouse cluster deployed (this guide uses `default-xx-01`)
+
+<Steps>
+
+<Step title="1. Create the Scale Request" id="1-create-the-scale-request">
+
+Create a JSON file with the desired resource allocation:
+
+``` json
+{
+  "vertical": {
+    "resources": {
+      "cpu": "4",
+      "memory": "16Gi"
+    }
+  }
+}
+```
+
+Save this as `scale.json`.
+
+</Step>
+
+<Step title="2. Send the Request" id="2-send-the-request">
+
+``` bash
+curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
+    -H "Content-Type: application/json" \
+    --data-binary "@scale.json"
+```
+
+</Step>
+
+<Step title="3. CPU:Memory Ratio Enforcement" id="3-cpumemory-ratio-enforcement">
+
+The API enforces a **1:4 CPU to memory ratio** (1 CPU core per 4 GiB of memory) with a 5% margin.
+
+If you provide only one resource type, the API automatically derives the other. For example, specifying only `"memory": "16Gi"` sets CPU to 4 cores.
+
+**Accepted resource quantity formats:**
+
+| Type   | Examples                                                |
+|--------|---------------------------------------------------------|
+| CPU    | `"4"` (cores), `"2.5"` (decimal), `"500m"` (millicores) |
+| Memory | `"16Gi"` (gibibytes), `"4096Mi"` (mebibytes)            |
+
+Binary units (Ki, Mi, Gi) are recommended for memory.
+
+</Step>
+
+<Step title="4. Monitor Scaling Progress" id="4-monitor-scaling-progress">
+
+Check the cluster status to track the scaling operation:
+
+``` bash
+curl "http://localhost:8080/api/v1/instances/default-xx-01/status"
+```
+
+The response includes: - `state`: Current cluster state - `previousState`: State before the transition - `message`: Details about the state transition
+
+The scaling is complete when the cluster returns to a running state.
+
+</Step>
+
+</Steps>
+
+## Rolling Restart Behavior
+
+The API updates the `ServerPodPolicy` of the `ClickhouseCluster` custom resource. The operator then performs a rolling restart of the StatefulSets with the new resource allocation.
+
+> **Important:** Unlike ClickHouse Cloud, ClickHouse Private does not use [Make Before Break (MBB) scaling](https://clickhouse.com/docs/manage/scaling#how-scaling-works-in-clickhouse-cloud). Vertical scaling may cause brief service disruptions during the rolling restart.

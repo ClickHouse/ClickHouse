@@ -36,17 +36,8 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
-    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
-    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
-    [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
-
-    /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
-    /// A URI-typed setting may carry basic-auth credentials, so a password of the form `scheme://user:password@`
-    /// is masked the same way it is masked in queries.
-    static String formatValueForErrorMessage(const Field & value);
-    static String formatValueForErrorMessage(String str);
 
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
@@ -57,11 +48,7 @@ struct BaseSettingsHelpers
     {
         IMPORTANT = 0x01,  /// Setting affects query results, cannot be ignored by older versions
         CUSTOM = 0x02,     /// User-defined custom setting
-        TIER = 0x1c,       /// 0b11100 == 3 bits for tier level (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL)
-        /// Flag indicating that the setting is baked into a client object built from the settings (e.g. the S3 client
-        /// of an object storage), so a change of the setting requires rebuilding that client.
-        /// See `hasChangesAffectingClient`. Currently only used in S3RequestSettings.
-        AFFECTS_CLIENT = 0x20,
+        TIER = 0x0c,       /// 0b1100 == 2 bits for tier level (PRODUCTION/BETA/EXPERIMENTAL)
         /// Flag indicating that changes from config can be picked up without server restart.
         /// Currently only works in CoordinationSettings.
         HOT_RELOAD = 0x80,
@@ -73,9 +60,8 @@ struct BaseSettingsHelpers
 
 private:
     /// For logging the summary of unknown settings instead of logging each one separately.
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static thread_local Strings unknown_settings;
-    static thread_local bool unknown_settings_warning_logged;
+    inline static thread_local Strings unknown_settings;
+    inline static thread_local bool unknown_settings_warning_logged = false;
 };
 
 /// Maps a Traits type to its owning settings class (e.g. `SettingsTraits` -> `Settings`,
@@ -150,7 +136,6 @@ struct SettingsOwner;
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
-  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, old_name, older_name)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
@@ -217,12 +202,6 @@ public:
     /// Set a setting by name
     virtual void set(std::string_view name, const Field & value);
 
-    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
-    /// built-in setting. Used to transport query parameters (whose user-chosen names may match a
-    /// setting name) through the `Settings` serialization without parsing the value as the colliding
-    /// setting's type. Only valid when `Traits::allow_custom_settings`.
-    void setCustom(std::string_view name, const Field & value);
-
     /// Get the value of a setting
     Field get(std::string_view name) const;
 
@@ -241,24 +220,11 @@ public:
     /// Apply multiple setting changes
     void applyChanges(const SettingsChanges & changes);
 
-    /// Reject `SET name` with no value unless `name` is a Bool setting. Every path that applies or
-    /// validates a `SettingChange` has to call this, not only `applyChange`: `Context` applies
-    /// query-level changes through `Context::setSetting`, which takes a name and a value and cannot
-    /// see how the change was written, and its constraint check converts the value first, which
-    /// would report the type error as `BAD_GET` from the wrong layer.
-    void checkShorthandChange(const SettingChange & change) const;
-    void checkShorthandChanges(const SettingsChanges & changes) const;
-
     /// Resets all the settings to their default values
     void resetToDefault();
 
     /// Resets specified setting to its default value
     void resetToDefault(std::string_view name);
-
-    /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
-    /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
-    /// remote server, which only receives changed settings. No-op for custom settings.
-    void markUnchanged(std::string_view name);
 
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
@@ -278,7 +244,7 @@ public:
     /// Get the description of a setting
     std::string_view getDescription(std::string_view name) const;
 
-    /// Get the tier (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL) of a setting
+    /// Get the tier (PRODUCTION/BETA/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
 
     /// Tier of a built-in setting. Unlike `getTier`, ignores custom settings and returns nullopt instead of throwing when no setting exists.
@@ -312,11 +278,6 @@ public:
     /// Copy settings with HOT_RELOAD flag from `new_settings` into `this`.
     /// Leave other settings unchanged.
     void updateHotReloadableSettings(const BaseSettings & new_settings);
-
-    /// Returns true if some setting with the AFFECTS_CLIENT flag is changed in `new_settings` and has a different value
-    /// than in `this`. Mirrors the semantics of the `updateIfChanged` methods of the settings wrappers (only the settings
-    /// changed in `new_settings` are applied): tells whether applying `new_settings` requires rebuilding the client.
-    bool hasChangesAffectingClient(const BaseSettings & new_settings) const;
 
     /// Convert all settings to a human-readable string (for debugging)
     std::string toString() const;
@@ -429,39 +390,10 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    /// An unknown name is resolved outside the block that adds the context: its message already names
-    /// the setting (and suggests a correction), so nothing has to be added to it.
-    const size_t index = accessor.find(name);
-    if (index == static_cast<size_t>(-1))
-    {
-        getCustomSetting(name) = value;
-        return;
-    }
-
-    /// A value of the wrong type or out of range is reported by the setting field itself, which does not
-    /// know its own name: `SETTINGS max_threads = 'abc'` used to say only "Cannot parse input: expected
-    /// 'eof' before: 'abc'", and `SETTINGS max_block_size = 0` only "A setting's value has to be greater
-    /// than 0". Name the setting and the value, the way `stringToValueUtil` already does.
-    try
-    {
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValue(*this, index, value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
-        throw;
-    }
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::setCustom(std::string_view name, const Field & value)
-{
-    /// Deliberately do NOT resolve aliases here. Custom fields carry user-chosen names — query
-    /// parameters are transported this way — and must be preserved exactly. Resolving an alias would
-    /// store e.g. a `--param_enable_analyzer` value under the canonical `allow_experimental_analyzer`,
-    /// so `SELECT {enable_analyzer:String}` could no longer find it. Genuine custom settings are not
-    /// aliases of built-in settings, so skipping resolution is a no-op for them.
-    getCustomSetting(name) = value;
+    else
+        getCustomSetting(name) = value;
 }
 
 template <typename TTraits>
@@ -512,38 +444,8 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
-{
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
-    if (!change.shorthand)
-        return;
-
-    if (std::string_view type = getTypeName(change.name); type != "Bool")
-        BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
-
-    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
-    /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
-    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
-    /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
-    /// name, so `system.query_log` and every other formatter would under-report what ran. This is
-    /// the first point after deserialization where an exception is logged with the AST masked
-    /// rather than with the raw JSON text, so this is where it is rejected.
-    if (change.value != Field(true))
-        BaseSettingsHelpers::throwValuelessSettingHasValue(change.name);
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::checkShorthandChanges(const SettingsChanges & changes) const
-{
-    for (const auto & change : changes)
-        checkShorthandChange(change);
-}
-
-template <typename TTraits>
 void BaseSettings<TTraits>::applyChange(const SettingChange & change)
 {
-    checkShorthandChange(change);
     set(change.name, change.value);
 }
 
@@ -581,15 +483,6 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 
     if constexpr (Traits::allow_custom_settings)
         custom_settings_map.erase(String{resolveCustomSettingName<TTraits>(name)});
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::markUnchanged(std::string_view name)
-{
-    name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValueChanged(*this, index, false);
 }
 
 template <typename TTraits>
@@ -677,27 +570,12 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    const size_t index = accessor.find(name);
-    if (index == static_cast<size_t>(-1))
-    {
-        if constexpr (Traits::allow_custom_settings)
-            return value;
-        else
-            BaseSettingsHelpers::throwSettingNotFound(name);
-    }
-
-    /// This is where a value given in a `SETTINGS` clause or by `SET` is checked, so it is where the
-    /// message for a value of the wrong type or out of range is produced. The setting field itself does
-    /// not know its own name, so name it here, the way `stringToValueUtil` already does.
-    try
-    {
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.castValueUtil(index, value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
-        throw;
-    }
+    if constexpr (Traits::allow_custom_settings)
+        return value;
+    else
+        BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
@@ -729,8 +607,7 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
     }
     catch (Exception & e)
     {
-        /// Settings profiles and constraints from `users.xml` arrive here as strings; a URI value may carry a password.
-        e.addMessage("while setting '{}' to value '{}'", name, BaseSettingsHelpers::formatValueForErrorMessage(str));
+        e.addMessage("while parsing value '{}' for setting '{}'", str, name);
         throw;
     }
 }
@@ -832,11 +709,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         bool is_important = (flags & Flags::IMPORTANT);
         bool is_custom = (flags & Flags::CUSTOM);
 
-        if (is_custom && Traits::allow_custom_settings && index == static_cast<size_t>(-1))
-        {
-            getCustomSetting(read_name).parseFromString(BaseSettingsHelpers::readString(in));
-        }
-        else if (index != static_cast<size_t>(-1))
+        if (index != static_cast<size_t>(-1))
         {
             if (is_custom)
             {
@@ -848,6 +721,10 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
                 accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
             else
                 accessor.readBinary(*this, index, in);
+        }
+        else if (is_custom && Traits::allow_custom_settings)
+        {
+            getCustomSetting(name).parseFromString(BaseSettingsHelpers::readString(in));
         }
         else if (is_important)
         {
@@ -873,20 +750,6 @@ void BaseSettings<TTraits>::updateHotReloadableSettings(const BaseSettings & new
         Field value = accessor.getValue(new_settings, index);
         accessor.setValue(*this, index, value);
     }
-}
-
-template <typename TTraits>
-bool BaseSettings<TTraits>::hasChangesAffectingClient(const BaseSettings & new_settings) const
-{
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t index = 0; index < accessor.size(); ++index)
-    {
-        if (!accessor.affectsClient(index) || !accessor.isValueChanged(new_settings, index))
-            continue;
-        if (accessor.getValue(*this, index) != accessor.getValue(new_settings, index))
-            return true;
-    }
-    return false;
 }
 
 template <typename TTraits>
@@ -1415,7 +1278,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             bool isHotReload(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::HOT_RELOAD; } \
-            bool affectsClient(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::AFFECTS_CLIENT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
             /* Value conversion utilities — use type-level ops (no Data instance needed) */ \
@@ -1465,11 +1327,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
-            } \
-            void setValueChanged(Data & data, size_t index, bool changed) const \
-            { \
-                const auto & fi = field_infos[index]; \
-                fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
@@ -1565,11 +1422,10 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_SKIP_TRAIT(...)
 
 
-/// Generates one or two alias mapping entries.
+/// Generates an alias mapping entry
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
-    { #ALIAS, #NAME }, \
-    __VA_OPT__({ #__VA_ARGS__, #NAME },)
+#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
+    { #ALIAS, #NAME },
 
 /// Implement the full settings infrastructure for a settings class.
 /// Generates: Impl struct, Data constructor, Accessor singleton, and
@@ -1664,7 +1520,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         static const Accessor the_instance = [] \
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
-            [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \

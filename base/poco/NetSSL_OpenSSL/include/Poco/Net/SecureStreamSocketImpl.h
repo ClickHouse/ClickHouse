@@ -183,9 +183,6 @@ namespace Net
         /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
         /// has not been performed yet.
 
-        void markFatalError();
-        /// Records that an external operation on the underlying `SSL` object failed fatally.
-
         void setLazyHandshake(bool flag = true);
         /// Enable lazy SSL handshake. If enabled, the SSL handshake
         /// will be performed the first time date is sent or
@@ -301,12 +298,6 @@ namespace Net
     inline SSL * SecureStreamSocketImpl::ssl() const
     {
         return _impl.ssl();
-    }
-
-
-    inline void SecureStreamSocketImpl::markFatalError()
-    {
-        _impl.markFatalError();
     }
 
 

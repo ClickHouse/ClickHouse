@@ -9,7 +9,7 @@ keywords: ['Bindplane', 'OTel', 'ClickStack', 'OpenTelemetry', 'управлен
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -71,7 +71,9 @@ Bindplane решает эту задачу, предоставляя:
 </div>
 
 <Steps>
-  <Step title="Настройте ClickStack как пункт назначения" id="configure-destination">
+  <Step>
+    #### Настройте ClickStack как пункт назначения
+
     1. Войдите в свою учетную запись Bindplane
     2. Перейдите в **Library**
     3. Нажмите **Add Destination**
@@ -91,7 +93,9 @@ Bindplane решает эту задачу, предоставляя:
     </Tip>
   </Step>
 
-  <Step title="Создайте конфигурацию" id="create-configuration">
+  <Step>
+    #### Создайте конфигурацию
+
     После настройки пункта назначения ClickStack создайте конфигурацию для обработки и маршрутизации телеметрии:
 
     1. Перейдите в **Configurations** → **Create Configuration**
@@ -113,7 +117,9 @@ Bindplane решает эту задачу, предоставляя:
     </Tip>
   </Step>
 
-  <Step title="Добавьте процессоры (необязательно)" id="add-processors">
+  <Step>
+    #### Добавьте процессоры (необязательно)
+
     Bindplane предоставляет аналитику конвейера и рекомендации по процессорам. Вы можете добавлять процессоры, чтобы:
 
     * **Filter**: уменьшить объём данных, исключив ненужную телеметрию
@@ -125,7 +131,9 @@ Bindplane решает эту задачу, предоставляя:
     Эти процессоры последовательно применяются ко всему вашему парку коллекторов до того, как данные попадут в ClickStack.
   </Step>
 
-  <Step title="Разверните коллекторы и запустите выкатку" id="deploy-collectors">
+  <Step>
+    #### Разверните коллекторы и запустите выкатку
+
     1. Добавьте коллектор (BDOT Collector) в свою конфигурацию:
        * Перейдите в **Agents** в Bindplane
        * Установите коллектор Bindplane в целевых системах, [следуя инструкциям Bindplane по установке](https://docs.bindplane.com/readme/install-your-first-collector)
@@ -149,7 +157,9 @@ Bindplane решает эту задачу, предоставляя:
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Сигналы телеметрии в ClickStack через Bindplane" size="lg" />
   </Step>
 
-  <Step title="Проверьте телеметрию в ClickStack" id="verify-telemetry">
+  <Step>
+    #### Проверьте телеметрию в ClickStack
+
     После выкатки конфигурации телеметрия начнёт поступать в ClickStack из вашего управляемого парка коллекторов:
 
     1. Войдите в свой экземпляр ClickStack (интерфейс HyperDX)

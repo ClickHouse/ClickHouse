@@ -59,6 +59,7 @@ def started_cluster():
     try:
         cluster.add_instance(
             "node1",
+            main_configs=["config.xml"],
             user_configs=["users.xml"],
             with_hms_catalog=True,
             stay_alive=True,

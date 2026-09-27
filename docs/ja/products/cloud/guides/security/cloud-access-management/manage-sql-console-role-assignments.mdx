@@ -1,0 +1,82 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: 'SQLコンソールのロール割り当てを管理する'
+title: 'SQLコンソールのロール割り当てを設定する'
+description: 'SQLコンソールのロール割り当てを管理する方法を示すガイド'
+doc_type: 'guide'
+keywords: ['SQLコンソール', 'ロール割り当て', 'アクセス管理', '権限', 'セキュリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Warning>
+  この設定は非推奨であり、カスタムロールに移行した組織では、ロール作成画面の新しい設定に置き換えられています。詳しくは、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users) を参照してください。
+</Warning>
+
+> このガイドでは、SQLコンソール のロール割り当てを設定する方法を説明します。これにより、console 全体のアクセス権限と、ユーザーが Cloud console 内で利用できる機能が決まります。
+
+<Steps>
+  <Step>
+    ### サービスの設定にアクセスする
+
+    services ページで、SQLコンソール のアクセス設定を変更したいサービスの右上にあるメニューをクリックします。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    ポップアップメニューから `settings` を選択します。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### SQLコンソール アクセスを調整する
+
+    &quot;Security&quot; セクションで、&quot;SQL console access&quot; の項目を見つけます。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Service Admin の設定を更新する
+
+    Service Admin のドロップダウンメニューを選択し、Service Admin ロールのアクセス制御設定を変更します。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    次のロールから選択できます。
+
+    | Role          |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### Service Read Only の設定を更新する
+
+    Service Read Only のドロップダウンメニューを選択し、Service Read Only ロールのアクセス制御設定を変更します。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    次のロールから選択できます。
+
+    | Role          |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### アクセス権を持つユーザーを確認する
+
+    ユーザー数を選択すると、そのサービスのユーザーの概要を確認できます。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    ページ右側にタブが開き、ユーザー総数と各ユーザーのロールが表示されます。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

@@ -1,0 +1,551 @@
+---
+title: 'DataStore の I/O 操作'
+sidebarTitle: 'I/O 操作'
+slug: /chdb/datastore/io
+description: 'DataStore でのデータの読み書き - 対応フォーマットと宛先'
+keywords: ['chdb', 'datastore', 'io', 'read', 'write', 'csv', 'parquet', 'json', 'excel']
+doc_type: 'reference'
+---
+
+DataStore は、さまざまなファイルフォーマットやデータソースの読み取りと書き込みに対応しています。
+
+<div id="reading">
+  ## データの読み取り
+</div>
+
+<div id="read-csv">
+  ### CSVファイル
+</div>
+
+```python
+read_csv(filepath_or_buffer, sep=',', header='infer', names=None, 
+         usecols=None, dtype=None, nrows=None, skiprows=None,
+         compression=None, encoding=None, **kwargs)
+```
+
+**例:**
+
+```python
+from chdb import datastore as pd
+
+# 基本的なCSV読み込み
+ds = pd.read_csv("data.csv")
+
+# With options
+ds = pd.read_csv(
+    "data.csv",
+    sep=";",                    # カスタム区切り文字
+    header=0,                   # ヘッダー行のインデックス
+    names=['a', 'b', 'c'],      # カスタムカラム名
+    usecols=['a', 'b'],         # 特定のカラムのみ読み込む
+    dtype={'a': 'Int64'},       # データ型を指定
+    nrows=1000,                 # 先頭1000行のみ読み込む
+    skiprows=1,                 # 先頭行をスキップ
+    compression='gzip',         # 圧縮ファイル
+    encoding='utf-8'            # エンコーディング
+)
+
+# URLから読み込む
+ds = pd.read_csv("https://example.com/data.csv")
+```
+
+<div id="read-parquet">
+  ### Parquet ファイル
+</div>
+
+大規模なデータセットに推奨。より高い圧縮率を備えた列指向フォーマットです。
+
+```python
+read_parquet(path, columns=None, **kwargs)
+```
+
+**例:**
+
+```python
+# 基本的なParquetの読み込み
+ds = pd.read_parquet("data.parquet")
+
+# 特定のカラムのみ読み込む（効率的 - 必要なデータのみ読み込む）
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2', 'col3'])
+
+# S3から読み込む
+ds = pd.read_parquet("s3://bucket/data.parquet")
+```
+
+<div id="read-json">
+  ### JSONファイル
+</div>
+
+```python
+read_json(path_or_buf, orient=None, lines=False, **kwargs)
+```
+
+**例:**
+
+```python
+# 標準JSON
+ds = pd.read_json("data.json")
+
+# JSON Lines（改行区切り）
+ds = pd.read_json("data.jsonl", lines=True)
+
+# orientを指定したJSON
+ds = pd.read_json("data.json", orient='records')
+```
+
+<div id="read-excel">
+  ### Excel ファイル
+</div>
+
+```python
+read_excel(io, sheet_name=0, header=0, names=None, **kwargs)
+```
+
+**例:**
+
+```python
+# 最初のシートを読み込む
+ds = pd.read_excel("data.xlsx")
+
+# 特定のシートを読み込む
+ds = pd.read_excel("data.xlsx", sheet_name="Sheet1")
+ds = pd.read_excel("data.xlsx", sheet_name=2)  # 3番目のシート
+
+# 複数のシートを読み込む（dictを返す）
+sheets = pd.read_excel("data.xlsx", sheet_name=['Sheet1', 'Sheet2'])
+```
+
+<div id="read-sql">
+  ### SQL データベース
+</div>
+
+```python
+read_sql(sql, con, **kwargs)
+```
+
+**例:**
+
+```python
+# SQLクエリから読み込む
+ds = pd.read_sql("SELECT * FROM users", connection)
+ds = pd.read_sql("SELECT * FROM orders WHERE date > '2024-01-01'", connection)
+```
+
+<div id="read-other">
+  ### その他のフォーマット
+</div>
+
+```python
+# Feather (Arrow)
+ds = pd.read_feather("data.feather")
+
+# ORC
+ds = pd.read_orc("data.orc")
+
+# Pickle
+ds = pd.read_pickle("data.pkl")
+
+# 固定幅フォーマット
+ds = pd.read_fwf("data.txt", widths=[10, 20, 15])
+
+# HTMLテーブル
+ds = pd.read_html("https://example.com/table.html")[0]
+```
+
+***
+
+<div id="writing">
+  ## データの書き込み
+</div>
+
+<div id="to-csv">
+  ### to_csv
+</div>
+
+CSVフォーマットにエクスポートします。
+
+```python
+to_csv(path_or_buf=None, sep=',', na_rep='', header=True, 
+       index=True, mode='w', compression=None, **kwargs)
+```
+
+**例:**
+
+```python
+ds = pd.read_parquet("data.parquet")
+
+# 基本的なエクスポート
+ds.to_csv("output.csv")
+
+# オプション付き
+ds.to_csv(
+    "output.csv",
+    sep=";",                    # カスタム区切り文字
+    index=False,                # インデックスを含めない
+    header=True,                # ヘッダーを含める
+    na_rep='NULL',              # NaN を 'NULL' として表現
+    compression='gzip'          # 出力を圧縮
+)
+
+# 文字列に変換
+csv_string = ds.to_csv()
+```
+
+<div id="to-parquet">
+  ### to_parquet
+</div>
+
+Parquet フォーマットでエクスポートします (大規模データに推奨) 。
+
+```python
+to_parquet(path, engine='pyarrow', compression='snappy', **kwargs)
+```
+
+**例:**
+
+```python
+# 基本的なエクスポート
+ds.to_parquet("output.parquet")
+
+# 圧縮オプションを指定する場合
+ds.to_parquet("output.parquet", compression='gzip')
+ds.to_parquet("output.parquet", compression='zstd')
+
+# パーティション分割された出力
+ds.to_parquet(
+    "output/",
+    partition_cols=['year', 'month']
+)
+```
+
+<div id="to-json">
+  ### to_json
+</div>
+
+JSON形式でエクスポートします。
+
+```python
+to_json(path_or_buf=None, orient='records', lines=False, **kwargs)
+```
+
+**例:**
+
+```python
+# 標準JSON（レコードの配列）
+ds.to_json("output.json", orient='records')
+
+# JSON Lines（1行に1つのJSONオブジェクト）
+ds.to_json("output.jsonl", lines=True)
+
+# 各種オリエンテーション
+ds.to_json("output.json", orient='split')    # {columns, data, index}
+ds.to_json("output.json", orient='records')  # [{col: val}, ...]
+ds.to_json("output.json", orient='columns')  # {col: {idx: val}}
+
+# 文字列に変換
+json_string = ds.to_json()
+```
+
+<div id="to-excel">
+  ### to_excel
+</div>
+
+Excel形式でエクスポートします。
+
+```python
+to_excel(excel_writer, sheet_name='Sheet1', index=True, **kwargs)
+```
+
+**例:**
+
+```python
+# 単一シート
+ds.to_excel("output.xlsx")
+ds.to_excel("output.xlsx", sheet_name="Data", index=False)
+
+# 複数シート
+with pd.ExcelWriter("output.xlsx") as writer:
+    ds1.to_excel(writer, sheet_name="Sales")
+    ds2.to_excel(writer, sheet_name="Inventory")
+```
+
+<div id="to-sql-method">
+  ### to_sql
+</div>
+
+SQLデータベースにエクスポートするか、SQL文字列を生成します。
+
+```python
+to_sql(name=None, con=None, schema=None, if_exists='fail', **kwargs)
+```
+
+**例:**
+
+```python
+# SQLクエリを生成（実行なし）
+sql = ds.to_sql()
+print(sql)
+# SELECT ...
+# FROM ...
+# WHERE ...
+
+# データベースに書き込む
+ds.to_sql("table_name", connection, if_exists='replace')
+```
+
+<div id="to-other">
+  ### その他のエクスポート方法
+</div>
+
+```python
+# pandas DataFrameへ
+df = ds.to_df()
+df = ds.to_pandas()
+
+# Arrow Tableへ
+table = ds.to_arrow()
+
+# NumPy配列へ
+arr = ds.to_numpy()
+
+# Dictionaryへ
+d = ds.to_dict()
+d = ds.to_dict(orient='records')  # dictのリスト
+d = ds.to_dict(orient='list')     # リストのdict
+
+# レコードへ（tupleのリスト）
+records = ds.to_records()
+
+# 文字列へ
+s = ds.to_string()
+s = ds.to_string(max_rows=100)
+
+# Markdownへ
+md = ds.to_markdown()
+
+# HTMLへ
+html = ds.to_html()
+
+# LaTeXへ
+latex = ds.to_latex()
+
+# クリップボードへ
+ds.to_clipboard()
+
+# pickleへ
+ds.to_pickle("output.pkl")
+
+# featherへ
+ds.to_feather("output.feather")
+```
+
+***
+
+<div id="format-comparison">
+  ## ファイルフォーマットの比較
+</div>
+
+| フォーマット      | 読み取り速度 | 書き込み速度 | ファイルサイズ | スキーマ | 最適な用途          |
+| ----------- | ------ | ------ | ------- | ---- | -------------- |
+| **Parquet** | 高速     | 高速     | 小       | あり   | 大規模データセット、分析   |
+| **CSV**     | 中程度    | 高速     | 大       | なし   | 互換性、シンプルなデータ   |
+| **JSON**    | 低速     | 中程度    | 大       | 一部対応 | API、ネストされたデータ  |
+| **Excel**   | 低速     | 低速     | 中       | 一部対応 | 非技術系ユーザーとの共有   |
+| **Feather** | 非常に高速  | 非常に高速  | 中       | あり   | プロセス間連携、pandas |
+
+<div id="recommendations">
+  ### 推奨事項
+</div>
+
+1. **分析ワークロード向け:** Parquet を使用します
+   * 列指向フォーマットのため、必要なカラムだけを読み取れます
+   * 高い圧縮率
+   * データ型を保持できます
+
+2. **データ交換向け:** CSV または JSON を使用します
+   * 幅広い互換性
+   * 人間が読みやすい形式
+
+3. **pandas との相互運用向け:** Feather または Arrow を使用します
+   * 最も高速なシリアライゼーション
+   * 型を保持できます
+
+***
+
+<div id="compression">
+  ## 圧縮サポート
+</div>
+
+<div id="read-compressed">
+  ### 圧縮ファイルの読み込み
+</div>
+
+```python
+# 拡張子から自動検出
+ds = pd.read_csv("data.csv.gz")
+ds = pd.read_csv("data.csv.bz2")
+ds = pd.read_csv("data.csv.xz")
+ds = pd.read_csv("data.csv.zst")
+
+# 明示的な圧縮指定
+ds = pd.read_csv("data.csv", compression='gzip')
+```
+
+<div id="write-compressed">
+  ### 圧縮ファイルの書き込み
+</div>
+
+```python
+# 圧縮付きCSV
+ds.to_csv("output.csv.gz", compression='gzip')
+ds.to_csv("output.csv.bz2", compression='bz2')
+
+# Parquet（常に圧縮）
+ds.to_parquet("output.parquet", compression='snappy')  # デフォルト
+ds.to_parquet("output.parquet", compression='gzip')
+ds.to_parquet("output.parquet", compression='zstd')    # 最高圧縮率
+ds.to_parquet("output.parquet", compression='lz4')     # 最速
+```
+
+<div id="compression-options">
+  ### 圧縮オプション
+</div>
+
+| 圧縮       | 速度    | 圧縮率   | 用途             |
+| -------- | ----- | ----- | -------------- |
+| `snappy` | 非常に高速 | 低い    | Parquet のデフォルト |
+| `lz4`    | 非常に高速 | 低い    | 速度優先           |
+| `gzip`   | 中程度   | 高い    | 互換性重視          |
+| `zstd`   | 高速    | 非常に高い | バランスが最適        |
+| `bz2`    | 低速    | 非常に高い | 最大限の圧縮         |
+
+***
+
+<div id="streaming">
+  ## ストリーミング I/O
+</div>
+
+メモリに収まらない非常に大きなファイルの場合:
+
+<div id="chunked-read">
+  ### チャンク単位の読み取り
+</div>
+
+```python
+# チャンクで読み込む
+for chunk in pd.read_csv("large.csv", chunksize=100000):
+    # 各チャンクを処理する
+    process(chunk)
+
+# イテレータを使用する
+reader = pd.read_csv("large.csv", iterator=True)
+chunk = reader.get_chunk(10000)
+```
+
+<div id="clickhouse-streaming">
+  ### ClickHouse Streaming を使う
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# すべてをメモリに読み込まずにファイルからストリーム処理
+ds = DataStore.from_file("huge.parquet")
+
+# 操作は遅延評価 - 必要な分だけ計算する
+result = ds.filter(ds['amount'] > 1000).head(100)
+```
+
+***
+
+<div id="remote">
+  ## リモートデータソース
+</div>
+
+<div id="http">
+  ### HTTP/HTTPS
+</div>
+
+```python
+# URLから読み込む
+ds = pd.read_csv("https://example.com/data.csv")
+ds = pd.read_parquet("https://example.com/data.parquet")
+```
+
+<div id="s3">
+  ### S3
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# 匿名アクセス
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+
+# 認証情報を使用する場合
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="KEY",
+    secret_access_key="SECRET"
+)
+```
+
+<div id="cloud">
+  ### GCS、Azure、HDFS
+</div>
+
+Cloud ストレージのオプションについては、[Factory Methods](/ja/products/chdb/datastore/factory-methods)を参照してください。
+
+***
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="use-parquet-for-large-files">
+  ### 1. 大容量ファイルにはParquetを使用する
+</div>
+
+```python
+# パフォーマンス向上のためCSVをParquetに変換する
+ds = pd.read_csv("large.csv")
+ds.to_parquet("large.parquet")
+
+# 以降の読み込みは大幅に高速化される
+ds = pd.read_parquet("large.parquet")
+```
+
+<div id="select-only-needed-columns">
+  ### 2. 必要なカラムだけを選択する
+</div>
+
+```python
+# 効率的 - col1とcol2のみを読み込む
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2'])
+
+# 非効率的 - すべてのカラムを読み込んでからフィルタリングする
+ds = pd.read_parquet("data.parquet")[['col1', 'col2']]
+```
+
+<div id="use-compression">
+  ### 3. 圧縮を利用する
+</div>
+
+```python
+# ファイルサイズが小さくなり、I/Oが減るため通常は高速
+ds.to_parquet("output.parquet", compression='zstd')
+```
+
+<div id="batch-writes">
+  ### 4. バッチ書き込み
+</div>
+
+```python
+# ループではなく一度だけ書き込む
+result = process_all_data(ds)
+result.to_parquet("output.parquet")
+
+# これはNG（非効率）
+for chunk in chunks:
+    chunk.to_parquet(f"output_{i}.parquet")
+```
