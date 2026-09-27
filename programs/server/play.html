@@ -8326,6 +8326,9 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         if (on_error) on_error("Network error");
         return false;
     }
+    /// Recorded from the values the request was sent with, whether or not it still belongs to the
+    /// active connection: the outcome is about these credentials, not the live fields.
+    rememberAuthenticationOutcome(response, server_address, user, password);
     if (!response.ok) {
         let error_text = await response.text();
         if (!quiet && belongs_to_active_connection()) {
@@ -9791,6 +9794,30 @@ function rememberLoginPassword(server_address, user, password) {
     try { window.localStorage.setItem(PASSWORDLESS_LOGINS_KEY, JSON.stringify([...logins])); } catch (e) { /* best-effort, see above */ }
 }
 
+/// Record what the HTTP `response` to a request sent as `server_address`/`user` with `password` tells
+/// about these credentials (see `rememberLoginPassword`). Called from every request that authenticates
+/// with the connection fields, not only from `checkCredentials`: the ping in `checkURL` probes the
+/// origin rather than the configured path, so on some deployments the credentials check never runs,
+/// and a query, the database panel or the completions can be the first request to authenticate.
+///
+/// ClickHouse authenticates before it executes the query, so the query's own error (a syntax error, an
+/// unknown table) follows a successful authentication just like a success does. A rejected login is
+/// answered with `401` or `403` (`403` also covers `ACCESS_DENIED`, which does follow a successful
+/// authentication, but the status cannot tell the two apart, so it proves nothing either way). Any
+/// other error proves the authentication only when the server itself produced it, which the
+/// `X-ClickHouse-Exception-Code` header shows: a proxy in front of the server can answer on its own.
+/// The header is not exposed to a cross-origin page, where only a successful response proves it.
+///
+/// Without the proof a non-empty password still forgets the passwordless entry: at worst the page then
+/// keeps an autofilled password it would have dropped, which is the pre-existing behaviour. An empty
+/// password is remembered only with the proof, since the entry makes the page drop a saved password.
+function rememberAuthenticationOutcome(response, server_address, user, password) {
+    if (response.status === 401 || response.status === 403) return;
+    if (response.ok || response.headers.get('X-ClickHouse-Exception-Code') !== null || password) {
+        rememberLoginPassword(server_address, user, password);
+    }
+}
+
 /// Whether the browser filled the field itself (its password manager), as opposed to the user typing
 /// or the page setting it. Reported by the standard `:autofill` pseudo-class, or its `-webkit-` form in
 /// older engines; a browser supporting neither (or an environment without `CSS.supports`, such as the
@@ -11175,11 +11202,6 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 
-        /// Authentication precedes the query, so a successful response means the snapshotted credentials
-        /// were accepted (see `rememberLoginPassword`). A failure is not recorded either way: it may be
-        /// the query's own error as well as a rejected login.
-        if (response.ok) rememberLoginPassword(connection.url, connection.user, connection.password);
-
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
         let content_type = response.headers.get('Content-Type') ?? '';
@@ -11230,6 +11252,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 content_type = response.headers.get('Content-Type') ?? '';
             }
         }
+
+        /// The response the retries above settled on tells whether the snapshotted credentials were
+        /// accepted, a failure of the query itself included (see `rememberAuthenticationOutcome`).
+        rememberAuthenticationOutcome(response, connection.url, connection.user, connection.password);
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
 
@@ -18051,11 +18077,7 @@ function wasmAvailable() {
 }
 
 /// Build the request URL the same way `postImpl` does, but for the completion query.
-function buildCompletionUrl() {
-    dropAutofilledStalePassword();
-    const user = user_elem.value;
-    const password = password_elem.value;
-    const server_address = url_elem.value;
+function buildCompletionUrl(server_address, user, password) {
     let url = server_address + (server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
@@ -18091,12 +18113,17 @@ async function loadCompletions() {
     completionsLoadStarted = true;
     const generation = connectionGeneration;
 
+    /// The completion query is a request with the live credentials (see `dropAutofilledStalePassword`).
+    dropAutofilledStalePassword();
+    const [server_address, user, password] = [url_elem.value, user_elem.value, password_elem.value];
+
     try {
-        const response = await fetch(buildCompletionUrl(), {
+        const response = await fetch(buildCompletionUrl(server_address, user, password), {
             method: "POST",
             body: COMPLETION_QUERY,
             headers: { 'Authorization': 'never' },
         });
+        rememberAuthenticationOutcome(response, server_address, user, password);
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
             return;
