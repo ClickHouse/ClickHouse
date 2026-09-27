@@ -136,6 +136,36 @@ SELECT 'collapses to another key, rollup, nulls', a, if(0, b, if(0, b, a)) AS k,
 FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY ROLLUP(a, k) ORDER BY a NULLS LAST, k NULLS LAST
 SETTINGS group_by_use_nulls = 1;
 
+-- Columns of different sources are different keys, in the branch that is taken and in the ones that are not.
+SELECT 'collapses to another key, other sources, cube', if(0, s2.b, if(0, s2.b, s1.a)) AS k1, if(0, s3.b, if(0, s3.b, s1.a)) AS k2, count()
+FROM (SELECT 'x' AS a) AS s1, (SELECT 'y' AS b) AS s2, (SELECT 'y' AS b) AS s3 GROUP BY CUBE(k1, k2) ORDER BY k1, k2;
+
+SELECT 'collapses to columns of other sources, rollup', a, c FROM
+(
+    SELECT (SELECT s1.a) AS a, count() AS c FROM (SELECT 1::UInt8 AS a) AS s1, (SELECT 1::UInt8 AS a) AS s2
+    GROUP BY ROLLUP(if(1, s1.a, 0), if(1, s2.a, 0))
+)
+ORDER BY a, c;
+
+-- The same in a subquery of such a query.
+SELECT 'subquery of a query with a key that collapses to another key', a, count() FROM
+(
+    SELECT (SELECT c0) AS a FROM (SELECT 1::UInt8) t0(c0)
+    GROUP BY if(1, c0, 0) WITH ROLLUP
+)
+GROUP BY ROLLUP(a, if(0, a, if(0, a, a))) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+
+-- Keys that collapse to the same column and are in the same grouping sets.
+SELECT 'keys collapse together, grouping sets', (SELECT c0) FROM (SELECT 1::UInt8) t0(c0)
+GROUP BY GROUPING SETS ((if(1, c0, 0), if(1, c0, 2))) SETTINGS group_by_use_nulls = 1;
+
+SELECT 'keys collapse together, grouping sets, setting off', a, c FROM
+(
+    SELECT (SELECT c0) AS a, count() AS c FROM (SELECT 1::UInt8) t0(c0)
+    GROUP BY GROUPING SETS ((if(1, c0, 0), if(1, c0, 2)), ())
+)
+ORDER BY a SETTINGS group_by_use_nulls = 0;
+
 -- The condition becomes constant only when the dictionary lookup, which matches no key, is optimized away.
 SELECT 'dictionary condition, rollup', (SELECT c0) FROM (SELECT 1::Bool AS c0, 1::UInt64 AS id) t0
 GROUP BY if(dictGet('d05271', 'v', id) = 'x', false, c0) WITH ROLLUP

@@ -64,6 +64,21 @@ collapses to another key, grouping sets	x		1
 collapses to another key, rollup, nulls	x	x	1
 collapses to another key, rollup, nulls	x	\N	1
 collapses to another key, rollup, nulls	\N	\N	1
+collapses to another key, other sources, cube			1
+collapses to another key, other sources, cube		x	1
+collapses to another key, other sources, cube	x		1
+collapses to another key, other sources, cube	x	x	1
+collapses to columns of other sources, rollup	0	1
+collapses to columns of other sources, rollup	1	1
+collapses to columns of other sources, rollup	1	1
+subquery of a query with a key that collapses to another key	1	1
+subquery of a query with a key that collapses to another key	1	1
+subquery of a query with a key that collapses to another key	\N	1
+subquery of a query with a key that collapses to another key	\N	1
+subquery of a query with a key that collapses to another key	\N	2
+keys collapse together, grouping sets	1
+keys collapse together, grouping sets, setting off	0	1
+keys collapse together, grouping sets, setting off	1	1
 dictionary condition, rollup	true
 dictionary condition, rollup	\N
 nested dictionary condition, rollup	true
