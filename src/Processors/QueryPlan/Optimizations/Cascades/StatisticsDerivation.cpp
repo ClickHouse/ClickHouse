@@ -400,7 +400,6 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            /// A PREWHERE that reads only columns without statistics is estimated as without statistics.
             if (!estimator->filterReadsOnlyColumnsWithoutStatistics(read_step.getStorageMetadata(), nullptr, prewhere_node))
             {
                 auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
