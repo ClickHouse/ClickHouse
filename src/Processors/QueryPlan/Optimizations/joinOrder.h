@@ -37,7 +37,7 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
-    /// Fraction of the cross product the cost model expects the join to keep, see `effectiveSelectivity`.
+    /// NDV-based selectivity of the join predicates (1 when no NDV is known); reported by `EXPLAIN` as `estimated (NDV)`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
