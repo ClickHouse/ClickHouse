@@ -20,10 +20,10 @@ public:
         const StorageID & table_id_,
         std::function<StoragePtr()> get_nested_,
         ColumnsDescription cached_columns,
-        std::function<bool()> may_need_database_rename_guard_)
+        std::function<bool()> may_use_leader_election_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
-        , may_need_database_rename_guard(std::move(may_need_database_rename_guard_))
+        , may_use_leader_election(std::move(may_use_leader_election_))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -125,6 +125,20 @@ public:
         }
         catch (...)
         {
+            /// Swallowing the failure is safe only for a table that may be a `MergeTree` with
+            /// `leader_election = 1`: its `drop()` never deletes anything but local metadata, so
+            /// skipping it loses nothing. Any other engine may have external cleanup to do in its
+            /// `drop()` — `StorageReplicatedMergeTree` removes its replica from Keeper — and
+            /// finalizing the catalog drop without it would leak that state (a lazy
+            /// `ReplicatedMergeTree` fails to materialize under a server-wide
+            /// `merge_tree.leader_election = 1` default, for example). `DROP TABLE` does not get
+            /// here with an unloaded proxy today, because `InterpreterDropQuery` materializes it
+            /// through `checkTableCanBeDropped` first and fails there; this keeps any other caller
+            /// of `drop()` from finalizing such a drop. Let the error propagate: the catalog
+            /// retries the drop later instead of finalizing it.
+            if (!may_use_leader_election())
+                throw;
+
             LOG_WARNING(log, "Failed to load table for drop: {}. "
                              "Cleanup of disks with shared metadata will be skipped to avoid "
                              "destructive fallback on shared object storage.",
@@ -132,10 +146,10 @@ public:
             /// We could not determine the underlying storage. Report the ownership as unknown
             /// (see `dropDataOwnershipUnknown`) instead of skipping cleanup entirely: the
             /// nested storage may be a `MergeTree` with `leader_election = 1` whose data lives
-            /// on shared object storage and is owned by another node — but it may equally be an
-            /// ordinary local table, and a blanket skip would leak its `store/<uuid>` directory
-            /// permanently on a transient load failure. The catalog cleans node-local disks and
-            /// skips only disks with shared metadata in this case.
+            /// on shared object storage and is owned by another node — but it may equally be a
+            /// table on a node-local disk, and a blanket skip would leak its `store/<uuid>`
+            /// directory permanently on a transient load failure. The catalog cleans node-local
+            /// disks and skips only disks with shared metadata in this case.
             drop_load_failed = true;
             return;
         }
@@ -230,7 +244,7 @@ public:
     {
         {
             std::lock_guard lock{nested_mutex};
-            if (!nested && !may_need_database_rename_guard())
+            if (!nested && !may_use_leader_election())
                 return;
         }
         getNested()->checkTableCanBeRenamedByDatabaseRename();
@@ -295,11 +309,12 @@ private:
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     bool drop_load_failed = false; /// `drop()` could not load the lazy table; force fail-closed cleanup decision.
-    /// Storage-free answer to "could `checkTableCanBeRenamedByDatabaseRename` reject this
-    /// table?", resolved from the `CREATE` query's engine and settings and the server-wide
+    /// Storage-free answer to "could this table be a `StorageMergeTree` with `leader_election`
+    /// on?", resolved from the `CREATE` query's engine and settings and the server-wide
     /// `merge_tree` defaults. Lets `RENAME DATABASE` skip materializing tables that cannot
-    /// carry the `leader_election` guard. Never `nullptr`.
-    std::function<bool()> may_need_database_rename_guard;
+    /// carry the `leader_election` guard, and limits the fail-closed branch of `drop()` to the
+    /// tables whose data may be owned by another node. Never `nullptr`.
+    std::function<bool()> may_use_leader_election;
     LoggerPtr log;
 };
 

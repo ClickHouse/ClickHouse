@@ -576,15 +576,16 @@ void DatabaseOrdinary::loadTableLazy(
     /// `ReplicatedMergeTree` cannot carry `leader_election` in its own `CREATE` query (that is
     /// rejected at create), but it does inherit a server-wide `merge_tree` default, and under such
     /// a default materializing it fails the whole `RENAME DATABASE`, because
-    /// `StorageReplicatedMergeTree` refuses to attach with the setting on.
-    auto may_need_database_rename_guard
+    /// `StorageReplicatedMergeTree` refuses to attach with the setting on. The same predicate
+    /// decides whether `StorageTableProxy::drop` may swallow a failure to materialize the table.
+    auto may_use_leader_election
         = [hint = DatabaseRenameGuardHint::fromCreateQuery(query), global_context = local_context->getGlobalContext()]
     {
         return hint.mayNeedGuard(global_context);
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns), std::move(may_need_database_rename_guard));
+        table_id, std::move(get_nested), std::move(columns), std::move(may_use_leader_election));
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }
