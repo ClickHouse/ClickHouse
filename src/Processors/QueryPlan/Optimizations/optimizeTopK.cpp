@@ -392,6 +392,11 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
+    /// A projection read inherits the stamp but reads a stored `_part_offset` as `_parent_part_offset`.
+    const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
+    if (std::ranges::find(read_columns, top_k_filter_info.column_name) == read_columns.end())
+        return;
+
     auto initial_header = read_from_mergetree_step->getOutputHeader();
 
     /// Cannot use FunctionFactory::get because the resolver needs the threshold tracker.
@@ -437,7 +442,8 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         }
 
         const auto * filter_node = &combined.addFunction(filter_function, {sort_column_node}, {});
-        if (hasResultNameClash(combined, filter_node))
+        /// The reader does not read a column after PREWHERE when a PREWHERE step computes a node of the same name.
+        if (hasResultNameClash(combined, filter_node) || initial_header->has(filter_node->result_name))
             return;
 
         /// Keep the conjunction flat. `MergeTreeSplitPrewhereIntoReadSteps` splits on the direct
