@@ -118,9 +118,9 @@ Returns average hexagon area in square meters at the given [H3](#h3-index) resol
             "Get hexagon area at resolution 13",
             "SELECT h3HexAreaM2(13) AS area",
             R"(
-┌─area─┐
-│ 43.9 │
-└──────┘
+┌──────────────area─┐
+│ 43.87026794728301 │
+└───────────────────┘
             )"
         }
     };

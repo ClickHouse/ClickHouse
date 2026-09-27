@@ -8,9 +8,11 @@
 -- different compressed size, making the accumulation effect clearly visible.
 -- Without the fix, all rows would show the ratio of their own single value.
 -- With the fix, each row reflects all values from the frame start.
+-- The codec is pinned to `LZ4` so the exact ratios do not depend on the
+-- server's default compression codec.
 SELECT
     number,
-    estimateCompressionRatio(repeat('a', number * 100 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
+    estimateCompressionRatio('LZ4')(repeat('a', number * 100 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
 FROM numbers(5)
 ORDER BY number;
 
@@ -18,7 +20,7 @@ ORDER BY number;
 -- (i.e. the ratio changes on every row, proving accumulation works).
 SELECT uniq(ratio) = 10
 FROM (
-    SELECT estimateCompressionRatio(repeat('x', number * 50 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
+    SELECT estimateCompressionRatio('LZ4')(repeat('x', number * 50 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
     FROM numbers(10)
 );
 
@@ -36,7 +38,7 @@ SELECT
 FROM (
     SELECT
         number % 3 AS val,
-        estimateCompressionRatio(repeat('b', (number % 3 + 1) * 500)) OVER (ORDER BY number % 3 RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
+        estimateCompressionRatio('LZ4')(repeat('b', (number % 3 + 1) * 500)) OVER (ORDER BY number % 3 RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
     FROM numbers(9)
 )
 GROUP BY val

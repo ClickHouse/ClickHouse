@@ -1,0 +1,4 @@
+burst then quiet: frozen after one trim
+1	1
+sustained eviction: never frozen
+0	1

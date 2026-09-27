@@ -11,6 +11,12 @@ SET enable_analyzer = 1;
 -- With small index granularity, the amount of rows left to read after the index analysis might be too small to utilize parallel replicas. So, we set it to 0.
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
+-- Pinned to the query-based implementation: the plan-based one cannot ship a read that uses direct
+-- read from a text index (its index read tasks are not serialized), so it keeps such a read local and
+-- `ParallelReplicasUsedCount` would be 0. Drop this pin once
+-- https://github.com/ClickHouse/ClickHouse/issues/116360 is fixed.
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
@@ -34,6 +40,6 @@ SELECT
     sum(ProfileEvents['ParallelReplicasUsedCount']) > 0,
     sum(ProfileEvents['TextIndexUsedEmbeddedPostings']) > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%tab%hasAnyTokens%' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%tab%hasAnyTokens%' AND type IN ('QueryFinish', 'ExceptionWhileProcessing');
 
 DROP TABLE tab;

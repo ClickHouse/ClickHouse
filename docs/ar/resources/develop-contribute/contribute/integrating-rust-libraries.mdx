@@ -1,0 +1,84 @@
+---
+description: 'دليل لدمج مكتبات Rust في ClickHouse'
+sidebarTitle: 'مكتبات Rust'
+slug: /development/integrating_rust_libraries
+title: 'دمج مكتبات Rust'
+doc_type: 'guide'
+---
+
+سيُشرح دمج مكتبات Rust بالاستناد إلى دمج دالة التجزئة BLAKE3.
+
+تتمثل الخطوة الأولى في الدمج في إضافة المكتبة إلى المجلد /rust. وللقيام بذلك، تحتاج إلى إنشاء مشروع Rust فارغ وإضافة المكتبة المطلوبة إلى Cargo.toml. ومن الضروري أيضًا ضبط ترجمة المكتبة الجديدة لتكون static عبر إضافة `crate-type = ["staticlib"]` ​​إلى Cargo.toml.
+
+بعد ذلك، تحتاج إلى ربط المكتبة بـ CMake باستخدام مكتبة Corrosion. تتمثل الخطوة الأولى في إضافة مجلد المكتبة إلى CMakeLists.txt داخل المجلد /rust. بعد ذلك، ينبغي إضافة ملف CMakeLists.txt إلى مجلد المكتبة. وفي هذا الملف، تحتاج إلى استدعاء دالة الاستيراد الخاصة بـ Corrosion. استُخدمت هذه الأسطر لاستيراد BLAKE3:
+
+```CMake
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+وبذلك، سننشئ هدف CMake صحيحًا باستخدام Corrosion، ثم نعيد تسميته إلى اسم أكثر ملاءمة. لاحظ أن الاسم `_ch_rust_blake3` يأتي من Cargo.toml، حيث يُستخدم بوصفه اسم المشروع (`name = "_ch_rust_blake3"`).
+
+ونظرًا لأن أنواع البيانات في Rust غير متوافقة مع أنواع البيانات في C/C++، فسنستخدم مشروع المكتبة الفارغ لدينا لإنشاء دوال وسيطة لتحويل البيانات المستلمة من C/C++، واستدعاء دوال المكتبة، وإجراء التحويل العكسي لبيانات الإخراج. على سبيل المثال، كُتبت هذه الدالة لـ BLAKE3:
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+تأخذ هذه الدالة سلسلة متوافقة مع C، وحجمها، ومؤشر سلسلة الإخراج كمدخلات. ثم تحوّل المدخلات المتوافقة مع C إلى الأنواع التي تستخدمها دوال المكتبة الفعلية وتستدعيها. بعد ذلك، ينبغي تحويل مخرجات دوال المكتبة مرة أخرى إلى نوع متوافق مع C. في هذه الحالة تحديدًا، كانت المكتبة تدعم الكتابة المباشرة إلى المؤشر عبر الدالة fill()، لذلك لم تكن هناك حاجة إلى هذا التحويل. والنصيحة الأساسية هنا هي تقليل عدد الدوال التي تنشئها، حتى تقلّ التحويلات المطلوبة عند كل استدعاء، ولا تضيف عبئًا إضافيًا كبيرًا.
+
+ومن الجدير بالذكر أن السمة `#[no_mangle]` و`extern "C"` إلزاميتان لجميع هذه الدوال. وبدونهما، لن يكون من الممكن إجراء عملية build صحيحة متوافقة مع C/C++. وإضافة إلى ذلك، فهما ضروريتان للخطوة التالية من التكامل.
+
+بعد كتابة الشيفرة الخاصة بـ shim methods، نحتاج إلى إعداد ملف الترويسة للمكتبة. يمكن تنفيذ ذلك يدويًا، أو يمكنك استخدام مكتبة cbindgen للتوليد التلقائي. وفي حال استخدام cbindgen، ستحتاج إلى كتابة سكربت build.rs للبناء وإضافة cbindgen كتبعية بناء.
+
+مثال على سكربت بناء يمكنه توليد ملف ترويسة تلقائيًا:
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+كذلك، ينبغي عليك استخدام السمة #[no&#95;mangle] و `extern "C"` مع كل سمة متوافقة مع C. ومن دون ذلك، قد لا تُجمَّع المكتبة بشكل صحيح، ولن يتمكن cbindgen من تشغيل التوليد التلقائي لملف الترويسة.
+
+بعد كل هذه الخطوات، يمكنك اختبار مكتبتك ضمن مشروع صغير لاكتشاف أي مشكلات في التوافق أو في توليد ملفات الترويسة. وإذا ظهرت أي مشكلات أثناء توليد ملفات الترويسة، فيمكنك محاولة ضبطه باستخدام ملف `cbindgen.toml` (يمكنك العثور على قالب هنا: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
+
+ومن المفيد الإشارة إلى المشكلة التي ظهرت عند دمج BLAKE3:
+قد يتسبب MemorySanitizer في ظهور تقارير إيجابية كاذبة، لأنه لا يستطيع معرفة ما إذا كانت بعض المتغيرات في Rust مهيأة أم لا. وقد حُلَّت هذه المشكلة بكتابة دالة ذات تعريف أكثر صراحةً لبعض المتغيرات، رغم أن هذا التنفيذ للدالة أبطأ ويُستخدم فقط لمعالجة عمليات بناء MemorySanitizer.

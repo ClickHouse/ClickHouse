@@ -28,7 +28,7 @@ namespace
 }
 
 SQLQueryPiece applySimpleFunction(
-    const PQT::Node * node,
+    const PrometheusQueryTree::Node * node,
     ConverterContext & context,
     const std::function<ASTPtr(ASTs)> & apply_function_to_ast,
     std::vector<SQLQueryPiece> && arguments)
@@ -60,7 +60,7 @@ SQLQueryPiece applySimpleFunction(
 
             case StoreMethod::CONST_SCALAR:
             {
-                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type));
+                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value));
 
                 if (res.store_method != StoreMethod::SCALAR_GRID && res.store_method != StoreMethod::VECTOR_GRID)
                     res.store_method = StoreMethod::SINGLE_SCALAR;
