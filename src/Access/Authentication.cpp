@@ -158,19 +158,29 @@ namespace
     }
 
     /// pAssw0rd+123456
+    /// For a NO_PASSWORD method the credential may also consist of the one-time password alone.
     std::pair<std::string_view, std::string_view>
-    splitOneTimePasswordAndPassword(std::string_view password_with_otp, const std::optional<OneTimePasswordSecret> & otp_secret)
+    splitOneTimePasswordAndPassword(std::string_view password_with_otp, const AuthenticationData & authentication_method)
     {
+        const auto & otp_secret = authentication_method.getOneTimePassword();
         if (!otp_secret)
             return {password_with_otp, ""};
+
+        auto whole_credential_is_otp = [&]() -> std::pair<std::string_view, std::string_view>
+        {
+            if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
+                return {"", password_with_otp};
+            return {password_with_otp, ""};
+        };
+
         auto num_digits = otp_secret->params.num_digits;
         if (password_with_otp.size() <= static_cast<size_t>(num_digits))
-            return {password_with_otp, ""};
+            return whole_credential_is_otp();
         size_t separator_pos = password_with_otp.size() - num_digits - 1;
         if (password_with_otp[separator_pos] != '+')
-            return {password_with_otp, ""};
+            return whole_credential_is_otp();
         if (!std::ranges::all_of(password_with_otp.substr(separator_pos + 1), [](char c) { return std::isdigit(c); }))
-            return {password_with_otp, ""};
+            return whole_credential_is_otp();
         return {password_with_otp.substr(0, separator_pos), password_with_otp.substr(separator_pos + 1)};
     }
 
@@ -183,19 +193,12 @@ namespace
     {
         const auto & provided_password = basic_credentials->getPassword();
         const auto & otp_secret = authentication_method.getOneTimePassword();
-        auto [password, one_time_password] = splitOneTimePasswordAndPassword(provided_password, otp_secret);
+        auto [password, one_time_password] = splitOneTimePasswordAndPassword(provided_password, authentication_method);
         Authentication::CredentialsCheckResult on_success = Authentication::CredentialsCheckResult::Success;
         if (otp_secret)
         {
-            if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
-            {
-                if (one_time_password.empty())
-                {
-                    one_time_password = password;
-                    password = "";
-                }
-            }
-
+            /// Only a pure check here: the code is marked as used by `consumeOneTimePassword` after
+            /// the whole authentication succeeds, so a failed attempt cannot burn a valid code.
             if (one_time_password.empty())
                 on_success = Authentication::CredentialsCheckResult::NeedSecondFactor;
             else if (!checkOneTimePassword(one_time_password, *otp_secret))
@@ -414,6 +417,24 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
         return CredentialsCheckResult::Success;
 
     return CredentialsCheckResult::Fail;
+}
+
+bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
+{
+    const auto & otp_secret = authentication_method.getOneTimePassword();
+    if (!otp_secret)
+        return true;
+
+    /// One-time passwords are checked only for basic credentials, see `checkBasicAuthentication`.
+    const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials);
+    if (!basic_credentials)
+        return true;
+
+    auto [password, one_time_password] = splitOneTimePasswordAndPassword(basic_credentials->getPassword(), authentication_method);
+    if (one_time_password.empty())
+        return true;
+
+    return checkAndConsumeOneTimePassword(one_time_password, *otp_secret);
 }
 
 }

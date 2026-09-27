@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer.
 
 -- A broadcast join keeps every left-side row on its node, so a left input partitioned by a key
 -- still satisfies a downstream requirement for that key. Without the keyed broadcast alternative
