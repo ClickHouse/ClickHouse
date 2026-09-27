@@ -9,6 +9,9 @@ import json
 import logging
 import os
 import threading
+import time
+
+import boto3
 
 import pyarrow as pa
 import pyspark
@@ -509,4 +512,93 @@ def test_concurrent_writers_through_slow_s3(started_cluster, partitioned):
             assert "commit conflict at version" in o, o
     successes = sum(1 for o in outcomes if o == "ok")
     _assert_consistent(started_cluster, node, path, 1 + successes, partitioned)
+    node.query(f"DROP TABLE {path}")
+
+
+# ---------------------------------------------------------------------------------------------
+# multipart uploads and a killed server
+# ---------------------------------------------------------------------------------------------
+
+# 5 MiB is the smallest part S3 accepts.
+MULTIPART = {"s3_max_single_part_upload_size": 5242880, "s3_min_upload_part_size": 5242880}
+
+
+def _incomplete_uploads(started_cluster, path):
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id="minio",
+        aws_secret_access_key=minio_secret_key,
+    )
+    return [u["Key"] for u in s3.list_multipart_uploads(Bucket=started_cluster.minio_bucket, Prefix=f"{path}/").get("Uploads", [])]
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_multipart_upload_aborted_when_the_write_fails(started_cluster, partitioned):
+    """Data files above `s3_max_single_part_upload_size` go up in parts. A write that fails while
+    the parts are uploaded must abort the multipart upload: no incomplete upload left behind, no
+    data file, no version. The same INSERT without the fault commits in parts and is readable."""
+    node = started_cluster.instances["node1"]
+    broken_s3 = started_cluster.broken_s3
+    path = randomize_table_name("test_multipart")
+    schema = pa.schema([("id", pa.int32(), False), ("payload", pa.string(), False), ("part", pa.int32(), False)])
+    create_empty_delta_table(started_cluster, "s3", path, schema, partition_by=["part"] if partitioned else None)
+    node.query(f"CREATE TABLE {path} (id Int32, payload String, part Int32) ENGINE = {mock_engine_definition(started_cluster, path)}", settings=MULTIPART)
+    # ~16 MB of incompressible payload per INSERT: several parts per data file.
+    insert = f"INSERT INTO {path} SELECT number AS id, randomString(64) AS payload, number % 2 AS part FROM numbers(250000)"
+
+    broken_s3.reset()
+    broken_s3.setup_at_part_upload(count=100000, after=1, action="connection_reset_by_peer")
+    try:
+        _, error = node.query_and_get_answer_with_error(insert, settings=MULTIPART)
+    finally:
+        broken_s3.reset()
+    assert error, "the INSERT succeeded: the data file was not uploaded in parts or the part fault was ignored"
+    logging.info("part upload failed: %s", error.splitlines()[0][:200])
+    assert log_versions(started_cluster, path) == [0]
+    assert _all_parquet_objects(started_cluster, path) == set()
+    assert _incomplete_uploads(started_cluster, path) == []
+
+    node.query(insert, settings=MULTIPART)
+    assert log_versions(started_cluster, path) == [0, 1]
+    assert node.query(f"SELECT count(), uniqExact(id) FROM {path}").strip() == "250000\t250000"
+    assert _incomplete_uploads(started_cluster, path) == []
+    node.query(f"DROP TABLE {path}")
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_server_killed_during_write(started_cluster, partitioned):
+    """SIGKILL while an INSERT streams rows: after the restart the log has no new version, the table
+    reads its old rows, at most the killed INSERT's data files remain as unreferenced orphans, and
+    the next INSERT commits."""
+    node = started_cluster.instances["node1"]
+    path = _new_mock_table(started_cluster, node, "test_killed_server", partitioned)
+    query_id = f"{path}_killed"
+    result = []
+    insert = threading.Thread(
+        target=lambda: result.append(
+            node.query_and_get_answer_with_error(
+                f"INSERT INTO {path} SELECT number + 100 AS id, number % 2 AS part FROM (SELECT number FROM numbers(30) WHERE sleepEachRow(1) = 0)"
+                " SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, max_threads = 1",
+                query_id=query_id,
+            )
+        )
+    )
+    insert.start()
+    deadline = time.monotonic() + 60
+    while int(node.query(f"SELECT coalesce(max(read_rows), 0) FROM system.processes WHERE query_id = '{query_id}'").strip()) < 2:
+        assert time.monotonic() < deadline, "the INSERT did not start streaming rows in 60s"
+        assert insert.is_alive(), result
+        time.sleep(0.1)
+    node.stop_clickhouse(kill=True)
+    insert.join()
+    node.start_clickhouse()
+
+    assert log_versions(started_cluster, path) == [0, 1]
+    assert node.query(f"SELECT count() FROM {path}").strip() == "6"
+    orphans = _all_parquet_objects(started_cluster, path) - _committed_add_objects(started_cluster, path)
+    assert len(orphans) <= (2 if partitioned else 1), orphans
+    node.query(f"INSERT INTO {path} SELECT number + 200 AS id, number % 2 AS part FROM numbers(6)")
+    assert log_versions(started_cluster, path) == [0, 1, 2]
+    assert node.query(f"SELECT count() FROM {path}").strip() == "12"
     node.query(f"DROP TABLE {path}")
