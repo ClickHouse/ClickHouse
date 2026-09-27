@@ -293,11 +293,12 @@ public:
     /// into each table it makes - so a table's settings object alone says where its values came from. The `source`
     /// column of `system.table_settings` is that record.
     ///
-    /// Every assignment records an origin - `setWithOrigin` the one it names, `set` `Default`, meaning none - so a
-    /// setting belongs to whoever assigned it last, a reset to the default included. An assignment through
-    /// `operator[]` bypasses both and keeps the origin, which suits an engine that adjusts a value in place, such
-    /// as by expanding macros; one that replaces a value records the new origin, through the typed `set` that
-    /// `DECLARE_SETTINGS_TYPED_SET` gives its public settings class.
+    /// Every assignment records an origin - `setWithOrigin` the one it names, `set` `Default`, meaning none, as do
+    /// `read` and `readBinary`, whose serialized forms carry none, and `updateHotReloadableSettings` the one the new
+    /// settings recorded - so a setting belongs to whoever assigned it last, a reset to the default included. An
+    /// assignment through `operator[]` bypasses all of them and keeps the origin, which suits an engine that adjusts
+    /// a value in place, such as by expanding macros; one that replaces a value records the new origin, through the
+    /// typed `set` that `DECLARE_SETTINGS_TYPED_SET` gives its public settings class.
 
     /// Assigns `value` and records `origin` as its source; `Default` records none.
     void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin) requires Traits::record_origin
@@ -942,6 +943,8 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
             BaseSettingsHelpers::throwSettingNotFound(name);
 
         accessor.readBinary(*this, index, in);
+        /// The binary form carries no origin, so the value read has none, as a value `set` assigns has none.
+        storeOrigin(index, SettingOrigin::Default);
     }
 }
 
@@ -1006,6 +1009,9 @@ void BaseSettings<TTraits>::updateHotReloadableSettings(const BaseSettings & new
             continue;
         Field value = accessor.getValue(new_settings, index);
         accessor.setValue(*this, index, value);
+        /// The value is `new_settings`', and so is where it came from.
+        if constexpr (Traits::record_origin)
+            recorded_origins.origins.set(index, new_settings.recorded_origins.origins.get(index));
     }
 }
 
