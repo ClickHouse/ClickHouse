@@ -56,3 +56,6 @@ ${CLICKHOUSE_CURL} -sS "${URL_RO}&close_session=1" -d 'SELECT 1 AS x FORMAT Null
 
 echo "-- compatibility with a version before 26.8 restores the old header behavior"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compatibility=26.7" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'
+echo "-- compatibility with 26.8 or 26.9 keeps the header an alias for output_format, as in those releases"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compatibility=26.8" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compatibility=26.9" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'

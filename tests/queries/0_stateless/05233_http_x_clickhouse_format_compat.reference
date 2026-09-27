@@ -29,3 +29,6 @@ X-ClickHouse-Format: CSV
 Cannot modify 'max_rows_to_read' setting in readonly mode
 -- compatibility with a version before 26.8 restores the old header behavior
 1
+-- compatibility with 26.8 or 26.9 keeps the header an alias for output_format, as in those releases
+{"x":1}
+{"x":1}
