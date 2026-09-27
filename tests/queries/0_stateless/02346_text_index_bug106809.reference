@@ -26,3 +26,4 @@ Nullable sorting key: lazy FINAL falls back to a regular FINAL read here too
 Sorting key mixing ASC and DESC columns: lazy FINAL falls back to a regular FINAL read here too
 1
 1
+1

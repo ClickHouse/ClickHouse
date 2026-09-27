@@ -135,4 +135,8 @@ INSERT INTO tab VALUES (10, 0, 1, 'zzz');
 SELECT count() FROM tab FINAL WHERE str = 'ccc';                      -- 1: survivor
 SELECT count() FROM tab FINAL PREWHERE str = 'bbb' WHERE str = 'bbb'; -- 1: `PREWHERE` is evaluated before `FINAL`
 
+-- 1: the text index is still read directly
+SELECT countIf(explain ILIKE '%__text_index%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL PREWHERE str = 'bbb' WHERE str = 'bbb');
+
 DROP TABLE tab;
