@@ -70,6 +70,8 @@ unresolvable remote() first argument refused: 1
 engine carrier warned: 1
 nested engine carrier warned: 1
 dictionary carrier warned: 1
+view inner engine carrier warned: 1
+warnings naming the view's collection: 1
 ordinary scalar function warned: 0
 collections emitted into the dump: 0
 engine carrier dumped naming the collection: 1

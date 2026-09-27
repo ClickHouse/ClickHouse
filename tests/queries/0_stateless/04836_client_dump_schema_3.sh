@@ -474,11 +474,17 @@ CREATE TABLE ${DB}.nc_scalar_src (nc_url Int64) ENGINE = MergeTree ORDER BY tupl
 CREATE VIEW ${DB}.nc_scalar_reader AS SELECT abs(nc_url) FROM ${DB}.nc_scalar_src;
 CREATE DICTIONARY ${DB}.nc_dict_reader (id UInt64, v String) PRIMARY KEY id
     SOURCE(CLICKHOUSE(NAME nc_dict)) LAYOUT(FLAT()) LIFETIME(0);
+CREATE NAMED COLLECTION nc_mv_url AS url = 'http://127.0.0.1:1/', format = 'TSV';
+CREATE TABLE ${DB}.nc_mv_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW ${DB}.nc_mv_reader ENGINE = URL(nc_mv_url) AS SELECT id FROM ${DB}.nc_mv_src;
 "
 if $CLICKHOUSE_LOCAL --path "$NCC_PATH" --dump-schema="${DB}" > "$NCC_DUMP_FILE" 2>"$ERR_FILE"; then
     echo "engine carrier warned: $(grep -c 'nc_url_reader depends on named collection nc_url' "$ERR_FILE")"
     echo "nested engine carrier warned: $(grep -c 'nc_nested_url_reader depends on named collection nc_url' "$ERR_FILE")"
     echo "dictionary carrier warned: $(grep -c 'nc_dict_reader depends on named collection nc_dict' "$ERR_FILE")"
+    # A materialized view keeps its inner engine in the view's own CREATE, so the view is named.
+    echo "view inner engine carrier warned: $(grep -c 'nc_mv_reader depends on named collection nc_mv_url' "$ERR_FILE")"
+    echo "warnings naming the view's collection: $(grep -c 'named collection nc_mv_url' "$ERR_FILE")"
     echo "ordinary scalar function warned: $(grep -c 'nc_scalar_reader.*named collection' "$ERR_FILE")"
     echo "collections emitted into the dump: $(grep -c 'CREATE NAMED COLLECTION' "$NCC_DUMP_FILE")"
     echo "engine carrier dumped naming the collection: $(grep -c 'ENGINE = URL(nc_url)' "$NCC_DUMP_FILE")"

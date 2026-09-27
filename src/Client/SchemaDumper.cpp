@@ -1511,9 +1511,19 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
     if (!create)
         return dependencies;
 
-    if (const auto * engine = create->storage ? create->storage->engine : nullptr; engine
-        && (create->getTable().empty() ? databaseEngineUsesNamedCollections(engine->name) : tableEngineUsesNamedCollections(engine->name)))
+    std::vector<const ASTFunction *> engines;
+    if (create->storage && create->storage->engine)
+        engines.push_back(create->storage->engine);
+    /// A view or TimeSeries keeps its inner table engines in `targets`.
+    if (create->targets && !create->getTable().empty())
+        for (const auto * inner : create->targets->getInnerEngines())
+            if (inner->engine)
+                engines.push_back(inner->engine);
+
+    for (const auto * engine : engines)
     {
+        if (!(create->getTable().empty() ? databaseEngineUsesNamedCollections(engine->name) : tableEngineUsesNamedCollections(engine->name)))
+            continue;
         const bool classify_remote = !create->getTable().empty() && isRemoteFunctionName(engine->name);
         collectNamedCollectionFromFunction(*engine, 0, classify_remote, clusters, dependencies);
         if (classify_remote)
