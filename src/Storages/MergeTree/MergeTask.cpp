@@ -1565,11 +1565,16 @@ bool MergeTask::isAnyTTLDue(const GlobalRuntimeContext & global_ctx, const Merge
     /// With `ttl_only_drop_parts`, a column TTL does not make the merge rewrite the part to clear its values:
     /// the column is dropped from the part once all of its values have expired (see `getColumnsFullyExpiredByTTL`).
     /// A merge that rewrites the part anyway (e.g. because of a row TTL) still clears the expired values.
-    const time_t min_ttl = (*global_ctx.data_settings)[MergeTreeSetting::ttl_only_drop_parts]
-        ? ttl_infos.getMinimalNonFinishedRowTTL()
-        : ttl_infos.part_min_ttl;
+    /// A column whose every value has expired, but which the merge does not drop (`ttl_infos` no longer has
+    /// the TTLs of the dropped columns), is cleared by rewriting the part, as without the setting.
+    if ((*global_ctx.data_settings)[MergeTreeSetting::ttl_only_drop_parts])
+    {
+        const time_t row_ttl = ttl_infos.getMinimalNonFinishedRowTTL();
+        const time_t column_ttl = ttl_infos.getMinimalMaxNonFinishedColumnTTL();
+        return (row_ttl && row_ttl <= global_ctx.time_of_merge) || (column_ttl && column_ttl <= global_ctx.time_of_merge);
+    }
 
-    return min_ttl && min_ttl <= global_ctx.time_of_merge;
+    return ttl_infos.part_min_ttl && ttl_infos.part_min_ttl <= global_ctx.time_of_merge;
 }
 
 bool MergeTask::isVerticalTTLDelete(
