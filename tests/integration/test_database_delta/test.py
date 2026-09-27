@@ -522,11 +522,13 @@ def test_complex_table_schema(started_cluster, use_delta_kernel, use_v2):
     )
     table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/complex_schema/{table_name}'"
-    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')"
+    create_query = f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/complex_schema/{table_name}'"
+    insert_query = f"INSERT OVERWRITE {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')"
+    # Every statement is idempotent, so the retry replay converges to the same single row.
     execute_multiple_spark_queries(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query, insert_query],
+        retry_on_timeout=True,
     )
 
     node1.query(
@@ -1004,16 +1006,18 @@ def test_varchar_char_types_via_unity_catalog(
     db_name = f"uc_varchar_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
 
     create_query = (
-        f"CREATE TABLE {schema_name}.{table_name} "
+        f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} "
         f"(id INT, name VARCHAR(256), code CHAR(10)) "
         f"USING DELTA LOCATION '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
     )
     insert_query = (
-        f"INSERT INTO {schema_name}.{table_name} VALUES (1, 'hello varchar', 'hello char')"
+        f"INSERT OVERWRITE {schema_name}.{table_name} VALUES (1, 'hello varchar', 'hello char')"
     )
+    # Every statement is idempotent, so the retry replay converges to the same single row.
     execute_multiple_spark_queries(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query, insert_query],
+        retry_on_timeout=True,
     )
 
     node1.query(
