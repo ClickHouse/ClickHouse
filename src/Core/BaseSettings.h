@@ -296,8 +296,8 @@ public:
     /// Every assignment records an origin - `setWithOrigin` the one it names, `set` `Default`, meaning none - so a
     /// setting belongs to whoever assigned it last, a reset to the default included. An assignment through
     /// `operator[]` bypasses both and keeps the origin, which suits an engine that adjusts a value in place, such
-    /// as by expanding macros; one that replaces a value records the new origin, through `setAtOffset` or
-    /// `recordOriginAtOffset` behind the typed `set` of its public settings class.
+    /// as by expanding macros; one that replaces a value records the new origin, through the typed `set` that
+    /// `DECLARE_SETTINGS_TYPED_SET` gives its public settings class.
 
     /// Assigns `value` and records `origin` as its source; `Default` records none.
     void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin) requires Traits::record_origin
@@ -316,22 +316,9 @@ public:
         }
     }
 
-    /// The same for the setting whose field is at `offset` in the settings data, as a `SettingIndex` stores it: for
-    /// the typed `set` of a public settings class, which holds this behind an incomplete type and so can pass on
-    /// only the offset - for an engine that assigns a value itself, over whatever a loader assigned.
-    void setAtOffset(size_t offset, const Field & value, SettingOrigin origin = SettingOrigin::Default)
-        requires Traits::record_origin
-    {
-        const auto & accessor = Traits::Accessor::instance();
-        const size_t index = accessor.findByOffset(offset);
-        chassert(index != static_cast<size_t>(-1));
-        accessor.setValue(*this, index, value);
-        storeOrigin(index, origin);
-    }
-
-    /// Records `origin` for the setting whose field is at `offset`, which the caller has just assigned through
-    /// `operator[]`: for the typed `set` of a public settings class, whose values need not have a `Field` form -
-    /// an atomic or an enum member of a storage, say.
+    /// Records `origin` for the setting whose field is at `offset` in the settings data, as a `SettingIndex` stores
+    /// it, which the caller has just assigned through `operator[]`: for the typed `set` of a public settings class
+    /// (`DECLARE_SETTINGS_TYPED_SET`), which holds this behind an incomplete type and so can pass on only the offset.
     void recordOriginAtOffset(size_t offset, SettingOrigin origin) requires Traits::record_origin
     {
         const size_t index = Traits::Accessor::instance().findByOffset(offset);

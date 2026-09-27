@@ -242,11 +242,6 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
-IMPLEMENT_SETTINGS_NAME_AT_OFFSET(ObjectStorageQueueSettings)
-
-void ObjectStorageQueueSettings::recordOriginAtOffset(size_t offset, SettingOrigin origin)
-{
-    impl->recordOriginAtOffset(offset, origin);
-}
+IMPLEMENT_SETTINGS_TYPED_SET(ObjectStorageQueueSettings)
 
 }

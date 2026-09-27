@@ -12,3 +12,13 @@
     { \
         return (*impl)[t]; \
     }
+
+#define IMPLEMENT_SETTINGS_TYPED_SET(CLASS_NAME) \
+    void CLASS_NAME::recordOriginAtOffset(size_t offset, SettingOrigin origin) \
+    { \
+        impl->recordOriginAtOffset(offset, origin); \
+    } \
+    std::string_view CLASS_NAME::nameAtOffset(size_t offset) \
+    { \
+        return CLASS_NAME##Impl::nameAtOffset(offset); \
+    }

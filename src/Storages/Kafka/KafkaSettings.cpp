@@ -118,10 +118,6 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
     loadSettingsFromNamedCollection(*impl, *named_collection);
 }
 
-void KafkaSettings::setAtOffset(size_t offset, const Field & value, SettingOrigin origin)
-{
-    impl->setAtOffset(offset, value, origin);
-}
 
 void KafkaSettings::sanityCheck(ContextPtr global_context) const
 {
@@ -180,5 +176,5 @@ bool KafkaSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(KafkaSettings)
-IMPLEMENT_SETTINGS_NAME_AT_OFFSET(KafkaSettings)
+IMPLEMENT_SETTINGS_TYPED_SET(KafkaSettings)
 }

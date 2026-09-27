@@ -64,15 +64,7 @@ struct ObjectStorageQueueSettings
 
     OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    /// Assigns `value` and records `origin` as where it came from: unlike an assignment through `operator[]`,
-    /// which keeps whatever origin was recorded. By the setting's typed index, so that a misspelled name does
-    /// not compile, and with the value in whatever form the setting's field accepts.
-    template <typename FieldType, typename Value>
-    void set(SettingIndex<ObjectStorageQueueSettings, FieldType> setting, Value && value, SettingOrigin origin)
-    {
-        (*this)[setting] = std::forward<Value>(value);
-        recordOriginAtOffset(setting.offset, origin);
-    }
+    DECLARE_SETTINGS_TYPED_SET(ObjectStorageQueueSettings)
 
     void dumpToSystemEngineSettingsColumns(
         MutableColumnsAndConstraints & params,
@@ -94,13 +86,8 @@ struct ObjectStorageQueueSettings
     /// needs no adjustment. The result may be a view into `name`, so it does not outlive the argument.
     static std::optional<std::string_view> adjustSettingName(std::string_view name);
     SettingDescriptions enumerateSettings() const;
-    /// The declared name of the setting at `offset`, for an engine naming one of its settings by typed
-    /// index - `setEffectiveValue` matches a described row, which is keyed by name.
-    static std::string_view nameAtOffset(size_t offset);
 
 private:
-    void recordOriginAtOffset(size_t offset, SettingOrigin origin);
-
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;
 };
 }

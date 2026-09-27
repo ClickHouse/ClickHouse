@@ -59,26 +59,14 @@ struct NATSSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    /// Assigns a value the engine chose itself, over whatever a loader assigned: unlike `operator[]`, the
-    /// setting no longer counts as supplied by a named collection. By the setting's typed index, so that a
-    /// misspelled name does not compile. See `BaseSettings::setAtOffset`.
-    template <typename FieldType>
-    void set(SettingIndex<NATSSettings, FieldType> setting, const Field & value)
-    {
-        setAtOffset(setting.offset, value);
-    }
+    DECLARE_SETTINGS_TYPED_SET(NATSSettings)
 
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
     SettingDescriptions enumerateSettings() const;
-    /// The declared name of the setting at `offset`, for an engine naming one of its settings by typed
-    /// index - `setEffectiveValue` matches a described row, which is keyed by name.
-    static std::string_view nameAtOffset(size_t offset);
 
 private:
-    void setAtOffset(size_t offset, const Field & value);
-
     std::unique_ptr<NATSSettingsImpl> impl;
 };
 }

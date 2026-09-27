@@ -72,15 +72,8 @@ struct KafkaSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    /// Assigns a value over whatever a loader assigned, recording `origin` as its source: unlike `operator[]`,
-    /// the setting no longer counts as supplied by a named collection. A value the engine chose itself records
-    /// none; a positional engine argument is the table's definition. By the setting's typed index, so that a
-    /// misspelled name does not compile. See `BaseSettings::setAtOffset`.
-    template <typename FieldType>
-    void set(SettingIndex<KafkaSettings, FieldType> setting, const Field & value, SettingOrigin origin = SettingOrigin::Default)
-    {
-        setAtOffset(setting.offset, value, origin);
-    }
+    /// A value the engine chose itself records no origin; a positional engine argument is the table's definition.
+    DECLARE_SETTINGS_TYPED_SET(KafkaSettings)
 
     SettingsChanges getFormatSettings() const;
 
@@ -88,13 +81,8 @@ struct KafkaSettings
 
     static bool hasBuiltin(std::string_view name);
     SettingDescriptions enumerateSettings() const;
-    /// The declared name of the setting at `offset`, for an engine naming one of its settings by typed
-    /// index - `setEffectiveValue` matches a described row, which is keyed by name.
-    static std::string_view nameAtOffset(size_t offset);
 
 private:
-    void setAtOffset(size_t offset, const Field & value, SettingOrigin origin);
-
     std::unique_ptr<KafkaSettingsImpl> impl;
 };
 

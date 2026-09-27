@@ -3170,10 +3170,7 @@ void MergeTreeSettings::set(std::string_view name, const Field & value)
     impl->set(name, value);
 }
 
-void MergeTreeSettings::setAtOffset(size_t offset, const Field & value)
-{
-    impl->setAtOffset(offset, value);
-}
+IMPLEMENT_SETTINGS_TYPED_SET(MergeTreeSettings)
 
 SettingsChanges MergeTreeSettings::changes() const
 {

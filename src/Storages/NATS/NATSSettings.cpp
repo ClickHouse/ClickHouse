@@ -103,10 +103,6 @@ void NATSSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & nam
     loadSettingsFromNamedCollection(*impl, *named_collection);
 }
 
-void NATSSettings::setAtOffset(size_t offset, const Field & value)
-{
-    impl->setAtOffset(offset, value);
-}
 
 SettingsChanges NATSSettings::getFormatSettings() const
 {
@@ -130,6 +126,6 @@ bool NATSSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(NATSSettings)
-IMPLEMENT_SETTINGS_NAME_AT_OFFSET(NATSSettings)
+IMPLEMENT_SETTINGS_TYPED_SET(NATSSettings)
 
 }

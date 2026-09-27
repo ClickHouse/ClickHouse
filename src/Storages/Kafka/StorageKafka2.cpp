@@ -197,7 +197,7 @@ StorageKafka2::StorageKafka2(
     {
         /// A value pinned here is the engine's, whichever source supplied the one it replaces.
         kafka_settings->set(KafkaSetting::input_format_allow_errors_num, 0);
-        kafka_settings->set(KafkaSetting::input_format_allow_errors_ratio, 0.0);
+        kafka_settings->set(KafkaSetting::input_format_allow_errors_ratio, 0.0f);
     }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
