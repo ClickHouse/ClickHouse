@@ -65,6 +65,7 @@
 #include <Poco/String.h>
 
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <ranges>
 #include <unordered_map>
@@ -787,6 +788,150 @@ bool explicitProjectionColumnTypeDependsOn(
     }
 
     return false;
+}
+
+/// Resolve a bare SELECT identifier through unambiguous query aliases. A table ALIAS keeps its
+/// own declared type across source type changes, so stop there when resolving the output type;
+/// follow its expression only when resolving the effective output name and dependencies.
+std::optional<String> projectionOutputColumn(
+    const IAST & expression,
+    const ColumnsDescription & columns,
+    const ProjectionAliases & aliases,
+    bool expand_table_aliases,
+    std::unordered_set<String> & visited)
+{
+    const auto * identifier = expression.as<ASTIdentifier>();
+    if (!identifier)
+        return std::nullopt;
+
+    const String & name = identifier->name();
+    if (!visited.insert(name).second)
+        return std::nullopt;
+
+    const auto [begin, end] = aliases.equal_range(name);
+    const auto * column = columns.tryGet(name);
+    const bool has_query_alias = begin != end;
+    if (has_query_alias && (std::next(begin) != end || column))
+        return std::nullopt;
+    if (has_query_alias)
+        return projectionOutputColumn(*begin->second, columns, aliases, expand_table_aliases, visited);
+    if (!column)
+        return std::nullopt;
+    if (expand_table_aliases && column->default_desc.kind == ColumnDefaultKind::Alias)
+    {
+        if (!column->default_desc.expression)
+            return std::nullopt;
+        return projectionOutputColumn(*column->default_desc.expression, columns, aliases, expand_table_aliases, visited);
+    }
+    return name;
+}
+
+std::optional<String> projectionOutputColumn(
+    const IAST & expression, const ColumnsDescription & columns, const ProjectionAliases & aliases, bool expand_table_aliases)
+{
+    std::unordered_set<String> visited;
+    return projectionOutputColumn(expression, columns, aliases, expand_table_aliases, visited);
+}
+
+/// A codec is stored even when the projection cannot be analyzed. Recheck it against a changed
+/// output type whenever that type can be proved from a bare SELECT identifier. Otherwise reject
+/// a dependent type change rather than persist a declaration that may fail at the next startup.
+void checkUnavailableProjectionCodecTypeChange(
+    const ASTProjectionDeclaration & declaration,
+    const String & changed_column,
+    const ColumnsDescription & old_columns,
+    const ColumnsDescription & new_columns,
+    const ProjectionAliases & aliases)
+{
+    if (!declaration.columns)
+        return;
+    const auto * query = declaration.query ? declaration.query->as<ASTProjectionSelectQuery>() : nullptr;
+    if (!query || !query->select())
+        return;
+
+    for (const auto & child : declaration.columns->children)
+    {
+        const auto & declared_column = child->as<const ASTColumnDeclaration &>();
+        const auto codec_ast = declared_column.getCodec();
+        if (!codec_ast || declared_column.getType())
+            continue;
+
+        size_t matched_outputs = 0;
+        bool unmatched_output_depends_on_change = false;
+        bool matched_output_depends_on_change = false;
+        for (const auto & expression : query->select()->children)
+        {
+            const auto expanded = expandProjectionMatcher(*expression, old_columns);
+            const auto & outputs = expanded ? *expanded : ASTs{expression};
+            for (const auto & output : outputs)
+            {
+                const auto source = projectionOutputColumn(*output, old_columns, aliases, /*expand_table_aliases=*/true);
+                const bool matches = output->getColumnName() == declared_column.name || (source && *source == declared_column.name)
+                    || (!expanded && expandedProjectionExpressionName(output, old_columns) == declared_column.name);
+                const bool depends_on_change
+                    = projectionQueryReferencesColumn(*output, changed_column, old_columns, aliases, /*expand_table_aliases=*/true);
+                if (!matches)
+                {
+                    unmatched_output_depends_on_change |= depends_on_change;
+                    continue;
+                }
+
+                ++matched_outputs;
+                if (!depends_on_change)
+                    continue;
+
+                matched_output_depends_on_change = true;
+
+                const auto type_column = projectionOutputColumn(*output, old_columns, aliases, /*expand_table_aliases=*/false);
+                if (!type_column || !new_columns.has(*type_column))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot change type of column {} because projection {} has a codec on a dependent SELECT expression whose new type "
+                        "cannot be checked",
+                        backQuote(changed_column),
+                        backQuote(declaration.name));
+
+                if (source && *source != *type_column)
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot change type of column {} because projection {} has a codec on a table ALIAS output whose name may change",
+                        backQuote(changed_column),
+                        backQuote(declaration.name));
+
+                const auto & new_type = new_columns.get(*type_column).type;
+                try
+                {
+                    auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        codec_ast, new_type, CodecValidationSettings::trusted());
+                    if (isLossyCodecForType(codec, new_type))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "codec would be lossy for type {}", new_type->getName());
+                }
+                catch (const Exception & exception)
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot change type of column {} because projection {} has an incompatible codec on column {}: {}",
+                        backQuote(changed_column),
+                        backQuote(declaration.name),
+                        backQuote(declared_column.name),
+                        exception.message());
+                }
+            }
+        }
+        if (matched_outputs > 1 && matched_output_depends_on_change)
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot change type of column {} because projection {} has an ambiguous codec output {}",
+                backQuote(changed_column),
+                backQuote(declaration.name),
+                backQuote(declared_column.name));
+        if (!matched_outputs && unmatched_output_depends_on_change)
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot change type of column {} because projection {} has a codec whose SELECT output cannot be identified",
+                backQuote(changed_column),
+                backQuote(declaration.name));
+    }
 }
 
 /// Whether the two names name one setting: a `MergeTree` setting can have two names.
@@ -2570,6 +2715,10 @@ void AlterCommands::apply(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         "Cannot change type of column {} because projection {} references it and declares an explicit column type",
                         backQuote(old_column.name), backQuote(declaration.name));
+
+                if (old_column.type->getName() != metadata_copy.columns.get(old_column.name).type->getName())
+                    checkUnavailableProjectionCodecTypeChange(
+                        declaration, old_column.name, metadata.columns, metadata_copy.columns, aliases);
 
                 for (const auto & subcolumn : metadata.columns.getSubcolumns(old_column.name))
                     if (!metadata_copy.columns.hasColumnOrSubcolumn(GetColumnsOptions::All, subcolumn.name)

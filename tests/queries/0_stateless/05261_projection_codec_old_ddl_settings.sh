@@ -10,6 +10,7 @@ set -euo pipefail
 
 create_table="${CLICKHOUSE_DATABASE}.t_projection_codec_old_create"
 attach_table="${CLICKHOUSE_DATABASE}.t_projection_codec_old_attach"
+attach_uuid=$(${CLICKHOUSE_CLIENT} -q 'SELECT generateUUIDv4()')
 source_table="${CLICKHOUSE_DATABASE}.t_projection_codec_old_source"
 copy_table="${CLICKHOUSE_DATABASE}.t_projection_codec_old_copy"
 alter_table="${CLICKHOUSE_DATABASE}.t_projection_codec_old_alter"
@@ -43,7 +44,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_create'"
 
 expect_disabled_before_enqueue attach "
-    ATTACH TABLE ${attach_table} ON CLUSTER test_shard_localhost
+    ATTACH TABLE ${attach_table} UUID '${attach_uuid}' ON CLUSTER test_shard_localhost
         (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
         ENGINE = MergeTree ORDER BY k"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
@@ -77,6 +78,13 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_create'"
 
 ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
+    ATTACH TABLE ${attach_table} UUID '${attach_uuid}' ON CLUSTER test_shard_localhost
+        (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
+        ENGINE = MergeTree ORDER BY k FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
+    WHERE database = currentDatabase() AND table = 't_projection_codec_old_attach'"
+
+${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = MergeTree ORDER BY k FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
@@ -99,6 +107,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT type FROM system.columns
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_alter' AND name = 'x'"
 
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${create_table} ON CLUSTER test_shard_localhost FORMAT Null"
+${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${attach_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${copy_table} ON CLUSTER test_shard_localhost FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${source_table}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${alter_table}"

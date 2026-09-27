@@ -78,8 +78,14 @@ ALTER TABLE t_projection_column_list_cluster_alter ON CLUSTER test_shard_localho
     ADD PROJECTION p (x UInt64) AS (SELECT x ORDER BY x) FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_create';
+SELECT countIf(position(replaceAll(create_table_query, '`', ''), 'PROJECTION p (x UInt64) AS') > 0)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_create';
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_alter';
+SELECT countIf(position(replaceAll(create_table_query, '`', ''), 'PROJECTION p (x UInt64) AS') > 0)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_alter';
 DROP TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE t_projection_column_list_cluster_alter ON CLUSTER test_shard_localhost FORMAT Null;
 SET distributed_ddl_output_mode = 'none';

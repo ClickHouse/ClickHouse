@@ -414,6 +414,36 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         settings=POSITIONAL,
     )
 
+    # A stored untyped codec must be checked against the new SELECT output type even while the
+    # positional GROUP BY makes its projection unavailable.
+    node.query("CREATE TABLE dl.t33 (a UInt64, b Float64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t33 ADD PROJECTION pp (b CODEC(FPC)) "
+        "AS (SELECT b, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    # b affects the filter, but not the FPC-encoded SELECT output.
+    node.query("CREATE TABLE dl.t34 (a UInt64, b Float64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t34 ADD PROJECTION pp (`toFloat64(a)` CODEC(FPC)) "
+        "AS (SELECT toFloat64(a), a WHERE b > 0 GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t35 (a UInt64, b Float64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t35 ADD PROJECTION pp (b CODEC(FPC)) "
+        "AS (WITH b AS source_value, source_value AS x SELECT x, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    node.query("CREATE TABLE dl.t36 (a UInt64, b Float64, x ALIAS b) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t36 ADD PROJECTION pp (b CODEC(FPC)) "
+        "AS (SELECT x, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -456,6 +486,10 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t30") == "1"
     assert projections("t31") == "1"
     assert projections("t32") == "1"
+    assert projections("t33") == "1"
+    assert projections("t34") == "1"
+    assert projections("t35") == "1"
+    assert projections("t36") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.restart_clickhouse()
@@ -495,6 +529,10 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t30") == "0"
     assert projections("t31") == "0"
     assert projections("t32") == "0"
+    assert projections("t33") == "0"
+    assert projections("t34") == "0"
+    assert projections("t35") == "0"
+    assert projections("t36") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -588,6 +626,23 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     node.query("ALTER TABLE dl.t7 MODIFY COLUMN d UInt32")
     node.query("ALTER TABLE dl.t7 DROP COLUMN c")
     assert declarations_on_disk("t7") == 1
+
+    error = node.query_and_get_error("ALTER TABLE dl.t33 MODIFY COLUMN b UInt64")
+    assert "projection `pp`" in error and "incompatible codec" in error
+    node.query("ALTER TABLE dl.t33 MODIFY COLUMN b Float32")
+    assert declarations_on_disk("t33") == 1
+    node.query("ALTER TABLE dl.t34 MODIFY COLUMN b UInt64")
+    assert declarations_on_disk("t34") == 1
+    error = node.query_and_get_error("ALTER TABLE dl.t35 MODIFY COLUMN b UInt64")
+    assert "projection `pp`" in error and "incompatible codec" in error
+    node.query("ALTER TABLE dl.t35 MODIFY COLUMN b Float32")
+    # The table ALIAS keeps its Float64 type, but its SELECT output can change name when b changes.
+    # The stored declaration would then fail to find output b after restart.
+    error = node.query_and_get_error("ALTER TABLE dl.t36 MODIFY COLUMN b UInt64")
+    assert "projection `pp`" in error and "table ALIAS output" in error
+    assert node.query(
+        "SELECT type FROM system.columns WHERE database = 'dl' AND table = 't36' AND name = 'x'"
+    ).strip() == "Float64"
 
     error = node.query_and_get_error("ALTER TABLE dl.t8 MODIFY COLUMN b UInt32")
     assert "projection `pp`" in error and "declares an explicit column type" in error
@@ -831,6 +886,10 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t30") == "1"
     assert projections("t31") == "1"
     assert projections("t32") == "1"
+    assert projections("t33") == "1"
+    assert projections("t34") == "1"
+    assert projections("t35") == "1"
+    assert projections("t36") == "1"
     assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 

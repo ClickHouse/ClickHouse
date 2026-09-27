@@ -1477,7 +1477,8 @@ Possible values:
     DECLARE(Bool, allow_projection_column_list_in_replicated_metadata, false, R"(
 Allow a projection column list to be stored by a replicated table, a Replicated database, or an ON CLUSTER DDL query.
 Versions before 26.10 cannot parse this syntax. Enable only after every replica and cluster host that may load the metadata or replay the DDL has been upgraded.
-New `ON CLUSTER` projection `CODEC` declarations require `distributed_ddl_entry_format_version >= 2`, because version 1 does not carry the session settings used to validate them.
+An `ON CLUSTER` operation that introduces projection `CODEC` metadata requires `distributed_ddl_entry_format_version >= 2`.
+This includes full-definition `ATTACH TABLE` and `CREATE TABLE AS source`, because version 1 does not carry the session settings used to validate the metadata.
 This setting is checked when the definition is first accepted, not when stored metadata is loaded.
 )", 0, \
         {"26.10", false, false, "New setting to explicitly permit projection column-list syntax in replicated metadata after every replica has been upgraded."}) \
