@@ -9104,18 +9104,24 @@ QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
     return query_execution_counters;
 }
 
+UInt64 Context::getAutomaticParallelReplicasMode(const Settings & settings_ref)
+{
+    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+        return 0;
+    return settings_ref[Setting::automatic_parallel_replicas_mode];
+}
+
 bool Context::isParallelReplicasEnabled() const
 {
     const auto & settings_ref = getSettingsRef();
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-             && settings_ref[Setting::automatic_parallel_replicas_mode] != 0);
+             && getAutomaticParallelReplicasMode(settings_ref) != 0);
 }
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    return canUseTaskBasedParallelReplicasForClusterEngines()
-        && getSettingsRef()[Setting::automatic_parallel_replicas_mode] == 0;
+    return canUseTaskBasedParallelReplicasForClusterEngines() && getAutomaticParallelReplicasMode(getSettingsRef()) == 0;
 }
 
 bool Context::canUseTaskBasedParallelReplicasForClusterEngines() const

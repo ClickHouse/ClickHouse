@@ -2685,11 +2685,7 @@ void Planner::buildPlanForQueryNode()
     /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
     disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
 
-    /// Not `canUseTaskBasedParallelReplicas`: cluster engines use parallel replicas regardless of
-    /// `automatic_parallel_replicas_mode`, so the checks below apply in every mode alike.
-    const bool parallel_replicas_checks_apply = query_context->canUseTaskBasedParallelReplicasForClusterEngines();
-
-    if (parallel_replicas_checks_apply)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
         if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())
         {
@@ -2709,8 +2705,7 @@ void Planner::buildPlanForQueryNode()
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
     /// the combination works there and the check is skipped.
-    if (parallel_replicas_checks_apply
-        && !query_context->getClientInfo().collaborate_with_initiator
+    if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::serialize_query_plan]
         && !settings[Setting::additional_table_filters].value.empty())
     {
