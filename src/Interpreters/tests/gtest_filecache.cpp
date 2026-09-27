@@ -441,6 +441,44 @@ public:
     pcg64 rng;
 };
 
+TEST_F(FileCacheTest, FilesInCacheDirectoryAreIgnoredOnLoad)
+{
+    /// Only directories under the cache directory hold cached data. A file there, which a server
+    /// of another version may keep, must be skipped by the load instead of failing it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = DB::FileCacheKey::fromPath("ignored_file_key");
+    {
+        auto cache = DB::FileCache("FilesInCacheDirectoryAreIgnoredOnLoad", settings);
+        cache.initialize();
+        download(*cache.getOrSet(key, 0, 5, INT_MAX, {}, 0, user)->begin());
+        ASSERT_EQ(cache.getUsedCacheSize(), 5);
+    }
+
+    const auto unknown_file = fs::path(cache_base_path) / "unknown_file";
+    {
+        DB::WriteBufferFromFile buf(unknown_file.string());
+        DB::writeString(std::string("a file of another version"), buf);
+        buf.finalize();
+    }
+
+    auto reopened = DB::FileCache("FilesInCacheDirectoryAreIgnoredOnLoad2", settings);
+    reopened.initialize();
+    ASSERT_EQ(reopened.getUsedCacheSize(), 5);
+    assertEqual(reopened.getFileSegmentInfos(key, user.user_id), { Range(0, 4) });
+    ASSERT_TRUE(fs::exists(unknown_file));
+}
+
 TEST_F(FileCacheTest, LRUPolicy)
 {
     ServerUUID::setRandomForUnitTests();
