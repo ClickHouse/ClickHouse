@@ -126,15 +126,16 @@ bool shouldValidateProjectionCodecs(const ContextPtr & context)
 
 bool projectionQueryReferencesColumn(const IAST & ast, const String & column_name)
 {
+    /// Removing a column from `SELECT *` removes that output too; it does not leave a broken
+    /// identifier in the stored query. Explicitly declared outputs are checked separately.
+    if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>())
+        return false;
+
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
         if (identifier->name() == column_name || identifier->name().starts_with(column_name + "."))
             return true;
     }
-
-    /// A projection that expands a wildcard depends on every source column.
-    if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>())
-        return true;
 
     for (const auto & child : ast.children)
         if (projectionQueryReferencesColumn(*child, column_name))
@@ -161,9 +162,11 @@ bool explicitProjectionColumnTypeDependsOn(const ASTProjectionDeclaration & decl
 
         for (const auto & expression : select_expressions)
         {
-            if (expression->as<ASTAsterisk>() || expression->as<ASTQualifiedAsterisk>())
+            if ((expression->as<ASTAsterisk>() || expression->as<ASTQualifiedAsterisk>())
+                && declared_column.name == source_column)
                 return true;
             if (expression->getAliasOrColumnName() == declared_column.name
+                && expression->as<ASTIdentifier>()
                 && projectionQueryReferencesColumn(*expression, source_column))
                 return true;
         }
@@ -1908,11 +1911,10 @@ void AlterCommands::apply(
 
     if (columns_changed)
     {
-        /// Check the stored query AST as well as analyzed projections. An unavailable projection
-        /// cannot be rebuilt here, but a referenced column that disappears will still be missing
-        /// when the projection can be analyzed again. Explicit output types likewise cannot be
-        /// trusted after changing an input type. Use only stored syntax and column types so the
-        /// decision is the same on replicas with different projection-analysis settings.
+        /// An unavailable projection cannot be rebuilt here. Reject changes that the stored
+        /// query proves will break when it can be analyzed again: a missing referenced column,
+        /// or a new type for a directly selected column with an explicit output type. Keep
+        /// wildcard expansion and untyped outputs free to follow source schema changes.
         auto check_projection = [&](const ASTPtr & definition_ast)
         {
             const auto & declaration = definition_ast->as<const ASTProjectionDeclaration &>();
@@ -1921,7 +1923,9 @@ void AlterCommands::apply(
 
             for (const auto & old_column : metadata.columns)
             {
-                if (!projectionQueryReferencesColumn(*declaration.query, old_column.name))
+                const bool explicit_type_depends_on_column = explicitProjectionColumnTypeDependsOn(declaration, old_column.name);
+                if (!projectionQueryReferencesColumn(*declaration.query, old_column.name)
+                    && !explicit_type_depends_on_column)
                     continue;
 
                 if (!metadata_copy.columns.has(old_column.name))
@@ -1930,7 +1934,7 @@ void AlterCommands::apply(
                         "Cannot remove or rename column {} because projection {} references it",
                         backQuote(old_column.name), backQuote(declaration.name));
 
-                if (explicitProjectionColumnTypeDependsOn(declaration, old_column.name)
+                if (explicit_type_depends_on_column
                     && old_column.type->getName() != metadata_copy.columns.get(old_column.name).type->getName())
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -1939,8 +1943,6 @@ void AlterCommands::apply(
             }
         };
 
-        for (const auto & projection : metadata_copy.projections)
-            check_projection(projection.definition_ast);
         for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
             check_projection(definition_ast);
     }
