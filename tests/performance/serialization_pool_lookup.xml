@@ -5,8 +5,13 @@
         so each row performs a SerializationObjectPool lookup from every aggregation thread.
         This measures the pool's hit path under contention.
     -->
+    <!--
+        `max_threads` is left at the harness default, which is one thread per CPU the servers are pinned to.
+        A fixed 16 oversubscribed the 8 pinned cores of the amd runners two threads per core, so the result
+        depended on the OS scheduler: the first query was flagged in 9% of amd master runs, against 0.4% on
+        arm, where 16 cores are available.
+    -->
     <settings>
-        <max_threads>16</max_threads>
         <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
     </settings>
 
