@@ -78,9 +78,9 @@ void GenerateRandomSettings::sanityCheck() const
             max_json_keys_per_object);
 }
 
-void GenerateRandomSettings::applyChanges(const SettingsChanges & changes)
+void GenerateRandomSettings::applyDefinition(const SettingsChanges & changes)
 {
-    impl->applyChanges(changes);
+    impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
 }
 
 bool GenerateRandomSettings::hasBuiltin(std::string_view name)

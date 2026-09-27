@@ -38,7 +38,8 @@ struct GenerateRandomSettings
     /// The table's own `SETTINGS` clause, recorded as the definition, as `loadFromQuery` records it.
     void loadFromQuery(ASTStorage & storage_def);
     void sanityCheck() const;
-    void applyChanges(const SettingsChanges & changes);
+    /// The same for a clause applied whole, as a table function's is.
+    void applyDefinition(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
     SettingDescriptions enumerateSettings() const;

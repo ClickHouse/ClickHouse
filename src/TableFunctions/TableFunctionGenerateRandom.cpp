@@ -83,7 +83,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         if (const auto * set_query = (*it)->as<ASTSetQuery>())
         {
             GenerateRandomSettings settings;
-            settings.applyChanges(set_query->changes);
+            settings.applyDefinition(set_query->changes);
             settings.sanityCheck();
 
             options.null_ratio = settings[GenerateRandomSetting::null_ratio];

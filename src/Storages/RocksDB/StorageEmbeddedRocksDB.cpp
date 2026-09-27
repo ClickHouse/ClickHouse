@@ -1239,7 +1239,7 @@ void ReadFromEmbeddedRocksDB::describeActions(JSONBuilder::JSONMap & map) const
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool /*async_insert*/)
 {
-    if (getSettings()[RocksDBSetting::optimize_for_bulk_insert])
+    if ((*getSettings())[RocksDBSetting::optimize_for_bulk_insert])
     {
         LOG_DEBUG(log, "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
