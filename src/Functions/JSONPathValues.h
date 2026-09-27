@@ -76,6 +76,22 @@ public:
             || !include_regexps.empty();
     }
 
+    /// A necessary condition for `shouldVisit(escapeLiteralPath(path))`, which is cheaper to check for many paths. With only
+    /// include paths and no include regexps, a path is visited only if it starts with an include path or an include path
+    /// starts with it. Returns true if it cannot tell, for example for a path that changes when escaped.
+    bool mayVisitLiteralPath(std::string_view path) const
+    {
+        if (include_paths.empty() || !include_regexps.empty() || path.find_first_of("\\[]") != std::string_view::npos)
+            return true;
+
+        for (const auto & include_path : include_paths)
+        {
+            if (path.starts_with(include_path) || std::string_view(include_path).starts_with(path))
+                return true;
+        }
+        return false;
+    }
+
     const VectorWithMemoryTracking<String> & getIncludePaths() const { return include_paths; }
     const VectorWithMemoryTracking<String> & getIncludePathRegexps() const { return include_path_regexps; }
     const VectorWithMemoryTracking<String> & getSkipPaths() const { return skip_paths; }

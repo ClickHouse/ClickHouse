@@ -97,6 +97,10 @@ public:
     void consumeNull(std::string_view, bool) {}
     const PreparedPath * preparePath(std::string_view path, const IDataType * static_type = nullptr)
     {
+        /// Most paths of a JSON column are usually not indexed, and this check is cheaper than the lookup in the cache.
+        if (!path_matcher.mayVisitLiteralPath(path))
+            return nullptr;
+
         auto it = literal_path_cache.find(path);
         if (it == literal_path_cache.end())
         {
