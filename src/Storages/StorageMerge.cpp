@@ -2379,9 +2379,8 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
 
-    /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key:
-    /// a read of a projection is sorted by the projection's. A read whose key is shorter than the prefix
-    /// refuses the request itself.
+    /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key (a projection's).
+    /// A read whose key is shorter than the prefix refuses the request itself.
     auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
     {
