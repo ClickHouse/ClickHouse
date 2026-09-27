@@ -30,6 +30,7 @@
     <fill_query>OPTIMIZE TABLE text_index_dense_{codec} FINAL</fill_query>
 
     <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAllTokens(s, ['thread', 'k17'])</query>
+    <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAnyTokens(s, ['thread', 'k17'])</query>
     <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAllTokens(s, ['thread', 'k17']) SETTINGS query_plan_optimize_count_from_text_index = 0, text_index_posting_list_apply_mode = 'materialize'</query>
     <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAllTokens(s, ['blk', 'k17'])</query>
 
