@@ -7726,6 +7726,13 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
+
+    /// The caches are keyed by the path of the active part, which does not change when the part is
+    /// renamed to detached, and a later part with the same name on the same disk (for example, fetched
+    /// again after `SYSTEM RESTORE REPLICA`) must not see the entries of this one. Otherwise they would
+    /// be cleared only by `removeIfNeeded` when the last reference to this part is gone.
+    /// This is done after the part has left the working set, so that an exception cannot leave it half-detached.
+    asMutableDeletingPart(part)->clearCaches();
 }
 
 

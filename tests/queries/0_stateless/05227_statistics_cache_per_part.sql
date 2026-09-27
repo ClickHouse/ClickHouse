@@ -42,12 +42,6 @@ INSERT INTO fact_05227 SELECT 3, number FROM numbers(1000);
 SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p >= 1
 SETTINGS log_comment = 'stats_cache_4_new_part' FORMAT Null;
 
--- Dropping the cache makes the next query load everything again.
-SYSTEM DROP STATISTICS CACHE;
-
-SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p >= 1
-SETTINGS log_comment = 'stats_cache_5_dropped' FORMAT Null;
-
 SYSTEM FLUSH LOGS query_log;
 
 -- A query may build the estimator more than once (for PREWHERE and for the join order), and the

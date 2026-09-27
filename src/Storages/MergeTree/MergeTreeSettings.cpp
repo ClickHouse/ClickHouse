@@ -2701,7 +2701,6 @@ but had not started, and the parts that remain unloaded are loaded once the sett
 before the `ALTER` that enables the setting commits it, so no cleanup or part load starts on a table that is already durably read-only. Other
 operations already in progress, including the loading of the parts that had already started, may finish.
 
-The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
 Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
 
 The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers

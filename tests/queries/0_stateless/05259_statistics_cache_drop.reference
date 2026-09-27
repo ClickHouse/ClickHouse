@@ -1,0 +1,4 @@
+stats_cache_drop_1_cold	1	1	0
+stats_cache_drop_2_warm	0	0	1
+stats_cache_drop_3_denied	0	0	1
+stats_cache_drop_4_dropped	1	1	0
