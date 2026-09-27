@@ -101,6 +101,15 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
         named_collection.clear();
     }
 
+    /// Clearing the changed flag forgets the source too: the setting stops counting as assigned, so
+    /// enumeration reports it as the engine's default, and an assignment through `operator[]`, which keeps
+    /// whatever is recorded, would otherwise report the source this call retired.
+    void markUnchanged(std::string_view name) override
+    {
+        BaseSettings<TTraits>::markUnchanged(name);
+        setOrigin(settingIndex(name), SettingOrigin::Default);
+    }
+
     /// The source recorded for the setting, or `Default` when none is, or the name is not a setting.
     SettingOrigin recordedOrigin(std::string_view name) const
     {

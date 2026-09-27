@@ -260,7 +260,11 @@ public:
     /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
     /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
     /// remote server, which only receives changed settings. No-op for custom settings.
-    void markUnchanged(std::string_view name);
+    ///
+    /// Virtual for the same reason `set` and `resetToDefault` are: it decides whether a setting counts
+    /// as assigned, which is what a subclass keeping something alongside the values follows -
+    /// `SettingsWithRecordedOrigin` keeps where each value came from.
+    virtual void markUnchanged(std::string_view name);
 
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
