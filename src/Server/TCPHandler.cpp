@@ -2877,7 +2877,7 @@ void TCPHandler::processUnexpectedQuery()
     UInt64 skip_uint_64 = 0;
     String skip_string;
 
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
 
     ClientInfo skip_client_info;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -2887,6 +2887,10 @@ void TCPHandler::processUnexpectedQuery()
     auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                       : SettingsWriteFormat::BINARY;
     skip_settings.read(*in, settings_format);
+
+    /// The same layout as in `processQuery`: the externally granted roles precede the interserver hash.
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+        readStringBinary(skip_string, *in, MAX_EXTRA_ROLES_SIZE);
 
     std::string skip_hash;
     bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
@@ -2901,7 +2905,7 @@ void TCPHandler::processUnexpectedQuery()
     readStringBinary(skip_string, *in);
 
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        skip_settings.read(*in, settings_format);
+        std::ignore = readQueryParameters(*in);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }
