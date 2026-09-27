@@ -212,6 +212,14 @@ IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node)
     return identifierPartQuoteFromAST(node.get());
 }
 
+IdentifierPartQuote wholeNameQuoteFromAST(const ASTPtr & node)
+{
+    if (const auto * identifier = node ? node->as<ASTIdentifier>() : nullptr)
+        if (identifier->name_parts.anyPartDoubleQuoted())
+            return IdentifierPartQuote::DoubleQuoted;
+    return identifierPartQuoteFromAST(node);
+}
+
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// Part boundaries are semantic, so mix them in.

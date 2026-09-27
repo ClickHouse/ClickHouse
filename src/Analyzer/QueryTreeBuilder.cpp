@@ -1266,7 +1266,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
                 for (auto & except_transformer_child : except_transformer->children)
                 {
                     except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
-                    except_column_names_quotes.push_back(identifierPartQuoteFromAST(except_transformer_child));
+                    except_column_names_quotes.push_back(wholeNameQuoteFromAST(except_transformer_child));
                 }
 
                 auto except_node = std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict);
