@@ -172,7 +172,7 @@ DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_T
 # this shard's rows, counted from the start of the uploads.
 DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
-# Pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
+# Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
@@ -1063,10 +1063,14 @@ def insert_into_cidb(cidb, info, table, query, data, deadline):
             return f"rejected: {error}"
         if table not in DASHBOARD_INPUT_TABLES:
             return error
-        if deadline - time.monotonic() <= CIDB_UPLOAD_RETRY_INTERVAL_SEC:
+        pause = min(
+            CIDB_UPLOAD_RETRY_INTERVAL_SEC,
+            deadline - time.monotonic() - Settings.CI_DB_INSERT_TIMEOUT_SEC,
+        )
+        if pause <= 0:
             break
-        print(f"WARNING: insert into [{table}] failed, retrying in {CIDB_UPLOAD_RETRY_INTERVAL_SEC}s")
-        time.sleep(CIDB_UPLOAD_RETRY_INTERVAL_SEC)
+        print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
+        time.sleep(pause)
     if error is None:
         return f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent"
     return f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
