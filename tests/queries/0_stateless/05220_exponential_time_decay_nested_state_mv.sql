@@ -128,6 +128,7 @@ FROM values(
 DROP VIEW IF EXISTS exponential_time_decay_nested_state_mv;
 DROP TABLE IF EXISTS exponential_time_decay_nested_state_source;
 DROP TABLE IF EXISTS exponential_time_decay_nested_state_destination;
+DROP TABLE IF EXISTS exponential_time_decay_finalized_values;
 
 CREATE TABLE exponential_time_decay_nested_state_source
 (
@@ -174,6 +175,144 @@ INSERT INTO exponential_time_decay_nested_state_source VALUES
 INSERT INTO exponential_time_decay_nested_state_source VALUES
     (1, -0.25, '2026-09-27 12:00:00.500003'),
     (2, 0, '2026-09-27 12:00:00.250002');
+
+-- Persist finalized values separately so the following tests exercise a real
+-- ExponentialTimeDecaying column rather than constructor nesting.
+CREATE TABLE exponential_time_decay_finalized_values
+(
+    key UInt8,
+    batch UInt8,
+    exhaustion ExponentialTimeDecaying(3)
+)
+ENGINE = Memory;
+
+INSERT INTO exponential_time_decay_finalized_values
+SELECT
+    key,
+    toUInt8(value >= 0) AS batch,
+    exponentialTimeDecaying(3)(value, occurred_at) AS exhaustion
+FROM exponential_time_decay_nested_state_source;
+
+-- Aggregate parameters are inferred from a qualified finalized-value column.
+-- This is the exact production shape without an explicit decay parameter.
+WITH
+    toDateTime64('2026-09-27 12:00:02.000017', 6, 'UTC') AS target_time,
+    aggregated AS
+    (
+        SELECT
+            t.key,
+            exponentialTimeDecayedSum(t.exhaustion) AS exhaustion,
+            exponentialTimeDecayedSum(3)(t.exhaustion) AS explicit_exhaustion
+        FROM exponential_time_decay_finalized_values AS t
+        GROUP BY t.key
+    )
+SELECT
+    key,
+    toTypeName(exhaustion),
+    exponentialTimeDecayingDecayLength(exhaustion),
+    abs(
+        exponentialTimeDecayingValueAt(exhaustion, target_time)
+        - exponentialTimeDecayingValueAt(explicit_exhaustion, target_time)
+    ) < 1e-12
+FROM aggregated
+ORDER BY key;
+
+-- Type inference for the aggregate must survive a subquery alias boundary too.
+WITH
+    toDateTime64('2026-09-27 12:00:02.000017', 6, 'UTC') AS target_time,
+    implicit AS
+    (
+        SELECT
+            t.key,
+            exponentialTimeDecayedSum(t.exhaustion) AS exhaustion
+        FROM
+        (
+            SELECT key, exhaustion
+            FROM exponential_time_decay_finalized_values
+        ) AS t
+        GROUP BY t.key
+    ),
+    expected AS
+    (
+        SELECT
+            t.key,
+            exponentialTimeDecayedSum(3)(t.exhaustion) AS exhaustion
+        FROM exponential_time_decay_finalized_values AS t
+        GROUP BY t.key
+    )
+SELECT
+    implicit.key,
+    abs(
+        exponentialTimeDecayingValueAt(implicit.exhaustion, target_time)
+        - exponentialTimeDecayingValueAt(expected.exhaustion, target_time)
+    ) < 1e-12
+FROM implicit
+INNER JOIN expected USING (key)
+ORDER BY implicit.key;
+
+-- The State combinator has the same inference requirement. Produce independent
+-- states per key/batch using the exact qualified-column form, then merge them.
+WITH
+    states AS
+    (
+        SELECT
+            t.key,
+            t.batch,
+            exponentialTimeDecayedSumState(t.exhaustion) AS exhaustion
+        FROM exponential_time_decay_finalized_values AS t
+        GROUP BY
+            t.key,
+            t.batch
+    )
+SELECT
+    key,
+    batch,
+    toTypeName(exhaustion)
+FROM states
+ORDER BY
+    key,
+    batch;
+
+WITH
+    toDateTime64('2026-09-27 12:00:02.000017', 6, 'UTC') AS target_time,
+    states AS
+    (
+        SELECT
+            t.key,
+            t.batch,
+            exponentialTimeDecayedSumState(t.exhaustion) AS exhaustion
+        FROM exponential_time_decay_finalized_values AS t
+        GROUP BY
+            t.key,
+            t.batch
+    ),
+    merged AS
+    (
+        SELECT
+            s.key,
+            exponentialTimeDecayedSumMerge(s.exhaustion) AS exhaustion
+        FROM states AS s
+        GROUP BY s.key
+    ),
+    direct AS
+    (
+        SELECT
+            t.key,
+            exponentialTimeDecayedSum(t.exhaustion) AS exhaustion
+        FROM exponential_time_decay_finalized_values AS t
+        GROUP BY t.key
+    )
+SELECT
+    merged.key,
+    abs(
+        exponentialTimeDecayingValueAt(merged.exhaustion, target_time)
+        - exponentialTimeDecayingValueAt(direct.exhaustion, target_time)
+    ) <= 1e-12 * greatest(
+        1.,
+        abs(exponentialTimeDecayingValueAt(direct.exhaustion, target_time)))
+FROM merged
+INNER JOIN direct USING (key)
+ORDER BY merged.key;
 
 OPTIMIZE TABLE exponential_time_decay_nested_state_destination FINAL;
 
@@ -274,3 +413,4 @@ ORDER BY actual.key;
 DROP VIEW exponential_time_decay_nested_state_mv;
 DROP TABLE exponential_time_decay_nested_state_source;
 DROP TABLE exponential_time_decay_nested_state_destination;
+DROP TABLE exponential_time_decay_finalized_values;
