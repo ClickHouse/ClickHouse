@@ -2,7 +2,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-
 cluster = ClickHouseCluster(__file__)
 initiator = cluster.add_instance(
     "initiator",
@@ -12,6 +11,16 @@ initiator = cluster.add_instance(
 worker = cluster.add_instance(
     "worker",
     main_configs=["configs/config.d/clusters.xml"],
+    with_zookeeper=True,
+)
+initial_user_initiator = cluster.add_instance(
+    "initial_user_initiator",
+    main_configs=["configs/config.d/clusters_initial_user.xml"],
+    with_zookeeper=True,
+)
+initial_user_worker = cluster.add_instance(
+    "initial_user_worker",
+    main_configs=["configs/config.d/clusters_initial_user.xml"],
     with_zookeeper=True,
 )
 
@@ -57,9 +66,7 @@ def test_worker_checks_set_row_policy(started_cluster):
 
     assert initiator.query(serialized_query) == "2\n"
 
-    worker.query(
-        "CREATE ROW POLICY set_rp_filter ON set_rp USING k = 1 TO default"
-    )
+    worker.query("CREATE ROW POLICY set_rp_filter ON set_rp USING k = 1 TO default")
 
     error = initiator.query_and_get_error(serialized_query)
 
@@ -118,7 +125,10 @@ def test_replicated_mutation_checks_set_row_policy(started_cluster):
 
     for error in (alter_error, delete_error, update_error):
         assert_set_policy_error(error, "replicated_rp.set_rp")
-    assert initiator.query("SELECT count(), sum(v) FROM replicated_rp.data_rp") == "2\t30\n"
+    assert (
+        initiator.query("SELECT count(), sum(v) FROM replicated_rp.data_rp")
+        == "2\t30\n"
+    )
 
 
 def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
@@ -151,9 +161,7 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
         "CREATE ROW POLICY cluster_set_rp_filter ON cluster_set_rp "
         "USING k = 1 TO cluster_mutator_role"
     )
-    initiator.query(
-        "GRANT SELECT(k) ON default.cluster_set_rp TO cluster_mutator_role"
-    )
+    initiator.query("GRANT SELECT(k) ON default.cluster_set_rp TO cluster_mutator_role")
 
     analyzer_source_access_error = initiator.query_and_get_error(
         "SELECT tuple(1, 10) IN cluster_set_rp",
@@ -177,9 +185,7 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
     )
     assert_privilege_error(source_access_error, "SELECT", "default.cluster_set_rp")
 
-    initiator.query(
-        "GRANT SELECT(v) ON default.cluster_set_rp TO cluster_mutator_role"
-    )
+    initiator.query("GRANT SELECT(v) ON default.cluster_set_rp TO cluster_mutator_role")
     analyzer_policy_error = initiator.query_and_get_error(
         "SELECT tuple(1, 10) IN cluster_set_rp",
         user="cluster_mutator",
@@ -278,4 +284,63 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
     )
     assert "UNKNOWN_TABLE" in unresolved_source_error
     assert "default.remote_only_set_rp" in unresolved_source_error
-    assert worker.query("SELECT count(), sum(v) FROM remote_cluster_data_rp") == "2\t30\n"
+    assert (
+        worker.query("SELECT count(), sum(v) FROM remote_cluster_data_rp") == "2\t30\n"
+    )
+
+
+def test_on_cluster_mutation_defers_worker_only_set_to_worker(started_cluster):
+    # With `distributed_ddl_use_initial_user_and_roles` and an entry format which carries the
+    # initiator's user, the worker runs the mutation as the submitting user, so a `Set` which exists only on the worker is checked there instead of
+    # being rejected on the initiator with `UNKNOWN_TABLE`.
+    for node in (initial_user_initiator, initial_user_worker):
+        node.query("CREATE ROLE iu_mutator_role")
+        node.query("CREATE USER iu_mutator DEFAULT ROLE iu_mutator_role")
+        node.query("GRANT CLUSTER ON *.* TO iu_mutator_role")
+        node.query("GRANT ALTER DELETE ON default.iu_data_rp TO iu_mutator_role")
+        node.query("GRANT SELECT ON default.* TO iu_mutator_role")
+
+    initial_user_worker.query(
+        "CREATE TABLE iu_data_rp (k UInt64) ENGINE = MergeTree ORDER BY k"
+    )
+    initial_user_worker.query("INSERT INTO iu_data_rp VALUES (1), (2), (3)")
+    for table in ("iu_set_policy", "iu_set_plain"):
+        initial_user_worker.query(f"CREATE TABLE {table} (k UInt64) ENGINE = Set")
+        initial_user_worker.query(f"INSERT INTO {table} VALUES (1)")
+    initial_user_worker.query(
+        "CREATE ROW POLICY iu_set_policy_filter ON iu_set_policy "
+        "USING k = 1 TO iu_mutator_role"
+    )
+
+    policy_error = initial_user_initiator.query_and_get_error(
+        "ALTER TABLE default.iu_data_rp ON CLUSTER initial_user_worker_only "
+        "DELETE WHERE k IN iu_set_policy "
+        "SETTINGS mutations_sync = 2, distributed_ddl_entry_format_version = 8",
+        user="iu_mutator",
+    )
+    assert "UNKNOWN_TABLE" not in policy_error
+    assert_set_policy_error(policy_error, "default.iu_set_policy")
+    assert initial_user_worker.query("SELECT count() FROM iu_data_rp") == "3\n"
+
+    initial_user_initiator.query(
+        "ALTER TABLE default.iu_data_rp ON CLUSTER initial_user_worker_only "
+        "DELETE WHERE k IN iu_set_plain "
+        "SETTINGS mutations_sync = 2, distributed_ddl_entry_format_version = 8",
+        user="iu_mutator",
+    )
+    assert (
+        initial_user_worker.query("SELECT groupArray(k) FROM iu_data_rp") == "[2,3]\n"
+    )
+
+    # The default entry format does not carry the initiator's user, so the worker would run the
+    # mutation without the submitting user's row policies: the initiator still rejects it.
+    unresolved_source_error = initial_user_initiator.query_and_get_error(
+        "ALTER TABLE default.iu_data_rp ON CLUSTER initial_user_worker_only "
+        "DELETE WHERE k IN iu_set_policy",
+        user="iu_mutator",
+    )
+    assert "UNKNOWN_TABLE" in unresolved_source_error
+    assert "default.iu_set_policy" in unresolved_source_error
+    assert (
+        initial_user_worker.query("SELECT groupArray(k) FROM iu_data_rp") == "[2,3]\n"
+    )

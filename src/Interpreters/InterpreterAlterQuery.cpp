@@ -494,7 +494,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -502,7 +502,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             {
                 const auto & command = child->as<const ASTAlterCommand &>();
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
-                    checkNoRowPolicyForSetOperands(child, default_database, context, /* throw_if_unresolved = */ true);
+                    checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

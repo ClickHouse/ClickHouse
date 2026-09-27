@@ -158,11 +158,11 @@ BlockIO InterpreterUpdateQuery::execute()
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_update = captured_query_ptr->as<const ASTUpdateQuery &>();
             const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : captured_update.getDatabase();
-            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, /* throw_if_unresolved = */ true);
+            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, throw_if_unresolved);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
