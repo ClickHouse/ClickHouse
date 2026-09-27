@@ -164,6 +164,21 @@ TEST(CompressionCodecTimeSeriesSamples, ValidationPreservesSelectorWhenSubstream
     EXPECT_EQ(preprocessed->formatForErrorMessage(), "CODEC(TimeSeriesSamples, ZSTD(3))");
 }
 
+TEST(CompressionCodecTimeSeriesSamples, ValidationPreservesSelectorWhenItExpandsToChain)
+{
+    const auto codec_ast = makeTimeSeriesSamplesCodec();
+    auto & factory = CompressionCodecFactory::instance();
+
+    for (const auto & column_type : DataTypes{std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeDateTime>()})
+    {
+        const auto preprocessed = factory.validateCodecAndGetPreprocessedAST(
+            codec_ast, column_type, CodecValidationSettings::trusted());
+
+        EXPECT_EQ(preprocessed, codec_ast);
+        EXPECT_EQ(preprocessed->formatForErrorMessage(), "CODEC(TimeSeriesSamples, ZSTD(3))");
+    }
+}
+
 TEST(CompressionCodecTimeSeriesSamples, ArrayTupleSubstreamsUseTypedSelectorAndSkipArraySizes)
 {
     const auto column_type = std::make_shared<DataTypeArray>(

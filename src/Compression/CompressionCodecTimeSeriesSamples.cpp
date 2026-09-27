@@ -101,7 +101,7 @@ void registerCodecTimeSeriesSamples(CompressionCodecFactory & factory)
                 return std::make_shared<CompressionCodecTimeSeriesSamples>();
 
             const WhichDataType which(column_type);
-            if (which.isDateTime() || which.isDateTime64())
+            if (which.isUInt32() || which.isDateTime() || which.isDateTime64())
                 return makeTimestampCodec(factory, column_type);
 
             if (which.isFloat32() || which.isFloat64())
@@ -109,7 +109,7 @@ void registerCodecTimeSeriesSamples(CompressionCodecFactory & factory)
 
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Codec TimeSeriesSamples cannot be applied to column {}: expected DateTime, DateTime64, Float32 or Float64",
+                "Codec TimeSeriesSamples cannot be applied to column {}: expected UInt32, DateTime, DateTime64, Float32 or Float64",
                 column_type->getName());
         });
 }
