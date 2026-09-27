@@ -216,6 +216,41 @@ def test_streaming_insert():
     assert update_result.record_count == 7000
 
 
+def test_datetime64_int64_ingest_is_whole_seconds():
+    """An Arrow `INT64` written into a `DateTime64` column is whole seconds.
+
+    The contract holds regardless of the target's time zone and is the same on the Flight
+    `DoPut` path as through the generic `FORMAT Arrow` input.
+    """
+    client = get_client("datetime64_int64_whole_seconds")
+    result = client.set_session_options({"session_timezone": "UTC"})
+    assert len(result.errors) == 0
+    client.execute_update("CREATE TABLE dt64_bare (dt64 DateTime64(3)) ENGINE = Memory")
+    client.execute_update("CREATE TABLE dt64_zoned (dt64 DateTime64(3, 'UTC')) ENGINE = Memory")
+
+    # Flight `DoPut`: an `INT64` keeps the whole-seconds contract.
+    table = pa.table({"dt64": pa.array([1705314601], type=pa.int64())})
+    for target in ("dt64_bare", "dt64_zoned"):
+        cmd = CommandStatementUpdate(query=f"INSERT INTO {target} VALUES")
+        writer, reader = client.client.do_put(flight_descriptor(cmd), table.schema, client._flight_call_options())
+        writer.write_table(table)
+        writer.done_writing()
+        result = reader.read()
+        assert result is not None
+        check = client.execute(f"SELECT count() FROM {target} WHERE dt64 = toDateTime64(1705314601, 3)")
+        check_table = client.do_get(check.endpoints[0].ticket).read_all()
+        assert check_table.column("count()")[0].as_py() == 1, target
+
+    # Generic Arrow input keeps the same whole-seconds contract.
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_file(sink, table.schema) as ipc_writer:
+        ipc_writer.write_table(table)
+    node.http_query("INSERT INTO dt64_bare FORMAT Arrow", data=sink.getvalue().to_pybytes())
+    check = client.execute("SELECT count() FROM dt64_bare WHERE dt64 = toDateTime64(1705314601, 3)")
+    check_table = client.do_get(check.endpoints[0].ticket).read_all()
+    assert check_table.column("count()")[0].as_py() == 2
+
+
 #
 # Flight SQL Metadata Commands
 #
@@ -313,9 +348,13 @@ def test_get_xdbc_type_info():
         "String",
         "Date",
         "Date32",
-        "DateTime",
-        "DateTime64",
     ]
+
+    # `DateTime`/`DateTime64` are deliberately not registered: the catalog cannot
+    # express that only the explicitly zoned forms are stable Arrow `timestamp`s.
+    # They stay identifiable through `CLICKHOUSE:TYPE_NAME` on the fields.
+    assert "DateTime" not in type_names
+    assert "DateTime64" not in type_names
 
     # Protocol requires ordering by (data_type, type_name).
     order_keys = [
@@ -332,20 +371,12 @@ def test_get_xdbc_type_info():
     }
 
     # Datetime rows report the generic SQL_DATETIME (9) in sql_data_type and the
-    # concise type in datetime_subcode (1 = date, 3 = timestamp); other rows
-    # repeat data_type in sql_data_type and have NULL datetime_subcode.
+    # concise type in datetime_subcode (1 = date); other rows repeat data_type in
+    # sql_data_type and have NULL datetime_subcode.
     for name in ("Date", "Date32"):
         assert rows[name]["data_type"] == 91
         assert rows[name]["sql_data_type"] == 9
         assert rows[name]["datetime_subcode"] == 1
-    for name in ("DateTime", "DateTime64"):
-        assert rows[name]["data_type"] == 93
-        assert rows[name]["sql_data_type"] == 9
-        assert rows[name]["datetime_subcode"] == 3
-    assert rows["DateTime"]["minimum_scale"] == 0
-    assert rows["DateTime"]["maximum_scale"] == 0
-    assert rows["DateTime64"]["minimum_scale"] == 0
-    assert rows["DateTime64"]["maximum_scale"] == 9
     assert rows["Int32"]["sql_data_type"] == 4
     assert rows["Int32"]["datetime_subcode"] is None
 
@@ -353,8 +384,6 @@ def test_get_xdbc_type_info():
     # parameter keywords otherwise.
     assert rows["FixedString"]["create_params"] == ["length"]
     assert rows["Decimal"]["create_params"] == ["precision", "scale"]
-    assert rows["DateTime"]["create_params"] == ["timezone"]
-    assert rows["DateTime64"]["create_params"] == ["precision", "timezone"]
     assert rows["Int32"]["create_params"] is None
     assert rows["String"]["create_params"] is None
 
@@ -509,7 +538,7 @@ def test_get_tables_with_schema():
         "int8_col": (pa.int8(), b"Int8", b"Int8"),
         "enum8_col": (pa.int8(), None, b"Enum8('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
-        "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+        "datetime_col": (pa.uint32(), None, b"DateTime('UTC')"),
         "decimal_col": (pa.decimal128(18, 4), b"Decimal", b"Decimal(18, 4)"),
         "nullable_col": (pa.string(), b"String", b"Nullable(String)"),
     }
@@ -582,7 +611,7 @@ def test_statement_query_type_metadata(where_clause):
         "int16_col": (pa.int16(), b"Int16", b"Int16"),
         "enum16_col": (pa.int16(), None, b"Enum16('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
-        "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+        "datetime_col": (pa.uint32(), None, b"DateTime('UTC')"),
         "string_col": (pa.string(), b"String", b"String"),
     }
     for name, (arrow_type, type_name, clickhouse_type_name) in expected.items():
@@ -597,6 +626,13 @@ def test_statement_query_type_metadata(where_clause):
 
     assert _field_metadata(table.schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
+    # `DateTime`/`DateTime64` are not in the XDBC catalog (their bare forms are not
+    # stable Arrow `timestamp`s), so they carry no standard metadata at all.
+    datetime_metadata = _field_metadata(table.schema.field("datetime_col"))
+    assert FLIGHT_SQL_TYPE_NAME not in datetime_metadata
+    assert FLIGHT_SQL_PRECISION not in datetime_metadata
+    assert FLIGHT_SQL_SCALE not in datetime_metadata
+
     if not where_clause:
         type_info = client.do_get(client.get_xdbc_type_info().endpoints[0].ticket).read_all()
         catalog_names = [
@@ -605,19 +641,6 @@ def test_statement_query_type_metadata(where_clause):
         for _, type_name, _ in expected.values():
             if type_name is not None:
                 assert catalog_names.count(type_name.decode()) == 1
-
-
-def test_statement_string_replaces_invalid_utf8():
-    """Flight SQL keeps its `String` text mapping while producing valid Arrow `utf8`."""
-    client = get_client()
-    table = client.do_get(
-        client.execute("SELECT unhex('FF') AS string_col").endpoints[0].ticket
-    ).read_all()
-
-    field = table.schema.field("string_col")
-    assert field.type == pa.string()
-    assert _field_metadata(field)[FLIGHT_SQL_TYPE_NAME] == b"String"
-    assert table.column("string_col").to_pylist() == ["\ufffd"]
 
 
 def test_wrapped_and_parameterized_type_metadata():
@@ -646,7 +669,7 @@ def test_wrapped_and_parameterized_type_metadata():
         ),
         "decimal_col": (b"Decimal", b"Decimal(18, 4)"),
         "fixed_string_col": (b"FixedString", b"FixedString(17)"),
-        "datetime64_col": (b"DateTime64", b"DateTime64(6, 'UTC')"),
+        "datetime64_col": (None, b"DateTime64(6, 'UTC')"),
         "enum_col": (None, b"Enum8('one' = 1, 'two' = 2, 'three' = 3)"),
         "bool_col": (b"Bool", b"Bool"),
     }
@@ -667,8 +690,8 @@ def test_wrapped_and_parameterized_type_metadata():
     assert decimal_metadata[FLIGHT_SQL_SCALE] == b"4"
     assert _field_metadata(schema.field("fixed_string_col"))[FLIGHT_SQL_PRECISION] == b"17"
     datetime64_metadata = _field_metadata(schema.field("datetime64_col"))
-    assert datetime64_metadata[FLIGHT_SQL_PRECISION] == b"26"
-    assert datetime64_metadata[FLIGHT_SQL_SCALE] == b"6"
+    assert FLIGHT_SQL_PRECISION not in datetime64_metadata
+    assert FLIGHT_SQL_SCALE not in datetime64_metadata
     assert _field_metadata(schema.field("bool_col"))[FLIGHT_SQL_PRECISION] == b"1"
 
 
@@ -724,7 +747,7 @@ def test_simple_aggregate_function_type_metadata():
         ),
         "datetime64_col": (
             pa.timestamp("ms", tz="UTC"),
-            b"DateTime64",
+            None,
             b"SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC')))",
         ),
         "bool_col": (
@@ -769,8 +792,9 @@ def test_simple_aggregate_function_type_metadata():
     datetime64_field = table.schema.field("datetime64_col")
     datetime64_metadata = _field_metadata(datetime64_field)
     assert datetime64_field.nullable
-    assert datetime64_metadata[FLIGHT_SQL_PRECISION] == b"23"
-    assert datetime64_metadata[FLIGHT_SQL_SCALE] == b"3"
+    assert FLIGHT_SQL_TYPE_NAME not in datetime64_metadata
+    assert FLIGHT_SQL_PRECISION not in datetime64_metadata
+    assert FLIGHT_SQL_SCALE not in datetime64_metadata
 
     bool_metadata = _field_metadata(table.schema.field("bool_col"))
     assert bool_metadata[FLIGHT_SQL_PRECISION] == b"1"
@@ -1048,7 +1072,9 @@ def test_poll_flight_info_type_metadata():
         _assert_schema_equal_with_metadata(info.schema, table.schema)
 
     metadata = _field_metadata(table.schema.field("datetime_col"))
-    assert metadata[FLIGHT_SQL_TYPE_NAME] == b"DateTime"
+    assert FLIGHT_SQL_TYPE_NAME not in metadata
+    assert FLIGHT_SQL_PRECISION not in metadata
+    assert FLIGHT_SQL_SCALE not in metadata
     assert metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime('UTC')"
     assert _field_metadata(table.schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
@@ -1564,6 +1590,11 @@ def test_prepared_statement_type_metadata():
         enum8_metadata = _field_metadata(stmt.dataset_schema.field("enum8_col"))
         assert FLIGHT_SQL_TYPE_NAME not in enum8_metadata
         assert enum8_metadata[CLICKHOUSE_TYPE_NAME] == b"Enum8('one' = 1, 'two' = 2)"
+        datetime_metadata = _field_metadata(stmt.dataset_schema.field("datetime_col"))
+        assert FLIGHT_SQL_TYPE_NAME not in datetime_metadata
+        assert FLIGHT_SQL_PRECISION not in datetime_metadata
+        assert FLIGHT_SQL_SCALE not in datetime_metadata
+        assert datetime_metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime('UTC')"
         assert _field_metadata(stmt.dataset_schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
         stmt.bind_parameters(

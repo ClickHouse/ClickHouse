@@ -1,7 +1,6 @@
 #include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -35,10 +34,8 @@ constexpr int32_t SQL_REAL = 7;
 constexpr int32_t SQL_DOUBLE = 8;
 constexpr int32_t SQL_VARCHAR = 12;
 constexpr int32_t SQL_TYPE_DATE = 91;
-constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
 
 constexpr int32_t SQL_CODE_DATE = 1;
-constexpr int32_t SQL_CODE_TIMESTAMP = 3;
 
 constexpr int32_t SQL_SEARCHABLE_BASIC = 2;
 constexpr int32_t SQL_SEARCHABLE_FULL = 3;
@@ -47,7 +44,10 @@ constexpr int32_t SQL_SEARCHABLE_FULL = 3;
 /// `Enum8` and `Enum16` are omitted because Arrow exports their numeric codes
 /// without a standard mapping back to the ClickHouse labels. Wide integers are
 /// omitted because Arrow exports their in-memory bytes as fixed-size binary.
-constexpr std::array<XdbcTypeInfoRow, 19> type_info_rows = {{
+/// `DateTime` and `DateTime64` are omitted because the catalog cannot express
+/// that only the explicitly zoned forms have a stable Arrow `timestamp`
+/// representation; they are still identifiable via `CLICKHOUSE:TYPE_NAME`.
+constexpr std::array<XdbcTypeInfoRow, 17> type_info_rows = {{
     {.type_name = "UUID",
      .data_type = SQL_GUID,
      .column_size = 36,
@@ -157,26 +157,6 @@ constexpr std::array<XdbcTypeInfoRow, 19> type_info_rows = {{
      .literal_suffix = "'",
      .searchable = SQL_SEARCHABLE_BASIC,
      .datetime_subcode = SQL_CODE_DATE},
-    {.type_name = "DateTime",
-     .data_type = SQL_TYPE_TIMESTAMP,
-     .column_size = 19,
-     .literal_prefix = "'",
-     .literal_suffix = "'",
-     .create_params = "timezone",
-     .searchable = SQL_SEARCHABLE_BASIC,
-     .datetime_subcode = SQL_CODE_TIMESTAMP,
-     .minimum_scale = 0,
-     .maximum_scale = 0},
-    {.type_name = "DateTime64",
-     .data_type = SQL_TYPE_TIMESTAMP,
-     .column_size = 29,
-     .literal_prefix = "'",
-     .literal_suffix = "'",
-     .create_params = "precision,timezone",
-     .searchable = SQL_SEARCHABLE_BASIC,
-     .datetime_subcode = SQL_CODE_TIMESTAMP,
-     .minimum_scale = 0,
-     .maximum_scale = 9},
 }};
 
 DataTypePtr unwrapType(const DataTypePtr & type)
@@ -266,17 +246,6 @@ addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
         {
             metadata_builder.Precision(static_cast<int32_t>(getDecimalPrecision(*type)));
             metadata_builder.Scale(static_cast<int32_t>(getDecimalScale(*type)));
-        }
-        else if (family_name == "DateTime")
-        {
-            metadata_builder.Precision(19);
-            metadata_builder.Scale(0);
-        }
-        else if (family_name == "DateTime64")
-        {
-            const auto scale = static_cast<int32_t>(assert_cast<const DataTypeDateTime64 &>(*type).getScale());
-            metadata_builder.Precision(19 + (scale == 0 ? 0 : scale + 1));
-            metadata_builder.Scale(scale);
         }
         else if (family_name == "FixedString")
         {
