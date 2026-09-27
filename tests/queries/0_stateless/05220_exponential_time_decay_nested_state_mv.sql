@@ -43,6 +43,30 @@ FROM values(
     (-0.25, '2026-09-27 12:00:00.500003'),
     (0, '2026-09-27 12:00:00.750007'));
 
+-- Scalar execution must handle ColumnConst on either argument without collapsing
+-- the vector side or losing timestamp precision.
+WITH toDateTime64('2026-09-27 12:00:00.125001', 6, 'UTC') AS constant_time
+SELECT
+    abs(
+        sum(exponentialTimeDecayingValueAt(
+            exponentialTimeDecaying(3)(value, constant_time),
+            constant_time))
+        - sum(value)) < 1e-12,
+    abs(
+        sum(exponentialTimeDecayingValueAt(
+            exponentialTimeDecaying(3)(toFloat64(2), occurred_at),
+            occurred_at))
+        - 6) < 1e-12
+FROM values(
+    'value Float64, occurred_at DateTime64(6, \'UTC\')',
+    (0.5, '2026-09-27 12:00:00.000001'),
+    (-0.25, '2026-09-27 12:00:00.500003'),
+    (0, '2026-09-27 12:00:00.750007'));
+
+-- Scalarization must preserve canonical-value validation.
+SELECT exponentialTimeDecaying(3)(toFloat64('nan'), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+SELECT exponentialTimeDecaying(3)(toFloat64(1), toFloat64('inf')); -- { serverError BAD_ARGUMENTS }
+
 -- Explicit and inferred decay-length forms both build an aggregate state over
 -- the scalar constructor and retain their distinct AggregateFunction signatures.
 SELECT
@@ -139,7 +163,9 @@ GROUP BY key;
 
 INSERT INTO exponential_time_decay_nested_state_source VALUES
     (1, 0.75, '2026-09-27 12:00:01.000009'),
-    (2, -2, '2026-09-27 12:00:00.750007');
+    (1, 0.125, '2026-09-27 12:00:01.000009'),
+    (2, -2, '2026-09-27 12:00:00.750007'),
+    (2, 0.5, '2026-09-27 12:00:00.750007');
 
 INSERT INTO exponential_time_decay_nested_state_source VALUES
     (1, 0.5, '2026-09-27 12:00:00.000001'),
