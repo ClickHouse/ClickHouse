@@ -221,19 +221,15 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
 
     # Keep an unavailable declaration on a replicated table, before an available one, so
-    # metadata rewrites have to serialize both in their original order.
+    # metadata rewrites have to serialize both in their original order. Declare both at CREATE:
+    # a later ReplicatedMergeTree ALTER_METADATA replay does not carry the positional setting,
+    # so it cannot introduce this projection before it has become a known unavailable one.
     node.query(
-        "CREATE TABLE dl.t9 (a UInt64, b UInt64) "
-        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/dl/t9', 'r1') ORDER BY a"
-    )
-    node.query(
-        "ALTER TABLE dl.t9 ADD PROJECTION pp_unavailable (b CODEC(ZSTD)) "
-        "AS (SELECT b, a GROUP BY 1, 2)",
+        "CREATE TABLE dl.t9 (a UInt64, b UInt64, "
+        "PROJECTION pp_unavailable (b CODEC(ZSTD)) AS (SELECT b, a GROUP BY 1, 2), "
+        "PROJECTION qq_available (SELECT a ORDER BY a)) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/dl/t9', 'r1') ORDER BY a",
         settings={**POSITIONAL, "allow_projection_column_list_in_replicated_metadata": 1},
-    )
-    node.query(
-        "ALTER TABLE dl.t9 ADD PROJECTION qq_available (SELECT a ORDER BY a)",
-        settings=POSITIONAL,
     )
     node.query(
         "CREATE TABLE dl.t9_peer (a UInt64, b UInt64, "

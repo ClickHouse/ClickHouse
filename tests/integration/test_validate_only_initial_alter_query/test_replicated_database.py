@@ -76,3 +76,12 @@ def test_projection_column_list_replay_without_initiator_settings(started_cluste
             "SELECT count() FROM system.projections "
             f"WHERE database = '{database_name}' AND table = 't'"
         ) == "2\n"
+
+    # The secondary must retain the declarations in its table metadata, not merely rebuild
+    # analyzed projection objects while replaying the two DDL entries.
+    secondary_create = node2.query(
+        "SELECT create_table_query FROM system.tables "
+        f"WHERE database = '{database_name}' AND name = 't'"
+    ).replace("`", "")
+    assert "PROJECTION p (x CODEC(ZSTD)) AS" in secondary_create
+    assert "PROJECTION q (x CODEC(LZ4)) AS" in secondary_create

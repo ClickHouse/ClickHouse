@@ -76,6 +76,9 @@ ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
         ENGINE = MergeTree ORDER BY k FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_create'"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, '\`', ''),
+    'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_old_create'"
 
 ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
     ATTACH TABLE ${attach_table} UUID '${attach_uuid}' ON CLUSTER test_shard_localhost
@@ -83,12 +86,18 @@ ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
         ENGINE = MergeTree ORDER BY k FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_attach'"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, '\`', ''),
+    'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_old_attach'"
 
 ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = MergeTree ORDER BY k FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_copy'"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, '\`', ''),
+    'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
 
 ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
     ALTER TABLE ${alter_table} ON CLUSTER test_shard_localhost
