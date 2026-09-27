@@ -34,9 +34,10 @@ FROM VALUES(
 -- Reconstructing stored type names must not consult an unrelated query cutoff,
 -- even when that cutoff value would be rejected for a new aggregate invocation.
 SET exponential_time_decay_significance_cutoff = -1;
-SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecaying(10), Float64, Float64)'));
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(10))'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedCount(10), Float64)'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedAvg(10), Float64, Float64)'));
-SELECT exponentialTimeDecaying(10)(1., 0.); -- { serverError BAD_ARGUMENTS }
+-- The scalar constructor does not consult an aggregate-only significance cutoff.
+SELECT exponentialTimeDecayingDecayLength(exponentialTimeDecaying(10)(1., 0.));
 SELECT exponentialTimeDecayedCount(10)(0.); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedAvg(10)(1., 0.); -- { serverError BAD_ARGUMENTS }

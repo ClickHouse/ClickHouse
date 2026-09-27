@@ -58,7 +58,6 @@ FROM
 (
     SELECT exponentialTimeDecaying(10)(v, toFloat64(0)) AS value
     FROM VALUES('v Float64', (-1), (2), (0), (-2), (1))
-    GROUP BY v
 )
 ORDER BY value;
 
@@ -78,7 +77,6 @@ FROM
         (3, 0, -1000),
         (4, 100, 0),
         (5, 2, 45))
-    GROUP BY id
 )
 ORDER BY decaying_value, id;
 
@@ -95,7 +93,6 @@ FROM
         (3, 0, -1000),
         (4, 100, 0),
         (5, 2, 45))
-    GROUP BY id
 )
 ORDER BY decaying_value DESC, id;
 

@@ -169,7 +169,7 @@ SET allow_experimental_time_decay_aggregate_functions = 0;
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
-SELECT exponentialTimeDecaying(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecaying(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_FUNCTION }
 
 -- Existing metadata must remain attachable for recovery, but new CREATE and
 -- ALTER operations cannot persist the experimental type without opting in.
@@ -447,19 +447,22 @@ FROM numeric
 CROSS JOIN datetime64
 CROSS JOIN decimal;
 
--- The constructor aggregates multiple rows and is equivalent to the sum form.
-SELECT
-    toTypeName(constructed) = 'ExponentialTimeDecaying(10)',
-    abs(exponentialTimeDecayingValueAt(constructed, toFloat64(10)) - exponentialTimeDecayingValueAt(decaying_sum, toFloat64(10))) < 1e-12,
-    tupleElement(constructed, 'signed_unit_time') = tupleElement(decaying_sum, 'signed_unit_time'),
-    exponentialTimeDecayingDecayLength(constructed) = 10
+-- The constructor is scalar: vector input must preserve one value per source row.
+-- Keep this silent on success so an analyzer-only nested-aggregate workaround cannot
+-- satisfy the constructor contract without also preserving row-wise execution.
+SELECT 'constructor row semantics violated'
 FROM
 (
     SELECT
-        exponentialTimeDecaying(10)(value, time) AS constructed,
-        exponentialTimeDecayedSum(10)(value, time) AS decaying_sum
+        value,
+        time,
+        exponentialTimeDecaying(10)(value, time) AS constructed
     FROM VALUES('value Float64, time Float64', (8, 0), (4, 10), (2, 5))
-);
+)
+WHERE
+    toTypeName(constructed) != 'ExponentialTimeDecaying(10)'
+    OR abs(exponentialTimeDecayingValueAt(constructed, time) - value) >= 1e-12
+    OR exponentialTimeDecayingDecayLength(constructed) != 10;
 
 -- Exercise vector-vector addition rather than only constant expressions.
 -- Emit the complete input and result only when a comparison fails so the
