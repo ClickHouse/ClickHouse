@@ -82,6 +82,15 @@ SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_
 SELECT sum(b) FROM t_autopr_gate_alias FORMAT Null
 SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body_via_alias';
 
+-- Same through an inline `view` table function: the walk refuses every table function outright, while
+-- this one plans the body it was given, with replicas.
+SELECT sum(b) FROM view(SELECT b FROM t_autopr_gate) FORMAT Null
+SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body_via_table_function';
+
+-- A table function that reads nothing else stays ineligible, so the check still saves a plan there.
+SELECT sum(number) FROM numbers(10000) FORMAT Null
+SETTINGS log_comment = 'autopr_gate_ineligible_table_function';
+
 -- Same through a chain of two `Alias` tables.
 SELECT sum(b) FROM t_autopr_gate_alias_2 FORMAT Null
 SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body_via_alias_chain';

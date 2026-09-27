@@ -247,7 +247,7 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
 ///   re-enable what the outer query turned off, and the read below it is then made with replicas
 ///   although the outer context forbids it. The root's own clause is not a problem - it is in the
 ///   context the walk is handed.
-/// - A table whose own storage is not what gets read. A `View` plans its body with its own
+/// - A table, or a table function such as `view(...)`, whose own storage is not what gets read. A `View` plans its body with its own
 ///   interpreter, and `getViewContext` clears `enable_parallel_replicas` for it only when
 ///   `parallel_replicas_allow_view_over_mergetree` let the walk unwrap the view, so with that setting
 ///   at its default `SELECT sum(a) FROM view_over_mergetree` reads the body with replicas while the
@@ -276,10 +276,13 @@ static bool walkCannotAnswerFor(const IQueryTreeNode * root)
             if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->hasSettingsChanges())
                 return true;
 
-        if (const auto * table_node = node->as<TableNode>())
+        const auto * table_node = node->as<TableNode>();
+        const auto * table_function_node = node->as<TableFunctionNode>();
+        if (table_node || table_function_node)
         {
-            const auto & storage = table_node->getStorage();
-            const auto nested_storage = unwrapStorageProxy(storage);
+            /// An unresolved table function is unknown too, for want of a storage to ask.
+            const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            const auto nested_storage = storage ? unwrapStorageProxy(storage) : nullptr;
             if (!nested_storage || nested_storage != storage)
                 return true;
 
