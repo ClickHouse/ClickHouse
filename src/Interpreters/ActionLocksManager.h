@@ -13,8 +13,7 @@
 namespace DB
 {
 
-/// Holds ActionLocks for tables
-/// Does not store pointers to tables
+/// Holds `ActionLock` objects without keeping their storage instances alive.
 class ActionLocksManager : WithContext
 {
 public:
@@ -34,7 +33,17 @@ public:
 private:
     using StorageRawPtr = const IStorage *;
     using Locks = std::unordered_map<size_t, ActionLock>;
-    using StorageLocks = std::unordered_map<StorageRawPtr, Locks>;
+    struct StorageEntry
+    {
+        std::weak_ptr<IStorage> storage;
+        Locks locks;
+
+        bool belongsTo(const StoragePtr & table) const
+        {
+            return !storage.owner_before(table) && !table.owner_before(storage);
+        }
+    };
+    using StorageLocks = std::unordered_map<StorageRawPtr, StorageEntry>;
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;
