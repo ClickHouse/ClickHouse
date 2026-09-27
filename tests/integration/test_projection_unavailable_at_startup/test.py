@@ -5,10 +5,9 @@ only way to reach the skip: an explicit `ATTACH TABLE` runs one level lower and 
 skipping, and `UNDROP TABLE` throws earlier still, while parsing the stored statement. Hence an
 integration test rather than a stateless one.
 
-`enable_positional_arguments_for_projections` defaults to false and is read from the query context when a
-projection is analyzed, so a projection body written with positional arguments can be added while the
-setting is on and then cannot be analyzed at any later startup. That is the state a server upgrade leaves
-behind, and reaching it needs nothing removed from the machine.
+`enable_positional_arguments_for_projections` defaults to false. A projection body written with
+positional arguments can be accepted while the setting is on and then cannot be analyzed at a
+later startup. That is the state a server upgrade leaves behind.
 """
 
 import os
@@ -219,6 +218,17 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         "AS (SELECT [b] AS arr, a GROUP BY 2, 1)",
         settings=POSITIONAL,
     )
+
+    # ReplicatedMergeTree analyzes CREATE definitions in the server context and replays metadata
+    # ALTERs in a background context. Give both the positional setting while introducing t9.
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/users.d/positional.xml"), POSITIONAL_XML
+    )
+    node.restart_clickhouse()
+    assert node.query(
+        "SELECT value FROM system.settings "
+        "WHERE name = 'enable_positional_arguments_for_projections'"
+    ) == "1\n"
 
     # Keep an unavailable declaration on a replicated table, before an available one, so
     # metadata rewrites have to serialize both in their original order. Declare both at CREATE:
@@ -488,6 +498,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t36") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
+    node.exec_in_container(["rm", "-f", POSITIONAL_XML])
     node.restart_clickhouse()
 
     # The skip fired, the server still started, and reads still work. This is also the in-range control

@@ -136,6 +136,9 @@ RESTORE TABLE t_create
     FROM Memory('05259_projection_column_list_restore') FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_create';
+SELECT countIf(position(replaceAll(create_table_query, '`', ''), 'PROJECTION p (x CODEC(ZSTD)) AS') > 0)
+    FROM system.tables
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_create';
 
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
