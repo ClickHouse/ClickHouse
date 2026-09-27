@@ -10478,8 +10478,8 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
 )", PRIVATE_PREVIEW, \
         {"25.8", "", "", "New experimental setting"}) \
     \
-    DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
-Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+    DECLARE_WITH_ALIAS(DoubleAuto, promql_evaluation_time, Field("auto"), R"(
+Sets the evaluation time to be used with promql dialect, as a Unix timestamp in seconds with an optional fraction. 'auto' means the current time.
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
