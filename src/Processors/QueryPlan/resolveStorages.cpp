@@ -28,6 +28,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageMerge.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
 #include <Core/Settings.h>
@@ -212,7 +213,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     /// Such a read carries no filter of its own, and only planning it again applies the policy -
     /// with the read-column widening and the FINAL / PREWHERE ordering that policy implies.
-    bool needs_row_policy = isRowPolicyPushedIntoRead(storage, context);
+    bool needs_row_policy = storage->supportsPrewhere() && !storage->isRemote() && !storage->supportedPrewhereColumns().has_value()
+        && getEffectiveRowPolicyFilter(*storage, context);
     bool replan_through_interpreter = storage->isRemote() || is_storage_merge || needs_row_policy;
     if (replan_through_interpreter)
     {
