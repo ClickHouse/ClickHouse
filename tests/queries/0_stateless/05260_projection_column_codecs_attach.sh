@@ -24,16 +24,4 @@ $CLICKHOUSE_CLIENT --send_logs_level fatal --allow_suspicious_codecs 1 -q "$atta
 $CLICKHOUSE_CLIENT -q "DETACH TABLE t_projection_codec_attach"
 $CLICKHOUSE_CLIENT --allow_suspicious_codecs 0 -q "ATTACH TABLE t_projection_codec_attach"
 $CLICKHOUSE_CLIENT -q "SELECT 'attached', codecs FROM system.projections WHERE database = currentDatabase() AND table = 't_projection_codec_attach'"
-
-# RESTORE loads previously accepted metadata, including codecs on ordinary and projection
-# columns, without depending on the current session's suspicious-codec setting.
-$CLICKHOUSE_CLIENT --allow_suspicious_codecs 1 -q "ALTER TABLE t_projection_codec_attach MODIFY COLUMN x CODEC(Gorilla)"
-# Memory backups are session-scoped, so BACKUP and RESTORE must use the same client session.
-$CLICKHOUSE_CLIENT --allow_suspicious_codecs 0 <<EOF
-BACKUP TABLE t_projection_codec_attach TO Memory('${CLICKHOUSE_DATABASE}_projection_codec_restore') FORMAT Null;
-DROP TABLE t_projection_codec_attach SYNC;
-RESTORE TABLE t_projection_codec_attach FROM Memory('${CLICKHOUSE_DATABASE}_projection_codec_restore') FORMAT Null;
-EOF
-$CLICKHOUSE_CLIENT -q "SELECT 'restored_projection', codecs FROM system.projections WHERE database = currentDatabase() AND table = 't_projection_codec_attach'"
-$CLICKHOUSE_CLIENT -q "SELECT 'restored_column', countIf(position(compression_codec, 'Gorilla') > 0) FROM system.columns WHERE database = currentDatabase() AND table = 't_projection_codec_attach' AND name = 'x'"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_projection_codec_attach"

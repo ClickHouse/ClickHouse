@@ -970,14 +970,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
-        /// A full-definition `ATTACH` is fresh user input, but a `Replicated` database replays it
-        /// under the same loading mode. Only the initiator has the session settings that accepted
-        /// its codecs. RESTORE loads an already accepted backup definition under SECONDARY_CREATE,
-        /// just as getColumnsDescription() trusts backed-up table-column codecs. Replicated metadata
-        /// syntax compatibility is checked separately before publishing a restored definition.
-        /// Keeper recovery and Shared Catalog replay also reuse stored definitions.
-        bool validate_projection_codecs = isFreshTableDefinition(mode, create.attach_short_syntax)
-            && !getContext()->isRecoveryFromStoredMetadata();
+        /// A full-definition `ATTACH` and a RESTORE supply definitions to validate against the
+        /// initiating session's codec settings. RESTORE uses SECONDARY_CREATE for other checks,
+        /// so include it explicitly. Replicated DDL replay and metadata recovery must not repeat
+        /// the session-dependent validation after the definition has been accepted.
+        bool validate_projection_codecs = (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
+            && !getContext()->isRecoveryFromStoredMetadata()
+            && !getContext()->getClientInfo().is_replicated_database_internal;
         if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
             validate_projection_codecs &= metadata_txn->isInitialQuery();
 #if CLICKHOUSE_CLOUD
@@ -992,7 +991,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
                 if (validate_projection_codecs)
                     ProjectionDescription::validateDeclaredColumnCodecs(
-                        projection, getContext(), mode, create.attach_short_syntax);
+                        projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
                 properties.projections.add(std::move(projection));
             }
 

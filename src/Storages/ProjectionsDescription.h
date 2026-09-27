@@ -115,7 +115,8 @@ struct ProjectionDescription
         const ProjectionDescription & projection,
         const ContextPtr & query_context,
         LoadingStrictnessLevel mode,
-        bool attach_short_syntax = true);
+        bool attach_short_syntax = true,
+        bool is_restore_from_backup = false);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,

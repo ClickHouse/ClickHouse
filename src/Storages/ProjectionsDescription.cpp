@@ -390,11 +390,12 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
     const ProjectionDescription & projection,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool attach_short_syntax)
+    bool attach_short_syntax,
+    bool is_restore_from_backup)
 {
-    /// Stored metadata and backup definitions were checked when first supplied by a user. Rechecking
-    /// them during replay or RESTORE would make acceptance depend on the current session's settings.
-    if (!isFreshTableDefinition(mode, attach_short_syntax))
+    /// RESTORE supplies a definition from a backup but uses SECONDARY_CREATE loading mode. Validate
+    /// it against the restoring session while leaving stored ATTACH and secondary replay untouched.
+    if (!isFreshTableDefinition(mode, attach_short_syntax) && !is_restore_from_backup)
         return;
 
     const auto & declaration = projection.definition_ast->as<const ASTProjectionDeclaration &>();

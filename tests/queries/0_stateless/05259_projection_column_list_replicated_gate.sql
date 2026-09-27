@@ -141,5 +141,24 @@ SELECT countIf(position(replaceAll(create_table_query, '`', ''), 'PROJECTION p (
     FROM system.tables
     WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_create';
 
+-- RESTORE checks a newly supplied codec on the initiating replica, then replays the accepted
+-- definition without the initiating session's allow_suspicious_codecs setting.
+SET allow_suspicious_codecs = 1;
+CREATE TABLE t_restore_codec
+    (x UInt64, PROJECTION p (x CODEC(Gorilla)) AS (SELECT x ORDER BY x))
+    ENGINE = MergeTree ORDER BY x;
+BACKUP TABLE t_restore_codec TO Memory('05259_projection_codec_restore') FORMAT Null;
+DROP TABLE t_restore_codec SYNC;
+SET allow_suspicious_codecs = 0;
+RESTORE TABLE t_restore_codec FROM Memory('05259_projection_codec_restore') FORMAT Null; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.tables
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_restore_codec';
+SET allow_suspicious_codecs = 1;
+RESTORE TABLE t_restore_codec FROM Memory('05259_projection_codec_restore') FORMAT Null;
+SELECT count() FROM system.projections
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_restore_codec';
+SELECT countIf(position(create_table_query, 'CODEC(Gorilla') > 0) FROM system.tables
+    WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_restore_codec';
+
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;

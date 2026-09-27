@@ -2031,10 +2031,12 @@ Omitting the type, as above, avoids having to spell out `AggregateFunction(max, 
 
 #### Validation {#projection-column-codecs-validation}
 
-Declared codecs are validated exactly as a table column's own codec is. Suspicious codecs require
+Declared codecs use the same validation rules as a table column's own codec. Suspicious codecs require
 `allow_suspicious_codecs`, and gated codecs require their dedicated setting, such as `enable_sz3_codec`.
-This is checked only when the projection is declared: once accepted, a lossless codec is not re-checked
-when the table is loaded, so a later setting change cannot make an existing table fail to attach.
+This is checked when the projection is declared or restored from a backup. Once accepted, a lossless
+codec is not re-checked when the table is loaded, so a later setting change cannot make an existing
+table fail to attach. A RESTORE of a suspicious or gated projection codec needs the corresponding
+setting in the restoring session, even when the backup was created with that setting enabled.
 
 Lossy codecs are rejected for projection columns. Projection selection is transparent, so storing altered
 values in a projection would make the same query return different results depending on whether the
