@@ -574,10 +574,14 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     return find_storage(inner_query_tree.get());
 }
 
-bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
 {
     if (metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE)
         return false;
+
+    /// A row policy of the invoker on the view itself hides rows too, even though it is applied above the read.
+    if (getEffectiveRowPolicyFilter(*this, context))
+        return true;
 
     const auto & inner_query = metadata.getSelectQuery().inner_query;
     auto storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
