@@ -79,6 +79,9 @@ namespace
 {
 constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
 
+/// The maximum number of steps of a range query, the same as MAX_GRID_SIZE of the timeSeries* aggregate functions.
+constexpr Int64 MAX_RANGE_QUERY_STEPS = 0xFFFFFF;
+
 Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 time_scale)
 {
     const auto high_precision_value = parseTimeSeriesDuration(value, LOOKBACK_DELTA_SCALE);
@@ -307,11 +310,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
 
-        /// A query shorter than the split interval is not split.
+        /// A query shorter than the split interval isn't split, nor is a query with too many steps, which fails as without splitting.
         const auto split_interval_seconds = getContext()->getSettingsRef()[Setting::promql_range_query_split_interval].totalSeconds();
         const Int128 split_interval = static_cast<Int128>(split_interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(time_scale);
         const Int128 length = static_cast<Int128>(evaluation_settings.end_time->value) - evaluation_settings.start_time->value;
-        if (split_interval > 0 && split_interval <= length && evaluation_settings.step->value > 0
+        const Int64 step = evaluation_settings.step->value;
+        if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS
             && getNextChunkStart(evaluation_settings, split_interval, evaluation_settings.start_time->value)
             && !usesWholeEvaluationRange(*query_tree->getRoot()))
         {

@@ -123,13 +123,21 @@ def test_start_modifier_is_not_split():
     assert_executed_queries(query_id, 1)
 
 
-def test_huge_step():
-    # The chunk boundaries must not overflow: the split query fails like the unsplit one.
-    step = "106751991167d"
-    expected = send_query_range("node_load1", H, H + 6 * 3600, step)
+@pytest.mark.parametrize(
+    "start, end, step",
+    [
+        # The chunk boundaries must not overflow.
+        (H, H + 6 * 3600, "106751991167d"),
+        # Too many steps for one query.
+        (0, 9000000000000, 60),
+    ],
+)
+def test_split_query_fails_like_unsplit(start, end, step):
+    expected = send_query_range("node_load1", start, end, step)
     params = {"promql_range_query_split_interval": INTERVAL}
-    response = send_query_range("node_load1", H, H + 6 * 3600, step, params)
+    response = send_query_range("node_load1", start, end, step, params)
     assert response.status_code == expected.status_code == 400
+    assert response.text == expected.text
 
 
 def test_old_chunks_come_from_query_cache():
