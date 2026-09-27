@@ -1233,7 +1233,7 @@ private:
         auto decoded = decodeJSONDataType(buffer, serializations_cache);
         auto & result = recent_value_types[next_recent_value_type];
         next_recent_value_type = (next_recent_value_type + 1) % recent_value_types.size();
-        result.encoded_type.assign(data.data(), buffer.position() - data.data());
+        result.encoded_type = data.substr(0, buffer.position() - data.data());
         result.type_info = &getTypeInfo(decoded.type, decoded.serialization, decoded.name);
         result.serialization = std::move(decoded.serialization);
         return result;
