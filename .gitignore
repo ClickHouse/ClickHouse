@@ -32,6 +32,7 @@ ci/local.env
 *.bashlog
 *.stderr
 *.stderr-fatal*
+*.stderr-wrapper
 *.stdout
 
 # llvm-xray logs
