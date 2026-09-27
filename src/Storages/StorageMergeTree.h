@@ -486,26 +486,17 @@ private:
     {
         struct PartInfo
         {
-            /// 2^power milliseconds must still fit in UInt64 once converted to microseconds and added to a timestamp.
-            static constexpr size_t max_postpone_power_limit = 53;
-
-            static size_t postponePowerFor(size_t max_postpone_time_ms_)
-            {
-                if (max_postpone_time_ms_ == 0)
-                    return 0ull;
-                return std::min<size_t>(static_cast<size_t>(std::log2(max_postpone_time_ms_)), max_postpone_power_limit);
-            }
+            /// 2^retry_count milliseconds must still fit in UInt64 once converted to microseconds and added to a timestamp.
+            static constexpr size_t max_retry_count = 53;
 
             size_t retry_count;
             size_t latest_fail_time_us;
             size_t max_postpone_time_ms;
-            size_t max_postpone_power;
 
             explicit PartInfo(size_t max_postpone_time_ms_)
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
-                            , max_postpone_power(postponePowerFor(max_postpone_time_ms_))
             {}
 
 
@@ -513,23 +504,16 @@ private:
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-                size_t current_backoff_interval_us = (1ull << retry_count) * 1000ull;
-                return latest_fail_time_us + current_backoff_interval_us;
+                size_t current_backoff_interval_ms = std::min<size_t>(1ull << retry_count, max_postpone_time_ms);
+                return latest_fail_time_us + current_backoff_interval_ms * 1000ull;
             }
 
             void addPartFailure()
             {
                 if (max_postpone_time_ms == 0)
                     return;
-                retry_count = std::min(max_postpone_power, retry_count + 1);
+                retry_count = std::min(max_retry_count, retry_count + 1);
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-            }
-
-            void setMaxPostponeTime(size_t max_postpone_time_ms_)
-            {
-                max_postpone_time_ms = max_postpone_time_ms_;
-                max_postpone_power = postponePowerFor(max_postpone_time_ms_);
-                retry_count = std::min(max_postpone_power, retry_count);
             }
 
             bool partCanBeProcessed() const
@@ -573,7 +557,7 @@ private:
 
             auto [it, inserted] = failed_parts.try_emplace(part_name, max_postpone_time_ms_);
             if (!inserted)
-                it->second.setMaxPostponeTime(max_postpone_time_ms_);
+                it->second.max_postpone_time_ms = max_postpone_time_ms_;
             it->second.addPartFailure();
         }
 

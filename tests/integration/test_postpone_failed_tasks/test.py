@@ -33,13 +33,13 @@ NON_REPLICATED_POSTPONE_MERGE_LOG = (
 FAILED_MERGE_LOG = "Exception is in merge_task."
 FAILING_MUTATION_QUERY = "ALTER TABLE test_table DELETE WHERE x IN (SELECT throwIf(1)) SETTINGS allow_nondeterministic_mutations = 1"
 
-# Bounds for the merge retry rate over one window, measured on an idle 96-core machine: 1 with the
-# backoff once the ladder is at its 32s ceiling, 92 and 102 without it. The paced bound keeps 6x
-# margin above the former and the unpaced bound about 8x below the latter. The unpaced bound is
-# deliberately that loose because this module is re-run under ASan and UBSan, where the unpaced
-# cycle is dominated by exception construction and stack-trace symbolization.
+# Bounds for the merge retry rate over one window. With the backoff, the delay is at its 60s cap
+# by then, so no two failures fit into one window however slow the machine is. Without it, 92
+# and 102 were measured on an idle 96-core machine, and the unpaced bound is about 8x below that
+# because this module is re-run under ASan and UBSan, where the unpaced cycle is dominated by
+# exception construction and stack-trace symbolization.
 RATE_WINDOW_SECONDS = 60
-PACED_MAX_FAILURES = 6
+PACED_MAX_FAILURES = 1
 UNPACED_MIN_FAILURES = 12
 
 all_nodes = [node_with_backoff, node_no_backoff]
@@ -163,8 +163,8 @@ def prepare_table_with_failing_merge(node, extra_settings=None):
 def test_merge_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log):
     prepare_table_with_failing_merge(node)
 
-    # The backoff starts at 2ms and doubles per failure, and retry_count is clamped at
-    # floor(log2(60000)) = 15, so from the 16th failure on the delay is at its ceiling. Wait
+    # The backoff starts at 2ms and doubles per failure until it reaches the 60s cap, so from
+    # the 16th failure on, as 2^16 ms is more than 60s, the delay is at its ceiling. Wait
     # for that many on both nodes, so that both the absence check and the rate window below
     # are made after the same amount of merge activity and with the ladder fully climbed. The
     # ladder itself takes about 66s, and the loop exits as soon as the count is reached, so the
@@ -231,6 +231,66 @@ def test_merge_backoff_cap_is_read_on_every_failure(started_cluster):
     assert node.wait_for_log_line(NON_REPLICATED_POSTPONE_MERGE_LOG, timeout=120)
 
     node.query("DROP TABLE test_table SYNC")
+
+
+def failure_times_ms(node, table, event_type):
+    node.query("SYSTEM FLUSH LOGS")
+    return [
+        int(t)
+        for t in node.query(
+            "SELECT toUnixTimestamp64Milli(event_time_microseconds) FROM system.part_log "
+            "WHERE table_uuid = (SELECT uuid FROM system.tables "
+            f"WHERE database = currentDatabase() AND name = '{table}') "
+            f"AND event_type = '{event_type}' AND error != 0 ORDER BY event_time_microseconds"
+        ).split()
+    ]
+
+
+def test_backoff_reaches_the_configured_cap(started_cluster):
+    node = node_with_backoff
+    # 8000 is not a power of two, so a delay that stops at the largest power of two below the
+    # cap, 4096 ms, is told apart from one that reaches it. Merges and mutations share this.
+    prepare_table_with_failing_merge(
+        node, extra_settings=["max_postpone_time_for_failed_merges_ms = 8000"]
+    )
+    try:
+        node.query("DROP TABLE IF EXISTS test_table_mutation SYNC")
+        node.query(
+            "CREATE TABLE test_table_mutation(x UInt32) ENGINE=MergeTree() ORDER BY x "
+            "SETTINGS max_postpone_time_for_failed_mutations_ms = 8000"
+        )
+        node.query("INSERT INTO test_table_mutation SELECT * FROM numbers(10)")
+        node.query(
+            "ALTER TABLE test_table_mutation DELETE WHERE x IN (SELECT throwIf(1)) "
+            "SETTINGS allow_nondeterministic_mutations = 1"
+        )
+
+        # The delay after the n-th failure is 2^n ms until it reaches the cap, which it does
+        # from the 13th failure on. A failure is logged before its delay starts, so a delay at
+        # the cap is never shorter than 8000 ms, and the lower bound sits just below it, far
+        # above a 4096 ms delay plus scheduling. From there on the delay stops doubling.
+        for table, event_type in (
+            ("test_table", "MergeParts"),
+            ("test_table_mutation", "MutatePart"),
+        ):
+            start_time = time.monotonic()
+            while (
+                len(failure_times_ms(node, table, event_type)) < 16
+                and time.monotonic() < start_time + 420
+            ):
+                time.sleep(1)
+            times = failure_times_ms(node, table, event_type)
+            assert len(times) >= 16
+            delays = [times[i + 1] - times[i] for i in range(12, 15)]
+            assert (
+                min(delays) > 7500
+            ), f"{event_type} delay stays below the cap: {delays} ms"
+            assert max(delays) < 1.5 * min(
+                delays
+            ), f"{event_type} delay grows past the cap: {delays} ms"
+    finally:
+        node.query("DROP TABLE IF EXISTS test_table_mutation SYNC")
+        node.query("DROP TABLE IF EXISTS test_table SYNC")
 
 
 def count_postponed_tasks_in_replicated_queue(node):
