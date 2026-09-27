@@ -489,8 +489,15 @@ public:
       * If final = false, then ColumnAggregateFunction is created as the aggregation columns with the state of the calculations,
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
+      * A non-zero `max_rows_per_block` caps the size of the emitted single-level chunks below `max_block_size`.
       */
-    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
+    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
+
+    /// A single-level result smaller than `max_block_size` is converted to one chunk, and a `Resize`
+    /// hands out whole chunks, so everything downstream of it runs in one thread. Returns a chunk size
+    /// that splits `rows` into about one chunk per output stream, never below 512 rows per chunk, or 0
+    /// to leave the result as is.
+    static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
@@ -1089,6 +1096,7 @@ private:
         bool final,
         size_t rows,
         bool return_single_block,
+        size_t max_rows_per_block = 0,
         bool allow_having_prefilter = false,
         UntruncatedAggregationKeys * untruncated_keys = nullptr) const;
 
@@ -1103,6 +1111,7 @@ private:
         bool final,
         size_t rows,
         bool return_single_block,
+        size_t max_rows_per_block = 0,
         bool allow_having_prefilter = false,
         UntruncatedAggregationKeys * untruncated_keys = nullptr) const;
 
@@ -1124,7 +1133,7 @@ private:
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks convertToBlockImplKeysOnly(
-        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const;
+        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block, size_t max_rows_per_block) const;
 
     template <typename Method, typename Table>
     Chunks convertToBlockImplFinal(
@@ -1134,12 +1143,13 @@ private:
         Arenas & aggregates_pools,
         bool use_compiled_functions,
         bool return_single_block,
+        size_t max_rows_per_block,
         bool allow_having_prefilter,
         UntruncatedAggregationKeys * untruncated_keys) const;
 
     template <typename Method, typename Table>
     Chunks
-    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
+    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
 
     /// `untruncated_keys`, when non-null and the bucket goes through a conversion that materializes
     /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all
@@ -1191,9 +1201,10 @@ private:
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
+    /// A non-zero `max_rows_per_block` caps the size of the emitted chunks below `max_block_size`.
     template <bool return_single_block>
     std::conditional_t<return_single_block, AggregatedChunk, AggregatedChunks>
-    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
 
     template <typename Method>
     AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
