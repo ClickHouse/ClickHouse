@@ -37,6 +37,11 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
+    /// A view has no `ENGINE` clause, so nothing can state a setting of it: a `SETTINGS` clause after its `SELECT`
+    /// belongs to that query. Answered without reading the stored definition, which the default does for every table
+    /// - a read and a parse of a metadata file per view, for no row.
+    SettingDescriptions getTableSettings(ContextPtr) const override { return {}; }
+
     StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
 
     /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
