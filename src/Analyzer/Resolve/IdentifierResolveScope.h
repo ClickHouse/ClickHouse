@@ -205,11 +205,7 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
-    /** When `group_by_use_nulls` is enabled, the columns that `if`/`multiIf` GROUP BY keys may collapse to once their
-      * conditions are constant. When the aggregation groups by such a column, a correlated reference to it becomes Nullable
-      * like a key; otherwise the column is not in the aggregation output and the reference is rejected either way.
-      * For other expressions it is not a key.
-      */
+    /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
     QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.

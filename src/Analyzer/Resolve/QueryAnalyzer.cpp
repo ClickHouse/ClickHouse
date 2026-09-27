@@ -4593,8 +4593,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
     }
 }
 
-/// The columns `IfConstantConditionPass` may collapse `node` to: the branches of nested `if`/`multiIf`. The conditions are
-/// not checked, since a pass can make one constant after analysis.
+/// The columns `IfConstantConditionPass` may collapse `node` to: the branches of nested `if`/`multiIf`, whatever their conditions.
 void registerConstantConditionBranchColumns(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     const auto * function_node = node->as<FunctionNode>();
