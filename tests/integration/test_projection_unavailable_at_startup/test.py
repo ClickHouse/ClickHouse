@@ -212,9 +212,10 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         settings=POSITIONAL,
     )
 
+    # Projection output names ignore SELECT aliases and normalize `[b]` to `array(b)`.
     node.query("CREATE TABLE dl.t8 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
     node.query(
-        "ALTER TABLE dl.t8 ADD PROJECTION pp (arr Array(UInt64) CODEC(ZSTD)) "
+        "ALTER TABLE dl.t8 ADD PROJECTION pp (`array(b)` Array(UInt64) CODEC(ZSTD)) "
         "AS (SELECT [b] AS arr, a GROUP BY 2, 1)",
         settings=POSITIONAL,
     )

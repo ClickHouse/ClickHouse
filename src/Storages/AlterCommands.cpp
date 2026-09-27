@@ -760,6 +760,7 @@ bool explicitProjectionColumnTypeDependsOn(
             const bool nested_dependency = projectionNestedMatcherReferencesColumn(
                 *expression, source_column, columns, aliases);
             const bool expression_matches = expression->getAliasOrColumnName() == declared_column.name
+                || expression->getColumnName() == declared_column.name
                 || (nested_dependency
                     && expandedProjectionExpressionName(expression, columns) == declared_column.name);
             if (expression_matches)
