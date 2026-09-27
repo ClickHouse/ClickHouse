@@ -284,8 +284,7 @@ void StorageMergeTree::startup()
         {
             if (refresh_parts_task)
                 refresh_parts_task->deactivate();
-            if (refresh_stats_task)
-                refresh_stats_task->deactivate();
+            stopStatisticsCache();
             stopOutdatedAndUnexpectedDataPartsLoadingTask();
             background_operations_assignee.finish();
             background_moves_assignee.finish();
@@ -343,11 +342,12 @@ void StorageMergeTree::shutdown(bool)
     /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
     /// `shutdown(false)` would early-return and leave `refreshStatistics` running concurrently with
     /// `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation is idempotent.
+    /// `stopStatisticsCache` also serializes with a concurrent `startStatisticsCache` (which reassigns the
+    /// task holder) and prevents it from arming the task after this point.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
+    stopStatisticsCache();
 
     if (already_called)
     {
