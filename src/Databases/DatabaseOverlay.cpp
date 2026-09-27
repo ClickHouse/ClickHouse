@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_)
