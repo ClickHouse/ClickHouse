@@ -150,7 +150,7 @@ return proc, total_time
 
 # process_result_impl (line ~2712)
 if proc.returncode is None:              # only true on TimeoutExpired
-    kill_process_group(os.getpgid(proc.pid), ...)
+    kill_process_group(proc.pid, ...)
 ```
 
 Consequence: any processes that are still in the process group after bash exits
