@@ -15,12 +15,18 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <base/defines.h>
+
 #include <fmt/ranges.h>
 
 #include <filesystem>
 #include <optional>
 
 #include <unistd.h>
+
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+#include <sanitizer/allocator_interface.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -348,6 +354,7 @@ MemoryWorker::MemoryWorker(
     , purge_total_memory_threshold_ratio(config.purge_total_memory_threshold_ratio)
     , purge_dirty_pages_threshold_ratio(config.purge_dirty_pages_threshold_ratio)
     , decay_adjustment_period_ms(config.decay_adjustment_period_ms)
+    , rss_speculative_reserve_ratio(config.rss_speculative_reserve_ratio)
     , dynamic_hard_limit_ratio(config.dynamic_hard_limit_ratio)
     , page_cache(page_cache_)
 {
@@ -539,20 +546,26 @@ MemoryWorker::~MemoryWorker()
 #endif
 }
 
-uint64_t MemoryWorker::getMemoryUsage(bool log_error)
+MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 {
+    MemoryUsage usage;
+
     switch (source)
     {
         case MemoryUsageSource::Cgroups:
         {
             if (cgroups_reader != nullptr)
-                return cgroups_reader->readMemoryUsage();
+            {
+                usage.resident = cgroups_reader->readMemoryUsage();
+                break;
+            }
             [[fallthrough]];
         }
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
-            return resident_mib.getValue();
+            usage.resident = resident_mib.getValue();
+            break;
 #else
             [[fallthrough]];
 #endif
@@ -560,9 +573,20 @@ uint64_t MemoryWorker::getMemoryUsage(bool log_error)
         {
             if (log_error)
                 LOG_ERROR(log, "Trying to fetch memory usage while no memory source can be used");
-            return 0;
+            break;
         }
     }
+
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+    /// `allocated` is used only to correct `total_memory_tracker`. `MemoryTracker` does not count
+    /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
+    /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
+    usage.allocated = __sanitizer_get_current_allocated_bytes();
+#else
+    usage.allocated = usage.resident;
+#endif
+
+    return usage;
 }
 
 namespace
@@ -820,7 +844,11 @@ void MemoryWorker::updateResidentMemoryThread()
     OSThreadNiceValue::set(-20);
 
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
-    [[maybe_unused]] bool first_run = true;
+    bool first_run = true;
+    /// Resident memory observed on the previous iteration, to compute the last-interval
+    /// growth for the speculative reservation below. Initialized on the first iteration
+    /// (speculation is skipped there).
+    Int64 prev_resident = 0;
     std::unique_lock rss_update_lock(rss_update_mutex);
 
 #if USE_JEMALLOC
@@ -839,11 +867,77 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Stopwatch total_watch;
 
-            Int64 resident = getMemoryUsage(first_run);
-            MemoryTracker::updateRSS(resident);
+            const MemoryUsage memory_usage = getMemoryUsage(first_run);
+
+            /// Speculatively reserve growth headroom on top of the observed RSS.
+            /// `resident - prev_resident` is how much RSS actually grew during the last tick;
+            /// on the assumption that the next interval may grow by the same amount, with the
+            /// default `ratio = 1.0` we reserve one full growth delta of headroom, so
+            /// `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the global
+            /// `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer closes
+            /// the gap.
+            /// The reservation is additionally capped by `resident - tracked`, the part of RSS
+            /// the global tracker does not see: growth that has already flowed into the tracker
+            /// is handled by the ordinary `will_be > current_hard_limit` check, so reserving for
+            /// it would only make the limit fire needlessly early on fully-tracked workloads.
+            /// Note that the *cumulative* gap `resident - tracked` must not be used as the
+            /// reservation itself: on a long-running server, jemalloc page retention and
+            /// fragmentation make that gap structurally large (gigabytes) even when nothing is
+            /// growing. In particular, right after a large query frees its memory, `tracked`
+            /// collapses while `resident` stays high, so reserving the whole gap pins the
+            /// published `rss` at the hard limit and unrelated small allocations get false
+            /// `MEMORY_LIMIT_EXCEEDED` until a later tick republishes a sane value (this was
+            /// breaking queries in the performance-comparison CI).
+            /// `ratio = 0` disables the speculation (`rss = resident`); sanitizer builds
+            /// default to `0` (computed at compile time in
+            /// `getDefaultMemoryWorkerRssSpeculativeReserveRatio`) because shadow-memory
+            /// overhead dominates the `resident - tracked` gap there.
+            /// Skip speculation on the very first run: there is no previous interval to
+            /// extrapolate from.
+            Int64 speculative_rss = memory_usage.resident;
+            /// Speculation only influences the global hard-limit check in
+            /// `MemoryTracker::allocImpl` (the `will_be_rss > current_hard_limit` branch),
+            /// so it is only meaningful when a global hard limit is configured. When the
+            /// hard limit is `0` (unlimited) we skip speculation entirely: biasing `rss`
+            /// upward would change no limit decision and could only publish a misleadingly
+            /// large value.
+            const Int64 current_hard_limit = total_memory_tracker.getHardLimit();
+            if (!first_run && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
+            {
+                /// `total_memory_tracker.get()` can legitimately go negative (the lazy
+                /// correction below handles this via `MemoryTracker::updateAllocated`).
+                /// That correction runs *after* this branch, so if we used the raw
+                /// value here a transiently-negative tracker would make `delta` larger
+                /// than `resident` and push the speculative `rss` arbitrarily far above
+                /// real resident, triggering false `MEMORY_LIMIT_EXCEEDED` decisions in
+                /// `MemoryTracker::allocImpl`. Clamp `tracked` to `0` first.
+                Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
+                Int64 delta = std::min(memory_usage.resident - prev_resident, memory_usage.resident - tracked);
+                /// Speculate only while real `resident` is still below the hard limit.
+                /// Once `resident >= current_hard_limit`, any positive allocation already
+                /// trips the `will_be_rss > current_hard_limit` branch in
+                /// `MemoryTracker::allocImpl`, so there is nothing left to reserve.
+                if (delta > 0 && memory_usage.resident < current_hard_limit)
+                {
+                    /// The reservation can be at most `current_hard_limit - resident`:
+                    /// reserving beyond the hard limit gains no early-throw power (any
+                    /// positive allocation already trips the limit once the published RSS
+                    /// reaches it). Capping the reservation *before* adding it to `resident`
+                    /// also guarantees the signed `Int64` addition cannot overflow, even
+                    /// with a very large configured ratio.
+                    const Int64 headroom = current_hard_limit - memory_usage.resident;
+                    double reserve_double = static_cast<double>(delta) * rss_speculative_reserve_ratio;
+                    Int64 reserve = (reserve_double >= static_cast<double>(headroom))
+                        ? headroom
+                        : static_cast<Int64>(reserve_double);
+                    speculative_rss += reserve;
+                }
+            }
+            prev_resident = memory_usage.resident;
+            MemoryTracker::updateRSS(speculative_rss);
 
             if (page_cache)
-                page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+                page_cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
             const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
@@ -851,7 +945,7 @@ void MemoryWorker::updateResidentMemoryThread()
             const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
 
             const bool needs_purge
-                = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(resident) > purge_total_memory_threshold)
+                = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(memory_usage.resident) > purge_total_memory_threshold)
                 || (purge_dirty_pages_threshold_ratio > 0
                     && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
 
@@ -906,24 +1000,17 @@ void MemoryWorker::updateResidentMemoryThread()
                     }
                 }
             }
+#endif
 
-            /// update MemoryTracker with `allocated` information from jemalloc when:
+            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
+            /// which may be much larger than what was actually allocated) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
-                MemoryTracker::updateAllocated(resident, /*log_change=*/true);
+                MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
             else if (correct_tracker)
-                MemoryTracker::updateAllocated(resident, /*log_change=*/false);
-#else
-            /// we don't update in the first run if we don't have jemalloc
-            /// because we can only use resident memory information
-            /// resident memory can be much larger than the actual allocated memory
-            /// so we rather ignore the potential difference caused by allocated memory
-            /// before MemoryTracker initialization
-            if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
-                MemoryTracker::updateAllocated(resident, /*log_change=*/false);
-#endif
+                MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
 
             /// Capture the settings generation before reading ratio/ceiling. We re-read
             /// it just before `setHardLimit` and skip the write if a reload happened
@@ -955,7 +1042,7 @@ void MemoryWorker::updateResidentMemoryThread()
                         /// are excluded. Under load `tracked` can be orders of magnitude smaller
                         /// than the actual RSS, which makes `(tracked + available) * ratio` compute
                         /// a hard limit close to current RSS and reject every subsequent allocation.
-                        Int64 used = std::max<Int64>(0, resident);
+                        Int64 used = std::max<Int64>(0, memory_usage.resident);
                         /// `used + available` is the upper bound of memory we could potentially own:
                         /// what we already use plus what is still free in our cgroup (or on the host).
                         /// Scaling by `ratio < 1` leaves headroom for other processes on the host.
@@ -984,7 +1071,10 @@ void MemoryWorker::updateResidentMemoryThread()
                         if (ceiling > 0)
                             new_hard_limit = std::min(new_hard_limit, ceiling);
 
-                        Int64 current_hard_limit = total_memory_tracker.getHardLimit();
+                        /// Renamed from `current_hard_limit` to avoid shadowing the
+                        /// `current_hard_limit` the speculative-reserve block reads earlier in
+                        /// `updateResidentMemoryThread` (`-Wshadow`/`-Werror`); no behavior change.
+                        Int64 installed_hard_limit = total_memory_tracker.getHardLimit();
 
                         /// Only adjust when the change is large enough to matter. `resident` and
                         /// `available` jitter by a few MiB on every tick (every ~50ms), so testing
@@ -997,10 +1087,10 @@ void MemoryWorker::updateResidentMemoryThread()
                         /// adjustment still reacts promptly when it actually needs to.
                         static constexpr double min_change_ratio = 0.01; /// 1%
                         const Int64 change_threshold = static_cast<Int64>(
-                            static_cast<double>(std::max<Int64>(0, current_hard_limit)) * min_change_ratio);
-                        const Int64 limit_change = new_hard_limit > current_hard_limit
-                            ? new_hard_limit - current_hard_limit
-                            : current_hard_limit - new_hard_limit;
+                            static_cast<double>(std::max<Int64>(0, installed_hard_limit)) * min_change_ratio);
+                        const Int64 limit_change = new_hard_limit > installed_hard_limit
+                            ? new_hard_limit - installed_hard_limit
+                            : installed_hard_limit - new_hard_limit;
                         if (limit_change > change_threshold)
                         {
                             /// Defeat the reload race: take the apply mutex and re-check the
@@ -1014,7 +1104,7 @@ void MemoryWorker::updateResidentMemoryThread()
                                 LOG_TRACE(
                                     log,
                                     "Adjusting total memory hard limit from {} to {} (resident: {}, available: {}, ceiling: {}, ratio: {})",
-                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    formatReadableSizeWithBinarySuffix(installed_hard_limit),
                                     formatReadableSizeWithBinarySuffix(new_hard_limit),
                                     formatReadableSizeWithBinarySuffix(used),
                                     formatReadableSizeWithBinarySuffix(available),

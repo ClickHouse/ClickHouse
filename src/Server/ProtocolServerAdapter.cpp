@@ -17,6 +17,7 @@ public:
     void start() override { tcp_server->start(); }
     void stop() override { tcp_server->stop(); }
     bool isStopping() const override { return !tcp_server->isOpen(); }
+    bool bindsOnStart() const override { return false; }
     UInt16 portNumber() const override { return tcp_server->portNumber(); }
     size_t currentConnections() const override { return tcp_server->currentConnections(); }
     size_t currentThreads() const override { return tcp_server->currentThreads(); }
@@ -54,6 +55,7 @@ public:
         grpc_server->stop();
     }
     bool isStopping() const override { return is_stopping; }
+    bool bindsOnStart() const override { return true; }
     UInt16 portNumber() const override { return grpc_server->portNumber(); }
     size_t currentConnections() const override { return grpc_server->currentConnections(); }
     size_t currentThreads() const override { return grpc_server->currentThreads(); }

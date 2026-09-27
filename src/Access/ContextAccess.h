@@ -61,7 +61,7 @@ public:
 #endif
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
-    std::optional<QuotaUsage> getQuotaUsage() const;
+    std::vector<QuotaUsage> getQuotaUsages() const;
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     SettingsChanges getDefaultSettings() const;
@@ -132,12 +132,24 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
+    /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
+    /// administer roles. Besides the role DDL guarded in checkAccessImplHelper, this includes changing which
+    /// roles are activated by default for a user (SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE), which is
+    /// authorized with plain ALTER_USER and is therefore not caught by that flag-based guard. Throws if the
+    /// current session is limited by such a clause.
+    void checkCanAdministerDefaultRoles() const;
+
     /// Checks access of grants with parameter where a filter can be applied.
     /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
     /// because we are checking for `READ` permissions for all possible URLs.
     ///
     /// But calling `checkAccessWithFilter(READ, "S3", "s3://foo/bar.csv")` will succeed, because we have just enough rights.
     void checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
+
+    /// The non-throwing counterpart of `checkAccessWithFilter`, for callers that have to observe the
+    /// decision instead of failing the query (e.g. to decide whether an operation may look at the data
+    /// at all, without disclosing through the error message what it would have seen).
+    bool isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
 
     static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
 
@@ -256,7 +268,7 @@ public:
 #endif
     /// Returns the quota to track resource consumption.
     ALWAYS_INLINE std::shared_ptr<const EnabledQuota> getQuota() const { return access->getQuota(); }
-    ALWAYS_INLINE std::optional<QuotaUsage> getQuotaUsage() const { return access->getQuotaUsage(); }
+    ALWAYS_INLINE std::vector<QuotaUsage> getQuotaUsages() const { return access->getQuotaUsages(); }
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     ALWAYS_INLINE SettingsChanges getDefaultSettings() const { return access->getDefaultSettings(); }
@@ -327,8 +339,14 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
 
+    /// Rejects changing users' default roles when the current session is limited by an authentication method's GRANTS clause.
+    ALWAYS_INLINE void checkCanAdministerDefaultRoles() const { access->checkCanAdministerDefaultRoles(); }
+
     /// Checks access of grants with parameter where a filter can be applied.
     ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
+
+    /// Checks access of grants with parameter where a filter can be applied, without throwing.
+    ALWAYS_INLINE bool isGrantedWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { return access->isGrantedWithFilter(context, flags, parameter, filter); }
 
 private:
     ContextAccessPtr access;

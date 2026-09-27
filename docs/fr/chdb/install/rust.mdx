@@ -1,0 +1,182 @@
+---
+title: 'Installer chDB pour Rust'
+sidebarTitle: 'Rust'
+slug: /chdb/install/rust
+description: 'Comment installer et utiliser les bindings Rust de chDB'
+keywords: ['chdb', 'embedded', 'clickhouse-lite', 'rust', 'install', 'ffi', 'bindings']
+doc_type: 'guide'
+---
+
+chDB-rust fournit des bindings FFI (Foreign Function Interface) expérimentaux pour chDB, vous permettant d’exécuter directement des requêtes ClickHouse dans vos applications Rust, sans aucune dépendance externe.
+
+<div id="installation">
+  ## Installation
+</div>
+
+<div id="install-libchdb">
+  ### Installer libchdb
+</div>
+
+Installez la bibliothèque chDB :
+
+```bash
+curl -sL https://lib.chdb.io | bash
+```
+
+<div id="usage">
+  ## Utilisation
+</div>
+
+chDB Rust prend en charge les modes d’exécution de requêtes avec et sans état.
+
+<div id="stateless-usage">
+  ### Utilisation sans état
+</div>
+
+Pour les requêtes simples sans état persistant :
+
+```rust
+use chdb_rust::{execute, arg::Arg, format::OutputFormat};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Execute a simple query
+    let result = execute(
+        "SELECT version()",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)])
+    )?;
+    println!("ClickHouse version: {}", result.data_utf8()?);
+    
+    // Query with CSV file
+    let result = execute(
+        "SELECT * FROM file('data.csv', 'CSV')",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)])
+    )?;
+    println!("CSV data: {}", result.data_utf8()?);
+    
+    Ok(())
+}
+```
+
+<div id="stateful-usage-sessions">
+  ### Utilisation avec état (Sessions)
+</div>
+
+Pour les requêtes nécessitant un état persistant, comme les bases de données et les tables :
+
+```rust
+use chdb_rust::{
+    session::SessionBuilder,
+    arg::Arg,
+    format::OutputFormat,
+    log_level::LogLevel
+};
+use tempdir::TempDir;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a temporary directory for database storage
+    let tmp = TempDir::new("chdb-rust")?;
+    
+    // Build session with configuration
+    let session = SessionBuilder::new()
+        .with_data_path(tmp.path())
+        .with_arg(Arg::LogLevel(LogLevel::Debug))
+        .with_auto_cleanup(true)  // Cleanup on drop
+        .build()?;
+
+    // Create database and table
+    session.execute(
+        "CREATE DATABASE demo; USE demo", 
+        Some(&[Arg::MultiQuery])
+    )?;
+
+    session.execute(
+        "CREATE TABLE logs (id UInt64, msg String) ENGINE = MergeTree() ORDER BY id",
+        None,
+    )?;
+
+    // Insert data
+    session.execute(
+        "INSERT INTO logs (id, msg) VALUES (1, 'Hello'), (2, 'World')",
+        None,
+    )?;
+
+    // Query data
+    let result = session.execute(
+        "SELECT * FROM logs ORDER BY id",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)]),
+    )?;
+
+    println!("Query results:\n{}", result.data_utf8()?);
+    
+    // Get query statistics
+    println!("Rows read: {}", result.rows_read());
+    println!("Bytes read: {}", result.bytes_read());
+    println!("Query time: {:?}", result.elapsed());
+
+    Ok(())
+}
+```
+
+<div id="building-testing">
+  ## Compilation et tests
+</div>
+
+<div id="build-the-project">
+  ### Compiler le projet
+</div>
+
+```bash
+cargo build
+```
+
+<div id="run-tests">
+  ### Lancer les tests
+</div>
+
+```bash
+cargo test
+```
+
+<div id="development-dependencies">
+  ### Dépendances de développement
+</div>
+
+Le projet inclut les dépendances de développement suivantes :
+
+* `bindgen` (v0.70.1) - Génère des bindings FFI à partir de fichiers d’en-tête C
+* `tempdir` (v0.3.7) - Gestion des répertoires temporaires dans les tests
+* `thiserror` (v1) - Utilitaires de gestion des erreurs
+
+<div id="error-handling">
+  ## Gestion des erreurs
+</div>
+
+chDB Rust assure une gestion complète des erreurs grâce à l’énumération `Error` :
+
+```rust
+use chdb_rust::{execute, error::Error};
+
+match execute("SELECT 1", None) {
+    Ok(result) => {
+        println!("Success: {}", result.data_utf8()?);
+    },
+    Err(Error::QueryError(msg)) => {
+        eprintln!("Query failed: {}", msg);
+    },
+    Err(Error::NoResult) => {
+        eprintln!("No result returned");
+    },
+    Err(Error::NonUtf8Sequence(e)) => {
+        eprintln!("Invalid UTF-8: {}", e);
+    },
+    Err(e) => {
+        eprintln!("Other error: {}", e);
+    }
+}
+```
+
+<div id="github-repository">
+  ## Dépôt GitHub
+</div>
+
+Vous trouverez le dépôt GitHub du projet à l’adresse [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust).

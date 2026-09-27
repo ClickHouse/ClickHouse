@@ -13,7 +13,6 @@ file(GLOB AZURE_SDK_SRC
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/credentials/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/cryptography/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/curl/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/io/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/tracing/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/identity/azure-identity/src/*.cpp"
@@ -48,16 +47,14 @@ file(GLOB AZURE_SDK_UNIFIED_SRC
 )
 
 add_library(_azure_sdk ${AZURE_SDK_UNIFIED_SRC})
-target_compile_definitions(_azure_sdk PRIVATE BUILD_CURL_HTTP_TRANSPORT_ADAPTER)
+
+# The default HTTP transport is `AzureSdkGetCustomHttpTransport`, implemented in
+# src/IO/AzureBlobStorage/PocoHTTPClient.cpp and resolved when linking the final binary.
+target_compile_definitions(_azure_sdk PRIVATE BUILD_TRANSPORT_CUSTOM_ADAPTER)
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
 if (TARGET OpenSSL::SSL)
     target_link_libraries(_azure_sdk PRIVATE OpenSSL::Crypto OpenSSL::SSL)
-endif()
-
-# Originally, on Windows azure-core is built with winhttp by default
-if (TARGET ch_contrib::curl)
-    target_link_libraries(_azure_sdk PRIVATE ch_contrib::curl)
 endif()
 
 target_link_libraries(_azure_sdk PRIVATE ch_contrib::libxml2)

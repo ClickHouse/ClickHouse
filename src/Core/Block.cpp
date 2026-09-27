@@ -1,8 +1,13 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -62,6 +67,168 @@ static const IColumn * getActualColumn(const IColumn * column)
     return actual_column;
 }
 
+/// Compares the structure of two columns. Aggregate-state columns whose functions have the same
+/// state representation (e.g. `quantileState` and `quantilesState(0.9)`) are compatible even
+/// though their names differ, and this relaxation must apply at any nesting depth: an expression
+/// over a `UNION` of such states can wrap them into another column (e.g. into a `Tuple`), and the
+/// per-branch headers then differ only by the aggregate function nested inside. For all other
+/// columns the comparison is as strict as comparing full column names.
+static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn & expected)
+{
+    /// A `Sparse` column is structurally interchangeable with the full column of the same type it
+    /// wraps, and this holds at any depth, not only at the top level: one branch can materialize a
+    /// nested subcolumn (`recursiveRemoveSparse`) while another keeps it sparse. Unwrap `Sparse` on
+    /// either side independently, mirroring the top-level unwrap in `checkColumnStructure`.
+    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(&actual))
+        return haveCompatibleColumnStructure(actual_sparse->getValuesColumn(), expected);
+    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(&expected))
+        return haveCompatibleColumnStructure(actual, expected_sparse->getValuesColumn());
+
+    const auto * actual_agg = typeid_cast<const ColumnAggregateFunction *>(&actual);
+    const auto * expected_agg = typeid_cast<const ColumnAggregateFunction *>(&expected);
+    if (actual_agg && expected_agg)
+        return actual_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_agg->getAggregateFunction());
+
+    if (typeid(actual) != typeid(expected))
+        return false;
+
+    /// `Variant` is compositional too: its type equality (checked before this point) already
+    /// fixes the set and the global order of alternatives, so the only thing that can differ
+    /// between two structurally-equal-typed `Variant` columns is an aggregate state nested
+    /// inside an alternative, which is exactly what we want to relax. But the local order of
+    /// the nested variant columns (the order `forEachSubcolumn` iterates them in) is a property
+    /// of a particular column, not of the type, and `getName` lists the variants in the global
+    /// order — so compare the alternatives pairwise by global discriminator, like `getName` does.
+    if (const auto * actual_variant = typeid_cast<const ColumnVariant *>(&actual))
+    {
+        const auto & expected_variant = assert_cast<const ColumnVariant &>(expected);
+        const size_t num_variants = actual_variant->getNumVariants();
+        if (num_variants != expected_variant.getNumVariants())
+            return false;
+
+        for (size_t global_discr = 0; global_discr < num_variants; ++global_discr)
+            if (!haveCompatibleColumnStructure(
+                actual_variant->getVariantByGlobalDiscriminator(global_discr),
+                expected_variant.getVariantByGlobalDiscriminator(global_discr)))
+                return false;
+
+        return true;
+    }
+
+    /// `Replicated` is compositional too, but only its nested column is structural: the internal
+    /// indexes column is a variable-width encoding detail (`UInt8` .. `UInt64`, widened lazily)
+    /// that `getName` does not include, yet `forEachSubcolumn` exposes — so descending into all
+    /// subcolumns would make the check stricter than the name comparison and reject a valid
+    /// runtime block against its header. Compare only the nested column, like
+    /// `ColumnReplicated::structureEquals` does.
+    if (const auto * actual_replicated = typeid_cast<const ColumnReplicated *>(&actual))
+    {
+        const auto & expected_replicated = assert_cast<const ColumnReplicated &>(expected);
+        return haveCompatibleColumnStructure(*actual_replicated->getNestedColumn(), *expected_replicated.getNestedColumn());
+    }
+
+    /// Descend only into the plain container columns whose name is a pure composition of the
+    /// nested column names, so that for everything else the comparison stays exactly as strict
+    /// as comparing full column names. `Dynamic`/`Object` are deliberately left strict because
+    /// their nested structure is not fixed by the type.
+    const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
+        || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
+        || typeid_cast<const ColumnConst *>(&actual);
+
+    if (!is_compositional)
+        return actual.getName() == expected.getName();
+
+    std::vector<const IColumn *> actual_children;
+    std::vector<const IColumn *> expected_children;
+    actual.forEachSubcolumn([&](const auto & subcolumn) { actual_children.push_back(subcolumn.get()); });
+    expected.forEachSubcolumn([&](const auto & subcolumn) { expected_children.push_back(subcolumn.get()); });
+
+    if (actual_children.size() != expected_children.size())
+        return false;
+
+    for (size_t i = 0; i < actual_children.size(); ++i)
+        if (!haveCompatibleColumnStructure(*actual_children[i], *expected_children[i]))
+            return false;
+
+    return true;
+}
+
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected, bool strict_aggregate_states);
+
+static bool haveCompatibleConstantValueVectors(const FieldVector & actual, const FieldVector & expected, bool strict_aggregate_states)
+{
+    if (actual.size() != expected.size())
+        return false;
+
+    for (size_t i = 0; i < actual.size(); ++i)
+        if (!haveCompatibleConstantValues(actual[i], expected[i], strict_aggregate_states))
+            return false;
+
+    return true;
+}
+
+/// Compares two constant values, relaxing only the aggregate-state leaves: the `Field` comparison
+/// of aggregate states throws when the aggregate function type names differ, even when the states
+/// are compatible by `haveSameStateRepresentation` (which the type and column structure checks
+/// have already established at this point). For such leaves compare only the serialized state, so
+/// that genuinely different constants — including a differing non-aggregate element next to a
+/// compatible aggregate state inside the same `Tuple` — are still reported as a mismatch.
+///
+/// The relaxation is only sound while the type of a value is fully determined by the column type,
+/// which is not the case under `Variant`, `Dynamic` and `JSON` — see `typeCanHideTheValueType`.
+/// For those, `strict_aggregate_states` also requires the aggregate function names to be equal
+/// (compared field by field, because `Field::operator ==` throws for differing names).
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected, bool strict_aggregate_states)
+{
+    if (actual.getType() != expected.getType())
+        return false;
+
+    switch (actual.getType())
+    {
+        case Field::Types::AggregateFunctionState:
+        {
+            const auto & actual_state = actual.safeGet<AggregateFunctionStateData>();
+            const auto & expected_state = expected.safeGet<AggregateFunctionStateData>();
+            if (strict_aggregate_states && actual_state.name != expected_state.name)
+                return false;
+            return actual_state.data == expected_state.data;
+        }
+        case Field::Types::Array:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Array>(), expected.safeGet<Array>(), strict_aggregate_states);
+        case Field::Types::Tuple:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Tuple>(), expected.safeGet<Tuple>(), strict_aggregate_states);
+        case Field::Types::Map:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Map>(), expected.safeGet<Map>(), strict_aggregate_states);
+        default:
+            return actual == expected;
+    }
+}
+
+/// Whether a value of this type is converted to a `Field` that no longer tells which type the
+/// value actually has. A `Variant` flattens a row to the `Field` of its active alternative
+/// (`ColumnVariant::operator []`) and `DataTypeVariant::equals` allows several aggregate-state
+/// alternatives that are compatible by state representation; `Dynamic` and `JSON` similarly store
+/// values of types that are not fixed by the column type. Two values on different alternatives can
+/// then produce equal `Field`s although the alternative itself is a part of the value and is
+/// observable (e.g. by `variantType`), so the aggregate-state relaxation must not apply inside them.
+///
+/// Only these three types are checked, not `IDataType::hasDynamicSubcolumns`: the latter is also
+/// true for a plain `Map`, which merely exposes the `m.keys` and `m.values` virtual subcolumns while
+/// the type of every value it holds is still fixed by the declared `Map(K, V)`.
+static bool typeCanHideTheValueType(const IDataType & type)
+{
+    if (isVariant(type) || isDynamic(type) || isObject(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        result = result || typeCanHideTheValueType(child);
+    });
+
+    return result;
+}
+
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
     std::string_view context_description, bool allow_materialize, int code)
@@ -97,19 +264,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         expected_column = getActualColumn(expected_column);
     }
 
-    const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
-    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected_column);
-
-    if (actual_column_maybe_agg && expected_column_maybe_agg)
-    {
-        if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
-            return onError<ReturnType>(code,
-                    "Block structure mismatch in {} stream: different columns:\n{}\n{}",
-                    context_description,
-                    actual.dumpStructure(),
-                    expected.dumpStructure());
-    }
-    else if (actual_column->getName() != expected_column->getName())
+    if (!haveCompatibleColumnStructure(*actual_column, *expected_column))
     {
         return onError<ReturnType>(code,
                 "Block structure mismatch in {} stream: different columns:\n{}\n{}",
@@ -125,7 +280,10 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
-        if (actual_value != expected_value)
+        /// The types are already checked to be equal at this point.
+        const bool strict_aggregate_states = actual.type && typeCanHideTheValueType(*actual.type);
+
+        if (!haveCompatibleConstantValues(actual_value, expected_value, strict_aggregate_states))
             return onError<ReturnType>(code,
                     "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
                     context_description,
@@ -249,8 +407,33 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
 
 void Block::erase(const std::set<size_t> & positions)
 {
-    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
-        erase(*it);
+    if (positions.empty())
+        return;
+
+    if (*positions.rbegin() >= data.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
+            data.empty() ? 0 : data.size() - 1);
+
+    /// Compact `data` in a single pass, dropping the erased positions, then rebuild the name index once.
+    /// This is O(columns) instead of O(columns * erased) that repeated single-position erases would cost.
+    size_t next = 0;
+    auto pos_it = positions.begin();
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        if (pos_it != positions.end() && *pos_it == i)
+        {
+            ++pos_it;
+            continue;
+        }
+        if (next != i)
+            data[next] = std::move(data[i]);
+        ++next;
+    }
+    data.resize(next);
+
+    index_by_name.clear();
+    for (size_t i = 0; i < data.size(); ++i)
+        index_by_name.emplace(data[i].name, i);
 }
 
 
@@ -688,7 +871,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    VectorWithMemoryTracking<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -856,7 +1039,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     /// The traditional task: the largest common subsequence (LCS).
     /// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
-    std::vector<std::vector<int>> lcs(lhs.columns() + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<int>> lcs(lhs.columns() + 1);
     for (auto & v : lcs)
         v.resize(rhs.columns() + 1);
 
@@ -1005,7 +1188,7 @@ void materializeBlockInplace(Block & block, bool remove_special_column_represent
     }
 }
 
-Block concatenateBlocks(const std::vector<Block> & blocks)
+Block concatenateBlocks(const Blocks & blocks)
 {
     if (blocks.empty())
         return {};

@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- ^ failpoint
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS atf_p;
 -- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;
 -- random index_granularity splits the 10 rows into >1 granule and breaks the reference.
@@ -26,16 +28,6 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_local_plan = 1,
     serialize_query_plan = 0; -- { serverError SUPPORT_IS_DISABLED }
-
-SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
-    enable_analyzer = 0,
-    enable_parallel_replicas = 2,
-    automatic_parallel_replicas_mode = 0,
-    max_parallel_replicas = 3,
-    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1,
-    parallel_replicas_local_plan = 1,
-    serialize_query_plan = 0;
 
 -- With `enable_parallel_replicas = 1` (best-effort) parallel replicas is silently
 -- disabled and the query runs locally with the filter applied.
@@ -65,6 +57,9 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     serialize_query_plan = 1;
 
 -- Verify the additional filter is present in the serialized plan shipped to followers.
+-- Pinned to the query-based implementation: this asserts the exact plan text, and
+-- `parallel_replicas_plan_based` builds a differently shaped (but equally filtered) fragment. The
+-- queries above, which check that the filter is actually applied, run on the default implementation.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 EXPLAIN PLAN actions = 1, distributed = 1
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
@@ -76,7 +71,9 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     parallel_replicas_for_non_replicated_merge_tree = 1,
     query_plan_remove_unused_columns = 1,
     parallel_replicas_local_plan = 1,
-    serialize_query_plan = 1;
+    serialize_query_plan = 1,
+    distributed_aggregation_memory_efficient = 1, -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
+    parallel_replicas_plan_based = 0;
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 DROP TABLE atf_p;

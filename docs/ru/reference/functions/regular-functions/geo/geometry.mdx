@@ -1,0 +1,149 @@
+---
+description: 'Документация по функциям для работы с Geometry'
+sidebarTitle: 'Geometry'
+slug: /sql-reference/functions/geo/geometry
+title: 'Функции для работы с Geometry'
+doc_type: 'reference'
+---
+
+<div id="geometry">
+  ## Geometry
+</div>
+
+Функции Geometry позволяют вычислять периметр и площадь для геометрических типов, таких как POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING и POINT. Используйте геометрические объекты в типе Geometry. Если входное значение — `NULL`, все перечисленные ниже функции вернут 0.
+
+<div id="perimetercartesian">
+  ## perimeterCartesian
+</div>
+
+Вычисляет периметр заданного объекта Geometry в декартовой (плоской) системе координат.
+
+**Синтаксис**
+
+```sql
+perimeterCartesian(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект типа Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — периметр объекта в единицах системы координат. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT perimeterCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterCartesian(geom)─┐
+│ 4.0                      │
+└──────────────────────────┘
+```
+
+<div id="areacartesian">
+  ## areaCartesian
+</div>
+
+Вычисляет площадь указанного объекта Geometry в декартовой системе координат.
+
+**Синтаксис**
+
+```sql
+areaCartesian(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект типа Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — площадь объекта в единицах системы координат. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaCartesian(geom)─┐
+│ -1                  │
+└─────────────────────┘
+```
+
+<div id="perimeterspherical">
+  ## perimeterSpherical
+</div>
+
+Вычисляет периметр объекта Geometry на сфере.
+
+**Синтаксис**
+
+```sql
+perimeterSpherical(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект типа Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — периметр. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+SELECT perimeterSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterSpherical(geom)─┐
+│ 0                        │
+└──────────────────────────┘
+```
+
+<div id="areaspherical">
+  ## areaSpherical
+</div>
+
+Вычисляет площадь объекта типа Geometry на поверхности сферы.
+
+**Синтаксис**
+
+```sql
+areaSpherical(geom)
+```
+
+**Аргументы**
+
+* `geom` — Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — площадь. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaSpherical(geom)────┐
+│ -0.0003046096848622019 │
+└────────────────────────┘
+```

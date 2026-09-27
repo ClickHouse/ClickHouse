@@ -1,0 +1,51 @@
+---
+title: 'Prise en charge de la propagation des modifications de schéma'
+slug: /integrations/clickpipes/mysql/schema-changes
+description: 'Page décrivant les types de modifications de schéma que ClickPipes peut détecter dans les tables sources'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for MySQL peut détecter les modifications de schéma dans les tables sources et, dans certains cas, propager automatiquement ces modifications vers les tables de destination. La façon dont chaque opération DDL est traitée est décrite ci-dessous :
+
+[//]: # "TODO Étendre cette page avec le comportement lors d’un renommage, de changements de type de données et de truncate, ainsi que des conseils sur la manière de gérer les modifications de schéma incompatibles."
+
+| Type de modification de schéma                                                                     | Comportement                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ajout d’une nouvelle colonne (`ALTER TABLE ADD COLUMN ...`)                                        | Propagé automatiquement. Les nouvelles colonnes seront remplies pour toutes les lignes répliquées après la modification de schéma                                                                                                                                                        |
+| Ajout d’une nouvelle colonne avec une valeur par défaut (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagé automatiquement. Les [valeurs par défaut prises en charge](#default-values-for-added-columns) sont également ajoutées à la colonne ClickHouse, elles s’appliquent donc aux lignes déjà présentes dans ClickHouse ainsi qu’aux lignes répliquées après la modification de schéma. |
+| Suppression d’une colonne existante (`ALTER TABLE DROP COLUMN ...`)                                | Détectée, mais **non** propagée. Les colonnes supprimées seront remplies avec `NULL` pour toutes les lignes répliquées après la modification de schéma                                                                                                                                   |
+
+<Note>
+  Les ajouts de colonnes pendant un snapshot ne sont actuellement pas pris en charge. La solution de contournement recommandée consiste à effectuer les snapshots avant ou après les modifications de schéma planifiées ou, si le ClickPipe est déjà en échec, à ajouter manuellement une colonne du type approprié à la table de destination.
+</Note>
+
+<div id="default-values-for-added-columns">
+  ## Valeurs par défaut des colonnes ajoutées
+</div>
+
+Pour une colonne ajoutée, ClickPipes ne propage une valeur par défaut que lorsqu’il peut la traduire de manière sûre pour ClickHouse. Lorsqu’une valeur par défaut est propagée, ClickHouse l’utilise lors de la lecture des parties de données antérieures à l’ajout de la nouvelle colonne. Ainsi, les lignes déjà présentes dans ClickHouse reçoivent la valeur par défaut de la source sans actualisation complète de la table.
+
+ClickPipes propage les valeurs littérales entières, décimales et à virgule flottante, les booléens, les valeurs simples de chaînes et de dates, ainsi que les valeurs enum ou set lorsque le serveur MySQL fournit des métadonnées de ligne binlog complètes. Il réécrit les littéraux de chaîne à l’aide de guillemets compatibles avec ClickHouse.
+
+ClickPipes omet intentionnellement les valeurs par défaut qui ne sont pas des littéraux portables, notamment `NULL`, les littéraux binaires, les appels de fonction tels que `CURRENT_TIMESTAMP`, `NOW()` ou `UUID()`, ainsi que les valeurs de chaîne contenant des barres obliques inverses ou des caractères de contrôle. La colonne est tout de même ajoutée, mais ClickHouse utilise la valeur par défaut ordinaire de son type pour les parties antérieures à l’ajout de la colonne. Une actualisation complète de la table est nécessaire si ces lignes existantes doivent contenir la valeur par défaut de la source.
+
+ClickPipes propage les valeurs par défaut uniquement dans le cadre de `ALTER TABLE ADD COLUMN`. Les opérations ultérieures qui modifient ou suppriment une valeur par défaut de colonne ne sont pas propagées vers ClickHouse.
+
+<div id="mysql-5-limitations">
+  ### Limitations de MySQL 5.x
+</div>
+
+Les versions de MySQL antérieures à [8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) n’incluent pas l’ensemble des métadonnées des colonnes dans le binlog (`binlog_row_metadata=FULL`). ClickPipes suit donc les colonnes en fonction de leur position ordinale. Cela signifie :
+
+* **L’ajout d’une colonne à la fin** (`ALTER TABLE ADD COLUMN ...`) est pris en charge.
+* **Toute DDL qui décale la position des colonnes** provoquera une erreur du pipe, car les positions ordinales ne peuvent alors plus être mises en correspondance de façon fiable. Cela inclut :
+  * `ALTER TABLE DROP COLUMN ...`
+  * `ALTER TABLE ADD COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE MODIFY COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE CHANGE COLUMN ... AFTER ...` / `FIRST`
+
+Si vous rencontrez cette erreur, vous devrez resynchroniser le pipe.

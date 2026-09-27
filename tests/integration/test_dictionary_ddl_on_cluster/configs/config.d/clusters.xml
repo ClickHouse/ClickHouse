@@ -24,5 +24,33 @@
             </replica>
         </shard>
     </cluster>
+    <one_node>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </one_node>
+    <workers_only>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </workers_only>
+    <workers_with_default_db>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1</host>
+                <port>9000</port>
+                <default_database>issue_114322</default_database>
+            </replica>
+        </shard>
+    </workers_with_default_db>
 </remote_servers>
 </clickhouse>

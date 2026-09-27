@@ -17,6 +17,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -825,7 +826,8 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         !ast_ddl->as<ASTOptimizeQuery>() &&
         !ast_ddl->as<ASTDropQuery>() &&
         !ast_ddl->as<ASTCreateIndexQuery>() &&
-        !ast_ddl->as<ASTDropIndexQuery>())
+        !ast_ddl->as<ASTDropIndexQuery>() &&
+        !ast_ddl->as<ASTDeleteQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
@@ -857,6 +859,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
+    String max_tries_exceeded_path = fs::path(shard_path) / "max_tries_exceeded";
     chassert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
     zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
     zookeeper->createIfNotExists(shard_path, "");
@@ -894,6 +897,8 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     bool executed_by_other_leader = false;
 
     bool extra_attempt_for_replicated_database = false;
+    bool max_tries_exceeded = false;
+    const bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task) != nullptr;
 
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
@@ -933,11 +938,14 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (counter > MAX_TRIES_TO_EXECUTE)
             {
                 /// Replicated databases have their own retries, limiting retries here would break outer retries
-                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
                 if (is_replicated_database_task)
                     extra_attempt_for_replicated_database = true;
                 else
+                {
+                    zookeeper->createIfNotExists(max_tries_exceeded_path, task.host_id_str);
+                    max_tries_exceeded = true;
                     break;
+                }
             }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
@@ -966,13 +974,21 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             break;
         }
 
+        if (zookeeper->exists(max_tries_exceeded_path))
+        {
+            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+            max_tries_exceeded = true;
+            break;
+        }
+
         String tries_count;
         zookeeper->tryGet(tries_to_execute_path, tries_count);
         if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
         {
-            /// Nobody will try to execute query again
-            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-            break;
+            LOG_WARNING(
+                log,
+                "Maximum retries count for task {} exceeded, waiting until the shard lock holder confirms no attempt is in flight",
+                task.entry_name);
         }
 
         /// Will try to wait or execute
@@ -998,7 +1014,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (!keep_original_error)
                 task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
-        return false;
+        return max_tries_exceeded;
     }
 
     if (executed_by_us)
@@ -1387,7 +1403,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         {
             HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
             all_host_ids.emplace(interserver_io_secure_host_id.toString());
-            LOG_INFO(log, "Add interserver IO secure host ID  {}", interserver_io_secure_host_id.toString());
+            LOG_INFO(log, "Add interserver IO secure host ID {}", interserver_io_secure_host_id.toString());
         }
     }
     catch (const Exception & e)
@@ -1482,6 +1498,12 @@ void DDLWorker::markReplicasActive(bool reinitialized)
                 }
 
                 auto code = zookeeper->tryRemove(active_path, stat.version);
+                if (code == Coordination::Error::ZBADVERSION)
+                {
+                    // The node was rewritten after it was read, so the check above no longer describes it.
+                    LOG_TRACE(log, "Loopback host {} was rewritten while it was being claimed, skipping it", host_id);
+                    continue;
+                }
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception::fromPath(code, active_path);
             }

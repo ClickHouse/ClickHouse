@@ -204,7 +204,7 @@ def check_convert_all_dbs_to_atomic():
     node.query("DETACH TABLE ordinary.detached PERMANENTLY")
 
     node.exec_in_container(
-        ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.stop_clickhouse()
     cannot_start = False
@@ -215,7 +215,7 @@ def check_convert_all_dbs_to_atomic():
     assert cannot_start
 
     node.exec_in_container(
-        ["bash", "-c", f"rm /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "rm /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.start_clickhouse()
 
@@ -225,7 +225,7 @@ def check_convert_all_dbs_to_atomic():
     node.query("ATTACH TABLE ordinary.detached")
 
     node.exec_in_container(
-        ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+        ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
     node.restart_clickhouse()
 

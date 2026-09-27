@@ -152,7 +152,7 @@ std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfigura
                         LOG_DEBUG(
                             log,
                             "Connect to {} attempt #{} failed, error: {}. Reconnecting...",
-                            connection->connectionInfoForLog(), i + 1, nats_GetLastError(nullptr));
+                            connection->connectionInfoForLog(), i + 1, getNATSLastError());
                         continue;
                     }
                     connect_promise->set_value(connection);
@@ -160,7 +160,7 @@ std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfigura
                     return;
                 }
 
-                throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to Nats last error: {}", nats_GetLastError(nullptr));
+                throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to Nats last error: {}", getNATSLastError());
             }
             catch (...)
             {
