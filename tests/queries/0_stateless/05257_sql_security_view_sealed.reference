@@ -5,6 +5,8 @@ visible
 visible
 visible
 visible
+visible
+visible
 --- nor on a remote server
 visible
 visible
@@ -13,8 +15,12 @@ visible
 0
 0
 0
+0
+0
 0	2
 0	2
+1	2
+1	2
 1	2
 1	2
 --- the view is still queried as usual
@@ -27,3 +33,5 @@ none_view: 1
 invoker_view: 0
 projection_view: 0
 policy_view: 1
+view_policy_view: 0
+view_policy_view for the user with the policy: 1

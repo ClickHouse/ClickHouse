@@ -31,13 +31,18 @@ CREATE ROW POLICY policy05257 ON $db.policy_secrets USING owner = 'alice' TO $de
 GRANT SELECT ON $db.policy_secrets TO $definer;
 CREATE VIEW $db.policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets;
 
+-- So does a plain projection if the invoker has a row policy on the view itself.
+CREATE VIEW $db.view_policy_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.secrets;
+CREATE ROW POLICY view_policy05257 ON $db.view_policy_view USING owner = 'alice' TO $user;
+
 GRANT SELECT ON $db.definer_view TO $user;
 GRANT SELECT ON $db.none_view TO $user;
 GRANT SELECT ON $db.policy_view TO $user;
+GRANT SELECT ON $db.view_policy_view TO $user;
 EOF
 
 echo "--- an outer expression is not evaluated on the hidden rows"
-for view in definer_view none_view policy_view; do
+for view in definer_view none_view policy_view view_policy_view; do
     for inline in 0 1; do
         ${CLICKHOUSE_CLIENT} --user "$user" --analyzer_inline_views "$inline" --query "
             SELECT secret FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
@@ -53,7 +58,7 @@ done
 
 echo "--- an outer predicate does not skip data by the values of the hidden rows"
 # The table is sorted by `secret`, so a predicate on it would skip granules by the primary key.
-for view in definer_view policy_view; do
+for view in definer_view policy_view view_policy_view; do
     for secret in HIDDEN nonexistent; do
         ${CLICKHOUSE_CLIENT} --user "$user" --use_query_condition_cache 0 --query_id "05257_${CLICKHOUSE_DATABASE}_${view}_$secret" --query "
             SELECT count() FROM $db.$view WHERE secret = '$secret'"
@@ -72,9 +77,12 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "
     SELECT secret FROM $db.definer_view WHERE secret LIKE 'vis%';"
 
 echo "--- only a view that runs with other privileges and can hide rows is sealed"
-for view in definer_view none_view invoker_view projection_view policy_view; do
+for view in definer_view none_view invoker_view projection_view policy_view view_policy_view; do
     echo -n "$view: "
     ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.$view WHERE secret = 'x')"
 done
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP USER $user, $definer"
+echo -n "view_policy_view for the user with the policy: "
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView
+
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"
