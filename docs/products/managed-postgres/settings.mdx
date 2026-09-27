@@ -36,3 +36,9 @@ To modify a parameter, select the **Edit parameters** button. Select the paramet
 All changes made to the configuration parameters are typically persisted to the instance within one minute. Some parameters require a database restart to take effect. These changes will be applied after the next restart, which you can trigger manually from the **Service actions** toolbar.
 
 Refer to the official [documentation](https://www.postgresql.org/docs/current/runtime-config.html) on the configuration parameters. The list of parameters available to set will be extended soon. In the meantime, contact [support](https://clickhouse.com/support/program) to request a parameter not currently supported.
+
+## Scheduled upgrades {#scheduled-upgrades}
+
+The **Configuration** section also lets you control when platform maintenance — minor PostgreSQL version upgrades, managed service feature updates, and operating system patches — is applied to your instance. Select **Configure schedule** in the **Scheduled upgrades** subsection to pick a two-hour UTC window and, optionally, the days of the week on which upgrades may be applied.
+
+For the available windows and what a schedule does and doesn't cover, see [scheduled upgrades](/products/managed-postgres/upgrades#scheduled-upgrades).

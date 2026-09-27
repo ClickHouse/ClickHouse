@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  La réplication des valeurs [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) n’est pas prise en charge. La valeur par défaut de ce type de données sera utilisée.
+  Les valeurs [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) sont répliquées. Lorsque PostgreSQL envoie une référence TOAST inchangée lors d’une mise à jour, la valeur existante est conservée. Si une colonne d’identité de réplica TOAST est inchangée, PostgreSQL doit envoyer un ancien tuple de clé, sans quoi la ligne ne peut pas être identifiée.
 </Note>
 
 <div id="settings">
@@ -257,6 +257,24 @@ Associe les types PostgreSQL `date` et `timestamp`/`timestamptz` aux types Click
 S&#39;il est défini sur `0`, les types plus limités `Date` et `DateTime` sont utilisés à la place (les valeurs en dehors de leur plage ou avec une précision sub-seconde ne peuvent pas être représentées).
 
 Ce paramètre contrôle uniquement les types de colonne choisis par l&#39;inférence de type lors de la création des tables imbriquées. Il doit donc être spécifié au moment du `CREATE DATABASE`. Il ne peut pas être modifié ensuite avec `ALTER DATABASE ... MODIFY SETTING` (les tables imbriquées déjà créées conservent leurs types de colonne fixes, et une telle modification est refusée) ; pour le modifier, recréez la base de données. Il ne s&#39;applique pas au moteur de table `MaterializedPostgreSQL`, où les types de colonne sont déclarés explicitement.
+
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis via une [collection nommée](/fr/concepts/features/configuration/server-config/named-collections) ou sous forme d’arguments clé-valeur ajoutés à la fin du moteur : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full` ; s’il n’est pas défini, la valeur par défaut de `libpq`, `prefer`, s’applique), ainsi que les certificats et la clé, sous l’une de deux formes. `sslrootcert` (certificat de CA), `sslcert` (certificat client) et `sslkey` (clé privée client) sont des chemins vers des fichiers locaux au serveur, acceptés uniquement depuis une collection nommée définie dans le fichier de configuration du serveur. `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent à la place le contenu littéral du fichier correspondant, peuvent être spécifiés en SQL et sont masqués dans les logs et les requêtes `SHOW`, comme un mot de passe.
+
+Exemple de connexion à un serveur PostgreSQL imposant TLS, avec vérification du certificat du serveur :
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+Les paramètres TLS/SSL font partie des paramètres de connexion PostgreSQL, qui sont définis lors de la création de la base de données. Pour les modifier, recréez la base de données.
 
 <div id="notes">
   ## Remarques

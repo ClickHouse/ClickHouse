@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## 지원되는 Postgres 버전
@@ -103,18 +104,11 @@ RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명
   ### IAM authentication 사용(선택 사항)
 </div>
 
-비밀번호 대신 AWS IAM 역할 기반 접근을 사용해 ClickPipes 사용자를 인증할 수 있습니다. 다음과 같이 사용자를 생성한 다음, 위에 나온 것과 동일한 스키마(schema) 및 복제 권한을 부여하십시오:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-<Note>
-  복제에 IAM authentication을 사용하려면 `rds.iam_auth_for_replication` 매개변수를 `1`로 설정해야 합니다. 이 기능은 PostgreSQL 11 버전부터 지원되며, 그보다 이전 버전에서는 `Initial Load Only` ClickPipes만 실행할 수 있습니다.
-</Note>
-
-ClickPipes가 이 방식으로 인증할 수 있도록 필요한 IAM role 및 policy를 설정하는 전체 단계는 [AWS IAM DB authentication (RDS/Aurora)](/ko/integrations/clickpipes/postgres/auth)를 참조하십시오.
+<IAMAuthentication engine="postgres" service="rds">
+  <Note>
+    복제에 IAM authentication을 사용하려면 `rds.iam_auth_for_replication` 매개변수를 `1`로 설정해야 합니다. 이 기능은 PostgreSQL 11 버전부터 지원되며, 그보다 이전 버전에서는 `Initial Load Only` ClickPipes만 실행할 수 있습니다.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## 네트워크 액세스 설정
@@ -124,7 +118,7 @@ ClickPipes가 이 방식으로 인증할 수 있도록 필요한 IAM role 및 po
   ### IP 기반 액세스 제어
 </div>
 
-RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
+RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="RDS Postgres에서 보안 그룹을 어디서 찾을 수 있습니까?" size="lg" border />
 

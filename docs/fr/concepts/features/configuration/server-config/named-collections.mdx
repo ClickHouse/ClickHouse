@@ -6,13 +6,13 @@ title: 'Collections nommées'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 Les collections nommées permettent de stocker des ensembles de paires clé-valeur
 utilisés pour configurer des intégrations avec des sources externes. Vous pouvez utiliser des collections nommées avec
 des dictionnaires, des tables, des fonctions de table et le stockage d’objets.
+
+<Note>
+  Les collections nommées créées par DDL peuvent être activées sur certains services ClickHouse Cloud. Contactez le Support pour confirmer leur disponibilité. Les collections nommées définies dans des fichiers de configuration ne sont pas disponibles, car les utilisateurs ne peuvent pas modifier les fichiers de configuration du serveur dans ClickHouse Cloud.
+</Note>
 
 Les collections nommées peuvent être configurées via du DDL ou dans des fichiers de configuration, et sont prises en compte
 au démarrage de ClickHouse. Elles simplifient la création d’objets et permettent de masquer les informations d’authentification
@@ -22,12 +22,12 @@ Les clés d’une collection nommée doivent correspondre aux noms des paramètr
 fonction, du moteur de table, de la base de données, etc. correspondants. Dans les exemples ci-dessous, un lien vers la liste des paramètres
 est fourni pour chaque type.
 
-Les paramètres définis dans une collection nommée peuvent être remplacés en SQL, comme le montrent les exemples
+Les paramètres définis dans une collection nommée peuvent être surchargés en SQL, comme le montrent les exemples
 ci-dessous. Cette possibilité peut être limitée à l’aide des mots-clés `[NOT] OVERRIDABLE` et des attributs XML,
 et/ou de l’option de configuration `allow_named_collection_override_by_default`.
 
 <Warning>
-  Si le remplacement est autorisé, des utilisateurs sans accès administratif peuvent
+  Si la surcharge est autorisée, des utilisateurs sans accès administratif peuvent
   être en mesure de découvrir les informations d’authentification que vous essayez de masquer.
   Si vous utilisez des collections nommées à cette fin, vous devez désactiver
   `allow_named_collection_override_by_default` (qui est activé par défaut).
@@ -103,6 +103,16 @@ section `named_collections_storage` du fichier de configuration. L&#39;exemple s
 ```
 
 Le paramètre de configuration facultatif `update_timeout_ms` vaut `5000` par défaut.
+
+Vous pouvez vérifier le type de stockage actif via `system.server_settings` et `getServerSetting` :
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+La modification du type de stockage nécessite un redémarrage du serveur ; `SYSTEM RELOAD CONFIG` ne modifie pas le backend actif.
 
 <div id="storing-named-collections-in-configuration-files">
   ## Stockage des collections nommées dans des fichiers de configuration

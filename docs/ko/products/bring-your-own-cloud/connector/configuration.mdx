@@ -1,0 +1,317 @@
+---
+title: '구성'
+sidebarTitle: '구성'
+description: 'ClickHouse Connector 구성: ClickHouse 인스턴스, 연산자 허용 목록, 네트워크 정책, 민감 정보 마스킹, 프라이빗 미러 및 스토리지'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration']
+doc_type: 'guide'
+---
+
+이 페이지에서는 ClickHouse Connector 설치 후 가장 자주 변경하는 구성 항목을 다룹니다. 각 키의 기본값과 의미는 [구성 참고](/ko/products/bring-your-own-cloud/connector/reference/configuration)를, 명령 플래그는 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli)를 참조하십시오.
+
+<div id="configuration-surfaces">
+  ## 구성 방식
+</div>
+
+커넥터는 설치 대상마다 하나의 구성 방식을 제공합니다.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    `clicklink clctl init`는 작업 디렉터리에 `clicklink-values.yaml`이라는 values 오버레이를 준비하고 이를 사용해 `clicklink-connector` 차트를 배포합니다. 이 오버레이는 배포 구성을 영구적으로 기록합니다. `--force`를 전달하지 않는 한 `init`를 다시 실행해도 유지되므로, 편집 내용은 재실행이나 복구 후에도 보존됩니다.
+
+    <Note>
+      이 페이지와 [운영](/ko/products/bring-your-own-cloud/connector/operations)의 Day-2 명령어는 `helm` CLI를 사용합니다. 기본 제공 Helm 클라이언트는 `init`에만 포함되어 있습니다.
+    </Note>
+
+    오버레이를 편집한 후 적용하십시오.
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # init에서 선택한 커넥터 네임스페이스
+    CHART_VERSION="$(helm get metadata clicklink-connector -n "${CONNECTOR_NAMESPACE}" | awk '/^VERSION:/{print $2}')"
+    helm upgrade clicklink-connector clicklink-connector \
+      --repo https://releases.clicklink.clickhouse.com/charts \
+      --version "${CHART_VERSION}" \
+      --namespace "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+
+    이 명령 블록은 이미 설치된 차트 버전에 편집한 values를 다시 적용하므로, 구성 변경으로 인해 의도하지 않은 업그레이드가 수행되지 않습니다. 새 버전으로 이동하는 작업은 [운영](/ko/products/bring-your-own-cloud/connector/operations)에서 다루는 별도의 의도적인 단계입니다. 차트 리포지토리를 사용하는 미러 설치에서는 `--repo`를 미러로 바꾸십시오.
+
+    직접 차트 참조(`oci://`, URL 또는 로컬 아카이브나 디렉터리, [프라이빗 미러](#private-mirrors) 참조)로 설치한 경우에는 확인할 리포지토리가 없습니다. 설치에 사용한 참조로 업그레이드를 다시 실행하십시오.
+
+    ```bash
+    helm upgrade clicklink-connector <same-chart-reference> \
+      --version "${CHART_VERSION}" \
+      -n "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `clicklink clctl init`는 `/etc/clicklink/config.yaml`을 작성합니다. `--force`를 전달하지 않는 한 `init`를 다시 실행해도 기존 구성이 유지되므로 파일을 직접 편집해도 안전합니다. 편집한 후 데몬을 재시작하고 확인하십시오.
+
+    ```bash
+    sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+    sudo clicklink clctl preflight
+    ```
+  </Tab>
+</Tabs>
+
+<div id="clickhouse-instances">
+  ## ClickHouse 인스턴스 추가 또는 변경
+</div>
+
+`instances` 아래의 각 항목은 커넥터가 데이터를 읽어 오는 ClickHouse 네이티브 프로토콜 엔드포인트의 이름을 지정합니다. `host`, `port`, `database`, `secure`와 Kubernetes의 `namespace`, `cluster`를 포함합니다. 자격 증명은 구성에 저장되지 않습니다. 각 구성 요소는 프로비저닝에서 생성한 액세스 번들을 통해 읽기 전용 ClickHouse 사용자를 확인합니다.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    `clicklink-values.yaml`의 두 구성 요소 맵에 모두 인스턴스를 추가하고, `networkPolicy.clickhouseNamespaces`에 해당 네임스페이스를 추가하십시오(네임스페이스의 `kubernetes.io/metadata.name` 레이블과 일치).
+
+    ```yaml
+    scraper:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    troubleshooter:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    networkPolicy:
+      clickhouseNamespaces:
+        - "clickhouse"
+    ```
+
+    워크스테이션에서 각 구성 요소에 대한 읽기 전용 액세스를 프로비저닝하십시오. `--apply-ch-grants`는 `kubectl exec`를 통해 파드 내에서 생성된 ClickHouse 권한을 적용합니다. 이 옵션이 없으면 명령어는 Kubernetes 측 리소스만 생성하고, 사용자가 적용할 수 있도록 `ch-grants.sql`을 디스크에 남겨 둡니다. 관리자 사용자에게 비밀번호가 있으면 `--ch-admin-password-stdin`을 추가하고 파이프로 전달하십시오.
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # init 시 선택한 커넥터 네임스페이스
+    clicklink clctl scraper access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    ```
+
+    SQL 실행 권한이 있는 관리자가 없는 Operator 관리형 인스턴스에서는 `--apply-ch-grants` 대신 `--ch-user-via cr`를 사용하십시오(파드 선택 플래그는 그대로 유지). 자세한 내용은 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli)를 참조하십시오. 그런 다음 각 명령어가 생성하는 Secret 및 ServiceAccount 쌍을 해당 `accessBundles` 맵에 연결하고, 위에 표시된 `helm upgrade`를 실행하십시오.
+
+    ```yaml
+    scraper:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-scraper-access-analytics
+          serviceAccountName: pcm-scraper-analytics
+
+    troubleshooter:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-troubleshooter-access-analytics
+          serviceAccountName: pcm-troubleshooter-analytics
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `/etc/clicklink/config.yaml`에 인스턴스를 추가하십시오.
+
+    ```yaml
+    instances:
+      analytics:
+        host: "10.0.12.34"
+        port: 9440
+        database: "default"
+        secure: true
+        cluster: "default"
+    ```
+
+    그런 다음 호스트에서 root 사용자로 각 구성 요소에 대한 액세스를 프로비저닝하십시오. 각 명령어는 ClickHouse 권한을 적용하고 해당 데몬을 재시작합니다(`--skip-restart`로 재시작 생략).
+
+    ```bash
+    sudo clicklink clctl scraper access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  동일한 `access provision` 명령어에 `--force`를 함께 사용하면 인스턴스의 ClickHouse 자격 증명을 교체할 수 있습니다. [운영](/ko/products/bring-your-own-cloud/connector/operations)을 참조하십시오.
+</Tip>
+
+<div id="operator-allowlist">
+  ## 연산자 허용 목록
+</div>
+
+Gateway 관리 세션은 연산자 이메일 주소 허용 목록에 따라 접근이 제한됩니다. 세션 Gateway로 전송되는 모든 요청에는 목록에 포함된 이메일 주소가 확인된 단기 유효 OIDC ID 토큰이 있어야 합니다. 허용 목록이 비어 있으면 Gateway가 차단되므로 누구도 이를 통해 세션을 열 수 없습니다. VM에서는 호스트의 root 사용자가 로컬 세션 파일을 통해 세션을 직접 관리할 수도 있으며, 허용 목록은 Gateway를 통한 경로에만 적용됩니다. 전체 신뢰 모델은 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    허용 목록은 오버레이에 정의되며 ConfigMap으로 렌더링됩니다. 변경하려면 목록을 수정하고 `helm upgrade`를 실행하십시오.
+
+    ```yaml
+    clctl:
+      gateway:
+        enabled: true
+        allowedOperators:
+          - "oncall@example.com"
+          - "dba@example.com"
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `init`는 허용 목록을 `/etc/clicklink/allowed-operators.txt`에 기록하며, 이메일 주소를 한 줄에 하나씩 저장합니다.
+
+    ```text
+    oncall@example.com
+    dba@example.com
+    ```
+
+    Troubleshooter는 30초마다 파일을 다시 읽으므로 재시작하지 않아도 수정 사항이 적용됩니다.
+  </Tab>
+</Tabs>
+
+<div id="network-policy">
+  ## 네트워크 정책 및 egress
+</div>
+
+Kubernetes에서 차트는 egress allowlist(`networkPolicy.enabled: true`)가 적용된 기본 거부 NetworkPolicy를 제공합니다. NetworkPolicy 객체는 CNI가 이를 적용할 때만 효력이 있습니다. CNI가 정책을 적용하는 환경에서는 `allowEgressCIDRs`에 커넥터 API endpoint에 해당하는 CIDR을 지정하기 전까지 커넥터의 egress가 완전히 차단됩니다.
+
+```yaml
+networkPolicy:
+  enabled: true
+  # CIDRs behind your connector API endpoint. Required under an enforcing CNI.
+  allowEgressCIDRs:
+    - "203.0.113.0/24"
+  # Ports opened to allowEgressCIDRs.
+  allowEgressPorts:
+    - 443
+  # Namespaces of your ClickHouse Services, matched by the
+  # kubernetes.io/metadata.name label. Empty allows no in-cluster
+  # ClickHouse access.
+  clickhouseNamespaces:
+    - "clickhouse"
+  # Kubernetes API server CIDRs. On managed Kubernetes the API server sits
+  # outside the cluster network, so it cannot be matched with a selector.
+  apiserverCIDRs:
+    - "172.16.0.0/28"
+```
+
+특히 주의해야 할 규칙은 다음 2가지입니다.
+
+* **`apiserverCIDRs`**: 비어 있으면 차트에서 API server egress 규칙을 생성하지 않습니다. 그러면 데몬이 첫 Kubernetes 토큰 요청 시 네트워크 오류로 실패하며, 이는 이 값을 설정해야 한다는 신호입니다. 관리형 Kubernetes에서는 클러스터의 API server endpoint CIDR을 사용하십시오.
+* **`clctl.gateway.jwksEgressCIDRs`**: session gateway가 활성화되면 troubleshooter는 연산자 토큰을 검증하기 위해 IdP(Identity Provider)의 JWKS를 가져옵니다. 기본 거부 정책에서는 이 값을 비워 두면 모든 토큰 검사가 차단됩니다.
+
+```yaml
+clctl:
+  gateway:
+    jwksEgressCIDRs:
+      - "199.36.153.8/30"
+```
+
+예를 들어 `private.googleapis.com` 범위는 Private Google Access를 통해 연결되는 Google IdP(Identity Provider)에 적용됩니다. 다른 IdP(Identity Provider)를 사용하는 경우 해당 제공업체의 범위(또는 이를 프런트하는 이그레스 프록시의 CIDR)를 지정하십시오.
+
+추가 인그레스 설정으로, `metricsScrapeSelector`는 레이블을 기준으로 메트릭 스크레이프 인그레스를 특정 Prometheus 네임스페이스로 제한하며, `kubeletProbeCIDRs`는 기본 거부 정책이 엄격한 환경에서 큐블릿 상태 프로브를 명시적으로 허용합니다. 전체 키 목록은 [구성 참고](/ko/products/bring-your-own-cloud/connector/reference/configuration)를 참조하십시오.
+
+<div id="redaction-patterns">
+  ## 민감 정보 마스킹 패턴
+</div>
+
+Troubleshooter 출력은 사용자 환경을 벗어나기 전에 민감 정보가 마스킹됩니다. 기본 제공 패턴은 `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key`, `connection-string-credentials`를 처리합니다. YAML 파일에서 사용자 지정 패턴을 추가할 수 있습니다. 사용자 지정 패턴은 파일에 정의된 순서대로 먼저 실행되고, 이후 기본 제공 패턴이 실행됩니다. 기본 제공 패턴의 `name`을 재사용하는 항목은 해당 기본 제공 패턴을 대체합니다.
+
+각 패턴에는 `name`(필수, 고유), `regex`(필수, Go RE2 구문), `replace`(기본값 `[REDACTED]`, `$1` 캡처 참조 지원), `case_insensitive`(기본값 `false`)를 지정합니다:
+
+```yaml
+version: 1
+patterns:
+  - name: internal-hostname
+    regex: '\b[a-z0-9-]+\.corp\.example\.com\b'
+    replace: '[REDACTED:internal-host]'
+
+  # Reusing a built-in name replaces the built-in pattern.
+  - name: ipv4
+    regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    replace: '[REDACTED:ip]'
+```
+
+VM에서는 파일 경로가 `/etc/clicklink/redaction-patterns.yaml`입니다. 설치 프로그램은 주석 처리된 기본 구성을 설치하며, 업그레이드해도 기존 버전을 유지합니다. Kubernetes에서는 YAML을 `redaction-patterns.yaml` 키를 사용해 ConfigMap에 저장하고 `troubleshooter.redaction.patternsConfigMap`에 해당 ConfigMap 이름을 설정하십시오. 차트가 이를 동일한 경로에 마운트합니다.
+
+<Warning>
+  패턴 파일이 존재하지만 유효하지 않으면 troubleshooter가 시작되지 않으며, 문제가 된 항목이 로그에 기록됩니다. `clicklink clctl preflight`로 파일을 검증할 수 있으므로 데몬을 다시 시작하기 전에 실행하십시오.
+</Warning>
+
+<div id="private-mirrors">
+  ## 프라이빗 미러 및 경계 내 엔드포인트
+</div>
+
+배포된 차트는 `image.repository`를 공개 멀티 아키텍처 cosign 서명 커넥터 이미지로 미리 설정하므로 일반 설치에는 이미지 values가 필요하지 않습니다. 배포된 기본값을 확인하려면 다음을 실행하십시오.
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+helm show values clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version "${CLICKLINK_VERSION#v}"
+```
+
+자체 레지스트리에서 pull하려면 오버레이의 리포지토리를 재정의하십시오:
+
+```yaml
+image:
+  repository: "registry.example.com/mirrors/clicklink"
+```
+
+미러에서 차트 자체를 설치하려면 `init`의 `--chart`에 `--chart-repo`에서 해석되는 차트 이름, 직접 지정한 `oci://` 참조, URL 또는 로컬 아카이브나 디렉터리를 지정할 수 있습니다. `--chart-version`은 기본적으로 CLI 자체 버전을 사용하므로 바이너리와 차트의 버전이 함께 유지됩니다:
+
+```bash
+clicklink clctl init --handoff handoff.yaml --target helm \
+  --chart oci://registry.example.com/charts/clicklink-connector
+```
+
+커넥터 API endpoint가 내부 경계의 사설 CA 뒤에 있는 경우 `init`에 `--api-private-ca`를 전달하십시오. 그러면 `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`가 구성되어 시스템 루트 대신 등록 번들의 CA 체인을 사용해 endpoint를 검증합니다. VM에서는 `/etc/clicklink/config.yaml`의 `api.tls.ca_file`이 이에 해당합니다. `init`은 번들 체인을 `/etc/clicklink/tls/ca.crt`에 설치하고, 검증에 사용하도록 시스템 루트에 추가합니다. 완전히 air-gapped된 환경에서 등록 및 certificate 서명을 수행하는 방법은 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
+
+<div id="storage">
+  ## 스토리지
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    Troubleshooter는 PersistentVolumeClaim에 상태를 저장하므로 파드가 재스케줄링되어도 세션 상태와 감사 추적이 유지됩니다.
+
+    ```yaml
+    persistence:
+      enabled: true
+      storageClass: "gp3"
+      size: 5Gi
+    ```
+
+    `storageClass`가 비어 있으면 클러스터의 기본 StorageClass를 사용합니다. 클러스터에 기본 StorageClass가 지정되어 있지 않으면 프롬프트나 `--storage-class`를 통해 `init`에 StorageClass를 지정해야 합니다.
+  </Tab>
+
+  <Tab title="Linux VM">
+    스크레이퍼는 API endpoint에 연결할 수 없는 동안 최소 1회 전송을 보장하기 위해 `/var/lib/clicklink/buffer`에 메트릭을 임시 저장합니다. 최대 168시간 또는 1024MB까지 보관하며, 기본 업로드 속도는 1MB/s로 제한됩니다.
+
+    ```yaml
+    scraper:
+      buffer:
+        path: /var/lib/clicklink/buffer
+        retention: 168h
+        max_size_mb: 1024
+    ```
+
+    `clicklink clctl preflight`에는 버퍼 디렉터리와 `/var/log`에 대한 디스크 검사가 포함됩니다.
+  </Tab>
+</Tabs>

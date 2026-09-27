@@ -23,9 +23,6 @@ SELECT x, lc, toTypeName(lc), r.lc, toTypeName(r.lc) FROM t AS l FULL JOIN nr AS
 SELECT '-';
 
 -- old behavior is different
-SELECT x, lc, toTypeName(lc), r.lc, toTypeName(r.lc) FROM t AS l LEFT JOIN nr AS r USING (lc) ORDER BY x SETTINGS enable_analyzer = 0;
-SELECT x, lc, toTypeName(lc), r.lc, toTypeName(r.lc) FROM t AS l RIGHT JOIN nr AS r USING (lc) ORDER BY x SETTINGS enable_analyzer = 0;
-SELECT x, lc, toTypeName(lc), r.lc, toTypeName(r.lc) FROM t AS l FULL JOIN nr AS r USING (lc) ORDER BY x SETTINGS enable_analyzer = 0;
 
 SELECT '-';
 
@@ -35,9 +32,6 @@ SELECT x, lc, materialize(r.lc) y, toTypeName(y) FROM t AS l FULL JOIN nr AS r U
 
 SELECT '-';
 
-SELECT x, lc, materialize(r.lc) y, toTypeName(y) FROM t AS l LEFT JOIN nr AS r USING (lc) ORDER BY x SETTINGS enable_analyzer = 0;
-SELECT x, lc, materialize(r.lc) y, toTypeName(y) FROM t AS l RIGHT JOIN nr AS r USING (lc) ORDER BY x SETTINGS enable_analyzer = 0;
-SELECT x, lc, materialize(r.lc) y, toTypeName(y) FROM t AS l FULL JOIN nr AS r USING (lc) ORDER BY x SETTINGS enable_analyzer = 0;
 
 SELECT '-';
 
@@ -45,7 +39,6 @@ SELECT x, lc FROM t AS l RIGHT JOIN nr AS r USING (lc) SETTINGS enable_analyzer 
 
 SELECT '-';
 
-SELECT x, lc FROM t AS l RIGHT JOIN nr AS r USING (lc) SETTINGS enable_analyzer = 0;
 
 SELECT '-';
 

@@ -156,7 +156,6 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
 
     S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = S3::isS3ExpressEndpoint(uri.endpoint),
     };

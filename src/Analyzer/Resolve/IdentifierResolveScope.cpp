@@ -30,6 +30,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
+        in_prewhere = parent_scope->in_prewhere;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -45,6 +46,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
             union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
 
         context = union_node->getContext();
+        in_prewhere = false;
     }
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
@@ -54,6 +56,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
             && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        in_prewhere = false;
     }
 
     if (context)
@@ -213,6 +216,11 @@ bool IdentifierResolveScope::canCacheIdentifier(
     if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
         return false;
 
+    /// Cannot use cache for a hidden lambda argument: outside of the hiding window the same name
+    /// resolves to the argument, inside it resolves to whatever the enclosing scopes provide.
+    if (!hidden_expression_arguments.empty() && hidden_expression_arguments.contains(lookup.identifier.front()))
+        return false;
+
     return true;
 }
 
@@ -318,7 +326,13 @@ void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges
     dump_mapping(buffer, "Alias name to expression node", aliases.alias_name_to_expression_node);
     dump_mapping(buffer, "Alias name to function node", aliases.alias_name_to_lambda_node);
     dump_mapping(buffer, "Alias name to table expression node", aliases.alias_name_to_table_expression_node);
-    dump_mapping(buffer, "CTE name to query node", cte_name_to_query_node);
+    if (!cte_name_to_query_node.empty())
+    {
+        buffer << "CTE name to query node table size: " << cte_name_to_query_node.size() << '\n';
+        for (const auto & [cte_name, cte_nodes] : cte_name_to_query_node)
+            for (const auto & cte_node : cte_nodes)
+                buffer << " { '" << cte_name << "' : " << cte_node->formatASTForErrorMessage() << " }\n";
+    }
     dump_mapping(buffer, "WINDOW name to window node", window_name_to_window_node);
 
     dump_list(buffer, "Nodes with duplicated aliases size ", aliases.nodes_with_duplicated_aliases);
