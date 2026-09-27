@@ -670,7 +670,8 @@ def should_skip_job(job_name):
         if "stateless" in job_name.lower():
             from ci.jobs.scripts.find_tests import Targeting
 
-            # Mirrors the in-job selection in `functional_tests.py`. Runs inside
+            # Mirrors the in-job selection in `functional_tests.py` before the job
+            # leaves out tag edits that do not apply to its build. Runs inside
             # `Config Workflow`, so it must issue no CIDB query.
             if not Targeting(info=_info_cache).get_changed_tests():
                 return True, "Skipped, no tests to run"
@@ -770,12 +771,13 @@ def should_skip_merge_queue_job(job_name):
     branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
     build/style/fast-test/docs-examples jobs the queue always needs. The skip
     condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    on `Targeting.get_changed_tests`), so the config-time skip never skips a job
+    that has tests to run; the job may still exit early when its changed tests
+    only edit tags that do not apply to its build. `get_changed_tests` resolves
+    data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even
+    one nested in a subdirectory) back to the tests that consume them, so a
+    fixture-only PR still reruns the affected test surface instead of being
+    skipped here as "no changed tests".
     """
     global _info_cache
     if _info_cache is None:

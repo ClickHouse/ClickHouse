@@ -330,6 +330,117 @@ class SelectionSmoke(unittest.TestCase):
         self.assertIn("line_end >= 10 AND line_start <= 10", query)
         self.assertNotIn("line_end >= 10 AND line_start <= 100", query)
 
+    def test_tag_edit_sections(self):
+        def edit(ext, body, checked_out=None, header="index 1..2 100644\n"):
+            path = f"tests/queries/0_stateless/00001_x.{ext}"
+            section = f"diff --git a/{path} b/{path}\n{header}--- a/{path}\n+++ b/{path}\n"
+            if checked_out is None:  # the new side of a hunk spanning the whole file
+                checked_out = "".join(f"{x[1:]}\n" for x in body.splitlines() if x[:1] != "-")
+            result = Targeting._tag_edit(f"{section}@@ -1 +1 @@\n{body}", lambda _: checked_out)
+            self.assertIn(result and result[0], (None, path))
+            return result and result[1]
+
+        tag_sh = " #!/usr/bin/env bash\n-# Tags: race\n+# Tags: race, no-msan\n"
+        for name, ext, body, expected in (
+            ("modify", "sh", tag_sh, {"no-msan"}),
+            ("add with blank", "sql", "+-- Tags: no-msan\n+\n SELECT 1;\n", {"no-msan"}),
+            ("remove with blank", "sql", "--- Tags: no-msan\n-\n SELECT 1;\n", {"no-msan"}),
+            ("code", "sql", "--- Tags: race\n+-- Tags: no-msan\n-SELECT 1;\n+SELECT 2;\n", None),
+            ("second run", "sql", "--- Tags: race\n+-- Tags: no-msan\n SELECT 1;\n+\n", None),
+            ("heredoc", "sh", " cat <<EOF\n-# Tags: race\n+# Tags: race, no-msan\n EOF\n", None),
+            ("below code", "sql", " SET x = 1;\n--- Tags: race\n+-- Tags: no-msan\n", None),
+            ("reference", "reference", tag_sh, None),
+        ):
+            with self.subTest(name):
+                self.assertEqual(edit(ext, body), expected)
+        with self.subTest("stale checkout"):
+            self.assertIsNone(edit("sh", tag_sh, checked_out="# Tags: race\n"))
+        with self.subTest("new file"):
+            new_file = "new file mode 100644\nindex 0..2\n"
+            self.assertIsNone(edit("sql", "+-- Tags: no-msan\n", header=new_file))
+
+    def test_build_flags_mirror_collect_build_flags(self):
+        for cxx_flags, build_type, expected in (
+            ("-fsanitize=address,undefined", "RelWithDebInfo", {"asan", "ubsan", "release"}),
+            ("-fsanitize=memory", "RelWithDebInfo", {"msan", "release"}),
+            ("-O0", "Debug", {"debug"}),
+            ("-fsanitize=cfi-vcall,cfi-derived-cast", "RelWithDebInfo", {"release"}),
+            ("", "", None),  # `clickhouse local` failed
+        ):
+            output = f"CXX_FLAGS\t-g {cxx_flags}\nBUILD_TYPE\t{build_type}" if build_type else ""
+            probe = patch("ci.jobs.scripts.find_tests.Shell.get_output", return_value=output)
+            with self.subTest(cxx_flags), probe:
+                self.assertEqual(Targeting.get_build_flags("clickhouse"), expected)
+
+    def test_changed_tests_leave_out_tag_edits_that_do_not_apply(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(tmp.name)
+        root = Path("tests/queries/0_stateless")
+        root.mkdir(parents=True)
+        sections = {}
+        for name, old, new in (
+            ("00001_tag.sh", "# Tags: race", "# Tags: race, no-msan"),
+            ("00002_ref.sql", "-- Tags: race", "-- Tags: race, no-msan"),
+            ("00002_ref.reference", "1", "2"),
+            ("00003_long.sql", "-- Tags: no-msan", "-- Tags: long"),
+            ("00004_asan.sql", "-- Tags: no-tsan", "-- Tags: no-asan"),
+        ):
+            path = root / name
+            path.write_text(f"{new}\n")
+            header = f"diff --git a/{path} b/{path}\nindex 1..2 100644\n--- a/{path}\n+++ b/{path}"
+            sections[name] = f"{header}\n@@ -1 +1 @@\n-{old}\n+{new}\n"
+        info = SimpleNamespace(job_name="Stateless tests", is_local_run=False, pr_number=1)
+        info.get_changed_files = lambda: [str(root / name) for name in sections]
+        target = Targeting(info)
+        sanitizer = "CXX_FLAGS\t-fsanitize={}\nBUILD_TYPE\tRelWithDebInfo"
+        debug = "CXX_FLAGS\t-g\nBUILD_TYPE\tDebug"
+
+        def select(build_options, binary="ci/tmp/clickhouse", diff="".join(sections.values())):
+            probe = patch("ci.jobs.scripts.find_tests.Shell.get_output", return_value=build_options)
+            with patch.object(target, "get_diff_text", return_value=diff), probe as get_output:
+                return target.get_changed_tests(binary=binary), get_output
+
+        every = ["00001_tag.", "00002_ref.", "00003_long.", "00004_asan."]
+        tests, probe = select(sanitizer.format("address,undefined"), binary=None)
+        self.assertEqual(tests, every)
+        probe.assert_not_called()
+        asan_ubsan = select(sanitizer.format("address,undefined"))[0]
+        self.assertEqual(asan_ubsan, ["00002_ref.", "00003_long.", "00004_asan."])
+        msan = select(sanitizer.format("memory"))[0]
+        self.assertEqual(msan, ["00001_tag.", "00002_ref.", "00003_long."])
+        self.assertEqual(select(debug)[0], ["00002_ref.", "00003_long."])
+        self.assertEqual(select("")[0], every)  # the probe failed
+        with patch.object(target, "get_diff_text", side_effect=RuntimeError("PR head changed")):
+            self.assertEqual(target.get_changed_tests(binary="ci/tmp/clickhouse"), every)
+        tests, probe = select(debug, diff=sections["00002_ref.reference"])
+        self.assertEqual(tests, every)
+        probe.assert_not_called()
+
+    def test_merge_queue_diff_is_the_queued_prs(self):
+        info = SimpleNamespace(
+            job_name="Stateless tests",
+            repo_name="ClickHouse/ClickHouse",
+            is_local_run=False,
+            pr_number=0,
+            is_merge_queue_event=True,
+            linked_pr_number=7,
+            sha="merge-group",
+        )
+        metadata = SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"head": {"sha": "head"}, "base": {"sha": "base"}},
+        )
+        diff = SimpleNamespace(raise_for_status=lambda: None, text=FIXTURE_DIFF)
+        with patch("requests.get", side_effect=[metadata, diff]) as get:
+            self.assertEqual(Targeting(info).get_diff_text(), FIXTURE_DIFF)
+        self.assertTrue(get.call_args_list[0].args[0].endswith("/pulls/7"))
+        self.assertTrue(get.call_args_list[1].args[0].endswith("/compare/base...head"))
 
 def main():
     parser = argparse.ArgumentParser()

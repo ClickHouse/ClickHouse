@@ -333,7 +333,178 @@ class Targeting:
             return False
         return False
 
-    def get_changed_tests(self, strict=False):
+    # Tags `clickhouse-test` acts on only for a build with one of these flags
+    # (`should_skip_test`: `no-<flag>`, and `no-sanitizers` for any sanitizer).
+    BUILD_TAG_FLAGS = {
+        "no-asan": {"asan"},
+        "no-tsan": {"tsan"},
+        "no-msan": {"msan"},
+        "no-ubsan": {"ubsan"},
+        "no-sanitizers": {"asan", "tsan", "msan", "ubsan"},
+        "no-debug": {"debug"},
+        "no-release": {"release"},
+    }
+
+    @staticmethod
+    def get_build_flags(binary):
+        """The flags `BUILD_TAG_FLAGS` names, read from `system.build_options` of
+        `binary` the way `collect_build_flags` in `tests/clickhouse-test` reads them
+        from the server. `None` when `clickhouse local` does not answer."""
+        output = Shell.get_output(
+            f'{binary} local --query "SELECT name, value FROM system.build_options'
+            " WHERE name IN ('CXX_FLAGS', 'BUILD_TYPE')\""
+        )
+        options = dict(
+            line.split("\t", 1) for line in output.splitlines() if "\t" in line
+        )
+        if options.keys() != {"CXX_FLAGS", "BUILD_TYPE"}:
+            return None
+        sanitizers = {
+            "thread": "tsan",
+            "address": "asan",
+            "undefined": "ubsan",
+            "memory": "msan",
+        }
+        match = re.search(r"-fsanitize=([\w,]+)", options["CXX_FLAGS"])
+        flags = {
+            sanitizers[s]
+            for s in (match.group(1).split(",") if match else [])
+            if s in sanitizers
+        }
+        if "Debug" in options["BUILD_TYPE"]:
+            flags.add("debug")
+        elif (
+            "RelWithDebInfo" in options["BUILD_TYPE"]
+            or "Release" in options["BUILD_TYPE"]
+        ):
+            flags.add("release")
+        return flags
+
+    @classmethod
+    def _tag_edit(cls, section, read):
+        """`(path, tags)` for a diff section of a stateless test source whose only
+        change is its `Tags:` line (and blank lines next to it) inside the leading
+        comment block; `tags` are the added and removed tags. `None` otherwise.
+
+        `read(path)` returns the checked-out file. Its `Tags:` line must be the added
+        one, so the section describes the tree under test and the removed line was the
+        only `Tags:` line before.
+        """
+        lines = section.splitlines()
+        first_hunk = next(
+            (i for i, line in enumerate(lines) if line.startswith("@@")), None
+        )
+        # Only `diff --git`/`index`/`---`/`+++` before the first hunk: no new, deleted,
+        # renamed, copied, mode-changed or binary file.
+        if first_hunk is None or any(
+            not line.startswith(("diff --git ", "index ", "--- ", "+++ "))
+            for line in lines[:first_hunk]
+        ):
+            return None
+        path = next(
+            (
+                line[len("+++ b/") :]
+                for line in lines[:first_hunk]
+                if line.startswith("+++ b/")
+            ),
+            None,
+        )
+        if (
+            path is None
+            or Path(path).parent != Path("tests/queries/0_stateless")
+            or not path.endswith(cls._TEST_FILE_EXTENSIONS)
+        ):
+            return None
+        sign = "--" if path.endswith((".sql", ".sql.j2")) else "#"
+
+        def is_tags(line):  # mirrors `find_tag_line` in `tests/clickhouse-test`
+            return line.startswith(sign) and line[len(sign) :].lstrip().startswith(
+                "Tags:"
+            )
+
+        edited = {"+": [], "-": []}
+        start = None  # checked-out line number where the run of changed lines starts
+        closed = False
+        next_line = 0
+        for line in lines[first_hunk:]:
+            if line.startswith("@@"):
+                match = re.match(r"@@ -\S+ \+(\d+)", line)
+                if match is None:
+                    return None
+                next_line = int(match.group(1))
+                closed = start is not None
+            elif line[:1] in edited:
+                if closed:
+                    return None  # a second run of changed lines
+                if start is None:
+                    start = next_line
+                if is_tags(line[1:]):
+                    edited[line[0]].append(line[1:])
+                elif line[1:].strip():
+                    return None
+                if line[0] == "+":
+                    next_line += 1
+            elif not line.startswith("\\"):  # "\ No newline at end of file"
+                closed = start is not None
+                next_line += 1
+        added, removed = edited["+"], edited["-"]
+        if len(added) > 1 or len(removed) > 1 or not (added or removed):
+            return None
+        checked_out = read(path).splitlines()
+        if [line for line in checked_out if is_tags(line)] != added:
+            return None
+        # The lines above the change are unchanged; only comments there means the edit
+        # is in the leading comment block, outside any literal or heredoc of the test.
+        if not all(
+            line.startswith(sign) or not line.strip()
+            for line in checked_out[: start - 1]
+        ):
+            return None
+
+        def tags(lines):  # mirrors `parse_tags_from_line`
+            return {
+                t.strip()
+                for line in lines
+                for t in line[len(sign) :].lstrip()[len("Tags:") :].split(",")
+            }
+
+        return path, tags(added) ^ tags(removed)
+
+    def get_tag_edits_not_applying(self, binary):
+        """`{path: tags}` for the changed test sources whose diff only edits tags that
+        cannot change a run of `binary`. Empty without a PR diff or build flags."""
+        try:
+            diff_text = self.get_diff_text()
+        except Exception as ex:
+            print(
+                f"WARNING: Failed to get the PR diff, every changed test is kept: {ex}"
+            )
+            return {}
+        edits = {}
+        for section in re.split(r"(?m)^(?=diff --git )", diff_text):
+            try:
+                edit = self._tag_edit(
+                    section, lambda path: Path(path).read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeDecodeError):
+                continue
+            if edit:
+                edits[edit[0]] = edit[1]
+        # Only a diff with tag edits pays for reading the binary.
+        build_flags = self.get_build_flags(binary) if edits else None
+        if build_flags is None:
+            return {}
+        return {
+            path: tags
+            for path, tags in edits.items()
+            if all(
+                tag in self.BUILD_TAG_FLAGS
+                and not self.BUILD_TAG_FLAGS[tag] & build_flags
+                for tag in tags
+            )
+        }
+
+    def get_changed_tests(self, strict=False, binary=None):
         # TODO: add support for integration tests
         result = set()
         if hasattr(self, "_diff_text") and self._diff_text:
@@ -362,7 +533,15 @@ class Targeting:
         if not changed_files:
             return result
 
+        # A test whose only change is tags that do not apply to this build runs here
+        # exactly as on the base branch, so it is not a change to rerun.
+        tag_edits = self.get_tag_edits_not_applying(binary) if binary else {}
         for fpath in changed_files:
+            if fpath in tag_edits:
+                print(
+                    f"File '{fpath}' only edits tags {sorted(tag_edits[fpath])}, which do not apply to this build - skipping"
+                )
+                continue
             if not fpath.startswith("tests/queries/0_stateless/"):
                 if fpath.startswith("tests/queries/"):
                     # Log any other changed file under tests/queries for future debugging
@@ -776,15 +955,18 @@ class Targeting:
 
         CI containers have no `.git` directory. Fetch a comparison pinned to the PR SHA.
         For public repos no auth is needed; for private repos GITHUB_TOKEN is used.
+        A merge-queue run gets the diff of the queued PR's current head.
         """
         if hasattr(self, "_diff_text") and self._diff_text is not None:
             return self._diff_text
-        assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        pr_number = self.info.pr_number
+        # A merge-queue run tests a merge commit of the queued PR: take that PR's diff.
+        if pr_number <= 0 and self.info.is_merge_queue_event:
+            pr_number = self.info.linked_pr_number
+        assert pr_number > 0, "Diff fetching applicable for PRs only"
         repo = self.info.repo_name or "ClickHouse/ClickHouse"
         if self.info.is_local_run:
-            self._diff_text = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo {repo}"
-            )
+            self._diff_text = Shell.get_output(f"gh pr diff {pr_number} --repo {repo}")
         else:
             import requests
 
@@ -793,20 +975,21 @@ class Targeting:
             if token:
                 headers["Authorization"] = f"Bearer {token}"
             response = requests.get(
-                f"https://api.github.com/repos/{repo}/pulls/{self.info.pr_number}",
+                f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
                 headers=headers,
                 timeout=60,
             )
             response.raise_for_status()
             metadata = response.json()
-            if metadata["head"]["sha"] != self.info.sha:
+            head_sha = metadata["head"]["sha"]
+            if self.info.pr_number > 0 and head_sha != self.info.sha:
                 raise RuntimeError(
                     "PR head changed before test selection; refusing a diff for a different SHA"
                 )
             base_sha = metadata["base"]["sha"]
             headers["Accept"] = "application/vnd.github.diff"
             response = requests.get(
-                f"https://api.github.com/repos/{repo}/compare/{base_sha}...{self.info.sha}",
+                f"https://api.github.com/repos/{repo}/compare/{base_sha}...{head_sha}",
                 headers=headers,
                 timeout=60,
             )

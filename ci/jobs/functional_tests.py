@@ -870,7 +870,7 @@ def main():
                 # Flaky check runs only changed/new test files in this PR.
                 # Previously failed and coverage-relevant tests are handled
                 # by the separate targeted check jobs.
-                tests = targeter.get_changed_tests()
+                tests = targeter.get_changed_tests(binary=f"{ch_path}/clickhouse")
                 tests_str = ", ".join(tests) if tests else "(none)"
                 print(f"[flaky-check] Changed/new tests ({len(tests)}): {tests_str}")
             else:
