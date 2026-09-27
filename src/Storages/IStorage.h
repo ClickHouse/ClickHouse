@@ -128,6 +128,12 @@ public:
     /// each row, which is not necessarily the name of this storage.
     virtual bool readsFromOtherTables() const { return false; }
 
+    /// Storages whose rows this storage returns as its own on read, e.g. the target of `Alias`.
+    /// Their row policies apply to reads from this storage as well, so only a wrapper that exposes
+    /// the target's schema unchanged and reads it in the caller's context may list one here.
+    /// `Merge` is not listed: it resolves the policies of its children itself, per child.
+    virtual std::vector<StoragePtr> getUnderlyingStorages() const { return {}; }
+
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
@@ -798,9 +804,11 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
+    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
+    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
     /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,

@@ -8,6 +8,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
+#include <Common/MultiVersion.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -105,6 +106,9 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+
+    void setExplicitMetadataFilePath(const String & path) override;
+
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
@@ -164,11 +168,17 @@ public:
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands) const override;
     void alter(
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -194,7 +204,9 @@ public:
         const ContextPtr & local_context,
         ReadBuffer & in);
 
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context,
+        bool force_fetch_latest_metadata = false) const;
 
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {
@@ -220,6 +232,7 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
+    DataLakeStorageSettings getMetadataLookupSettings() const;
 
     /// Refuse `operation` while the table root is deeper than the queried path, because anything
     /// scoped to the queried path reaches beyond this table there.
@@ -229,6 +242,7 @@ private:
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
+    MultiVersion<String> explicit_metadata_file_path;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
@@ -236,6 +250,8 @@ private:
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
+
+    void alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context);
 };
 }
 

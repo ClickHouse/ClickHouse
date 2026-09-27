@@ -2,7 +2,7 @@
 SELECT id FROM tab WHERE data.title::String = '["foo","bar"]' ORDER BY id
 0
 Description: text GRANULARITY 100000000
-Condition: (mode: All; tokens: ["["foo","bar"]"])
+Condition: (mode: All; tokens: ["[\\"foo\\",\\"bar\\"]"])
 Parts: 1/1
 Granules: 1/4
 -- Equality without index
