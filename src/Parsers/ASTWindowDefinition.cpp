@@ -72,10 +72,8 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     static_assert(sizeof(void *) != 8 || sizeof(*this) == 120, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
     hash_state.update(parent_window_name.size());
     hash_state.update(parent_window_name);
-    /// A double-quoted name is pinned to exact matching under `standard` name matching. Mixed in
-    /// only when set, so the hash of an unquoted definition stays unchanged.
-    if (parent_window_name_quote == IdentifierPartQuote::DoubleQuoted)
-        hash_state.update(parent_window_name_quote);
+    /// `parent_window_name_quote` is not hashed: formatting does not preserve quote styles, and the
+    /// hash must survive a format/reparse round trip. The query result cache key mixes it in instead.
     hash_state.update(frame_is_default);
     hash_state.update(frame_type);
     hash_state.update(frame_begin_type);
@@ -207,9 +205,7 @@ void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_
         "If members were added to ASTWindowListElement, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
-    /// Mixed in only when set, see `ASTWindowDefinition::updateTreeHashImpl`.
-    if (name_quote == IdentifierPartQuote::DoubleQuoted)
-        hash_state.update(name_quote);
+    /// `name_quote` is not hashed, see `ASTWindowDefinition::updateTreeHashImpl`.
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

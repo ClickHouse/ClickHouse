@@ -78,10 +78,6 @@ void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     {
         hash_state.update(alias.size());
         hash_state.update(alias);
-        /// A double-quoted alias is pinned to exact matching under `standard` name matching. Mixed in
-        /// only when set, so the hash of an unquoted alias stays unchanged.
-        if (alias_quote == IdentifierPartQuote::DoubleQuoted)
-            hash_state.update(alias_quote);
     }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

@@ -2,7 +2,6 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -22,14 +21,6 @@ ASTPtr ASTInterpolateElement::clone() const
     return clone;
 }
 
-void ASTInterpolateElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// `column` is part of `getID`. A double-quoted target is pinned to exact matching under `standard`
-    /// name matching; mixed in only when set, so the hash of an unquoted target stays unchanged.
-    if (column_quote == IdentifierPartQuote::DoubleQuoted)
-        hash_state.update(column_quote);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
-}
 
 void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

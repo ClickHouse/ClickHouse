@@ -16,9 +16,9 @@ public:
     IdentifierPartQuote column_quote = IdentifierPartQuote::Unquoted;
     ASTPtr expr;
 
+    /// `column_quote` stays out of the id: quote styles do not survive formatting (see the
+    /// hashing policy note in `ASTIdentifier::updateTreeHashImpl`).
     String getID(char delim) const override { return String("InterpolateElement") + delim + "(column " + column + ")"; }
-
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr clone() const override;
     void writeJSON(WriteBuffer & out) const override;

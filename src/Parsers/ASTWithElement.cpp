@@ -36,10 +36,8 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
     hash_state.update(name.size());
     hash_state.update(name);
-    /// A double-quoted CTE name is pinned to exact matching under `standard` name matching. Mixed in
-    /// only when set, so the hash of an unquoted CTE stays unchanged.
-    if (name_quote == IdentifierPartQuote::DoubleQuoted)
-        hash_state.update(name_quote);
+    /// `name_quote` is not hashed: formatting does not preserve quote styles, and the hash must survive
+    /// a format/reparse round trip. The query result cache key mixes it in instead.
     hash_state.update(is_materialized);
     hash_state.update(aliases != nullptr);
     if (aliases)
