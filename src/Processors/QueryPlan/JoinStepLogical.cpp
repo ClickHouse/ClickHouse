@@ -2544,9 +2544,15 @@ static void serializeNodeList(
     }
 }
 
+/// The `flags` byte belongs to every version of this step's layout and is always written, so only the
+/// meaning of this bit is gated on the step version, never the byte itself.
+static constexpr UInt8 JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY = 1;
+
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
+    if (join_reorder_boundary && ctx.step_version >= 1)
+        flags |= JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2631,6 +2637,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+    if (ctx.step_version >= 1)
+        step->join_reorder_boundary = (flags & JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY) != 0;
 
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS)
     {
@@ -2696,6 +2704,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->join_reorder_boundary = join_reorder_boundary;
 
     return result_step;
 }
@@ -2720,7 +2729,10 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep(
+        "Join",
+        JoinStepLogical::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_REORDER_BOUNDARY}});
 }
 
 
