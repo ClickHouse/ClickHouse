@@ -210,10 +210,25 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
-    /// Such a read carries no filter of its own, and only planning it again applies the policy -
+    /// A read whose plan carries no filter for the policy gets it only by being planned again here -
     /// with the read-column widening and the FINAL / PREWHERE ordering that policy implies.
-    bool needs_row_policy = storage->supportsPrewhere() && !storage->isRemote() && !storage->supportedPrewhereColumns().has_value()
-        && getEffectiveRowPolicyFilter(*storage, context);
+    bool needs_row_policy = false;
+    /// Remote and Merge reads are planned again below with their own options, which apply the policy.
+    if (reading_from_table && !storage->isRemote() && !is_storage_merge && getEffectiveRowPolicyFilter(*storage, context))
+    {
+        switch (reading_from_table->getRowPolicyPlacement())
+        {
+            case ReadFromTableStep::RowPolicyPlacement::NotInPlan:
+                needs_row_policy = true;
+                break;
+            case ReadFromTableStep::RowPolicyPlacement::FilterStep:
+                break;
+            /// A sender that does not record the placement pushes the policy for sure only under a nullopt contract.
+            case ReadFromTableStep::RowPolicyPlacement::Unknown:
+                needs_row_policy = storage->supportsPrewhere() && !storage->supportedPrewhereColumns().has_value();
+                break;
+        }
+    }
     bool replan_through_interpreter = storage->isRemote() || is_storage_merge || needs_row_policy;
     if (replan_through_interpreter)
     {

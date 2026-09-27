@@ -489,7 +489,7 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 ```
 
 <Warning>
-Define the policy on every server that holds the data, and give the tables behind one `Distributed` table the same engine. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan, and whether the policy travels inside that plan or is resolved by the executing server depends on the engine of the table the initiator sees. Some engines are the exception to both: their policy is neither shipped inside the plan nor resolved by the executing server, so it is missed even when the same policy is defined on every server. This affects engines that support `PREWHERE` for only part of their columns, which includes `Buffer` and, depending on the format, `File` and the object storage engines. Set `serialize_query_plan = 0` for reads of such a table by users the policy applies to.
+Define the same policy on every server that holds the data. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan, and when it cannot apply its policy inside the read (an engine without `PREWHERE` support, or a policy on a column the engine does not filter in `PREWHERE`) that plan carries the initiator's policy instead of the executing server's own.
 </Warning>
 
 ## ON CLUSTER Clause {#on-cluster-clause}

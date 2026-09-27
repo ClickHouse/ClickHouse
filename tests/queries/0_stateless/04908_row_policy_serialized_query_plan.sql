@@ -15,6 +15,11 @@ DROP TABLE IF EXISTS rp_mem;
 DROP TABLE IF EXISTS rp_mem_dist;
 DROP TABLE IF EXISTS rp_mem_nd;
 DROP TABLE IF EXISTS rp_mem_nd_dist;
+DROP TABLE IF EXISTS rp_log;
+DROP TABLE IF EXISTS rp_log_dist;
+DROP TABLE IF EXISTS rp_buf_dst;
+DROP TABLE IF EXISTS rp_buf;
+DROP TABLE IF EXISTS rp_buf_dist;
 
 CREATE TABLE rp_leaf (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO rp_leaf SELECT number, number FROM numbers(10);
@@ -93,8 +98,20 @@ SELECT 'final after=1 sqp=0', k, v FROM rp_final_dist FINAL ORDER BY k, v SETTIN
 SELECT 'final after=0 sqp=1', k, v FROM rp_final_dist FINAL ORDER BY k, v SETTINGS serialize_query_plan = 1, apply_row_policy_after_final = 0;
 SELECT 'final after=0 sqp=0', k, v FROM rp_final_dist FINAL ORDER BY k, v SETTINGS serialize_query_plan = 0, apply_row_policy_after_final = 0;
 
--- A storage that does not support PREWHERE gets the policy as a filter step of the shipped plan.
--- That read must keep taking the direct-read path, or the policy would be applied twice.
+-- A storage without PREWHERE support gets the policy as a filter step of the shipped plan, and the
+-- executing node must not apply it again. A nondeterministic policy keeps about half the rows when
+-- applied once and about a quarter when applied twice.
+CREATE TABLE rp_log (x UInt32) ENGINE = Log;
+INSERT INTO rp_log SELECT number FROM numbers(100000);
+CREATE TABLE rp_log_dist AS rp_log ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_log);
+DROP ROW POLICY IF EXISTS rp_log_policy ON rp_log;
+CREATE ROW POLICY rp_log_policy ON rp_log FOR SELECT USING rand64() % 2 = 0 TO ALL;
+SELECT 'log nd sqp=1', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_log_dist SETTINGS serialize_query_plan = 1;
+SELECT 'log nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_log_dist SETTINGS serialize_query_plan = 0;
+DROP ROW POLICY rp_log_policy ON rp_log;
+
+-- Memory and Buffer take a policy into the read when it reads their plain stored columns. Such a policy
+-- is not part of the shipped plan, so the executing node applies it.
 CREATE TABLE rp_mem (x UInt32, y UInt32) ENGINE = Memory;
 INSERT INTO rp_mem SELECT number, number FROM numbers(10);
 CREATE TABLE rp_mem_dist AS rp_mem ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_mem);
@@ -102,20 +119,33 @@ DROP ROW POLICY IF EXISTS rp_mem_policy ON rp_mem;
 CREATE ROW POLICY rp_mem_policy ON rp_mem FOR SELECT USING y < 5 TO ALL;
 SELECT 'memory sqp=1', count() FROM rp_mem_dist SETTINGS serialize_query_plan = 1;
 SELECT 'memory sqp=0', count() FROM rp_mem_dist SETTINGS serialize_query_plan = 0;
+ALTER ROW POLICY rp_mem_policy ON rp_mem USING x IN (SELECT number * 3 FROM system.numbers LIMIT 4);
+SELECT 'memory subq sqp=1', arraySort(groupArray(x)) FROM rp_mem_dist SETTINGS serialize_query_plan = 1;
+SELECT 'memory subq sqp=0', arraySort(groupArray(x)) FROM rp_mem_dist SETTINGS serialize_query_plan = 0;
+DROP ROW POLICY rp_mem_policy ON rp_mem;
 
--- A deterministic policy returns the same count whether it is applied once or twice, so the
--- exactly-once property needs a policy that keeps a different subset per evaluation: applied
--- once it keeps about half the rows, twice about a quarter. Classify instead of comparing raw
--- counts, which vary per run.
-CREATE TABLE rp_mem_nd (x UInt32) ENGINE = Memory;
-INSERT INTO rp_mem_nd SELECT number FROM numbers(100000);
+CREATE TABLE rp_buf_dst (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE rp_buf AS rp_buf_dst ENGINE = Buffer(currentDatabase(), rp_buf_dst, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+INSERT INTO rp_buf SELECT number, number FROM numbers(10);
+CREATE TABLE rp_buf_dist AS rp_buf_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_buf);
+DROP ROW POLICY IF EXISTS rp_buf_policy ON rp_buf;
+CREATE ROW POLICY rp_buf_policy ON rp_buf FOR SELECT USING y < 5 TO ALL;
+SELECT 'buffer sqp=1', count() FROM rp_buf_dist SETTINGS serialize_query_plan = 1;
+SELECT 'buffer sqp=0', count() FROM rp_buf_dist SETTINGS serialize_query_plan = 0;
+DROP ROW POLICY rp_buf_policy ON rp_buf;
+
+-- Applied inside the read on the executing node only. A policy on a MATERIALIZED column is outside
+-- Memory's PREWHERE columns, so it is shipped as a filter step and must not be applied again.
+CREATE TABLE rp_mem_nd (x UInt32, m UInt32 MATERIALIZED x) ENGINE = Memory;
+INSERT INTO rp_mem_nd (x) SELECT number FROM numbers(100000);
 CREATE TABLE rp_mem_nd_dist AS rp_mem_nd ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_mem_nd);
 DROP ROW POLICY IF EXISTS rp_mem_nd_policy ON rp_mem_nd;
 CREATE ROW POLICY rp_mem_nd_policy ON rp_mem_nd FOR SELECT USING rand64() % 2 = 0 TO ALL;
-SELECT 'memory nd sqp=1', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER'))
-FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 1;
-SELECT 'memory nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER'))
-FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 0;
+SELECT 'memory nd sqp=1', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 1;
+SELECT 'memory nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 0;
+ALTER ROW POLICY rp_mem_nd_policy ON rp_mem_nd USING rand64() % 2 = 0 AND m < 1000000;
+SELECT 'memory materialized nd sqp=1', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 1;
+SELECT 'memory materialized nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER')) FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_mem_nd_policy ON rp_mem_nd;
 
 -- max_columns_to_read counts the columns the query selects. The policy's own columns are read
@@ -130,7 +160,6 @@ SETTINGS serialize_query_plan = 0, max_columns_to_read = 1; -- { serverError TOO
 
 DROP ROW POLICY rp_leaf_policy ON rp_leaf;
 DROP ROW POLICY rp_final_policy ON rp_final;
-DROP ROW POLICY rp_mem_policy ON rp_mem;
 
 -- Without a policy the read is unchanged.
 SELECT 'no policy sqp=1', count() FROM rp_dist SETTINGS serialize_query_plan = 1;
@@ -146,3 +175,8 @@ DROP TABLE rp_mem_dist;
 DROP TABLE rp_mem;
 DROP TABLE rp_mem_nd_dist;
 DROP TABLE rp_mem_nd;
+DROP TABLE rp_log_dist;
+DROP TABLE rp_log;
+DROP TABLE rp_buf_dist;
+DROP TABLE rp_buf;
+DROP TABLE rp_buf_dst;
