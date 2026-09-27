@@ -1302,13 +1302,9 @@ def test_list_tables_pagination(node, catalog_manager):
     independently of this PR).
     """
     n_tables = 60  # > Fabric's ~50-per-page boundary
-    # `pg` sorts lexicographically after any pre-existing `e2e_<hex>`
-    # or `tbl_<hex>` names produced by other tests in the same session,
-    # so any silent truncation drops our tables first.
-    prefix = f"e2e_pg_{uuid.uuid4().hex[:6]}_"
+    # Truncation shows up as tables missing by count, not by name sort order.
     data = pa.table({"id": pa.array([1], type=pa.int64())})
 
-    expected = [f"{prefix}{i:03d}" for i in range(n_tables)]
     created = []
     db = None
     try:
@@ -1322,9 +1318,11 @@ def test_list_tables_pagination(node, catalog_manager):
         # them instead of leaking catalog/storage artifacts.
         first_exc = None
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            # No `table_name=`: only the auto-named path retries a transient
+            # catalog error, so the names must come back from create_table.
             futures = [
-                pool.submit(catalog_manager.create_table, data, table_name=short)
-                for short in expected
+                pool.submit(catalog_manager.create_table, data)
+                for _ in range(n_tables)
             ]
             for fut in concurrent.futures.as_completed(futures):
                 try:
@@ -1334,6 +1332,7 @@ def test_list_tables_pagination(node, catalog_manager):
                         first_exc = exc
         if first_exc is not None:
             raise first_exc
+        expected = sorted(created)
 
         db = catalog_manager.make_database_name()
         catalog_manager.create_catalog(node, db)
