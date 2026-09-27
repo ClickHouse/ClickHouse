@@ -104,7 +104,7 @@ def test_sts_smoke(started_cluster):
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke.csv',
                 'CSV', 'a Int64, b Int64, c Int64',
                 extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
-                SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000
+                SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
         )
 
@@ -173,7 +173,7 @@ def test_sts_smoke_env_credentials_disabled_no_opt_in(started_cluster):
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_prod_shape.csv',
                 'CSV', 'a Int64, b Int64, c Int64',
                 extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
-                SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000
+                SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
         )
     assert ei.value.returncode == 243
@@ -199,7 +199,7 @@ def test_sts_external_id(started_cluster):
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_external_id.csv',
                 'CSV', 'a Int64, b Int64, c Int64',
                 extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole', external_id = 'wrong_external_id'))
-                SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000
+                SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
         )
 
@@ -233,7 +233,7 @@ def test_sts_smoke_s3cluster(started_cluster):
                 test_shard_localhost,
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke_s3cluster.csv',
                 'CSV', extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
-                SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000
+                SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
         )
 
@@ -300,7 +300,7 @@ def test_sts_credentials_cache(started_cluster):
                     test_shard_localhost,
                     'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke_s3cluster.csv',
                     'CSV', extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession{i}'))
-                    SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000
+                    SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
             """
             )
 
@@ -335,7 +335,7 @@ def test_sts_backup_restore(started_cluster):
             BACKUP TABLE t_sts_backup TO S3(
                 '{backup_url}_wrong',
                 extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
-            SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000
+            SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
         )
     assert "server-managed credentials" not in ei.value.stderr, ei.value.stderr
@@ -389,6 +389,6 @@ def test_role_arn_override_drops_collection_external_id(started_cluster):
             s3_role_extid_leak,
             role_arn = 'arn::role',
             format = 'CSV', structure = 'a Int64, b Int64, c Int64')
-        SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 10000
+        SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 10000
     """
     )
