@@ -32,6 +32,13 @@ struct JoinTreeQueryPlan
     std::unordered_map<String, String> shard_collapse_duplicate_keys{};
 };
 
+/// Turn parallel replicas off for a query joining multiple tables when
+/// `parallel_replicas_for_queries_with_multiple_tables` is disabled.
+/// It has to run before the parallel-replicas compatibility checks of `Planner::buildPlanForQueryNode`:
+/// those checks throw with `enable_parallel_replicas = 2`, and a query for which parallel replicas are
+/// already meant to be off must not surface a parallel-replicas-only exception.
+void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context);
+
 /// Build JOIN TREE query plan for query node
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,

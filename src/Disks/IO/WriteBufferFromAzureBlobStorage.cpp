@@ -102,7 +102,7 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromAzureBlobStorage was canceled."
+                "WriteBufferFromAzureBlobStorage was canceled. "
                 "The file might not be written to AzureBlobStorage. "
                 "{}.",
                 blob_path);

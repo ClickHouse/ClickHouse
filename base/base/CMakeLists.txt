@@ -19,7 +19,6 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
-    IPv4andIPv6.cpp
     itoa.cpp
     JSON.cpp
     mremap.cpp
