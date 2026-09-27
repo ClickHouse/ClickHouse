@@ -101,7 +101,7 @@ static size_t extractMaskNumericImpl(
         if (!mask[i])
             continue;
 
-        UInt8 value = 0;
+        UInt8 value;
         if (null_bytemap && (*null_bytemap)[i])
         {
             value = null_value;
@@ -137,7 +137,7 @@ static bool extractMaskNumeric(
         return false;
 
     const auto & data = numeric_column->getData();
-    size_t ones_count = 0;
+    size_t ones_count;
     ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
@@ -152,7 +152,7 @@ static MaskInfo extractMaskFromConstOrNull(
     UInt8 null_value,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
-    UInt8 value = 0;
+    UInt8 value;
     if (column->onlyNull())
     {
         value = null_value;
@@ -194,7 +194,7 @@ static MaskInfo extractMaskImpl(
         return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
-    MaskInfo mask_info{};
+    MaskInfo mask_info;
 
     if (!(extractMaskNumeric<inverted, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)

@@ -28,7 +28,7 @@ sys.stdout.buffer.write(bytearray.fromhex(sys.argv[1])[::-1] + bytearray.fromhex
 " "$checksum" "$1"
 }
 
-# Method bytes are from CompressionInfo.h: NONE is 0x02 = 2 and Quantized is 0x9e = 158.
+# Method bytes are from CompressionInfo.h: NONE is 0x02 = 2.
 frame() { # $1 = method byte (decimal), $2 = size_decompressed, $3 = payload
     emit "$(python3 -c "
 import struct, sys
@@ -44,13 +44,9 @@ frame 2 8 'SELECT 1' | post
 
 echo '-- a codec that stores data uncompressed must not lie about the uncompressed size'
 frame 2 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
-# Quantized is the other codec reporting isNone(), so it takes the same shortcut. The read path
-# builds it from the method byte alone, without the enable_quantized_codec setting its DDL requires.
-echo '-- and neither may the other verbatim codec'
-frame 158 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
 
-# The comparison is for inequality, so arms that only ever declare more than the body pin one side of
-# it: narrowed to "body shorter than declared", both frames above would still be refused. This one
+# The comparison is for inequality, so an arm that only ever declares more than the body pins one side
+# of it: narrowed to "body shorter than declared", the frame above would still be refused. This one
 # declares less instead, and without the check it is not refused at all, it executes its real body.
 echo '-- nor may it understate the uncompressed size'
 frame 2 3 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (3)'
@@ -67,7 +63,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_mt_bound (k UInt64, s String CODEC(NONE), INDEX idx_s s TYPE minmax GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS index_granularity = 8, compress_marks = 1, compress_primary_key = 1,
-                 min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0,
+                 min_bytes_for_wide_part = 0,
                  marks_compression_codec = 'NONE', primary_key_compression_codec = 'NONE';
 
     INSERT INTO t_log_bound SELECT repeat('a', 100) FROM numbers(1000);
@@ -76,8 +72,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(length(s)) FROM t_log_bound;
     SELECT count(), sum(length(s)) FROM t_mt_bound WHERE s LIKE '%a%';
     SELECT count() FROM t_mt_bound WHERE k = 42;
-    -- packed_skip_index_max_bytes = 0 keeps the index in its own file, which is the skip-index class
-    -- checkDataPart iterates over; a packed one carries no per-file checksum entry to visit.
     CHECK TABLE t_mt_bound SETTINGS check_query_single_value_result = 1;
 
     DROP TABLE t_log_bound;

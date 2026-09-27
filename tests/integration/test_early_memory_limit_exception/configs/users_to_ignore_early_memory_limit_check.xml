@@ -1,0 +1,7 @@
+<clickhouse>
+    <users_to_ignore_early_memory_limit_check> default </users_to_ignore_early_memory_limit_check>
+    <max_server_memory_usage>1000000000</max_server_memory_usage>
+    <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
+    <cgroups_memory_usage_observer_wait_time>0</cgroups_memory_usage_observer_wait_time>
+    <allow_system_allocate_memory>1</allow_system_allocate_memory>
+</clickhouse>

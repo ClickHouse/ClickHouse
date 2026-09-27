@@ -34,9 +34,6 @@ public:
 
     String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -59,7 +56,7 @@ public:
         data_lhs.vector.addValue(index, value);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & data_lhs = this->data(place);
         const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & data_rhs = this->data(rhs);

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/DDLTask.h>
@@ -21,9 +20,6 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 
 namespace DB
@@ -52,7 +48,7 @@ extern const int LOGICAL_ERROR;
 
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 {
-    chassert(type != ASTAlterCommand::NO_TYPE);
+    assert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
         /// It's dangerous, because it may duplicate data if executed on multiple replicas. We can allow it after #18978
         ASTAlterCommand::ATTACH_PARTITION,
@@ -63,23 +59,6 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
     };
 
     return !unsupported_alter_types.contains(type);
-}
-
-
-static bool needsDefaultDatabaseForBareDictionaryOnCluster(const ASTPtr & query_ptr)
-{
-    const auto * system_query = query_ptr->as<ASTSystemQuery>();
-    if (!system_query)
-        return false;
-
-    if (system_query->type != ASTSystemQuery::Type::RELOAD_DICTIONARY
-        && system_query->type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
-        return false;
-
-    if (!system_query->table || system_query->database)
-        return false;
-
-    return true;
 }
 
 
@@ -153,8 +132,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     bool need_replace_current_database = std::any_of(
         access_to_check.begin(),
         access_to_check.end(),
-        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
-        || needsDefaultDatabaseForBareDictionaryOnCluster(query_ptr);
+        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
@@ -171,7 +149,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         ::sort(host_default_databases.begin(), host_default_databases.end());
         host_default_databases.erase(std::unique(host_default_databases.begin(), host_default_databases.end()), host_default_databases.end());
-        chassert(use_local_default_database || !host_default_databases.empty());
+        assert(use_local_default_database || !host_default_databases.empty());
 
         if (use_local_default_database && !host_default_databases.empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");
@@ -206,11 +184,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    /// Strip the initiator-only settings from the queued DDL query text too — the `DDLLogEntry` settings
-    /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
-    /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
-    /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);

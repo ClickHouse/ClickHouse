@@ -33,7 +33,7 @@ public:
     public:
         String label_name;
         String label_value;
-        MatcherType matcher_type{};
+        MatcherType matcher_type;
     };
 
     using MatcherList = std::vector<Matcher>;
@@ -57,8 +57,8 @@ public:
     class Node
     {
     public:
-        NodeType node_type{};
-        ResultType result_type{};          /// The data type this node with its children evaluates to.
+        NodeType node_type;
+        ResultType result_type;          /// The data type this node with its children evaluates to.
         std::vector<const Node *> children;  /// E.g. arguments for a function, matchers for selectors.
         const Node * parent = nullptr;
         Node() = default;
@@ -75,7 +75,7 @@ public:
     class Scalar : public Node
     {
     public:
-        ScalarType scalar{};
+        ScalarType scalar;
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
@@ -112,7 +112,7 @@ public:
     class RangeSelector : public Node
     {
     public:
-        DurationType range{};
+        DurationType range;
         const InstantSelector * getInstantSelector() const { return &typeid_cast<const InstantSelector &>(*children.at(0)); }
         RangeSelector() { node_type = NodeType::RangeSelector; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
@@ -126,7 +126,7 @@ public:
     class Subquery : public Node
     {
     public:
-        DurationType range{};
+        DurationType range;
         std::optional<DurationType> step;
         const Node * getExpression() const { return children.at(0); }
         Subquery() { node_type = NodeType::Subquery; result_type = ResultType::RANGE_VECTOR; }
@@ -139,19 +139,13 @@ public:
     /// Represents a change of the evaluation time applied to an instant selector or a range selector or a subquery.
     /// Examples: <expression> offset 1d
     ///           <expression> @ 1609746000
-    ///           <expression> @ start()
-    ///           <expression> @ end()
-    ///           <expression> @ start() offset -1d
+    ///           <expression> @ 1609746000 offset -1d
     class Offset : public Node
     {
     public:
-        enum class AtModifier { None, Timestamp, Start, End };
-
-        AtModifier at_modifier = AtModifier::None;
         std::optional<TimestampType> at_timestamp;
         std::optional<DurationType> offset_value;
         const Node * getExpression() const { return children.at(0); }
-        bool hasAtModifier() const { return at_modifier != AtModifier::None; }
         Offset() { node_type = NodeType::Offset; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
@@ -235,19 +229,19 @@ public:
     PrometheusQueryTree & operator=(PrometheusQueryTree && src) noexcept;
 
     /// Constructs a PrometheusQueryTree from a prepared list of nodes.
-    PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 time_scale_ = 3);
-    explicit PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 time_scale_ = 3);
+    PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 timestamp_scale_ = 3);
+    explicit PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 timestamp_scale_ = 3);
 
     /// Parses a promql query.
-    explicit PrometheusQueryTree(std::string_view promql_query_, UInt32 time_scale_ = 3) { parse(promql_query_, time_scale_); }
+    explicit PrometheusQueryTree(std::string_view promql_query_, UInt32 timestamp_scale_ = 3) { parse(promql_query_, timestamp_scale_); }
 
     /// Parses a promql query.
     /// This function throws an exception if something is wrong with the syntax.
-    void parse(std::string_view promql_query_, UInt32 time_scale_ = 3);
+    void parse(std::string_view promql_query_, UInt32 timestamp_scale_ = 3);
 
     /// Tries to parse a promql query. Returns true if successful.
     /// If it isn't successful the function sets `error_pos` and `error_message` and returns false.
-    bool tryParse(std::string_view promql_query_, UInt32 time_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
+    bool tryParse(std::string_view promql_query_, UInt32 timestamp_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
 
     bool empty() const { return node_list.empty(); }
     size_t size() const { return node_list.size(); }
@@ -262,7 +256,7 @@ public:
     ResultType getResultType() const;
 
     /// Returns the scale used for timestamps and durations.
-    UInt32 getTimeScale() const { return time_scale; }
+    UInt32 getTimestampScale() const { return timestamp_scale; }
 
     /// Dumps the tree to string as a tree for debugging purposes.
     String dumpTree() const;
@@ -270,7 +264,7 @@ public:
 private:
     std::vector<std::unique_ptr<Node>> node_list;
     const Node * root = nullptr;
-    UInt32 time_scale = 0;
+    UInt32 timestamp_scale = 0;
 };
 
 }

@@ -26,9 +26,3 @@ ContextHolder & getMutableContext()
     static ContextHolder holder;
     return holder;
 }
-
-TestCommandLineOptions & getTestCommandLineOptions()
-{
-    static TestCommandLineOptions holder;
-    return holder;
-}

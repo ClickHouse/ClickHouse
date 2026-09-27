@@ -11,7 +11,7 @@ namespace Poco
 }
 namespace DB
 {
-class FileLogSource final : public ISource
+class FileLogSource : public ISource
 {
 public:
     FileLogSource(

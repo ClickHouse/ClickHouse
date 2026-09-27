@@ -1,9 +1,0 @@
--- create a view without construction settings
--- inject a construction setting into the stored metadata, as an older server could have written it
-1
--- metadata load (ATTACH) accepts the definition; the view is readable
-10
--- a DETACH / ATTACH round-trip also works
-10
--- a fresh CREATE is still rejected
-NOT_IMPLEMENTED

@@ -39,7 +39,7 @@ namespace ErrorCodes
   * range(start, end): [start, end)
   * range(start, end, step): [start, end) with step increments.
   */
-class FunctionRange final : public IFunction
+class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
@@ -136,22 +136,6 @@ private:
         return nullptr;
     }
 
-    /// Out of line so ThinLTO cannot inline it into `executeImpl`, where surrounding code decides the
-    /// loop's alignment. The value comes from the index, not an accumulator: ranges here are short, so
-    /// the vectoriser's scalar remainder dominates and independent values fill it better. `iotaWithStep`
-    /// keeps an accumulator because its caller generates whole blocks, where a multiply would cost more.
-    template <typename T>
-    static NO_INLINE void fillConstStartStep(T * out, size_t n, T start, T step)
-    {
-        /// Same as in `iota`: a portable AArch64 build keeps LLVM's default interleave factor of 2,
-        /// while x86-64-v3 is already at 4.
-#if defined(__aarch64__) && !defined(OS_DARWIN)
-#pragma clang loop interleave_count(4)
-#endif
-        for (size_t idx = 0; idx < n; ++idx)
-            out[idx] = static_cast<T>(start + idx * step);
-    }
-
     template <typename T>
     ColumnPtr executeConstStartStep(
             const IColumn * end_arg, const T start, const T step, const size_t input_rows_count) const
@@ -202,9 +186,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            const size_t n = row_length[row_idx];
-            fillConstStartStep(out_data.data() + offset, n, start, step);
-            offset += n;
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
+            {
+                out_data[offset] = static_cast<T>(start + idx * step);
+                ++offset;
+            }
             out_offsets[row_idx] = offset;
         }
 
@@ -594,7 +580,7 @@ The supported types are:
 - `Int8/16/32/64]`
 
 - All arguments `start`, `end`, `step` must be one of the above supported types. Elements of the returned array will be a super type of the arguments.
-- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](/reference/settings/session-settings/function#function_range_max_elements_in_block).
+- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](../../operations/settings/settings.md#function_range_max_elements_in_block).
 - Returns `NULL` if any argument has Nullable(nothing) type. An exception is thrown if any argument has `NULL` value (Nullable(T) type).
     )";
     FunctionDocumentation::Syntax syntax = "range([start, ] end [, step])";

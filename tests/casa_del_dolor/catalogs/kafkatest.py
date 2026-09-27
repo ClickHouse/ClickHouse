@@ -2,7 +2,7 @@ import logging
 import random
 import traceback
 
-from kafka import KafkaAdminClient
+from integration.helpers.kafka.common_direct import KafkaAdminClient
 import integration.helpers.kafka.common as k
 
 

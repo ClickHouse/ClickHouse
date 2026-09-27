@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -153,9 +154,6 @@ public:
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
-    bool supportsStreaming() const override { return true; }
-
-    CursorPromotersMap buildPromoters() override;
 
     void read(
         QueryPlan & query_plan,
@@ -173,10 +171,6 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     MutationCounters getMutationCounters() const override;
 
-protected:
-    DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
-public:
-
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool optimize(
@@ -189,7 +183,7 @@ public:
         bool cleanup,
         ContextPtr query_context) override;
 
-    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -515,6 +509,7 @@ private:
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     AsyncBlockIDsCache<StorageReplicatedMergeTree> deduplication_hashes_cache;
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
@@ -573,24 +568,31 @@ private:
         size_t max_block_size,
         size_t num_streams);
 
+    void readParallelReplicasImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage);
+
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
       */
-    bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
     bool createTableIfNotExistsAttempt(const StorageMetadataPtr & metadata_snapshot, QueryStatusPtr process_list_element) const;
 
     /**
      * Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
      */
-    void createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    void createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
     void createReplicaAttempt(const StorageMetadataPtr & metadata_snapshot, QueryStatusPtr process_list_element) const;
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
-    void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
     void createNewZooKeeperNodesAttempt() const;
 
     /// Returns the ZooKeeper retries info specified for the CREATE TABLE query which is creating and starting this table right now.
@@ -598,7 +600,7 @@ private:
     void clearCreateQueryZooKeeperRetriesInfo();
 
     bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-                             const ZooKeeperRetriesInfo & zookeeper_retries_info);
+                             const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
     bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const;
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
@@ -845,7 +847,6 @@ private:
       * If replicas are added at the same time, it can not wait the added replica.
       *
       * Waits for inactive replicas no more than wait_for_inactive_timeout.
-      * With only_active, inactive replicas are not waited for and not reported.
       * Returns list of inactive replicas that have not executed entry or throws exception.
       *
       * NOTE: This method must be called without table lock held.
@@ -853,10 +854,9 @@ private:
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
                                              Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-                                             const String & error_context = {}, bool only_active = false);
+                                             const String & error_context = {});
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-                                                   bool only_active = false);
+                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -956,12 +956,11 @@ private:
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
 
     /// Wait for timeout seconds mutation is finished on replicas
-    /// With only_active, replicas that are not active are not reported as unfinished.
     void waitMutationToFinishOnReplicas(
-        const Strings & replicas, const String & mutation_id, bool only_active = false) const;
+        const Strings & replicas, const String & mutation_id) const;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 
@@ -998,7 +997,7 @@ private:
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    void createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
     void createTableSharedIDAttempt() const;
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);

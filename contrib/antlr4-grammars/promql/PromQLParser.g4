@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD | ATAN2) grouping?
+    : (MULT | DIV | MOD) grouping?
     ;
 
 addOp
@@ -112,8 +112,6 @@ parens
 
 timestamp
     : NUMBER
-    | START LEFT_PAREN RIGHT_PAREN
-    | END LEFT_PAREN RIGHT_PAREN
     ;
 
 duration
@@ -133,7 +131,6 @@ instantSelector
 
 labelMatcher
     : labelName labelMatcherOperator STRING
-    | STRING
     ;
 
 labelMatcherOperator
@@ -215,11 +212,10 @@ labelName
     : keyword
     | METRIC_NAME
     | LABEL_NAME
-    | STRING
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
     ;
 
 metricName
@@ -231,7 +227,6 @@ keyword
     : AND
     | OR
     | UNLESS
-    | ATAN2
     | BY
     | WITHOUT
     | ON
@@ -240,8 +235,6 @@ keyword
     | GROUP_RIGHT
     | OFFSET
     | BOOL
-    | START
-    | END
     | AGGREGATION_OPERATOR
     | FUNCTION
     ;
