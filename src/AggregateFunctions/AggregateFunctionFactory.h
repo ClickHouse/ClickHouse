@@ -129,6 +129,9 @@ public:
     /// combinator suffixes, has an execution-availability check.
     bool hasExecutionAvailabilityCheck(const String & name) const;
 
+    /// True when this aggregate name has a dedicated legacy window implementation.
+    bool hasWindowCreator(const String & name) const;
+
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(
         String name,

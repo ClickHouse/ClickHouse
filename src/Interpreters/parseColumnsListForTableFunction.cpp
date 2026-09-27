@@ -37,6 +37,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
 
 }
 
@@ -71,8 +72,21 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         {
             bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
             if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
-                is_experimental_time_decay_type
-                    |= AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(aggregate_function_type->getFunctionName());
+            {
+                const String & function_name = aggregate_function_type->getFunctionName();
+                const auto & factory = AggregateFunctionFactory::instance();
+                if (factory.hasExecutionAvailabilityCheck(function_name))
+                {
+                    if (factory.hasWindowCreator(function_name))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "The function '{}' can only be used as a window function, not as an aggregate function, "
+                            "so its state cannot be used as a data type",
+                            function_name);
+
+                    is_experimental_time_decay_type = true;
+                }
+            }
 
             if (is_experimental_time_decay_type)
                 throw Exception(

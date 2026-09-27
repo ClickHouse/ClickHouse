@@ -194,7 +194,7 @@ ATTACH TABLE time_decay_aggregate_attach_blocked
 (
     value AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)
 )
-ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 
 -- Materialized views use the same schema gate for both inferred CREATE columns
 -- and explicit columns in full ATTACH definitions.

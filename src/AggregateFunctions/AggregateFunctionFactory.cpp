@@ -294,6 +294,30 @@ bool AggregateFunctionFactory::hasExecutionAvailabilityCheck(const String & name
 }
 
 
+bool AggregateFunctionFactory::hasWindowCreator(const String & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
+        return static_cast<bool>(it->second.window_creator);
+
+    const String case_insensitive_name = Poco::toLower(name);
+    if (auto it = case_insensitive_aggregate_functions.find(case_insensitive_name);
+        it != case_insensitive_aggregate_functions.end())
+        return static_cast<bool>(it->second.window_creator);
+
+    if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+    {
+        const String & suffix = combinator->getName();
+        String nested_name = name.substr(0, name.size() - suffix.size());
+        if (!nested_name.empty())
+            return hasWindowCreator(nested_name);
+    }
+
+    return false;
+}
+
+
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const String & name_param,
     NullsAction action,
