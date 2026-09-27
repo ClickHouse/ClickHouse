@@ -33,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
@@ -417,19 +418,23 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
     {
         auto lock = storage.lockParts();
         auto block_holder = storage.fillNewPartName(part, lock);
+        MergeTreeDeduplicationLog * deduplication_log{nullptr};
+        std::vector<std::string> block_ids;
 
         if (!deduplication_hashes.empty())
         {
-            auto * deduplication_log = storage.getDeduplicationLog();
+            deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
-            auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
-            auto result = deduplication_log->addPart(block_ids, part->info);
+            block_ids = getDeduplicationBlockIds(deduplication_hashes);
+
+            /// Only look for duplicates here. The block IDs are published after the part is committed, see below.
+            auto duplicates = deduplication_log->getDuplicates(block_ids);
 
             std::vector<std::string> conflict_block_ids;
-            for (const auto & res : result)
+            for (const auto & duplicate : duplicates)
             {
-                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
-                conflict_block_ids.push_back(res.block_id);
+                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", duplicate.block_id, duplicate.part_info.getPartNameForLogs());
+                conflict_block_ids.push_back(duplicate.block_id);
             }
 
             if (!conflict_block_ids.empty())
@@ -448,6 +453,35 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// Hence, for now rename_in_transaction is false.
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
+
+        /// Publish the block IDs only after the part is committed. If they were published first, any failure between
+        /// the publication and the commit (a table size limit, an I/O error, a server kill) would leave block IDs of a
+        /// part that does not exist, and a retry of the insert would be deduplicated against it. Its rows would be
+        /// silently lost. Now such a failure leaves either nothing or a committed part without its block IDs, so a
+        /// retry can only insert the rows again. Duplicates can be found and removed, lost rows cannot.
+        ///
+        /// The publication stays under the same `lockParts` as the check above. `commitPart` is the only place that
+        /// publishes block IDs, so no other insert can publish the same block ID in between, and no `DROP` can select
+        /// the new part before its block IDs exist.
+        if (deduplication_log)
+        {
+            std::vector<MergeTreeDeduplicationLog::AddPartResult> duplicates;
+            try
+            {
+                duplicates = deduplication_log->addPart(block_ids, part->info);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while publishing the deduplication block IDs of part {}, which is already committed. "
+                    "A retry of this insert may insert its rows again", part->name);
+                throw;
+            }
+
+            if (!duplicates.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block with ID {} of the committed part {} is already published as part {} although it was not found "
+                                                                    "by the duplicate check. It's a bug",
+                                                                    duplicates.front().block_id, part->name, duplicates.front().part_info.getPartNameForLogs());
+        }
     }
 
     return {};
