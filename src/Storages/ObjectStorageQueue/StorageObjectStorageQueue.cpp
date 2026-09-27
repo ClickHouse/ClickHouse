@@ -2278,11 +2278,19 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built, so the
     /// rebuilt object carries its default. Report what `partitioning_mode` says, last, so it takes that
     /// setting's final origin - even when the value is the default, since after the fold they are one setting.
-    const auto mode = std::ranges::find(
-        settings, ObjectStorageQueueSettings::nameAtOffset(ObjectStorageQueueSetting::partitioning_mode.offset), &SettingDescription::name);
-    if (mode != settings.end())
-        setEffectiveValue(
-            settings, ObjectStorageQueueSetting::use_hive_partitioning, mode->value == "hive" ? "1" : "0", mode->origin);
+    ///
+    /// Only where the rebuild read the metadata. Without it `partitioning_mode` is the definition's text or the
+    /// compiled-in default, never the folded value, and `use_hive_partitioning` already holds what the definition
+    /// states - which is what the table works with, as its own `use_hive_partitioning` member is read from it.
+    /// Folding then would report a stated `use_hive_partitioning = 1` as `0`, from a source that is not the one.
+    if (rebuilt_from_shared_metadata)
+    {
+        const auto mode = std::ranges::find(
+            settings, ObjectStorageQueueSettings::nameAtOffset(ObjectStorageQueueSetting::partitioning_mode.offset), &SettingDescription::name);
+        if (mode != settings.end())
+            setEffectiveValue(
+                settings, ObjectStorageQueueSetting::use_hive_partitioning, mode->value == "hive" ? "1" : "0", mode->origin);
+    }
 
     return settings;
 }
