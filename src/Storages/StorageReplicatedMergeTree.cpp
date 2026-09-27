@@ -7718,11 +7718,9 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
-    /// The database `max_rows` limit is enforced per part inside `ReplicatedMergeTreeSink::commitPart`,
-    /// once ZooKeeper deduplication is known, so that attaching a duplicate part stays a no-op even
-    /// when the database is over the limit. `SYSTEM RESTORE REPLICA` reattaches the first replica's
-    /// existing parts while readonly; those parts are already accounted for, so an over-limit
-    /// database must not prevent metadata recovery, and the check is skipped for that path.
+    /// `SYSTEM RESTORE REPLICA` reattaches the first replica's existing parts while readonly; those
+    /// parts are already accounted for, so an over-limit database must not prevent metadata
+    /// recovery, and the database `max_rows` check below is skipped for that path.
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
@@ -7738,13 +7736,13 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
         /* is_attach */ true,
         /* allow_attach_while_readonly */ allow_attach_while_readonly);
 
-    /// All-or-nothing pre-check for the database `max_rows` limit. The per-part check inside
-    /// `commitPart` cannot roll back: parts committed earlier in the loop are already in ZooKeeper,
+    /// All-or-nothing pre-check for the database `max_rows` limit. A check inside the commit
+    /// loop could not roll back: parts committed earlier in the loop are already in ZooKeeper,
     /// so failing in the middle would leave the command partially applied. Ask ZooKeeper up front
     /// which parts are already deduplicated -- those add no rows and are excluded from the
     /// aggregate, so attaching only duplicates stays a no-op even when the database is over the
-    /// limit -- and validate the rest together before anything is committed. The per-part check
-    /// remains the authoritative one for inserts racing with this pre-check.
+    /// limit -- and validate the rest together before anything is committed. Like the other
+    /// `max_rows` checks, it is best-effort: an insert racing with it may overshoot the limit.
     if (deduplicate_part && !allow_attach_while_readonly && hasDatabaseRowsLimit())
     {
         const bool deduplicate = (*getSettings())[MergeTreeSetting::replicated_deduplication_window] != 0;

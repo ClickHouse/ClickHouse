@@ -175,7 +175,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     /// With insert deduplication, the database `max_rows` check is evaluated here as well, but its
     /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
     /// retrying an INSERT which was already written stays a no-op even once the database is full.
-    /// `ATTACH` parts have their own admission check in `commitPart` (see `writeExistingPart`).
+    /// `ATTACH` is checked for the whole batch in `StorageReplicatedMergeTree::attachPartitionImpl`.
     const bool defer_database_rows_limit = deduplicate && !is_attach;
     try
     {
@@ -654,12 +654,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     try
     {
-        /// Enforce the database `max_rows` limit only for user-issued ATTACH commands. Backup
-        /// restore (deduplicate_part = false) reattaches data the user explicitly restores, and
-        /// `SYSTEM RESTORE REPLICA` (allow_attach_while_readonly = true) recovers parts that are
-        /// already accounted for; neither of them is subject to the limit.
-        const bool check_database_rows_limit = deduplicate_part && !allow_attach_while_readonly;
-        auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids, check_database_rows_limit);
+        auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids);
         bool deduplicated = !conflicts.empty();
 
         int error = 0;
@@ -750,8 +745,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const std::vector<DeduplicationHash> & deduplication_hashes,
-    const std::vector<String> & deduplication_block_ids,
-    bool check_database_rows_limit)
+    const std::vector<String> & deduplication_block_ids)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -971,17 +965,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             }
         }
 
-        /// The part is not a duplicate (the block id check above would have returned a conflict),
-        /// so it will actually add rows: enforce the database `max_rows` limit only now that
-        /// deduplication is decided. A duplicate attach thus stays a no-op even when the database
-        /// is over the limit. Throwing here is safe: only the ephemeral block number node exists
-        /// at this point, and it is released by the lock's destructor.
-        if (check_database_rows_limit)
-            storage.checkDatabaseRowsLimit(part->rows_count);
-
-        /// The same point for an INSERT into a database that had already reached `max_rows` when
-        /// the insert started (see the constructor): a duplicate part was accepted above as a no-op,
-        /// while a part that would add rows is rejected here.
+        /// For an INSERT into a database that had already reached `max_rows` when the insert
+        /// started (see the constructor), a duplicate part was accepted above as a no-op, while a
+        /// part that would add rows is rejected here. Throwing here is safe: only the ephemeral
+        /// block number node exists at this point, and it is released by the lock's destructor.
         if (database_rows_limit_exception)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
