@@ -389,7 +389,7 @@ struct DistributedQueryPlan
     /// Maps exchange_id to exchange description
     ExchangeDescriptions exchange_descriptions;
     String final_result_stream_name;
-    /// `max_threads` of the settings the plan was optimized with; its local tasks share it.
+    /// The thread limit the plan runs with, never above its `max_threads` setting; its local tasks share it.
     UInt64 max_threads = 0;
 };
 

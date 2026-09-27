@@ -1020,7 +1020,11 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
         /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
         const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
-        distributed_plan.max_threads = optimization_settings.max_threads;
+        /// A synchronous remote read raises the plan's limit to `max_distributed_connections` for threads
+        /// that wait on sockets; the local tasks do not, so they never get more than the setting.
+        distributed_plan.max_threads = getMaxThreads()
+            ? std::min<UInt64>(getMaxThreads(), optimization_settings.max_threads)
+            : optimization_settings.max_threads;
         /// Local execution runs every task in-process and needs no worker hosts; constructing
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
         TaskToHostMapPtr task_to_host_map = execute_locally
