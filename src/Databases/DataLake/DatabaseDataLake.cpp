@@ -916,7 +916,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     const bool want_stateful = use_stateful_tables && !lightweight
         && !can_use_parallel_replicas
-        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction];
+        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction]
+        && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG;
     if (want_stateful)
     {
         StoragePtr cached_storage;
