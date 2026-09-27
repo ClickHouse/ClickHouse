@@ -3,8 +3,9 @@
 # timeout and reports it as `Timeout!`. A test whose process exits right at the deadline is not reaped yet at
 # that point, and macOS hides such a process: `getpgid` fails with ESRCH, and `killpg` of a group with no
 # running member fails with EPERM. This test loads the runner as a module, answers both calls that way, and
-# checks that such a test is still reported as a timeout and its group signalled, with and without
-# `--capture-client-stacktrace`, instead of failing with an internal error of the runner.
+# checks that such a test is still reported as a timeout instead of failing with an internal error of the
+# runner, and which signals the runner sent, when the last running member exits before SIGTSTP (sent first
+# with `--capture-client-stacktrace`), before SIGTERM, or between SIGTERM and SIGKILL.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,6 +20,7 @@ import importlib.machinery
 import importlib.util
 import io
 import os
+import signal
 import subprocess
 import sys
 import types
@@ -32,7 +34,9 @@ with contextlib.redirect_stdout(io.StringIO()):
     loader.exec_module(runner)
 
 group = None
-signalled = []
+failing = None
+members_exited = False
+sent = []
 
 
 def getpgid(pid):
@@ -41,18 +45,27 @@ def getpgid(pid):
 
 
 def killpg(pgid, sig):
+    global members_exited
     assert pgid == group, pgid
     if sig != 0:
-        signalled.append(sig)
-    raise PermissionError(errno.EPERM, os.strerror(errno.EPERM))
+        sent.append(signal.Signals(sig).name)
+    # The last running member of the group exits just before `failing` is sent.
+    members_exited = members_exited or sig == failing
+    if members_exited:
+        raise PermissionError(errno.EPERM, os.strerror(errno.EPERM))
 
 
 os.getpgid = getpgid
 os.killpg = killpg
 
-for capture in (False, True):
+for capture, failing in (
+    (False, signal.SIGTERM),
+    (False, signal.SIGKILL),
+    (True, signal.SIGTSTP),
+):
     runner.CAPTURE_CLIENT_STACKTRACE = capture
-    signalled.clear()
+    members_exited = False
+    sent.clear()
     # Nothing has reaped it, so `returncode` is unset, as for a test whose deadline has passed.
     proc = subprocess.Popen(["true"], start_new_session=True)
     group = proc.pid
@@ -69,8 +82,8 @@ for capture in (False, True):
     try:
         result = runner.TestCase.process_result_impl(test, proc, 60.0)
         print(
-            f"capture_client_stacktrace={capture}: {result.status.value} {result.reason.value}"
-            f" group signalled: {bool(signalled)}"
+            f"capture_client_stacktrace={capture}, last member exits before {failing.name}:"
+            f" {result.status.value} {result.reason.value} signals sent: {' '.join(sent)}"
         )
     finally:
         proc.wait()
