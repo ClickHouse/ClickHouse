@@ -36,5 +36,12 @@ ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Pa
 # The server must still be alive.
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
+# A malformed spelling that takes the throwing path in parseTransformAndArgument
+# ('bucket]' has no '[' and raises BAD_ARGUMENTS) must also be dropped instead
+# of rejecting the table.
+sed -i 's/"bucket\[xyz\]"/"bucket]"/' "${LATEST}"
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "SELECT 1"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 rm -rf "${TABLE_PATH}"
