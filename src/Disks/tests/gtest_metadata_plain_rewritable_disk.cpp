@@ -288,6 +288,33 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     EXPECT_EQ(object_storage->reads, 12);
 }
 
+/// `LocalObjectStorage` stages a write next to its target until it is finalized. The
+/// metadata loaded while the writer is still open must not take the staged file for a
+/// file of the directory.
+TEST_F(MetadataPlainRewritableDiskTest, LoadIgnoresUnfinishedWrite)
+{
+    auto metadata = getMetadataStorage("LoadIgnoresUnfinishedWrite");
+    auto object_storage = getObjectStorage("LoadIgnoresUnfinishedWrite");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    auto buffer = object_storage->writeObject(StoredObject(generateObjectKeyForPath(metadata, "A/file")), WriteMode::Rewrite);
+    buffer->write("data", 4);
+    buffer->next();
+
+    metadata = restartMetadataStorage("LoadIgnoresUnfinishedWrite");
+    EXPECT_EQ(metadata->listDirectory("A"), std::vector<std::string>{});
+
+    buffer->finalize();
+    metadata = restartMetadataStorage("LoadIgnoresUnfinishedWrite");
+    EXPECT_EQ(metadata->listDirectory("A"), std::vector<std::string>({"file"}));
+    EXPECT_EQ(metadata->getFileSize("A/file"), 4);
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
 {
     auto metadata = getMetadataStorage("Ls");

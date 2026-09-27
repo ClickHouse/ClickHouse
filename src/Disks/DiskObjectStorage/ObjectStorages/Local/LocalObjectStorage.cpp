@@ -304,6 +304,15 @@ private:
     mutable std::atomic<bool> read_failed = false;
 };
 
+/// Prefix of the name a write is staged under until it is published. Staging has to
+/// happen next to the target, because `rename` cannot publish across filesystems and
+/// the key prefix may span several of them (it is `/` in `clickhouse-local`), so a
+/// staged file lives among the objects of its directory. `listObjects` hides every
+/// name with this prefix, as a remote object storage never lists an unfinished
+/// upload: a reader listing a directory while a writer is open must not take the
+/// staged file for an object, as the `plain_rewritable` metadata would do.
+constexpr std::string_view staging_file_name_prefix = ".tmp_local_object_storage_";
+
 /// Give the version about to be published a modification time strictly later than
 /// the version it replaces, so that no two versions of a path can ever share an etag.
 ///
@@ -619,11 +628,12 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     /// every other method of this storage.
     ///
     /// The staging name is drawn from a generator of its own, so that staging a write
-    /// does not advance `thread_local_rng`, which object keys are generated from.
+    /// does not advance `thread_local_rng`, which object keys are generated from. The
+    /// name of the target is not part of it, so that a target whose name is close to
+    /// `NAME_MAX` can still be staged.
     static thread_local pcg64 staging_name_rng(randomSeed());
-    auto target_path = fs::path(resolved_path);
-    auto temp_path = target_path.parent_path()
-        / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8, staging_name_rng));
+    auto temp_path = fs::path(resolved_path).parent_path()
+        / fmt::format("{}{}", staging_file_name_prefix, getRandomASCIIString(16, staging_name_rng));
 
     return std::make_unique<WriteBufferToPublishedFile>(
         resolved_path,
@@ -902,6 +912,10 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     throw_unless_vanished(sym_ec, entry_path);
                 else if (!is_symlink)
                     pending_dirs.push_back(entry_path);
+            }
+            else if (entry_path.filename().string().starts_with(staging_file_name_prefix))
+            {
+                /// A write that is not published yet is not an object.
             }
             else
             {

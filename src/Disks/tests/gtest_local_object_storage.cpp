@@ -861,6 +861,39 @@ TEST(LocalObjectStorage, InterleavedUnconditionalWritesPublishDistinctEtags)
     EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"prefix.path"});
 }
 
+/// A write is staged next to its target until it is finalized, and `listObjects` must
+/// not report the staged file: a remote object storage never lists an unfinished upload.
+TEST(LocalObjectStorage, ListObjectsHidesUnfinishedWrites)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_list_hides_unfinished");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "directory" / std::string(250, 'x');
+    fs::create_directories(path.parent_path());
+
+    auto writer = storage->writeObject(
+        DB::StoredObject(path.string()), DB::WriteMode::Rewrite, /*attributes=*/ {}, DB::DBMS_DEFAULT_BUFFER_SIZE, {});
+    writer->write("data", 4);
+    writer->next();
+
+    auto list = [&]
+    {
+        DB::RelativePathsWithMetadata children;
+        storage->listObjects(root.string(), children, /* max_keys */ 0);
+        std::vector<std::string> paths;
+        for (const auto & child : children)
+            paths.push_back(child->relative_path);
+        return paths;
+    };
+
+    EXPECT_EQ(listDirectory(path.parent_path()).size(), 1) << "the write is expected to be staged next to its target";
+    EXPECT_EQ(list(), std::vector<std::string>{});
+
+    writer->finalize();
+    EXPECT_EQ(list(), std::vector<std::string>{path.string()});
+}
+
 /// Every etag this storage hands out has to be the same kind of token, because a
 /// caller feeds the etag it read straight back into `If-Match`. `getObjectMetadata`
 /// used to build a differently shaped one, which could then only ever compare unequal
