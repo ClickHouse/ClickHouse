@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -1194,6 +1195,40 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
     return false;
 }
 
+/// Whether the splice into the query the replicas run would drop a conjunct that may fix a column, which
+/// is the one way a condition the fragment is given can order this read and not theirs. Asked conjunct by
+/// conjunct, the way the splice itself drops them and the way `appendFixedColumnsFromFilterExpression`
+/// walks a condition, because asking it of the whole condition would also catch
+/// `k = 5 AND arrayExists(x -> ..., arr)`, where `k = 5` does travel - and withholding the ordering there
+/// leaves the replicas the ones reading in order, diverging the other way round.
+static bool aFixingConjunctWouldBeDroppedByTheSplice(const ActionsDAG::Node & condition)
+{
+    std::vector<const ActionsDAG::Node *> conjuncts{&condition};
+    while (!conjuncts.empty())
+    {
+        const auto * node = conjuncts.back();
+        conjuncts.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            conjuncts.push_back(node->children.front());
+            continue;
+        }
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+        {
+            for (const auto * child : node->children)
+                conjuncts.push_back(child);
+            continue;
+        }
+
+        if (mayFixColumn(node) && remoteRewriteDropsCondition(*node))
+            return true;
+    }
+
+    return false;
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     if (parent_node->children.size() != 1)
@@ -1494,15 +1529,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// by the rewrite that splices the condition into their query, and the answer is carried on
         /// this step.
         ///
-        /// One answer for the whole fragment, though the splice works conjunct by conjunct and can
-        /// drop some of them. That is enough because the two lists do not meet: what fixes a column
-        /// is an `equals` against a constant reached through `and`
-        /// (`appendFixedColumnsFromFilterExpression`), and what the splice drops is the
-        /// non-deterministic, the stateful and what it cannot name (`tryBuildAdditionalFilterAST`) -
-        /// a constant is none of those. Teach either side something new - an `in` against a
-        /// one-element set, say - and this has to be revisited; test 05255 pins it.
+        /// The fragment's answer covers all of it, while the splice works conjunct by conjunct and can
+        /// drop one, so the reasons it drops a conjunct are asked here as well. Most of them cannot meet
+        /// a fixed column: what fixes one is an `equals` against a constant
+        /// (`appendFixedColumnsFromFilterExpression`), and the splice drops the non-deterministic, the
+        /// stateful and what it cannot name (`tryBuildAdditionalFilterAST`) - a constant is none of
+        /// those. A lambda can meet one, because a sorting key may be a higher-order expression, so that
+        /// case is asked for. Teach either side something new - an `in` against a one-element set, say -
+        /// and this has to be revisited; tests 05255 and 05259 pin the two shapes.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        if (!parallel_replicas_local_plan->replicasGetPushedConditions() && condition && mayFixColumn(condition))
+        const bool condition_reaches_the_replicas = parallel_replicas_local_plan->replicasGetPushedConditions()
+            && !(condition && aFixingConjunctWouldBeDroppedByTheSplice(*condition));
+        if (!condition_reaches_the_replicas && condition && mayFixColumn(condition))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized

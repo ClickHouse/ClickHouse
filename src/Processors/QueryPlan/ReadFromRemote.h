@@ -29,6 +29,10 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 bool canSpliceFiltersIntoRemoteQuery(
     const ASTPtr & query_ast, const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context, const ContextPtr & context);
 
+/// Whether the splice would drop this particular condition whatever the query's shape says - it cannot
+/// express a lambda. `canSpliceFiltersIntoRemoteQuery` answers for the fragment, this for one condition.
+bool remoteRewriteDropsCondition(const ActionsDAG::Node & condition);
+
 /// Reading step from remote servers.
 /// Unite query results from several shards.
 class ReadFromRemote final : public SourceStepWithFilterBase

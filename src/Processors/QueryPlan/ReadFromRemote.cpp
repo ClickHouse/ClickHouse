@@ -249,6 +249,38 @@ static ASTSelectQuery * tryGetSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery>();
 }
 
+/// A lambda, or the capture a lambda with bound arguments becomes. Two cases because a lambda with no
+/// capture can be constant-folded into a plain function.
+static bool isLambdaLike(const ActionsDAG::Node & node)
+{
+    return WhichDataType(node.result_type).isFunction()
+        || (node.type == ActionsDAG::ActionType::FUNCTION && typeid_cast<const FunctionCapture *>(node.function_base.get()));
+}
+
+/// Whether the rewrite would drop a condition rather than carry it, for a reason that is the
+/// condition's own rather than the query's shape: it cannot write a lambda back into an AST. Asked by
+/// the push-down, which may not let a read order itself by a condition the replicas will not get.
+bool remoteRewriteDropsCondition(const ActionsDAG::Node & condition)
+{
+    std::vector<const ActionsDAG::Node *> stack{&condition};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (isLambdaLike(*node))
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
@@ -319,10 +351,7 @@ ASTPtr tryBuildAdditionalFilterAST(
         }
 
         /// Lambdas are not supported (converting back to AST is complicated).
-        /// We have two cases here cause function with no capture can be constant-folded.
-        if (WhichDataType(node->result_type).isFunction()
-            || (node->type == ActionsDAG::ActionType::FUNCTION
-                && typeid_cast<const FunctionCapture *>(node->function_base.get())))
+        if (isLambdaLike(*node))
         {
             node_to_ast[node] = nullptr;
             stack.pop();
