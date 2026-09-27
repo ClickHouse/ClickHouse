@@ -35,7 +35,8 @@ CREATE SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 0;
 SELECT value FROM system.settings_profile_elements WHERE profile_name = 'profile_05136';
 ALTER SETTINGS PROFILE profile_05136 SETTINGS allow_experimental_analyzer = 0;
 SELECT value FROM system.settings_profile_elements WHERE profile_name = 'profile_05136';
-ALTER SETTINGS PROFILE profile_05136 MODIFY SETTINGS enable_analyzer = 0;
+-- `MODIFY` matches the element by the name it is stored under; an alias of a query-level setting would add a second element.
+ALTER SETTINGS PROFILE profile_05136 MODIFY SETTINGS allow_experimental_analyzer = 0;
 SELECT value FROM system.settings_profile_elements WHERE profile_name = 'profile_05136';
 DROP SETTINGS PROFILE profile_05136;
 
