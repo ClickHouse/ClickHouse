@@ -234,3 +234,57 @@ def test_mutation_of_empty_part_with_cleanup_interval_deferred(started_cluster):
         ), state(table)
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_mutation_of_empty_part_with_failing_cleanup(started_cluster):
+    table = "t_failing_cleanup"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    # As above, only the request can remove the empty part. The temporary directory cleanup runs on
+    # every iteration here, and is made to fail on each of them below.
+    node.query(
+        f"CREATE TABLE {table} (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS merge_tree_clear_old_parts_interval_seconds = 100000, "
+        "merge_tree_clear_old_temporary_directories_interval_seconds = 0"
+    )
+    poison = None
+    try:
+        node.query(f"INSERT INTO {table} VALUES (1)")
+        node.query(f"ALTER TABLE {table} DELETE WHERE 1 SETTINGS mutations_sync = 1")
+
+        # The age check of a stale temporary directory reads every entry, and reading a symlink loop
+        # throws, so this directory makes the temporary directory cleanup fail each time it runs.
+        poison = (
+            node.query(
+                "SELECT data_paths[1] FROM system.tables "
+                f"WHERE database = currentDatabase() AND name = '{table}'"
+            )
+            .strip()
+            .rstrip("/")
+            + "/tmp_poison"
+        )
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir {poison} && ln -s loop {poison}/loop && touch -d '3 days ago' {poison}",
+            ]
+        )
+
+        node.query(
+            f"ALTER TABLE {table} DELETE WHERE a = 1 "
+            "SETTINGS mutations_sync = 1, max_execution_time = 60"
+        )
+        assert (
+            node.query(
+                "SELECT countIf(is_done = 0) FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{table}'"
+            ).strip()
+            == "0"
+        ), state(table)
+        # Keeps a run in which the cleanup did not fail from passing without having tested anything.
+        node.wait_for_log_line(f"{table} \\(CleanupThread\\).*tmp_poison/loop")
+    finally:
+        # The loop would make the removal of the table directory fail as well.
+        if poison:
+            node.exec_in_container(["rm", "-rf", poison])
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")

@@ -45,6 +45,12 @@ Float32 MergeTreeCleanupThread::iterate()
 
     auto shared_lock
         = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+    /// Served before the other cleanups: a request wakes this thread only once, so an exception
+    /// in any of them must not keep it from being served.
+    if (clear_empty_parts_requested.exchange(false, std::memory_order_relaxed))
+        cleaned_part_like += storage.clearEmptyParts();
+
     if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
             static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
     {
@@ -52,9 +58,6 @@ Float32 MergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearOldTemporaryDirectories(
             (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
     }
-
-    /// Consumed unconditionally: the periodic branch below cleans empty parts too.
-    const bool empty_parts_requested = clear_empty_parts_requested.exchange(false, std::memory_order_relaxed);
 
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
             static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
@@ -65,8 +68,6 @@ Float32 MergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearUnusedPatchParts();
         cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
     }
-    else if (empty_parts_requested)
-        cleaned_part_like += storage.clearEmptyParts();
 
     constexpr Float32 parts_number_amplification = 1.3f; /// Assuming we merge 4-5 parts each time
     Float32 cleaned_inserted_parts = static_cast<Float32>(cleaned_parts) / parts_number_amplification;
