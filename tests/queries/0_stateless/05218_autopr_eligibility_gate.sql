@@ -11,6 +11,9 @@
 
 DROP TABLE IF EXISTS t_autopr_gate;
 DROP TABLE IF EXISTS t_autopr_gate_2;
+DROP TABLE IF EXISTS t_autopr_gate_alias;
+DROP TABLE IF EXISTS t_autopr_gate_alias_2;
+DROP TABLE IF EXISTS t_autopr_gate_hop;
 DROP VIEW IF EXISTS v_autopr_gate;
 
 -- ReplacingMergeTree so that the FINAL case below is a legal query; plain MergeTree rejects FINAL
@@ -18,6 +21,13 @@ DROP VIEW IF EXISTS v_autopr_gate;
 CREATE TABLE t_autopr_gate (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a;
 CREATE TABLE t_autopr_gate_2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE VIEW v_autopr_gate AS SELECT a, b FROM t_autopr_gate;
+-- An `Alias` forwards reading to its target, so this reaches the view's body just as the view does.
+CREATE TABLE t_autopr_gate_alias ENGINE = Alias('v_autopr_gate');
+-- An `Alias` to an `Alias` is refused at creation, but recreating a target as one builds the chain.
+CREATE TABLE t_autopr_gate_alias_2 ENGINE = Alias('t_autopr_gate_hop');
+CREATE TABLE t_autopr_gate_hop (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+DROP TABLE t_autopr_gate_hop;
+CREATE TABLE t_autopr_gate_hop ENGINE = Alias('v_autopr_gate');
 INSERT INTO t_autopr_gate SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_autopr_gate_2 SELECT number, number % 10 FROM numbers(1000);
 
@@ -68,6 +78,23 @@ SETTINGS log_comment = 'autopr_gate_ineligible_final';
 SELECT sum(b) FROM v_autopr_gate FORMAT Null
 SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body';
 
+-- Same through an `Alias` to that view: the walk sees the alias storage, not what it points at.
+SELECT sum(b) FROM t_autopr_gate_alias FORMAT Null
+SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body_via_alias';
+
+-- Same through an inline `view` table function: the walk refuses every table function outright, while
+-- this one plans the body it was given, with replicas.
+SELECT sum(b) FROM view(SELECT b FROM t_autopr_gate) FORMAT Null
+SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body_via_table_function';
+
+-- A table function that reads nothing else stays ineligible, so the check still saves a plan there.
+SELECT sum(number) FROM numbers(10000) FORMAT Null
+SETTINGS log_comment = 'autopr_gate_ineligible_table_function';
+
+-- Same through a chain of two `Alias` tables.
+SELECT sum(b) FROM t_autopr_gate_alias_2 FORMAT Null
+SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body_via_alias_chain';
+
 -- Eligible only through a subquery's own SETTINGS clause, which allows parallel replicas on
 -- non-replicated MergeTree again after the outer query forbade them. The subquery is planned with its
 -- own context and the read below it is made with replicas, so a check that only consulted the outer
@@ -99,6 +126,9 @@ WHERE current_database = currentDatabase()
   AND startsWith(log_comment, 'autopr_gate_')
 ORDER BY log_comment;
 
+DROP TABLE t_autopr_gate_alias;
+DROP TABLE t_autopr_gate_alias_2;
+DROP TABLE t_autopr_gate_hop;
 DROP VIEW v_autopr_gate;
 DROP TABLE t_autopr_gate;
 DROP TABLE t_autopr_gate_2;
