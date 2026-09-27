@@ -1206,7 +1206,7 @@ When a query filters on a specific subcolumn (e.g. `data.user_name.:String = 'al
 
 <Note>
 The index may produce false positives when different JSON paths contain the same tokens.
-For example, if row 1 has `{"a": "hello", "b": "world"}` and a query searches for `data.a = 'world'`, the text index cannot distinguish that `world` belongs to path `b`, not `a`.
+For example, if row 1 has `{"a": "hello", "b": "world"}` and a query searches for `data.a.:String = 'world'`, the text index cannot distinguish that `world` belongs to path `b`, not `a`.
 In such cases, the index will not skip the row, and the filter on the actual column data will handle the final evaluation.
 This is the same behavior as with other text index use cases where the index acts as a fast pre-filter.
 </Note>

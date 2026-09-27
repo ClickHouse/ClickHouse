@@ -40,6 +40,7 @@ SELECT count() FROM t_dynamic WHERE hasToken(j.s, 'hello') SETTINGS dynamic_thro
 SELECT count() FROM t_dynamic WHERE hasToken(j.s, 'hello') SETTINGS dynamic_throw_on_type_mismatch = 0, use_skip_indexes = 0;
 SELECT count() FROM t_dynamic WHERE hasTokenOrNull(j.s, 'two') SETTINGS dynamic_throw_on_type_mismatch = 0, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_dynamic WHERE match(j.s, 'one two three') SETTINGS dynamic_throw_on_type_mismatch = 0, force_data_skipping_indices = 'idx';
+SELECT count() FROM t_dynamic WHERE j.s ILIKE '%THREE%' SETTINGS dynamic_throw_on_type_mismatch = 0, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_dynamic WHERE j.s.:String = 'hello' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_dynamic WHERE j.s.:String IN ('hello', 'zzz') SETTINGS force_data_skipping_indices = 'idx';
 
