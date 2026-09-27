@@ -4,6 +4,7 @@
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <IO/ReadCancellationToken.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -225,6 +226,11 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
     size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
 
+    /// These readers materialize rows already selected before a partial result was requested.
+    /// They must drain using a fresh read scope, while full cancellation still stops the new pool.
+    auto lazy_reader_settings = reader_settings;
+    lazy_reader_settings.read_settings.read_cancellation = ReadCancellationToken::create();
+
     MergeTreeReadPoolBase::PoolSettings pool_settings{
         .threads = max_threads,
         .sum_marks = sum_marks,
@@ -261,7 +267,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         /* row_level_filter */ nullptr,
         /* prewhere_info */ nullptr,
         actions_settings,
-        reader_settings,
+        lazy_reader_settings,
         outputs.front().getHeader().getNames(),
         pool_settings,
         block_size,
@@ -283,11 +289,12 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             nullptr,
             /*index_read_tasks*/ IndexReadTasks{},
             actions_settings,
-            reader_settings,
+            lazy_reader_settings,
             /*index_build_context*/ nullptr,
             lazy_materializing_rows);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
+        auto source = std::make_shared<MergeTreeSource>(
+            std::move(processor), log_name, MergeTreeSource::PartialResultMode::Drain);
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));
