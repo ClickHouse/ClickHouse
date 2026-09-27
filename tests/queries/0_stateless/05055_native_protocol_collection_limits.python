@@ -210,6 +210,8 @@ def readException(s):
         "Too many settings received",
         "Too large string size",
         "Too large collection size",
+        "Attempt to read after eof",
+        "Cannot read all data",
     ):
         if known in message:
             return known
@@ -246,6 +248,15 @@ def rejected(s):
     return result
 
 
+def endOfStream(s):
+    """The client closed its side in the middle of a packet: the server may either answer with the
+    exception about the end of the stream or simply close the connection."""
+    result = outcome(s)
+    if result in ("closed", "Attempt to read after eof", "Cannot read all data"):
+        return "end of stream"
+    return result
+
+
 def main():
     # A settings sequence longer than any real query.
     s = connect()
@@ -253,10 +264,13 @@ def main():
     print("too many settings:", outcome(s))
     s.close()
 
-    # A `ClientInfo` string that declares a gigabyte and never sends it.
+    # A `ClientInfo` string that declares a gigabyte and never sends it. It is read growing as the
+    # bytes arrive, so the server waits for them instead of allocating the declared size, and stops
+    # at the end of the stream.
     s = connect()
     sendQuery(s, "SELECT 1", os_user_declared_size=1 << 30)
-    print("client info string of a gigabyte:", outcome(s))
+    s.shutdown(socket.SHUT_WR)
+    print("client info string of a gigabyte:", endOfStream(s))
     s.close()
 
     # A setting name that declares a gigabyte and never sends it: the count bound alone does not
