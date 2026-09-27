@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -165,6 +166,40 @@ TEST(ColumnReplicated, RollbackClearsInsertionCache)
     auto full = assert_cast<const ColumnReplicated &>(*dest).convertToFullColumnIfReplicated();
     ASSERT_EQ(full->size(), 1u);
     ASSERT_EQ(full->getUInt(0), 12u);
+}
+
+TEST(ColumnReplicated, CopyShortRowsFrom)
+{
+    const String long_value(200, 'l');
+    auto source = createColumn({"a", "b", long_value}, {0, 2, 0, 2});
+    auto other_source = createColumn({long_value, "z"}, {0, 1, 1});
+    MutableColumnPtr dest_nested = ColumnString::create();
+    auto dest = ColumnReplicated::create(std::move(dest_nested));
+    dest->copyShortRowsFrom(*source);
+    /// Short rows of `source` are copied, its long row is shared; rows of an unregistered source are shared.
+    dest->insertFrom(*source, 0);
+    dest->insertFrom(*source, 2);
+    dest->insertRangeFrom(*source, 1, 3);
+    dest->insertManyFrom(*source, 1, 2);
+    dest->insertFrom(*other_source, 0);
+    dest->insertRangeFrom(*other_source, 1, 2);
+    checkColumn(*dest, {"a", "a", long_value, "a", long_value, "z"}, {0, 1, 2, 3, 2, 2, 2, 4, 5, 5});
+
+    /// Rows of other column families are shared however short.
+    MutableColumnPtr array_nested = ColumnArray::create(ColumnUInt64::create());
+    array_nested->insert(Array{UInt64(1)});
+    MutableColumnPtr array_indexes = ColumnUInt8::create();
+    array_indexes->insert(0);
+    array_indexes->insert(0);
+    auto array_source = ColumnReplicated::create(std::move(array_nested), std::move(array_indexes));
+    MutableColumnPtr array_dest_nested = ColumnArray::create(ColumnUInt64::create());
+    auto array_dest = ColumnReplicated::create(std::move(array_dest_nested));
+    array_dest->copyShortRowsFrom(*array_source);
+    array_dest->insertFrom(*array_source, 0);
+    array_dest->insertFrom(*array_source, 1);
+    ASSERT_EQ(array_dest->getNestedColumn()->size(), 1);
+    ASSERT_EQ(array_dest->size(), 2);
+    ASSERT_EQ((*array_dest)[1], Field(Array{UInt64(1)}));
 }
 
 TEST(ColumnReplicated, IndicesOfNonDefaultRows)

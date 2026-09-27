@@ -18,6 +18,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Merged columns copy the short rows of a source instead of sharing them if the source references each of its rows fewer
+/// times than this: such a row repeats at most that often in a merged block, which does not pay for a cache entry.
+constexpr UInt64 MIN_REPEATS_TO_SHARE_SHORT_ROWS = 4;
+
+bool hasFewRepeats(const ColumnReplicated & column)
+{
+    ColumnUInt64::Container reference_counts(column.getNestedColumn()->size(), 0);
+    column.getIndexes().countRowsInIndexedData(reference_counts);
+    return std::ranges::all_of(reference_counts, [](UInt64 count) { return count < MIN_REPEATS_TO_SHARE_SHORT_ROWS; });
+}
+
+}
+
 MergeSorter::MergeSorter(
     SharedHeader header, Chunks chunks_, const SortDescription & description,
     size_t max_merged_block_size_, UInt64 limit_, Mode mode_)
@@ -29,6 +45,8 @@ MergeSorter::MergeSorter(
 {
     Chunks nonempty_chunks;
     size_t chunks_size = chunks.size();
+    columns_to_copy_short_rows.resize(chunks_size);
+    short_rows_registered_block.assign(chunks_size, 0);
 
     for (size_t chunk_index = 0; chunk_index < chunks_size; ++chunk_index)
     {
@@ -51,6 +69,21 @@ MergeSorter::MergeSorter(
             columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
         }
         chunk.setColumns(std::move(columns), num_rows);
+
+        UnorderedMapWithMemoryTracking<const IColumn *, bool> few_repeats_by_index;
+        const auto & chunk_columns = chunk.getColumns();
+        for (size_t i = 0; i < chunk_columns.size(); ++i)
+        {
+            const auto * replicated = typeid_cast<const ColumnReplicated *>(chunk_columns[i].get());
+            if (!replicated)
+                continue;
+
+            auto [it, inserted] = few_repeats_by_index.try_emplace(replicated->getIndexesColumn().get(), false);
+            if (inserted)
+                it->second = hasFewRepeats(*replicated);
+            if (it->second)
+                columns_to_copy_short_rows[chunk_index].push_back(i);
+        }
 
         cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
 
@@ -96,6 +129,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = createMergedColumns();
+    ++merged_block_number;
 
     size_t size_to_reserve = 0;
     for (const auto & chunk : chunks)
@@ -140,6 +174,15 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 
         if (rows_to_insert)
         {
+            const size_t source = current->order;
+            if (short_rows_registered_block[source] != merged_block_number)
+            {
+                short_rows_registered_block[source] = merged_block_number;
+                for (size_t i : columns_to_copy_short_rows[source])
+                    assert_cast<ColumnReplicated &>(*merged_columns[i]).copyShortRowsFrom(
+                        assert_cast<const ColumnReplicated &>(*current->all_columns[i]));
+            }
+
             /// Each input batch is internally unique in `MergeUniqueChunks` mode. Only its first row
             /// can repeat the last emitted key, so the remaining rows form one contiguous range.
             for (size_t i = 0; i < num_columns; ++i)
@@ -179,6 +222,14 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 
     if (merged_rows == 0 && chunks.empty())
         return {};
+
+    for (auto & column : merged_columns)
+    {
+        auto * replicated = typeid_cast<ColumnReplicated *>(column.get());
+        /// A merged replicated column that reused no row equals its nested column.
+        if (replicated && replicated->getNestedColumn()->size() == replicated->size() && replicated->getIndexes().isIdentity())
+            column = IColumn::mutate(std::move(replicated->getNestedColumn()).detach());
+    }
 
     return Chunk(std::move(merged_columns), merged_rows);
 }

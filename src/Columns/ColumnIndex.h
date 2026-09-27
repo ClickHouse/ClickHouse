@@ -47,6 +47,9 @@ public:
 
     bool containsDefault() const;
 
+    /// Whether the index of every row equals its row number.
+    bool isIdentity() const;
+
     /// Per-row hash of indexed data: gathers the precomputed per-dictionary-row hashes
     /// `dict_hash` by index and writes (or combines, when initial == false) into `hash_out`.
     /// `hash_out[i]` corresponds to row `row_begin + i`.

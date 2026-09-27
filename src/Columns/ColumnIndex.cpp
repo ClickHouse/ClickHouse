@@ -534,6 +534,27 @@ bool ColumnIndex::containsDefault() const
     return contains;
 }
 
+bool ColumnIndex::isIdentity() const
+{
+    bool identity = true;
+
+    auto check_identity = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    {
+        const auto & data = getIndexesData<CurIndexType>();
+        for (size_t row = 0; row != data.size(); ++row)
+        {
+            if (data[row] != row)
+            {
+                identity = false;
+                return;
+            }
+        }
+    };
+
+    callForType(std::move(check_identity), size_of_type);
+    return identity;
+}
+
 void ColumnIndex::computeHashInto(
     const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {

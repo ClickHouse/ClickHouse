@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -256,5 +257,88 @@ TEST(MergeSorter, ConstantSparseAndReplicatedColumns)
         const std::vector<UInt64> expected = mode == MergeSorter::Mode::PreserveRows
             ? std::vector<UInt64>{100, 300, 200, 201, 301} : std::vector<UInt64>{100, 200, 201, 301};
         EXPECT_EQ(readPayloads(sorter, 2), expected);
+    }
+}
+
+TEST(MergeSorter, ReplicatedPayloadCopiedOrShared)
+{
+    /// Merged blocks copy the short payload rows of a chunk that references each of its payload rows fewer than 4 times and
+    /// share the other rows; a merged payload that shares no row is returned as a plain column.
+    const auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
+
+    struct Source
+    {
+        std::vector<UInt64> keys;
+        std::vector<String> payloads;
+        std::vector<UInt8> payload_indexes;
+    };
+    auto make_chunk = [](const Source & source)
+    {
+        auto key_column = ColumnUInt64::create();
+        for (const auto key : source.keys)
+            key_column->insertValue(key);
+        MutableColumnPtr nested = ColumnString::create();
+        for (const auto & payload : source.payloads)
+            nested->insert(payload);
+        MutableColumnPtr indexes = ColumnUInt8::create();
+        for (const auto index : source.payload_indexes)
+            indexes->insert(index);
+        return Chunk(
+            Columns{std::move(key_column), ColumnReplicated::create(std::move(nested), std::move(indexes))}, source.keys.size());
+    };
+
+    struct Case
+    {
+        Source a;
+        Source b;
+        size_t block_size;
+        /// Nested size of the merged payload of every block, 0 if the payload must be a plain column.
+        size_t nested_size;
+        std::vector<std::vector<String>> blocks;
+    };
+    const String l(200, 'l');
+    const std::vector<Case> cases{
+        /// Rows referenced once are copied.
+        {{{1, 3}, {"a", "b"}, {0, 1}}, {{2, 4}, {"c", "d"}, {0, 1}}, 64, 0, {{"a", "c", "b", "d"}}},
+        /// A short row referenced twice is copied too.
+        {{{1, 3}, {"a"}, {0, 0}}, {{2, 4}, {"c", "d"}, {0, 1}}, 64, 0, {{"a", "c", "a", "d"}}},
+        /// A long row is shared.
+        {{{1, 3}, {l}, {0, 0}}, {{2, 4}, {"c", "d"}, {0, 1}}, 64, 3, {{l, "c", l, "d"}}},
+        /// Rows referenced 4 times are shared.
+        {{{1, 3, 5, 7}, {"a"}, {0, 0, 0, 0}}, {{2, 4, 6, 8}, {"b"}, {0, 0, 0, 0}}, 64, 2, {{"a", "b", "a", "b", "a", "b", "a", "b"}}},
+        /// The rule holds per chunk: the first one shares its row, the second one copies its rows.
+        {{{1, 3, 5, 7}, {"a"}, {0, 0, 0, 0}}, {{2, 4, 6, 8}, {"b", "c"}, {0, 0, 1, 1}}, 64, 5, {{"a", "b", "a", "b", "a", "c", "a", "c"}}},
+        /// It holds in every merged block.
+        {{{1, 2, 5, 6}, {"a", "b"}, {0, 0, 1, 1}}, {{3, 4, 7, 8}, {"c", "d"}, {0, 0, 1, 1}}, 4, 0, {{"a", "a", "c", "c"}, {"b", "b", "d", "d"}}},
+    };
+
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    {
+        for (size_t case_index = 0; case_index < cases.size(); ++case_index)
+        {
+            SCOPED_TRACE(::testing::Message() << "mode=" << static_cast<int>(mode) << ", case=" << case_index);
+            const auto & test_case = cases[case_index];
+            Chunks chunks;
+            chunks.push_back(make_chunk(test_case.a));
+            chunks.push_back(make_chunk(test_case.b));
+            MergeSorter sorter(header, std::move(chunks), ascending(), test_case.block_size, 0, mode);
+
+            std::vector<std::vector<String>> blocks;
+            while (auto chunk = sorter.read())
+            {
+                if (!chunk.getNumRows())
+                    continue;
+                const auto & payload = chunk.getColumns()[1];
+                EXPECT_EQ(payload->isReplicated(), test_case.nested_size != 0);
+                if (payload->isReplicated())
+                    EXPECT_EQ(assert_cast<const ColumnReplicated &>(*payload).getNestedColumn()->size(), test_case.nested_size);
+                auto & values = blocks.emplace_back();
+                for (size_t row = 0; row < chunk.getNumRows(); ++row)
+                    values.emplace_back(payload->getDataAt(row));
+            }
+            EXPECT_EQ(blocks, test_case.blocks);
+        }
     }
 }

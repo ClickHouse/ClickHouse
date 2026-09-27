@@ -196,7 +196,23 @@ public:
     const ColumnPtr & getNestedColumn() const { return nested_column; }
     WrappedPtr & getNestedColumn() { return nested_column; }
 
+    /// Later inserts from `source` copy its rows shorter than an insertion_cache entry instead of remembering them.
+    /// For a source whose rows repeat too little for sharing them to pay off.
+    void copyShortRowsFrom(const ColumnReplicated & source);
+
 private:
+    /// Rows already inserted from one replicated source column.
+    struct InsertedRows
+    {
+        /// See copyShortRowsFrom.
+        bool copy_short_rows = false;
+        /// Source nested row -> row of nested_column holding the same value.
+        UnorderedMapWithMemoryTracking<size_t, size_t> rows;
+    };
+
+    /// Returns the row of nested_column holding row src_index of src_nested, inserting the value if needed.
+    size_t insertNestedRow(InsertedRows & inserted_rows, const IColumn & src_nested, size_t src_index);
+
     WrappedPtr nested_column;
     ColumnIndex indexes;
 
@@ -209,8 +225,8 @@ private:
     /// It helps to reduce memory usage during sorting/merge-sorting of replicated columns where
     /// we create empty ColumnReplicated and do insertFrom/insertRangeFrom/insertManyFrom from
     /// source columns.
-    /// Mapping is the following: id -> (source_index -> inserted_index).
-    UnorderedMapWithMemoryTracking<UInt64, UnorderedMapWithMemoryTracking<size_t, size_t>> insertion_cache;
+    /// Mapping is the following: id -> (source_index -> inserted_index), see InsertedRows.
+    UnorderedMapWithMemoryTracking<UInt64, InsertedRows> insertion_cache;
 
     /// Global counter used to create a unique id for each ColumnReplicated instance.
     static std::atomic<UInt64> global_id_counter;
