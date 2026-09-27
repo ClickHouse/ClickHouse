@@ -241,7 +241,7 @@ public:
         if (min_ngram_length < 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_ngram_length' must be greater or equal to 3");
 
-        if (arguments.size() == 3)
+        if (arguments.size() >= 3)
             max_ngram_length = arguments[2].column->getUInt(0);
 
         if (max_ngram_length < min_ngram_length)
