@@ -84,12 +84,12 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     const StorageMergeTree & storage_,
     const MergeTreeTransactionPtr & tx_,
     std::unique_lock<std::mutex> & merge_mutate_lock_,
-    bool respect_failure_backoff_)
+    UInt64 max_postpone_time_for_failed_merges_ms_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
     , committing_blocks(storage.getCommittingBlocks())
     , min_update_block(getMinUpdateBlockNumber(committing_blocks))
-    , respect_failure_backoff(respect_failure_backoff_)
+    , max_postpone_time_for_failed_merges_ms(max_postpone_time_for_failed_merges_ms_)
 {
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
@@ -192,7 +192,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
     if (storage.currently_merging_mutating_parts.contains(part->info))
         return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
 
-    if (respect_failure_backoff && !storage.merge_backoff_policy.partCanBeProcessed(part->name))
+    if (!storage.merge_backoff_policy.partCanBeProcessed(part->name, max_postpone_time_for_failed_merges_ms))
     {
         auto reason = PreformattedMessage::create(
             "According to exponential backoff policy, do not perform merges for the part {} yet. Put it aside.",

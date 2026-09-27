@@ -118,8 +118,10 @@ def prepare_table_with_failing_merge(node, extra_settings=None):
     metadata, so the conversion, and with it the merge, fails every time.
     """
     # Drop before rotating, so that a postpone line logged for the previous table cannot land
-    # in the fresh log and defeat an absence assertion made against it.
-    node.query("DROP TABLE IF EXISTS test_table SYNC")
+    # in the fresh log and defeat an absence assertion made against it. Both nodes are cleaned,
+    # so that no task still failing on the other one runs alongside the timing checks.
+    for n in all_nodes:
+        n.query("DROP TABLE IF EXISTS test_table SYNC")
     node.rotate_logs()
     # merge_selector_base=1 makes the two equal-sized parts mergeable straight away instead
     # of only once they have aged.
@@ -179,6 +181,16 @@ def test_merge_exponential_backoff_with_merge_tree(started_cluster, node, found_
 
     if found_in_log:
         assert node.wait_for_log_line(NON_REPLICATED_POSTPONE_MERGE_LOG)
+        # A failed merge postpones every one of its source parts.
+        parts = node.query(
+            "SELECT name FROM system.parts WHERE database = currentDatabase() "
+            "AND table = 'test_table' AND active"
+        ).split()
+        assert len(parts) == 2
+        for part in parts:
+            assert node.contains_in_log(
+                f"do not perform merges for the part {part} yet"
+            ), f"part {part} was not postponed"
     else:
         # Best effort, but when it fails, then the logs for sure contain the problematic message
         assert not node.contains_in_log(NON_REPLICATED_POSTPONE_MERGE_LOG)
@@ -206,6 +218,19 @@ def test_merge_exponential_backoff_with_merge_tree(started_cluster, node, found_
     assert "UNKNOWN_ELEMENT_OF_ENUM" in node.query_and_get_error(
         "OPTIMIZE TABLE test_table FINAL"
     )
+
+    if found_in_log:
+        # Lowering the cap has to reach the postponed parts at once, not only when their delay
+        # is over. So it is lowered right after a background failure has restarted the 60s delay.
+        failures = len(failure_times_ms(node, "test_table", "MergeParts"))
+        restarted = wait_for_more_merge_failures(node, failures, timeout=120)
+        assert restarted > failures
+        node.query(
+            "ALTER TABLE test_table MODIFY SETTING max_postpone_time_for_failed_merges_ms = 0"
+        )
+        assert (
+            wait_for_more_merge_failures(node, restarted, timeout=30) > restarted
+        ), "lowering the cap did not reach the postponed parts"
 
 
 def test_merge_backoff_cap_is_read_on_every_failure(started_cluster):
@@ -244,6 +269,16 @@ def failure_times_ms(node, table, event_type):
             f"AND event_type = '{event_type}' AND error != 0 ORDER BY event_time_microseconds"
         ).split()
     ]
+
+
+def wait_for_more_merge_failures(node, failures, timeout):
+    """Returns the number of failed merges of test_table once it exceeds `failures`, or at the timeout."""
+    start_time = time.monotonic()
+    while True:
+        count = len(failure_times_ms(node, "test_table", "MergeParts"))
+        if count > failures or time.monotonic() > start_time + timeout:
+            return count
+        time.sleep(1)
 
 
 def test_backoff_reaches_the_configured_cap(started_cluster):

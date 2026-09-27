@@ -1854,7 +1854,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         });
 
     /// `aggressive` is set only by `OPTIMIZE`, which must get the merge's own error instead.
-    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, /*respect_failure_backoff_=*/!aggressive);
+    UInt64 max_postpone_time_for_failed_merges_ms
+        = aggressive ? 0 : (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_merges_ms];
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, max_postpone_time_for_failed_merges_ms);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
@@ -2134,6 +2136,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     }
 
     size_t max_ast_elements = getContext()->getSettingsRef()[Setting::max_expanded_ast_elements];
+    UInt64 max_postpone_time_for_failed_mutations_ms = (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms];
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
@@ -2174,7 +2177,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
         MergeTreeTransactionPtr txn;
 
-        if (!mutation_backoff_policy.partCanBeProcessed(part->name))
+        if (!mutation_backoff_policy.partCanBeProcessed(part->name, max_postpone_time_for_failed_mutations_ms))
         {
             LOG_DEBUG(log, "According to exponential backoff policy, do not perform mutations for the part {} yet. Put it aside.", part->name);
             current_parts_postpone_reasons[part->name] = PostponeReasons::HIT_MUTATION_BACKOFF;

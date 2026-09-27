@@ -489,40 +489,25 @@ private:
             /// 2^retry_count milliseconds must still fit in UInt64 once converted to microseconds and added to a timestamp.
             static constexpr size_t max_retry_count = 53;
 
-            size_t retry_count;
-            size_t latest_fail_time_us;
-            size_t max_postpone_time_ms;
+            size_t retry_count = 0;
+            size_t latest_fail_time_us = 0;
 
-            explicit PartInfo(size_t max_postpone_time_ms_)
-                            : retry_count(0ull)
-                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
-                            , max_postpone_time_ms(max_postpone_time_ms_)
-            {}
-
-
-            size_t getNextMinExecutionTimeUsResolution() const
+            size_t getNextMinExecutionTimeUsResolution(size_t max_postpone_time_ms) const
             {
-                if (max_postpone_time_ms == 0)
-                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
                 size_t current_backoff_interval_ms = std::min<size_t>(1ull << retry_count, max_postpone_time_ms);
                 return latest_fail_time_us + current_backoff_interval_ms * 1000ull;
             }
 
             void addPartFailure()
             {
-                if (max_postpone_time_ms == 0)
-                    return;
                 retry_count = std::min(max_retry_count, retry_count + 1);
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeProcessed() const
+            bool partCanBeProcessed(size_t max_postpone_time_ms) const
             {
-                if (max_postpone_time_ms == 0)
-                    return true;
-
                 auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-                return current_time_us >= getNextMinExecutionTimeUsResolution();
+                return current_time_us >= getNextMinExecutionTimeUsResolution(max_postpone_time_ms);
             }
         };
 
@@ -544,31 +529,29 @@ private:
             failed_parts.erase(part_name);
         }
 
-        void addPartFailure(const String & part_name, size_t max_postpone_time_ms_)
+        void addPartFailure(const String & part_name, size_t max_postpone_time_ms)
         {
             std::unique_lock _lock(parts_info_lock);
 
-            /// The cap is re-read on every failure, so MODIFY SETTING also reaches an already failed part.
-            if (max_postpone_time_ms_ == 0)
+            if (max_postpone_time_ms == 0)
             {
                 failed_parts.erase(part_name);
                 return;
             }
 
-            auto [it, inserted] = failed_parts.try_emplace(part_name, max_postpone_time_ms_);
-            if (!inserted)
-                it->second.max_postpone_time_ms = max_postpone_time_ms_;
-            it->second.addPartFailure();
+            failed_parts[part_name].addPartFailure();
         }
 
-        bool partCanBeProcessed(const String & part_name) const
+        bool partCanBeProcessed(const String & part_name, size_t max_postpone_time_ms) const
         {
+            if (max_postpone_time_ms == 0)
+                return true;
 
             std::unique_lock _lock(parts_info_lock);
             auto iter = failed_parts.find(part_name);
             if (iter == failed_parts.end())
                 return true;
-            return iter->second.partCanBeProcessed();
+            return iter->second.partCanBeProcessed(max_postpone_time_ms);
         }
     };
     /// Controls postponing logic for failed mutations.

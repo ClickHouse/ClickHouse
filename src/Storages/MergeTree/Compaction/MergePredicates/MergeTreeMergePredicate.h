@@ -15,7 +15,7 @@ public:
         const StorageMergeTree & storage_,
         const MergeTreeTransactionPtr & tx_,
         std::unique_lock<std::mutex> & merge_mutate_lock_,
-        bool respect_failure_backoff_);
+        UInt64 max_postpone_time_for_failed_merges_ms_);
     ~MergeTreeMergePredicate() override = default;
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
@@ -31,7 +31,7 @@ private:
     DataVersionsByPartition data_versions_by_partition;
     CommittingBlocksSet committing_blocks;
     std::optional<Int64> min_update_block;
-    bool respect_failure_backoff;
+    UInt64 max_postpone_time_for_failed_merges_ms;
 };
 
 using MergeTreeMergePredicatePtr = std::shared_ptr<const MergeTreeMergePredicate>;
