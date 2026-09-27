@@ -347,6 +347,72 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         settings=POSITIONAL,
     )
 
+    # A nested COLUMNS matcher supplies the arguments to plus(). Losing or gaining one
+    # matching column would change that call while the projection cannot be analyzed.
+    node.query(
+        "CREATE TABLE dl.t25 (a UInt64, b UInt64, c UInt64, d UInt64) "
+        "ENGINE = MergeTree ORDER BY c"
+    )
+    node.query(
+        "ALTER TABLE dl.t25 ADD PROJECTION pp (`plus(a, b)` UInt64 CODEC(ZSTD)) "
+        "AS (SELECT plus(COLUMNS('^(a|b|b2)$')) AS x, c GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    # A direct matcher may shrink, but stored positional GROUP BY references must still
+    # resolve to the same outputs.
+    node.query("CREATE TABLE dl.t26 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t26 ADD PROJECTION pp "
+        "(SELECT COLUMNS('^(a|b)$'), c GROUP BY 1, 2, 3)",
+        settings=POSITIONAL,
+    )
+    node.query("CREATE TABLE dl.t27 (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY d")
+    node.query(
+        "ALTER TABLE dl.t27 ADD PROJECTION pp "
+        "(SELECT d, COLUMNS('^(a|b)$'), sum(c) GROUP BY 1, COLUMNS('^(a|b)$'))",
+        settings=POSITIONAL,
+    )
+
+    # Nested `*` also supplies function arguments; `count(*)` is the exception because it
+    # counts rows rather than expanding into the table's columns.
+    node.query("CREATE TABLE dl.t28 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t28 ADD PROJECTION pp (`plus(a, b)` UInt64 CODEC(ZSTD)) "
+        "AS (SELECT plus(*) AS x, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    node.query("CREATE TABLE dl.t29 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t29 ADD PROJECTION pp (`count()` AggregateFunction(count) CODEC(ZSTD)) "
+        "AS (SELECT COUNT(*) AS x, a GROUP BY 2)",
+        settings=POSITIONAL,
+    )
+    node.query(
+        "ALTER TABLE dl.t29 ADD PROJECTION qq "
+        "(SELECT countIf(COLUMNS('^b$'), a > 0) AS x, a GROUP BY 2)",
+        settings=POSITIONAL,
+    )
+    node.query("CREATE TABLE dl.t30 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t30 ADD PROJECTION pp (`plus(a, b)` UInt64 CODEC(ZSTD)) "
+        "AS (WITH plus(COLUMNS('^(a|b)$')) AS x SELECT x, c GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    node.query("CREATE TABLE dl.t31 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t31 ADD PROJECTION pp "
+        "(SELECT COLUMNS('^(a|b)$'), sum(c) GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    # An unused WITH alias cannot affect the projection's SELECT output.
+    node.query("CREATE TABLE dl.t32 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t32 ADD PROJECTION pp "
+        "(WITH plus(COLUMNS('^(a|b|b2)$')) AS x SELECT c GROUP BY 1)",
+        settings=POSITIONAL,
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -381,6 +447,14 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t22") == "1"
     assert projections("t23") == "1"
     assert projections("t24") == "1"
+    assert projections("t25") == "1"
+    assert projections("t26") == "1"
+    assert projections("t27") == "1"
+    assert projections("t28") == "1"
+    assert projections("t29") == "2"
+    assert projections("t30") == "1"
+    assert projections("t31") == "1"
+    assert projections("t32") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.restart_clickhouse()
@@ -412,6 +486,14 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t22") == "0"
     assert projections("t23") == "0"
     assert projections("t24") == "0"
+    assert projections("t25") == "0"
+    assert projections("t26") == "0"
+    assert projections("t27") == "0"
+    assert projections("t28") == "0"
+    assert projections("t29") == "0"
+    assert projections("t30") == "0"
+    assert projections("t31") == "0"
+    assert projections("t32") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -545,6 +627,27 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     node.query("ALTER TABLE dl.t23 MODIFY COLUMN b UInt32")
     error = node.query_and_get_error("ALTER TABLE dl.t24 MODIFY COLUMN t Tuple(y UInt64)")
     assert "projection `pp`" in error and "field that would no longer exist" in error
+    for statement in ("DROP COLUMN b", "ADD COLUMN b2 UInt64"):
+        error = node.query_and_get_error(f"ALTER TABLE dl.t25 {statement}")
+        assert "projection `pp`" in error and "nested matcher" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t25 MODIFY COLUMN b Int64")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    node.query("ALTER TABLE dl.t25 MODIFY COLUMN d UInt32")
+    error = node.query_and_get_error("ALTER TABLE dl.t26 DROP COLUMN b")
+    assert "projection `pp`" in error and "positional GROUP BY" in error
+    node.query("ALTER TABLE dl.t27 DROP COLUMN b")
+    error = node.query_and_get_error("ALTER TABLE dl.t28 DROP COLUMN b")
+    assert "projection `pp`" in error and "nested matcher" in error
+    node.query("ALTER TABLE dl.t29 ADD COLUMN c UInt64")
+    node.query("ALTER TABLE dl.t29 DROP COLUMN b")
+    error = node.query_and_get_error("ALTER TABLE dl.t30 MODIFY COLUMN b Int64")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t31 DROP COLUMN b")
+    assert "projection `pp`" in error and "positional GROUP BY" in error
+    node.query("ALTER TABLE dl.t32 ADD COLUMN b2 UInt64")
+    node.query("ALTER TABLE dl.t32 DROP COLUMN b2")
+    node.query("ALTER TABLE dl.t32 DROP COLUMN b")
+    node.query("ALTER TABLE dl.t32 DROP COLUMN a")
     assert declarations_on_disk("t14") == 1
     assert declarations_on_disk("t15") == 1
     assert declarations_on_disk("t16") == 1
@@ -556,6 +659,14 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert declarations_on_disk("t22") == 1
     assert declarations_on_disk("t23") == 1
     assert declarations_on_disk("t24") == 1
+    assert declarations_on_disk("t25") == 1
+    assert declarations_on_disk("t26") == 1
+    assert declarations_on_disk("t27") == 1
+    assert declarations_on_disk("t28") == 1
+    assert declarations_on_disk("t29") == 2
+    assert declarations_on_disk("t30") == 1
+    assert declarations_on_disk("t31") == 1
+    assert declarations_on_disk("t32") == 1
 
     zk_path = node.query(
         "SELECT zookeeper_path FROM system.replicas WHERE database = 'dl' AND table = 't9'"
@@ -711,6 +822,14 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t22") == "1"
     assert projections("t23") == "1"
     assert projections("t24") == "1"
+    assert projections("t25") == "1"
+    assert projections("t26") == "1"
+    assert projections("t27") == "1"
+    assert projections("t28") == "1"
+    assert projections("t29") == "2"
+    assert projections("t30") == "1"
+    assert projections("t31") == "1"
+    assert projections("t32") == "1"
     assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 

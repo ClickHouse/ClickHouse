@@ -1,3 +1,4 @@
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -59,8 +60,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/StringUtils.h>
+
+#include <Poco/String.h>
 
 #include <functional>
+#include <optional>
 #include <ranges>
 #include <unordered_map>
 #include <unordered_set>
@@ -154,6 +159,30 @@ ProjectionAliases getProjectionAliases(const ASTProjectionDeclaration & declarat
     return aliases;
 }
 
+bool isUnqualifiedProjectionMatcher(const IAST & ast);
+bool countFunctionIgnoresMatchers(const ASTFunction & function);
+
+/// The analyzer discards direct unqualified matcher arguments of safe count variants. Every
+/// unavailable-projection dependency check must skip those same arguments.
+template <typename Predicate>
+bool anyRelevantProjectionChild(const IAST & ast, Predicate && predicate)
+{
+    const auto * function = ast.as<ASTFunction>();
+    const bool ignore_matchers = function && function->arguments && countFunctionIgnoresMatchers(*function);
+    for (const auto & child : ast.children)
+    {
+        if (ignore_matchers && child.get() == function->arguments.get())
+        {
+            for (const auto & argument : function->arguments->children)
+                if (!isUnqualifiedProjectionMatcher(*argument) && predicate(*argument))
+                    return true;
+        }
+        else if (predicate(*child))
+            return true;
+    }
+    return false;
+}
+
 bool projectionQueryReferencesColumn(
     const IAST & ast,
     const String & column_name,
@@ -244,11 +273,11 @@ bool projectionQueryReferencesColumn(
         expanded_aliases.erase(alias_name);
     }
 
-    for (const auto & child : ast.children)
-        if (projectionQueryReferencesColumn(*child, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments))
-            return true;
-
-    return false;
+    return anyRelevantProjectionChild(ast, [&](const IAST & child)
+    {
+        return projectionQueryReferencesColumn(
+            child, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments);
+    });
 }
 
 bool projectionQueryReferencesColumn(
@@ -258,10 +287,9 @@ bool projectionQueryReferencesColumn(
     const ProjectionAliases & aliases,
     bool expand_table_aliases);
 
-/// Expand the same matcher transformers used by query analysis to identify a typed output's source.
-bool projectionMatcherTypedOutputDependsOn(
-    const IAST & expression, const String & declared_column, const String & source_column,
-    const ColumnsDescription & columns, const ProjectionAliases & aliases)
+/// Expand the same matcher transformers used by query analysis before comparing dependencies
+/// or the argument shape of an enclosing expression.
+std::optional<ASTs> expandProjectionMatcher(const IAST & expression, const ColumnsDescription & columns)
 {
     ASTs outputs;
     const IAST * transformers = nullptr;
@@ -278,7 +306,7 @@ bool projectionMatcherTypedOutputDependsOn(
     else if (const auto * qualified_list = expression.as<ASTQualifiedColumnsListMatcher>())
         transformers = qualified_list->transformers.get();
     else
-        return false;
+        return std::nullopt;
 
     const String * pattern = nullptr;
     if (const auto * regexp = expression.as<ASTColumnsRegexpMatcher>())
@@ -308,11 +336,290 @@ bool projectionMatcherTypedOutputDependsOn(
         for (const auto & child : transformers->children)
             applyColumnsTransformer(child, outputs);
 
-    for (const auto & output : outputs)
-        if (output->getAliasOrColumnName() == declared_column
+    return outputs;
+}
+
+bool projectionMatcherTypedOutputDependsOn(
+    const IAST & expression, const String & declared_column, const String & source_column,
+    const ColumnsDescription & columns, const ProjectionAliases & aliases)
+{
+    const auto outputs = expandProjectionMatcher(expression, columns);
+    if (!outputs)
+        return false;
+
+    for (const auto & output : *outputs)
+        if ((declared_column.empty() || output->getAliasOrColumnName() == declared_column)
             && projectionQueryReferencesColumn(
                 *output, source_column, columns, aliases, /*expand_table_aliases=*/true))
                 return true;
+    return false;
+}
+
+bool isProjectionExpandableMatcher(const IAST & ast)
+{
+    return ast.as<ASTColumnsRegexpMatcher>() || ast.as<ASTQualifiedColumnsRegexpMatcher>()
+        || ast.as<ASTColumnsListMatcher>() || ast.as<ASTQualifiedColumnsListMatcher>()
+        || ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>();
+}
+
+bool isUnqualifiedProjectionMatcher(const IAST & ast)
+{
+    return ast.as<ASTAsterisk>() || ast.as<ASTColumnsRegexpMatcher>() || ast.as<ASTColumnsListMatcher>();
+}
+
+/// The analyzer removes unqualified matcher arguments from safe count variants, so they do not
+/// depend on the table's column list. Keep this in step with resolveFunction's combinator check.
+bool countFunctionIgnoresMatchers(const ASTFunction & function)
+{
+    if (function.name.size() < 5 || !equalsCaseInsensitive(std::string_view(function.name).substr(0, 5), "count")
+        || !function.arguments
+        || std::ranges::none_of(function.arguments->children, [](const auto & argument)
+            { return isUnqualifiedProjectionMatcher(*argument); }))
+        return false;
+
+    String base_name = function.name;
+    while (auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_name))
+    {
+        if (combinator->transformsArgumentTypes())
+            return false;
+        base_name.resize(base_name.size() - combinator->getName().size());
+    }
+
+    const auto base_lower = Poco::toLower(base_name);
+    const auto name_lower = Poco::toLower(function.name);
+    return (base_lower == "count" || base_lower == "countstate")
+        && name_lower.starts_with(base_lower) && name_lower != "countdistinct";
+}
+
+/// Projection output names are derived after matcher expansion and ignore SELECT aliases.
+/// Expand a clone so a declaration such as `plus(a, b)` can be matched to `plus(COLUMNS(...)) AS x`.
+void expandProjectionMatchersForName(ASTPtr & ast, const ColumnsDescription & columns)
+{
+    if (auto * function = ast->as<ASTFunction>(); function && function->arguments)
+    {
+        ASTs arguments;
+        const bool ignore_matchers = countFunctionIgnoresMatchers(*function);
+        for (auto & argument : function->arguments->children)
+        {
+            if (ignore_matchers && isUnqualifiedProjectionMatcher(*argument))
+                continue;
+
+            if (auto outputs = expandProjectionMatcher(*argument, columns))
+            {
+                for (auto & output : *outputs)
+                {
+                    expandProjectionMatchersForName(output, columns);
+                    arguments.push_back(std::move(output));
+                }
+            }
+            else
+            {
+                expandProjectionMatchersForName(argument, columns);
+                arguments.push_back(argument);
+            }
+        }
+        function->arguments->children = std::move(arguments);
+        for (auto & child : ast->children)
+            if (child.get() != function->arguments.get())
+                expandProjectionMatchersForName(child, columns);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        expandProjectionMatchersForName(child, columns);
+}
+
+String expandedProjectionExpressionName(const ASTPtr & expression, const ColumnsDescription & columns)
+{
+    auto expanded = expression->clone();
+    expandProjectionMatchersForName(expanded, columns);
+    return expanded->getColumnName();
+}
+
+/// Unlike a top-level matcher, a matcher inside a function changes that function's arguments
+/// when a source column disappears. A remaining match is not enough to keep the expression valid.
+bool projectionNestedMatcherReferencesColumn(
+    const IAST & ast, const String & source_column, const ColumnsDescription & columns,
+    const ProjectionAliases & aliases, bool inside_function, std::unordered_set<String> & expanded_aliases)
+{
+    if (inside_function && isProjectionExpandableMatcher(ast) && projectionMatcherTypedOutputDependsOn(
+            ast, /*declared_column=*/"", source_column, columns, aliases))
+        return true;
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        if (expanded_aliases.insert(name).second)
+        {
+            auto [begin, end] = aliases.equal_range(name);
+            for (auto it = begin; it != end; ++it)
+                if (projectionNestedMatcherReferencesColumn(
+                        *it->second, source_column, columns, aliases, inside_function, expanded_aliases))
+                    return true;
+            expanded_aliases.erase(name);
+        }
+    }
+
+    const bool child_inside_function = inside_function || ast.as<ASTFunction>();
+    return anyRelevantProjectionChild(ast, [&](const IAST & child)
+    {
+        return projectionNestedMatcherReferencesColumn(
+            child, source_column, columns, aliases, child_inside_function, expanded_aliases);
+    });
+}
+
+bool projectionNestedMatcherReferencesColumn(
+    const IAST & ast, const String & source_column, const ColumnsDescription & columns,
+    const ProjectionAliases & aliases)
+{
+    std::unordered_set<String> expanded_aliases;
+    return projectionNestedMatcherReferencesColumn(
+        ast, source_column, columns, aliases, /*inside_function=*/false, expanded_aliases);
+}
+
+bool projectionNestedMatcherReferencesColumn(
+    const ASTProjectionSelectQuery & query, const String & source_column, const ColumnsDescription & columns,
+    const ProjectionAliases & aliases)
+{
+    std::unordered_set<String> expanded_aliases;
+    for (const auto & expression : {query.select(), query.where(), query.groupBy(), query.orderBy()})
+        if (expression && projectionNestedMatcherReferencesColumn(
+                *expression, source_column, columns, aliases, /*inside_function=*/false, expanded_aliases))
+            return true;
+    return false;
+}
+
+/// A matcher inside a function supplies a variable number of arguments. Rebuilding an unavailable
+/// projection after an ALTER must not silently change that function's argument expressions.
+bool projectionNestedMatcherChangesShape(
+    const IAST & ast, const ColumnsDescription & old_columns, const ColumnsDescription & new_columns,
+    const ProjectionAliases & aliases, bool inside_function, std::unordered_set<String> & expanded_aliases)
+{
+    if (inside_function && isProjectionExpandableMatcher(ast))
+    {
+        const auto old_outputs = expandProjectionMatcher(ast, old_columns);
+        if (old_outputs)
+        {
+            std::optional<ASTs> new_outputs;
+            try
+            {
+                new_outputs = expandProjectionMatcher(ast, new_columns);
+            }
+            catch (const Exception &)
+            {
+                return true;
+            }
+
+            if (!new_outputs || old_outputs->size() != new_outputs->size())
+                return true;
+            for (size_t i = 0; i < old_outputs->size(); ++i)
+                if ((*old_outputs)[i]->getTreeHash(/*ignore_aliases=*/false)
+                    != (*new_outputs)[i]->getTreeHash(/*ignore_aliases=*/false))
+                    return true;
+        }
+    }
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        if (expanded_aliases.insert(name).second)
+        {
+            auto [begin, end] = aliases.equal_range(name);
+            for (auto it = begin; it != end; ++it)
+                if (projectionNestedMatcherChangesShape(
+                        *it->second, old_columns, new_columns, aliases, inside_function, expanded_aliases))
+                    return true;
+            expanded_aliases.erase(name);
+        }
+    }
+
+    const bool child_inside_function = inside_function || ast.as<ASTFunction>();
+    return anyRelevantProjectionChild(ast, [&](const IAST & child)
+    {
+        return projectionNestedMatcherChangesShape(
+            child, old_columns, new_columns, aliases, child_inside_function, expanded_aliases);
+    });
+}
+
+bool projectionNestedMatcherChangesShape(
+    const ASTProjectionSelectQuery & query,
+    const ColumnsDescription & old_columns, const ColumnsDescription & new_columns,
+    const ProjectionAliases & aliases)
+{
+    std::unordered_set<String> expanded_aliases;
+    for (const auto & expression : {query.select(), query.where(), query.groupBy(), query.orderBy()})
+        if (expression && projectionNestedMatcherChangesShape(
+                *expression, old_columns, new_columns, aliases, /*inside_function=*/false, expanded_aliases))
+            return true;
+    return false;
+}
+
+/// A direct SELECT matcher may safely shed columns, but an existing positional GROUP BY must
+/// still resolve to the same output expression after expansion with the new table schema.
+bool projectionGroupByPositionChangesOutput(
+    const ASTProjectionDeclaration & declaration,
+    const ColumnsDescription & old_columns, const ColumnsDescription & new_columns)
+{
+    const auto * query = declaration.query ? declaration.query->as<ASTProjectionSelectQuery>() : nullptr;
+    if (!query || !query->select() || !query->groupBy())
+        return false;
+
+    auto select_outputs = [&](const ColumnsDescription & columns)
+    {
+        ASTs result;
+        for (const auto & expression : query->select()->children)
+        {
+            if (auto outputs = expandProjectionMatcher(*expression, columns))
+                result.insert(result.end(), outputs->begin(), outputs->end());
+            else
+                result.push_back(expression);
+        }
+        return result;
+    };
+
+    const auto old_outputs = select_outputs(old_columns);
+    const auto new_outputs = select_outputs(new_columns);
+
+    auto position_index = [](const Field & value, size_t output_count) -> std::optional<size_t>
+    {
+        if (value.getType() == Field::Types::UInt64)
+        {
+            const auto position = value.safeGet<UInt64>();
+            if (position > 0 && position <= output_count)
+                return position - 1;
+        }
+        else if (value.getType() == Field::Types::Int64)
+        {
+            const auto position = value.safeGet<Int64>();
+            if (position > 0 && static_cast<UInt64>(position) <= output_count)
+                return static_cast<size_t>(position - 1);
+            if (position < 0)
+            {
+                const auto magnitude = static_cast<UInt64>(-(position + 1)) + 1;
+                if (magnitude <= output_count)
+                    return output_count - magnitude;
+            }
+        }
+        return std::nullopt;
+    };
+
+    for (const auto & expression : query->groupBy()->children)
+    {
+        const auto * literal = expression->as<ASTLiteral>();
+        if (!literal || !literal->tryGetAlias().empty())
+            continue;
+
+        const auto type = literal->value.getType();
+        if (type != Field::Types::UInt64 && type != Field::Types::Int64)
+            continue;
+
+        const auto old_index = position_index(literal->value, old_outputs.size());
+        const auto new_index = position_index(literal->value, new_outputs.size());
+        if (!old_index || !new_index
+            || old_outputs[*old_index]->getTreeHash(/*ignore_aliases=*/false)
+                != new_outputs[*new_index]->getTreeHash(/*ignore_aliases=*/false))
+            return true;
+    }
     return false;
 }
 
@@ -344,15 +651,17 @@ bool projectionTupleElementReferencesSubcolumn(
         }
     }
 
-    for (const auto & child : ast.children)
-        if (projectionTupleElementReferencesSubcolumn(*child, source_column, subcolumn_name, columns, new_columns, aliases))
-            return true;
-    return false;
+    return anyRelevantProjectionChild(ast, [&](const IAST & child)
+    {
+        return projectionTupleElementReferencesSubcolumn(
+            child, source_column, subcolumn_name, columns, new_columns, aliases);
+    });
 }
 
 /// A dynamic regexp selection may lose columns, but it cannot become empty on recovery.
 bool projectionMatcherBecomesEmpty(
-    const IAST & ast, const String & removed_column, const ColumnsDescription & new_columns)
+    const IAST & ast, const String & removed_column, const ColumnsDescription & new_columns,
+    const ProjectionAliases & aliases, std::unordered_set<String> & expanded_aliases)
 {
     const String * pattern = nullptr;
     if (const auto * matcher = ast.as<ASTColumnsRegexpMatcher>())
@@ -368,8 +677,34 @@ bool projectionMatcherBecomesEmpty(
             return true;
     }
 
-    for (const auto & child : ast.children)
-        if (projectionMatcherBecomesEmpty(*child, removed_column, new_columns))
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        if (expanded_aliases.insert(name).second)
+        {
+            auto [begin, end] = aliases.equal_range(name);
+            for (auto it = begin; it != end; ++it)
+                if (projectionMatcherBecomesEmpty(
+                        *it->second, removed_column, new_columns, aliases, expanded_aliases))
+                    return true;
+            expanded_aliases.erase(name);
+        }
+    }
+
+    return anyRelevantProjectionChild(ast, [&](const IAST & child)
+    {
+        return projectionMatcherBecomesEmpty(child, removed_column, new_columns, aliases, expanded_aliases);
+    });
+}
+
+bool projectionMatcherBecomesEmpty(
+    const ASTProjectionSelectQuery & query, const String & removed_column, const ColumnsDescription & new_columns,
+    const ProjectionAliases & aliases)
+{
+    std::unordered_set<String> expanded_aliases;
+    for (const auto & expression : {query.select(), query.where(), query.groupBy(), query.orderBy()})
+        if (expression && projectionMatcherBecomesEmpty(
+                *expression, removed_column, new_columns, aliases, expanded_aliases))
             return true;
     return false;
 }
@@ -407,15 +742,37 @@ bool explicitProjectionColumnTypeDependsOn(
         if (!declared_column.getType())
             continue;
 
+        bool matched_output = false;
+        bool unmatched_nested_dependency = false;
         for (const auto & expression : select_expressions)
         {
+            const auto outputs = expandProjectionMatcher(*expression, columns);
+            if (outputs)
+            {
+                for (const auto & output : *outputs)
+                    if (output->getAliasOrColumnName() == declared_column.name)
+                        matched_output = true;
+            }
             if (projectionMatcherTypedOutputDependsOn(
                     *expression, declared_column.name, source_column, columns, aliases))
                 return true;
-            if (expression->getAliasOrColumnName() == declared_column.name
-                && projectionQueryReferencesColumn(
-                    *expression, source_column, columns, aliases, /*expand_table_aliases=*/true))
-                return true;
+
+            const bool nested_dependency = projectionNestedMatcherReferencesColumn(
+                *expression, source_column, columns, aliases);
+            const bool expression_matches = expression->getAliasOrColumnName() == declared_column.name
+                || (nested_dependency
+                    && expandedProjectionExpressionName(expression, columns) == declared_column.name);
+            if (expression_matches)
+            {
+                matched_output = true;
+                if (projectionQueryReferencesColumn(
+                        *expression, source_column, columns, aliases, /*expand_table_aliases=*/true)
+                    || nested_dependency)
+                    return true;
+            }
+            else if (nested_dependency)
+                unmatched_nested_dependency = true;
+
             /// A bare `WITH` or table `ALIAS` identifier can be stored under its source name.
             if (declared_column.name == source_column && expression->as<ASTIdentifier>()
                 && expression->tryGetAlias().empty()
@@ -423,6 +780,9 @@ bool explicitProjectionColumnTypeDependsOn(
                     *expression, source_column, columns, aliases, /*expand_table_aliases=*/true))
                 return true;
         }
+
+        if (!matched_output && unmatched_nested_dependency)
+            return true;
     }
 
     return false;
@@ -2175,16 +2535,26 @@ void AlterCommands::apply(
                 return;
             const auto aliases = getProjectionAliases(declaration);
 
+            const auto * query = declaration.query->as<ASTProjectionSelectQuery>();
+            if (query && projectionNestedMatcherChangesShape(
+                    *query, metadata.columns, metadata_copy.columns, aliases))
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Cannot change columns because projection {} has a nested matcher whose expansion would change",
+                    backQuote(declaration.name));
+
             for (const auto & old_column : metadata.columns)
             {
                 const bool explicit_type_depends_on_column = explicitProjectionColumnTypeDependsOn(
                     declaration, old_column.name, metadata.columns, aliases);
-                const bool matcher_becomes_empty = !metadata_copy.columns.has(old_column.name)
-                    && projectionMatcherBecomesEmpty(*declaration.query, old_column.name, metadata_copy.columns);
+                const bool matcher_becomes_empty = !metadata_copy.columns.has(old_column.name) && query
+                    && projectionMatcherBecomesEmpty(*query, old_column.name, metadata_copy.columns, aliases);
+                const bool nested_matcher_depends_on_column = query && projectionNestedMatcherReferencesColumn(
+                    *query, old_column.name, metadata.columns, aliases);
                 if (!projectionQueryReferencesColumn(
                         *declaration.query, old_column.name, metadata.columns, aliases,
                         /*expand_table_aliases=*/true)
-                    && !explicit_type_depends_on_column && !matcher_becomes_empty)
+                    && !explicit_type_depends_on_column && !matcher_becomes_empty && !nested_matcher_depends_on_column)
                     continue;
 
                 if (!metadata_copy.columns.has(old_column.name))
@@ -2211,6 +2581,13 @@ void AlterCommands::apply(
                             "Cannot change column {} because projection {} references a field that would no longer exist",
                             backQuote(old_column.name), backQuote(declaration.name));
             }
+
+            if (projectionGroupByPositionChangesOutput(declaration, metadata.columns, metadata_copy.columns))
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Cannot change columns because projection {} has a positional GROUP BY reference "
+                    "that would resolve to a different SELECT output",
+                    backQuote(declaration.name));
         };
 
         for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
