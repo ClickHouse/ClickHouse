@@ -53,6 +53,7 @@ See ["Configure backup schedules"](/products/cloud/guides/backups/configurable-b
 
 ClickHouse Cloud allows exporting backups to your own cloud service provider (CSP) account storage (AWS S3, Google Cloud Storage, or Azure Blob Storage).
 If you configure backups to your own bucket, ClickHouse Cloud also continues to take its own backups by default.
+The backup retention setting applies to backups written to your bucket. Backups managed by ClickHouse Cloud use the default retention policy.
 
 For details of how ClickHouse Cloud backups work, see the [backups](/products/cloud/guides/backups/review-and-restore-backups) docs.
 
@@ -90,7 +91,7 @@ You can use [SQL commands](/products/cloud/guides/backups/bring-your-own-backup/
 </Steps>
 
 <Warning>
-ClickHouse Cloud won't manage the lifecycle of backups in customer buckets.
-Customers are responsible for ensuring that backups in their bucket are managed appropriately for adhering to compliance standards as well as managing cost.
+ClickHouse Cloud doesn't manage the lifecycle of backups exported using SQL commands.
+Customers are responsible for ensuring that these backups are managed appropriately for adhering to compliance standards as well as managing cost.
 If the backups are corrupted, they won't be able to be restored.
 </Warning>

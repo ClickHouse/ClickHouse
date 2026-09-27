@@ -47,7 +47,7 @@ def main():
     # dropped together with the block.
     block = f"{BLOCK_START}\n\n---\n{workflow_line}\n{sync_line}\n{BLOCK_END}"
 
-    title, body, _labels = GH.get_pr_title_body_labels()
+    title, body, _labels, _is_draft = GH.get_pr_title_body_labels()
     if not title:
         print("WARNING: Failed to fetch PR data - skip PR description update")
         return

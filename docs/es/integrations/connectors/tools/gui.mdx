@@ -432,6 +432,23 @@ doc_type: 'reference'
   ## Comercial
 </div>
 
+<Accordion title="ProbeDeck">
+  [ProbeDeck](https://probedeck.app) es un cliente de iOS y iPadOS para monitorizar y consultar ClickHouse.
+
+  Características:
+
+  * ProbeDeck muestra consultas en ejecución, réplicas, partes, fusiones, mutaciones, discos y métricas del servidor.
+  * Puede cancelar consultas con `KILL QUERY` y mutaciones con `KILL MUTATION`.
+  * Puede explorar esquemas y datos o ejecutar SQL en el editor.
+  * ProbeDeck se conecta mediante HTTP(S) a través de la red del dispositivo o de un túnel SSH.
+  * ProbeDeck almacena las credenciales en el llavero de iOS y admite un modo de solo lectura para cada conexión.
+  * La aplicación incluye una demostración sin conexión con datos integrados.
+
+  Los usuarios gratuitos pueden monitorizar un servidor y ejecutar SQL de solo lectura. Pueden guardar una conexión. ProbeDeck Pro añade controles para cancelar, escrituras, DDL y conexiones guardadas ilimitadas.
+
+  Consulte [Conectar ProbeDeck a ClickHouse](/es/integrations/connectors/sql-clients/probedeck) para obtener instrucciones de conexión.
+</Accordion>
+
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) es un IDE de bases de datos de JetBrains con soporte específico para ClickHouse. También está integrado en otras herramientas basadas en IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm y otras.
 
@@ -487,24 +504,24 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) es una herramienta de BI de autoservicio para la exploración de datos y la generación de informes operativos. Está disponible tanto como servicio en la nube como en una versión autohospedada. Los informes de SeekTable pueden integrarse en cualquier aplicación web.
+  [SeekTable](https://www.seektable.com) es una herramienta de BI de autoservicio para explorar datos y generar informes operativos. Está disponible como servicio en la nube y en versión autohospedada. Los informes de SeekTable pueden integrarse en cualquier aplicación web.
 
   Características:
 
-  * Generador de informes fácil de usar para usuarios de negocio.
+  * Generador de informes intuitivo para usuarios empresariales.
   * Potentes parámetros de informe para el filtrado SQL y la personalización de consultas específicas de cada informe.
-  * Puede conectarse a ClickHouse tanto mediante un endpoint TCP/IP nativo como mediante una interfaz HTTP(S) (2 drivers diferentes).
-  * Es posible aprovechar toda la potencia del dialecto ClickHouse SQL en las definiciones de dimensiones/medidas.
-  * [Web API](https://www.seektable.com/help/web-api-integration) para la generación automatizada de informes.
-  * Admite un flujo de desarrollo de informes con [copia de seguridad/restauración](https://www.seektable.com/help/self-hosted-backup-restore) de los datos de la cuenta; la configuración de los modelos de datos (cubos) / informes está en un XML legible para humanos y puede almacenarse en un sistema de control de versiones.
+  * Puede conectarse a ClickHouse tanto mediante un endpoint TCP/IP nativo como mediante una interfaz HTTP(S) (2 controladores distintos).
+  * Permite utilizar toda la potencia del dialecto SQL de ClickHouse en las definiciones de dimensiones y medidas.
+  * [API web](https://www.seektable.com/help/web-api-integration) para generar informes automáticamente.
+  * Admite un flujo de desarrollo de informes con [copia de seguridad/restauración](https://www.seektable.com/help/self-hosted-backup-restore) de los datos de la cuenta; la configuración de los modelos de datos (cubos) e informes se almacena en XML legible por humanos y puede guardarse en un sistema de control de versiones.
 
-  SeekTable es [gratis](https://www.seektable.com/help/cloud-pricing) para uso personal/individual.
+  SeekTable es [gratuito](https://www.seektable.com/help/cloud-pricing) para uso personal.
 
-  [Cómo configurar la conexión a ClickHouse en SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+  [Cómo configurar una conexión de ClickHouse en SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) es una UI sencilla en la que puede visualizar las consultas que se están ejecutando actualmente en su clúster de ClickHouse, consultar información sobre ellas y cancelarlas si lo desea.
+  [Chadmin](https://github.com/bun4uk/chadmin) es una interfaz de usuario sencilla que permite visualizar las consultas que se están ejecutando actualmente en su clúster de ClickHouse, consultar información sobre ellas y cancelarlas si lo desea.
 </Accordion>
 
 <Accordion title="TABLUM.IO">
@@ -542,12 +559,12 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="1bench">
-  [1bench](https://1bench.dev) es una interfaz gráfica de escritorio nativa para múltiples bases de datos con soporte de primer nivel para ClickHouse, que abarca la visión general del servidor, la gestión de esquemas, la búsqueda vectorial y la exploración de grandes conjuntos de resultados.
+  [1bench](https://1bench.dev) es una interfaz gráfica de escritorio nativa para múltiples bases de datos con soporte de primer nivel para ClickHouse, que abarca el resumen del servidor, la gestión de esquemas, la búsqueda vectorial y la exploración de grandes conjuntos de resultados.
 
   Características:
 
-  * Visión general del servidor al conectarse: versión, tiempo de actividad, consultas en ejecución, merges activos, partes y tamaños de almacenamiento, estado de la réplica, clústeres y nodos de un vistazo.
-  * Generador visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
+  * Resumen del servidor al conectarse: versión, tiempo de actividad, consultas en ejecución, fusiones activas, partes y tamaños de almacenamiento, estado de la réplica, clústeres y nodos de un vistazo.
+  * Constructor visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
   * Asistente visual de `CREATE TABLE` compatible con variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` y aplicación automática de `Nullable()`.
   * Manejo nativo de tipos de ClickHouse: `Nullable`, `Array`, `LowCardinality` y objetos anidados.
   * Soporte para búsqueda vectorial: columnas de embeddings `Array(Float32)` representadas como celdas vectoriales compactas, visualización de embeddings en 2D y búsqueda de elementos similares mediante `cosineDistance`.

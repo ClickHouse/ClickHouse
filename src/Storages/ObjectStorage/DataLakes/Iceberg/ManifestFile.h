@@ -60,6 +60,16 @@ struct PartitionSpecsEntry
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
+struct PartitionFieldSummary
+{
+    bool contains_null = false;
+    bool contains_nan = false;
+    std::optional<String> lower_bound;
+    std::optional<String> upper_bound;
+};
+
+using PartitionFieldSummaries = std::vector<PartitionFieldSummary>;
+
 struct ManifestFileCacheableInfo
 {
     std::shared_ptr<AvroForIcebergDeserializer> deserializer;
@@ -88,6 +98,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
     String file_format;
     std::optional<IcebergPathFromMetadata> lower_reference_data_file_path; // For position delete files only.
     std::optional<IcebergPathFromMetadata> upper_reference_data_file_path; // For position delete files only.
+    std::optional<IcebergPathFromMetadata> referenced_data_file_path; // Required for deletion vectors.
+    std::optional<Int64> content_offset; // Required for deletion vectors.
+    std::optional<Int64> content_size_in_bytes; // Required for deletion vectors.
     std::optional<std::vector<Int32>> equality_ids;
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
@@ -96,6 +109,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
     /// File-level statistics from Iceberg manifest (required fields per spec)
     Int64 record_count;
     Int64 file_size_in_bytes;
+
+    bool isDeletionVector() const;
 
     ParsedManifestFileEntry(
         FileContentType content_type_,
@@ -112,6 +127,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
         String file_format_,
         std::optional<IcebergPathFromMetadata> lower_reference_data_file_path_,
         std::optional<IcebergPathFromMetadata> upper_reference_data_file_path_,
+        std::optional<IcebergPathFromMetadata> referenced_data_file_path_,
+        std::optional<Int64> content_offset_,
+        std::optional<Int64> content_size_in_bytes_,
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_,
         Int64 record_count_,
@@ -130,6 +148,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , file_format(std::move(file_format_))
         , lower_reference_data_file_path(std::move(lower_reference_data_file_path_))
         , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
+        , referenced_data_file_path(std::move(referenced_data_file_path_))
+        , content_offset(content_offset_)
+        , content_size_in_bytes(content_size_in_bytes_)
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
         , record_count(record_count_)

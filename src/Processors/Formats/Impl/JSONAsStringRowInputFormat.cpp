@@ -229,11 +229,11 @@ In this format, a single JSON object is interpreted as a single value.
 If the input has several JSON objects (which are comma separated), they are interpreted as separate rows. 
 If the input data is enclosed in `[]`, it is interpreted as an array of JSON objects.
 
-:::note
+<Note>
 This format can only be parsed for a table with a single field of type [String](/reference/data-types/string).
 The remaining columns must be set to either [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view),
 or be omitted. 
-:::
+</Note>
 
 Once you serialize the entire JSON object to a String you can use the [JSON functions](/reference/functions/regular-functions/json-functions) to process it.
 

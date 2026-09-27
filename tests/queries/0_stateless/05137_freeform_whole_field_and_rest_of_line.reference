@@ -1,0 +1,33 @@
+A field read into a column of the provided structure has to be consumed entirely
+c0	String					
+c1	Int64					
+INCORRECT_DATA
+1x	2
+c0	Int64					
+c1	Int64					
+1	2
+Trailing whitespace of a CSV or JSON field is allowed after the value
+c0	String					
+c1	String					
+1	2
+The remainder of a line after a token ending with a colon is one verbatim field
+c0	String					
+c1	String					
+app:	42
+app:	\\N
+app:	a\tb c
+app:	a\\tb
+42	2
+\\N	2
+a\tb c	5
+a\\tb	4
+The remainder of a line is deserialized as a whole text into the column of the provided structure
+value:	1
+value:	2
+value:	1
+value:	2
+value:	1
+value:	\N
+value:	0
+value:	1
+UNEXPECTED_DATA_AFTER_PARSED_VALUE

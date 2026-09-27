@@ -54,6 +54,12 @@ String FieldVisitorToCastedLiteral::operator() (const Float64 & x) const
     return out;
 }
 
+String FieldVisitorToCastedLiteral::operator() (const NumberLiteral & x) const
+{
+    /// The raw literal text re-parses to a NumberLiteral again, so no cast suffix is needed.
+    return FieldVisitorToString()(x);
+}
+
 String FieldVisitorToCastedLiteral::operator() (const String & x) const
 {
     String out = FieldVisitorToString()(x);
