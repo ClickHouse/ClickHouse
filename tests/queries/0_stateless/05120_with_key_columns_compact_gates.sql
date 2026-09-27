@@ -48,10 +48,11 @@ SETTINGS
 INSERT INTO t_wkc_compact_empty VALUES (1, map());
 SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_wkc_compact_empty' AND active;
 SELECT id, m, m['a'], m.exists_a FROM t_wkc_compact_empty;
+-- An empty Map has no keys, so no per-key streams. The key list is `m.key_columns.txt`
+-- and is not listed among the packed substreams; there is no shared presence stream.
 SELECT
-    has(substreams, 'm.keys_info'),
     has(substreams, 'm.key_a'),
-    has(substreams, 'm.key_presence')
+    NOT has(substreams, 'm.key_presence')
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_wkc_compact_empty' AND column = 'm' AND active;
 

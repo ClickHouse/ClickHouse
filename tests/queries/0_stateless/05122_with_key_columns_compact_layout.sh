@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-random-merge-tree-settings, no-object-storage, no-shared-merge-tree, no-replicated-database, no-fasttest
 #
-# Compact with_key_columns keeps key data inside data.bin. keys_info is a
-# Compact prefix stream, not a sidecar file. There are no per-key .bin files.
+# Compact with_key_columns keeps key and exists data inside data.bin.
+# The key list is a plain m.key_columns.txt. There are no per-key .bin files and no template files.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -69,6 +69,7 @@ has_pattern()
 echo "files"
 echo "data_bin=$(has_pattern 'data.bin')"
 echo "compact_marks=$(has_pattern 'data.*mrk4')"
+echo "key_columns_txt=$(has_pattern 'm.key_columns.txt')"
 echo "keys_info_sidecar=$(has_pattern 'm.keys_info*')"
 echo "key_a_bin=$(has_pattern 'm.key_a.bin')"
 echo "key_b_bin=$(has_pattern 'm.key_b.bin')"

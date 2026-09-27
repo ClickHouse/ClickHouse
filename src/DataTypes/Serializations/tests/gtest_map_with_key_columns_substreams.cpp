@@ -53,14 +53,28 @@ TEST(MapWithKeyColumnsSubstreams, FileAndSubcolumnNames)
     }
 
     {
-        auto path = makePath(namedStream(ISerialization::Substream::MapKeyPresence, "foo"));
-        EXPECT_EQ(fileName(path), "m.key_presence");
+        auto path = makePath(namedStream(ISerialization::Substream::MapKeyExists, "foo"));
+        EXPECT_EQ(fileName(path), "m.exists_foo");
         EXPECT_EQ(ISerialization::getSubcolumnNameForStream(path), "exists_foo");
-        EXPECT_EQ(path.front().toString(), "MapKeyPresence(foo)");
+        EXPECT_EQ(path.front().toString(), "MapKeyExists(foo)");
         EXPECT_TRUE(ISerialization::hasSubcolumnForPath(path, path.size()));
         EXPECT_TRUE(ISerialization::isDynamicSubcolumn(path, path.size()));
-        EXPECT_FALSE(ISerialization::isSpecialCompressionAllowed(path));
         EXPECT_FALSE(ISerialization::isEphemeralSubcolumn(path, path.size()));
+    }
+
+    {
+        /// A key literally named `template` must not collide with the structural
+        /// template streams: its value stream is `.key_template` and its exists
+        /// stream `.exists_template` only for the dedicated template substreams,
+        /// while a real key's streams always escape the key text.
+        auto value_path = makePath(namedStream(ISerialization::Substream::MapKey, "presence"));
+        EXPECT_EQ(fileName(value_path), "m.key_presence");
+        auto exists_path = makePath(namedStream(ISerialization::Substream::MapKeyExists, "presence"));
+        EXPECT_EQ(fileName(exists_path), "m.exists_presence");
+        auto value_template_path = makePath(ISerialization::Substream(ISerialization::Substream::MapKeyValueTemplate));
+        EXPECT_EQ(fileName(value_template_path), "m.key_template");
+        auto exists_template_path = makePath(ISerialization::Substream(ISerialization::Substream::MapKeyExistsTemplate));
+        EXPECT_EQ(fileName(exists_template_path), "m.exists_template");
     }
 }
 
@@ -99,8 +113,27 @@ TEST(MapWithKeyColumnsSubstreams, EscapedKeyNames)
     }
 
     {
-        auto path = makePath(namedStream(ISerialization::Substream::MapKeyPresence, dotted));
-        EXPECT_EQ(fileName(path), "m.key_presence");
+        auto path = makePath(namedStream(ISerialization::Substream::MapKeyExists, dotted));
+        EXPECT_EQ(fileName(path), "m.exists_" + escapeForFileName(dotted));
         EXPECT_EQ(ISerialization::getSubcolumnNameForStream(path), "exists_" + dotted);
+        EXPECT_EQ(path.front().toString(), "MapKeyExists(" + dotted + ")");
+    }
+
+    {
+        auto path = makePath(namedStream(ISerialization::Substream::MapKeyExists, slashed));
+        EXPECT_EQ(fileName(path), "m.exists_" + escapeForFileName(slashed));
+        EXPECT_EQ(ISerialization::getSubcolumnNameForStream(path), "exists_" + slashed);
+    }
+
+    {
+        auto path = makePath(namedStream(ISerialization::Substream::MapKeyExists, empty));
+        EXPECT_EQ(fileName(path), "m.exists_" + escapeForFileName(empty));
+        EXPECT_EQ(ISerialization::getSubcolumnNameForStream(path), "exists_");
+    }
+
+    {
+        auto path = makePath(namedStream(ISerialization::Substream::MapKeyExists, non_utf8));
+        EXPECT_EQ(fileName(path), "m.exists_" + escapeForFileName(non_utf8));
+        EXPECT_EQ(ISerialization::getSubcolumnNameForStream(path), "exists_" + non_utf8);
     }
 }

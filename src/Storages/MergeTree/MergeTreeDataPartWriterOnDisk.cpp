@@ -755,6 +755,14 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+
+        /// `with_key_columns` discovers keys while writing, and the key list itself is
+        /// `<column>.key_columns.txt`, not a data substream. This dry run therefore sees no
+        /// streams. A column still needs one slot here so the next column can be added;
+        /// the Wide writer replaces it with the real key streams once the key set is known.
+        const auto & recorded = columns_substreams.getColumnSubstreams(columns_substreams.getColumnNames().size() - 1);
+        if (recorded.empty() && typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
+            columns_substreams.addSubstreamToLastColumn(escapeForFileName(name_and_type.name) + ".empty");
     }
 }
 

@@ -1,8 +1,12 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
+#include <memory>
 #include <unordered_map>
 
 namespace DB
@@ -18,9 +22,22 @@ bool partUsesMapWithKeyColumns(const IMergeTreeDataPart & part, const String & c
 /// True when the table setting will write merged parts with `with_key_columns`.
 bool mergeOutputUsesMapWithKeyColumns(const MergeTreeSettings & settings, const IDataType & type);
 
-/// Read `keys_info` from a Wide part. Compact parts should use `collectManifestFromColumn`
-/// after reading the (small) Map column.
-MapKeyManifest readMapKeyManifestFromWidePart(const IMergeTreeDataPart & part, const NameAndTypePair & column);
+/// `<column>.key_columns.txt`, using the same escaping and long-name hashing as column data files.
+String getMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeSettings & settings, const IDataPartStorage * storage);
+
+/// Write one plain-text key list and record its uncompressed checksum. The returned buffer is
+/// pre-finalized; the caller syncs and finalizes it with the rest of the part.
+std::unique_ptr<WriteBufferFromFileBase> writeMapKeyColumnsFile(
+    IDataPartStorage & storage,
+    const String & column_name,
+    const MergeTreeSettings & storage_settings,
+    const DataTypePtr & key_type,
+    const MapKeyManifest & manifest,
+    const WriteSettings & query_write_settings,
+    MergeTreeDataPartChecksums & checksums);
+
+/// Key list loaded when the part was opened, from `<column>.key_columns.txt`.
+MapKeyManifest readMapKeyManifestFromPart(const IMergeTreeDataPart & part, const NameAndTypePair & column);
 
 /// Sorted union of source manifests. Duplicate keys keep the first entry's kinds.
 MapKeyManifest unionMapKeyManifests(const std::vector<MapKeyManifest> & manifests);
@@ -29,16 +46,7 @@ MapKeyManifest unionMapKeyManifests(const std::vector<MapKeyManifest> & manifest
 /// rescan the first written block.
 void stampMapKeyUnion(ColumnMap & column, const MapKeyManifest & manifest);
 
-/// Remap one row of part-order presence (`source_size` UInt8s) into union order.
-void remapPresenceRow(
-    const UInt8 * source,
-    size_t source_size,
-    const std::vector<ssize_t> & union_to_source,
-    PaddedPODArray<UInt8> & dest);
-
-std::vector<ssize_t> buildPresenceRemap(const MapKeyManifest & source, const MapKeyManifest & union_manifest);
-
 String mapKeySubcolumnName(const String & map_column, const String & key_stream_name);
-String mapKeysPresenceSubcolumnName(const String & map_column);
+String mapKeyExistsSubcolumnName(const String & map_column, const String & key_stream_name);
 
 }

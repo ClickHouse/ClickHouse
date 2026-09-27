@@ -6,18 +6,14 @@
 namespace DB
 {
 
-/// Reads or writes the shared `key_presence` stream as `Array(UInt8)`:
-/// one UInt8 per manifest key, in that manifest's order.
-///
-/// Read uses the source part's `keys_info`. Write uses the caller-supplied
-/// output union so `keys_info` and the presence block stay aligned.
+/// Read-only view of `m.keys_presence` as `Array(UInt8)`: one UInt8 per manifest
+/// key per row, in manifest order. Reconstructs presence from the per-key
+/// `.exists_<name>` streams (via the full `with_key_columns` read path), so it
+/// always agrees with a full `m` read.
 class SerializationMapKeyPresenceMerge final : public SimpleTextSerialization
 {
 public:
-    static SerializationPtr create(
-        const SerializationPtr & map_with_key_columns_serialization_,
-        MapKeyManifest write_manifest_ = {},
-        bool for_write_ = false);
+    static SerializationPtr create(const SerializationPtr & map_with_key_columns_serialization_);
 
     bool supportsPooling() const override { return false; }
 
@@ -62,36 +58,24 @@ public:
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override { throwNoSerialization(); }
     bool tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override { throwNoSerialization(); }
 
-    const MapKeyManifest & getWriteManifest() const { return write_manifest; }
-
     struct DeserializeState : public DeserializeBinaryBulkState
     {
-        MapKeyManifest manifest;
+        DeserializeBinaryBulkStatePtr map_state;
 
         DeserializeBinaryBulkStatePtr clone() const override
         {
-            return std::make_shared<DeserializeState>(*this);
+            auto new_state = std::make_shared<DeserializeState>(*this);
+            new_state->map_state = map_state ? map_state->clone() : nullptr;
+            return new_state;
         }
     };
 
-    struct SerializeState : public SerializeBinaryBulkState
-    {
-        std::vector<std::vector<UInt8>> pending_presence;
-        size_t pending_rows = 0;
-    };
-
 private:
-    SerializationMapKeyPresenceMerge(
-        const SerializationPtr & map_with_key_columns_serialization_,
-        MapKeyManifest write_manifest_,
-        bool for_write_);
+    explicit SerializationMapKeyPresenceMerge(const SerializationPtr & map_with_key_columns_serialization_);
 
     [[noreturn]] static void throwNoSerialization();
-    void flushPendingPresence(SerializeBinaryBulkSettings & settings, SerializeState & state) const;
 
     SerializationPtr map_with_key_columns_serialization;
-    MapKeyManifest write_manifest;
-    bool for_write = false;
 };
 
 }

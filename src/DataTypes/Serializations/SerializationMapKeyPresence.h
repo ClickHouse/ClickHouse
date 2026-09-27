@@ -12,6 +12,10 @@ class SerializationMapKeyPresence final : public SimpleTextSerialization
 public:
     static SerializationPtr create(const SerializationPtr & map_with_key_columns_serialization_, Field key_);
 
+    /// Writes only this key's `.exists_<name>` UInt8 stream under the parent Map
+    /// column name. Used by per-key Vertical merge; does not touch `keys_info`.
+    static SerializationPtr createForWrite(const SerializationPtr & map_with_key_columns_serialization_, Field key_);
+
     bool supportsPooling() const override { return false; }
 
     void enumerateStreams(
@@ -56,12 +60,14 @@ public:
     bool tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override { throwNoSerialization(); }
 
 private:
-    SerializationMapKeyPresence(const SerializationPtr & map_with_key_columns_serialization_, Field key_);
+    SerializationMapKeyPresence(const SerializationPtr & map_with_key_columns_serialization_, Field key_, bool write_only_);
 
     [[noreturn]] static void throwNoSerialization();
 
     SerializationPtr map_with_key_columns_serialization;
     Field key;
+    String key_name;
+    bool write_only = false;
 };
 
 }

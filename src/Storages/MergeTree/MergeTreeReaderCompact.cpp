@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
@@ -20,6 +22,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(
@@ -514,6 +517,8 @@ void MergeTreeReaderCompact::readPrefix(
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
+        if (const auto part = data_part_info_for_read->getDataPart())
+            deserialize_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;

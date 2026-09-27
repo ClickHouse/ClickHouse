@@ -99,4 +99,9 @@ void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
     chassert(codec_);
     codec = std::move(codec_);
 }
+
+void CompressedWriteBuffer::deepCopyTo(CompressedWriteBuffer & target) const
+{
+    deepCopyOwnMemoryTo(target);
+}
 }

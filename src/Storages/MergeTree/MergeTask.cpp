@@ -32,6 +32,7 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
@@ -60,7 +61,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/Serializations/SerializationMapKeyPresenceMerge.h>
+#include <DataTypes/Serializations/SerializationMapKeyPresence.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
@@ -70,6 +71,7 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
+#include <Common/quoteString.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -177,6 +179,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsUInt64 map_key_columns_per_key_merge_min_keys;
+    extern const MergeTreeSettingsUInt64 map_max_key_columns;
 }
 
 namespace ErrorCodes
@@ -186,6 +189,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int LIMIT_EXCEEDED;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int RECEIVED_EMPTY_DATA;
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -2064,75 +2071,382 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     return false;
 }
 
-class RemapMapKeyPresenceTransform final : public ISimpleTransform
+/// One `rows_sources` replay that gathers a map key's value column and its exists column.
+/// `ColumnGathererStream` accepts a single column, so this stays local to the per-key merge.
+class MapKeyPairGatherAlgorithm final : public IMergingAlgorithm
 {
 public:
-    RemapMapKeyPresenceTransform(SharedHeader header_, std::vector<ssize_t> remap_, size_t source_size_)
-        : ISimpleTransform(header_, header_, false)
-        , remap(std::move(remap_))
-        , source_size(source_size_)
+    MapKeyPairGatherAlgorithm(
+        size_t num_inputs,
+        ReadBuffer & row_sources_buf_,
+        size_t block_preferred_size_rows_,
+        size_t block_preferred_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_)
+        : sources(num_inputs)
+        , row_sources_buf(row_sources_buf_)
+        , block_preferred_size_rows(block_preferred_size_rows_)
+        , block_preferred_size_bytes(block_preferred_size_bytes_)
+        , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     {
+        if (num_inputs == 0)
+            throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
     }
 
-    String getName() const override { return "RemapMapKeyPresence"; }
-
-    void transform(Chunk & chunk) override
-    {
-        auto column = chunk.getColumns()[0];
-        const auto & array = assert_cast<const ColumnArray &>(*column);
-        const auto & nested = assert_cast<const ColumnUInt8 &>(array.getData());
-        const auto & offsets = array.getOffsets();
-
-        auto dest_nested = ColumnUInt8::create();
-        auto dest_offsets = ColumnArray::ColumnOffsets::create();
-        auto & dest_data = dest_nested->getData();
-        auto & dest_offs = dest_offsets->getData();
-
-        const size_t rows = array.size();
-        dest_data.reserve(rows * remap.size());
-        dest_offs.reserve(rows);
-
-        for (size_t row = 0; row < rows; ++row)
-        {
-            const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
-            const size_t end = offsets[row];
-            const size_t row_source_size = end - begin;
-            if (source_size != 0 && row_source_size != source_size)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Map key presence row has {} values, expected {}",
-                    row_source_size,
-                    source_size);
-
-            remapPresenceRow(nested.getData().data() + begin, row_source_size, remap, dest_data);
-            dest_offs.push_back(dest_data.size());
-        }
-
-        Columns columns;
-        columns.emplace_back(ColumnArray::create(std::move(dest_nested), std::move(dest_offsets)));
-        chunk.setColumns(std::move(columns), rows);
-    }
+    const char * getName() const override { return "MapKeyPairGatherAlgorithm"; }
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
+    void onSourceExhausted(size_t source_num) override;
+    Status merge() override;
+    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
 
 private:
-    std::vector<ssize_t> remap;
-    size_t source_size;
+    struct Source
+    {
+        ColumnPtr value;
+        ColumnPtr exists;
+        size_t pos = 0;
+        size_t size = 0;
+        bool exhausted = false;
+    };
+
+    void loadSource(Source & source, Chunk chunk);
+    Chunk takeResultChunk();
+    void updateStats(const IColumn & value, const IColumn & exists);
+    Status mergeSingleSourcePassthrough();
+
+    std::vector<Source> sources;
+    ReadBuffer & row_sources_buf;
+    const size_t block_preferred_size_rows;
+    const size_t block_preferred_size_bytes;
+    const std::optional<size_t> max_dynamic_subcolumns;
+
+    MutableColumnPtr result_value;
+    MutableColumnPtr result_exists;
+
+    ssize_t next_required_source = -1;
+    UInt64 merged_rows = 0;
+    UInt64 merged_bytes = 0;
+    UInt64 merged_blocks = 0;
 };
 
-class RemapMapKeyPresenceStep : public ITransformingStep
+void MapKeyPairGatherAlgorithm::updateStats(const IColumn & value, const IColumn & exists)
+{
+    merged_rows += value.size();
+    merged_bytes += value.allocatedBytes() + exists.allocatedBytes();
+    ++merged_blocks;
+}
+
+void MapKeyPairGatherAlgorithm::loadSource(Source & source, Chunk chunk)
+{
+    if (chunk.getNumColumns() != 2)
+        throw Exception(
+            ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+            "Map key gather expected 2 columns, got {}",
+            chunk.getNumColumns());
+
+    Input input;
+    input.set(std::move(chunk));
+    removeConstAndSparse(input);
+
+    auto columns = input.chunk.detachColumns();
+    if (columns.size() != 2 || columns[0]->size() != columns[1]->size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Map key value and exists columns have different sizes ({} and {})",
+            columns.empty() ? 0 : columns[0]->size(),
+            columns.size() < 2 ? 0 : columns[1]->size());
+
+    source.value = std::move(columns[0]);
+    source.exists = std::move(columns[1]);
+    source.size = source.value->size();
+    source.pos = 0;
+
+    if (source.size == 0)
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Fetched block is empty");
+}
+
+void MapKeyPairGatherAlgorithm::initialize(Inputs inputs)
+{
+    VectorWithMemoryTracking<ColumnPtr> value_columns;
+    value_columns.reserve(inputs.size());
+    const IColumn * exists_sample = nullptr;
+
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (!inputs[i].chunk)
+            continue;
+
+        loadSource(sources[i], std::move(inputs[i].chunk));
+        value_columns.push_back(sources[i].value);
+        if (!exists_sample)
+            exists_sample = sources[i].exists.get();
+    }
+
+    if (value_columns.empty())
+        return;
+
+    result_value = value_columns[0]->cloneEmpty();
+    result_exists = exists_sample->cloneEmpty();
+    if (result_value->hasDynamicStructure())
+        result_value->chooseDynamicStructureForMerge(value_columns, max_dynamic_subcolumns);
+    if (result_value->hasStatistics())
+        result_value->takeOrCalculateStatisticsFrom(value_columns);
+}
+
+void MapKeyPairGatherAlgorithm::consume(Input & input, size_t source_num)
+{
+    if (!input.chunk)
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Fetched block is empty. Source {}", source_num);
+
+    loadSource(sources[source_num], std::move(input.chunk));
+}
+
+void MapKeyPairGatherAlgorithm::onSourceExhausted(size_t source_num)
+{
+    sources[source_num].exhausted = true;
+}
+
+Chunk MapKeyPairGatherAlgorithm::takeResultChunk()
+{
+    auto value = result_value->cloneEmpty();
+    auto exists = result_exists->cloneEmpty();
+    result_value.swap(value);
+    result_exists.swap(exists);
+
+    Chunk chunk;
+    updateStats(*value, *exists);
+    chunk.addColumn(std::move(value));
+    chunk.addColumn(std::move(exists));
+    return chunk;
+}
+
+IMergingAlgorithm::Status MapKeyPairGatherAlgorithm::mergeSingleSourcePassthrough()
+{
+    Source & source = sources[0];
+    if (source.pos < source.size)
+    {
+        Chunk res;
+        updateStats(*source.value, *source.exists);
+        res.addColumn(source.value);
+        res.addColumn(source.exists);
+        source.pos = source.size;
+        source.size = 0;
+        source.value.reset();
+        source.exists.reset();
+        next_required_source = 0;
+        return Status(std::move(res));
+    }
+
+    /// `rows_sources` is empty, so the single part is forwarded as-is. Once that part is
+    /// exhausted there is nothing left to read; asking for it again would spin.
+    if (source.exhausted || next_required_source == -1)
+        return Status(Chunk(), true);
+
+    next_required_source = 0;
+    return Status(next_required_source);
+}
+
+IMergingAlgorithm::Status MapKeyPairGatherAlgorithm::merge()
+{
+    if (!result_value)
+        return Status(Chunk(), true);
+
+    if (sources.size() == 1 && row_sources_buf.eof())
+        return mergeSingleSourcePassthrough();
+
+    if (next_required_source != -1)
+    {
+        Source & source = sources[next_required_source];
+        if (source.pos >= source.size)
+            throw Exception(
+                ErrorCodes::RECEIVED_EMPTY_DATA,
+                "Cannot fetch required block. Source {}",
+                next_required_source);
+        next_required_source = -1;
+    }
+
+    while (true)
+    {
+        row_sources_buf.nextIfAtEnd();
+        auto * row_source_pos = reinterpret_cast<RowSourcePart *>(row_sources_buf.position());
+        auto * row_sources_end = reinterpret_cast<RowSourcePart *>(row_sources_buf.buffer().end());
+
+        if (row_source_pos >= row_sources_end)
+        {
+            if (result_value->empty())
+            {
+                if (row_sources_buf.eof())
+                    return Status(Chunk(), true);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "rows_sources ended before eof while gathering a map key");
+            }
+            return Status(takeResultChunk(), row_sources_buf.eof());
+        }
+
+        if (result_value->empty())
+        {
+            const size_t size_to_reserve = std::min(static_cast<size_t>(row_sources_end - row_source_pos), block_preferred_size_rows);
+            result_value->reserve(size_to_reserve);
+            result_exists->reserve(size_to_reserve);
+        }
+
+        bool requested_source = false;
+        do
+        {
+            if (row_source_pos >= row_sources_end)
+                break;
+
+            const RowSourcePart row_source = *row_source_pos;
+            const size_t source_num = row_source.getSourceNum();
+            if (source_num >= sources.size())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Row source {} is out of range ({})",
+                    source_num,
+                    sources.size());
+
+            Source & source = sources[source_num];
+            if (source.pos >= source.size)
+            {
+                if (source.exhausted)
+                    throw Exception(
+                        ErrorCodes::RECEIVED_EMPTY_DATA,
+                        "Cannot fetch required block. Source {}",
+                        source_num);
+
+                next_required_source = source_num;
+                row_sources_buf.position() = reinterpret_cast<char *>(row_source_pos);
+                requested_source = true;
+                break;
+            }
+
+            ++row_source_pos;
+
+            size_t len = 1;
+            const size_t max_len = std::min(static_cast<size_t>(row_sources_end - row_source_pos), source.size - source.pos);
+            while (len < max_len && row_source_pos->data == row_source.data)
+            {
+                ++len;
+                ++row_source_pos;
+            }
+
+            row_sources_buf.position() = reinterpret_cast<char *>(row_source_pos);
+
+            if (!row_source.getSkipFlag())
+            {
+                /// The whole source block becomes the output block. Dynamic structure and statistics
+                /// stay on `result_*` and go through `insertRangeFrom` below.
+                if (source.pos == 0 && len == source.size && result_value->empty()
+                    && !result_value->hasDynamicStructure() && !result_value->hasStatistics())
+                {
+                    Chunk res;
+                    updateStats(*source.value, *source.exists);
+                    res.addColumn(source.value);
+                    res.addColumn(source.exists);
+                    source.pos = source.size;
+                    return Status(std::move(res));
+                }
+
+                result_value->insertRangeFrom(*source.value, source.pos, len);
+                result_exists->insertRangeFrom(*source.exists, source.pos, len);
+            }
+
+            source.pos += len;
+        } while (result_value->size() < block_preferred_size_rows
+            && result_value->byteSize() + result_exists->byteSize() < block_preferred_size_bytes);
+
+        if (requested_source)
+        {
+            if (result_value->empty())
+                return Status(next_required_source);
+
+            Status status(takeResultChunk());
+            status.required_source = next_required_source;
+            return status;
+        }
+
+        /// A window of skipped rows produces nothing. Keep reading instead of returning an empty chunk.
+        if (result_value->empty())
+            continue;
+
+        return Status(takeResultChunk(), row_sources_buf.eof());
+    }
+}
+
+class MapKeyPairGatherTransform final : public IMergingTransform<MapKeyPairGatherAlgorithm>
 {
 public:
-    RemapMapKeyPresenceStep(SharedHeader input_header_, std::vector<ssize_t> remap_, size_t source_size_)
+    MapKeyPairGatherTransform(
+        SharedHeader header,
+        size_t num_inputs,
+        std::unique_ptr<ReadBuffer> row_sources_buf_,
+        size_t block_preferred_size_rows_,
+        size_t block_preferred_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_)
+        : IMergingTransform<MapKeyPairGatherAlgorithm>(
+            num_inputs,
+            header,
+            header,
+            /*have_all_inputs_=*/ true,
+            /*limit_hint_=*/ 0,
+            /*always_read_till_end_=*/ false,
+            num_inputs,
+            *row_sources_buf_,
+            block_preferred_size_rows_,
+            block_preferred_size_bytes_,
+            max_dynamic_subcolumns_)
+        , row_sources_buf_holder(std::move(row_sources_buf_))
+    {
+        if (header->columns() != 2)
+            throw Exception(
+                ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+                "Header should have 2 columns, but contains {}",
+                header->columns());
+    }
+
+    String getName() const override { return "MapKeyPairGatherTransform"; }
+
+private:
+    std::unique_ptr<ReadBuffer> row_sources_buf_holder;
+};
+
+class MapKeyPairGatherStep : public ITransformingStep
+{
+public:
+    MapKeyPairGatherStep(
+        const SharedHeader & input_header_,
+        const String & rows_sources_temporary_file_name_,
+        UInt64 merge_block_size_rows_,
+        UInt64 merge_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_)
         : ITransformingStep(input_header_, input_header_, getTraits())
-        , remap(std::move(remap_))
-        , source_size(source_size_)
+        , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
+        , merge_block_size_rows(merge_block_size_rows_)
+        , merge_block_size_bytes(merge_block_size_bytes_)
+        , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     {
     }
 
-    String getName() const override { return "RemapMapKeyPresence"; }
+    String getName() const override { return "MapKeyPairGather"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
     {
-        pipeline.addTransform(std::make_shared<RemapMapKeyPresenceTransform>(pipeline.getSharedHeader(), remap, source_size));
+        const auto & header = pipeline.getSharedHeader();
+        const auto input_streams_count = pipeline.getNumStreams();
+
+        if (!pipeline_settings.temporary_file_lookup)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file lookup is not set in pipeline settings for vertical merge");
+
+        auto rows_sources_read_buf = pipeline_settings.temporary_file_lookup->getTemporaryFileForReading(rows_sources_temporary_file_name);
+
+        auto transform = std::make_unique<MapKeyPairGatherTransform>(
+            header,
+            input_streams_count,
+            std::move(rows_sources_read_buf),
+            merge_block_size_rows,
+            merge_block_size_bytes,
+            max_dynamic_subcolumns);
+
+        pipeline.addTransform(std::move(transform));
     }
 
     void updateOutputHeader() override
@@ -2146,18 +2460,20 @@ private:
         return ITransformingStep::Traits
         {
             {
-                .returns_single_stream = false,
+                .returns_single_stream = true,
                 .preserves_number_of_streams = true,
                 .preserves_sorting = true,
             },
             {
-                .preserves_number_of_rows = true,
+                .preserves_number_of_rows = false,
             }
         };
     }
 
-    std::vector<ssize_t> remap;
-    size_t source_size;
+    const String rows_sources_temporary_file_name;
+    const UInt64 merge_block_size_rows;
+    const UInt64 merge_block_size_bytes;
+    const std::optional<size_t> max_dynamic_subcolumns;
 };
 
 /// Gathers values from all parts for one column using rows sources temporary file
@@ -2235,6 +2551,18 @@ private:
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
+    return createPipelineForReadingColumns(Names{column_name});
+}
+
+MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
+MergeTask::VerticalMergeStage::createPipelineForReadingColumns(const Names & column_names) const
+{
+    if (column_names.empty() || column_names.size() > 2)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Vertical merge read pipeline expected 1 or 2 columns, got {}",
+            column_names.size());
+
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
@@ -2255,7 +2583,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
-            Names{column_name},
+            column_names,
             global_ctx->input_rows_filtered,
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
@@ -2302,29 +2630,49 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        bool is_result_sparse = false;
-        if (auto serialization = global_ctx->new_data_part->tryGetSerialization(column_name))
-            is_result_sparse = ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE);
-        auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentHeader(),
-            RowsSourcesTemporaryFile::FILE_ID,
-            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
-            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            max_dynamic_subcolumns,
-            is_result_sparse);
+        const UInt64 merge_block_size_rows = (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size];
+        const UInt64 merge_block_size_bytes = (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes];
+        const auto & gather_header = merge_column_query_plan.getCurrentHeader();
 
-        merge_step->setStepDescription("Gather column");
-        merge_column_query_plan.addStep(std::move(merge_step));
+        if (column_names.size() == 2)
+        {
+            auto merge_step = std::make_unique<MapKeyPairGatherStep>(
+                gather_header,
+                RowsSourcesTemporaryFile::FILE_ID,
+                merge_block_size_rows,
+                merge_block_size_bytes,
+                max_dynamic_subcolumns);
+            merge_step->setStepDescription("Gather map key value and exists");
+            merge_column_query_plan.addStep(std::move(merge_step));
+        }
+        else
+        {
+            bool is_result_sparse = false;
+            if (auto serialization = global_ctx->new_data_part->tryGetSerialization(column_names.front()))
+                is_result_sparse = ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE);
+            auto merge_step = std::make_unique<ColumnGathererStep>(
+                gather_header,
+                RowsSourcesTemporaryFile::FILE_ID,
+                merge_block_size_rows,
+                merge_block_size_bytes,
+                max_dynamic_subcolumns,
+                is_result_sparse);
+
+            merge_step->setStepDescription("Gather column");
+            merge_column_query_plan.addStep(std::move(merge_step));
+        }
     }
 
-    /// Add expression step for indexes
+    /// Add expression step for indexes. A per-key pair reads subcolumns, which are not index columns.
     MergeTreeIndices indexes_to_recalc;
-    auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
-
-    if (indexes_it != global_ctx->skip_indexes_by_column.end())
+    if (column_names.size() == 1)
     {
-        indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, indexes_it->second, *global_ctx->data_settings);
-        addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_it->second, global_ctx);
+        auto indexes_it = global_ctx->skip_indexes_by_column.find(column_names.front());
+        if (indexes_it != global_ctx->skip_indexes_by_column.end())
+        {
+            indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, indexes_it->second, *global_ctx->data_settings);
+            addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_it->second, global_ctx);
+        }
     }
 
     /// If merge may reduce rows, rebuild text indexes and statistics for the resulting part.
@@ -2428,17 +2776,48 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             return false;
         }
 
-        ctx->column_elems_written += block.rows();
         if (ctx->per_key_map)
         {
-            Block renamed;
-            auto column = block.getByPosition(0);
-            column.name = ctx->per_key_map->map_column_name;
-            renamed.insert(std::move(column));
-            ctx->column_to->write(renamed);
+            if (block.columns() != 2)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Per-key map gather for column {} produced {} columns",
+                    ctx->per_key_map->map_column_name,
+                    block.columns());
+
+            const auto & value_column = block.getByPosition(0).column;
+            const auto & exists_column = block.getByPosition(1).column;
+            if (value_column->size() != exists_column->size())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Per-key map gather for column {} has {} value rows and {} exists rows",
+                    ctx->per_key_map->map_column_name,
+                    value_column->size(),
+                    exists_column->size());
+
+            if (!ctx->column_to_exists)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Per-key map gather for column {} has no exists writer",
+                    ctx->per_key_map->map_column_name);
+
+            ctx->column_elems_written += value_column->size();
+
+            Block value_block;
+            auto value = block.getByPosition(0);
+            value.name = ctx->per_key_map->map_column_name;
+            value_block.insert(std::move(value));
+            ctx->column_to->write(value_block);
+
+            Block exists_block;
+            auto exists = block.getByPosition(1);
+            exists.name = ctx->per_key_map->map_column_name;
+            exists_block.insert(std::move(exists));
+            ctx->column_to_exists->write(exists_block);
         }
         else
         {
+            ctx->column_elems_written += block.rows();
             stampMapKeyUnionsOnBlock(block, global_ctx->map_key_unions);
             ctx->column_to->write(block);
         }
@@ -2505,79 +2884,38 @@ bool MergeTask::VerticalMergeStage::isPerKeyMapGatheringColumn() const
     return global_ctx->per_key_vertical_map_columns.contains(ctx->it_name_and_type->name);
 }
 
-void MergeTask::VerticalMergeStage::preparePerKeyMapPresence() const
+void MergeTask::VerticalMergeStage::initPerKeyMapState() const
 {
     const auto & column_name = ctx->it_name_and_type->name;
 
-    if (!ctx->per_key_map)
-    {
-        VerticalMergeRuntimeContext::PerKeyMapMergeState state;
-        state.map_column_name = column_name;
-        state.map_type = ctx->it_name_and_type->type;
-        const auto & map_type = assert_cast<const DataTypeMap &>(*state.map_type);
-        state.value_type = map_type.getValueType();
-        state.map_serialization = global_ctx->new_data_part->getSerialization(column_name);
-        const auto * with_key_columns = typeid_cast<const SerializationMapWithKeyColumns *>(state.map_serialization.get());
-        if (!with_key_columns)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Per-key merge expected with_key_columns serialization for column {}", column_name);
-        state.value_serialization = with_key_columns->getValueSerialization();
-        state.union_manifest = global_ctx->map_key_unions.at(column_name);
-        state.part_manifests.resize(global_ctx->future_part->parts.size());
-        for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
-        {
-            const auto & part = global_ctx->future_part->parts[part_num];
-            if (partUsesMapWithKeyColumns(*part, column_name) && isWidePart(part))
-                state.part_manifests[part_num] = readMapKeyManifestFromWidePart(*part, *ctx->it_name_and_type);
-            else if (partUsesMapWithKeyColumns(*part, column_name))
-                state.part_manifests[part_num] = scanMapKeysFromPart(
-                    *global_ctx->data,
-                    global_ctx->storage_snapshot,
-                    part,
-                    global_ctx->alter_conversions[part_num],
-                    column_name,
-                    part_num);
-        }
-        state.phase = VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence;
-        ctx->per_key_map = std::move(state);
-    }
+    VerticalMergeRuntimeContext::PerKeyMapMergeState state;
+    state.map_column_name = column_name;
+    state.map_type = ctx->it_name_and_type->type;
+    const auto & map_type = assert_cast<const DataTypeMap &>(*state.map_type);
+    state.value_type = map_type.getValueType();
+    state.map_serialization = global_ctx->new_data_part->getSerialization(column_name);
+    const auto * with_key_columns = typeid_cast<const SerializationMapWithKeyColumns *>(state.map_serialization.get());
+    if (!with_key_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Per-key merge expected with_key_columns serialization for column {}", column_name);
+    state.value_serialization = with_key_columns->getValueSerialization();
+    state.union_manifest = global_ctx->map_key_unions.at(column_name);
+    /// Merge output writes every union key with its own value + exists streams and a
+    /// tracked presence bit.
+    for (auto & entry : state.union_manifest.keys)
+        entry.presence_kind = MapKeyPresenceKind::Tracked;
 
-    ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
-    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
+    const UInt64 max_keys = (*global_ctx->data_settings)[MergeTreeSetting::map_max_key_columns];
+    if (max_keys && state.union_manifest.keys.size() > max_keys)
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "Number of distinct keys in Map column {} is {}, exceeds map_max_key_columns ({})",
+            backQuoteIfNeed(column_name),
+            state.union_manifest.keys.size(),
+            max_keys);
 
-    auto column_pipeline = createPipelineForMapPresence();
-    ctx->build_statistics_transforms.clear();
-    ctx->column_parts_pipeline = std::move(column_pipeline.pipeline);
-    ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
-        global_ctx->merge_list_element_ptr,
-        global_ctx->watch_prev_elapsed,
-        *global_ctx->column_progress,
-        [&my_ctx = *global_ctx]() { my_ctx.checkOperationIsNotCanceled(); }));
-    ctx->column_parts_pipeline.disableProfileEventUpdate();
-    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
-
-    SerializationByName serializations_override;
-    serializations_override.emplace(
-        column_name,
-        SerializationMapKeyPresenceMerge::create(ctx->per_key_map->map_serialization, ctx->per_key_map->union_manifest, /*for_write_=*/ true));
-
-    NamesAndTypesList columns_list;
-    columns_list.emplace_back(column_name, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()));
-
-    ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
-        global_ctx->new_data_part,
-        global_ctx->data_settings,
-        global_ctx->metadata_snapshot,
-        columns_list,
-        MergeTreeIndices{},
-        global_ctx->compression_codec,
-        global_ctx->to->getIndexGranularity(),
-        global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
-        &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->to->getSkipIndicesPackedWriter(),
-        std::move(serializations_override));
-
-    ctx->column_elems_written = 0;
+    state.key_index = 0;
+    state.progress_at_column_start = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
+    ctx->per_key_map = std::move(state);
 }
 
 void MergeTask::VerticalMergeStage::preparePerKeyMapKey() const
@@ -2587,14 +2925,15 @@ void MergeTask::VerticalMergeStage::preparePerKeyMapKey() const
     const auto & key_entry = state.union_manifest.keys[state.key_index];
     const auto * with_key_columns = typeid_cast<const SerializationMapWithKeyColumns *>(state.map_serialization.get());
     const String key_stream_name = with_key_columns->keyToStreamName(key_entry.key);
-    const String subcolumn_name = mapKeySubcolumnName(column_name, key_stream_name);
+    const String value_subcolumn_name = mapKeySubcolumnName(column_name, key_stream_name);
+    const String exists_subcolumn_name = mapKeyExistsSubcolumnName(column_name, key_stream_name);
 
-    ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
     const Float64 key_weight = ctx->column_sizes->columnWeight(column_name)
         / static_cast<Float64>(std::max<size_t>(state.union_manifest.keys.size(), 1));
+    ctx->progress_before = state.progress_at_column_start + key_weight * static_cast<Float64>(state.key_index);
     global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, key_weight);
 
-    auto column_pipeline = createPipelineForReadingOneColumn(subcolumn_name);
+    auto column_pipeline = createPipelineForReadingColumns(Names{value_subcolumn_name, exists_subcolumn_name});
     ctx->build_statistics_transforms.clear();
     ctx->column_parts_pipeline = std::move(column_pipeline.pipeline);
     ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
@@ -2605,28 +2944,53 @@ void MergeTask::VerticalMergeStage::preparePerKeyMapKey() const
     ctx->column_parts_pipeline.disableProfileEventUpdate();
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
-    SerializationByName serializations_override;
-    serializations_override.emplace(
+    const auto total_size_bytes = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
+    const auto & index_granularity = global_ctx->to->getIndexGranularity();
+
+    SerializationByName value_serializations;
+    value_serializations.emplace(
         column_name,
         SerializationMapWithKeyColumnsValue::createForWrite(
             state.value_serialization, state.value_type, state.map_serialization, key_entry.key));
 
-    NamesAndTypesList columns_list;
-    columns_list.emplace_back(column_name, state.value_type);
+    NamesAndTypesList value_columns;
+    value_columns.emplace_back(column_name, state.value_type);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->data_settings,
         global_ctx->metadata_snapshot,
-        columns_list,
+        value_columns,
         MergeTreeIndices{},
         global_ctx->compression_codec,
-        global_ctx->to->getIndexGranularity(),
-        global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
+        index_granularity,
+        total_size_bytes,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter(),
-        std::move(serializations_override));
+        std::move(value_serializations));
+
+    SerializationByName exists_serializations;
+    exists_serializations.emplace(
+        column_name,
+        SerializationMapKeyPresence::createForWrite(state.map_serialization, key_entry.key));
+
+    NamesAndTypesList exists_columns;
+    exists_columns.emplace_back(column_name, std::make_shared<DataTypeUInt8>());
+
+    ctx->column_to_exists = std::make_unique<MergedColumnOnlyOutputStream>(
+        global_ctx->new_data_part,
+        global_ctx->data_settings,
+        global_ctx->metadata_snapshot,
+        exists_columns,
+        MergeTreeIndices{},
+        global_ctx->compression_codec,
+        index_granularity,
+        total_size_bytes,
+        &global_ctx->written_offset_substreams,
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        std::move(exists_serializations));
 
     ctx->column_elems_written = 0;
 }
@@ -2636,46 +3000,47 @@ void MergeTask::VerticalMergeStage::finalizePerKeyMapPiece() const
     auto & state = *ctx->per_key_map;
     global_ctx->checkOperationIsNotCanceled();
 
+    if (!ctx->column_to || !ctx->column_to_exists)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Per-key map column {} is missing a value or exists writer",
+            state.map_column_name);
+
     ctx->executor.reset();
-    ctx->column_to->finalizeIndexGranularity();
-    auto changed_checksums = ctx->column_to->fillChecksumsWithoutUpdatingPart(global_ctx->new_data_part->checksums);
-    global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
 
-    const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
-    if (!columns_substreams.empty())
+    /// Value substreams, then exists substreams, for this key only.
+    auto finish_writer = [&](std::unique_ptr<MergedColumnOnlyOutputStream> & writer)
     {
-        const auto & substreams = columns_substreams.getColumnSubstreams(0);
-        if (state.phase == VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence)
+        writer->finalizeIndexGranularity();
+        auto changed_checksums = writer->fillChecksumsWithoutUpdatingPart(global_ctx->new_data_part->checksums);
+        global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
+
+        const auto & columns_substreams = writer->getColumnsSubstreams();
+        if (!columns_substreams.empty())
         {
-            for (const auto & substream : substreams)
-            {
-                if (substream.ends_with(".keys_info"))
-                    state.keys_info_substreams.push_back(substream);
-                else
-                    state.presence_substreams.push_back(substream);
-            }
+            const auto & substreams = columns_substreams.getColumnSubstreams(0);
+            state.key_substreams.insert(state.key_substreams.end(), substreams.begin(), substreams.end());
         }
-        else
+
+        auto cached_marks = writer->releaseCachedMarks();
+        for (auto & [name, marks] : cached_marks)
+            global_ctx->cached_marks.emplace(name, std::move(marks));
+
+        auto cached_index_marks = writer->releaseCachedIndexMarks();
+        for (auto & [name, marks] : cached_index_marks)
+            global_ctx->cached_index_marks.emplace(name, std::move(marks));
+
+        ctx->delayed_streams.emplace_back(std::move(writer));
+
+        while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
         {
-            state.key_value_substreams.insert(state.key_value_substreams.end(), substreams.begin(), substreams.end());
+            ctx->delayed_streams.front()->finish(ctx->need_sync);
+            ctx->delayed_streams.pop_front();
         }
-    }
+    };
 
-    auto cached_marks = ctx->column_to->releaseCachedMarks();
-    for (auto & [name, marks] : cached_marks)
-        global_ctx->cached_marks.emplace(name, std::move(marks));
-
-    auto cached_index_marks = ctx->column_to->releaseCachedIndexMarks();
-    for (auto & [name, marks] : cached_index_marks)
-        global_ctx->cached_index_marks.emplace(name, std::move(marks));
-
-    ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
-
-    while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
-    {
-        ctx->delayed_streams.front()->finish(ctx->need_sync);
-        ctx->delayed_streams.pop_front();
-    }
+    finish_writer(ctx->column_to);
+    finish_writer(ctx->column_to_exists);
 
     if (!global_ctx->isCancelled() && global_ctx->rows_written != ctx->column_elems_written)
     {
@@ -2697,92 +3062,29 @@ void MergeTask::VerticalMergeStage::finishPerKeyMapColumn() const
 {
     auto & state = *ctx->per_key_map;
 
+    const auto & map_type = assert_cast<const DataTypeMap &>(*state.map_type);
+    auto key_columns_file = writeMapKeyColumnsFile(
+        global_ctx->new_data_part->getDataPartStorage(),
+        state.map_column_name,
+        *global_ctx->data_settings,
+        map_type.getKeyType(),
+        state.union_manifest,
+        global_ctx->context->getWriteSettings(),
+        global_ctx->gathered_data.checksums);
+    if (ctx->need_sync)
+        key_columns_file->sync();
+    key_columns_file->finalize();
+
     ColumnsSubstreams piece;
     piece.addColumn(state.map_column_name);
-    piece.addSubstreamsToLastColumn(state.keys_info_substreams);
-    piece.addSubstreamsToLastColumn(state.key_value_substreams);
-    piece.addSubstreamsToLastColumn(state.presence_substreams);
+    piece.addSubstreamsToLastColumn(state.key_substreams);
 
     global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(
         global_ctx->gathered_data.columns_substreams, piece, global_ctx->new_data_part->getColumns().getNames());
 
     global_ctx->merge_list_element_ptr->columns_written += 1;
     global_ctx->merge_list_element_ptr->progress.store(
-        ctx->progress_before + ctx->column_sizes->columnWeight(state.map_column_name), std::memory_order_relaxed);
-}
-
-MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
-MergeTask::VerticalMergeStage::createPipelineForMapPresence() const
-{
-    const auto & state = *ctx->per_key_map;
-    const String presence_name = mapKeysPresenceSubcolumnName(state.map_column_name);
-
-    std::vector<QueryPlanPtr> plans;
-    size_t part_starting_offset = 0;
-    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
-
-    for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
-    {
-        auto plan_for_part = std::make_unique<QueryPlan>();
-
-        createReadFromPartStep(
-            MergeTreeSequentialSourceType::Merge,
-            *plan_for_part,
-            *global_ctx->data,
-            global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
-            global_ctx->alter_conversions[part_num],
-            global_ctx->merged_part_offsets,
-            Names{presence_name},
-            global_ctx->input_rows_filtered,
-            apply_deleted_mask,
-            /*filter=*/ std::nullopt,
-            ctx->read_with_direct_io,
-            ctx->use_prefetch,
-            global_ctx->context,
-            getLogger("VerticalMergeStage"));
-
-        auto remap = buildPresenceRemap(state.part_manifests[part_num], state.union_manifest);
-        auto remap_step = std::make_unique<RemapMapKeyPresenceStep>(
-            plan_for_part->getCurrentHeader(), std::move(remap), state.part_manifests[part_num].keys.size());
-        remap_step->setStepDescription("Remap Map key presence");
-        plan_for_part->addStep(std::move(remap_step));
-
-        plans.emplace_back(std::move(plan_for_part));
-        part_starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
-    }
-
-    QueryPlan merge_column_query_plan;
-    {
-        SharedHeaders input_headers;
-        input_headers.reserve(plans.size());
-        for (auto & plan : plans)
-            input_headers.emplace_back(plan->getCurrentHeader());
-
-        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
-        merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
-    }
-
-    {
-        const auto & merge_tree_settings = global_ctx->data_settings;
-        auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentHeader(),
-            RowsSourcesTemporaryFile::FILE_ID,
-            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
-            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            /*max_dynamic_subcolumns=*/ std::nullopt,
-            /*is_result_sparse=*/ false);
-
-        merge_step->setStepDescription("Gather Map key presence");
-        merge_column_query_plan.addStep(std::move(merge_step));
-    }
-
-    QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
-    auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
-    pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
-    auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
-
-    return {QueryPipelineBuilder::getPipeline(std::move(*builder)), MergeTreeIndices{}, {}};
+        state.progress_at_column_start + ctx->column_sizes->columnWeight(state.map_column_name), std::memory_order_relaxed);
 }
 
 
@@ -3015,6 +3317,9 @@ void MergeTask::VerticalMergeStage::cancel() noexcept
     if (ctx->column_to)
         ctx->column_to->cancel();
 
+    if (ctx->column_to_exists)
+        ctx->column_to_exists->cancel();
+
     if (ctx->prepared_pipeline.has_value())
         ctx->prepared_pipeline->pipeline.cancel();
 
@@ -3235,11 +3540,9 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
             if (isPerKeyMapGatheringColumn())
             {
                 if (!ctx->per_key_map)
-                    preparePerKeyMapPresence();
-                else if (ctx->per_key_map->phase == VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence)
-                    preparePerKeyMapPresence();
-                else
-                    preparePerKeyMapKey();
+                    initPerKeyMapState();
+
+                preparePerKeyMapKey();
             }
             else
             {
@@ -3262,26 +3565,14 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
             {
                 finalizePerKeyMapPiece();
                 auto & state = *ctx->per_key_map;
-                if (state.phase == VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence)
+                /// One replay wrote this key's value and exists streams.
+                /// `keys.size() >= min_keys > 0` here, so there is always at least one key.
+                ++state.key_index;
+                if (state.key_index >= state.union_manifest.keys.size())
                 {
-                    state.phase = VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Key;
-                    state.key_index = 0;
-                    if (state.union_manifest.keys.empty())
-                    {
-                        finishPerKeyMapColumn();
-                        ctx->per_key_map.reset();
-                        ++ctx->it_name_and_type;
-                    }
-                }
-                else
-                {
-                    ++state.key_index;
-                    if (state.key_index >= state.union_manifest.keys.size())
-                    {
-                        finishPerKeyMapColumn();
-                        ctx->per_key_map.reset();
-                        ++ctx->it_name_and_type;
-                    }
+                    finishPerKeyMapColumn();
+                    ctx->per_key_map.reset();
+                    ++ctx->it_name_and_type;
                 }
             }
             else
@@ -4218,30 +4509,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::collectMapKeyUnions() const
                     column.name,
                     part_num));
             }
-            else if (isWidePart(part))
-            {
-                auto manifest = readMapKeyManifestFromWidePart(*part, column);
-                if (manifest.keys.empty() && part->rows_count > 0)
-                {
-                    manifest = scanMapKeysFromPart(
-                        *global_ctx->data,
-                        global_ctx->storage_snapshot,
-                        part,
-                        global_ctx->alter_conversions[part_num],
-                        column.name,
-                        part_num);
-                }
-                manifests.push_back(std::move(manifest));
-            }
             else
             {
-                manifests.push_back(scanMapKeysFromPart(
-                    *global_ctx->data,
-                    global_ctx->storage_snapshot,
-                    part,
-                    global_ctx->alter_conversions[part_num],
-                    column.name,
-                    part_num));
+                /// A loaded `with_key_columns` manifest is authoritative, including an empty key list.
+                /// Scanning the column would read every row to rediscover keys the part already recorded.
+                manifests.push_back(readMapKeyManifestFromPart(*part, column));
             }
         }
 

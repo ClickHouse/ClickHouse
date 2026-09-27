@@ -181,7 +181,7 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     ObjectSubObject,
     ObjectCombinedPath,
     MapKey,
-    MapKeyPresence,
+    MapKeyExists,
 };
 
 String ISerialization::Substream::toString() const
@@ -339,15 +339,18 @@ String getNameForSubstreamPath(
             stream_name += ".keys_info";
         else if (it->type == SubstreamType::MapKey)
             stream_name += ".key_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream);
-        else if (it->type == SubstreamType::MapKeyPresence)
+        else if (it->type == SubstreamType::MapKeyExists)
         {
-            /// The presence stream is shared across keys on disk. The per-key
-            /// `exists_<text>` name is only used as a logical subcolumn path.
-            if (escape_for_file_name)
-                stream_name += ".key_presence";
-            else
-                stream_name += ".exists_" + it->name_of_substream;
+            /// One independent presence stream per key. Both the value stream
+            /// (`.key_<name>`) and this one escape the key text, so no key name
+            /// (including one literally named `presence` or `key`) can collide
+            /// with a structural stream such as the per-key templates.
+            stream_name += ".exists_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream);
         }
+        else if (it->type == SubstreamType::MapKeyValueTemplate)
+            stream_name += ".key_template";
+        else if (it->type == SubstreamType::MapKeyExistsTemplate)
+            stream_name += ".exists_template";
         else if (Substream::named_types.contains(it->type))
         {
             auto substream_name = "." + it->name_of_substream;
@@ -593,8 +596,7 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
-            || elem.type == Substream::SparseOffsets
-            || elem.type == Substream::MapKeyPresence)
+            || elem.type == Substream::SparseOffsets)
             return false;
     }
     return true;
@@ -736,7 +738,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook
             || path[last_elem].type == Substream::MapKey
-            || path[last_elem].type == Substream::MapKeyPresence;
+            || path[last_elem].type == Substream::MapKeyExists;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -769,7 +771,8 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     {
         if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
             || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure
-            || path[i].type == SubstreamType::MapKey || path[i].type == SubstreamType::MapKeyPresence)
+            || path[i].type == SubstreamType::MapKey || path[i].type == SubstreamType::MapKeyExists
+            || path[i].type == SubstreamType::MapKeyValueTemplate || path[i].type == SubstreamType::MapKeyExistsTemplate)
             return true;
     }
 

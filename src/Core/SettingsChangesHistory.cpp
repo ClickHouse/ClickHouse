@@ -1532,7 +1532,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.10",
         {
-            {"map_max_key_columns", 0, 0, "New setting reserved to bound the number of independent key streams in `with_key_columns` Map serialization. 0 means no limit. The writer does not apply it yet."},
+            {"map_max_key_columns", 0, 0, "New setting bounding the number of independent key streams in `with_key_columns` Map serialization. 0 means no limit. A write that would exceed it fails with `LIMIT_EXCEEDED`."},
             {"map_key_columns_per_key_merge_min_keys", 0, 32, "New setting. A `with_key_columns` Map whose distinct key union reaches this size is merged one key at a time. 0 keeps the previous single-column merge. `compatibility` below 26.10 restores 0."},
             {"max_bytes_for_compact_map_key_columns", 67108864, 67108864, "New setting to cap the uncompressed size of zero-level Compact parts written with `with_key_columns` Map serialization. 0 disables Compact for that serialization."},
         });

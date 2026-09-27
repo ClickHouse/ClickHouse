@@ -1,9 +1,9 @@
 part_type
 Wide
-m_has_core_streams
-1	1	1	1	1
-s_has_core_streams
-1	1	1	1
+m_manifest_not_substream
+1	1
+s_manifest_not_substream
+1	1
 roundtrip
 1	1	2	3	0	1	1	0	{'a':1,'a.b':3,'b':2}	x	yyyy
 2	4	0	0	0	4	1	0	{'a':4}	z	

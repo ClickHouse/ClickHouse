@@ -436,6 +436,8 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
+        /// Exists stream written together with `column_to` for one per-key replay.
+        std::unique_ptr<MergedColumnOnlyOutputStream> column_to_exists{nullptr};
 
         /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
         /// and it initiates prefetching of the first range of that column.
@@ -458,24 +460,21 @@ private:
 
         struct PerKeyMapMergeState
         {
-            enum class Phase : uint8_t
-            {
-                Presence,
-                Key,
-            };
-
+            /// One replay of `rows_sources` per union key writes that key's value
+            /// stream and its `.exists_` stream. Substream names are appended in
+            /// that order, matching `enumerateKeyStreams`.
             String map_column_name;
             DataTypePtr map_type;
             DataTypePtr value_type;
             SerializationPtr map_serialization;
             SerializationPtr value_serialization;
             MapKeyManifest union_manifest;
-            std::vector<MapKeyManifest> part_manifests;
-            Phase phase{Phase::Presence};
             size_t key_index = 0;
-            std::vector<String> keys_info_substreams;
-            std::vector<String> presence_substreams;
-            std::vector<String> key_value_substreams;
+            /// Progress captured before the first key of this column. Column end
+            /// stores this plus `columnWeight`, so the two streams of one key do
+            /// not add the column weight twice.
+            Float64 progress_at_column_start = 0;
+            std::vector<String> key_substreams;
         };
 
         std::optional<PerKeyMapMergeState> per_key_map;
@@ -517,12 +516,12 @@ private:
         void finalizeVerticalMergeForOneColumn() const;
 
         bool isPerKeyMapGatheringColumn() const;
-        void preparePerKeyMapPresence() const;
+        void initPerKeyMapState() const;
         void preparePerKeyMapKey() const;
         void finalizePerKeyMapPiece() const;
         void finishPerKeyMapColumn() const;
-        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForMapPresence() const;
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingColumns(const Names & column_names) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;

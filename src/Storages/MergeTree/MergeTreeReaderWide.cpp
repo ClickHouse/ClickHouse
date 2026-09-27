@@ -271,7 +271,18 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
     };
 
-    serialization->enumerateStreams(callback);
+    /// Let serializations whose subcolumn streams may or may not exist in a given
+    /// part (e.g. a per-key `with_key_columns` Map key that is absent from this
+    /// part's manifest) enumerate only the streams that actually exist, so the
+    /// column is not wrongly marked partially-read and refilled with defaults.
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+    {
+        return IMergeTreeDataPart::getStreamNameForColumn(
+            name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings).has_value();
+    };
+    auto enumerate_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type);
+    serialization->enumerateStreams(enumerate_settings, callback, enumerate_data);
 
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
@@ -445,6 +456,8 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+        if (const auto part = data_part_info_for_read->getDataPart())
+            deserialize_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;

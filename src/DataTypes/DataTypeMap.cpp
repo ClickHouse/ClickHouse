@@ -247,12 +247,12 @@ ColumnPtr makePresenceColumnFromMap(const ColumnMap & column_map, const IColumn 
 }
 
 /// Resolves a dynamic subcolumn like `map['key']` / `map.exists_key` by parsing the key
-/// from the subcolumn name. Per-key serialization reads only that key's value or presence
-/// stream; `basic` / `with_buckets` keep using `SerializationMapKeyValue`.
+/// from the subcolumn name. `with_key_columns` reads that key's value stream or its `.exists_`
+/// stream. `basic` / `with_buckets` read the bucket that contains the key: `m['key']` via
+/// `SerializationMapKeyValue`, `m.exists_<key>` via `SerializationMapKeyExists`.
 ///
-/// The returned path identifies the substream. `basic` / `with_buckets` use `MapKeyValue`
-/// so `m['key']` still rewrites to the key subcolumn. `with_key_columns` uses `MapKey`
-/// or `MapKeyPresence`, which name the per-key streams.
+/// The returned path identifies the substream. `basic` / `with_buckets` value reads use
+/// `MapKeyValue`. `with_key_columns` uses `MapKey` or `MapKeyExists`.
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
     /// Must run before the `key_` prefix check: `keys_presence` starts with `key_`.
@@ -312,7 +312,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
             res->data.column = ColumnArray::create(std::move(presence_nested), std::move(offsets));
         }
 
-        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyPresence);
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyExists);
         res->substreams_path.back().name_of_substream = String(KEYS_PRESENCE_SUBCOLUMN);
         return res;
     }
@@ -337,16 +337,26 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
 
     /// `exists_` is a type-level subcolumn. Analysis uses the default (`BASIC`)
     /// serialization, so this branch must not depend on `WITH_KEY_COLUMNS`.
+    /// The part's own serialization is substituted when the column is read.
     if (is_exists)
     {
-        SerializationPtr exists_serialization = key_columns
-            ? SerializationMapKeyPresence::create(serialization, key)
-            : DataTypeUInt8().getDefaultSerialization();
+        SerializationPtr exists_serialization;
+        if (key_columns)
+            exists_serialization = SerializationMapKeyPresence::create(serialization, key);
+        else
+        {
+            const auto & map_serialization = assert_cast<const SerializationMap &>(*serialization);
+            exists_serialization = SerializationMapKeyExists::create(
+                map_serialization.getNestedSerialization(),
+                map_serialization.getMapSerializationVersion(),
+                key_column->getPtr(),
+                nested);
+        }
         auto res = std::make_unique<SubcolumnInfo>();
         res->data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
         if (data.column)
             res->data.column = makePresenceColumnFromMap(assert_cast<const ColumnMap &>(*data.column), *key_column);
-        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyPresence);
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyExists);
         res->substreams_path.back().name_of_substream = String(key_string);
         return res;
     }
@@ -638,7 +648,7 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 
 ## Per-key Map Serialization in MergeTree {#per-key-map-serialization}
 
-`with_key_columns` stores each distinct key in its own streams, plus one shared presence stream. A query that reads one key, such as `m['key']` or `mapContains`, opens only that key's files. Bytes read follow the selected key, including when the other keys in the row are much larger. `with_buckets` still reads every key that landed in the same bucket.
+`with_key_columns` stores each distinct key as its own value stream plus its own presence stream. `m['key']` opens that key's value stream. A constant `mapContains`, `mapContainsKey`, `has`, or `notHas` opens that key's presence stream and does not read value streams. A key absent from the part manifest is false with no file read. `mapKeys` and a non-constant key read the presence streams and do not read value streams. `with_buckets` still reads every key that landed in the same bucket.
 
 ### Enabling per-key serialization {#enabling-per-key-serialization}
 
@@ -652,7 +662,7 @@ SETTINGS
     min_rows_for_wide_part = 0;
 ```
 
-The format is implemented for Wide parts. Writing a Compact part raises `NOT_IMPLEMENTED`. An insert below [min_bytes_for_wide_part](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) is a Compact part (10 MiB by default on a self-managed build). Set `min_bytes_for_wide_part` and `min_rows_for_wide_part` to `0` when every part must use `with_key_columns`.
+The format is implemented for both Wide and Compact parts. A key that first appears after the first written granule (for example from a mutation or a horizontal merge) still gets its own dedicated streams: the writer keeps a per-key template stream and copies it as the new key's all-absent history prefix.
 
 `map_serialization_version_for_zero_level_parts` can stay `basic` for inserts. Merged parts then use `with_key_columns`. Those merged parts still have to be Wide.
 

@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 
 namespace DB
 {
@@ -18,7 +19,6 @@ public:
         Field key_);
 
     /// Writes only this key's value streams under the parent Map column name.
-    /// Does not touch `keys_info` (written by the presence pass).
     static SerializationPtr createForWrite(
         const SerializationPtr & value_serialization_,
         const DataTypePtr & value_type_,

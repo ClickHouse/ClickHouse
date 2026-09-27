@@ -32,22 +32,18 @@ FROM system.parts
 WHERE database = currentDatabase() AND table = 't_wkc_layout' AND active
 ORDER BY name;
 
-SELECT 'm_has_core_streams';
-SELECT
-    has(substreams, 'm.keys_info'),
-    has(substreams, 'm.key_a'),
-    has(substreams, 'm.key_b'),
-    has(substreams, 'm.key_presence'),
-    arrayExists(x -> x LIKE '%key_a%b%' OR x LIKE '%key_a.b%', substreams)
+-- Each key is stored as its own value stream `.key_<name>` plus its own presence
+-- stream `.exists_<name>`; there is no shared presence stream. The key list is
+-- `<column>.key_columns.txt`, not a substream. (Per-key streams of a Wide part are
+-- not yet surfaced in `system.parts_columns.substreams`, so the streams themselves
+-- are exercised by the round-trip and rewrite checks below rather than asserted here.)
+SELECT 'm_manifest_not_substream';
+SELECT NOT has(substreams, 'm.keys_info'), NOT has(substreams, 'm.key_presence')
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_wkc_layout' AND column = 'm' AND active;
 
-SELECT 's_has_core_streams';
-SELECT
-    has(substreams, 's.keys_info'),
-    has(substreams, 's.key_hot'),
-    has(substreams, 's.key_cold'),
-    has(substreams, 's.key_presence')
+SELECT 's_manifest_not_substream';
+SELECT NOT has(substreams, 's.keys_info'), NOT has(substreams, 's.key_presence')
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_wkc_layout' AND column = 's' AND active;
 

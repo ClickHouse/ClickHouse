@@ -1,13 +1,15 @@
 #include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <DataTypes/Serializations/SerializationMapWithKeyColumnsKeysOrValues.h>
 #include <DataTypes/Serializations/SerializationMapWithKeyColumnsSize.h>
-#include <DataTypes/Serializations/SerializationMapPresence.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <Formats/FormatSettings.h>
@@ -19,6 +21,7 @@
 #include <Common/typeid_cast.h>
 #include <base/EnumReflection.h>
 
+#include <limits>
 #include <set>
 
 namespace DB
@@ -45,69 +48,85 @@ IColumn & extractNestedColumn(IColumn & column)
 
 }
 
-void SerializationMapWithKeyColumns::writeManifest(WriteBuffer & ostr, const SerializationPtr & key_serialization, const MapKeyManifest & manifest)
+namespace
 {
-    writeBinaryLittleEndian(static_cast<UInt8>(MapKeysInfoVersion::V1), ostr);
-    writeBinaryLittleEndian(static_cast<UInt64>(manifest.keys.size()), ostr);
 
+constexpr UInt64 KEY_COLUMNS_TEXT_VERSION = 1;
+
+MapKeyManifest readKeyColumnsTextImpl(ReadBuffer & istr, const DataTypePtr & key_type)
+{
+    UInt64 version = 0;
+    readText(version, istr);
+    assertChar('\n', istr);
+    if (version != KEY_COLUMNS_TEXT_VERSION)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown key_columns.txt version {}", version);
+
+    UInt64 key_count = 0;
+    readText(key_count, istr);
+    assertChar('\n', istr);
+
+    auto key_serialization = key_type->getDefaultSerialization();
+    FormatSettings format_settings;
+    MapKeyManifest manifest;
+    manifest.keys.reserve(key_count);
+    for (UInt64 i = 0; i < key_count; ++i)
+    {
+        UInt64 presence_kind = 0;
+        readText(presence_kind, istr);
+        assertChar('\t', istr);
+
+        auto kind = magic_enum::enum_cast<MapKeyPresenceKind>(static_cast<UInt8>(presence_kind));
+        if (!kind || presence_kind > std::numeric_limits<UInt8>::max())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map key presence kind {} in key_columns.txt", presence_kind);
+
+        auto key_column = key_type->createColumn();
+        key_serialization->deserializeTextEscaped(*key_column, istr, format_settings);
+        assertChar('\n', istr);
+
+        manifest.keys.push_back(MapKeyManifestEntry{.key = (*key_column)[0], .presence_kind = *kind});
+    }
+
+    if (!istr.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected trailing data in key_columns.txt");
+
+    return manifest;
+}
+
+}
+
+void SerializationMapWithKeyColumns::writeKeyColumnsText(WriteBuffer & ostr, const DataTypePtr & key_type, const MapKeyManifest & manifest)
+{
+    writeText(KEY_COLUMNS_TEXT_VERSION, ostr);
+    writeChar('\n', ostr);
+    writeText(manifest.keys.size(), ostr);
+    writeChar('\n', ostr);
+
+    auto key_serialization = key_type->getDefaultSerialization();
     FormatSettings format_settings;
     for (const auto & entry : manifest.keys)
     {
-        key_serialization->serializeBinary(entry.key, ostr, format_settings);
-        writeBinaryLittleEndian(static_cast<UInt8>(entry.presence_kind), ostr);
-        writeBinaryLittleEndian(static_cast<UInt8>(entry.value_kind), ostr);
+        writeText(static_cast<UInt8>(entry.presence_kind), ostr);
+        writeChar('\t', ostr);
+
+        auto key_column = key_type->createColumn();
+        key_column->insert(entry.key);
+        key_serialization->serializeTextEscaped(*key_column, 0, ostr, format_settings);
+        writeChar('\n', ostr);
     }
 }
 
-MapKeyManifest SerializationMapWithKeyColumns::readManifest(ReadBuffer & istr, const SerializationPtr & key_serialization)
+MapKeyManifest SerializationMapWithKeyColumns::readKeyColumnsText(ReadBuffer & istr, const DataTypePtr & key_type)
 {
-    MapKeyManifest manifest;
     try
     {
-        UInt8 version = 0;
-        readBinaryLittleEndian(version, istr);
-        if (!magic_enum::enum_cast<MapKeysInfoVersion>(version))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map keys info serialization version: {}", static_cast<UInt32>(version));
-
-        UInt64 key_count = 0;
-        readBinaryLittleEndian(key_count, istr);
-
-        FormatSettings format_settings;
-        manifest.keys.reserve(key_count);
-        for (UInt64 i = 0; i < key_count; ++i)
-        {
-            MapKeyManifestEntry entry;
-            key_serialization->deserializeBinary(entry.key, istr, format_settings);
-
-            UInt8 presence_kind = 0;
-            readBinaryLittleEndian(presence_kind, istr);
-            auto maybe_presence = magic_enum::enum_cast<MapKeyPresenceKind>(presence_kind);
-            if (!maybe_presence)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map key presence kind: {}", static_cast<UInt32>(presence_kind));
-            entry.presence_kind = *maybe_presence;
-
-            UInt8 value_kind = 0;
-            readBinaryLittleEndian(value_kind, istr);
-            auto maybe_value = magic_enum::enum_cast<MapKeyValueKind>(value_kind);
-            if (!maybe_value)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map key value kind: {}", static_cast<UInt32>(value_kind));
-            entry.value_kind = *maybe_value;
-
-            manifest.keys.push_back(std::move(entry));
-        }
+        return readKeyColumnsTextImpl(istr, key_type);
     }
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::INCORRECT_DATA)
             throw;
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read Map keys info: {}", e.message());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupt key_columns.txt: {}", e.message());
     }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read Map keys info: truncated or corrupted manifest");
-    }
-
-    return manifest;
 }
 
 SerializationMapWithKeyColumns::SerializationMapWithKeyColumns(
@@ -123,6 +142,7 @@ SerializationMapWithKeyColumns::SerializationMapWithKeyColumns(
     , nested_serialization(nested_serialization_)
     , basic_map_serialization(SerializationMap::create(
           key_serialization_, value_serialization_, nested_serialization_, MergeTreeMapSerializationVersion::BASIC))
+    , exists_serialization(std::make_shared<DataTypeUInt8>()->getDefaultSerialization())
 {
 }
 
@@ -189,6 +209,78 @@ std::vector<Field> SerializationMapWithKeyColumns::keysFromManifest(const MapKey
     for (const auto & entry : manifest.keys)
         keys.push_back(entry.key);
     return keys;
+}
+
+namespace
+{
+
+/// Distinct keys of `column` (a `ColumnMap`) that are not in `known`, in first-seen order.
+std::vector<Field> collectFirstSeenKeys(const IColumn & column, const std::set<Field> & known)
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+    const auto & keys_column = column_map.getNestedData().getColumn(0);
+
+    std::vector<Field> new_keys;
+    std::set<Field> seen = known;
+    for (size_t i = 0; i < keys_column.size(); ++i)
+    {
+        Field key = keys_column[i];
+        if (seen.insert(key).second)
+            new_keys.push_back(std::move(key));
+    }
+    return new_keys;
+}
+
+}
+
+std::vector<Field> SerializationMapWithKeyColumns::collectNewKeys(const IColumn & column, const SerializeBinaryBulkState & state) const
+{
+    const auto & map_state = typeid_cast<const SerializeBinaryBulkStateMapWithKeyColumns &>(state);
+    std::set<Field> known;
+    for (const auto & key_state : map_state.keys)
+        known.insert(key_state.key);
+    return collectFirstSeenKeys(column, known);
+}
+
+std::vector<Field> SerializationMapWithKeyColumns::collectAllKeys(const IColumn & column) const
+{
+    return collectFirstSeenKeys(column, {});
+}
+
+void SerializationMapWithKeyColumns::addKeys(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const
+{
+    auto * map_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
+    for (const auto & key : keys)
+    {
+        if (map_state->key_index.contains(key))
+            continue;
+        KeyWriteState key_state;
+        key_state.key = key;
+        map_state->key_index.emplace(key, map_state->keys.size());
+        map_state->keys.push_back(std::move(key_state));
+    }
+}
+
+void SerializationMapWithKeyColumns::markKeysCopiedFromTemplate(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const
+{
+    auto * map_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
+    for (const auto & key : keys)
+        map_state->copied_from_template.insert(key);
+}
+
+const std::vector<Field> SerializationMapWithKeyColumns::getRegisteredKeys(const SerializeBinaryBulkState & state) const
+{
+    const auto & map_state = typeid_cast<const SerializeBinaryBulkStateMapWithKeyColumns &>(state);
+    std::vector<Field> keys;
+    keys.reserve(map_state.keys.size());
+    for (const auto & key_state : map_state.keys)
+        keys.push_back(key_state.key);
+    return keys;
+}
+
+size_t SerializationMapWithKeyColumns::getRegisteredKeyCount(const SerializeBinaryBulkState & state) const
+{
+    return typeid_cast<const SerializeBinaryBulkStateMapWithKeyColumns &>(state).keys.size();
 }
 
 std::vector<SerializationMapWithKeyColumns::PivotedKeyColumn> SerializationMapWithKeyColumns::pivot(
@@ -265,6 +357,71 @@ void SerializationMapWithKeyColumns::addMapKeyPath(DeserializeBinaryBulkSettings
     settings.path.back().name_of_substream = keyToStreamName(key);
 }
 
+void SerializationMapWithKeyColumns::addMapExistsPath(SerializeBinaryBulkSettings & settings, const Field & key) const
+{
+    settings.path.push_back(Substream::MapKeyExists);
+    settings.path.back().name_of_substream = keyToStreamName(key);
+}
+
+void SerializationMapWithKeyColumns::addMapExistsPath(DeserializeBinaryBulkSettings & settings, const Field & key) const
+{
+    settings.path.push_back(Substream::MapKeyExists);
+    settings.path.back().name_of_substream = keyToStreamName(key);
+}
+
+void SerializationMapWithKeyColumns::enumerateKeyStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData &,
+    const Field & key) const
+{
+    const auto key_name = keyToStreamName(key);
+
+    settings.path.push_back(Substream::MapKey);
+    settings.path.back().name_of_substream = key_name;
+    /// The sample column is a `ColumnMap`. `V` enumerates from its own type.
+    auto value_data = SubstreamData(value_serialization).withType(value_type);
+    value_serialization->enumerateStreams(settings, callback, value_data);
+    settings.path.pop_back();
+
+    settings.path.push_back(Substream::MapKeyExists);
+    settings.path.back().name_of_substream = key_name;
+    auto exists_data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
+    exists_serialization->enumerateStreams(settings, callback, exists_data);
+    settings.path.pop_back();
+}
+
+void SerializationMapWithKeyColumns::enumerateTemplateStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData &) const
+{
+    settings.path.push_back(Substream::MapKeyValueTemplate);
+    /// The sample column is a `ColumnMap`. `V` enumerates from its own type.
+    auto value_data = SubstreamData(value_serialization).withType(value_type);
+    value_serialization->enumerateStreams(settings, callback, value_data);
+    settings.path.pop_back();
+
+    settings.path.push_back(Substream::MapKeyExistsTemplate);
+    auto exists_data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
+    exists_serialization->enumerateStreams(settings, callback, exists_data);
+    settings.path.pop_back();
+}
+
+void SerializationMapWithKeyColumns::enumerateRegisteredKeyStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data,
+    const SerializeBinaryBulkStatePtr & state) const
+{
+    if (!state)
+        return;
+
+    const auto & map_state = typeid_cast<const SerializeBinaryBulkStateMapWithKeyColumns &>(*state);
+    for (const auto & key_state : map_state.keys)
+        enumerateKeyStreams(settings, callback, data, key_state.key);
+}
+
 void SerializationMapWithKeyColumns::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -276,10 +433,6 @@ void SerializationMapWithKeyColumns::enumerateStreams(
         manifest = with_key_columns_state->manifest;
     else if (data.column)
         manifest = collectManifestFromColumn(*data.column);
-
-    settings.path.push_back(Substream::MapKeysInfo);
-    callback(settings.path);
-    settings.path.pop_back();
 
     if (settings.enumerate_virtual_streams)
     {
@@ -320,75 +473,100 @@ void SerializationMapWithKeyColumns::enumerateStreams(
         auto value_data = SubstreamData(value_serialization).withType(value_type);
         value_serialization->enumerateStreams(settings, callback, value_data);
         settings.path.pop_back();
-    }
 
-    /// Presence is one shared physical stream. Logical `exists_<text>` names are
-    /// produced by `SerializationMapKeyPresence`, not by the full-column layout.
-    if (!manifest.keys.empty())
-    {
-        settings.path.push_back(Substream::MapKeyPresence);
-        callback(settings.path);
-        settings.path.pop_back();
+        /// One independent UInt8 presence stream per key. `AlwaysPresent` keys
+        /// skip it (presence is implicitly all-1). Written through the standard
+        /// nested bulk path, so it is granule/mark aligned.
+        if (entry.presence_kind == MapKeyPresenceKind::Tracked)
+        {
+            settings.path.push_back(Substream::MapKeyExists);
+            settings.path.back().name_of_substream = key_name;
+            auto exists_data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
+            exists_serialization->enumerateStreams(settings, callback, exists_data);
+            settings.path.pop_back();
+        }
     }
 }
 
 void SerializationMapWithKeyColumns::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
+    const IColumn & /*column*/,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     auto with_key_columns_state = std::make_shared<SerializeBinaryBulkStateMapWithKeyColumns>();
-    with_key_columns_state->manifest = collectManifestFromColumn(column);
 
-    settings.path.push_back(Substream::MapKeysInfo);
-    auto * stream = settings.getter(settings.path);
-    settings.path.pop_back();
-
-    if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Map keys info during serialization of binary bulk state prefix");
-
-    writeManifest(*stream, key_serialization, with_key_columns_state->manifest);
-
-    const auto keys = keysFromManifest(with_key_columns_state->manifest);
-    auto pivoted = pivot(column, key_type, value_type, keys);
-
-    with_key_columns_state->value_states.resize(keys.size());
-    for (size_t i = 0; i < keys.size(); ++i)
+    if (settings.map_key_columns_frozen_keys)
     {
-        addMapKeyPath(settings, keys[i]);
-        value_serialization->serializeBinaryBulkStatePrefix(*pivoted[i].values, settings, with_key_columns_state->value_states[i]);
-        settings.path.pop_back();
-    }
-
-    state = std::move(with_key_columns_state);
-}
-
-void SerializationMapWithKeyColumns::flushPendingPresence(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStateMapWithKeyColumns & state) const
-{
-    if (state.manifest.keys.empty())
-    {
-        state.pending_presence.clear();
-        state.pending_rows = 0;
+        /// Compact "frozen" mode: the whole part's key set is known before the first granule.
+        /// Register exactly those keys and their per-key streams now; do not create template
+        /// streams. Rows that miss a key are serialized as absent in place. The key list is
+        /// written by the part writer into `<column>.key_columns.txt`, not from this suffix.
+        with_key_columns_state->frozen = true;
+        state = std::move(with_key_columns_state);
+        addKeys(state, *settings.map_key_columns_frozen_keys);
+        initializeKeyPrefixes(settings, state);
+        auto * frozen_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
+        frozen_state->prefix_written = true;
         return;
     }
 
-    settings.path.push_back(Substream::MapKeyPresence);
-    auto * presence_stream = settings.getter(settings.path);
+    /// Wide path: keys are discovered block by block. Open the two template streams; late keys
+    /// copy the templates' all-absent history when they first appear.
+    {
+        settings.path.push_back(Substream::MapKeyValueTemplate);
+        auto empty_values = value_type->createColumn();
+        value_serialization->serializeBinaryBulkStatePrefix(*empty_values, settings, with_key_columns_state->template_value_state);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::MapKeyExistsTemplate);
+        auto empty_exists = ColumnUInt8::create();
+        exists_serialization->serializeBinaryBulkStatePrefix(*empty_exists, settings, with_key_columns_state->template_exists_state);
+        settings.path.pop_back();
+    }
+
+    with_key_columns_state->prefix_written = true;
+    state = std::move(with_key_columns_state);
+}
+
+void SerializationMapWithKeyColumns::initializeKeyPrefixes(
+    SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    auto * map_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
+    for (auto & key_state : map_state->keys)
+    {
+        if (key_state.value_state || map_state->copied_from_template.contains(key_state.key))
+            continue;
+
+        addMapKeyPath(settings, key_state.key);
+        auto empty_values = value_type->createColumn();
+        value_serialization->serializeBinaryBulkStatePrefix(*empty_values, settings, key_state.value_state);
+        settings.path.pop_back();
+
+        addMapExistsPath(settings, key_state.key);
+        auto empty_exists = ColumnUInt8::create();
+        exists_serialization->serializeBinaryBulkStatePrefix(*empty_exists, settings, key_state.exists_state);
+        settings.path.pop_back();
+    }
+}
+
+void SerializationMapWithKeyColumns::writeTemplateDefaults(
+    size_t rows,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    auto * map_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
+
+    auto values = value_type->createColumn();
+    values->insertManyDefaults(rows);
+    settings.path.push_back(Substream::MapKeyValueTemplate);
+    value_serialization->serializeBinaryBulkWithMultipleStreams(*values, 0, rows, settings, map_state->template_value_state);
     settings.path.pop_back();
 
-    if (!presence_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Map key presence during serialization");
-
-    /// A 0-row call still goes through the getter so Compact/Wide stream
-    /// discovery records `key_presence`. Do not emit an empty block: suffix
-    /// would otherwise write a second one after a completed granule.
-    if (state.pending_rows > 0)
-        MapKeyPresenceBlock::serialize(*presence_stream, state.pending_rows, state.pending_presence);
-
-    state.pending_presence.clear();
-    state.pending_rows = 0;
+    auto exists = ColumnUInt8::create();
+    exists->getData().resize_fill(rows, 0);
+    settings.path.push_back(Substream::MapKeyExistsTemplate);
+    exists_serialization->serializeBinaryBulkWithMultipleStreams(*exists, 0, rows, settings, map_state->template_exists_state);
+    settings.path.pop_back();
 }
 
 void SerializationMapWithKeyColumns::serializeBinaryBulkStateSuffix(
@@ -399,15 +577,31 @@ void SerializationMapWithKeyColumns::serializeBinaryBulkStateSuffix(
         return;
 
     auto * with_key_columns_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
-    for (size_t i = 0; i < with_key_columns_state->manifest.keys.size(); ++i)
+
+    for (auto & key_state : with_key_columns_state->keys)
     {
-        addMapKeyPath(settings, with_key_columns_state->manifest.keys[i].key);
-        value_serialization->serializeBinaryBulkStateSuffix(settings, with_key_columns_state->value_states[i]);
+        addMapKeyPath(settings, key_state.key);
+        value_serialization->serializeBinaryBulkStateSuffix(settings, key_state.value_state);
+        settings.path.pop_back();
+
+        addMapExistsPath(settings, key_state.key);
+        exists_serialization->serializeBinaryBulkStateSuffix(settings, key_state.exists_state);
         settings.path.pop_back();
     }
 
-    if (with_key_columns_state->pending_rows > 0)
-        flushPendingPresence(settings, *with_key_columns_state);
+    if (with_key_columns_state->frozen)
+    {
+        /// No template streams. The part writer writes `<column>.key_columns.txt`.
+        return;
+    }
+
+    settings.path.push_back(Substream::MapKeyValueTemplate);
+    value_serialization->serializeBinaryBulkStateSuffix(settings, with_key_columns_state->template_value_state);
+    settings.path.pop_back();
+
+    settings.path.push_back(Substream::MapKeyExistsTemplate);
+    exists_serialization->serializeBinaryBulkStateSuffix(settings, with_key_columns_state->template_exists_state);
+    settings.path.pop_back();
 }
 
 void SerializationMapWithKeyColumns::deserializeBinaryBulkStatePrefix(
@@ -419,10 +613,15 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkStatePrefix(
 
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
-        /// A single-key subcolumn reader publishes this manifest before per-key value states
-        /// exist. Reusing that state for a full-column read indexes `value_states` out of range.
+        /// A single-key subcolumn reader publishes this manifest before per-key
+        /// value/exists states exist. Reusing that state for a full-column read
+        /// would index `value_states` / `exists_states` out of range or read 0
+        /// presence rows. Only reuse directly when both are fully prepared.
         auto * cached = typeid_cast<DeserializeBinaryBulkStateMapWithKeyColumns *>(cached_state.get());
-        if (!cached || cached->value_states.size() == cached->manifest.keys.size())
+        const bool fully_prepared = cached
+            && cached->value_states.size() == cached->manifest.keys.size()
+            && cached->exists_states.size() == cached->manifest.keys.size();
+        if (!cached || fully_prepared)
         {
             state = std::move(cached_state);
             settings.path.pop_back();
@@ -430,37 +629,50 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkStatePrefix(
         }
 
         settings.path.pop_back();
-        cached->value_states.resize(cached->manifest.keys.size());
-        for (size_t i = 0; i < cached->manifest.keys.size(); ++i)
-        {
-            addMapKeyPath(settings, cached->manifest.keys[i].key);
-            value_serialization->deserializeBinaryBulkStatePrefix(settings, cached->value_states[i], cache);
-            settings.path.pop_back();
-        }
+        preparePerKeyDeserializeStates(*cached, settings, cache);
         state = std::move(cached_state);
         return;
     }
 
-    auto * stream = settings.getter(settings.path);
-    if (!stream)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Missing stream for Map keys info");
+    if (!settings.map_key_columns_manifest)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Missing key_columns manifest for with_key_columns Map");
 
     auto with_key_columns_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumns>();
-    with_key_columns_state->manifest = readManifest(*stream, key_serialization);
+    with_key_columns_state->manifest = *settings.map_key_columns_manifest;
     settings.path.pop_back();
 
-    with_key_columns_state->value_states.resize(with_key_columns_state->manifest.keys.size());
-    for (size_t i = 0; i < with_key_columns_state->manifest.keys.size(); ++i)
-    {
-        addMapKeyPath(settings, with_key_columns_state->manifest.keys[i].key);
-        value_serialization->deserializeBinaryBulkStatePrefix(settings, with_key_columns_state->value_states[i], cache);
-        settings.path.pop_back();
-    }
+    preparePerKeyDeserializeStates(*with_key_columns_state, settings, cache);
 
     settings.path.push_back(Substream::MapKeysInfo);
     addToSubstreamsDeserializeStatesCache(cache, settings.path, with_key_columns_state);
     settings.path.pop_back();
     state = std::move(with_key_columns_state);
+}
+
+void SerializationMapWithKeyColumns::preparePerKeyDeserializeStates(
+    DeserializeBinaryBulkStateMapWithKeyColumns & state,
+    DeserializeBinaryBulkSettings & settings,
+    SubstreamsDeserializeStatesCache * cache) const
+{
+    const size_t key_count = state.manifest.keys.size();
+    state.value_states.resize(key_count);
+    state.exists_states.resize(key_count);
+
+    for (size_t i = 0; i < key_count; ++i)
+    {
+        const auto & entry = state.manifest.keys[i];
+
+        addMapKeyPath(settings, entry.key);
+        value_serialization->deserializeBinaryBulkStatePrefix(settings, state.value_states[i], cache);
+        settings.path.pop_back();
+
+        if (entry.presence_kind == MapKeyPresenceKind::Tracked)
+        {
+            addMapExistsPath(settings, entry.key);
+            exists_serialization->deserializeBinaryBulkStatePrefix(settings, state.exists_states[i], cache);
+            settings.path.pop_back();
+        }
+    }
 }
 
 void SerializationMapWithKeyColumns::serializeBinaryBulkWithMultipleStreams(
@@ -471,39 +683,35 @@ void SerializationMapWithKeyColumns::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkStatePtr & state) const
 {
     auto * with_key_columns_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
-    const auto keys = keysFromManifest(with_key_columns_state->manifest);
-    auto pivoted = pivot(column, key_type, value_type, keys, offset, limit);
-    const size_t rows = keys.empty() ? 0 : pivoted.front().presence.size();
 
+    std::vector<Field> keys;
+    keys.reserve(with_key_columns_state->keys.size());
+    for (const auto & key_state : with_key_columns_state->keys)
+        keys.push_back(key_state.key);
+
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+    const size_t column_size = column_map.size();
+    const size_t rows = limit && offset + limit < column_size ? limit : column_size - offset;
+
+    /// Each registered key: dense value stream + per-row presence stream.
+    auto pivoted = pivot(column, key_type, value_type, keys, offset, limit);
     for (size_t i = 0; i < pivoted.size(); ++i)
     {
         addMapKeyPath(settings, pivoted[i].key);
         value_serialization->serializeBinaryBulkWithMultipleStreams(
-            *pivoted[i].values, 0, pivoted[i].values->size(), settings, with_key_columns_state->value_states[i]);
+            *pivoted[i].values, 0, pivoted[i].values->size(), settings, with_key_columns_state->keys[i].value_state);
+        settings.path.pop_back();
+
+        auto exists_column = ColumnUInt8::create();
+        auto & exists_data = exists_column->getData();
+        exists_data.assign(pivoted[i].presence.begin(), pivoted[i].presence.end());
+        addMapExistsPath(settings, pivoted[i].key);
+        exists_serialization->serializeBinaryBulkWithMultipleStreams(
+            *exists_column, 0, exists_column->size(), settings, with_key_columns_state->keys[i].exists_state);
         settings.path.pop_back();
     }
 
-    if (keys.empty())
-        return;
-
-    if (with_key_columns_state->pending_presence.empty())
-        with_key_columns_state->pending_presence.resize(pivoted.size());
-    else if (with_key_columns_state->pending_presence.size() != pivoted.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Map key presence key count changed from {} to {} inside a granule",
-            with_key_columns_state->pending_presence.size(),
-            pivoted.size());
-
-    for (size_t i = 0; i < pivoted.size(); ++i)
-        with_key_columns_state->pending_presence[i].insert(
-            with_key_columns_state->pending_presence[i].end(),
-            pivoted[i].presence.begin(),
-            pivoted[i].presence.end());
-    with_key_columns_state->pending_rows += rows;
-
-    if (settings.granule_is_complete)
-        flushPendingPresence(settings, *with_key_columns_state);
+    with_key_columns_state->num_rows_written += rows;
 }
 
 void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
@@ -518,13 +726,19 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
 
     auto * with_key_columns_state = checkAndGetState<DeserializeBinaryBulkStateMapWithKeyColumns>(state);
     auto & column_map = assert_cast<ColumnMap &>(column);
-    const size_t key_count = with_key_columns_state->manifest.keys.size();
+    const auto & manifest = with_key_columns_state->manifest;
+    const size_t key_count = manifest.keys.size();
 
-    /// Compact `.mrk4` keeps each key / presence stream in its own compressed
+    /// Compact `.mrk4` keeps each key / exists stream in its own compressed
     /// block. The Compact full-column getter only seeks for subcolumns, so the
     /// nested value serialization (e.g. String size + data) must seek itself.
+    ///
+    /// Only force a per-mark seek when we are NOT continuing a sequential read.
+    /// With `continuous_reading` (e.g. several small blocks inside one granule)
+    /// the streams must keep advancing from their current position; re-seeking to
+    /// the granule's mark every block would re-read the granule from its start.
     auto original_getter = settings.getter;
-    if (settings.seek_stream_to_current_mark_callback)
+    if (settings.seek_stream_to_current_mark_callback && !settings.continuous_reading)
     {
         settings.getter = [&](const SubstreamPath & path) -> ReadBuffer *
         {
@@ -533,43 +747,67 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
         };
     }
 
-    std::vector<std::vector<UInt8>> presence;
-    if (key_count != 0)
-    {
-        settings.path.push_back(Substream::MapKeyPresence);
-        auto * presence_stream = settings.getter(settings.path);
-        settings.path.pop_back();
-
-        if (!presence_stream)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Missing stream for Map key presence");
-
-        MapKeyPresenceBlock::deserializeAll(*presence_stream, limit, key_count, presence);
-    }
-
+    /// Per-key dedicated streams: value + presence, both read through the standard
+    /// nested bulk path so a `limit` spanning several granules is handled correctly.
+    /// Each stream is materialized once and shared with sibling subcolumn reads
+    /// (e.g. `m['k']`, `mapContains`) via `cache`, mirroring the Array/Nullable
+    /// pattern, so no stream is ever advanced twice within one read.
     std::vector<MutableColumnPtr> value_columns(key_count);
+    std::vector<PaddedPODArray<UInt8>> presence(key_count);
     for (size_t i = 0; i < key_count; ++i)
     {
-        addMapKeyPath(settings, with_key_columns_state->manifest.keys[i].key);
+        const auto & entry = manifest.keys[i];
+
+        addMapKeyPath(settings, entry.key);
         value_columns[i] = value_type->createColumn();
-        value_serialization->deserializeBinaryBulkWithMultipleStreams(
-            *value_columns[i], limit, settings, with_key_columns_state->value_states[i], cache);
+        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, *value_columns[i]))
+        {
+            const size_t prev_size = value_columns[i]->size();
+            value_serialization->deserializeBinaryBulkWithMultipleStreams(
+                *value_columns[i], limit, settings, with_key_columns_state->value_states[i], cache);
+            addColumnWithNumReadRowsToSubstreamsCache(
+                cache, settings.path, value_columns[i]->getPtr(), value_columns[i]->size() - prev_size);
+        }
         settings.path.pop_back();
+
+        const size_t value_rows = value_columns[i]->size();
+        if (entry.presence_kind == MapKeyPresenceKind::AlwaysPresent)
+        {
+            presence[i].resize_fill(value_rows, 1);
+        }
+        else
+        {
+            auto exists_column = ColumnUInt8::create();
+            addMapExistsPath(settings, entry.key);
+            if (!insertDataFromSubstreamsCacheIfAny(cache, settings, *exists_column))
+            {
+                const size_t prev_size = exists_column->size();
+                exists_serialization->deserializeBinaryBulkWithMultipleStreams(
+                    *exists_column, limit, settings, with_key_columns_state->exists_states[i], cache);
+                addColumnWithNumReadRowsToSubstreamsCache(
+                    cache, settings.path, exists_column->getPtr(), exists_column->size() - prev_size);
+            }
+            settings.path.pop_back();
+            /// Copy (do not move): the same column is now shared in `cache` and
+            /// must stay intact for sibling reads (e.g. `length`, `mapContains`).
+            presence[i].assign(exists_column->getData().begin(), exists_column->getData().end());
+        }
     }
 
     settings.getter = std::move(original_getter);
 
+    /// Determine the row count from whatever key stream we read.
     size_t rows = limit;
-    if (!presence.empty())
-        rows = presence.front().size();
+    if (key_count > 0)
+        rows = presence[0].size();
 
     for (size_t i = 0; i < key_count; ++i)
     {
-        if (value_columns[i]->size() != rows)
+        if (value_columns[i]->size() != rows || presence[i].size() != rows)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Map key value stream row count {} does not match presence rows {}",
-                value_columns[i]->size(),
-                rows);
+                "Map key value/presence row count mismatch: value {}, presence {}, expected {}",
+                value_columns[i]->size(), presence[i].size(), rows);
     }
 
     auto & nested_column = column_map.getNestedColumn();
@@ -578,24 +816,22 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
     auto & values_column = nested_data.getColumn(1);
     auto & offsets = nested_column.getOffsets();
 
+    if (key_count == 0)
+    {
+        offsets.reserve(offsets.size() + limit);
+        for (size_t row = 0; row < limit; ++row)
+            offsets.push_back(keys_column.size());
+        return;
+    }
+
     std::vector<MutableColumnPtr> key_holders(key_count);
     for (size_t i = 0; i < key_count; ++i)
     {
         key_holders[i] = key_type->createColumn();
-        key_holders[i]->insert(with_key_columns_state->manifest.keys[i].key);
+        key_holders[i]->insert(manifest.keys[i].key);
     }
 
-    size_t total_pairs = 0;
-    for (size_t i = 0; i < key_count; ++i)
-    {
-        for (UInt8 bit : presence[i])
-            total_pairs += bit;
-    }
-
-    keys_column.reserve(keys_column.size() + total_pairs);
-    values_column.reserve(values_column.size() + total_pairs);
     offsets.reserve(offsets.size() + rows);
-
     for (size_t row = 0; row < rows; ++row)
     {
         for (size_t i = 0; i < key_count; ++i)
@@ -605,6 +841,7 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
             keys_column.insertFrom(*key_holders[i], 0);
             values_column.insertFrom(*value_columns[i], row);
         }
+
         offsets.push_back(keys_column.size());
     }
 }

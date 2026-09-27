@@ -45,6 +45,10 @@ public:
     void addSubstreamToLastColumn(const String & substream);
     void addSubstreamsToLastColumn(const std::vector<String> & substreams);
 
+    /// Replace one column's substream list. The entry must still be uniquely owned.
+    /// An empty list is allowed: a `with_key_columns` Map can have no data streams.
+    void setColumnSubstreams(const String & column, const std::vector<String> & substreams);
+
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
     std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
     size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;

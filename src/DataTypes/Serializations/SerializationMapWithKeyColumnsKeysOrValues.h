@@ -6,8 +6,8 @@ namespace DB
 {
 
 /// Reads `m.keys` / `m.values` for a with_key_columns Map.
-/// Keys are rebuilt from the shared presence stream and the part manifest.
-/// Values are rebuilt by deserializing the full Map and taking the values array.
+/// `m.keys` is the manifest keys whose `.exists_` bit is 1, in manifest order.
+/// `m.values` is rebuilt by deserializing the full Map and taking the values array.
 class SerializationMapWithKeyColumnsKeysOrValues final : public SimpleTextSerialization
 {
 public:

@@ -35,22 +35,27 @@ FROM system.parts
 WHERE database = currentDatabase() AND table = 't_wkc_compact_layout' AND active
 ORDER BY name;
 
+-- A Compact part registers each key's value stream `.key_<name>` and presence stream
+-- `.exists_<name>`. There is no shared presence stream. The key list is
+-- `m.key_columns.txt`, so it is not listed among the packed substreams.
 SELECT 'm_has_core_streams';
 SELECT
-    has(substreams, 'm.keys_info'),
     has(substreams, 'm.key_a'),
+    has(substreams, 'm.exists_a'),
     has(substreams, 'm.key_b'),
-    has(substreams, 'm.key_presence'),
+    has(substreams, 'm.exists_b'),
+    NOT has(substreams, 'm.key_presence'),
     arrayExists(x -> x LIKE '%key_a%b%' OR x LIKE '%key_a.b%', substreams)
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_wkc_compact_layout' AND column = 'm' AND active;
 
 SELECT 's_has_core_streams';
 SELECT
-    has(substreams, 's.keys_info'),
     has(substreams, 's.key_hot'),
+    has(substreams, 's.exists_hot'),
     has(substreams, 's.key_cold'),
-    has(substreams, 's.key_presence')
+    has(substreams, 's.exists_cold'),
+    NOT has(substreams, 's.key_presence')
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_wkc_compact_layout' AND column = 's' AND active;
 

@@ -5,7 +5,7 @@ Compact
 empty map compact
 Compact
 1	{}	0	0
-1	0	0
+0	1
 optimize final -> wide
 Wide
 1	{'a':1,'b':2}	1	2

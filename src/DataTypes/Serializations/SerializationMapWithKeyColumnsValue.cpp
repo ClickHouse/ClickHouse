@@ -2,7 +2,10 @@
 #include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -75,16 +78,16 @@ void SerializationMapWithKeyColumnsValue::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    if (!write_value_only)
-    {
-        settings.path.push_back(Substream::MapKeysInfo);
-        callback(settings.path);
-        settings.path.pop_back();
-    }
+    /// A key present in the manifest has its own `.key_<name>` value stream. A key absent
+    /// from the manifest has no data files and reads as all-default, so its streams are not
+    /// enumerated. Stream discovery runs before the manifest is known, so guard the value
+    /// stream with `check_stream_exists`: it is enumerated only when it exists on disk.
+    const bool have_exists_check = settings.check_stream_exists_callback != nullptr;
 
     settings.path.push_back(Substream::MapKey);
     settings.path.back().name_of_substream = key_name;
-    if (!settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path))
+    const bool dedicated_exists = !have_exists_check || settings.check_stream_exists_callback(settings.path);
+    if (dedicated_exists)
     {
         auto value_data = SubstreamData(nested_serialization).withType(value_type).withColumn(data.column);
         nested_serialization->enumerateStreams(settings, callback, value_data);
@@ -151,7 +154,6 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkStatePrefix(
     SubstreamsDeserializeStatesCache * cache) const
 {
     auto value_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumnsValue>();
-    const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
 
     settings.path.push_back(ISerialization::Substream::MapKeysInfo);
 
@@ -166,11 +168,10 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkStatePrefix(
     }
     else
     {
-        auto * stream = settings.getter(settings.path);
-        if (!stream)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Missing stream for Map keys info");
+        if (!settings.map_key_columns_manifest)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Missing key_columns manifest for with_key_columns Map");
 
-        manifest = SerializationMapWithKeyColumns::readManifest(*stream, key_columns.getKeySerialization());
+        manifest = *settings.map_key_columns_manifest;
         auto stored = std::make_shared<SerializationMapWithKeyColumns::DeserializeBinaryBulkStateMapWithKeyColumns>();
         stored->manifest = manifest;
         addToSubstreamsDeserializeStatesCache(cache, settings.path, stored);
@@ -184,11 +185,6 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkStatePrefix(
             continue;
 
         value_state->key_in_manifest = true;
-        if (cached_map && i < cached_map->value_states.size() && cached_map->value_states[i])
-        {
-            value_state->value_state = cached_map->value_states[i];
-            break;
-        }
 
         settings.path.push_back(ISerialization::Substream::MapKey);
         settings.path.back().name_of_substream = key_name;
@@ -216,7 +212,16 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkWithMultipleStrea
 
     settings.path.push_back(Substream::MapKey);
     settings.path.back().name_of_substream = key_name;
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, value_state->value_state, cache);
+    if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
+    {
+        /// Read into a fresh column and publish that, then append to the result.
+        /// The cached column must be distinct from any reader's result column,
+        /// otherwise the next range would insert the column into itself.
+        auto value_column = value_type->createColumn();
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(*value_column, limit, settings, value_state->value_state, cache);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, value_column->getPtr(), value_column->size());
+        column.insertRangeFrom(*value_column, 0, value_column->size());
+    }
     settings.path.pop_back();
 }
 
