@@ -3,7 +3,7 @@
 -- explicitly set setting is not affected by the pin.
 
 -- A `compatibility` pin must reproduce the defaults the pinned release shipped: an entry recorded in
--- the wrong version block of `SettingsChangesHistory` reverts a default the pinned release had, or
+-- the wrong version in the setting's declaration reverts a default the pinned release had, or
 -- keeps one it did not have.
 
 SELECT 'shipped in 26.8';
