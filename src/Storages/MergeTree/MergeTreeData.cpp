@@ -10492,7 +10492,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             /// same name exists.
             const auto & name_parts = identifier->name_parts;
             const bool is_lambda_parameter = !name_parts.empty()
-                && std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end();
+                && std::ranges::find(lambda_parameters, name_parts.front().spelling) != lambda_parameters.end();
             for (size_t begin = 0; !is_lambda_parameter && begin < name_parts.size(); ++begin)
             {
                 String candidate;
@@ -10500,7 +10500,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                 {
                     if (end > begin)
                         candidate += ".";
-                    candidate += name_parts[end];
+                    candidate += name_parts[end].spelling;
 
                     if (!followed_column_definitions.emplace(candidate).second)
                         continue;

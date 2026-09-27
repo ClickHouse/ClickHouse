@@ -69,9 +69,13 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     /// The frame and the parent window name are not children, so the default implementation does
     /// not see them. The offsets are children and are covered by the generic walk.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 120, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
     hash_state.update(parent_window_name.size());
     hash_state.update(parent_window_name);
+    /// A double-quoted name is pinned to exact matching under `standard` name matching. Mixed in
+    /// only when set, so the hash of an unquoted definition stays unchanged.
+    if (parent_window_name_quote == IdentifierPartQuote::DoubleQuoted)
+        hash_state.update(parent_window_name_quote);
     hash_state.update(frame_is_default);
     hash_state.update(frame_type);
     hash_state.update(frame_begin_type);
@@ -199,10 +203,13 @@ void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_
     /// this two differently named windows hash equally. Length-prefixed, otherwise the name runs
     /// into whatever `getID` writes next.
     static_assert(
-        sizeof(void *) != 8 || sizeof(*this) == 64,
+        sizeof(void *) != 8 || sizeof(*this) == 72,
         "If members were added to ASTWindowListElement, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
+    /// Mixed in only when set, see `ASTWindowDefinition::updateTreeHashImpl`.
+    if (name_quote == IdentifierPartQuote::DoubleQuoted)
+        hash_state.update(name_quote);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

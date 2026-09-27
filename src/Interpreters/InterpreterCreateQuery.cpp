@@ -1430,11 +1430,7 @@ void InterpreterCreateQuery::validateViewSelectColumnSpellings(const ASTCreateQu
         if (create.refresh_strategy)
             context->setCurrentDatabaseUnchecked(create.getDatabase());
 
-        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-            InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
-        else
-            InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context,
-                /*is_subquery=*/ false, /*is_create_parameterized_view=*/ create.refresh_strategy != nullptr);
+        InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
     };
 
     try

@@ -937,7 +937,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
                     "implicit_table_at_top_level setting",
                     settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-                return std::make_shared<IdentifierNode>(Identifier(identifier_ast->as<ASTIdentifier &>().name_parts));
+                return std::make_shared<IdentifierNode>(identifier_ast->as<ASTIdentifier &>().name_parts);
             }
         }
 

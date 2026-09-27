@@ -1965,7 +1965,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                   */
                 bool alias_can_take_over = can_check_aliases
                     && identifier_lookup.isExpressionLookup()
-                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME,
+                        scope.context->getSettingsRef()[Setting::column_and_query_name_matching]) != nullptr;
 
                 if (alias_can_take_over)
                 {
@@ -6527,8 +6528,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         /// Set below when the identifier matched a nested SELECT-list alias (not a top-level projection alias); reset per identifier.
         bool nested_alias_matched = false;
 
+        const NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+
         /// Find a SELECT-list node aliased as the USING identifier: top-level projection aliases first (pick-first, kept for compatibility), then nested-subexpression aliases.
-        auto find_aliased_node_in_projection = [&select_list_aliases, &nested_alias_matched](const QueryNode * query_node_,
+        auto find_aliased_node_in_projection = [&select_list_aliases, &nested_alias_matched, name_match_mode](const QueryNode * query_node_,
                                                    const String & identifier_full_name_) -> QueryTreeNodePtr
         {
             for (const auto & projection_node : query_node_->getProjection().getNodes())
@@ -6542,7 +6545,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 auto projection_list_clone = query_node_->getProjectionNode()->clone();
                 select_list_aliases.emplace();
-                QueryExpressionsAliasVisitor visitor(*select_list_aliases);
+                QueryExpressionsAliasVisitor visitor(*select_list_aliases, name_match_mode);
                 visitor.visit(projection_list_clone);
             }
 

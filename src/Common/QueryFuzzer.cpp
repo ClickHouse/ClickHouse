@@ -8817,15 +8817,15 @@ ASTPtr QueryFuzzer::makeParameterizedIdentifier(const ASTIdentifier & ident)
         param_counter = saved_param_counter;
         return nullptr;
     };
-    for (auto & part : name_parts)
+    for (auto & part : name_parts.parts)
     {
-        if (part.empty())
+        if (part.spelling.empty())
             return rollback();
-        auto param = makeQueryParameter("Identifier", part);
+        auto param = makeQueryParameter("Identifier", part.spelling);
         if (!param)
             return rollback();
         name_params.emplace_back(std::move(param));
-        part.clear();
+        part.spelling.clear();
     }
 
     ASTPtr res;
@@ -8834,9 +8834,7 @@ ASTPtr QueryFuzzer::makeParameterizedIdentifier(const ASTIdentifier & ident)
     const auto * table_ident = typeid_cast<const ASTTableIdentifier *>(&ident);
     if (table_ident && name_parts.size() <= 2)
     {
-        auto table_res = name_parts.size() == 1
-            ? make_intrusive<ASTTableIdentifier>(name_parts[0], std::move(name_params))
-            : make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1], std::move(name_params));
+        auto table_res = make_intrusive<ASTTableIdentifier>(std::move(name_parts), std::move(name_params));
         table_res->uuid = table_ident->uuid;
         table_res->has_uuid = table_ident->has_uuid;
         res = std::move(table_res);

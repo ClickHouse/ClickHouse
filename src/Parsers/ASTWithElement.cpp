@@ -32,10 +32,14 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     /// The name selects which CTE a reference resolves to, and `aliases` renames the subquery
     /// columns, but neither is a child, so without this both are absent from the hash.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 80, "If members were added to ASTWithElement, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTWithElement, hash them here unless they are purely cosmetic.");
     /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
     hash_state.update(name.size());
     hash_state.update(name);
+    /// A double-quoted CTE name is pinned to exact matching under `standard` name matching. Mixed in
+    /// only when set, so the hash of an unquoted CTE stays unchanged.
+    if (name_quote == IdentifierPartQuote::DoubleQuoted)
+        hash_state.update(name_quote);
     hash_state.update(is_materialized);
     hash_state.update(aliases != nullptr);
     if (aliases)
