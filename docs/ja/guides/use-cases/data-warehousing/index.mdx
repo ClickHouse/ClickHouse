@@ -16,7 +16,7 @@ ClickHouse は、[Apache Iceberg](/ja/reference/engines/table-engines/integratio
   ### 既存データをそのままクエリする
 </div>
 
-ClickHouse は、データを複製することなく、オブジェクトストレージ内のオープンテーブルフォーマットを直接クエリできます。Iceberg、Delta Lake、Hudi、Paimon を標準採用している組織なら、ClickHouse から既存のテーブルを参照するよう設定するだけで、ClickHouse の SQL方言、分析関数、高効率なネイティブの Parquet リーダーをすぐに活用できます。同時に、[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) や [chDB](/ja/chdb/index) のようなツールを使えば、リモートストレージ上の 70 を超えるファイルフォーマットに対して探索的なアドホック分析を行うことができ、インフラストラクチャの準備なしにデータレイク内のデータセットを対話的に調査できます。
+ClickHouse は、データを複製することなく、オブジェクトストレージ内のオープンテーブルフォーマットを直接クエリできます。Iceberg、Delta Lake、Hudi、Paimon を標準採用している組織なら、ClickHouse から既存のテーブルを参照するよう設定するだけで、ClickHouse の SQL方言、分析関数、高効率なネイティブの Parquet リーダーをすぐに活用できます。同時に、[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) や [chDB](/chdb/index) のようなツールを使えば、リモートストレージ上の 70 を超えるファイルフォーマットに対して探索的なアドホック分析を行うことができ、インフラストラクチャの準備なしにデータレイク内のデータセットを対話的に調査できます。
 
 これは、[テーブル関数とテーブルエンジン](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) を使った直接読み取り、または [データカタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) のいずれかで実現できます。
 
