@@ -64,7 +64,7 @@ protected:
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
-        size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
+        size_t value_width, size_t pad_to_width, size_t cut_to_width, size_t prefix, bool align_right, bool is_number);
 
     /// Writes one cell-padding character: `U+00A0` when `use_nbsp_for_padding` is on, ASCII space otherwise.
     void writePaddingSpace();

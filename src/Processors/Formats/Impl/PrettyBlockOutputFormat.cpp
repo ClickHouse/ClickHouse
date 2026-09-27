@@ -106,7 +106,9 @@ void PrettyBlockOutputFormat::calculateWidths(
 
     /// Calculate the widths of all values.
     String serialized_value;
-    size_t prefix = row_number_width + (style == Style::Space ? 1 : 2); // Tab character adjustment
+    /// The visible position where the value of the current column starts: a tab advances to the next tab stop,
+    /// so its width depends on it. The row numbers take `row_number_width` positions only when they are printed.
+    size_t prefix = (format_settings.pretty.row_numbers ? row_number_width : 0) + (style == Style::Space ? 1 : 2);
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & elem = header.getByPosition(i);
@@ -610,6 +612,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 }
 
                 bool all_lines_printed = true;
+                /// The visible position where the value of the current column starts, the same one
+                /// `calculateWidths` used: a tab advances to the next tab stop, so a line of a
+                /// multi-line value has to be measured from there, not from the first column.
+                size_t prefix = (format_settings.pretty.row_numbers ? row_number_width : 0) + (style == Style::Space ? 1 : 2);
                 for (size_t j = 0; j < num_columns; ++j)
                 {
                     if (style != Style::Space)
@@ -626,8 +632,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
                         max_widths[j],
                         cut_to_width,
+                        prefix,
                         type->shouldAlignRightInPrettyFormats(),
                         isNumber(removeNullable(type)));
+                    prefix += max_widths[j] + 3;
 
                     if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
                         all_lines_printed = false;
@@ -693,7 +701,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
     bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
-    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
+    size_t value_width, size_t pad_to_width, size_t cut_to_width, size_t prefix, bool align_right, bool is_number)
 {
     if (!serialized_value)
     {
@@ -702,8 +710,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         WriteBufferFromString out_serialize(*serialized_value);
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
-
-    size_t prefix = row_number_width + (style == Style::Space ? 1 : 2);
 
     bool is_continuation = start_from_offset > 0 && start_from_offset < serialized_value->size();
 
