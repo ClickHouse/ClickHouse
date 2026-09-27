@@ -19,7 +19,7 @@ SELECT sum(k) FROM t FORMAT Null SETTINGS enable_parallel_replicas = 1, automati
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ParallelReplicasUsedCount'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05260_force_mode_0', '05260_force_mode_1', '05260_force_mode_2', '05260_enabled_mode_1')
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05260_force_mode_0', '05260_force_mode_1', '05260_force_mode_2', '05260_enabled_mode_1')
     AND initial_query_id = query_id
 ORDER BY log_comment
 SETTINGS enable_parallel_replicas = 0;
