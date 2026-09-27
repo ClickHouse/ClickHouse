@@ -53,17 +53,18 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         /// User-defined functions are not registered in `FunctionFactory`, so they have to be resolved
         /// through their own factories, the same way `ActionsVisitor` and `TreeOptimizer` do. Otherwise
         /// a non-deterministic `EXECUTABLE` or `WASM` UDF looks like an unknown function here and is
-        /// treated as deterministic, so a predicate that calls it may be duplicated into a subquery and
-        /// evaluated twice per row.
+        /// treated as deterministic, so a predicate over it may be pushed into a subquery and the
+        /// function evaluated twice per row.
         ///
-        /// `EXECUTABLE` UDFs are never deterministic in the scope of a query, so their determinism is
-        /// decided by the name alone. Do not instantiate them: `UserDefinedExecutableFunctionFactory::tryGet`
+        /// An `EXECUTABLE` UDF is not stateful, so only its `deterministic` flag matters. Read it from the
+        /// configuration instead of instantiating the function: `UserDefinedExecutableFunctionFactory::tryGet`
         /// builds a `UserDefinedFunction` with an empty `parameters` array, and that constructor throws
-        /// `BAD_ARGUMENTS` for a parametric UDF such as `test_function_with_parameter(1)(k)`, which would
+        /// `BAD_ARGUMENTS` for a parametric UDF such as `test_function_parameter_python(1)(k)`, which would
         /// turn a mere optimizer walk into a query failure.
-        if (UserDefinedExecutableFunctionFactory::has(ast_function.name, data.getContext()))
+        if (auto is_deterministic = UserDefinedExecutableFunctionFactory::tryGetIsDeterministic(ast_function.name, data.getContext()))
         {
-            data.is_deterministic_function = false;
+            if (!*is_deterministic)
+                data.is_deterministic_function = false;
             return;
         }
 
@@ -130,9 +131,12 @@ bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context)
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
         /// `untuple` expands at execution build time: its output names are not referenceable here.
+        /// A predicate over the result of a non-deterministic function must not be pushed down either:
+        /// the pushed copy refers to the function again and may see a different value than the outer one.
         if (expression_info.is_stateful_function
             || expression_info.is_window_function
-            || expression_info.is_untuple)
+            || expression_info.is_untuple
+            || !expression_info.is_deterministic_function)
         {
             // If an outer query has a WHERE on window function, we can't move
             // it into the subquery, because window functions are not allowed in
