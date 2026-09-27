@@ -1392,6 +1392,7 @@ The server successfully detected this situation and will download merged part fr
     M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces", ValueType::Bytes) \
     M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces", ValueType::Bytes) \
     M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces", ValueType::Bytes) \
+    M(PrometheusRemoteWriteSkippedSeries, "Number of time series skipped by the Prometheus remote-write protocol because they had no metric name", ValueType::Number) \
     M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces", ValueType::Bytes) \
     M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces", ValueType::Bytes) \
     M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces", ValueType::Bytes) \
