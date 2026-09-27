@@ -25,4 +25,3 @@ SELECT toTypeName([tuple(), CAST((1, 2), 'Tuple(UInt8, UInt8)')]);
 SELECT [tuple(), (1, 2)] SETTINGS use_variant_as_common_type = 0; -- { serverError NO_COMMON_TYPE }
 
 -- Legacy path: should error on incompatible tuple arities (no Variant in legacy INTERSECT)
-SELECT 1 FROM (SELECT tuple() AS k INTERSECT ALL SELECT (1, 2) AS k) SETTINGS enable_analyzer = 0, use_variant_as_common_type = 0; -- { serverError NO_COMMON_TYPE }

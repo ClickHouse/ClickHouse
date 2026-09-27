@@ -84,7 +84,7 @@ ClickHouse 并没有统一的 CPU 利用率目标。请使用 [iostat](https://l
   ## 内存
 </div>
 
-与 CPU 的选择类似，内存与存储比以及内存与 CPU 比的选择取决于您的使用场景。
+与 CPU 的选择类似，内存与存储比例以及内存与 CPU 比的选择取决于您的使用场景。
 
 所需的 RAM 容量通常取决于：
 
@@ -92,7 +92,7 @@ ClickHouse 并没有统一的 CPU 利用率目标。请使用 [iostat](https://l
 * 查询中处理的数据量。
 
 不过，总体而言，内存越多，查询运行速度通常越快。
-如果您的使用场景对价格较为敏感，较低的内存容量也可以满足需求，因为可以启用相关设置 ([`max_bytes_before_external_group_by`](/zh/reference/settings/session-settings#max_bytes_before_external_group_by) 和 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings#max_bytes_before_external_sort)) ，允许将数据落盘到磁盘；但请注意，这可能会显著影响查询性能。
+如果您的使用场景对价格较为敏感，较低的内存容量也可以满足需求，因为可以启用相关设置 ([`max_bytes_before_external_group_by`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) 和 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) ，允许将数据落盘到磁盘；但请注意，这可能会显著影响查询性能。
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### 内存与存储比例应为多少？

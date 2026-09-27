@@ -43,11 +43,11 @@ Leia mais sobre [exclusões leves](/pt-BR/concepts/features/operations/delete/li
 As mutações de exclusão podem ser executadas com um comando `ALTER TABLE ... DELETE`, por exemplo.
 
 ```sql
--- exclui todos os dados de 2018 com uma mutation. Não recomendado.
+-- delete all data from 2018 with a mutation. Not recommended.
 ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
 ```
 
-Elas podem ser executadas de forma síncrona (por padrão, se não forem replicadas) ou assíncrona (conforme determinado pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync)). Essas operações consomem muita E/S, reescrevendo todas as partes que correspondem à expressão `WHERE`. Não há atomicidade nesse processo - as partes são substituídas por partes alteradas assim que ficam prontas, e uma consulta `SELECT` que comece a ser executada durante uma mutação verá dados de partes que já foram alteradas junto com dados de partes que ainda não foram alteradas. Os usuários podem acompanhar o andamento por meio da tabela [system.mutations](/pt-BR/reference/system-tables/mutations#monitoring-mutations). Essas são operações intensivas de E/S e devem ser usadas com moderação, pois podem afetar o desempenho das consultas `SELECT` no cluster.
+Elas podem ser executadas de forma síncrona (por padrão, se não forem replicadas) ou assíncrona (conforme determinado pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings/mutations#mutations_sync)). Essas operações consomem muita E/S, reescrevendo todas as partes que correspondem à expressão `WHERE`. Não há atomicidade nesse processo - as partes são substituídas por partes alteradas assim que ficam prontas, e uma consulta `SELECT` que comece a ser executada durante uma mutação verá dados de partes que já foram alteradas junto com dados de partes que ainda não foram alteradas. Os usuários podem acompanhar o andamento por meio da tabela [system.mutations](/pt-BR/reference/system-tables/mutations#monitoring-mutations). Essas são operações intensivas de E/S e devem ser usadas com moderação, pois podem afetar o desempenho das consultas `SELECT` no cluster.
 
 Leia mais sobre [mutações de exclusão](/pt-BR/reference/statements/alter/delete).
 

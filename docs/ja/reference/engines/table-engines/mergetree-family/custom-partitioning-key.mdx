@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 この例では、現在の週に発生したイベントタイプごとにパーティション化を設定します。
 
-デフォルトでは、浮動小数点のパーティションキーはサポートされていません。これを使用するには、設定 [allow&#95;floating&#95;point&#95;partition&#95;key](/ja/reference/settings/merge-tree-settings#allow_floating_point_partition_key) を有効にします。
+デフォルトでは、浮動小数点のパーティションキーはサポートされていません。これを使用するには、設定 [allow&#95;floating&#95;point&#95;partition&#95;key](/ja/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key) を有効にします。
 
 テーブルに新しいデータを挿入すると、そのデータは主キーでソートされた個別のパーツ (chunk) として保存されます。挿入後 10〜15 分で、同じパーティション内のパーツは 1 つの完全なパーツにマージされます。
 

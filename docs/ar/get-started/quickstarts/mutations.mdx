@@ -1,6 +1,7 @@
 ---
 slug: /guides/developer/mutations
 sidebarTitle: 'تحديث البيانات وحذفها'
+searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutations']
 title: 'تحديث بيانات ClickHouse وحذفها'
 description: 'يشرح كيفية تنفيذ عمليات التحديث والحذف في ClickHouse'
@@ -105,7 +106,7 @@ ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
 راجع صفحة توثيق تعليمة [`DELETE`](/ar/reference/statements/delete) لمزيد من التفاصيل.
 
 <div id="lightweight-deletes">
-  ## عمليات الحذف الخفيفة
+  ## الحذف الخفيف
 </div>
 
 خيار آخر لحذف الصفوف هو استخدام الأمر `DELETE FROM`، ويُشار إليه باسم **الحذف الخفيف**. تُعلَّم الصفوف المحذوفة فورًا على أنها محذوفة، وتُستبعَد تلقائيًا من جميع الاستعلامات اللاحقة، لذلك لا تحتاج إلى انتظار دمج الأجزاء أو استخدام الكلمة المفتاحية `FINAL`. ويجري تنظيف البيانات بشكل غير متزامن في الخلفية.
@@ -123,7 +124,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 بعض الملاحظات حول الحذف الخفيف:
 
 * هذه الميزة متاحة فقط لعائلة محركات الجداول `MergeTree`.
-* يكون الحذف الخفيف متزامنًا افتراضيًا، إذ ينتظر إلى أن تعالج جميع النسخ المتماثلة عملية الحذف. ويخضع هذا السلوك للتحكم من خلال [الإعداد `lightweight_deletes_sync`](/ar/reference/settings/session-settings#lightweight_deletes_sync).
+* يكون الحذف الخفيف متزامنًا افتراضيًا، إذ ينتظر إلى أن تعالج جميع النسخ المتماثلة عملية الحذف. ويخضع هذا السلوك للتحكم من خلال [الإعداد `lightweight_deletes_sync`](/ar/reference/settings/session-settings/lightweight#lightweight_deletes_sync).
 
 <div className="mt-8">
   <BackToQuickstarts />

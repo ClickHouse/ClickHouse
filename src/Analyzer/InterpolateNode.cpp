@@ -12,7 +12,7 @@ namespace DB
 {
 
 InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
 {
     if (expression_)
     {

@@ -79,7 +79,8 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -104,6 +105,10 @@ public:
     {
         virtual ~BloomFilter() = default;
 
+        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
+        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// value set intersect the two sequences in one pass instead of searching for each hash
+        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -321,8 +326,10 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
-            /// Special for pointInPolygon to utilize minmax indices.
+            /// Special for pointInPolygon to utilize primary key and minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            /// where x, y are key columns, or pointInPolygon(coord, [...])
+            /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
@@ -358,7 +365,8 @@ public:
         ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
-        ///    as in pointInPolygon((x, y), ...).
+        ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -379,7 +387,8 @@ public:
 
         /// For FUNCTION_POINT_IN_POLYGON.
         /// Function name (e.g. 'pointInPolygon') and the polygon.
-        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
+        /// Additionally, `key_columns` has two elements for point coordinates (x, y),
+        /// or one element if the point is a whole key column of Tuple type.
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
@@ -437,9 +446,15 @@ public:
     /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
     /// FUNCTION_NOT_IN_SET (1 element)
     ///
-    /// These atoms are relaxed only when the associated constants undergo
+    /// These atoms are relaxed when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier.
+    /// mentioned earlier. Two NaN rules relax them as well, each for the bound
+    /// its condition is evaluated against: a right-unbounded FUNCTION_IN_RANGE
+    /// atom over a key column that can hold a NaN inside a Tuple (see
+    /// relaxRangeAtomsOverNaNHidingTupleColumns), and, for a condition built
+    /// over a getExtremes-derived hyperrectangle, a range or single-element set
+    /// atom over any key column that can hide a NaN (see
+    /// relaxAtomsOverNaNHidingColumns).
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -450,8 +465,25 @@ public:
     ///
     /// NOTE: we also need to examine special functions that generate atoms. For
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
-    /// on a given regular expression, which is relaxed for simplicity.
+    /// on a given regular expression. Such an atom is relaxed unless the regular
+    /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
+
+    /// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
+    /// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
+    /// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
+    /// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
+    static bool typeMayHideNaN(const DataTypePtr & type);
+
+    /// Weaken the atoms over a `typeMayHideNaN` key column. Only for a condition evaluated against a
+    /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`. A hidden NaN satisfies
+    /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`
+    /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
+    void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
+
+    /// The primary-key counterpart of the above, for a NaN hidden inside a `Tuple` key column rather than
+    /// behind a `getExtremes` bound. Weaker on purpose: it keeps the exact-range machinery intact.
+    void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 
@@ -485,6 +517,15 @@ public:
         bool date_time_overflow_behavior_ignore_);
 
 private:
+    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
+    /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
+    /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
+    bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
+    bool mayReadNullKeyValue(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Hyperrectangle & sparse_hyperrectangle,
+        const DataTypes & sparse_key_types) const;
+
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
     {
@@ -492,6 +533,9 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
+        /// Analysis passes that are not allowed to execute a user subquery set this.
+        const bool require_ready_sets = false;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
@@ -556,7 +600,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        bool & out_is_injective);
+        bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -652,11 +696,17 @@ private:
     };
     static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
 
+    struct SpaceFillingCurveArgument
+    {
+        String name;
+        DataTypePtr type;
+    };
+
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos{};
         String function_name;
-        std::vector<String> arguments;
+        std::vector<SpaceFillingCurveArgument> arguments;
         SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;

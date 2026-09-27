@@ -86,20 +86,7 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
   ### 我可以连接没有公网 IP 或位于私有网络中的 Postgres 数据库吗？
 </div>
 
-可以！ClickPipes for Postgres 提供了两种连接私有网络中数据库的方式：
-
-1. **SSH 隧道**
-   * 适用于大多数场景
-   * 请在[此处](/zh/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)查看设置说明
-   * 适用于所有区域
-
-2. **AWS PrivateLink**
-   * 支持以下三个 AWS 区域：
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * 详细设置说明请参阅我们的 [PrivateLink 文档](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * 如果所在区域不支持 PrivateLink，请使用 SSH 隧道
+可以。有关 ClickPipes 如何访问未暴露于公网的数据源，请参阅 [ClickPipes 网络](/zh/integrations/clickpipes/networking)。
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### 如何处理 UPDATE 和 DELETE？

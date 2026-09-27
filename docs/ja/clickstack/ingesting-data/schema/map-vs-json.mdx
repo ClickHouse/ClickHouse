@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickstack', 'json', 'map', '属性', 'スキーマ', 'オブザーバビリティ']
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickStack の[デフォルトスキーマ](/ja/clickstack/ingesting-data/schemas)では、resource、scope、log、span の属性は `Map(LowCardinality(String), String)` カラムに保存されます。ClickHouse は厳密に型付けされた [`JSON` 型](/ja/reference/formats/JSON/JSON) もサポートしており、ClickStack では `Map` の代わりにこれを使用するためのベータサポートも提供されています。
 

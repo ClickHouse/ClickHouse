@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
@@ -214,7 +214,7 @@ El Private Endpoint Resource ID aparece en Azure Portal. Abre el Private Endpoin
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Vista del Private Endpoint" border />
 
-En properties, busca el campo `id` y copia este valor:
+Copia el campo `id` de nivel superior (el Resource ID del Private Endpoint, con el formato `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — no uses los campos `id` anidados dentro del objeto `properties`:
 
 **Método preferido: usar Resource ID**
 

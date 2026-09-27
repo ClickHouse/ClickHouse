@@ -37,7 +37,7 @@ public:
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = node->as<const ArrayJoinNode &>();
-                return child.get() == array_join_node.getTableExpression().get();
+                return child.get() == array_join_node.getTableExpressionNode().get();
             }
             case QueryTreeNodeType::CROSS_JOIN:
             {
@@ -47,7 +47,7 @@ public:
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = node->as<const JoinNode &>();
-                return child.get() == join_node.getLeftTableExpression().get() || child.get() == join_node.getRightTableExpression().get();
+                return child.get() == join_node.getLeftTableExpressionNode().get() || child.get() == join_node.getRightTableExpressionNode().get();
             }
             default:
             {

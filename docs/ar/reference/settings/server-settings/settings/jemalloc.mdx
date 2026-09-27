@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لعدد خيوط jemalloc الخلفية التي يمكن إنشاؤها. اضبطه على 0 لاستخدام القيمة الافتراضية لـ jemalloc
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />عدد ساحات jemalloc المخصصة للبيانات الوصفية طويلة الأمد الخاصة بكل جزء وكل جدول من MergeTree. تعطل القيمة `0` الساحة المخصصة (تستخدم البيانات الوصفية ساحات CPU الافتراضية لكل وحدة معالجة). تستخدم القيمة `1` ساحة مشتركة واحدة. تنشئ القيمة `N > 1` تجميعة من `N` ساحات وتوجّه تخصيصات الذاكرة حسب CPU؛ وعلى الأجهزة متعددة الأنوية، يتجنب ذلك تسلسل تخصيص البيانات الوصفية على أقفال ساحة واحدة. يُقيَّد العدد بعدد وحدات CPU التي يمكن للعملية العمل عليها (قناع التقارب الخاص بها)، لذا تؤدي قيمة كبيرة (أو عدد الأنوية) إلى تخصيص ساحة واحدة لكل CPU مسموح بها. يُطبَّق عند بدء التشغيل.
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>

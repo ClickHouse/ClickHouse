@@ -97,7 +97,7 @@ Use artifacts when dashboard/API cannot provide root-cause data:
 
 - `logs.tar.zst` / `job.log.zst`: job context, server configs, warnings/errors, machine contention.
 - `left/server.log` and `right/server.log`: exact old/new binary revision, build ID, startup settings, query execution timing, background activity.
-- `left-trace-log.tsv` / `right-trace-log.tsv`: raw `system.trace_log` samples by query id for CPU/Real/Memory stacks.
+- `report/stacks.left.tsv` / `report/stacks.right.tsv`: symbolized collapsed stacks per query for CPU/Real/Memory. Prefer these over `*-trace-log.tsv`, which is not shipped in `logs.tar.zst` and holds only `query_id, trace, trace_type, size` (raw addresses, no symbols).
 - `analyze/tmp/{test}_{queryN}.tsv`: per-run raw profile events, useful when dashboard only shows summary metrics.
 - prebuilt `.svg` flamegraphs: useful if the dashboard flamegraph-diff endpoint is missing or incomplete.
 

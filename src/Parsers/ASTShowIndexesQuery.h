@@ -4,6 +4,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTQueryWithOutput.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -20,13 +22,16 @@ public:
     IdentifierPartQuote database_quote = IdentifierPartQuote::Unquoted;
     IdentifierPartQuote table_quote = IdentifierPartQuote::Unquoted;
 
-    String getID(char) const override { return "ShowColumns"; }
+    String getID(char) const override { return "ShowIndexes"; }
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }
-

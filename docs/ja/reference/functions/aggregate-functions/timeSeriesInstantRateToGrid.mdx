@@ -15,8 +15,10 @@ doc_type: 'reference'
 
 タイムスタンプと値の組として時系列データを受け取り、開始タイムスタンプ、終了タイムスタンプ、step で定義される一定間隔の時間グリッド上で、このデータから [PromQL ライクな irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) を計算する集約関数です。グリッド上の各点について、`irate` の計算に使うサンプルは、指定された時間ウィンドウ内のものが考慮されます。
 
+複数のサンプルが同じタイムスタンプを持つ場合、使用されるのはそのうち 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のすべての値より優先順位が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ NaN 値が使用されます。
+
 <Warning>
-  この関数は実験的です。有効にするには、`allow_experimental_ts_to_grid_aggregate_function=true` を設定してください。
+  この関数は実験的です。有効にするには、`allow_experimental_time_series_aggregate_functions=true` を設定してください。
 </Warning>
 
 **構文**
@@ -27,10 +29,10 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 
 **パラメータ**
 
-* `start_timestamp` — グリッドの開始時点を指定します。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime)
-* `end_timestamp` — グリッドの終了時点を指定します。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime)
-* `grid_step` — グリッドの刻み幅を秒単位で指定します。[`UInt32`](/ja/reference/data-types/int-uint)
-* `staleness` — 対象とするサンプルの許容される最大の古さを秒単位で指定します。staleness ウィンドウは左開右閉区間です。[`UInt32`](/ja/reference/data-types/int-uint)
+* `start_timestamp` — グリッドの開始時点を指定します。`DateTime64` の timestamp 引数の場合は、小数、または数値や日時テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `end_timestamp` — グリッドの終了時点を指定します。`DateTime64` の timestamp 引数の場合は、小数、または数値や日時テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `grid_step` — グリッドの刻み幅を秒単位で指定します。`DateTime64` の timestamp 引数の場合は、小数、または数値や &#39;15s&#39;、&#39;1m&#39; のような期間を表す文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `staleness` — 対象とするサンプルの許容される最大の古さを秒単位で指定します。staleness ウィンドウは左開右閉区間です。`DateTime64` の timestamp 引数の場合は、小数、または数値や &#39;15s&#39;、&#39;1m&#39; のような期間を表す文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 
 **引数**
 

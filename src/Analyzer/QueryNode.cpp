@@ -18,6 +18,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -37,11 +38,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
 {
@@ -173,8 +175,11 @@ DataTypePtr QueryNode::getResultType() const
             return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+            /// Reachable from plain SQL: dropping `EXISTS` from `NOT EXISTS (SELECT * FROM t WHERE t.a = o.b)`
+            /// leaves a correlated subquery of several columns where a single value is expected, so describe
+            /// the query rather than the method that could not answer for it.
+            throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "A correlated subquery used as an expression must return exactly one column, but it returns {}",
                 projection_columns.size());
     }
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
@@ -216,6 +221,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (is_limit_by_all)
         buffer << ", is_limit_by_all: " << is_limit_by_all;
+
+    if (is_limit_after_all)
+        buffer << ", is_limit_after_all: " << is_limit_after_all;
 
     std::string group_by_type;
     if (is_group_by_with_rollup)
@@ -262,10 +270,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << std::string(indent + 2, ' ') << "PROJECTION\n";
     getProjection().dumpTreeImpl(buffer, format_state, indent + 4);
 
-    if (getJoinTree())
+    if (children[join_tree_child_index])
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "JOIN TREE\n";
-        getJoinTree()->dumpTreeImpl(buffer, format_state, indent + 4);
+        children[join_tree_child_index]->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (getPrewhere())
@@ -340,6 +348,18 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getLimit()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasLimitAfter())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT AFTER\n";
+        getLimitAfter()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasLimitUntil())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT UNTIL\n";
+        getLimitUntil()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasOffset())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
@@ -372,6 +392,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
+        is_limit_after_all == rhs_typed.is_limit_after_all &&
         projection_columns == rhs_typed.projection_columns &&
         projection_aliases_to_override == rhs_typed.projection_aliases_to_override &&
         pinned_projection_column_names == rhs_typed.pinned_projection_column_names &&
@@ -432,6 +453,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_all);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
+    state.update(is_limit_after_all);
 
     state.update(settings_changes.size());
 
@@ -439,6 +461,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     {
         state.update(setting_change.name.size());
         state.update(setting_change.name);
+        state.update(setting_change.shorthand);
 
         auto setting_change_value_dump = setting_change.value.dump();
         state.update(setting_change_value_dump.size());
@@ -463,6 +486,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
+    result_query_node->is_limit_after_all = is_limit_after_all;
     result_query_node->cte_name = cte_name;
     result_query_node->cte_name_quote = cte_name_quote;
     result_query_node->projection_columns = projection_columns;
@@ -487,6 +511,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
     select_query->limit_by_all = is_limit_by_all;
+    select_query->limit_after_all = is_limit_after_all;
 
     if (hasWith())
     {
@@ -522,6 +547,18 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
+            /// The parser leaves `ASTWithElement::aliases` out of `children`, so match it here.
+            const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
+            if (!cte_column_aliases.empty())
+            {
+                auto cte_column_aliases_ast = make_intrusive<ASTExpressionList>();
+                cte_column_aliases_ast->children.reserve(cte_column_aliases.size());
+                for (const auto & cte_column_alias : cte_column_aliases)
+                    cte_column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(IdentifierName({cte_column_alias})));
+
+                with_element_ast->aliases = std::move(cte_column_aliases_ast);
+            }
+
             expression_list_ast->children.back() = std::move(with_element_ast);
         }
 
@@ -554,7 +591,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
     ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[join_tree_child_index], options);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
@@ -592,6 +629,12 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasLimit())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST(options));
+
+    if (hasLimitAfter())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, getLimitAfter()->toAST(options));
+
+    if (hasLimitUntil())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, getLimitUntil()->toAST(options));
 
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));

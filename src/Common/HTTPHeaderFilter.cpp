@@ -21,7 +21,10 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 
     for (auto & entry : entries)
     {
-        if (entry.name.contains('\n') || entry.value.contains('\n'))
+        /// A bare CR or LF in a header name or value terminates the header line, so a header
+        /// carrying one could smuggle a second header into the request (request/response splitting).
+        if (entry.name.contains('\n') || entry.value.contains('\n')
+            || entry.name.contains('\r') || entry.value.contains('\r'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
         /// Strip whitespace and control characters from header name for validation
         std::string & normalized_name = entry.name;
@@ -48,6 +51,13 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
     }
+}
+
+void HTTPHeaderFilter::checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const
+{
+    /// Mutable, because the check strips control characters from the name in place. That cannot
+    /// disturb this container's invariant, which is about case, so nothing needs re-applying.
+    checkAndNormalizeHeaders(entries.entries);
 }
 
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)

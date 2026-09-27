@@ -3,11 +3,7 @@
 #include <Core/IdentifierName.h>
 #include <Parsers/IAST.h>
 
-
-namespace re2
-{
-    class RE2;
-}
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -23,16 +19,17 @@ public:
         clone->cloneChildren();
         return clone;
     }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+/// A `COLUMNS(...)` transformer is pure syntax: applying it needs the expanded column list, which
+/// only exists during analysis. See `Interpreters/applyColumnsTransformer.h`.
 class IASTColumnsTransformer : public IAST
 {
-public:
-    virtual void transform(ASTs & nodes) const = 0;
-    static void transform(const ASTPtr & transformer, ASTs & nodes);
 };
 
 class ASTColumnsApplyTransformer : public IASTColumnsTransformer
@@ -48,9 +45,10 @@ public:
             res->lambda = lambda->clone();
         return res;
     }
-    void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     // Case 1  APPLY (quantile(0.9))
     String func_name;
@@ -77,11 +75,12 @@ public:
         clone->cloneChildren();
         return clone;
     }
-    void transform(ASTs & nodes) const override;
     void setPattern(String pattern_);
-    std::shared_ptr<re2::RE2> getMatcher() const;
+    const std::optional<String> & getPattern() const { return pattern; }
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -104,6 +103,8 @@ public:
 
         void appendColumnName(WriteBuffer & ostr) const override;
         void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+        void writeJSON(WriteBuffer & out) const override;
+        void readJSON(const Poco::JSON::Object & json) override;
 
         String name;
         /// Quoting of the replacement name as written in the query.
@@ -121,15 +122,13 @@ public:
         clone->cloneChildren();
         return clone;
     }
-    void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-
-private:
-    static void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name);
 };
 
 }

@@ -7,7 +7,7 @@ Sending many small batches in synchronous mode isn't recommended, leading to man
 
 Asynchronous inserts shift batching responsibility from the client to the server by writing incoming data to an in-memory buffer, then flushing it to storage based on configurable thresholds. This approach significantly reduces part creation overhead, lowers CPU usage, and ensures ingestion remains efficient—even under high concurrency.
 
-The core behavior is controlled via the [`async_insert`](/reference/settings/session-settings#async_insert) setting.
+The core behavior is controlled via the [`async_insert`](/reference/settings/session-settings/async-insert#async_insert) setting.
 
 <Frame>
   <img src="/images/bestpractices/async_inserts.webp" alt="Async inserts" />
@@ -17,9 +17,9 @@ Asynchronous inserts are supported over both the HTTP and native TCP interfaces.
 
 When enabled (`async_insert = 1`), inserts are buffered and only written to disk once one of the flush conditions is met:
 
-- The buffer reaches a specified data size ([`async_insert_max_data_size`](/reference/settings/session-settings#async_insert_max_data_size), default 100 MiB).
-- A time threshold elapses ([`async_insert_busy_timeout_ms`](/reference/settings/session-settings#async_insert_busy_timeout_max_ms), default 200 ms or 1000 ms on Cloud).
-- A maximum number of insert queries accumulate ([`async_insert_max_query_number`](/reference/settings/session-settings#async_insert_max_query_number), default 450).
+- The buffer reaches a specified data size ([`async_insert_max_data_size`](/reference/settings/session-settings/async-insert#async_insert_max_data_size), default 100 MiB).
+- A time threshold elapses ([`async_insert_busy_timeout_ms`](/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), default 200 ms or 1000 ms on Cloud).
+- A maximum number of insert queries accumulate ([`async_insert_max_query_number`](/reference/settings/session-settings/async-insert#async_insert_max_query_number), default 450).
 
 Whichever threshold is reached first triggers the flush.
 
@@ -27,7 +27,7 @@ This batching process is invisible to clients and helps ClickHouse efficiently m
 
 ### Choosing a return mode {#choosing-a-return-mode}
 
-The behavior of asynchronous inserts is further refined using the [`wait_for_async_insert`](/reference/settings/session-settings#wait_for_async_insert) setting.
+The behavior of asynchronous inserts is further refined using the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting.
 
 When set to 1 (the default), ClickHouse only acknowledges the insert after the data is successfully flushed to disk. This ensures strong durability guarantees and makes error handling straightforward: if something goes wrong during the flush, the error is returned to the client. This mode is recommended for most production scenarios, especially when insert failures must be tracked reliably.
 
@@ -43,7 +43,7 @@ Our strong recommendation is to use `async_insert=1,wait_for_async_insert=1` if 
 
 ### Adaptive async inserts {#adaptive-async-inserts}
 
-Since version 24.2, ClickHouse uses adaptive flush timeouts by default ([`async_insert_use_adaptive_busy_timeout`](/reference/settings/session-settings#async_insert_use_adaptive_busy_timeout)). Instead of a fixed flush interval, the timeout dynamically adjusts between a minimum ([`async_insert_busy_timeout_min_ms`](/reference/settings/session-settings#async_insert_busy_timeout_min_ms), default 50 ms) and maximum ([`async_insert_busy_timeout_max_ms`](/reference/settings/session-settings#async_insert_busy_timeout_max_ms), default 200 ms or 1000 ms on Cloud) based on incoming data rate.
+Since version 24.2, ClickHouse uses adaptive flush timeouts by default ([`async_insert_use_adaptive_busy_timeout`](/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)). Instead of a fixed flush interval, the timeout dynamically adjusts between a minimum ([`async_insert_busy_timeout_min_ms`](/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms), default 50 ms) and maximum ([`async_insert_busy_timeout_max_ms`](/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), default 200 ms or 1000 ms on Cloud) based on incoming data rate.
 
 When data arrives frequently, the timeout stays closer to the minimum to flush sooner and reduce end-to-end latency. When data is sparse, it grows toward the maximum to accumulate larger batches. This is especially useful in default mode (`wait_for_async_insert=1`), where a fixed high timeout would force clients to block for the full interval even when data is ready to flush.
 
@@ -51,7 +51,7 @@ When data arrives frequently, the timeout stays closer to the minimum to flush s
 
 Schema validation and data parsing happen during buffer flush, not when the insert is received. If any row in an insert query has a parsing or type error, **none of the data from that query is flushed** — the entire query's payload is rejected. In default mode (`wait_for_async_insert=1`), the error is returned to the client. In fire-and-forget mode, errors are written to server logs and the [`system.asynchronous_inserts`](/reference/system-tables/asynchronous_inserts) table.
 
-Each flush creates at least one part per distinct partition key value in the buffer. Even for tables without a partition key, a single flush can produce multiple parts if the buffered data exceeds [`max_insert_block_size`](/reference/settings/session-settings#max_insert_block_size) (default ~1 million rows).
+Each flush creates at least one part per distinct partition key value in the buffer. Even for tables without a partition key, a single flush can produce multiple parts if the buffered data exceeds [`max_insert_block_size`](/reference/settings/session-settings/max-insert#max_insert_block_size) (default ~1 million rows).
 
 <Note>
 Despite using async inserts, you can still encounter ["too many parts"](/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) errors if the partitioning key has high cardinality.
@@ -59,9 +59,11 @@ Despite using async inserts, you can still encounter ["too many parts"](/resourc
 
 ### Deduplication and reliability {#deduplication-and-reliability}
 
-By default, ClickHouse performs automatic deduplication for synchronous inserts, which makes retries safe in failure scenarios. However, this is disabled for asynchronous inserts unless explicitly enabled (this shouldn't be enabled if you have dependent materialized views — [see issue](https://github.com/ClickHouse/ClickHouse/issues/66003)).
+Since version 26.2, ClickHouse performs automatic deduplication for asynchronous inserts as well as for synchronous ones, which makes retries safe on tables that keep a deduplication log. `*ReplicatedMergeTree` engines keep one by default; a plain `MergeTree` table needs `non_replicated_deduplication_window` set to a positive value. Both insert types are controlled by [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), which defaults to `enable`. Dependent materialized views are supported.
 
-In practice, if deduplication is turned on and the same insert is retried — due to, for instance, a timeout or network drop — ClickHouse can safely ignore the duplicate. This helps maintain idempotency and avoids double-writing data.
+In practice, if the same insert is retried — due to, for instance, a timeout or network drop — ClickHouse can safely ignore the duplicate. This helps maintain idempotency and avoids double-writing data. For asynchronous inserts, deduplication works per user query rather than per flushed batch, so a duplicate query does not discard the other queries batched with it.
+
+For details, and for the one restriction that applies to materialized views under asynchronous inserts, see [Deduplicating inserts on retries](/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
 ### Enabling asynchronous inserts {#enabling-asynchronous-inserts}
 
