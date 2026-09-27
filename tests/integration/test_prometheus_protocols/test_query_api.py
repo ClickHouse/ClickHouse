@@ -65,6 +65,10 @@ def send_test_data():
             for i in range(STREAM_ERROR_SERIES_COUNT)
         ]
     )
+    # `exact_rate_counter` is used by the `promql_exact_rate` test.
+    send_to_clickhouse(
+        [({"__name__": "exact_rate_counter", "job": "test"}, {100: 10, 120: 20})]
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -216,6 +220,34 @@ def test_range_query_lookback_delta():
         )
         == expected
     )
+
+
+# The setting `promql_exact_rate` comes from the URL query of both `/api/v1/query` and `/api/v1/query_range`.
+# The window (80, 120] holds 10 at 100 and 20 at 120: extrapolation doubles the increase of 10 to 20.
+def test_exact_rate_param():
+    for function, extrapolated, exact in (
+        ("rate", "0.5", "0.25"),
+        ("increase", "20", "10"),
+        ("delta", "20", "10"),
+    ):
+        query = f"{function}(exact_rate_counter[40s])"
+        for params, value in (
+            (None, extrapolated),
+            ({"promql_exact_rate": "0"}, extrapolated),
+            ({"promql_exact_rate": "1"}, exact),
+        ):
+            assert (
+                execute_query_via_http_api(
+                    node.ip_address, 9093, "/api/v1/query", query, timestamp=120, params=params,
+                )
+                == f'{{"resultType": "vector", "result": [{{"metric": {{"job": "test"}}, "value": [120, "{value}"]}}]}}'
+            )
+            assert (
+                execute_range_query_via_http_api(
+                    node.ip_address, 9093, "/api/v1/query_range", query, 100, 120, 10, params=params,
+                )
+                == f'{{"resultType": "matrix", "result": [{{"metric": {{"job": "test"}}, "values": [[120, "{value}"]]}}]}}'
+            )
 
 
 # Malformed PromQL is rejected at parse time.
