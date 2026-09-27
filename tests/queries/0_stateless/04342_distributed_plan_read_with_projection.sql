@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: a distributed read (make_distributed_plan) over a table with a normal projection
 -- threw `LOGICAL_ERROR` 'Different list of shards in child plans'. The projection
 -- optimization replaced the single read with a Union of (surviving-parts read, projection read), but

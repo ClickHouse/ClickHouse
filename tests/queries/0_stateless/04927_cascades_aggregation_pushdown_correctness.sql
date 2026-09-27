@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- Every scenario runs twice: through the cascades optimizer with `cascades_aggregation_pushdown`
 -- steered towards the pushed plan by stat hints, and classically (`enable_cascades_optimizer = 0`,
 -- `make_distributed_plan = 0`). The two result blocks of each scenario must be identical.

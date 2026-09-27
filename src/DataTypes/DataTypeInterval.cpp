@@ -16,7 +16,7 @@ bool DataTypeInterval::equals(const IDataType & rhs) const
 
 void DataTypeInterval::updateHashImpl(SipHash & hash) const
 {
-    hash.update(static_cast<uint8_t>(IntervalKind::Kind(kind)));
+    hash.update(kind.toBinary());
 }
 
 void registerDataTypeInterval(DataTypeFactory & factory)

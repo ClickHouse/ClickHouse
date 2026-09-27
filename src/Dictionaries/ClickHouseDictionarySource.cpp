@@ -162,6 +162,26 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
+namespace
+{
+
+/// The query text comes from the dictionary definition (possibly a `CREATE DICTIONARY` written by a user
+/// who has no other privileges), and for a local source it is executed as an `internal` query on behalf
+/// of the configured user. So only a `SELECT` is allowed: any other statement (`CREATE TABLE`, ...)
+/// would run with the access checks of `internal` queries skipped.
+void checkQueryIsSelect(const String & query, const char * description, const char * error_message)
+{
+    const char * query_begin = query.data();
+    const char * query_end = query.data() + query.size();
+    ParserQuery parser(query_end);
+    ASTPtr ast = parseQuery(parser, query_begin, query_end, description, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+}
+
+}
+
 BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
     BlockIO io;
@@ -173,13 +193,7 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
 
-    const char * query_begin = query.data();
-    const char * query_end = query.data() + query.size();
-    ParserQuery parser(query_end);
-    ASTPtr ast = parseQuery(parser, query_begin, query_end, "Query for ClickHouse dictionary", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT query can be used as a dictionary source");
+    checkQueryIsSelect(query, "Query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary source");
 
     if (configuration.is_local)
     {
@@ -204,6 +218,8 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     LOG_TRACE(log, "Performing invalidate query");
+
+    checkQueryIsSelect(request, "Invalidate query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary invalidate query");
 
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);

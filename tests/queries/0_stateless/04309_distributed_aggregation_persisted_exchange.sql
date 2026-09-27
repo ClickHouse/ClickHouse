@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Regression test: distributed partial aggregation delivered through a persisted exchange must not
 -- deadlock. The result reader drains final_result after the driver (the executor) has finished, so
 -- the query's in-memory exchanges must outlive the executor rather than be removed on its completion.
