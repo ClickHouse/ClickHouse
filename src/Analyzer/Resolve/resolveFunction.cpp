@@ -47,6 +47,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/exponentialTimeDecaying.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 
@@ -3044,6 +3045,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
+    }
+
+    if (!function && function_name == "exponentialTimeDecaying")
+    {
+        function = createExponentialTimeDecayingFunction(parameters, scope.context);
+        can_have_parameters = true;
     }
 
     FunctionBasePtr * function_base_cache = nullptr;

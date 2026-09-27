@@ -3927,36 +3927,6 @@ FROM
         assertExperimentalTimeDecayAggregateFunctionEnabled,
         false});
 
-    factory.registerFunction("exponentialTimeDecaying", {
-        createAggregateFunctionExponentialTimeDecaying,
-        FunctionDocumentation{
-            .description = R"(
-Constructs an `ExponentialTimeDecaying(decay_length)` value from one or more `(value, time)` rows.
-The result keeps its direct value and anchor for arithmetic and derives one UInt64 ordering key.
-Comparison, equality, hashing, primary-key marks, and minmax indexes use that same key.
-It can be combined again by `exponentialTimeDecayedSum`, including as a
-`SimpleAggregateFunction` column in an `AggregatingMergeTree`.
-)",
-            .syntax = "exponentialTimeDecaying(decay_length)(value, time)",
-            .arguments = {
-                {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
-                {"time", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
-            .parameters = {
-                {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}},
-            .returned_value = {"Returns an `ExponentialTimeDecaying(decay_length)` value.", {}},
-            .examples = {{
-                "Construct a decaying value",
-                "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
-                "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
-                "(1,20.79441541679836,10)"}},
-            .introduced_in = {26, 8},
-            .category = FunctionDocumentation::Category::AggregateFunction},
-        {},
-        {},
-        {},
-        assertExperimentalTimeDecayAggregateFunctionEnabled,
-        false});
-
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
     )";

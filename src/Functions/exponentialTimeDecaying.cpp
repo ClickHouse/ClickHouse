@@ -2,6 +2,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace DB
 {
@@ -23,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_FUNCTION;
 }
 
@@ -139,6 +142,79 @@ struct DecayingColumnBuilder
     const Float64 decay_length;
     ColumnFloat64::MutablePtr value_at_anchor = ColumnFloat64::create();
     ColumnFloat64::MutablePtr anchor_time = ColumnFloat64::create();
+};
+
+class FunctionExponentialTimeDecaying final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecaying";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecaying>();
+    }
+
+    FunctionExponentialTimeDecaying() = default;
+
+    explicit FunctionExponentialTimeDecaying(Float64 decay_length_)
+        : decay_length(decay_length_)
+    {
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function {} requires a decay_length parameter",
+                getName());
+
+        if (!isNumber(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a number, got {}",
+                getName(),
+                arguments[0].type->getName());
+
+        assertTimeType(arguments[1].type, getName());
+        return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(*decay_length);
+    }
+
+    ColumnPtr executeImpl(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        size_t input_rows_count) const override
+    {
+        chassert(decay_length);
+
+        auto value_column = arguments[0].column->convertToFullColumnIfConst();
+        auto time_column = arguments[1].column->convertToFullColumnIfConst();
+        DecayingColumnBuilder result(*decay_length);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const Float64 value = value_column->getFloat64(row);
+            const Float64 time = time_column->getFloat64(row);
+
+            if (!std::isfinite(value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", getName());
+            if (!std::isfinite(time))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", getName());
+
+            result.append(value, time);
+        }
+
+        return result.build();
+    }
+
+private:
+    std::optional<Float64> decay_length;
 };
 
 class FunctionExponentialTimeDecayingAdd final : public IFunction
@@ -285,8 +361,55 @@ public:
 
 }
 
+FunctionOverloadResolverPtr createExponentialTimeDecayingFunction(
+    const Array & parameters,
+    ContextPtr context)
+{
+    assertExperimentalFeatureEnabled(context, FunctionExponentialTimeDecaying::name);
+
+    if (parameters.size() != 1)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function {} takes exactly one parameter, the decay length",
+            FunctionExponentialTimeDecaying::name);
+
+    const Float64 decay_length
+        = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
+    if (!std::isfinite(decay_length) || decay_length <= 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Decay length of function {} must be finite and positive",
+            FunctionExponentialTimeDecaying::name);
+
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(
+        std::make_shared<FunctionExponentialTimeDecaying>(decay_length));
+}
+
 REGISTER_FUNCTION(ExponentialTimeDecaying)
 {
+    factory.registerFunction<FunctionExponentialTimeDecaying>(FunctionDocumentation{
+        .description = R"(
+Constructs one `ExponentialTimeDecaying(decay_length)` value for each `(value, time)` input row.
+The result keeps its direct value and anchor for arithmetic and derives one UInt64 ordering key.
+Comparison, equality, hashing, primary-key marks, and minmax indexes use that same key.
+It can be combined by `exponentialTimeDecayedSum`, including as a
+`SimpleAggregateFunction` column in an `AggregatingMergeTree`.
+)",
+        .syntax = "exponentialTimeDecaying(decay_length)(value, time)",
+        .arguments = {
+            {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
+            {"time", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
+        .parameters = {
+            {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}},
+        .returned_value = {"Returns an `ExponentialTimeDecaying(decay_length)` value.", {}},
+        .examples = {{
+            "Construct a decaying value",
+            "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "(1,20.79441541679836,10)"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
     factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
         .description = R"(
 Adds two exponentially time-decaying values using their direct value/anchor payloads.
