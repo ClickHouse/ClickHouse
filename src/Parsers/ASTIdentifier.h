@@ -21,11 +21,6 @@ class ASTTableIdentifier;
 IdentifierPartQuote identifierPartQuoteFromAST(const IAST * node);
 IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node);
 
-/// One quote style for a possibly compound identifier that is matched as a whole (e.g. an `EXCEPT` or
-/// `REPLACE` target): double-quoted if any part is, so a double-quoted suffix is never case-folded;
-/// otherwise the quote style of the first part.
-IdentifierPartQuote wholeNameQuoteFromAST(const ASTPtr & node);
-
 /// FIXME: rewrite code about params - they should be substituted at the parsing stage,
 ///        or parsed as a separate AST entity.
 
