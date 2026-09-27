@@ -140,7 +140,7 @@ ENGINE = Memory;
 CREATE TABLE exponential_time_decay_nested_state_destination
 (
     key UInt8,
-    activity AggregateFunction(
+    exhaustion AggregateFunction(
         exponentialTimeDecayedSum(3),
         ExponentialTimeDecaying(3))
 )
@@ -157,7 +157,7 @@ SELECT
     key,
     exponentialTimeDecayedSumState(3)(
         exponentialTimeDecaying(3)(value, occurred_at)
-    ) AS activity
+    ) AS exhaustion
 FROM exponential_time_decay_nested_state_source
 GROUP BY key;
 
@@ -177,6 +177,70 @@ INSERT INTO exponential_time_decay_nested_state_source VALUES
 
 OPTIMIZE TABLE exponential_time_decay_nested_state_destination FINAL;
 
+-- Merge combinator parameters can be recovered from a qualified persisted state.
+-- This is the production query shape: no explicit decay parameter is supplied
+-- in SQL; it must come from AggregateFunction(exponentialTimeDecayedSum(3),
+-- ExponentialTimeDecaying(3)).
+WITH
+    toDateTime64('2026-09-27 12:00:02.000017', 6, 'UTC') AS target_time,
+    merged AS
+    (
+        SELECT
+            t.key,
+            exponentialTimeDecayedSumMerge(t.exhaustion) AS exhaustion,
+            exponentialTimeDecayedSumMerge(3)(t.exhaustion) AS explicit_exhaustion
+        FROM exponential_time_decay_nested_state_destination AS t
+        GROUP BY t.key
+    )
+SELECT
+    key,
+    toTypeName(exhaustion),
+    exponentialTimeDecayingDecayLength(exhaustion),
+    abs(
+        exponentialTimeDecayingValueAt(exhaustion, target_time)
+        - exponentialTimeDecayingValueAt(explicit_exhaustion, target_time)
+    ) < 1e-12
+FROM merged
+ORDER BY key;
+
+-- Preserve the AggregateFunction type through a subquery boundary and recover
+-- the same implicit Merge parameters from a qualified alias there as well.
+WITH
+    toDateTime64('2026-09-27 12:00:02.000017', 6, 'UTC') AS target_time,
+    merged AS
+    (
+        SELECT
+            t.key,
+            exponentialTimeDecayedSumMerge(t.exhaustion) AS exhaustion
+        FROM
+        (
+            SELECT
+                key,
+                exhaustion
+            FROM exponential_time_decay_nested_state_destination
+        ) AS t
+        GROUP BY t.key
+    ),
+    expected AS
+    (
+        SELECT
+            key,
+            exponentialTimeDecayedSum(3)(value, occurred_at) AS exhaustion
+        FROM exponential_time_decay_nested_state_source
+        GROUP BY key
+    )
+SELECT
+    merged.key,
+    abs(
+        exponentialTimeDecayingValueAt(merged.exhaustion, target_time)
+        - exponentialTimeDecayingValueAt(expected.exhaustion, target_time)
+    ) <= 1e-12 * greatest(
+        1.,
+        abs(exponentialTimeDecayingValueAt(expected.exhaustion, target_time)))
+FROM merged
+INNER JOIN expected USING (key)
+ORDER BY merged.key;
+
 -- Compare the persisted, merged finalized-value states against direct aggregation
 -- of the raw source rows. This simultaneously checks MV execution, DateTime64(6)
 -- handling, signed/zero values, out-of-order batches, and storage-engine merging.
@@ -190,7 +254,7 @@ FROM
     SELECT
         key,
         exponentialTimeDecayingValueAt(
-            exponentialTimeDecayedSumMerge(3)(activity),
+            exponentialTimeDecayedSumMerge(3)(exhaustion),
             target_time) AS value_at_target
     FROM exponential_time_decay_nested_state_destination
     GROUP BY key

@@ -6,5 +6,9 @@ exponentialTimeDecaying	0
 1	1
 AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(3))
 1	1
+1	ExponentialTimeDecaying(3)	3	1
+2	ExponentialTimeDecaying(3)	3	1
+1	1
+2	1
 1	1
 2	1
