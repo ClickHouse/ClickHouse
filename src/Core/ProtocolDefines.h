@@ -184,6 +184,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// First query-plan serialization version that knows the `spill_codec_authorized` plan setting for
 /// temporary-file codecs. Gates writing it in the sorting, aggregation, and join serialization paths.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC = 21;
+/// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
+/// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
+/// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
+/// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
