@@ -19,6 +19,9 @@ SET query_plan_optimize_prewhere = 1;
 -- query, including the inserts below: a fuzzed re-execution of one writes further parts, and every
 -- byte count here is read against a fixed part set.
 SET ast_fuzzer_runs = 0;
+-- The keys below match no row, so that only statistics are read, and lie outside every part's value
+-- range: pruning parts by statistics would drop them all before any statistics are loaded.
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_stats_once_a SYNC;
 DROP TABLE IF EXISTS t_stats_once_b SYNC;
@@ -223,10 +226,8 @@ SELECT count() FROM (
     UNION ALL SELECT k, w FROM t_stats_once_c WHERE k = 900000006 AND w >= 0 AND w < 100000
 ) SETTINGS log_comment = '04651_sets', use_statistics_cache = 1, ast_fuzzer_runs = 0 FORMAT Null;
 
--- A branch naming the partition column asks about one more column than a branch that does not, so
--- the two are not answered from the same statistics. Partition pruning does not narrow the part set
--- here, because this path builds the estimator before range analysis: both branches carry the whole
--- set. Pruned part sets reach the key only on the join path, covered further down.
+-- A branch filtering on the partition column reads one partition's part and asks about one more
+-- column than a branch that does not, so the two are not answered from the same statistics.
 SELECT count() FROM (
     SELECT k FROM t_stats_once_p WHERE part = 1 AND k = 900000001 AND v >= 0 AND v < 100000
     UNION ALL SELECT k FROM t_stats_once_p WHERE k = 900000002 AND v >= 0 AND v < 100000
@@ -332,10 +333,8 @@ SELECT trimLeft(explain) FROM (
 -- is pinned, and `join_algorithm` with it: the filter is attached only when the algorithm list names
 -- a hash-family algorithm. With either unpinned there are two callers and the ratio below is 2
 -- rather than 3.
--- A throwing row limit makes join-order estimation analyze ranges without memoizing the result, so a
--- caller that reads that memo falls back to the whole part set and asks about a second entry the
--- ratio does not describe: `max_rows_to_read` and its leaf twin are pinned to the shipped default,
--- which the test profile raises. With either set, one of the three asks about both partitions.
+-- `max_rows_to_read` and its leaf twin are pinned to the shipped default, which the test profile
+-- raises, so the join is planned as it is by default.
 -- The `EXPLAIN` is wrapped in a counting query, so no plan text reaches the output; `FORMAT Null` on
 -- its own does not suppress it.
 SELECT count() FROM (

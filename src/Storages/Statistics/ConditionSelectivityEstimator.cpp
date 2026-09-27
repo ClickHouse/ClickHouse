@@ -198,7 +198,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 /// to report the selectivity of the un-negated predicate. Finalize both first, so the
                 /// negation applies to a plain selectivity.
                 if (!last_element->finalized && (last_element->hasAbsorbed() || last_element->isConstantFactor()))
-                    last_element->finalize(column_estimators, metadata);
+                    last_element->finalize(payload->column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
                 else

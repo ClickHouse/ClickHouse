@@ -1,15 +1,17 @@
 <test>
-    <!-- Plan-time cost of a query that reads one table many times: each branch asks
-         `MergeTreeData::getConditionSelectivityEstimator` for an estimator over the same
-         part set, and until the background refresh publishes the table-wide cache the
-         statistics were re-read from disk for every one of them. The keys match no row
-         and the queries are `EXPLAIN`, so this measures planning only. Twelve parts make one load
-         large enough that repeating it dominates. -->
+    <!-- Plan-time cost of a query that reads one table many times: each branch asks for a
+         selectivity estimate over the same part set, and until the background refresh publishes
+         the table-wide cache the statistics were re-read from disk for every one of them. The keys
+         match no row and the queries are `EXPLAIN`, so this measures planning only. The keys also
+         lie outside every part's value range, so pruning parts by statistics is off: it would leave
+         no part to load statistics for. Twelve parts make one load large enough that repeating it
+         dominates. -->
 
     <settings>
         <allow_statistics>1</allow_statistics>
         <use_statistics>1</use_statistics>
         <use_statistics_cache>1</use_statistics_cache>
+        <use_statistics_for_part_pruning>0</use_statistics_for_part_pruning>
         <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
         <max_query_size>10000000</max_query_size>
         <max_ast_elements>1000000</max_ast_elements>
