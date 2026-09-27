@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_map>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
@@ -298,7 +299,16 @@ void calculateHashTableCacheKeys(
         {
             // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
             const auto & join_expression = join_step->getJoinOperator().expression;
-            bool single_disjunct = join_expression.size() > 1 || (join_expression.size() == 1 && !join_expression.front().isFunction(JoinConditionOperator::Or));
+            /// An OR is split into a clause per branch unless an equality between the two sides is the join key.
+            auto is_key = [](const JoinActionRef & condition)
+            {
+                auto [op, lhs, rhs] = condition.asBinaryPredicate();
+                return (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
+                    && ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()));
+            };
+            auto is_disjunction = [](const JoinActionRef & condition) { return condition.isFunction(JoinConditionOperator::Or); };
+            bool single_disjunct = !join_expression.empty()
+                && (std::ranges::none_of(join_expression, is_disjunction) || std::ranges::any_of(join_expression, is_key));
             const bool calculate = allowParallelHashJoin(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,

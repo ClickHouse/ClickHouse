@@ -1,0 +1,54 @@
+a2 ⋈ a3 ⋈ a4
+Type: inner
+a2 ⋈ a3
+Type: inner
+a2 ⋈ a3 ⋈ a4
+Type: inner
+a2 ⋈ a3
+Type: inner
+5106	5106	9451410484528463041
+a2 ⋈ a3 ⋈ a4
+Type: inner
+a2 ⋈ a3
+Type: inner
+a2 ⋈ a3 ⋈ a4
+Type: inner
+a2 ⋈ a3
+Type: inner
+tb ⋈ tc ⋈ ta
+Type: inner
+tb ⋈ tc
+Type: inner
+3
+ra ⋈ rb ⋈ rc
+Type: inner
+ra ⋈ rb
+Type: inner
+1000
+s0 ⋈ s3 ⋈ (s1 ⋈ s2)
+Type: inner
+s0 ⋈ s3
+Type: inner
+s1 ⋈ s2
+Type: inner
+s0 ⋈ s3 ⋈ (s1 ⋈ s2)
+Type: inner
+s0 ⋈ s3
+Type: inner
+s1 ⋈ s2
+Type: inner
+u0 ⋈ u1 ⋈ u2
+Type: inner
+u0 ⋈ u1
+Type: inner
+u0 ⋈ u2 ⋈ u1
+Type: inner
+u0 ⋈ u2
+Type: inner
+1000
+1000
+v0 ⟕ v1 ⋈ v2
+Type: inner
+v0 ⟕ v1
+Type: left
+10000

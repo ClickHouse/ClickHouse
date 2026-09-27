@@ -950,6 +950,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
             query_graph.prepared_storage_relations.set(i);
     }
+    const auto & join_algorithms = query_graph_builder.context->join_settings.join_algorithms;
+    query_graph.hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH);
+    query_graph.ie_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::IE_JOIN);
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 

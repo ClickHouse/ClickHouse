@@ -81,7 +81,8 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                 if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations);
+                auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations,
+                    right->relations, isInner(*join_kind) || isCrossOrComma(*join_kind));
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {

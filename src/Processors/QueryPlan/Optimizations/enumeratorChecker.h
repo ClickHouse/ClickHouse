@@ -111,7 +111,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     if (kind == JoinKind::Cross)
         kind = JoinKind::Inner;
 
-    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
+    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask, isInner(kind) || isCrossOrComma(kind));
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",

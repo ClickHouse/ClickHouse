@@ -126,6 +126,10 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
+    /// Whether `join_algorithm` enables `hash` and `ie_join`, which decide whether a join runs on the branches of an OR.
+    bool hash_join_enabled = false;
+    bool ie_join_enabled = false;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
 

@@ -1375,12 +1375,25 @@ static bool tryAddDisjunctiveConditions(
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
     bool throw_on_error)
 {
-    if (join_expressions.size() != 1)
+    auto is_disjunction = [](const JoinActionRef & expression) { return expression.isFunction(JoinConditionOperator::Or); };
+
+    /// Join reordering can put an OR into one join with conditions of other JOIN ON clauses; such a join is planned
+    /// as the OR with them added to every branch instead of a cross join.
+    if (join_expressions.size() != 1
+        && (throw_on_error || planning_context.is_storage_join || std::ranges::count_if(join_expressions, is_disjunction) != 1))
         return false;
 
-    auto & join_expression = join_expressions.front();
-    if (!join_expression.isFunction(JoinConditionOperator::Or))
+    auto disjunction_it = std::ranges::find_if(join_expressions, is_disjunction);
+    if (disjunction_it == join_expressions.end())
         return false;
+
+    const JoinActionRef & join_expression = *disjunction_it;
+    std::vector<JoinActionRef> other_conditions;
+    for (const auto & expression : join_expressions)
+    {
+        if (expression != join_expression)
+            other_conditions.push_back(expression);
+    }
 
     size_t initial_clauses_num = table_join_clauses.size();
     std::vector<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
@@ -1390,6 +1403,7 @@ static bool tryAddDisjunctiveConditions(
         std::vector<JoinActionRef> join_condition = {expr};
         if (expr.isFunction(JoinConditionOperator::And))
             join_condition = expr.getArguments();
+        join_condition.append_range(other_conditions);
 
         auto & table_join_clause = table_join_clauses.emplace_back();
         bool has_keys = addJoinPredicatesToTableJoin(
@@ -1422,6 +1436,9 @@ static bool tryAddDisjunctiveConditions(
     /// Clear join_expressions if there is no unhandled conditions, no need to calculate residual filter
     if (!has_residual_condition)
         join_expressions.clear();
+    else
+        std::erase_if(join_expressions, [](const JoinActionRef & expression)
+            { return expression.fromLeft() || expression.fromRight() || expression.fromNone(); });
 
     return true;
 }

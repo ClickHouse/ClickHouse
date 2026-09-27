@@ -100,13 +100,14 @@ double computeSelectivity(
     SelectivityCache & expression_selectivity,
     const std::vector<JoinActionRef *> & edges,
     const BitSet & left,
-    const BitSet & right)
+    const BitSet & right,
+    bool is_inner_step)
 {
-    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
-
-    /// Also account for transitively-equivalent columns spanning both sides.
+    /// Transitively-equivalent columns spanning both sides: each such class is a key of the join.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
     std::unordered_set<ConstClassPtr> visited;
+    double equivalence_selectivity = 1.0;
+    bool has_equivalence_key = false;
 
     for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
     {
@@ -141,11 +142,27 @@ double computeSelectivity(
                 max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
             }
         }
-        if (has_left && has_right && max_ndv > 0)
-            selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+        if (has_left && has_right)
+        {
+            has_equivalence_key = true;
+            if (max_ndv > 0)
+                equivalence_selectivity = std::min(equivalence_selectivity, 1.0 / static_cast<double>(max_ndv));
+        }
     }
 
-    return selectivity;
+    auto is_prepared_storage = [&](const BitSet & side)
+    {
+        auto relation = side.getSingleBit();
+        return relation && query_graph.prepared_storage_relations.test(*relation);
+    };
+    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges,
+        [&](const BitSet & lhs, const BitSet & rhs)
+        {
+            return lhs.any() && rhs.any()
+                && ((isSubsetOf(lhs, left) && isSubsetOf(rhs, right)) || (isSubsetOf(lhs, right) && isSubsetOf(rhs, left)));
+        },
+        has_equivalence_key, is_prepared_storage(left) || is_prepared_storage(right), is_inner_step);
+    return std::min(selectivity, equivalence_selectivity);
 }
 
 }

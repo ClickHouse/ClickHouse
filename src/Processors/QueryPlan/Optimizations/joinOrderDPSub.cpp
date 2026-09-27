@@ -79,7 +79,7 @@ private:
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask, bool is_inner_step);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -412,13 +412,13 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
 }
 
 double DPSubJoinOrderOptimizer::computeSelectivityMask(
-    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
+    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask, bool is_inner_step)
 {
-    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
-
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
     const UInt64 generation = ++dpsub_data.equiv_generation;
+    double equivalence_selectivity = 1.0;
+    bool has_equivalence_key = false;
 
     for (UInt32 remaining = left_mask; remaining;)
     {
@@ -451,12 +451,27 @@ double DPSubJoinOrderOptimizer::computeSelectivityMask(
                     max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
                 }
             }
-            if (has_left && has_right && max_ndv > 0)
-                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+            if (has_left && has_right)
+            {
+                has_equivalence_key = true;
+                if (max_ndv > 0)
+                    equivalence_selectivity = std::min(equivalence_selectivity, 1.0 / static_cast<double>(max_ndv));
+            }
         }
     }
 
-    return selectivity;
+    const UInt32 prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
+    auto is_prepared_storage = [&](UInt32 side) { return std::has_single_bit(side) && (side & prepared_storage_mask) != 0; };
+    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges,
+        [&](const BitSet & lhs, const BitSet & rhs)
+        {
+            UInt32 l = toMask(lhs);
+            UInt32 r = toMask(rhs);
+            return l && r
+                && (((l & ~left_mask) == 0 && (r & ~right_mask) == 0) || ((l & ~right_mask) == 0 && (r & ~left_mask) == 0));
+        },
+        has_equivalence_key, is_prepared_storage(left_mask) || is_prepared_storage(right_mask), is_inner_step);
+    return std::min(selectivity, equivalence_selectivity);
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>

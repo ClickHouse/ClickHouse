@@ -21,6 +21,7 @@ double computeSelectivity(
     SelectivityCache & expression_selectivity,
     const std::vector<JoinActionRef *> & edges,
     const BitSet & left,
-    const BitSet & right);
+    const BitSet & right,
+    bool is_inner_step);
 
 }
