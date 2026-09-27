@@ -16,7 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-disk_path="disks/05175/${CLICKHOUSE_DATABASE}/"
+disk_path="${CLICKHOUSE_DISKS_FILES}/05175/${CLICKHOUSE_DATABASE}/"
 
 # The writer owns the root and writes 4 unmerged parts, all in ascending key order.
 ${CLICKHOUSE_CLIENT} --query "
@@ -69,7 +69,7 @@ SETTINGS table_disk = true,
 
 # The mirror of the pair above, on its own root: parts written descending, mounted by a table declaring
 # ascending. The two orders are compared by different branches, and the reader above reaches only one.
-disk_path_desc="disks/05175_desc/${CLICKHOUSE_DATABASE}/"
+disk_path_desc="${CLICKHOUSE_DISKS_FILES}/05175_desc/${CLICKHOUSE_DATABASE}/"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE writer_desc (key Int32, val UInt32) ENGINE = MergeTree ORDER BY key DESC
