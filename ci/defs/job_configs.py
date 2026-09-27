@@ -263,6 +263,7 @@ common_integration_test_job_config = Job.Config(
             "./ci/jobs/scripts/coverage_selection.py",
             "./ci/jobs/scripts/test_selection_config.py",
             "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./ci/jobs/promql_compliance_job.py",

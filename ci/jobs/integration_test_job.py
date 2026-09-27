@@ -975,6 +975,22 @@ def owning_test_modules(changed_files: List[str]) -> List[str]:
     return list(dict.fromkeys(modules))
 
 
+# A targeted job runs one batch of the full suite when the shared integration harness
+# changes: neither coverage nor the owning-module mapping can select tests for it.
+HARNESS_FALLBACK_BATCHES = 8
+
+
+def is_shared_harness_file(fpath: str) -> bool:
+    """Shared integration test infrastructure, e.g. `tests/integration/helpers/cluster.py`,
+    `tests/integration/conftest.py`, `tests/integration/compose/...`."""
+    fpath = fpath.removeprefix("./")
+    return (
+        fpath.startswith("tests/integration/")
+        and not fpath.startswith("tests/integration/test_")
+        and not fpath.endswith(".md")
+    ) or fpath.startswith("ci/docker/integration/")
+
+
 def quote_tests(tests: List[str]) -> str:
     """Join test node IDs into a shell-safe, space-separated string.
 
@@ -1672,9 +1688,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     assert (
         not is_per_test_coverage or is_llvm_coverage
     ), "per_test_coverage requires an amd_llvm_coverage* build"
-    if is_targeted_check and info.is_local_run and args.test:
-        # The PR workflow has only targeted integration jobs, so a local run with
-        # `--test` (the `integration` job alias) runs the given tests as a regular job.
+    if is_targeted_check and info.is_local_run:
+        # The PR workflow has only targeted integration jobs, so a local run of one
+        # (e.g. the `integration` job alias) runs as a regular job: test selection needs
+        # the PR diff and CIDB.
         is_targeted_check = False
 
     per_test_coverage_dir = f"{temp_path}/per_test_coverage"
@@ -1835,11 +1852,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # The changed test modules run in every configuration, not only in the flaky
         # check, and so do the modules of packages whose supporting files changed: the
         # coverage selector sees only source files.
-        tests = (
-            changed_test_modules
-            + owning_test_modules(info.get_changed_files() or [])
-            + tests
-        )
+        changed_files = info.get_changed_files() or []
+        tests = changed_test_modules + owning_test_modules(changed_files) + tests
+        harness_files = [f for f in changed_files if is_shared_harness_file(f)]
+        if harness_files:
+            fallback_parallel, fallback_sequential = get_parallel_sequential_tests_to_run(
+                1, HARNESS_FALLBACK_BATCHES, [], workers, args.options, info
+            )
+            print(
+                f"Shared integration harness changed ({harness_files}): also running batch "
+                f"1/{HARNESS_FALLBACK_BATCHES} of the full suite"
+            )
+            tests += fallback_parallel + fallback_sequential
         if not tests:
             # early exit
             Result.create_from(
