@@ -100,6 +100,16 @@ void FileChecker::setEmpty(const String & full_file_path)
     map[fileName(full_file_path)] = 0;
 }
 
+void FileChecker::remove(const String & full_file_path)
+{
+    map.erase(fileName(full_file_path));
+}
+
+bool FileChecker::contains(const String & full_file_path) const
+{
+    return map.contains(fileName(full_file_path));
+}
+
 size_t FileChecker::getFileSize(const String & full_file_path) const
 {
     auto it = map.find(fileName(full_file_path));

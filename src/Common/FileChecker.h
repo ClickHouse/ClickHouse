@@ -29,6 +29,8 @@ public:
     void update(const String & full_file_path);
     void update(const String & filename, size_t size);
     void setEmpty(const String & full_file_path);
+    void remove(const String & full_file_path);
+    bool contains(const String & full_file_path) const;
 
     /// Record the current sizes of several files and persist them as a single unit.
     /// The stored sizes stay unchanged unless all of them are persisted, because repair()

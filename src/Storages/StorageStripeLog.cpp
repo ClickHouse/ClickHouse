@@ -504,7 +504,6 @@ StorageStripeLog::StorageStripeLog(
     {
         file_checker.setEmpty(data_file_path);
         file_checker.setEmpty(index_file_path);
-        file_checker.setEmpty(schema_history_file_path);
     }
 
     if (mode < LoadingStrictnessLevel::ATTACH)
@@ -767,7 +766,7 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     indices.clear();
     file_checker.setEmpty(data_file_path);
     file_checker.setEmpty(index_file_path);
-    file_checker.setEmpty(schema_history_file_path);
+    file_checker.remove(schema_history_file_path);
 
     schema_history.clear();
     indices_loaded = true;
@@ -855,6 +854,15 @@ void StorageStripeLog::appendSchemaHistoryBoundary(
             return;
     }
 
+    /// The history file is registered in `sizes.json` only once a table actually needs it, so tables
+    /// that never had a column added keep the same set of files as before. Register it with zero size
+    /// before the first write, so an interrupted append is rolled back by `FileChecker::repair`.
+    if (!file_checker.contains(schema_history_file_path))
+    {
+        file_checker.setEmpty(schema_history_file_path);
+        file_checker.save();
+    }
+
     auto out = disk->writeFile(schema_history_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
     writeVarUInt(block_end, *out);
     writeVarUInt(column_count, *out);
@@ -894,7 +902,10 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.updateAndSave({data_file_path, index_file_path, schema_history_file_path});
+    std::vector<String> file_paths{data_file_path, index_file_path};
+    if (file_checker.contains(schema_history_file_path))
+        file_paths.push_back(schema_history_file_path);
+    file_checker.updateAndSave(file_paths);
     total_bytes = file_checker.getFileSize(data_file_path) + file_checker.getFileSize(index_file_path);
 }
 
