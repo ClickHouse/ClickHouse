@@ -139,6 +139,7 @@ private:
     /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
     void switchToGraceHashJoin(bool spill_immediately = false);
     void tryConvertSlots();
+    void tryCompressStoredBlocksBeforeSwitch();
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -156,6 +157,11 @@ private:
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
+
+    /// Whether the one forced compression pass over the collected blocks was already run in the
+    /// concurrent mode (see tryCompressStoredBlocksBeforeSwitch). Guarded by `switch_mutex`, which
+    /// is held exclusively for the whole pass.
+    bool compression_attempted = false;
 
     /// HashJoin that stores right-side blocks during COLLECTING phase (single-thread mode).
     std::shared_ptr<HashJoin> hash_join;

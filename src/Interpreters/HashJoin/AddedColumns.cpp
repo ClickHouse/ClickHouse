@@ -196,6 +196,16 @@ void LazyOutput::emitColumnarOutputs(MutableColumns & columns, const RefWordSele
     if (selection.begin == selection.end)
         return;
 
+    /// The emit table holds raw planes of the stored columns, which are `ColumnCompressed`
+    /// placeholders once the join compressed them, so it is not resolved then (see the `AddedColumns`
+    /// constructor): read those blocks through their decompressed views instead.
+    if (have_compressed)
+    {
+        DecompressResolver resolve(*join);
+        emitCompressedColumnarOutputs(resolve, stored_columns, columns, output_access_indexes, type_name, selection);
+        return;
+    }
+
     /// Empty for joinGet, which emits through `buildJoinGetOutput` instead.
     chassert(!emit_gather.empty());
     EmitScratch scratch;
@@ -212,24 +222,210 @@ std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * bloc
     return {block->columns[column_index].get(), row_num};
 }
 
-void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
+namespace
 {
-    for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+
+/// (stored block, row number) pairs of one emit; a nullptr block is a default row.
+struct StoredRowPairs
+{
+    PaddedPODArray<const StoredBlock *> blocks;
+    PaddedPODArray<UInt32> row_numbers;
+};
+
+/// Appends `pairs` to the columnar outputs, reading each row from the (already resolved) block.
+void insertStoredRowPairs(
+    MutableColumns & to,
+    const StoredRowPairs & pairs,
+    size_t begin,
+    size_t end,
+    const NamesAndTypes & type_name,
+    const ColumnAccessIndexes & output_access_indexes)
+{
+    for (size_t dst_idx = 0; dst_idx < to.size(); ++dst_idx)
     {
         const auto & access_index = output_access_indexes[dst_idx];
-        chassert(access_index.type != ColumnAccessIndex::Type::RowStore);
+        if (access_index.type != ColumnAccessIndex::Type::Columns)
+            continue;
 
-        auto & col = columns[dst_idx];
-        col->reserve(col->size() + size_to_reserve);
-        for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
+        auto & col = to[dst_idx];
+        col->reserve(col->size() + (end - begin));
+        for (size_t i = begin; i < end; ++i)
         {
-            if (!*row_ref_i)
+            const StoredBlock * block = pairs.blocks[i];
+            if (!block)
             {
                 type_name[dst_idx].type->insertDefaultInto(*col);
                 continue;
             }
-            chassert(refWordIsInline(*row_ref_i));
-            const auto * block = stored_columns[refWordBlockNo(*row_ref_i)];
+            const auto [column_from_block, row_num] = getBlockColumnAndRow(block, pairs.row_numbers[i], access_index.index);
+            col->insertFrom(*column_from_block, row_num);
+        }
+    }
+}
+
+}
+
+/// Copies the rows of `selection` into the columnar output columns when the stored blocks are
+/// compressed (`enable_join_in_memory_compression`). The rows are processed grouped by stored
+/// block, not in row order: each distinct block is decompressed exactly once per call, and the
+/// decompressed working set is released between groups once it outgrows the resolver's budget -
+/// groups are disjoint, so nothing released is ever referenced again. Copying in row order instead
+/// would re-decompress on every block switch when the rows alternate between blocks that do not fit
+/// the budget together (e.g. a build side of a few compressed blocks tens of MiB each, probed by
+/// keys that jump between them), degrading the probe to O(rows * block size). When the rows already
+/// reference the blocks in group order (the common case: the build side is probed in insert order),
+/// they are copied into the output directly; otherwise they are copied group-major into scratch
+/// columns and restored to the original row order with a permutation.
+/// In-memory compression and the row store are mutually exclusive (see the HashJoin constructor), so
+/// only the columnar entries of `output_access_indexes` are filled here.
+void emitCompressedColumnarOutputs(
+    DecompressResolver & resolve,
+    const StoredBlock * const * stored_columns,
+    MutableColumns & columns,
+    const ColumnAccessIndexes & output_access_indexes,
+    const NamesAndTypes & type_name,
+    const RefWordSelection & selection)
+{
+    StoredRowPairs pairs;
+    pairs.blocks.reserve(selection.rows);
+    pairs.row_numbers.reserve(selection.rows);
+    for (const UInt64 * word = selection.begin; word != selection.end; ++word)
+    {
+        if (!*word)
+        {
+            pairs.blocks.push_back(nullptr);
+            pairs.row_numbers.push_back(0);
+            continue;
+        }
+        for (const UInt64 ref_word : refsOf(*word))
+        {
+            pairs.blocks.push_back(stored_columns[refWordBlockNo(ref_word)]);
+            pairs.row_numbers.push_back(static_cast<UInt32>(refWordRowNo(ref_word)));
+        }
+    }
+
+    const size_t num_rows = pairs.blocks.size();
+    if (num_rows == 0)
+        return;
+
+    /// Group ordinals in first-appearance order; non-matched rows (nullptr) form a group too.
+    std::unordered_map<const StoredBlock *, UInt32> ordinal_of_block;
+    PaddedPODArray<UInt32> ordinals(num_rows);
+    bool rows_are_in_group_order = true;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        const UInt32 next_ordinal = static_cast<UInt32>(ordinal_of_block.size());
+        const UInt32 ordinal = ordinal_of_block.try_emplace(pairs.blocks[i], next_ordinal).first->second;
+        rows_are_in_group_order = rows_are_in_group_order && (i == 0 || ordinal >= ordinals[i - 1]);
+        ordinals[i] = ordinal;
+    }
+    const size_t num_groups = ordinal_of_block.size();
+
+    /// Copies runs of consecutive equal stored pointers from `grouped` into `to`, resolving each
+    /// run's block once and releasing the working set between runs when it is over budget (safe:
+    /// the rows of the previous runs are fully copied out, and no block appears in two runs).
+    const auto copy_grouped_runs = [&](const StoredRowPairs & grouped, MutableColumns & to)
+    {
+        StoredRowPairs run;
+        size_t begin = 0;
+        while (begin < num_rows)
+        {
+            const StoredBlock * stored = grouped.blocks[begin];
+            size_t end = begin + 1;
+            while (end < num_rows && grouped.blocks[end] == stored)
+                ++end;
+            if (resolve.needReleaseBefore(stored))
+                resolve.release(/*forced_by_budget=*/ true);
+            const StoredBlock * block = resolve(stored);
+            run.blocks.assign(end - begin, block);
+            run.row_numbers.assign(grouped.row_numbers.begin() + begin, grouped.row_numbers.begin() + end);
+            insertStoredRowPairs(to, run, 0, end - begin, type_name, output_access_indexes);
+            begin = end;
+        }
+    };
+
+    if (rows_are_in_group_order || num_groups == 1)
+    {
+        copy_grouped_runs(pairs, columns);
+        return;
+    }
+
+    /// Counting sort of the rows by group, stable within a group: `rank[i]` is the position of
+    /// row `i` in the group-major order.
+    std::vector<size_t> group_begin(num_groups + 1, 0);
+    for (size_t i = 0; i < num_rows; ++i)
+        ++group_begin[ordinals[i] + 1];
+    for (size_t g = 1; g <= num_groups; ++g)
+        group_begin[g] += group_begin[g - 1];
+    IColumn::Permutation rank(num_rows);
+    {
+        std::vector<size_t> cursor(group_begin.begin(), group_begin.end() - 1);
+        for (size_t i = 0; i < num_rows; ++i)
+            rank[i] = cursor[ordinals[i]]++;
+    }
+
+    /// Scatter the pairs into group-major order. The stored pointers stay unresolved here:
+    /// resolution happens run by run in copy_grouped_runs, after the previous runs' rows are
+    /// already copied out, so a release between runs invalidates nothing that is still needed.
+    StoredRowPairs sorted;
+    sorted.blocks.resize(num_rows);
+    sorted.row_numbers.resize(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        sorted.blocks[rank[i]] = pairs.blocks[i];
+        sorted.row_numbers[rank[i]] = pairs.row_numbers[i];
+    }
+
+    MutableColumns scratch;
+    scratch.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        scratch.push_back(columns[i]->cloneEmpty());
+        if (output_access_indexes[i].type == ColumnAccessIndex::Type::Columns)
+            scratch.back()->reserve(num_rows);
+    }
+
+    copy_grouped_runs(sorted, scratch);
+
+    /// Restore the original row order and append to the output.
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (output_access_indexes[i].type != ColumnAccessIndex::Type::Columns)
+            continue;
+        auto restored = scratch[i]->permute(rank, 0);
+        columns[i]->insertRangeFrom(*restored, 0, num_rows);
+    }
+}
+
+void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
+{
+    /// Rows in the outer loop (not columns) so that all reads from a resolved block happen before
+    /// the next row: the decompressed working set can then be released as soon as it grows past
+    /// the resolver's budget. `joinGet` returns a single column, so the loop order does not matter
+    /// for cache efficiency.
+    DecompressResolver resolve(*join);
+    for (auto & col : columns)
+        col->reserve(col->size() + size_to_reserve);
+    for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
+    {
+        if (!*row_ref_i)
+        {
+            for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+                type_name[dst_idx].type->insertDefaultInto(*columns[dst_idx]);
+            continue;
+        }
+        chassert(refWordIsInline(*row_ref_i));
+        const StoredBlock * stored = stored_columns[refWordBlockNo(*row_ref_i)];
+        /// All previous rows are fully copied out, so the working set can be dropped right away.
+        if (resolve.needReleaseBefore(stored))
+            resolve.release(/*forced_by_budget=*/ true);
+        const auto * block = resolve(stored);
+        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+        {
+            const auto & access_index = output_access_indexes[dst_idx];
+            chassert(access_index.type != ColumnAccessIndex::Type::RowStore);
+
+            auto & col = columns[dst_idx];
             const auto [column_from_block, row_num] = getBlockColumnAndRow(block, refWordRowNo(*row_ref_i), access_index.index);
             if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block->isNullable())
                 nullable_col->insertFromNotNullable(*column_from_block, row_num);
@@ -264,6 +460,33 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     size_t row_idx = 0;
     size_t total_byte_size = 0;
     size_t left_idx = 0; /// position in non-replicated left block
+    DecompressResolver resolve(*join);
+
+    /// The bytes-limit accounting below needs each matched row's decompressed sizes, so with a
+    /// bytes limit compressed blocks are resolved inline, in row order (the resolver's thrash
+    /// fallback bounds the worst case). Without one, the words are collected unresolved and the
+    /// emit copies them grouped by block (emitCompressedColumnarOutputs).
+    const bool inline_resolve = resolve.active && bytes_limit != 0;
+
+    /// Emit the columnar words selected so far, reading compressed blocks through `resolve`.
+    auto emit_selected = [&]
+    {
+        if constexpr (from_columns)
+        {
+            /// Every selected word is inline or zero by construction, which is the flat shape.
+            const RefWordSelection selection{
+                .begin = selected_words.data(),
+                .end = selected_words.data() + selected_words.size(),
+                .rows = selected_words.size(),
+                .shape = RefWordShape::Flat};
+            if (resolve.active)
+                emitCompressedColumnarOutputs(resolve, stored_columns, columns, output_access_indexes, type_name, selection);
+            else
+                emitColumnarOutputs(columns, selection);
+            selected_words.clear();
+        }
+    };
+
     for (const UInt64 * row_ref_i = row_refs_begin; rows_limit > 0 && row_ref_i != row_refs_end; ++row_ref_i)
     {
         if (*row_ref_i)
@@ -285,7 +508,18 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                 [[maybe_unused]] const StoredBlock * block = nullptr;
                 [[maybe_unused]] const RowDataStore * row_store = nullptr;
                 if constexpr (from_columns)
+                {
                     block = stored_columns[block_no];
+                    if (inline_resolve)
+                    {
+                        if (resolve.needReleaseBefore(block))
+                        {
+                            emit_selected();
+                            resolve.release(/*forced_by_budget=*/ true);
+                        }
+                        block = resolve(block);
+                    }
+                }
                 if constexpr (from_row_store)
                     row_store = block_row_stores[block_no];
 
@@ -343,16 +577,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
         }
     }
 
-    if constexpr (from_columns)
-    {
-        /// Every selected word is inline or zero by construction, which is the flat shape.
-        const RefWordSelection selection{
-            .begin = selected_words.data(),
-            .end = selected_words.data() + selected_words.size(),
-            .rows = selected_words.size(),
-            .shape = RefWordShape::Flat};
-        emitColumnarOutputs(columns, selection);
-    }
+    emit_selected();
 
     fillRowStoreOutputColumns(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, type_name);
     return added_rows;

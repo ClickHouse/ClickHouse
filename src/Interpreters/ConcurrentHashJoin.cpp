@@ -236,6 +236,29 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    /// `max_bytes_in_join` is enforced on the global total, so the compression
+                    /// trigger in each slot must fire on the global total as well: with balanced
+                    /// keys, every slot stays under its own half-threshold while the global total
+                    /// already exceeds the limit, and the query would throw before any slot
+                    /// compresses. The `max_memory_usage` trigger has the same per-slot problem, so
+                    /// all slots share one query-memory baseline (see setSharedMemoryUsageBaseline).
+                    /// Only wired when compression is enabled, so the plain shrinking behavior with
+                    /// the setting off is unchanged.
+                    if (table_join_->enableJoinInMemoryCompression())
+                    {
+                        inner_hash_join->data->setLogicalJoinTotalBytesCounter(&global_total_bytes);
+                        /// The counter above lags by the delta of the insert that is currently running
+                        /// in this slot; tell the slot which part of its count is already in there so it
+                        /// can add the pending delta back (see setPublishedLogicalJoinLocalBytes).
+                        inner_hash_join->data->setPublishedLogicalJoinLocalBytes(&inner_hash_join->local_total_bytes);
+                        inner_hash_join->data->setSharedMemoryUsageBaseline(&shared_memory_usage_before_adding_blocks);
+                        /// When a `SpillingHashJoin` wraps us, arm the compression trigger at its
+                        /// spill threshold too, so a compressible build side compresses before the
+                        /// wrapper switches to `GraceHashJoin`. The trigger compares the logical
+                        /// join's total (via the counter above), matching the wrapper's own check.
+                        if (external_join_threshold_ > 0)
+                            inner_hash_join->data->setExternalJoinThresholdForCompression(external_join_threshold_);
+                    }
                     inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
                     global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
@@ -252,7 +275,15 @@ ConcurrentHashJoin::ConcurrentHashJoin(
             getData(hash_joins[i])->stored_columns_index = shared_index;
 
         /// Decision must be done on the materialized block.
-        use_zero_copy_right = useZeroCopyApproach(hash_joins[0]->data->materializeColumnsFromRightBlock(*right_sample_block));
+        /// With in-memory compression enabled, never scatter the build side zero-copy. The zero-copy
+        /// scatter shares one full block across all slots through per-slot row selectors, so compressing
+        /// stored blocks (on insert or in `shrinkStoredBlocksToFit`) would compress the whole shared block
+        /// once per slot, keeping `slots` compressed copies of every row while `StoredBlock::allocatedBytes`
+        /// counts only a selector-sized fraction of each copy. Materialized shards hold exactly their own
+        /// rows, so compression and byte accounting apply to disjoint data. Scattering by copying
+        /// partitions rows rather than duplicating them, so it does not increase the total stored size.
+        use_zero_copy_right = !table_join->enableJoinInMemoryCompression()
+            && useZeroCopyApproach(hash_joins[0]->data->materializeColumnsFromRightBlock(*right_sample_block));
     }
     catch (...)
     {
@@ -387,7 +418,36 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
+    {
+        /// Concurrent inserts compare the half-of-`max_bytes_in_join` compression trigger against a
+        /// global counter that compensates only their own slot's unpublished delta, so one wave of
+        /// inserts on different slots can jump the logical join from below the trigger straight over
+        /// the full limit with no slot compressing: each saw only its own delta. Before failing the
+        /// global check, give compression the same last chance `SpillingHashJoin` gives it before
+        /// spilling: one forced pass over all slots. One pass is enough - it also arms insert-time
+        /// compaction, so the blocks added later are compacted on insertion and a repeat pass could
+        /// not shrink the build side any further (the same one-shot rationale as
+        /// SpillingHashJoin::tryCompressStoredBlocksBeforeSwitch).
+        if (table_join->enableJoinInMemoryCompression()
+            && !table_join->sizeLimits().softCheck(post_join_total_rows, post_join_total_bytes))
+        {
+            {
+                /// The lock is taken even when the pass has already run: a thread that skipped a
+                /// pass still in progress would re-read the pre-compression totals below and fail
+                /// although the build side is about to shrink. Waiting orders the re-read after
+                /// the pass.
+                std::lock_guard lock(size_limit_compression_mutex);
+                if (!size_limit_compression_attempted)
+                {
+                    size_limit_compression_attempted = true;
+                    compressStoredBlocks();
+                }
+            }
+            post_join_total_rows = global_total_rows.load(std::memory_order_relaxed);
+            post_join_total_bytes = global_total_bytes.load(std::memory_order_relaxed);
+        }
         return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
     return true;
 }
 
@@ -873,7 +933,7 @@ void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<Internal
     hash_join->local_total_bytes = 0;
 }
 
-BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
+HashJoin::ReleasedJoinedBlocks ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 {
     chassert(slot_idx < hash_joins.size());
     auto & hash_join = hash_joins[slot_idx];
@@ -882,6 +942,26 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
         return {};
     resetTotalRowsAndBytesUnlocked(hash_join);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
+}
+
+size_t ConcurrentHashJoin::compressStoredBlocks()
+{
+    for (auto & hash_join : hash_joins)
+    {
+        std::lock_guard lock(hash_join->mutex);
+        if (!hash_join->data || !hash_join->data->getJoinedData())
+            continue;
+
+        size_t slot_total_bytes = hash_join->data->getTotalByteCount();
+        hash_join->data->shrinkStoredBlocksToFit(slot_total_bytes, /*force_optimize=*/true);
+        /// The forced pass does not arm insert-time compaction itself, so the blocks added after it
+        /// would be stored uncompressed and the next threshold crossing would spill with the tail of
+        /// the build side uncompacted - the same latch the plain `hash` path sets once its own
+        /// threshold fires.
+        hash_join->data->armCompactionForFurtherBlocks();
+        updateTotalRowsAndBytesUnlocked(hash_join);
+    }
+    return global_total_bytes.load(std::memory_order_relaxed);
 }
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
@@ -928,6 +1008,12 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             getData(hash_joins[0])->allocated_size += getData(hash_joins[i])->allocated_size;
             getData(hash_joins[0])->rows_to_join += getData(hash_joins[i])->rows_to_join;
             getData(hash_joins[0])->keys_to_join += getData(hash_joins[i])->keys_to_join;
+
+            /// The merged slot 0 now holds slot i's stored columns; if those were compressed
+            /// (`enable_join_in_memory_compression`), slot 0 must decompress them at probe time even
+            /// when slot 0 itself did not compress, so propagate the flag.
+            if (hash_joins[i]->data->haveCompressed())
+                hash_joins[0]->data->setHaveCompressed(true);
 
             getData(hash_joins[i])->allocated_size = 0;
             getData(hash_joins[i])->rows_to_join = 0;
