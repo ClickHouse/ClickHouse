@@ -53,9 +53,6 @@ function check_cancelled_prefix_read()
 
     # Each row carries many distinct JSON keys, so almost all of them land in shared data and the
     # per-granule structure prefix becomes large enough for a read of it to span a cancellation.
-    #
-    # The JSON is built inline rather than in a scalar subquery: the old analyzer does not resolve an
-    # outer column inside one, so the subquery form fails there with UNKNOWN_IDENTIFIER.
     ${CLICKHOUSE_CLIENT} -q "
         INSERT INTO t_${part_type} SELECT number, toJSONString(mapFromArrays(
             arrayMap(x -> concat('k', toString(number), '_', toString(x)), range(20000)),
@@ -89,16 +86,13 @@ function check_cancelled_prefix_read()
     # assertion below fails even though the guard is present and working.
     #
     # Hence the budget is a fraction of this fixture's own read cost, timed here rather than assumed.
-    # The scan is timed by the server via query_log rather than by clock reads around it: with the
-    # old analyzer a subquery whose result is unused is removed before execution, so any pair of
-    # in-query clock reads measures nothing and every budget collapses to the floor.
-    # The logging settings are pinned rather than assumed: without a finish row the fallback would
-    # be the floor again, which is the very thing being fixed, so a missing row prints 0 and the
-    # assertion below reports it instead of the run passing on an uncalibrated budget.
+    # The logging settings are pinned rather than assumed: without a finish row the budget would fall
+    # back to the floor, so a missing row prints 0 and the assertion below reports it instead of the
+    # run passing on an uncalibrated budget.
     # The row is taken whatever type it carries, because a scan stopped by the ceiling above is
     # logged as an exception and its duration is still the lower bound the budget needs.
     time_read_ms() {
-        local qid="04675-${part_type}-$$-${RANDOM}"
+        local qid="05274-${part_type}-$$-${RANDOM}"
         ${CLICKHOUSE_CLIENT} --query_id="${qid}" --log_queries=1 --log_queries_probability=1 \
             --log_queries_min_query_duration_ms=0 --log_queries_min_type='QUERY_START' \
             --max_execution_time "${read_ceiling}" -q "

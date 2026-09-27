@@ -460,6 +460,7 @@ struct CancellableQueryFixture
             "SELECT 1",
             /*normalized_query_hash_*/ 0,
             client_info,
+            /*user_id_*/ std::nullopt,
             /*priority_handle_*/ QueryPriorities::Handle{},
             /*query_slot_*/ nullptr,
             /*memory_reservation_*/ nullptr,
@@ -986,7 +987,7 @@ TEST(ObjectSerialization, LongPathNameObservesCancellation)
 ///
 /// The samples are taken from INSIDE the read, through the stream's per-chunk callback, so the string
 /// under test is alive and already grown when its pages are counted. Sampling after the read returned
-/// would be unsound: the string is a local of `deserializeStructureGranulePrefix`, so the
+/// would be unsound: the string is a local of `deserializeChunkStructurePrefix`, so the
 /// `CANNOT_READ_ALL_DATA` throw destroys it on the way out, and whether the freed pages are still
 /// resident at that point is an allocator-decay question rather than a property of this code.
 /// `MemoryStatisticsOS::get` reads current `/proc/self/statm` and has no peak field, hence the running

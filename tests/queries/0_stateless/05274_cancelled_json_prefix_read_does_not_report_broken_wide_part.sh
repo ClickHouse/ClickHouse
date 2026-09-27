@@ -11,7 +11,7 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-# shellcheck source=./04675_cancelled_json_prefix_read_does_not_report_broken_part.lib
-. "$CUR_DIR"/04675_cancelled_json_prefix_read_does_not_report_broken_part.lib
+# shellcheck source=./05274_cancelled_json_prefix_read_does_not_report_broken_part.lib
+. "$CUR_DIR"/05274_cancelled_json_prefix_read_does_not_report_broken_part.lib
 
 check_cancelled_prefix_read wide
