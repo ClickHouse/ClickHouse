@@ -202,6 +202,9 @@ protected:
         return !reserved_param_names.contains(name);
     }
 
+    /// Adds the settings which the handler derives from its own parameters.
+    virtual void addSettingsFromParams(SettingsChanges & /* settings_changes */) const {}
+
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
@@ -222,6 +225,8 @@ protected:
                 settings_changes.push_back({key, value});
             }
         }
+
+        addSettingsFromParams(settings_changes);
 
         context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         context->applySettingsChanges(settings_changes);
@@ -467,10 +472,23 @@ public:
         if (name.empty())
             return false;
 
+        /// Other Prometheus-compatible servers accept these; `nocache` and `partial_response` are mapped in addSettingsFromParams.
+        static const NameSet ignored_param_names{"nocache", "trace", "round_digits", "partial_response", "dedup"};
+        if (ignored_param_names.contains(name) || unsupported_param_names.contains(name))
+            return false;
+
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
         static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    void addSettingsFromParams(SettingsChanges & settings_changes) const override
+    {
+        if (params->getParsed<bool>("nocache", false))
+            settings_changes.push_back({"use_query_cache", false});
+        if (!params->getParsed<bool>("partial_response", true))
+            settings_changes.push_back({"skip_unavailable_shards", false});
     }
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
@@ -500,6 +518,10 @@ public:
 
         try
         {
+            for (const auto & name : unsupported_param_names)
+                if (params->has(name))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The '{}' parameter is not supported", name);
+
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
@@ -647,6 +669,9 @@ public:
     }
 
 private:
+    /// These filters limit which series a client can see, so they are rejected and never ignored.
+    static inline const NameSet unsupported_param_names{"extra_label", "extra_filters", "extra_filters[]"};
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
