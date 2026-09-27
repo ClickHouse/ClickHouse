@@ -6071,6 +6071,9 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
         {"26.3", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."}) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
+
+Pair this with an explicit `max_insert_threads` setting: the optimization caps the `SELECT` to
+`max_insert_threads` reading threads, which changes how many blocks the `SELECT` produces.
 )", 0, \
         {"24.7", true, false, "The optimization does not make sense in many cases."}) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
@@ -7939,6 +7942,10 @@ If disabled and the INSERT query contains inline data, the server will not send 
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 )", 0, \
         {"26.2", false, true, "Enable async inserts by default."}) \
+    DECLARE(Bool, async_insert_select_as_async_insert, true, R"(
+Whether a user-initiated `INSERT ... SELECT` may use the asynchronous insert queue when `async_insert` is enabled and the query is eligible (a single small block into a `MergeTree`-family destination with no dependent views). When disabled, `INSERT ... SELECT` always runs synchronously regardless of `async_insert`. Internal inserts (refreshable materialized view, `POPULATE`, `CREATE TABLE ... AS SELECT`) are always synchronous and ignore this setting.
+)", 0, \
+        {"26.10", false, true, "Enable async inserts for `INSERT ... SELECT` queries by default."}) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
 If true wait for processing of asynchronous insertion.
 )", 0) \
@@ -9286,9 +9293,9 @@ Cloud default value: `1`.
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Obsolete since v26.9: the analyzer cannot be disabled anymore.
 
-The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. In v26.10 the query analysis it used to switch to was removed. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
+The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 this setting was frozen at its only supported value, `1`, and the `compatibility` setting no longer reverts it. In v26.10 the query analysis it used to switch to was removed. For backward compatibility, setting it to `0` is accepted and replaced with `1`, so queries, session settings, settings profiles and client configurations that still set `enable_analyzer = 0` keep working, with the analyzer. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
 )", IMPORTANT | SettingsTierType::OBSOLETE, enable_analyzer, \
-        {"26.9", true, true, "The setting is obsolete: the analyzer is mandatory and the old query analysis is no longer supported. Disabling it is refused instead of being ignored, and `compatibility` with a version below 24.3 no longer reverts it."}, \
+        {"26.9", true, true, "The setting is obsolete: the analyzer is mandatory and the old query analysis is no longer supported. A change that would disable it is accepted and replaced with `1`, and `compatibility` with a version below 24.3 no longer reverts it."}, \
         {"24.8", 1, 1, "Added the alias `enable_analyzer`."}, \
         {"24.3", false, true, "Enable analyzer and planner by default."}) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
