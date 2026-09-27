@@ -195,12 +195,12 @@ private:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                /// One table must not fail the scan. An engine reads its settings from wherever it keeps them,
-                /// and some of those are remote - `StorageObjectStorageQueue` rebuilds them from Keeper - so a
-                /// single table whose store is unreachable would otherwise make this table unreadable for the
-                /// whole server. `system.tables` degrades per row for the same reason. The table is skipped
-                /// rather than reported with empty settings, because no row is honest about settings that could
-                /// not be read; the exception is logged, which is where the error surfaces.
+                /// One table must not fail the scan. An engine reads its settings from wherever it keeps them -
+                /// its stored definition on disk, a remote catalog - so a single table whose store cannot be
+                /// read would otherwise make this table unreadable for the whole server. `system.tables`
+                /// degrades per row for the same reason. The table is skipped rather than reported with empty
+                /// settings, because no row is honest about settings that could not be read; the exception is
+                /// logged, which is where the error surfaces.
                 try
                 {
                     if (const auto table = resolveTable(tables_it.table(), table_name))
