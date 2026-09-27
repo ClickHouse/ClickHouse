@@ -619,16 +619,20 @@ size_t readGranulePrefix(
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.data_part_type = MergeTreeDataPartType::Compact;
     settings.use_specialized_prefixes_and_suffixes_substreams = true;
-    /// The trailing copy-sizes / indexes / values streams are read after the prefix; an empty buffer
-    /// for each is enough to reach the end of the read cleanly (the granule holds no rows of data).
+    /// The prefix declares one row, so the copy-sizes stream holds that row's size, 0 (one `UInt64`
+    /// per row); with no entries to read, an empty buffer serves the indexes and values streams.
     static const std::string empty;
+    static const std::string one_empty_row(sizeof(UInt64), '\0');
     ReadBufferFromString empty_stream(empty);
+    ReadBufferFromString sizes_stream(one_empty_row);
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         if (path.empty())
             return nullptr;
         if (path.back().type == ISerialization::Substream::ObjectSharedDataStructurePrefix)
             return &structure_prefix_stream;
+        if (path.back().type == ISerialization::Substream::ObjectSharedDataCopySizes)
+            return &sizes_stream;
         return &empty_stream;
     };
     settings.seek_stream_to_current_mark_callback = [](const ISerialization::SubstreamPath &) {};
