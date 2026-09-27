@@ -1,8 +1,10 @@
 import copy
-import difflib
 import json
 import os
 import re
+import subprocess
+import tempfile
+from pathlib import Path
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -115,9 +117,9 @@ def fetch_file_at(repo_name, path, ref):
 
 
 def fetch_declaration_diffs(repo_name, pr_number, paths):
-    """`{path: (patch, head_file_lines)}` for the `paths` changed by `pr_number`, the patch diffed here from
-    the merge-base and head contents of each file. GitHub's per-file `.patch` is not used: it is omitted for
-    large diffs, and this check must not be skipped when a declaration file changed.
+    """`{path: (patch, head_file_lines)}` for the `paths` changed by `pr_number`, the patch diffed here by
+    `git diff` from the merge-base and head contents of each file. GitHub's per-file `.patch` is not used: it
+    is omitted for large diffs, and this check must not be skipped when a declaration file changed.
 
     Diffing from the merge base, as `git diff <base>...<head>` does, keeps changes that the base made on its
     own from being reported as reversions made by the PR."""
@@ -150,11 +152,27 @@ def fetch_declaration_diffs(repo_name, pr_number, paths):
     for path in paths:
         base_lines = fetch_file_at(repo_name, path, merge_base)
         head_lines = fetch_file_at(repo_name, path, refs["head"])
-        patch = "\n".join(
-            difflib.unified_diff(base_lines, head_lines, path, path, n=3, lineterm="")
-        )
-        files[path] = (patch, head_lines)
+        files[path] = (git_diff(base_lines, head_lines), head_lines)
     return files
+
+
+def git_diff(base_lines, head_lines):
+    """Unified diff of two line lists by `git diff`, so that CI parses the very hunks the local runner
+    (`python3 -m ci.jobs.scripts.settings_history`) parses: `difflib` aligns repeated record blocks
+    differently and then attributes a changed record to the wrong setting."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base, head = Path(tmp, "base"), Path(tmp, "head")
+        base.write_text("\n".join(base_lines) + "\n", encoding="utf-8")
+        head.write_text("\n".join(head_lines) + "\n", encoding="utf-8")
+        result = subprocess.run(
+            ["git", "diff", "--no-index", "--no-ext-diff", "-U3", str(base), str(head)],
+            capture_output=True,
+            text=True,
+        )
+    # `--no-index` exits 1 when the files differ; anything above is an error.
+    if result.returncode > 1:
+        raise RuntimeError(f"git diff failed ({result.returncode}): {result.stderr.strip()}")
+    return result.stdout
 
 
 _FETCH_ERROR_MESSAGE_LIMIT = 500
