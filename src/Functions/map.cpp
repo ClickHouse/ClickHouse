@@ -465,7 +465,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             UInt8 found = 0;
-            for (size_t i = offsets[row - 1]; !found && i < offsets[row]; ++i)
+            for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; !found && i < offsets[row]; ++i)
                 found = static_cast<UInt8>(key_matches[i] && value_matches[i]);
             result_data[row] = found;
         }
