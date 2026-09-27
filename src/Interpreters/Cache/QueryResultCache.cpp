@@ -407,7 +407,7 @@ public:
                 IdentifierName trimmed_parts(std::vector<IdentifierPart>(identifier->name_parts.begin() + 1, identifier->name_parts.end()));
                 auto new_identifier = make_intrusive<ASTIdentifier>(std::move(trimmed_parts));
                 /// Keep the alias quote: it is part of the hash under `standard` name matching.
-                new_identifier->setAlias(identifier->alias, identifier->alias_quote);
+                new_identifier->setAlias(identifier->alias, identifier->getAliasQuote());
                 ast = std::move(new_identifier);
             }
         }
@@ -456,10 +456,10 @@ void updateHashWithDoubleQuotes(const IAST & ast, SipHash & hash, size_t & node_
                 mix(i);
     }
 
-    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&ast); with_alias && is_double_quoted(with_alias->alias_quote))
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&ast); with_alias && is_double_quoted(with_alias->getAliasQuote()))
         mix(alias_tag);
 
-    if (const auto * function = ast.as<ASTFunction>(); function && is_double_quoted(function->window_name_quote))
+    if (const auto * function = ast.as<ASTFunction>(); function && is_double_quoted(function->getWindowNameQuote()))
         mix(name_tag);
     else if (const auto * with_element = ast.as<ASTWithElement>(); with_element && is_double_quoted(with_element->name_quote))
         mix(name_tag);

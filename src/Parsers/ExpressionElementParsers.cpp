@@ -704,7 +704,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
             function.window_name = getIdentifierName(window_name_ast);
-            function.window_name_quote = identifierPartQuoteFromAST(window_name_ast);
+            function.setWindowNameQuote(identifierPartQuoteFromAST(window_name_ast));
             return true;
         }
 
@@ -2728,7 +2728,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
-            ast_with_alias->alias_quote = identifierPartQuoteFromAST(alias_node);
+            ast_with_alias->setAliasQuote(identifierPartQuoteFromAST(alias_node));
 
             // the alias is parametrised and will be resolved later when the query context is known
             if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())

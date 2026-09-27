@@ -745,7 +745,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                     if (function->window_definition)
                         function_node->getWindowNode() = buildWindow(function->window_definition, context);
                     else
-                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{function->window_name, function->window_name_quote}}));
+                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{function->window_name, function->getWindowNameQuote()}}));
                 }
 
                 result = std::move(function_node);
@@ -999,7 +999,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 else
                     table_identifier_node = std::make_shared<IdentifierNode>(table_identifier_typed.name_parts);
 
-                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias(), table_identifier_typed.alias_quote);
+                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias(), table_identifier_typed.getAliasQuote());
                 table_identifier_node->setOriginalAST(table_element.table_expression);
 
                 table_expressions.push_back(std::move(table_identifier_node));
@@ -1018,7 +1018,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     CommonTableExpressionData{.cte_name = subquery_expression.cte_name},
                     select_query.aliases(),
                     context);
-                node->setAlias(subquery_expression.tryGetAlias(), subquery_expression.alias_quote);
+                node->setAlias(subquery_expression.tryGetAlias(), subquery_expression.getAliasQuote());
                 node->setOriginalAST(select_with_union_query);
 
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax

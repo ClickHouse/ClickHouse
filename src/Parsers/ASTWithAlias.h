@@ -17,10 +17,12 @@ protected:
     struct ASTWithAliasFlags
     {
         using ParentFlags = void;
-        static constexpr UInt32 RESERVED_BITS = 1;
+        static constexpr UInt32 RESERVED_BITS = 3;
 
         UInt32 prefer_alias_to_column_name : 1;
-        UInt32 unused : 31;
+        /// `IdentifierPartQuote` of the alias as written in the query. Kept in the flags, so it does not grow every node.
+        UInt32 alias_quote : 2;
+        UInt32 unused : 29;
     };
 
 public:
@@ -33,7 +35,8 @@ public:
     String alias;
 
     /// Quoting of the alias as written in the query.
-    IdentifierPartQuote alias_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote getAliasQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTWithAliasFlags>().alias_quote); }
+    void setAliasQuote(IdentifierPartQuote quote) { flags<ASTWithAliasFlags>().alias_quote = static_cast<UInt32>(quote); }
 
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
@@ -54,13 +57,13 @@ public:
     void setAlias(const String & to) override
     {
         alias = to;
-        alias_quote = IdentifierPartQuote::Unquoted;
+        setAliasQuote(IdentifierPartQuote::Unquoted);
     }
 
     void setAlias(const String & to, IdentifierPartQuote quote)
     {
         alias = to;
-        alias_quote = quote;
+        setAliasQuote(quote);
     }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
@@ -85,7 +88,7 @@ inline ASTPtr setAlias(ASTPtr ast, const String & alias)
 inline IdentifierPartQuote tryGetAliasQuote(const IAST * ast)
 {
     if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(ast))
-        return ast_with_alias->alias_quote;
+        return ast_with_alias->getAliasQuote();
     return IdentifierPartQuote::Unquoted;
 }
 
