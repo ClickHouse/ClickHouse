@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -953,7 +954,8 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     return {nullptr, object_storage_path};
 }
 
-static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, DistributedQueryCancellationPtr cancellation)
+static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context,
+    DistributedQueryCancellationPtr cancellation, UInt64 task_max_threads)
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
@@ -962,6 +964,8 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
+    if (task_max_threads < task_context->getSettingsRef()[Setting::max_threads])
+        task_context->setSetting("max_threads", task_max_threads);
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
@@ -1009,12 +1013,12 @@ protected:
         return new_context;
     }
 
-    std::future<void> startTask(const DistributedQueryTaskDescription & task_description, VectorWithMemoryTracking<std::thread> & threads)
+    std::future<void> startTask(const DistributedQueryTaskDescription & task_description, UInt64 task_max_threads, VectorWithMemoryTracking<std::thread> & threads)
     {
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup]() mutable
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, task_max_threads, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup]() mutable
         {
             ThreadStatus thread_status;
             /// The task attaches its own query context and thread group inside executeTask (matching
@@ -1022,7 +1026,7 @@ protected:
 
             try
             {
-                executeTask(query_id, task_description, ctx, cancellation);
+                executeTask(query_id, task_description, ctx, cancellation, task_max_threads);
                 promise.set_value();
             }
             catch (...)
@@ -1048,10 +1052,14 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
+        /// A stage's tasks run in this process at the same time, so they share the query's threads.
+        const UInt64 task_max_threads = std::max<UInt64>(
+            1, context->getSettingsRef()[Setting::max_threads] / std::max<size_t>(1, stage.tasks.size()));
+
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
-            started_tasks.emplace_back(startTask(task_description, started_threads).share());
+            started_tasks.emplace_back(startTask(task_description, task_max_threads, started_threads).share());
         }
 
         stage_tasks[stage_name] = std::move(started_tasks);
