@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- One query per check in the fallback decision point (`hasPlanUnsupportedStepForDistributed`):
 -- with `distributed_plan_fallback_to_local_execution = 1` (the default) each returns correct
 -- results while silently running locally; with the setting disabled the same query throws.
