@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
@@ -31,6 +32,11 @@
 
 #include <chrono>
 
+
+namespace ProfileEvents
+{
+    extern const Event PrometheusRemoteWriteDroppedExemplars;
+}
 
 namespace DB
 {
@@ -328,12 +334,19 @@ void PrometheusRemoteWriteProtocol::write(
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
     insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
 
+    size_t num_exemplars = 0;
+    for (const auto & element : time_series)
+        num_exemplars += element.exemplars_size();
+    if (num_exemplars)
+        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedExemplars, num_exemplars);
+
     LOG_TRACE(
         log,
-        "{}: {} time series and {} metrics metadata written",
+        "{}: {} time series and {} metrics metadata written, {} exemplars dropped",
         storage_id.getNameForLogs(),
         time_series.size(),
-        metrics_metadata.size());
+        metrics_metadata.size(),
+        num_exemplars);
 }
 
 }
