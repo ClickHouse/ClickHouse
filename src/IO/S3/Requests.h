@@ -4,11 +4,13 @@
 
 #if USE_AWS_S3
 
+#include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 #include <IO/S3/ChecksumAlgorithm.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
+#include <aws/core/http/HttpRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
@@ -40,6 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 }
+
+#include <string>
 
 namespace DB::S3
 {
@@ -111,6 +115,16 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
     }
 }
 };
+
+/// Replace the significant `x-amz-` headers with their `x-goog-` analogue; GCS ignores the
+/// `x-amz-` spelling silently.
+Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
+
+void translateHeadersToGCS(Aws::Http::HttpRequest & request);
+
+/// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
+/// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
+std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
 
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
@@ -195,11 +209,7 @@ protected:
     RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::MD5;
 };
 
-class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
-{
-public:
-    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
-};
+using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
 
 class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
 {
@@ -220,14 +230,33 @@ public:
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
+/// Custom object metadata key under which a writer stamps the id identifying itself.
+static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
+
+/// 22 characters drawn from `a`-`z`, about 103 bits. It only has to be unique among the writers
+/// racing for one key.
+static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
+
+/// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
+/// object carries it. Left empty, the client asks nothing.
+class RequestWithIdempotencyId
+{
+public:
+    void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
+    const Aws::String & getIdempotencyId() const { return idempotency_id; }
+
+private:
+    Aws::String idempotency_id;
+};
+
+class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId
 {
 public:
     bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
+class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>, public RequestWithIdempotencyId
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;

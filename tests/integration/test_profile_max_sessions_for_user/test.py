@@ -9,7 +9,6 @@ import pymysql.connections
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_logs_contain_with_retry
 from helpers.uclient import client, prompt
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -20,6 +19,15 @@ import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate 
 import clickhouse_grpc_pb2_grpc
 
 MAX_SESSIONS_FOR_USER = 2
+SESSIONS_ESTABLISHED_TIMEOUT = 180
+# The refusal arrives while the session is created, so the probe below cannot need more
+# time than establishing a session does.
+OVER_LIMIT_TIMEOUT = SESSIONS_ESTABLISHED_TIMEOUT
+# Per query for this test's own bookkeeping. Without it the client helper waits
+# DEFAULT_QUERY_TIMEOUT = 600s, which would make the budgets above advisory.
+CONTROL_QUERY_TIMEOUT = 30
+OVER_LIMIT_QUERY = "SELECT 1"
+SESSION_REFUSED_ERROR = "overflown session count"
 POSTGRES_SERVER_PORT = 5433
 MYSQL_SERVER_PORT = 9001
 GRPC_PORT = 9100
@@ -64,7 +72,7 @@ def grpc_create_insecure_channel():
     return channel
 
 
-def grpc_query(query_text, channel, session_id_):
+def grpc_query(query_text, channel, session_id_, timeout=None):
     query_info = clickhouse_grpc_pb2.QueryInfo(
         query=query_text,
         session_id=session_id_,
@@ -73,40 +81,122 @@ def grpc_query(query_text, channel, session_id_):
     )
 
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
-    result = stub.ExecuteQuery(query_info)
+    result = stub.ExecuteQuery(query_info, timeout=timeout)
     if result and result.HasField("exception"):
         raise Exception(result.exception.display_text)
     return result.output.decode(DEFAULT_ENCODING)
 
 
-def threaded_run_test(sessions):
-    instance.rotate_logs()
-    thread_list = []
-    for i in range(len(sessions)):
-        thread = ThreadWithException(target=sessions[i], args=(i,))
-        thread_list.append(thread)
-        thread.start()
-
-    if len(sessions) > MAX_SESSIONS_FOR_USER:
-        # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
-        assert_logs_contain_with_retry(
-            instance, "overflown session count", retry_count=120
+def wait_for_user_queries(count, threads, deadline):
+    # A running query implies a tracked session for that user, because the session is
+    # created before the query. The converse does not hold, so this can prove sessions
+    # present, never absent.
+    started = time.monotonic()
+    running = 0
+    while True:
+        # A whole CONTROL_QUERY_TIMEOUT per poll, not the rest of the budget: a poll cut
+        # short by the deadline would report the client instead of the sessions. The barrier
+        # can therefore overrun SESSIONS_ESTABLISHED_TIMEOUT by up to one poll.
+        running = int(
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE user = '{TEST_USER}'",
+                timeout=CONTROL_QUERY_TIMEOUT,
+            ).strip()
         )
+        if running >= count:
+            return
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
 
+    errors = [thread.exception for thread in threads if thread.exception]
+    pytest.fail(
+        f"{running} of {count} sessions for {TEST_USER} were established in "
+        f"{time.monotonic() - started:.0f}s; session errors: {errors}"
+    )
+
+
+def reclaim_sessions(thread_list):
     # A single KILL snapshots system.processes once. An accepted session whose
     # query has not registered yet (slow under sanitizers) survives and its
     # thread blocks forever. Re-issue KILL until every worker thread has exited.
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
+        instance.query(
+            f"KILL QUERY WHERE user='{TEST_USER}' SYNC",
+            timeout=CONTROL_QUERY_TIMEOUT,
+        )
         for thread in thread_list:
             thread.join(timeout=1)
         if not any(thread.is_alive() for thread in thread_list):
-            break
+            return
 
     # Bounded: never fall through to an unbounded join (would hang to the pytest timeout).
     if any(thread.is_alive() for thread in thread_list):
         pytest.fail("Timed out waiting for session threads to finish after KILL QUERY")
+
+
+def occupy_every_session(deadline):
+    # A client that has finished its query still holds a tracked session, so this
+    # saturates the limit while leaving `system.processes` empty.
+    while True:
+        conns = []
+        try:
+            for _ in range(MAX_SESSIONS_FOR_USER):
+                conns.append(
+                    pymysql.connections.Connection(
+                        host=instance.ip_address,
+                        user=TEST_USER,
+                        password=TEST_PASSWORD,
+                        database="default",
+                        port=MYSQL_SERVER_PORT,
+                        read_timeout=CONTROL_QUERY_TIMEOUT,
+                        write_timeout=CONTROL_QUERY_TIMEOUT,
+                    )
+                )
+                conns[-1].cursor().execute("SELECT 1")
+            return conns
+        except Exception as ex:
+            for conn in conns:
+                conn.close()
+            # A refusal here is the previous call's sessions still being tracked, the
+            # transient state SessionHolder retries through.
+            if SESSION_REFUSED_ERROR not in str(ex) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
+def threaded_run_test(sessions):
+    holders = sessions[:MAX_SESSIONS_FOR_USER]
+    over_limit = sessions[MAX_SESSIONS_FOR_USER:]
+
+    # One deadline for the whole establishment phase, so a holder stops retrying exactly
+    # when the barrier stops waiting for it.
+    deadline = time.monotonic() + SESSIONS_ESTABLISHED_TIMEOUT
+    thread_list = [
+        SessionHolder(session, i, deadline) for i, session in enumerate(holders)
+    ]
+    for thread in thread_list:
+        thread.start()
+
+    try:
+        wait_for_user_queries(len(holders), thread_list, deadline)
+
+        # Not a thread: `join(timeout=...)` returns while a blocked client call keeps
+        # running into the next test, holding its session. The deadline goes to the client
+        # instead; libpq's bounds the connection phase only, which is where a refusal
+        # arrives (`ErrorResponse` precedes `ReadyForQuery`).
+        for i, session in enumerate(over_limit, start=len(holders)):
+            try:
+                session(i, OVER_LIMIT_QUERY, OVER_LIMIT_TIMEOUT)
+            except Exception as ex:
+                assert SESSION_REFUSED_ERROR in str(
+                    ex
+                ), f"session {i} over the limit failed for another reason: {ex!r}"
+            else:
+                pytest.fail(f"session {i} over the limit was not refused")
+    finally:
+        reclaim_sessions(thread_list)
 
 
 @pytest.fixture(scope="module")
@@ -122,62 +212,103 @@ def started_cluster():
         cluster.shutdown()
 
 
-class ThreadWithException(threading.Thread):
+class SessionHolder(threading.Thread):
+    # A class attribute so the main thread can read it before `run` starts, and text
+    # rather than the exception object: that would retain its traceback, and with it the
+    # frame owning the protocol client, so the session would outlive the thread and be
+    # counted against the next test.
+    exception = None
+
+    def __init__(self, session, id, deadline):
+        super().__init__()
+        self.session = session
+        self.id = id
+        self.deadline = deadline
+
     def run(self):
-        try:
-            super().run()
-        except:
-            pass
+        while True:
+            try:
+                self.session(self.id)
+                return
+            except Exception as ex:
+                self.exception = f"{type(ex).__name__}: {ex}"
+                # A refused holder created no session, so the limit is saturated by
+                # sessions this call did not open: a slot is freed when the server
+                # destroys the connection, which the previous call's KILL QUERY does not
+                # wait for. That is transient, so keep trying for the whole deadline.
+                if SESSION_REFUSED_ERROR not in str(ex):
+                    return
+                if time.monotonic() >= self.deadline:
+                    return
+                time.sleep(0.5)
 
 
-def postgres_session(id):
+def postgres_session(id, query=None, timeout=None):
     ch = py_psql.connect(
         host=instance.ip_address,
         port=POSTGRES_SERVER_PORT,
         user=TEST_USER,
         password=TEST_PASSWORD,
         database="default",
+        # libpq bounds the whole connection phase, which is where the refusal arrives.
+        connect_timeout=timeout,
     )
     cur = ch.cursor()
-    cur.execute(get_query("postgres_session", id))
+    cur.execute(query or get_query("postgres_session", id))
     cur.fetchall()
 
 
-def mysql_session(id):
+def mysql_session(id, query=None, timeout=None):
     client = pymysql.connections.Connection(
         host=instance.ip_address,
         user=TEST_USER,
         password=TEST_PASSWORD,
         database="default",
         port=MYSQL_SERVER_PORT,
+        # Not `connect_timeout`: pymysql clears the socket timeout before the handshake,
+        # and the refusal arrives in the handshake.
+        read_timeout=timeout,
+        write_timeout=timeout,
     )
     cursor = client.cursor(pymysql.cursors.DictCursor)
-    cursor.execute(get_query("mysql_session", id))
+    cursor.execute(query or get_query("mysql_session", id))
     cursor.fetchall()
 
 
-def tcp_session(id):
-    instance.query(get_query("tcp_session", id), user=TEST_USER, password=TEST_PASSWORD)
-
-
-def http_session(id):
-    instance.http_query(
-        get_query("http_session", id), user=TEST_USER, password=TEST_PASSWORD
+def tcp_session(id, query=None, timeout=None):
+    instance.query(
+        query or get_query("tcp_session", id),
+        user=TEST_USER,
+        password=TEST_PASSWORD,
+        timeout=timeout,
     )
 
 
-def http_named_session(id):
+def http_session(id, query=None, timeout=None):
     instance.http_query(
-        get_query("http_named_session", id),
+        query or get_query("http_session", id),
+        user=TEST_USER,
+        password=TEST_PASSWORD,
+        timeout=timeout,
+    )
+
+
+def http_named_session(id, query=None, timeout=None):
+    instance.http_query(
+        query or get_query("http_named_session", id),
         user=TEST_USER,
         password=TEST_PASSWORD,
         params={"session_id": id},
+        timeout=timeout,
     )
 
 
-def grpc_session(id):
+def grpc_session(id, query=None, timeout=None):
     grpc_query(
-        get_query("grpc_session", id), grpc_create_insecure_channel(), f"session_{id}"
+        query or get_query("grpc_session", id),
+        grpc_create_insecure_channel(),
+        f"session_{id}",
+        timeout=timeout,
     )
 
 
@@ -212,6 +343,31 @@ def test_profile_max_sessions_for_user_tcp_and_others(started_cluster):
     threaded_run_test([tcp_session, postgres_session, postgres_session])
     threaded_run_test([tcp_session, http_session, postgres_session])
     threaded_run_test([tcp_session, postgres_session, http_session])
+
+
+def test_profile_max_sessions_for_user_holder_retries_after_refusal(started_cluster):
+    deadline = time.monotonic() + SESSIONS_ESTABLISHED_TIMEOUT
+    occupied = occupy_every_session(deadline)
+    holder = SessionHolder(tcp_session, 0, deadline)
+    holder.start()
+    try:
+        # Free the slots only once the holder has actually been refused, so the holder
+        # has to retry to reach the barrier. Waiting for a duration instead would let
+        # this pass with no retry at all.
+        while not holder.exception:
+            assert holder.is_alive(), "the holder ended without being refused"
+            assert time.monotonic() < deadline, "the holder was never refused"
+            time.sleep(0.1)
+        assert SESSION_REFUSED_ERROR in holder.exception, holder.exception
+
+        for conn in occupied:
+            conn.close()
+        occupied = []
+        wait_for_user_queries(1, [holder], deadline)
+    finally:
+        for conn in occupied:
+            conn.close()
+        reclaim_sessions([holder])
 
 
 def test_profile_max_sessions_for_user_setting_in_query(started_cluster):

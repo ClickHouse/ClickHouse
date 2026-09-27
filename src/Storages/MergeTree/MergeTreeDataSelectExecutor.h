@@ -215,6 +215,19 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
+    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
+    static RangesInDataParts filterParts(
+        const RangesInDataParts & parts,
+        const ReadFromMergeTree::Indexes & indexes,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
@@ -226,7 +239,8 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats);
+        ReadFromMergeTree::IndexStats & index_stats,
+        bool check_index_usage = true);
 
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.

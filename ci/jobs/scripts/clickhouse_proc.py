@@ -371,6 +371,16 @@ class ClickHouseProc:
     def stop_log_exports():
         return log_export.stop()
 
+    def _set_pid(self, replica_num, pid):
+        if replica_num == 1:
+            self.pid_1 = pid
+        elif replica_num == 2:
+            self.pid_2 = pid
+        elif replica_num == 0:
+            self.pid_0 = pid
+        else:
+            assert False
+
     def start(self, replica_num=0):
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
@@ -394,6 +404,9 @@ class ClickHouseProc:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
+        # The cached pid mirrors this file and must not outlive it: `stop_server`
+        # keys its pid-less kill path off the cached value.
+        self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
         Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
@@ -446,14 +459,7 @@ class ClickHouseProc:
                     continue
                 started = True
                 print(f"Got pid from fs [{pid}]")
-                if replica_num == 1:
-                    self.pid_1 = int(pid)
-                elif replica_num == 2:
-                    self.pid_2 = int(pid)
-                elif replica_num == 0:
-                    self.pid_0 = int(pid)
-                else:
-                    assert False
+                self._set_pid(replica_num, int(pid))
                 break
         except Exception:
             pass
@@ -613,7 +619,12 @@ class ClickHouseProc:
         )
 
     def prepare_stateful_data(
-        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None
+        self,
+        with_s3_storage,
+        is_db_replicated,
+        build_type=None,
+        step_timeout=None,
+        stop_thread_fuzzer=False,
     ):
         """`step_timeout` bounds each statement, in seconds; None means unbounded."""
         self.stateful_setup_error = None
@@ -646,6 +657,10 @@ set -o pipefail
 trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+fi
 
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
@@ -684,10 +699,15 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
+fi
 """
         command = (
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
+            f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
@@ -835,6 +855,14 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                     f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
                 )
                 proc.send_signal(signal.SIGTRAP)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            elif proc:
+                # `proc` is the `sh -c` wrapper, not the server, so kill by the
+                # unique `--pid-file` token, then reap the wrapper.
+                Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
@@ -1197,10 +1225,20 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                 "caller id: None:DistribCache",
             )
         )
+        # The matches go through a file rather than a pipe into `grep -q .`: `grep -q` exits at
+        # its first line, so `tee` takes SIGPIPE and the tail is lost, and the appended
+        # lifecycle IS that tail.
+        no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
             f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
+            f"| head -n100 > {no_such_key_matches}; "
+            f"python3 {repo_dir}/ci/jobs/scripts/s3_key_lifecycle.py {no_such_key_matches} {self.log_dir} "
+            f">> {no_such_key_matches} "
+            f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
+            f">> {no_such_key_matches}; "
+            f"cat {no_such_key_matches} >&2; "
+            f"[ -f {no_such_key_matches} ] && ! [ -s {no_such_key_matches} ]"
         )
         results.append(
             Result.from_commands_run(

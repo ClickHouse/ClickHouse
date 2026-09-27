@@ -1,0 +1,9 @@
+the serialized state is exactly its values
+53
+0100000000000000070900000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+64
+the same rows give one state
+1
+1
+a state written to a column and read back merges into the same fit
+2	40

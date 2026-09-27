@@ -1,6 +1,6 @@
 -- Regression tests for the review findings of the Trino dialect.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 
 DROP TABLE IF EXISTS trino_review_regressions;
 CREATE TABLE trino_review_regressions (s Nullable(String), arr Array(Nullable(Int64))) ENGINE = Memory;

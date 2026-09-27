@@ -9,6 +9,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
+import dataclasses
 import os
 import re
 import shlex
@@ -388,7 +389,7 @@ def main():
             f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
             f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
             f" clickhouse/style-test:latest"
-            f" ./tests/ci/changelog.py -v --debug-helpers"
+            f" ./ci/tools/changelog.py -v --debug-helpers"
             f' --gh-user-or-token "$GH_TOKEN"'
             f" --jobs=5"
             f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
@@ -687,24 +688,6 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Post the final release status — but only when "Prepare Release Info" ran
-    # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
-    # before prepare, the file is absent (cleared at the top of main), so
-    # --post-status would raise FileNotFoundError trying to read it; skip it and
-    # let the aggregated job Result (praktika Slack feed) report the failing
-    # setup step instead.
-    if os.path.exists(RELEASE_INFO_FILE):
-        results.append(
-            Result.from_commands_run(
-                name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
-        )
-
     # Always remove the publishing credentials and the signing-key home so they
     # do not persist for a later job on a reused self-hosted runner.
     def cleanup_credentials():
@@ -739,6 +722,36 @@ def main():
             workdir=REPO_PATH,
         )
     )
+    if results[-1].status != Result.Status.OK:
+        ok = False
+
+    def post_slack_message():
+        release_info = ReleaseInfo.from_file()
+        title = "New release branch" if release_info.is_new_release_branch() else "New release"
+        print(f"{title}: {release_info.release_tag}")
+        # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
+        from ci_buddy import CIBuddy
+        from slack_ids import LESHIKUS
+
+        buddy = CIBuddy(dry_run=args.dry_run)
+        if ok:
+            buddy.post_done(f"Completed: {title}", dataclasses.asdict(release_info))
+        else:
+            buddy.post_critical(
+                f"<@{LESHIKUS}> Failed: {title}",
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
+            )
+
+    # RELEASE_INFO_FILE exists only if "Prepare Release Info" ran this attempt
+    if os.path.exists(RELEASE_INFO_FILE):
+        results.append(
+            Result.from_commands_run(
+                name="Post Slack Message",
+                command=post_slack_message,
+                workdir=REPO_PATH,
+            )
+        )
 
     log_files = [
         p

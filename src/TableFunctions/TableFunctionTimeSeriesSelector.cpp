@@ -19,9 +19,9 @@ namespace
 ColumnsDescription getColumnsDescription(const StorageTimeSeriesSelector::Configuration & config)
 {
     return ColumnsDescription({
-        {TimeSeriesColumnNames::ID, config.id_data_type},
-        {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},
-        {TimeSeriesColumnNames::Value, config.scalar_data_type}
+        {TimeSeriesColumnNames::ID, config.table_id_type},
+        {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type},
+        {TimeSeriesColumnNames::Value, config.table_value_type}
     });
 }
 

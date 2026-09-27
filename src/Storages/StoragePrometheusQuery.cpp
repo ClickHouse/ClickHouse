@@ -20,6 +20,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -168,23 +169,29 @@ StoragePrometheusQuery::resolveConfiguration(const Arguments & parsed_args, cons
     auto time_series_storage_id = context->tryResolveStorageID(parsed_args.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    UInt64 time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    auto table_timestamp_type = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type).first;
 
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
+
+    /// The types of the timestamp parameters: they can specify the time zone of the results.
+    DataTypes time_parameter_types{parsed_args.start_time_type, parsed_args.end_time_type};
 
     Configuration config;
-    config.promql_query = std::make_shared<PrometheusQueryTree>(parsed_args.promql_query, timestamp_scale);
+    config.promql_query = std::make_shared<PrometheusQueryTree>(parsed_args.promql_query, time_scale);
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
-    evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
-    evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.time_series_version = time_series_version;
+    evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
+    evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
+    evaluation_settings.time_scale = time_scale;
     evaluation_settings.mode = parsed_args.mode;
-    evaluation_settings.start_time = parseTimeSeriesTimestamp(parsed_args.start_time, parsed_args.start_time_type, timestamp_scale);
-    evaluation_settings.end_time = parseTimeSeriesTimestamp(parsed_args.end_time, parsed_args.end_time_type, timestamp_scale);
+    evaluation_settings.start_time = parseTimeSeriesTimestamp(parsed_args.start_time, parsed_args.start_time_type, time_scale);
+    evaluation_settings.end_time = parseTimeSeriesTimestamp(parsed_args.end_time, parsed_args.end_time_type, time_scale);
     evaluation_settings.step = parsed_args.step_type
-        ? parseTimeSeriesDuration(parsed_args.step, parsed_args.step_type, timestamp_scale)
+        ? parseTimeSeriesDuration(parsed_args.step, parsed_args.step_type, time_scale)
         : Decimal64{0};
     return config;
 }
