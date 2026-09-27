@@ -1878,9 +1878,22 @@ void AlterCommands::apply(
         {
             /// Existing indices are rebuilt because the column layout changed, not because the user
             /// redefined them, so an unrelated `ALTER` must not start failing on grandfathered metadata.
-            index = IndexDescription::getIndexFromAST(
+            auto new_index = IndexDescription::getIndexFromAST(
                 index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context,
                 /* validate_expressions = */ false);
+
+            /// But if this `ALTER` changed an `ALIAS` column the index expands through, the expanded
+            /// expression is fresh user input and must pass the same checks as a new definition.
+            if (!index.expression_list_ast
+                || new_index.expression_list_ast->getTreeHash(/* ignore_aliases = */ false)
+                    != index.expression_list_ast->getTreeHash(/* ignore_aliases = */ false))
+            {
+                new_index = IndexDescription::getIndexFromAST(
+                    index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context,
+                    /* validate_expressions = */ true);
+            }
+
+            index = std::move(new_index);
         }
         catch (const Exception & exception)
         {
