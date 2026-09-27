@@ -345,9 +345,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Serialize sibling creates on the folded spelling. Acquired after the exact-name guard: the
     /// exact spelling sorts before its folded form, and multi-guard holders acquire in sorted order.
+    /// Only `standard` matching checks for siblings, so only it needs the guard.
     std::unique_ptr<DDLGuard> folded_guard;
-    if (String folded_name = foldIdentifierCaseASCII(database_name); folded_name != database_name)
-        folded_guard = DatabaseCatalog::instance().getDDLGuard(folded_name, "", nullptr);
+    if (getContext()->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard)
+    {
+        if (String folded_name = foldIdentifierCaseASCII(database_name); folded_name != database_name)
+            folded_guard = DatabaseCatalog::instance().getDDLGuard(folded_name, "", nullptr);
+    }
 
     throwIfCaseSiblingDatabase(create, getContext());
 
@@ -2544,9 +2548,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
     /// Guard the folded spelling too, so concurrent sibling creates re-check serially. Acquired after
     /// the exact-name guard: the exact spelling sorts before its folded form, and multi-guard holders acquire in sorted order.
+    /// Only `standard` matching checks for siblings, so only it needs the guard; a caller that already
+    /// holds the guards (`need_ddl_guard` is false) must not wait for them again.
     std::unique_ptr<DDLGuard> folded_table_guard;
-    if (String folded_table = foldIdentifierCaseASCII(create.getTable()); folded_table != create.getTable())
-        folded_table_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), folded_table, nullptr);
+    if (likely(need_ddl_guard) && getContext()->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard)
+    {
+        if (String folded_table = foldIdentifierCaseASCII(create.getTable()); folded_table != create.getTable())
+            folded_table_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), folded_table, nullptr);
+    }
 
     String data_path;
     DatabasePtr database;
