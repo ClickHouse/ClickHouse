@@ -86,6 +86,13 @@ Shaping is offered only for the statements those settings shape, i.e. `SELECT` a
 
 A shape applies to the result of a single statement, so it is not offered for a "Run all" multi-statement run, whose statements are separate queries with separate columns.
 
+It is not offered for a result of at most one row on its first page either: any order of a single row is the same order, and a filter on it can only keep it or drop it, so the controls could do nothing but re-run the query for the same rows — and an empty result has not even a row to drop. It is the same reason the [color coding](/concepts/features/interfaces/web-ui-color-coding) toggles are hidden there: with no more than one row there is nothing to compare.
+
+Two single-row results keep their controls, because there the controls are the only way back:
+
+- one that is already sorted or filtered, whose sort must stay reversible and whose filter must stay clearable — a filter matching a single row is exactly how a long result becomes a short one, and taking the controls away with it would strand the user with it on;
+- one cut off at the display limit, which is the first page of a longer result: the page size is capped by the number of cells the table can show at once, so a very wide result can be cut to a single row, and the rows past it are precisely what sorting and paging are there to reach.
+
 A shape belongs to the statement it was made on. Running a different statement — after editing the query, or moving the cursor to another statement of a multi-statement editor — drops it, rather than applying an `ORDER BY` or a `WHERE` on a column the new statement may not have.
 
 It belongs to the context that statement was run in as well: the selected database, the server and user it was sent to, and the values of its query parameters. The same text names different columns after any of those change — `SELECT * FROM events` after switching databases, or `SELECT * FROM {tbl:Identifier}` after editing the parameter — so the shape is dropped there too, and the next run returns the unshaped result.

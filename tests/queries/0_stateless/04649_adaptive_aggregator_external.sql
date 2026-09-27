@@ -54,14 +54,14 @@ SELECT
     =
     (SELECT count(), sum(u) FROM (SELECT number % 50 AS g, uniqExact(number) AS u FROM numbers_mt(400000) GROUP BY g SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1));
 
--- A freeze threshold above both the key count and the give-up bound keeps every producer
--- learning for the whole query, so the results mix tables that stood down under pressure and
--- spilled with tables that never crossed the threshold at all.
+-- A key freeze threshold above both the key count and the give-up bound, with the byte bound
+-- disabled, keeps every producer learning for the whole query, so the results mix tables that
+-- stood down under pressure and spilled with tables that never crossed the threshold at all.
 SELECT 'Learning-phase spill preserves results';
 SELECT
     (SELECT count(), sum(c) FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT count(), sum(c) FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 4000000, group_by_two_level_threshold = 1000, max_bytes_before_external_group_by = 20000000, max_bytes_ratio_before_external_group_by = 0));
+    (SELECT count(), sum(c) FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 4000000, adaptive_aggregator_freeze_threshold_bytes = 0, group_by_two_level_threshold = 1000, max_bytes_before_external_group_by = 20000000, max_bytes_ratio_before_external_group_by = 0));
 
 -- Few distinct keys spread over many routing buckets leave each bucket holding only a handful
 -- of records, and small blocks mean a bucket's first block often carries none of them. Both

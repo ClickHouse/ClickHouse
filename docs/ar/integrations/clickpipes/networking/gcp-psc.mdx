@@ -1,40 +1,41 @@
 ---
-sidebarTitle: 'GCP Private Service Connect'
-description: 'أنشئ اتصالاً آمناً بين ClickPipes ومصدر بيانات مستضاف على GCP باستخدام Private Service Connect ‏(PSC).'
-slug: /integrations/clickpipes/networking/gcp-psc
-title: 'GCP Private Service Connect لـ ClickPipes'
-doc_type: 'guide'
-keywords: ['gcp psc', 'private service connect', 'أمان ClickPipes', 'نقطة نهاية خاصة عكسية', 'اتصال خاص']
+title: "GCP Private Service Connect لـ ClickPipes"
+sidebarTitle: "GCP Private Service Connect"
+icon: "/images/icons/cloud-providers/google-cloud-color.svg"
+description: "أنشئ اتصالاً آمناً بين ClickPipes ومصدر بيانات مستضاف على GCP باستخدام Private Service Connect ‏(PSC)."
+slug: "/integrations/clickpipes/networking/gcp-psc"
+doc_type: "guide"
+keywords: ["gcp psc", "private service connect", "أمان ClickPipes", "نقطة نهاية خاصة عكسية", "اتصال خاص"]
 integration:
-   - support_level: 'core'
-   - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكنك استخدام GCP‏ [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) لإنشاء اتصال آمن بين ClickPipes ومصدر بيانات مستضاف على GCP. ينشئ ClickPipes **نقطة نهاية خاصة عكسية (RPE)** في شبكة VPC الخاصة به، ويوجّهها إلى خدمة نقطة نهاية خاصة منشورة لمصدر بياناتك، بحيث لا تتعرّض حركة المرور للإنترنت العام مطلقًا.
 
-<Note>
-  تتوفر إمكانية الاتصال عبر GCP PSC فقط عند نشر خدمة ClickPipes على GCP. راجع [قائمة مناطق GCP التي يُستضاف فيها ClickPipes](/ar/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) قبل البدء.
-</Note>
+<Check>
+  يدعم ClickPipes اتصال PSC **عبر المناطق** من خلال [الوصول العام](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). يُطلب الوصول العام لنقاط النهاية الموجودة في منطقة مختلفة عن المنطقة التي تعمل فيها البنية التحتية لـ ClickPipes. راجع [وثائق مناطق GCP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) لمزيد من التفاصيل.
+</Check>
 
 <div id="supported-patterns">
   ## الأنماط المدعومة
 </div>
 
-| النمط                 | متى يُستخدم                                                                                                                      | مرفق الخدمة                              |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| **PSC أصلي**          | الخدمات المُدارة التي تنشر مرفق خدمة PSC تلقائيًا، مثل AlloyDB.                                                                  | يُنشأ تلقائيًا عند تمكين PSC على المثيل. |
-| **PSC مملوك للمنتِج** | مصادر البيانات التي لا تنشر مرفق خدمة، مثل Postgres على Compute Engine أو خدمة مُدارة لا يمكن الوصول إليها إلا عبر عنوان IP خاص. | تنشئه وتديره بنفسك.                      |
+| النمط                 | متى يُستخدم                                                                                                                         | مرفق الخدمة                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **PSC أصلي**          | الخدمات المُدارة التي تنشر مرفق خدمة PSC تلقائيًا (*مثل* Google Cloud SQL وAlloyDB وGoogle Cloud Managed Service for Apache Kafka). | يُنشأ تلقائيًا عند تمكين PSC على المثيل. |
+| **PSC مملوك للمنتِج** | مصادر البيانات التي لا تنشر مرفق خدمة، مثل Postgres على Compute Engine أو خدمة مُدارة لا يمكن الوصول إليها إلا عبر عنوان IP خاص.    | تنشئه وتديره بنفسك.                      |
 
 <div id="prerequisites">
   ## المتطلبات الأساسية
 </div>
 
-* خدمة ClickHouse Cloud مستضافة على GCP في [منطقة تتوفر فيها ClickPipes](/ar/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips).
+* خدمة ClickHouse Cloud مستضافة على GCP. تعمل ClickPipes في المنطقة نفسها التي توجد فيها خدمة ClickHouse Cloud لديك (مع [بعض الاستثناءات](/ar/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)).
 * أذونات IAM لتفعيل PSC على مصدرك وإدارة مرفقات خدمة PSC (`roles/compute.networkAdmin`).
-* يجب السماح لـ **مشروع مستهلك ClickPipes** بالاتصال بمرفق الخدمة لديك. بالنسبة إلى بيئة الإنتاج في ClickPipes، يكون هذا المشروع هو `clickpipes-production`.
-* مفتاح API/السر لـ ClickHouse Cloud الخاص بالمؤسسة المالكة للخدمة (مطلوب فقط إذا أجريت التوفير عبر Terraform أو واجهة برمجة التطبيقات).
+* يجب السماح لـ **مشروع مستهلك ClickPipes** بالاتصال بمرفق الخدمة لديك (`clickpipes-production`).
+* إذا كنت تُجري توفير ClickPipes برمجيًا: مفتاح API لـ ClickHouse Cloud خاص بالمؤسسة المالكة للخدمة.
 
 <div id="create-rpe">
   ## إنشاء نقطة النهاية الخاصة العكسية
@@ -42,10 +43,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لإنشاء RPE، ستحتاج إلى المعلومات التالية الخاصة بمصدر بياناتك:
 
-* **عنوان URI لمرفق الخدمة**: `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`، وهو
-  نقطة نهاية PSC المنشورة أمام مصدر بياناتك.
-* **اسم DNS الخاص**: اسم المضيف الذي يتصل به خط الأنابيب. تحصل نقطة نهاية PSC على عنوان IP داخلي ثابت
-  دون اسم DNS مرتبط بها، لذا تحل ClickPipes اسم المضيف هذا إلى عنوان IP نيابةً عنك.
+* **عنوان URI لمرفق الخدمة**: `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`، وهو نقطة نهاية PSC المنشورة أمام مصدر بياناتك.
+* **اسم DNS الخاص**: اسم المضيف الذي يتصل به خط الأنابيب. تحصل نقطة نهاية PSC على عنوان IP داخلي ثابت دون اسم DNS مرتبط بها، لذا تحل ClickPipes اسم المضيف هذا إلى عنوان IP نيابةً عنك.
 
 <Tabs>
   <Tab title="واجهة ClickPipes">
@@ -99,19 +98,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### أسماء DNS الخاصة المخصصة
 </div>
 
-نظرًا إلى أن GCP PSC لا ينشر سجلات DNS، يُعد تعيين DNS خاص مخصص ضروريًا لكل نقطة نهاية في GCP PSC — إذ تُوفّر دائمًا اسم DNS الخاص بالمصدر بهذه الطريقة، ويحلّه ClickPipes إلى عنوان IP الداخلي الثابت للـ نقطة نهاية.
+نظرًا إلى أن GCP PSC لا ينشر سجلات DNS، يلزم تعيين DNS خاص مخصص لكل نقطة نهاية في GCP PSC لكي يتمكن ClickPipes من حلّه إلى عنوان IP الداخلي الثابت للـ نقطة نهاية.
 
-تنطبق [قواعد تسمية DNS الخاص المخصص](/ar/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) القياسية في ClickPipes — إذ يُفرض دعم wildcards، والتفرّد عبر نقاط النهاية الخاصة العكسية للخدمة، وقيود اللاحقات المحجوزة بالطريقة نفسها لدى جميع المزوّدين. وتكون wildcards مفيدة بصورة خاصة في GCP: إذ يغطي تعيين واحد مثل `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` جميع brokers في Kafka cluster من نوع Managed.
+تنطبق [قواعد تسمية DNS الخاص المخصص](/ar/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) القياسية في ClickPipes: إذ يُفرض دعم wildcards، والتفرّد عبر نقاط النهاية الخاصة العكسية للخدمة، وقيود اللاحقات المحجوزة بالطريقة نفسها لدى جميع المزوّدين. وتكون wildcards مفيدة بصورة خاصة، *على سبيل المثال*، إذ يغطي تعيين واحد مثل `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` جميع brokers في Kafka cluster من نوع Managed.
 
 بالنسبة إلى GCP PSC، لا يُستخدم إلا `privateDnsName` الخاص بالتعيين. الحقل `internalDNSName` غير مدعوم، لأن نقطة نهاية في PSC يوفّر عنوان IP ثابتًا لا اسم DNS لتثبيته عليه — وتُحل التعيينات دائمًا إلى عنوان IP هذا.
 
 <div id="producer-owned">
-  ## الموافقة على الاتصالات المملوكة للمنتِج
+  ## الموافقة على الاتصالات التي يملكها المنتج
 </div>
 
-بالنسبة إلى PSC المملوك للمنتِج، أضِف مشروع ClickPipes المستهلِك إلى قائمة القبول التلقائي لمرفق الخدمة ليُقبل الاتصال تلقائيًا. إذا لم تفعل ذلك، سيظل RPE في حالة `PendingAcceptance` إلى أن توافق عليه يدويًا.
+بالنسبة إلى PSC الذي يملكه المنتج، أضف مشروع مستهلك ClickPipes (`clickpipes-production`) إلى قائمة القبول التلقائي لمرفق الخدمة، ليُقبل الاتصال تلقائيًا. إذا تخطيت ذلك، سيبقى RPE في حالة `PendingAcceptance` إلى أن توافق عليه يدويًا.
 
-لقبول الاتصال، يجب أن تتضمن قائمة قبول المستهلكين لمرفق الخدمة عنوان URI المستند إلى المعرّف الرقمي لنقطة النهاية (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). هذه القيمة هي `endpointWithId` للاتصال المعلّق على مرفق الخدمة — صِفه للعثور عليها:
+لقبول الاتصال، يجب أن تتضمن قائمة قبول المستهلك لمرفق الخدمة عنوان URI لنقطة النهاية المستند إلى المعرّف الرقمي (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). للحصول على قيمة `endpointWithId` للاتصال المعلّق على مرفق الخدمة، شغّل:
 
 ```bash
 gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
@@ -119,7 +118,11 @@ gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
   --format='json(connectedEndpoints)'
 ```
 
-خذ `endpointWithId` الخاص بالإدخال ذي `status` بقيمة `PENDING`، وأزل البادئة `https://www.googleapis.com/compute/beta/`، ثم مرّر النتيجة إلى `--consumer-accept-list`:
+خذ `endpointWithId` للإدخال الذي تكون قيمة `status` فيه `PENDING`، وأزل البادئة `https://www.googleapis.com/compute/beta/`، ثم مرّر النتيجة إلى `--consumer-accept-list`:
+
+<Danger>
+  يستبدل `--consumer-accept-list` قائمة القبول بدلًا من إضافة مشروع المستهلك الجديد إليها. إذا كان مرفق الخدمة يقبل بالفعل مشاريع أو نقاط نهاية أخرى، فمرّرها جميعًا في الأمر نفسه، وإلا ستفقد العناصر التي لم تُدرجها إمكانية الوصول.
+</Danger>
 
 ```bash
 gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
@@ -129,9 +132,7 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 ```
 
 <Warning>
-  لا تستخدم `endpoint_id` الوارد في استجابة واجهة برمجة تطبيقات ClickPipes أو Terraform هنا — فهذه القيمة هي *اسم* قاعدة إعادة التوجيه، وليست المعرّف الرقمي الذي تتطلبه GCP، لذا لن تتطابق قائمة القبول. احصل دائمًا على المعرّف الرقمي من `endpointWithId` المعلّق الخاص بمرفق الخدمة.
-
-  يؤدي `--consumer-accept-list` أيضًا إلى استبدال قائمة القبول بدلًا من الإضافة إليها. إذا كان مرفق الخدمة يقبل بالفعل مشاريع أو نقاط نهاية أخرى، فمرّرها جميعًا في الأمر نفسه، وإلا فستفقد العناصر التي لم تذكرها إمكانية الوصول.
+  لا تستخدم هنا `endpoint_id` من استجابة واجهة برمجة تطبيقات ClickPipes أو Terraform؛ إذ إن هذه القيمة هي *اسم* قاعدة إعادة التوجيه، وليست المعرّف الرقمي الذي تتطلبه GCP، ولذلك لن تتطابق قائمة القبول. احصل دائمًا على المعرّف الرقمي من `endpointWithId` المعلّق الخاص بمرفق الخدمة.
 </Warning>
 
 <div id="managing-rpes">
@@ -140,25 +141,18 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 
 يمكنك إدارة نقاط النهاية الخاصة العكسية الحالية من إعدادات خدمة ClickHouse Cloud:
 
-1. في الشريط الجانبي، ابحث عن زر `Settings` وانقر عليه.
+1. من الشريط الجانبي لوحدة تحكم ClickHouse Cloud، انتقل إلى `Settings`.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="إعدادات ClickHouse Cloud" size="lg" border />
+ضمن `ClickPipe reverse private endpoints`، انقر على `Reverse private endpoints`.
 
-2. انقر على `Reverse private endpoints` ضمن قسم `ClickPipe reverse private endpoints`.
+تظهر المعلومات التفصيلية لنقطة النهاية الخاصة العكسية في اللوحة المنبثقة. ومن هذا العرض، يمكنك حذف نقاط RPE: انقر على `×` بجوار نقطة نهاية وأكّد حذفها. الحذف **دائم** وسيؤدي إلى تعطيل أي ClickPipe يستخدم نقطة النهاية هذه حاليًا.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="إعدادات ClickHouse Cloud" size="md" border />
+لتغيير تعيينات DNS الخاص المخصص لنقطة نهاية، استخدم [Cloud API](/ar/integrations/clickpipes/programmatic-access/openapi) أو [Terraform](/ar/integrations/clickpipes/programmatic-access/terraform). يستبدل التحديث قائمة التعيينات كاملةً بدلًا من الإضافة إليها.
 
-   تظهر المعلومات التفصيلية لنقطة النهاية الخاصة العكسية في اللوحة المنبثقة.
-
-   هذا العرض للقراءة فقط باستثناء الحذف: انقر على `×` بجانب نقطة نهاية وأكّد الحذف. الحذف نهائي ويعطّل أي ClickPipe يستخدم نقطة النهاية هذه حاليًا.
-
-   لتغيير تعيينات DNS الخاص المخصص لنقطة نهاية، استخدم واجهة برمجة التطبيقات أو Terraform. يستبدل التحديث قائمة التعيينات بالكامل بدلًا من الإضافة إليها.
-
-إذا كانت نقطة النهاية تعرض `Rejected` أو `Failed`، فاقرأ الرسالة أسفل حالتها، إذ توضح ما إذا كان المنتج قد رفض الاتصال، أو ما إذا كان الاتصال قد أُغلق أو يحتاج إلى إجراء. يشير كلاهما عادةً إلى أن قائمة القبول الخاصة بمرفق الخدمة لا تتضمن مشروع مستهلك ClickPipes. للاطلاع على الحالة التي يبلّغ عنها GCP لنقطة النهاية، نفّذ وصفًا لـ `connectedEndpoints` الخاص بمرفق الخدمة لديك.
+إذا كانت نقطة نهاية تعرض `Rejected` أو `Failed`، فاقرأ الرسالة ضمن حالتها: إذ تميّز بين اتصال رفضه المنتج واتصال أُغلق أو يحتاج إلى اتخاذ إجراء. وعادةً ما يعني كلاهما أن قائمة القبول لمرفق الخدمة لا تتضمن مشروع مستهلك ClickPipes. للاطلاع على الحالة التي يبلّغ عنها GCP لنقطة النهاية، صِف `connectedEndpoints` لمرفق الخدمة.
 
 <div id="limitations">
-  ## القيود
+  ## القيود المعروفة
 </div>
 
-* يجب أن تقع نقطة نهاية RPE ومرفق الخدمة في **منطقة GCP نفسها**. لا يُدعم PSC عبر المناطق باستخدام [الوصول العام](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) حتى الآن. استخدم [SSH Tunneling](/ar/integrations/clickpipes/networking/index#ssh-tunneling) إذا كان المصدر في منطقة أخرى.
 * لا يمكن أن يُطالب بمرفق خدمة PSC سوى من قِبل خدمة ClickHouse Cloud واحدة في الوقت نفسه، ولا يمكن إعادة استخدامه عبر خدمات متعددة. لنقل مرفق خدمة إلى خدمة أخرى، [تواصل مع دعم ClickHouse](https://clickhouse.com/support/program) لتحرير المطالبة الحالية.

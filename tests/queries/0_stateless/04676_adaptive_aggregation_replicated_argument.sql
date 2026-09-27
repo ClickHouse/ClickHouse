@@ -45,7 +45,6 @@ SET collect_hash_table_stats_during_aggregation = 0;
 SET enable_lazy_columns_replication = 1;
 SET max_threads = 4;
 SET max_block_size = 4096;
-SET max_rows_to_group_by = 0;
 SET query_plan_join_swap_table = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
@@ -108,9 +107,9 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND event_date >= yesterday() AND event_time >= now() - 600
     AND log_comment LIKE '04676_seal_%';
 
--- The normalization inside the coalescing additionally needs the buffered batches to disagree at
--- an argument position, and which blocks one producer buffers is not something the settings above
--- pin, so the count is summed over the three arms rather than asserted for each.
+-- The seal normalizes a gathered argument column that arrived in a wrapped representation, and
+-- the join's lazily replicated blocks guarantee such columns reach the seal. The count is
+-- summed over the three arms because which blocks stay replicated is the join's decision.
 SELECT 'normalized', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'

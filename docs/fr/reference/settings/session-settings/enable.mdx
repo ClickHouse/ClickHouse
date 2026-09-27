@@ -22,7 +22,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer l’agrégation `GROUP BY` adaptative, qui fige la table de hachage locale de chaque thread lorsqu’elle atteint `adaptive_aggregator_freeze_threshold` clés, afin que les clés fréquentes continuent d’être agrégées dans les petites tables locales, tandis que les clés rares sont routées selon leur hash vers des files d’attente par bucket et agrégées exactement une fois lors de la fusion parallèle des buckets ; les clés rares sont ainsi stockées et traitées une seule fois au lieu d’une fois par thread."}]}]} />
 
-Active l’algorithme `GROUP BY` adaptatif : chaque thread agrège dans sa table de hachage locale jusqu’à ce qu’elle atteigne `adaptive_aggregator_freeze_threshold` clés, puis celle-ci est figée. Les lignes associées aux clés déjà rencontrées (fréquentes) continuent alors de la mettre à jour sur place, tandis que les nouvelles clés (rares) sont routées selon leur hash vers des files d’attente par bucket et agrégées exactement une fois lors de la fusion parallèle des buckets. Les clés fréquentes restent dans de petites tables tenant en cache, tandis que les clés rares ne sont stockées et traitées qu’une seule fois, au lieu d’une fois par thread.
+Active l’algorithme `GROUP BY` adaptatif : chaque thread agrège dans sa table de hachage locale jusqu’à ce qu’elle atteigne `adaptive_aggregator_freeze_threshold` clés (ou `adaptive_aggregator_freeze_threshold_bytes` de mémoire), puis celle-ci est figée. Les lignes associées aux clés déjà rencontrées (fréquentes) continuent alors de la mettre à jour sur place, tandis que les nouvelles clés (rares) sont routées selon leur hash vers des files d’attente par bucket et agrégées exactement une fois lors de la fusion parallèle des buckets. Les clés fréquentes restent dans de petites tables tenant en cache, tandis que les clés rares ne sont stockées et traitées qu’une seule fois, au lieu d’une fois par thread.
 
 Les paramètres d’agrégation externe (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) sont respectés : au-delà du seuil, les files d’attente sont vidées de manière anticipée dans la table partagée et, si cela ne suffit pas à repasser sous ce seuil, la table partagée est déversée sur disque via l’agrégation externe ordinaire.
 
@@ -48,6 +48,18 @@ Déclenche le processeur pour déverser de manière adaptative les données vers
 
 Active `DISTINCT` dans les sous-requêtes `IN`. Ce paramètre implique un compromis : son activation peut réduire considérablement la taille des tables temporaires transférées pour les sous-requêtes `IN` distribuées et accélérer nettement le transfert de données entre les shards, en garantissant que seules des valeurs uniques sont envoyées.
 Cependant, l’activation de ce paramètre ajoute des opérations de fusion supplémentaires sur chaque nœud, car la déduplication (`DISTINCT`) doit être effectuée. Utilisez ce paramètre lorsque le transfert réseau constitue un goulot d’étranglement et que le coût supplémentaire de fusion est acceptable.
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer individuellement le codec de compression expérimental `ALP`, sans activer `allow_experimental_codecs`."}]}]} />
+
+Permet d’utiliser le codec de compression expérimental `ALP`.
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -127,6 +139,17 @@ Le tableau ci-dessous montre le comportement de ce paramètre pour différentes 
 
 Si cette option est définie sur true, l’utilisation de l’index de texte est autorisée.
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+
+Active le repliement anticipé des constantes avec évaluation en court-circuit pour `and` et `or` lors de l’analyse des requêtes.
+Lorsqu’elle est activée, les branches inaccessibles admissibles des sous-requêtes scalaires sont analysées afin de préserver leurs types et de valider la sémantique des requêtes, mais elles ne sont pas exécutées. L’optimisation revient à une analyse ordinaire lorsque la cardinalité scalaire ou des valeurs d’exécution sont requises.
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -136,6 +159,37 @@ Si cette option est définie sur true, l’utilisation de l’index de texte est
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "Propage par défaut les instructions WITH aux requêtes UNION et à toutes les sous-requêtes"}]}]} />
 
 Propage les instructions WITH aux requêtes UNION et à toutes les sous-requêtes
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler l'optimisation du filtrage TopK lors de l'agrégation dans les requêtes `GROUP BY key ORDER BY key LIMIT N`."}]}]} />
+
+Active l&#39;optimisation du filtrage TopK lors de l&#39;agrégation dans les requêtes `GROUP BY keys ORDER BY <prefix of keys> LIMIT K`, ainsi que dans les requêtes `GROUP BY keys LIMIT K` sans `ORDER BY` (dans ce cas, n&#39;importe quels `K` groupes constituent un résultat valide, un tri sur toutes les clés est donc généré).
+
+Lorsqu&#39;elle est activée, l&#39;agrégateur maintient un tas de taille limitée contenant les `K` clés les mieux classées rencontrées jusqu&#39;à présent et n&#39;insère pas de nouvelles lignes dans la table de hachage lorsque leur clé de regroupement ne peut pas figurer dans le résultat final. Cela évite d&#39;agréger des lignes qui seraient écartées par le `ORDER BY ... LIMIT` ultérieur et, lorsque le tas classe la clé `GROUP BY` complète, supprime également les groupes évincés de la table de hachage intermédiaire, dont la taille est alors limitée par le `LIMIT` plutôt que par le nombre de clés distinctes. Lorsque le `ORDER BY` ne couvre qu&#39;un préfixe strict des clés `GROUP BY`, le classement ne peut pas identifier un groupe complet ; seules des lignes sont donc ignorées : la table de hachage conserve chaque groupe admis et peut toujours croître en fonction de la cardinalité des colonnes de clés restantes.
+
+L&#39;optimisation est désactivée lorsque le `LIMIT` demandé est supérieur à [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/fr/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) ou au plafond fixe de `100000`, car le coût du tas en mémoire et en CPU augmente avec le `LIMIT` demandé.
+
+L&#39;optimisation est ignorée pour les formes de requêtes où la suppression de groupes pourrait modifier le résultat, notamment avec `WITH TOTALS`, `HAVING`, `QUALIFY`, les fonctions de fenêtre, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, un `COLLATE` sur l&#39;une des clés `GROUP BY` correspondantes (un `COLLATE` sur une colonne `ORDER BY` située après le préfixe de clé complet ne peut pas affecter les groupes retenus et ne désactive donc pas l&#39;optimisation), un `ORDER BY` sur un agrégat ou sur tout élément qui n&#39;est pas un préfixe initial des clés `GROUP BY`, ainsi que lorsque `max_rows_to_group_by` ou `exact_rows_before_limit` est défini.
+
+Valeurs possibles :
+
+* 0 — Désactivé.
+* 1 — Activé.
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant de transformer la charge utile d'une jointure de hachage en stockage par lignes."}]}]} />
+
+Active la transformation de la charge utile d&#39;une jointure de hachage en stockage par lignes.
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -331,6 +385,18 @@ Permet à l&#39;agrégation économe en mémoire (voir `distributed_aggregation_
 Cela peut améliorer les performances lorsque la taille des buckets d&#39;agrégation est inégale, en permettant à une réplique d&#39;envoyer à l&#39;initiateur des buckets dont les ID sont plus élevés alors qu&#39;elle traite encore des buckets volumineux avec des ID plus faibles.
 L&#39;inconvénient est une consommation de mémoire potentiellement plus élevée.
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer individuellement le codec de compression expérimental `Quantized`, sans `allow_experimental_codecs`."}]}]} />
+
+Permet d’utiliser le codec de compression expérimental `Quantized`.
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ Lorsqu’il est désactivé, toute expression de table utilisant le modificateur
 lors de la construction du plan. Il s’agit du paramètre de contrôle global de la
 fonctionnalité de requêtes en continu ; des capacités supplémentaires peuvent être régies par leurs propres paramètres.
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer individuellement le codec de compression expérimental `SZ3`, sans activer `allow_experimental_codecs`."}]}]} />
+
+Permet d&#39;utiliser le codec de compression expérimental `SZ3`.
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -499,5 +577,17 @@ Valeurs possibles :
 
 * 0 - Désactivé
 * 1 - Activé
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer individuellement le codec de compression expérimental `ZXC`, sans `allow_experimental_codecs`."}]}]} />
+
+Autorise l’utilisation du codec de compression expérimental `ZXC`.
 
 {/*AUTOGENERATED_END*/}
