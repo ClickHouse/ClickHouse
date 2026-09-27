@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 <Note>
-The query condition cache only works when [enable_analyzer](/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) is set to true, which is the default value.
+The query condition cache works with the analyzer, which is the only query analysis since version `26.9` and the default since `24.3`.
 </Note>
 
 Many real-world workloads involve repeated queries against the same or almost the same data (for instance, previously existing data plus new data).

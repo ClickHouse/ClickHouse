@@ -17,6 +17,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>
+#include <algorithm>
 #include <memory>
 #include <Common/HashTable/Hash.h>
 
@@ -91,7 +92,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     };
 
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
-    using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
+    using EmplaceResult = typename Base::EmplaceResult;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
@@ -116,6 +117,15 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// Cache AggregateDataPtr for current column in order to decrease the number of hash table usages.
     columns_hashing_impl::MappedCache<Mapped> mapped_cache;
     PaddedPODArray<VisitValue> visit_cache;
+
+    PaddedPODArray<UInt64> filled_visit_cache_indexes;
+
+    ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
+    {
+        if (visit_cache[index] == VisitValue::Empty)
+            filled_visit_cache_indexes.push_back(index);
+        visit_cache[index] = value;
+    }
 
     /// If initialized column is nullable.
     bool is_nullable = false;
@@ -191,11 +201,23 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if constexpr (has_mapped)
             mapped_cache.resize(key_columns[0]->size());
 
-        VisitValue empty(VisitValue::Empty);
-        visit_cache.assign(key_columns[0]->size(), empty);
+        visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
 
         size_of_index_type = column->getSizeOfIndexType();
         positions = column->getIndexesPtr().get();
+    }
+
+    ALWAYS_INLINE void resetCache()
+    {
+        Base::resetCache();
+
+        if (filled_visit_cache_indexes.size() > visit_cache.size() / 4)
+            std::fill(visit_cache.begin(), visit_cache.end(), VisitValue::Empty);
+        else
+            for (UInt64 index : filled_visit_cache_indexes)
+                visit_cache[index] = VisitValue::Empty;
+
+        filled_visit_cache_indexes.clear();
     }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -223,7 +245,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
-            visit_cache[row] = VisitValue::Found;
+            setVisited(row, VisitValue::Found);
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
@@ -242,6 +264,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         auto key_holder = getKeyHolder(row_, pool);
+        auto key = keyHolderGetKey(key_holder);
 
         bool inserted = false;
         typename Data::LookupResult it;
@@ -250,7 +273,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         else
             data.emplace(key_holder, it, inserted);
 
-        visit_cache[row] = VisitValue::Found;
+        setVisited(row, VisitValue::Found);
 
         if constexpr (has_mapped)
         {
@@ -260,7 +283,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 new (&mapped) Mapped();
             }
             mapped_cache[row] = mapped;
-            return EmplaceResult(mapped, mapped_cache[row], inserted);
+            return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
         }
         else
             return EmplaceResult(inserted);
@@ -304,7 +327,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             it = data.find(keyHolderGetKey(key_holder));
 
         bool found = it;
-        visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
+        setVisited(row, found ? VisitValue::Found : VisitValue::NotFound);
 
         if constexpr (has_mapped)
         {
@@ -382,6 +405,10 @@ struct HashMethodSerialized
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
+    /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
+    /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
+    /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
+    mutable PaddedPODArray<char> serialize_scratch;
 
     /// Per-row canonical hashes computed from `serialized_keys` using the hash table's hash function.
     /// Filled lazily on the first emplace/find call (because we need access to `Data::hash`).
@@ -395,7 +422,8 @@ struct HashMethodSerialized
 
     /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
     /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
-    /// Checked lazily on the first emplace/find call.
+    /// Holds the raw setting; `minBytesForPrefetch` adjusts it for the cell size on the first
+    /// emplace/find call, once `Data` is known. Checked there as well.
     size_t min_bytes_for_prefetch = 0;
 
     std::unique_ptr<PrefetchingHelper> prefetching;
@@ -493,7 +521,7 @@ struct HashMethodSerialized
     /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
     /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
     /// + prefetch path when the hash table is small enough to fit in caches. Matches
-    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    /// `Aggregator::executeImpl`'s `prefetch` gate, cell-size correction included.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
         requires prealloc
@@ -501,7 +529,12 @@ struct HashMethodSerialized
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        /// This method prefetches on its own instead of going through `Aggregator`'s gate, so it has
+        /// to apply the same cell-size correction the gate does - see `minBytesForPrefetch`. Without
+        /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
+        /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
+        const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
         {
             can_precompute_hashes = false;
             return;
@@ -536,8 +569,8 @@ struct HashMethodSerialized
             return ArenaKeyHolder{serialized_keys[row], pool};
         else
         {
-            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
-            char * memory = holder.get();
+            serialize_scratch.resize(row_sizes[row]);
+            char * memory = serialize_scratch.data();
             std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
@@ -547,7 +580,7 @@ struct HashMethodSerialized
                     memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
-            return ArenaKeyHolder{key, pool, std::move(holder)};
+            return ArenaKeyHolder{key, pool};
         }
     }
 

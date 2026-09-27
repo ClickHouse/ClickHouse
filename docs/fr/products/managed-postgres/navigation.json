@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Premiers pas",
+      "group": "Get started",
       "pages": [
         "fr/products/managed-postgres/overview",
         "fr/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Fonctionnalités",
+      "group": "Features",
       "pages": [
         "fr/products/managed-postgres/connection",
         "fr/products/managed-postgres/settings",
@@ -35,7 +35,7 @@
       ]
     },
     {
-      "group": "Tarification",
+      "group": "Pricing",
       "pages": [
         "fr/products/managed-postgres/pricing"
       ]
@@ -59,7 +59,7 @@
       ]
     },
     {
-      "group": "Surveillance",
+      "group": "Monitoring",
       "pages": [
         "fr/products/managed-postgres/monitoring/overview",
         "fr/products/managed-postgres/monitoring/dashboard",

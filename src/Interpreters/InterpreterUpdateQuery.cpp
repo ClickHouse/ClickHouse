@@ -9,6 +9,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -41,6 +42,7 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool use_legacy_to_time;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
 }
@@ -65,6 +67,9 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
 
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
+
+    if (update_query.partitions)
+        alter_query->set(alter_query->partitions, update_query.partitions);
 
     auto mutation_command = MutationCommand::parse(
         *alter_query,
@@ -92,6 +97,12 @@ BlockIO InterpreterUpdateQuery::execute()
     /// the database of the updated table.
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    /// The spelling must be canonical before the query is enqueued for ON CLUSTER or a Replicated
+    /// database: the oldest DDL entry format carries no settings, so the replaying host would
+    /// otherwise resolve `toTime` with its own default.
+    if (settings[Setting::use_legacy_to_time])
+        replaceLegacyToTime(*query_ptr);
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
@@ -174,16 +185,17 @@ BlockIO InterpreterUpdateQuery::execute()
     }
 
     /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it
-    /// were a table.
+    /// were a table. The context makes CTE expansion respect `enable_global_with_statement`: a CTE
+    /// name a subquery does not see is a table name there, and has to be qualified.
     if (update_query.predicate)
     {
         ASTPtr predicate = update_query.predicate->ptr();
-        ApplyWithSubqueryVisitor::visit(predicate);
+        ApplyWithSubqueryVisitor::visit(predicate, getContext());
     }
     if (update_query.assignments)
     {
         ASTPtr assignments = update_query.assignments->ptr();
-        ApplyWithSubqueryVisitor::visit(assignments);
+        ApplyWithSubqueryVisitor::visit(assignments, getContext());
     }
 
     /// Add default database to table identifiers that we can encounter in the update expression.

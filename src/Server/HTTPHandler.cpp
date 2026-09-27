@@ -4,6 +4,7 @@
 #include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -760,7 +761,12 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+        /// The frames are the same self-describing format as the native protocol's, so the codec comes from
+        /// the same setting. It must not come from the default codec for table data: that one is chosen for
+        /// how data sits on disk, and tying the two together silently changes, on every such change, what
+        /// each `compress=1` client has to be able to decode.
+        used_output.out_compressed_holder
+            = std::make_shared<CompressedWriteBuffer>(*used_output.out, chooseNetworkCompressionCodec(&settings));
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
         used_output.out = used_output.out_compressed_holder;
     }
@@ -1882,7 +1888,8 @@ std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
@@ -1901,6 +1908,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
         url_prefix.pop_back();
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    connection_config.default_session_user = default_session_user;
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
     if (!common_headers.empty())
     {
@@ -1923,7 +1931,8 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     if (!config.has(config_prefix + ".handler.query"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
@@ -1935,6 +1944,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    connection_config.default_session_user = default_session_user;
 
     /// Regular expressions from the rule's url/headers whose named capturing groups are referenced by the query;
     /// their captured values are passed to the query as parameters by PredefinedQueryHandler::customizeContext.

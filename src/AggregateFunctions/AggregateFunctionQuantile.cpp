@@ -246,7 +246,7 @@ SELECT quantiles(0.25, 0.5, 0.75, 0.9)(val) FROM t;
         )",
             R"(
 ┌─quantiles(0.25, 0.5, 0.75, 0.9)(val)─┐
-│ [3, 5.5, 8, 9.5]                     │
+│ [2.5,5,7.5,9]                        │
 └──────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};

@@ -3,6 +3,8 @@
 #include <Common/ColumnsHashing.h>
 
 #include <Columns/ColumnString.h>
+#include <Interpreters/TopKAggregationHeap.h>
+
 namespace DB
 {
 class IColumn;
@@ -42,6 +44,7 @@ struct AggregationMethodOneNumber
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -85,6 +88,7 @@ struct AggregationMethodString
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodString() = default;
 
@@ -121,6 +125,7 @@ struct AggregationMethodStringNoCache
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -154,6 +159,7 @@ struct AggregationMethodPackedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodPackedString() = default;
 
@@ -191,6 +197,7 @@ struct AggregationMethodFixedString
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -224,6 +231,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -258,6 +266,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
+    using Base::top_k_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -295,6 +304,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -342,6 +352,7 @@ struct AggregationMethodSerialized
     using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodSerialized() = default;
 

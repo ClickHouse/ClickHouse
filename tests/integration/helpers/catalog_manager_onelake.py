@@ -23,8 +23,7 @@ ONELAKE_BLOB_HOST = "onelake.blob.fabric.microsoft.com"
 ONELAKE_STORAGE_ENDPOINT = f"https://{ONELAKE_DFS_HOST}"
 ONELAKE_CATALOG_URL = "https://onelake.table.fabric.microsoft.com/iceberg"
 
-# All tables this manager creates -- including those produced by
-# `test_list_tables_pagination` (`e2e_pg_*`) -- start with this prefix.
+# All tables this manager creates start with this prefix.
 # Stale cleanup must restrict itself to this prefix so other workloads
 # sharing the same Fabric lakehouse are never touched.
 TABLE_NAME_PREFIX = "e2e_"
@@ -234,7 +233,7 @@ class OneLakeCatalogManager(CatalogManager):
         """Drop-and-create a DataLakeCatalog database authenticating with a
         pre-obtained bearer token.
 
-        Assumes ``allow_experimental_database_iceberg`` is enabled in the
+        Assumes ``allow_database_iceberg`` is enabled in the
         server's user config."""
         node.query(
             f"DROP DATABASE IF EXISTS {database_name};\n"
@@ -282,7 +281,7 @@ class OneLakeCatalogManager(CatalogManager):
     def create_catalog(self, node, database_name: str) -> None:
         """Drop-and-create a DataLakeCatalog database with real credentials.
 
-        Assumes ``allow_experimental_database_iceberg`` is enabled in the
+        Assumes ``allow_database_iceberg`` is enabled in the
         server's user config."""
         node.query(
             f"DROP DATABASE IF EXISTS {database_name};\n"
@@ -295,7 +294,7 @@ class OneLakeCatalogManager(CatalogManager):
         Returns the first non-empty stderr encountered, or an empty
         string when both statements succeed.  Useful for negative tests
         where the error may surface at either stage.  Assumes
-        ``allow_experimental_database_iceberg`` is enabled in the
+        ``allow_database_iceberg`` is enabled in the
         server's user config.
         """
         sql = self.create_db_sql(database_name, **overrides)
