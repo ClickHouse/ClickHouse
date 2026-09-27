@@ -21,7 +21,10 @@ from ci.jobs.scripts.coverage_selection import (
     snapshot_predicate,
     validate_snapshots,
 )
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+from ci.jobs.scripts.test_selection_config import (
+    INTEGRATION_SELECTION_CONFIG,
+    SELECTION_CONFIG,
+)
 
 from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
@@ -77,6 +80,7 @@ class Targeting:
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
+            self.config = INTEGRATION_SELECTION_CONFIG
         else:
             self.job_type = None
 
@@ -839,9 +843,14 @@ class Targeting:
         self._coverage_candidates = []
         missing = []
         for candidate in candidates:
-            if self.functional_test_source_file(
-                self.selection_test_name(candidate["test"])
-            ):
+            if self.job_type == self.INTEGRATION_JOB_TYPE:
+                # Integration coverage is recorded per module, e.g. `test_storage_s3/test.py`.
+                exists = (Path("tests/integration") / candidate["test"]).is_file()
+            else:
+                exists = self.functional_test_source_file(
+                    self.selection_test_name(candidate["test"])
+                )
+            if exists:
                 self._coverage_candidates.append(candidate)
             else:
                 missing.append(
@@ -856,8 +865,7 @@ class Targeting:
         )
 
     def get_all_relevant_tests_with_info(self, include_changed_tests=True):
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            self.get_diff_text()
+        self.get_diff_text()
         results = []
         changed = []
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
@@ -865,11 +873,9 @@ class Targeting:
             results.append(result)
         failed, result = self.get_previously_failed_tests_with_info(strict=True)
         results.append(result)
-        candidates = []
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            _, result = self.get_most_relevant_tests()
-            candidates = self._coverage_candidates
-            results.append(result)
+        _, result = self.get_most_relevant_tests()
+        candidates = self._coverage_candidates
+        results.append(result)
         normalize = (
             self.selection_test_name
             if self.job_type == self.STATELESS_JOB_TYPE
