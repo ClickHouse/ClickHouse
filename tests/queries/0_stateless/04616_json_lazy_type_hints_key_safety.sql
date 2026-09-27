@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-msan
+-- Tags: no-fasttest
 
 -- Safety checks for lazy JSON type-hint ALTERs (enable_json_lazy_type_hints).
 -- A lazy metadata-only type-hint change skips the mutation branch, so it must be refused when it

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-msan
+# Tags: zookeeper
 # RENAME DATABASE must reject a target name that would leave a table undroppable, because the
 # dropped-metadata filename metadata_dropped/{db}.{table}.{uuid}.sql has to fit the filesystem
 # limit. Two holes are covered: the check used to sit inside the dependency-check guard, so

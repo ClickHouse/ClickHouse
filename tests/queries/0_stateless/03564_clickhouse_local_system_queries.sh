@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-msan
 
 # Test that clickhouse-local properly handles SYSTEM queries:
 # - SYSTEM RELOAD CONFIG should throw UNSUPPORTED_METHOD

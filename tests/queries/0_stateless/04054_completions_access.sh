@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-msan
 
 # Test that system.completions respects per-table grants correctly.
 # A user with only per-table SHOW TABLES/SHOW COLUMNS grants (no global grant)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-msan
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage
 #
 # `no-fasttest`: reading the part directory off local disk is not reliably available on the Fast
 # test macOS runner. `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the

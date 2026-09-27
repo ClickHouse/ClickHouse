@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: FileLog requires inotify
 # Tag no-parallel: uses a shared USER_FILES_PATH directory
 

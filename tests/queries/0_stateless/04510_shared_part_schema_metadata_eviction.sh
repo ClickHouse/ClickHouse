@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-msan
+# Tags: no-shared-merge-tree
 
 # Eviction of the shared part metadata cache across ALTER ADD/DROP COLUMN cycles,
 # with and without Nested columns and with `share_nested_offsets` enabled and disabled

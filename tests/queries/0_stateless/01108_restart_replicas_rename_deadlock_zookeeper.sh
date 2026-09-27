@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, replica, no-msan
+# Tags: deadlock, replica
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
