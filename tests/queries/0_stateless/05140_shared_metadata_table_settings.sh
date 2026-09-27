@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# Tag justification: needs the S3Queue engine, which is an optional build.
+# Tags: no-fasttest, zookeeper
+# Tag justification: needs the S3Queue engine, which is an optional build, and Keeper, which holds its metadata.
 #
 # `shared_metadata` is the one source in `system.table_settings` that outranks the table's own
 # `SETTINGS` clause. `S3Queue` and `AzureQueue` keep the settings that must agree between replicas in

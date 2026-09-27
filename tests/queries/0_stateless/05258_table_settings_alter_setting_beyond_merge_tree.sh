@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, zookeeper
 # Tag no-fasttest: the fast test build has no `S3Queue`
+# Tag zookeeper: an `S3Queue` table keeps its metadata in Keeper
 #
 # What `ALTER ... MODIFY SETTING` does to the reported source, on the engines that are not `MergeTree`.
 # `05220` covers `MergeTree`, where a modified setting becomes the definition's. Two more cases matter,

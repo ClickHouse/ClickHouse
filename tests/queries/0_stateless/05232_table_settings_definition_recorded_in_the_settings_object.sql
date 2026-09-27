@@ -1,7 +1,3 @@
--- Tags: no-random-merge-tree-settings
--- Tag justification: the harness randomizes MergeTree settings into the `CREATE` query of every table it
--- creates, which would state in the definition the settings this test expects to be unstated.
---
 -- `MergeTree` and `Memory` record the table's own `SETTINGS` clause in the settings object as they apply it,
 -- so `system.table_settings` reads the source from there rather than from the stored `CREATE` query. The two
 -- have to agree at every point the settings can change: on `CREATE`, after `ALTER ... MODIFY SETTING` and
