@@ -143,6 +143,17 @@ def main():
         )
     )
 
+    # Nothing else in CI runs the compat builds, and on x86-64-v1 `round` has a code path of its own.
+    test_results.append(
+        Result.from_commands_run(
+            name="round half to even",
+            command=[f"""
+            {temp_path}/clickhouse local --query "SELECT throwIf(round(x) != r OR round(toFloat32(x)) != r) FROM values('x Float64, r Float64', (0.5, 0), (1.5, 2), (2.5, 2), (-0.5, 0), (-1.5, -2), (-2.5, -2)) FORMAT Null"
+            """.strip()],
+            with_info=True,
+        )
+    )
+
     if check_old_distributions:
         test_results.append(
             Result.from_commands_run(
