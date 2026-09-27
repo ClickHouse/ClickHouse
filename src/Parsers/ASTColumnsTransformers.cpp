@@ -189,6 +189,10 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
 
     hash_state.update(name.size());
     hash_state.update(name);
+    /// A double-quoted target is pinned to exact matching under `standard` name matching. Mixed in
+    /// only when set, so the hash of an unquoted target stays unchanged.
+    if (name_quote == IdentifierPartQuote::DoubleQuoted)
+        hash_state.update(name_quote);
     children[0]->updateTreeHashImpl(hash_state, ignore_aliases);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

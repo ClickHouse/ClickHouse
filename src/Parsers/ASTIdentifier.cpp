@@ -214,12 +214,20 @@ IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node)
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// Part boundaries are semantic and survive the format/reparse round-trip, so mix them in.
-    /// Quote styles do not (formatting honors identifier_quoting_style), so they stay out of the hash.
+    /// Part boundaries are semantic, so mix them in.
     if (name_parts.size() > 1)
     {
         for (const auto & part : name_parts)
             hash_state.update(part.spelling.size());
+    }
+
+    /// A double-quoted part is pinned to exact matching under `standard` name matching, so quoted and
+    /// unquoted spellings must not share, e.g., a query result cache entry. Mixed in only for such parts,
+    /// so the hash of an identifier without double quotes stays unchanged.
+    for (size_t i = 0; i < name_parts.size(); ++i)
+    {
+        if (name_parts[i].quote == IdentifierPartQuote::DoubleQuoted)
+            hash_state.update(i);
     }
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }

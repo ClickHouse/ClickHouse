@@ -402,7 +402,8 @@ public:
                 /// `__table1.nested.field` are normalized to `nested.field`, not just `nested`.
                 IdentifierName trimmed_parts(std::vector<IdentifierPart>(identifier->name_parts.begin() + 1, identifier->name_parts.end()));
                 auto new_identifier = make_intrusive<ASTIdentifier>(std::move(trimmed_parts));
-                new_identifier->setAlias(identifier->tryGetAlias());
+                /// Keep the alias quote: it is part of the hash under `standard` name matching.
+                new_identifier->setAlias(identifier->alias, identifier->alias_quote);
                 ast = std::move(new_identifier);
             }
         }
