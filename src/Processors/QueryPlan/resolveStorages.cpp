@@ -29,7 +29,6 @@
 
 #include <Storages/StorageMerge.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
-#include <Planner/Planner.h>
 #include <Planner/Utils.h>
 #include <Core/Settings.h>
 
@@ -287,15 +286,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         }
 
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), interpreter_context, options);
-        if (needs_row_policy)
-        {
-            auto set_options = options;
-            /// A set's plan is consumed through column identifiers, unlike this read, whose output
-            /// names have to match the shipped plan's.
-            set_options.ignore_rename_columns = false;
-            addBuildSubqueriesForTableFilterSets(
-                interpreter.getQueryPlan(), set_options, interpreter.getPlanner().getPlannerContext());
-        }
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(std::move(interpreter_context));
     }

@@ -115,6 +115,8 @@ struct SelectQueryOptions
         out.skip_additional_table_filters = false;
         /// A subquery's column list is the user's own, so the limit applies to it.
         out.ignore_max_columns_to_read = false;
+        /// A subquery's output is consumed through column identifiers, never by source column name.
+        out.ignore_rename_columns = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;

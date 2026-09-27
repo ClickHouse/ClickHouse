@@ -7,6 +7,8 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS rp_leaf;
 DROP TABLE IF EXISTS rp_dist;
+DROP TABLE IF EXISTS rp_merge_dist;
+DROP TABLE IF EXISTS rp_merge;
 DROP TABLE IF EXISTS rp_final;
 DROP TABLE IF EXISTS rp_final_dist;
 DROP TABLE IF EXISTS rp_mem;
@@ -48,9 +50,7 @@ DROP ROW POLICY rp_dist_policy ON rp_dist;
 -- Read limits still apply to the re-planned read.
 SELECT count() FROM rp_dist SETTINGS serialize_query_plan = 1, max_rows_to_read = 1; -- { serverError TOO_MANY_ROWS }
 
--- A policy containing an IN subquery registers a set while its filter is built. The re-planned read
--- stops at FetchColumns, before the planner would add the step that builds that set, so the set has
--- to be built here or execution reaches function `in` with a not-ready set.
+-- A policy containing an IN subquery, whose set the executing node builds itself.
 -- The subquery reads system.numbers: a policy is stored as text and re-resolved on the executing
 -- node against its own default database, so an unqualified per-test table would not resolve there,
 -- and the database name is not expressible in a .sql test.
@@ -62,6 +62,16 @@ SELECT 'subq policy local', arraySort(groupArray(x)) FROM rp_leaf;
 SELECT 'subq policy sqp=1', arraySort(groupArray(x)) FROM rp_dist SETTINGS serialize_query_plan = 1;
 SELECT 'subq policy sqp=0', arraySort(groupArray(x)) FROM rp_dist SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_sub_policy ON rp_leaf;
+
+-- The executing node plans a read of a Merge table again as well, including its own such policy.
+CREATE TABLE rp_merge AS rp_leaf ENGINE = Merge(currentDatabase(), '^rp_leaf$');
+CREATE TABLE rp_merge_dist AS rp_leaf ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_merge);
+DROP ROW POLICY IF EXISTS rp_merge_policy ON rp_merge;
+CREATE ROW POLICY rp_merge_policy ON rp_merge FOR SELECT USING x IN (SELECT number * 3 FROM system.numbers LIMIT 4) TO ALL;
+SELECT 'merge subq policy sqp=1', arraySort(groupArray(x)) FROM rp_merge_dist SETTINGS serialize_query_plan = 1;
+SELECT 'merge subq policy sqp=0', arraySort(groupArray(x)) FROM rp_merge_dist SETTINGS serialize_query_plan = 0;
+DROP ROW POLICY rp_merge_policy ON rp_merge;
+
 CREATE ROW POLICY rp_leaf_policy ON rp_leaf FOR SELECT USING y < 5 TO ALL;
 
 -- A policy on a non-sorting-key column interacts with FINAL, so for each value of
@@ -127,6 +137,8 @@ SELECT 'no policy sqp=1', count() FROM rp_dist SETTINGS serialize_query_plan = 1
 SELECT 'no policy sqp=0', count() FROM rp_dist SETTINGS serialize_query_plan = 0;
 
 DROP TABLE rp_dist;
+DROP TABLE rp_merge_dist;
+DROP TABLE rp_merge;
 DROP TABLE rp_leaf;
 DROP TABLE rp_final_dist;
 DROP TABLE rp_final;
