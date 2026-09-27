@@ -297,13 +297,11 @@ static bool doesQueryFilterImplyProjectionWhere(
 }
 
 /// Normal projection analysis result in case it can be applied.
+/// For now, it is empty.
 /// Normal projection can be used only if it contains all required source columns.
 /// It would not be hard to support pre-computed expressions and filtration.
 struct NormalProjectionCandidate : public ProjectionCandidate
 {
-    /// Whether the projection's primary key contributed to the analyzed mark count.
-    /// Tracked to gate the post-selection skip-index refinement of the parent table.
-    bool pk_was_useful = false;
 };
 
 static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block & main_header)
@@ -614,36 +612,20 @@ UseProjectionsResult optimizeUseNormalProjections(
 
         auto & stat = parent_reading_select_result->projection_stats.emplace_back();
         stat.name = candidate.projection->name;
-        bool projection_pk_was_useful = false;
         for (const auto & index_stat : candidate.merge_tree_projection_select_result_ptr->index_stats)
         {
             if (index_stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
             {
                 stat.condition = index_stat.condition;
                 stat.search_algorithm = index_stat.search_algorithm;
-                projection_pk_was_useful = !index_stat.used_keys.empty();
             }
         }
-
-        /// Keep this candidate if its primary key contributed to filtering, or if its sort order
-        /// matches the query's ORDER BY (a read-in-order projection avoids an explicit sort even
-        /// without a selective filter). Dropping a sort-order-only candidate here would regress
-        /// read-in-order queries that have no selective projection primary key.
-        bool sort_order_helps = projection_sort_order_useful(projection);
-        if (!projection_pk_was_useful && !relax_projection_checks && !sort_order_helps)
-        {
-            LOG_DEBUG(logger, "Not using projection {} because its condition was not useful and its sort order does not help : {}", candidate.projection->name, stat.condition);
-            result.projection_reject_reasons.try_emplace(projection->name, "the projection primary key does not help with the filter and its sort order does not help with ORDER BY");
-            continue;
-        }
-
         stat.selected_parts = candidate.selected_parts;
         stat.selected_marks = candidate.selected_marks;
         stat.selected_ranges = candidate.selected_ranges;
         stat.selected_rows = candidate.selected_rows;
         stat.filtered_parts = candidate.filtered_parts;
         candidate.stat = &stat;
-        candidate.pk_was_useful = projection_pk_was_useful;
 
         LOG_DEBUG(logger, "Projection {} analyzed: {} marks, projection condition {}",
             candidate.projection->name, candidate.sum_marks, stat.condition);
@@ -651,17 +633,22 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     /// Phase 2: pick the candidate with the smallest sum_marks. Break ties by preferring a
     /// candidate whose sort order matches the query's ORDER BY.
-    for (auto & candidate : candidates)
+    auto choose_best_candidate = [&]
     {
-        if (!candidate.stat)
-            continue;
+        best_candidate = nullptr;
+        for (auto & candidate : candidates)
+        {
+            if (!candidate.stat)
+                continue;
 
-        bool sort_order_helps = projection_sort_order_useful(candidate.projection);
-        if (best_candidate == nullptr
-            || candidate.sum_marks < best_candidate->sum_marks
-            || (candidate.sum_marks == best_candidate->sum_marks && sort_order_helps && !projection_sort_order_useful(best_candidate->projection)))
-            best_candidate = &candidate;
-    }
+            bool sort_order_helps = projection_sort_order_useful(candidate.projection);
+            if (best_candidate == nullptr
+                || candidate.sum_marks < best_candidate->sum_marks
+                || (candidate.sum_marks == best_candidate->sum_marks && sort_order_helps && !projection_sort_order_useful(best_candidate->projection)))
+                best_candidate = &candidate;
+        }
+    };
+    choose_best_candidate();
 
     if (!best_candidate)
         return result;
@@ -673,11 +660,13 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// parent's mark count, refine the parent estimate by applying skip-index filtering now so
     /// the comparison reflects the marks that will actually be read from the parent.
     size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-    bool best_sort_order_helps = projection_sort_order_useful(best_candidate->projection);
     LOG_DEBUG(logger, "Best projection {} has marks {}, parent marks {}, ratio {}, projection condition {}",
         best_candidate->projection->name, best_candidate->sum_marks, parent_reading_marks, ratio, best_candidate->stat->condition);
 
-    if (best_candidate->pk_was_useful
+    /// The pass is driven only by the base table's deferred skip indexes and the ratio: a projection
+    /// can win against the primary-key-only estimate because of its sort order or its granularity
+    /// even when its own primary key does not help with the filter.
+    if (!relax_projection_checks
         && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         && static_cast<double>(best_candidate->sum_marks) > static_cast<double>(parent_reading_marks) * ratio
         && query.filter_node != nullptr)
@@ -747,9 +736,32 @@ UseProjectionsResult optimizeUseNormalProjections(
                 parent_reading_select_result->selected_marks = total_marks_after_skip;
                 parent_reading_select_result->selected_rows = total_rows_after_skip;
                 parent_reading_marks = total_marks_after_skip;
+
+                /// A partially materialized projection also reads the parts that lack it from the
+                /// parent, and its sum_marks counted them with the primary-key-only estimate.
+                /// Recompute these costs from the refined ranges and choose the best candidate again.
+                std::unordered_map<const IMergeTreeDataPart *, size_t> refined_parent_marks;
+                for (const auto & part : parent_reading_select_result->parts_with_ranges)
+                    refined_parent_marks[part.data_part.get()] = part.getMarksCount();
+
+                for (auto & candidate : candidates)
+                {
+                    if (!candidate.stat || candidate.parent_parts.empty())
+                        continue;
+
+                    candidate.sum_marks = candidate.merge_tree_projection_select_result_ptr->selected_marks;
+                    for (const auto * part : candidate.parent_parts)
+                    {
+                        if (auto it = refined_parent_marks.find(part); it != refined_parent_marks.end())
+                            candidate.sum_marks += it->second;
+                    }
+                }
+                choose_best_candidate();
             }
         }
     }
+
+    bool best_sort_order_helps = projection_sort_order_useful(best_candidate->projection);
 
     /// Phase 4: apply the rejection criteria with the (possibly refined) parent mark count.
     /// Consider projections with equal read cost only if:
