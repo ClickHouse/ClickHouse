@@ -97,62 +97,105 @@ private:
             case QueryTreeNodeType::IDENTIFIER:
             {
                 const auto & identifier = set_node->as<const IdentifierNode &>().getIdentifier();
-                if (!aliases || !identifier.isShort())
-                    return true;
-                auto it = aliases->alias_name_to_expression_node.find(identifier.getFullName());
-                if (it == aliases->alias_name_to_expression_node.end())
-                    return true;
-                /// An alias of a constant or of a function (`[1, 3]`, `tuple(1, 3)`) is not a subquery. A function that
-                /// hides one (a SQL user-defined function) is accounted for where the aliased expression is visited.
-                const auto aliased_type = it->second->getNodeType();
-                return aliased_type != QueryTreeNodeType::CONSTANT && aliased_type != QueryTreeNodeType::FUNCTION;
+                return !identifier.isShort() || aliasMayBeSubquery(identifier.getFullName());
             }
             default:
                 return false;
         }
     }
 
-    /// Whether the body of the SQL user-defined function `function_name` may have `IN` with a subquery once it is expanded.
-    static bool sqlUserDefinedFunctionMayHaveInWithSubquery(const String & function_name)
+    /// Whether `name` may be a table, a CTE or an alias of a subquery. An alias of a constant or of a function (`[1, 3]`,
+    /// `tuple(1, 3)`) is not a subquery: a function that hides one (a SQL user-defined function) is accounted for where
+    /// the aliased expression is visited. An alias of an identifier (`WITH s1 AS s2`) is followed.
+    bool aliasMayBeSubquery(String name) const
     {
-        std::unordered_set<String> visited;
-        return sqlUserDefinedFunctionMayHaveInWithSubquery(function_name, visited);
+        if (!aliases)
+            return true;
+        std::unordered_set<String> visited_names;
+        while (visited_names.insert(name).second)
+        {
+            auto it = aliases->alias_name_to_expression_node.find(name);
+            if (it == aliases->alias_name_to_expression_node.end())
+                return true;
+            const auto & aliased_node = it->second;
+            const auto * aliased_identifier = aliased_node->as<IdentifierNode>();
+            if (!aliased_identifier)
+                return aliased_node->getNodeType() != QueryTreeNodeType::CONSTANT && aliased_node->getNodeType() != QueryTreeNodeType::FUNCTION;
+            if (!aliased_identifier->getIdentifier().isShort())
+                return true;
+            name = aliased_identifier->getIdentifier().getFullName();
+        }
+        /// A cycle of aliases, which the analyzer rejects.
+        return true;
     }
 
-    static bool sqlUserDefinedFunctionMayHaveInWithSubquery(const String & function_name, std::unordered_set<String> & visited)
+    /// Whether the body of the SQL user-defined function `function_name` may have `IN` with a subquery once it is expanded.
+    bool sqlUserDefinedFunctionMayHaveInWithSubquery(const String & function_name) const
     {
-        if (!visited.insert(function_name).second)
-            return false;
+        std::unordered_set<String> functions_in_expansion;
+        return sqlUserDefinedFunctionMayHaveInWithSubquery(function_name, functions_in_expansion);
+    }
+
+    bool sqlUserDefinedFunctionMayHaveInWithSubquery(const String & function_name, std::unordered_set<String> & functions_in_expansion) const
+    {
         auto function_ast = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
         if (!function_ast)
             return false;
         const auto * create_function_query = function_ast->as<ASTCreateSQLFunctionQuery>();
         if (!create_function_query)
             return false;
-        return astMayHaveInWithSubquery(create_function_query->function_core, visited);
+        /// A recursive call is rejected when the body is expanded.
+        if (!functions_in_expansion.insert(function_name).second)
+            return true;
+
+        /// The arguments of the call are resolved before they are bound to the parameters, so a subquery argument is a
+        /// scalar subquery, and a parameter on the right side of `IN` is never a set built from a subquery.
+        const auto & lambda = create_function_query->function_core->children.at(0);
+        std::unordered_set<String> parameter_names;
+        for (const auto & parameter : lambda->children.at(0)->children.at(0)->children)
+            parameter_names.insert(parameter->as<ASTIdentifier &>().name());
+
+        bool result = astMayHaveInWithSubquery(lambda->children.at(1), parameter_names, functions_in_expansion);
+        functions_in_expansion.erase(function_name);
+        return result;
     }
 
-    /// Any subquery in the body counts: it becomes a subquery of the query once the body is expanded. So does `IN` a
-    /// parameter, an identifier of a table or a table function, because the argument of the call may be a subquery.
-    static bool astMayHaveInWithSubquery(const ASTPtr & ast, std::unordered_set<String> & visited)
+    /// Any subquery in the body counts: it becomes a subquery of the query once the body is expanded. So does `IN` a table,
+    /// a CTE or a table function.
+    bool astMayHaveInWithSubquery(
+        const ASTPtr & ast,
+        const std::unordered_set<String> & parameter_names,
+        std::unordered_set<String> & functions_in_expansion) const
     {
         if (ast->as<ASTSubquery>())
             return true;
         if (const auto * function = ast->as<ASTFunction>())
         {
-            if (isNameOfInFunction(function->name) && function->arguments && function->arguments->children.size() == 2)
-            {
-                const auto & set_ast = function->arguments->children[1];
-                if (set_ast->as<ASTIdentifier>() || set_ast->as<ASTTableIdentifier>()
-                    || (set_ast->as<ASTFunction>() && TableFunctionFactory::instance().isTableFunctionName(set_ast->as<ASTFunction>()->name)))
-                    return true;
-            }
-            if (sqlUserDefinedFunctionMayHaveInWithSubquery(function->name, visited))
+            if (isNameOfInFunction(function->name) && function->arguments && function->arguments->children.size() == 2
+                && astMayBeSubquery(function->arguments->children[1], parameter_names))
+                return true;
+            if (sqlUserDefinedFunctionMayHaveInWithSubquery(function->name, functions_in_expansion))
                 return true;
         }
         for (const auto & child : ast->children)
-            if (astMayHaveInWithSubquery(child, visited))
+            if (astMayHaveInWithSubquery(child, parameter_names, functions_in_expansion))
                 return true;
+        return false;
+    }
+
+    /// The same as `mayBeSubquery`, for the right side of `IN` in the body of a SQL user-defined function.
+    bool astMayBeSubquery(const ASTPtr & ast, const std::unordered_set<String> & parameter_names) const
+    {
+        if (ast->as<ASTTableIdentifier>())
+            return true;
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (identifier->compound())
+                return true;
+            return !parameter_names.contains(identifier->name()) && aliasMayBeSubquery(identifier->name());
+        }
+        if (const auto * function = ast->as<ASTFunction>())
+            return TableFunctionFactory::instance().isTableFunctionName(function->name);
         return false;
     }
 
