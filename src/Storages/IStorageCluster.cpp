@@ -12,6 +12,9 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
+#include <Planner/Utils.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -19,6 +22,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -36,6 +41,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
@@ -126,6 +132,39 @@ void IStorageCluster::read(
     /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
     /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
+    /// A replica resolves `additional_table_filters` against the forwarded query, in which the table expression has a
+    /// generated alias, so it misses an entry keyed by the alias. Unless the initiator filters the fetched rows itself,
+    /// forward the filter resolved here as a condition of the query, and drop the entries naming the table function,
+    /// which the replica would resolve to this read as well.
+    if (query_info.additional_filter_ast && processed_stage != QueryProcessingStage::FetchColumns)
+    {
+        if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
+        {
+            const auto full_name = StorageID(ITableFunction::getDatabaseName(), table_function->name).getFullNameNotQuoted();
+
+            ASTPtr filter = buildFilterQueryTree(query_info.additional_filter_ast, query_info.table_expression, context)
+                ->toAST({.qualify_indentifiers_with_database = false});
+            query_to_send = query_to_send->clone();
+            auto & select = query_to_send->as<ASTSelectQuery &>();
+            if (auto where = select.where())
+                filter = makeASTOperator("and", std::move(where), std::move(filter));
+            select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+
+            Map forwarded_filters;
+            for (const auto & entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+                if (entry.safeGet<Tuple>().at(0).safeGet<String>() != full_name)
+                    forwarded_filters.push_back(entry);
+
+            static constexpr std::string_view additional_table_filters_name[] = {"additional_table_filters"};
+            removeSettingsFromQueryTopLevel(query_to_send, additional_table_filters_name);
+
+            auto forwarded_context = Context::createCopy(context);
+            forwarded_context->setSetting("additional_table_filters", Field(std::move(forwarded_filters)));
+            query_plan.addInterpreterContext(forwarded_context);
+            context = std::move(forwarded_context);
+        }
+    }
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
