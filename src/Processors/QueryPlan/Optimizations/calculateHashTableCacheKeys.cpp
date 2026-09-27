@@ -136,6 +136,10 @@ bool isByteTransparentTransform(const ITransformingStep & transform)
 
 /// If `dag` only forwards its inputs (possibly renaming and reordering them), return the input index
 /// each output comes from. Returns nothing when an output is computed rather than forwarded.
+///
+/// `outputsAreRenamedInputs` below asks a neighbouring yes/no question - may this wrapper be skipped
+/// over entirely - and is stricter: it also rejects forwarding one input twice. This one answers what
+/// the permutation IS, which is what a key needs to tell two orderings of the same columns apart.
 std::optional<std::vector<size_t>> pureColumnPermutation(const ActionsDAG & dag)
 {
     std::unordered_map<const ActionsDAG::Node *, size_t> input_index;
@@ -302,6 +306,26 @@ bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
     return expression && expression->getTransformTraits().preserves_number_of_rows
         && !expression->getInputHeaders().empty()
         && outputsAreRenamedInputs(expression->getExpression());
+}
+
+/// Does this wrapper forward its inputs in the SAME order? `outputsAreRenamedInputs` accepts a
+/// reordering too, and a reordering is not a rename: it changes which column each position holds, and a
+/// position is how the payloads above identify their columns (`writeCacheKeyColumnName`).
+static bool forwardsInputsInOrder(const IQueryPlanStep & step)
+{
+    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
+    if (!expression)
+        return false;
+
+    auto permutation = pureColumnPermutation(expression->getExpression());
+    if (!permutation)
+        return false;
+
+    for (size_t i = 0; i < permutation->size(); ++i)
+        if ((*permutation)[i] != i)
+            return false;
+
+    return true;
 }
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
@@ -581,7 +605,6 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(cache_keys[child]);
         }
 
-        bool step_contributes = true;
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
@@ -591,8 +614,6 @@ void calculateHashTableCacheKeys(
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
-            else
-                step_contributes = false;
         }
 
         /// A step that contributes nothing must not contribute a hashing round either. Hashing its
@@ -610,10 +631,12 @@ void calculateHashTableCacheKeys(
         ///
         /// A transforming step always has exactly one child, so the join branches above never reach
         /// this; the guard is for safety, not for a shape that occurs.
-        ///
-        /// A pass-through expression that reorders its columns does contribute - the permutation, see
-        /// `calculateHashFromStep` - and so keeps a key of its own.
-        if (!step_contributes && isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1)
+        /// Only a wrapper that forwards its inputs in order is adopted. One that also reorders them keeps
+        /// a key of its own, from the permutation `calculateHashFromStep` hashed: adopting it would put a
+        /// plan that permutes same-typed columns and a plan that does not on one key, which is how two
+        /// mirror queries over different join inputs came to share a statistics entry.
+        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1
+            && forwardsInputsInOrder(*node.step))
         {
             raw_hashes[&node] = raw_hashes[node.children.front()];
             cache_keys[&node] = cache_keys[node.children.front()];
