@@ -392,8 +392,8 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
     LoadingStrictnessLevel mode,
     bool attach_short_syntax)
 {
-    /// Stored metadata was checked when it was first supplied by a user. Rechecking it during a replay
-    /// would make acceptance depend on the replaying session's settings.
+    /// Stored metadata and backup definitions were checked when first supplied by a user. Rechecking
+    /// them during replay or RESTORE would make acceptance depend on the current session's settings.
     if (!isFreshTableDefinition(mode, attach_short_syntax))
         return;
 

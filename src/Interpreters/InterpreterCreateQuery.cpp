@@ -972,7 +972,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// A full-definition `ATTACH` is fresh user input, but a `Replicated` database replays it
         /// under the same loading mode. Only the initiator has the session settings that accepted
-        /// its codecs. Keeper recovery and Shared Catalog replay also reuse stored definitions.
+        /// its codecs. RESTORE loads an already accepted backup definition under SECONDARY_CREATE,
+        /// just as getColumnsDescription() trusts backed-up table-column codecs. Replicated metadata
+        /// syntax compatibility is checked separately before publishing a restored definition.
+        /// Keeper recovery and Shared Catalog replay also reuse stored definitions.
         bool validate_projection_codecs = isFreshTableDefinition(mode, create.attach_short_syntax)
             && !getContext()->isRecoveryFromStoredMetadata();
         if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
