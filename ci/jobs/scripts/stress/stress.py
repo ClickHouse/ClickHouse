@@ -52,6 +52,33 @@ def escape_tsv_info(text: str) -> str:
     )
 
 
+HUNG_CHECK_INFO_BUDGET = 32 * 1024
+
+
+def build_hung_check_info(hung_check_log: Path) -> str:
+    """Build the `info` cell of the `Hung check failed` row from `hung_check.log`.
+
+    Bounded, and read from the head: `clickhouse-test --hung-check` prints the
+    verdict and the longest-running queries first, so the head is the diagnostic
+    region. The whole log is uploaded as a CI artifact.
+    """
+    with open(hung_check_log, "rb") as f:
+        # The extra byte separates "exactly the budget" from "there was more".
+        chunk = f.read(HUNG_CHECK_INFO_BUDGET + 1)
+    log_text = chunk[:HUNG_CHECK_INFO_BUDGET].decode("utf-8", errors="replace")
+    if len(chunk) > HUNG_CHECK_INFO_BUDGET:
+        # Keep the trailing fragment: one hung query is one unescaped line of
+        # arbitrary length, so dropping a partial last line can erase the whole
+        # processlist.
+        log_text = (
+            "(truncated; see the hung_check.log artifact for the full output;"
+            " showing the first 32 KiB, whose last line may be cut)\n"
+            + log_text
+            + "\n..."
+        )
+    return log_text
+
+
 class RandomDisruptor:
     """Background thread that randomly kills queries, client processes and mutations, and
     briefly stops background operations such as merges, during stress tests.
@@ -356,13 +383,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
 
-    # The stress test profile constrains enable_analyzer to >= 1 (stress_tests.lib) so neither the
-    # AST fuzzer nor a test spends the run on the old interpreter. Send the setting explicitly so the
-    # randomized compatibility below cannot revert it: compatibility only rewrites settings that are
-    # not `changed`, and a constraint cannot catch that revert because there is no explicit change to
-    # check. The profile pins the same value server-side for the queries this does not cover.
-    client_options.append("enable_analyzer=1")
-
     if i > 0:
         options.append("--order=random")
 
@@ -482,7 +502,13 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     # https://github.com/ClickHouse/ClickHouse/issues/112032 needs to be fixed to enable transform_null_in
     #if random.random() < 1 / 3:
     #    client_options.append("transform_null_in=1")
-    if random.random() < 1 / 3:
+    # The upgrade check runs this load against the previous release's server. Before #119385
+    # (26.9) a sorting key such as `CAST(json.b, 'String')` is matched to the same expression
+    # in `ORDER BY` by name and arity only, although under `cast_keep_nullable = 1` the query
+    # types it `Nullable(String)` while the key is `String`; read-in-order with
+    # `read_in_order_use_virtual_row = 1` then aborts the shipped server with
+    # `Logical error: Virtual row has different type` (`03277_json_subcolumns_in_primary_key`).
+    if random.random() < 1 / 3 and not upgrade_check:
         client_options.append("cast_keep_nullable=1")
     if random.random() < 1 / 3:
         client_options.append("aggregate_functions_null_for_empty=1")
@@ -506,8 +532,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
-        if random.random() < 1 / 2:
-            # Ship serialized query plans to the replicas instead of query text.
+        # Ship serialized query plans to the replicas instead of query text. The upgrade
+        # check's only test load runs against the previous release, so a failure on this
+        # path there cannot be fixed by any change to master.
+        if random.random() < 1 / 2 and not upgrade_check:
             client_options.append("serialize_query_plan=1")
 
     if random.random() < 0.2:
@@ -1219,44 +1247,14 @@ def run_stress_test(args: argparse.Namespace) -> None:
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
-                # Embed a tail of the captured hung-check output in
-                # test_results.tsv so the processlist and thread stacktraces
-                # are visible in CIDB. The full log is also kept as a CI
-                # artifact (see process_results in stress_job.py), giving
-                # investigators access to the complete diagnostic output.
-                #
-                # Read only the last 32 KiB rather than the whole file: on
-                # deadlock failures `hung_check.log` can be very large (a
-                # full processlist plus a `gdb` backtrace for every server
-                # process), and the stress-test machine is already under
-                # memory pressure. The diagnostic content we need
-                # (`Found hung queries`, the processlist with stacktraces,
-                # the `gdb` backtraces) is printed at the end of the log,
-                # so the tail is exactly the relevant region.
+                # Embed part of the hung-check output in test_results.tsv so the
+                # verdict and the processlist are visible in CIDB. The whole log
+                # is also a CI artifact (process_results in stress_job.py).
                 info_field = ""
                 try:
-                    tail_bytes_size = 32 * 1024
-                    with open(hung_check_log, "rb") as f:
-                        f.seek(0, os.SEEK_END)
-                        size = f.tell()
-                        offset = max(0, size - tail_bytes_size)
-                        f.seek(offset)
-                        tail_bytes = f.read()
-                    log_text = tail_bytes.decode("utf-8", errors="replace")
-                    if offset > 0:
-                        # Drop the (likely partial) first line so the tail
-                        # always starts on a line boundary.
-                        nl = log_text.find("\n")
-                        if nl >= 0:
-                            log_text = log_text[nl + 1 :]
-                        log_text = (
-                            "(truncated; see hung_check.log artifact for"
-                            " the full output; showing last 32 KiB)\n...\n"
-                            + log_text
-                        )
                     # Escape so NUL, tab, and newline survive the TSV encoding,
                     # matching the decoder in read_test_results().
-                    info_field = escape_tsv_info(log_text)
+                    info_field = escape_tsv_info(build_hung_check_info(hung_check_log))
                 except OSError as ex:
                     logging.warning(
                         "Failed to read hung_check.log to embed in"

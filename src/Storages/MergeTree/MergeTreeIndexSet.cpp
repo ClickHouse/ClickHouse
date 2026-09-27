@@ -30,6 +30,19 @@ namespace ErrorCodes
 /// 0b11 -- can be true and false at the same time
 static const Field UNKNOWN_FIELD(3u);
 
+/// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
+/// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
+static bool hasMeaningfulFieldExtremes(const IDataType & type)
+{
+    bool result = !isDynamic(type) && !isVariant(type);
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (isDynamic(child) || isVariant(child))
+            result = false;
+    });
+    return result;
+}
+
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const String & index_name_,
@@ -128,6 +141,12 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
         elem.column = std::move(mutable_col);
+
+        if (!hasMeaningfulFieldExtremes(*elem.type))
+        {
+            set_hyperrectangle.push_back(Range::createWholeUniverse());
+            continue;
+        }
 
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
         /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
@@ -288,6 +307,13 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
 
+            if (!hasMeaningfulFieldExtremes(*index_sample_block.getByPosition(i).type))
+            {
+                if (set_hyperrectangle.size() <= i)
+                    set_hyperrectangle.push_back(Range::createWholeUniverse());
+                continue;
+            }
+
             /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
             /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
             /// (otherwise IS NULL can wrongly prune); getExtremes on LC materializes internally anyway.
@@ -383,6 +409,10 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
+    /// `set_hyperrectangle` comes from `getExtremes`/`getExtremesNullLast`, which skip NaN, and
+    /// `mayBeTrueOnGranule` uses it as a pre-check before the exact per-value evaluation.
+    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
+
     for (const auto & column : index_description.sample_block)
         key_columns.emplace(column.name, column.type);
 
@@ -593,7 +623,8 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// through the regular filter path.
             /// A type with no boolean reading takes the same way out. A wide integer is an integer,
             /// so `__bitWrapperFunc` would read `indexHint(toUInt256(v))` as `v != 0` and prune the
-            /// granules holding `v = 0`, while nothing else in the query reads that hint at all.
+            /// granules holding `v = 0`, while `WHERE toUInt256(v)` is rejected, so no row-level
+            /// filter corresponds to what was skipped.
             const auto & atom_result_type = atom_node_ptr->result_type;
             const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
                 ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()

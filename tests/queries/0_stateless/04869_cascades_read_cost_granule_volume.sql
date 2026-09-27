@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- A read is priced on the rows the primary key keeps, not on the rows the filter keeps.
 -- `t_rc_dim` is filtered on `v`, which is not in the sorting key, so the scan covers the whole
 -- table although the estimate (from column statistics) is a few hundred rows. Without the

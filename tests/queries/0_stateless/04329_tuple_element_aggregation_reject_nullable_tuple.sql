@@ -5,7 +5,7 @@
 -- Nullable wrapping a custom-named tuple (such as `Point`) is allowed because flattening keeps
 -- custom-named tuples as opaque leaves.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_reject_top_level;
 DROP TABLE IF EXISTS t_reject_nested;

@@ -1090,7 +1090,7 @@ STEER_PROMPT="You are running in a non-interactive, single-shot batch session. D
 # Sent on each resume to nudge the worker to finish.
 NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Preserve remote PR history and obey the staged-diff, full-PR-diff, and fast-forward-only safety gates; never force-push or bypass the pre-push hook. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
-TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond a clean merge of the latest base branch. If any other code change, including a merge conflict, is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}."
+TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond a clean merge of the latest base branch. If any other code change, including a merge conflict, is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}. This phase runs without any GitHub or Git credentials: \`gh\` is unauthenticated and will fail, and no push or authenticated API call can succeed here. Base your triage on the orchestrator pre-check facts above, on the local repository state, and on unauthenticated sources, and hand off to the coding model whenever the PR needs anything the pre-check already reports as pending."
 
 TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-branch merge yourself. If any other source, test, or documentation change is needed, stop and hand it to the coding model by emitting ${HANDOFF_MARKER} on its own line followed by a detailed task description. Emit ${DONE_MARKER} only if the PR is fully handled."
 
@@ -1292,6 +1292,12 @@ import_triage_objects()
     git -C "$wt" fetch -q --no-tags "$triage_wt" "${missing[@]}"
 }
 
+# Path, relative to the worker worktree, of the marker that hands a validated
+# base-branch merge from the triage phase to the coding phase. The
+# `continue-pr-auto` skill reads it in its checkout step and keeps the merge
+# instead of resetting it away.
+VALIDATED_MERGE_MARKER="tmp/continue-all-prs/validated-base-merge"
+
 recreate_validated_triage_merge()
 {
     local wt="$1" start_head="$2" base_head="$3" triage_wt="$4"
@@ -1311,6 +1317,12 @@ recreate_validated_triage_merge()
     # `commit.gpgSign=true` configured, an otherwise clean validated merge
     # would fail here on any machine where signing needs interaction.
     git -C "$wt" -c commit.gpgSign=false commit -m "Merge base branch into pull request head" || return 1
+    # Record the recreated merge for the coding phase. Its first step resets
+    # the worktree to the remote pull-request head, which would otherwise
+    # discard this merge and make the coding model pay for a second merge and
+    # rebuild inside the same budget.
+    mkdir -p "$wt/tmp/continue-all-prs" || return 1
+    git -C "$wt" rev-parse HEAD > "$wt/$VALIDATED_MERGE_MARKER" || return 1
     # The recreated merge can advance submodule gitlinks (a base-branch
     # submodule bump merges cleanly). Without realignment the worker's
     # submodule worktrees stay on the old revisions and the coding model
@@ -1383,6 +1395,10 @@ run_continue_pr()
     local -a model_args triage_git_args triage_sandbox_args
     sid=""
     phase="coding"
+    # A marker left over from the previous pull request handled by this worker
+    # must never be handed to the coding phase: `git clean` deliberately keeps
+    # `tmp/continue-all-prs/` between runs.
+    rm -f "$wt/$VALIDATED_MERGE_MARKER"
     [[ -n "$TRIAGE_MODEL" ]] && phase="triage"
     handoff=""
     triage_start_head=""

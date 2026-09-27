@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
@@ -102,7 +103,6 @@ namespace
             /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
             , upload_checksum_algorithm(
                 use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
-                        && (!client_ptr->isChecksumDisabled() || client_ptr->isS3ExpressBucket())
                     ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
                     : std::nullopt)
             , num_parts(0)
@@ -122,6 +122,8 @@ namespace
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
+        /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
+        const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -150,8 +152,9 @@ namespace
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
-            if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+            auto metadata = object_metadata.value_or(ObjectAttributes{});
+            metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
@@ -207,6 +210,7 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
+            request.setIdempotencyId(idempotency_id);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -243,9 +247,10 @@ namespace
                     break;
                 }
 
-                if (isTransientCompleteMultipartUploadError(outcome.GetError()) && (retries < max_retries))
+                const auto & error = outcome.GetError();
+
+                if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
                 {
-                    const auto & error = outcome.GetError();
                     const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
