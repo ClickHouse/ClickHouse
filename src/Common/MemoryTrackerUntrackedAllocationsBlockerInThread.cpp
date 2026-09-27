@@ -1,17 +1,16 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
-#include <Common/FiberLocal.h>
 #include <cstdint>
 
-static constinit FiberLocal<uint64_t, FiberLocalSlot::MEMORY_TRACKER_UNTRACKED_ALLOCATIONS_BLOCKER_COUNTER> MemoryTrackerUntrackedAllocationsBlockerInThreadCounter;
+static thread_local constinit uint64_t MemoryTrackerUntrackedAllocationsBlockerInThreadCounter = 0;
 
 MemoryTrackerUntrackedAllocationsBlockerInThread::MemoryTrackerUntrackedAllocationsBlockerInThread()
 {
-    MemoryTrackerUntrackedAllocationsBlockerInThreadCounter = MemoryTrackerUntrackedAllocationsBlockerInThreadCounter + 1;
+    ++MemoryTrackerUntrackedAllocationsBlockerInThreadCounter;
 }
 
 MemoryTrackerUntrackedAllocationsBlockerInThread::~MemoryTrackerUntrackedAllocationsBlockerInThread()
 {
-    MemoryTrackerUntrackedAllocationsBlockerInThreadCounter = MemoryTrackerUntrackedAllocationsBlockerInThreadCounter - 1;
+    --MemoryTrackerUntrackedAllocationsBlockerInThreadCounter;
 }
 
 bool MemoryTrackerUntrackedAllocationsBlockerInThread::isBlocked()

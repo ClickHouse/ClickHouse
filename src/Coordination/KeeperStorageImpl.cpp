@@ -103,7 +103,9 @@ bool fixupACL(
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
-            result_acls.push_back(request_acl);
+            /// Save world:anyone ACLs to support specific permissions
+            if (request_acl.permissions != Coordination::ACL::All)
+                result_acls.push_back(request_acl);
             valid_found = true;
         }
         else if (request_acl.scheme == "digest")
@@ -118,14 +120,6 @@ bool fixupACL(
             result_acls.push_back(new_acl);
         }
     }
-
-    /// ZooKeeper ORs the entries of an ACL list, so dropping one can only narrow the result. A list
-    /// consisting only of world:anyone with all permissions grants everyone everything, which is
-    /// exactly what the empty list (ACL id 0) means here, so it is the one list that can be dropped.
-    if (std::ranges::all_of(result_acls, [](const Coordination::ACL & acl)
-            { return acl.scheme == "world" && acl.id == "anyone" && acl.permissions == Coordination::ACL::All; }))
-        result_acls.clear();
-
     return valid_found;
 }
 
@@ -199,14 +193,6 @@ bool isRemoveNodeDelta(const KeeperDelta & delta)
         return op->new_node.action == Coordination::Storage::NodeAction::Remove;
     else
         return std::holds_alternative<RemoveNodeDelta>(delta.operation);
-}
-
-bool isCreateNodeDelta(const KeeperDelta & delta)
-{
-    if (const auto * op = std::get_if<LSMTDelta>(&delta.operation))
-        return op->new_node.action == Coordination::Storage::NodeAction::Create;
-    else
-        return std::holds_alternative<CreateNodeDelta>(delta.operation);
 }
 
 bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::DeltaRange & deltas, Coordination::Stat & out_stat)
@@ -297,18 +283,12 @@ process(const Coordination::ZooKeeperSyncRequest & zk_request, KeeperStorage & /
 
 /// CREATE Request ///
 static std::pair<KeeperResponsesForSessions, Int64> processWatches(
-    const Coordination::ZooKeeperCreateRequest & /*zk_request*/,
-    KeeperStorage::DeltaRange deltas,
+    const Coordination::ZooKeeperCreateRequest & zk_request,
+    KeeperStorage::DeltaRange /*deltas*/,
     KeeperStorage & storage,
     int64_t /*session_id*/)
 {
-    for (const auto & delta : deltas)
-    {
-        if (isCreateNodeDelta(delta))
-            return storage.processWatchesImpl(delta.path, Coordination::Event::CREATED);
-    }
-
-    return {};
+    return storage.processWatchesImpl(zk_request.getPath(), Coordination::Event::CREATED);
 }
 
 template <typename Storage>

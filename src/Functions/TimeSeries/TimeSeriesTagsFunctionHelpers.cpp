@@ -70,32 +70,12 @@ namespace
             "Array(Tuple(String, String))");
     }
 
-    void reserveTagVectors(VectorWithMemoryTracking<TagNamesAndValues> & out_tags_vector, size_t num_tags)
-    {
-        if (num_tags == 0)
-            return;
-
-        for (auto & tags : out_tags_vector)
-            tags.reserve(tags.size() + num_tags);
-    }
-
-    std::string_view extractStringViewAt(const IColumn & column, size_t row)
-    {
-        if (column.isNullAt(row))
-            return {};
-
-        auto value = std::string_view{column.getDataAt(row)};
-        trimRight(value, '\0'); /// Trim zero characters in case FixedString was used for this column.
-        return value;
-    }
-
     /// Extracts tags from a column of type Array(Tuple(String, String)) containing pairs (tag_name, tag_value).
     void extractTagsArrayFromColumn(
         std::string_view function_name,
         size_t argument_index,
         const IColumn & column_tags_array,
-        VectorWithMemoryTracking<TagNamesAndValues> & out_tags_vector,
-        size_t num_extra_tags)
+        VectorWithMemoryTracking<TagNamesAndValues> & out_tags_vector)
     {
         size_t num_rows = column_tags_array.size();
         chassert(out_tags_vector.size() == num_rows);
@@ -114,11 +94,10 @@ namespace
                     auto & res = out_tags_vector[i];
                     auto start_offset = offsets[i - 1];
                     auto end_offset = offsets[i];
-                    res.reserve(res.size() + (end_offset - start_offset) + num_extra_tags);
                     for (size_t j = start_offset; j != end_offset; ++j)
                     {
-                        auto tag_name = extractStringViewAt(tag_names, j);
-                        auto tag_value = extractStringViewAt(tag_values, j);
+                        auto tag_name = std::string_view{tag_names.getDataAt(j)};
+                        auto tag_value = std::string_view{tag_values.getDataAt(j)};
                         res.emplace_back(tag_name, tag_value);
                     }
                 }
@@ -127,10 +106,7 @@ namespace
 
             /// [] is of type Array(Nothing).
             if (checkColumn<ColumnNothing>(&array_column->getData()))
-            {
-                reserveTagVectors(out_tags_vector, num_extra_tags);
                 return;
-            }
         }
 
         /// The argument can be literal NULL.
@@ -138,23 +114,20 @@ namespace
         {
             const auto & nested_column = nullable_column->getNestedColumn();
             if (checkColumn<ColumnNothing>(&nested_column))
-            {
-                reserveTagVectors(out_tags_vector, num_extra_tags);
                 return;
-            }
         }
 
         /// The argument can be wrapped in a ColumnMap.
         if (const auto * map_column = checkAndGetColumn<ColumnMap>(&column_tags_array))
         {
-            extractTagsArrayFromColumn(function_name, argument_index, map_column->getNestedColumn(), out_tags_vector, num_extra_tags);
+            extractTagsArrayFromColumn(function_name, argument_index, map_column->getNestedColumn(), out_tags_vector);
             return;
         }
 
         /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
         if (auto full_column = column_tags_array.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality(); full_column.get() != &column_tags_array)
         {
-            extractTagsArrayFromColumn(function_name, argument_index, *full_column, out_tags_vector, num_extra_tags);
+            extractTagsArrayFromColumn(function_name, argument_index, *full_column, out_tags_vector);
             return;
         }
 
@@ -188,7 +161,12 @@ namespace
         VectorWithMemoryTracking<std::string_view> res{num_rows, ""};
         for (size_t i = 0; i != res.size(); ++i)
         {
-            res[i] = extractStringViewAt(column, i);
+            if (!column.isNullAt(i))
+            {
+                auto str = std::string_view{column.getDataAt(i)};
+                trimRight(str, '\0'); /// Trim zero characters in case FixedString was used for this column.
+                res[i] = str;
+            }
         }
         return res;
     }
@@ -240,12 +218,6 @@ namespace
             std::sort(tags.begin(), tags.end(), less_by_tag_name);
             tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
 
-            /// A tag with an empty value means the tag is absent, so drop such tags before checking for
-            /// conflicts. This lets a caller pass an empty value for a tag that is also present (with a
-            /// non-empty value) in the tags array - e.g. an empty `metric_name` column when `__name__` is
-            /// already in the tags - without it being treated as a conflict.
-            std::erase_if(tags, is_tag_value_empty);
-
             auto adjacent = std::adjacent_find(tags.begin(), tags.end(), equal_by_tag_name);
             if (adjacent != tags.end())
             {
@@ -253,6 +225,8 @@ namespace
                     "Found two tags with the same name {} but different values {} and {} while executing function {}",
                     quoteString(adjacent->first), quoteString(adjacent->second), quoteString(std::next(adjacent)->second), function_name);
             }
+
+            std::erase_if(tags, is_tag_value_empty);
         }
     }
 
@@ -344,8 +318,7 @@ VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArgum
 
     VectorWithMemoryTracking<TagNamesAndValues> tags_vector;
     tags_vector.resize(column_tags_array.size());
-    const size_t num_extra_tags = (arguments.size() - start_argument_index - 1) / 2;
-    extractTagsArrayFromColumn(function_name, start_argument_index, column_tags_array, tags_vector, num_extra_tags);
+    extractTagsArrayFromColumn(function_name, start_argument_index, column_tags_array, tags_vector);
 
     if (start_argument_index + 1 < arguments.size())
     {

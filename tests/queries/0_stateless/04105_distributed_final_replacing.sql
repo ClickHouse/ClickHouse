@@ -1,3 +1,4 @@
+-- Tags: no-old-analyzer
 -- Regression test: distributed query plan on SELECT FINAL from engines with specialized merging
 -- (Replacing, Collapsing, ...) must not reroute same-sort-key rows to different buckets, or
 -- deduplication is broken.
@@ -13,6 +14,7 @@ INSERT INTO t_replacing_final_correctness SELECT number, 1, 'old' FROM numbers(1
 INSERT INTO t_replacing_final_correctness SELECT number, 2, 'new' FROM numbers(100000);
 
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
 SELECT '-- Local';

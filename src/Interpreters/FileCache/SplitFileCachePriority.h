@@ -56,6 +56,7 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
+        const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool is_initial_load = false) override;
 
@@ -70,6 +71,7 @@ public:
     bool tryIncreasePriority(
         Iterator & iterator,
         bool is_space_reservation_complete,
+        CachePriorityGuard & queue_guard,
         CacheStateGuard & state_guard) override;
 
     EvictionInfoPtr collectEvictionInfo(
@@ -84,24 +86,23 @@ public:
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
+        InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
         EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
+        CachePriorityGuard &,
         CacheStateGuard &) override;
 
-    void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
+    void iterate(
+        IterateFunc func,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::ReadLock & lock) override;
 
-    void shuffle() override;
+    void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    PriorityDumpPtr dump() override;
-
-    bool supportsDynamicResize() const override
-    {
-        return getPriority(SegmentType::Data).supportsDynamicResize()
-            && getPriority(SegmentType::System).supportsDynamicResize();
-    }
+    PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
     bool modifySizeLimits(
         size_t max_size_,
@@ -126,19 +127,17 @@ public:
     }
 
 protected:
-    [[noreturn]] CachePriorityGuard & getPriorityGuard() const override;
-
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
     {
         getPriority(SegmentType::Data).setInvalidateNotifier(threshold, on_invalidate);
         getPriority(SegmentType::System).setInvalidateNotifier(threshold, on_invalidate);
     }
 
-    size_t removeInvalidatedEntries(size_t max_batch) override
+    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override
     {
-        size_t removed = getPriority(SegmentType::Data).removeInvalidatedEntries(max_batch);
+        size_t removed = getPriority(SegmentType::Data).removeInvalidatedEntries(max_batch, cache_guard);
         if (removed < max_batch)
-            removed += getPriority(SegmentType::System).removeInvalidatedEntries(max_batch - removed);
+            removed += getPriority(SegmentType::System).removeInvalidatedEntries(max_batch - removed, cache_guard);
         return removed;
     }
 
@@ -176,7 +175,6 @@ public:
     EntryPtr getEntry() const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
-    void remove() override;
 
     void invalidate() noexcept override;
 
@@ -195,8 +193,6 @@ public:
 
     const Iterator * getNestedOrThis() const override { return iterator->getNestedOrThis(); }
     Iterator * getNestedOrThis() override { return iterator->getNestedOrThis(); }
-
-    CachePriorityGuard & getPriorityGuard() const override { return iterator->getPriorityGuard(); }
 
     const FileSegmentKeyType type;
 

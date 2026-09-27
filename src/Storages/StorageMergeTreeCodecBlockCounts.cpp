@@ -1,7 +1,7 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -212,7 +212,7 @@ private:
             UInt32 size_compressed = 0;
             UInt32 size_decompressed = 0;
             auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
-            ++counts[codec->getCodecDescription()->formatForLogging()];
+            ++counts[codec->getCodecDesc()->formatForLogging()];
         }
         return codecCountsToField(counts);
     }
@@ -362,7 +362,9 @@ void StorageMergeTreeCodecBlockCounts::read(
     /// The other columns are metadata that `system.parts_columns` reports regardless of row policies.
     if (sample_block->has(CODEC_BLOCK_COUNTS_COLUMN))
     {
-        if (getEffectiveRowPolicyFilter(*source_table, context))
+        auto row_policy_filter = context->getRowPolicyFilter(
+            source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Cannot read column `{}` from `mergeTreeCodecBlockCounts` because a row policy is applied on table {}. "

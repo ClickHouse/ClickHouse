@@ -3,7 +3,6 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <vector>
 #include <sys/types.h>
@@ -114,14 +113,9 @@ protected:
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
     /// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
-    /// `nats_url` is not here: it is hidden only when its value carries an '@'.
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
     static constexpr std::string_view nats_secret_keys[]
         = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
-
-    /// As `nats_secret_keys`, for RabbitMQ; `rabbitmq_address` is hidden only when it carries an '@'.
-    /// Keep in sync with `RabbitMQ::SETTINGS_TO_HIDE`.
-    static constexpr std::string_view rabbitmq_secret_keys[] = {"rabbitmq_password"};
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
@@ -169,6 +163,11 @@ protected:
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
     void findXDBCSecretArguments();
+
+    /// Similar to `findSecretNamedArgument`, but if the value is a URI with credentials,
+    /// masks only the password part instead of hiding the entire value.
+    void maskXDBCSecretNamedArgument(std::string_view key, size_t start);
+
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
@@ -217,10 +216,7 @@ protected:
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
     void findBigQuerySecretArguments();
-    void findBrokerTableEngineSecretArguments(
-        std::span<const std::string_view> secret_keys, std::string_view address_key);
     void findNATSTableEngineSecretArguments();
-    void findRabbitMQTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();
@@ -243,13 +239,6 @@ protected:
     /// Marks *every* occurrence, not just the first: a malformed query is formatted for logging before
     /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0);
-
-    /// Hides the value of every `key = value` argument from `start` on whose key is not a plain literal.
-    void markNamedArgumentsWithUnreadableKeys(size_t start);
-
-    /// The raw indexes of the arguments from `start` on that are not `key = value` pairs, in order. A
-    /// positional argument after the first named one is hidden instead of listed: its slot is unknowable.
-    std::vector<size_t> classifyPositionalArguments(size_t start = 0);
 
     /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
     /// in any order; the span covering them may hide a non-secret argument in between, which is safe)

@@ -1,9 +1,5 @@
--- Tags: no-fasttest, no-parallel, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: requires S3/minio-backed storage with a filesystem cache.
--- Tag no-parallel-replicas: the checks below read the `ProfileEvents` of the two `SELECT`s out of
--- `system.query_log`. With parallel replicas the reading moves off the initiator, and the executor's
--- counters no longer land in the rows those checks sum, so all three come back 0 - not just the warm
--- one. Seen in `Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)`.
 -- Tag no-parallel: the cold->warm assertion needs the cold read's populate to reserve cache space
 -- and survive to the warm read. The dedicated `s3_cache_04511` policy isolates it from other tests'
 -- background-merge cache traffic (which saturates the shared `s3_cache` with non-releasable segments
@@ -12,17 +8,9 @@
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
--- Full (not Packed) part storage, so every stream of the part is its own object and therefore its own
--- cache key. With Packed storage the whole part is ONE object: the marks streams and the data stream
--- resolve to the SAME cache segment and race for its single downloader role, and only the role winner
--- writes. Each stream is bounded to its own slice of the archive (see `ReadBufferFromFileView`), so
--- the winner fills only that slice and the cold read leaves the segment with holes, which the warm
--- read then goes back to the source for. `min_bytes_for_full_part_storage` is randomized by the test
--- harness, so leaving it unpinned made the assertion below fail in about a third of the runs.
 CREATE TABLE t_re_disk_cache (k UInt64, v String)
 ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0;
+SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0;
 
 -- No cache-on-write, so the first SELECT below is a genuine cold read that must populate the cache.
 INSERT INTO t_re_disk_cache SELECT number, toString(number) FROM numbers(200000)

@@ -1,7 +1,6 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Common/SipHash.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -24,14 +23,6 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
 
     res->final_operator = final_operator;
     return res;
-}
-
-void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// The operator joining the selects is not a child either, so `a EXCEPT b` and `a INTERSECT b`
-    /// would otherwise hash equally.
-    hash_state.update(final_operator);
-    ASTSelectQuery::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -145,17 +136,11 @@ void ASTSelectIntersectExceptQuery::readJSON(const Poco::JSON::Object & json)
     /// `formatImpl` would still print it with the operator separator. Reject foreign children
     /// from malformed `clickhouse_json` so the AST cannot format as different SQL than it means.
     for (const auto & child : children)
-    {
         if (!child
             || !(child->as<ASTSelectQuery>()
                  || child->as<ASTSelectWithUnionQuery>()
                  || child->as<ASTSelectIntersectExceptQuery>()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Expected only select operands in `SelectIntersectExceptQuery` during AST JSON deserialization");
-        /// `ParserQueryWithOutput` attaches output options to the outermost query only.
-        if (hasQueryOutputOptions(child.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "A set operation element cannot carry query output options during AST JSON deserialization");
-    }
 }
 }

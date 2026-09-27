@@ -2,3 +2,4 @@ contrib/* linguist-vendored
 *.h linguist-language=C++
 tests/queries/0_stateless/data_json/* binary
 tests/queries/0_stateless/*.reference -crlf
+src/Core/SettingsChangesHistory.cpp merge=union

@@ -25,7 +25,7 @@ inline bool looksLikePackedSkipIndexFile(std::string_view name)
 }
 
 class IMergeTreeIndexCondition;
-class IMergeTreeDataPartInfoForReader;
+class IMergeTreeDataPart;
 struct IMergeTreeIndex;
 struct MarkRanges;
 
@@ -78,7 +78,7 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    const IMergeTreeDataPartInfoForReader & part_info;
+    const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges;
     bool skip_postings_deserialization;

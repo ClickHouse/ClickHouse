@@ -30,7 +30,4 @@ CHECK TABLE t_check_retryable_zk; -- { serverError KEEPER_EXCEPTION }
 -- The failpoint is ONCE, so it is already consumed; the healthy part checks out again.
 CHECK TABLE t_check_retryable_zk;
 
--- Nothing above guarantees the fail point fired, so disarm it explicitly rather than rely on that.
-SYSTEM DISABLE FAILPOINT check_table_inject_retryable_zk_error;
-
 DROP TABLE t_check_retryable_zk SYNC;

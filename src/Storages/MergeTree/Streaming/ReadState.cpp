@@ -10,29 +10,42 @@ namespace DB
 {
 
 ReadState::ReadState(const StreamSettings & stream_settings)
-    : partition_cursors(cursorTreeToMergeTreeCursor(stream_settings.cursor))
+    : partition_cursors(buildMergeTreeCursor(stream_settings.cursor))
 {
 }
 
-void ReadState::startReadRound(const ClassifiedPartitions & partitions)
+void ReadState::startReadRound(const ClassifiedPartitions & partitions, const std::map<std::string, Int64> & safe_block_numbers)
 {
     const auto now = std::chrono::steady_clock::now();
 
+    round_in_progress = true;
+    reading_up_to_block_numbers.clear();
     emitted_source_idle = false;
     reported_idle_partitions = partitions.idle_partitions;
 
     for (const auto & partition_id : partitions.changed_partitions)
+    {
+        reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);
         partition_last_read_time[partition_id] = now;
+    }
 }
 
-void ReadState::finishReadRound(const ClassifiedPartitions & partitions, const std::map<std::string, int64_t> & safe_block_numbers)
+void ReadState::finalizeReadRound()
 {
-    for (const auto & partition_id : partitions.changed_partitions)
+    for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
     {
         auto & position = partition_cursors[partition_id];
-        position.block_number = safe_block_numbers.at(partition_id) + 1;
+        position.block_number = safe_block_number + 1;
         position.block_offset = -1;
     }
+
+    reading_up_to_block_numbers.clear();
+    round_in_progress = false;
+}
+
+bool ReadState::readRoundInProgress() const
+{
+    return round_in_progress;
 }
 
 void ReadState::updatePartitionCursor(const std::string & partition, PartitionCursor cursor)
@@ -44,12 +57,16 @@ void ReadState::updatePartitionCursor(const std::string & partition, PartitionCu
 void ReadState::updatePartitionWatermark(const std::string & partition, Field watermark)
 {
     partition_last_read_time[partition] = std::chrono::steady_clock::now();
-    partition_watermarks[partition] = std::move(watermark);
+
+    auto & current = partition_watermarks[partition];
+    if (watermark > current)
+        current = std::move(watermark);
 }
 
 void ReadState::updateGlobalWatermark(const Field & watermark)
 {
-    last_emitted_watermark = watermark;
+    if (watermark > last_emitted_watermark)
+        last_emitted_watermark = watermark;
 }
 
 void ReadState::updatePartitionSet(const ClassifiedPartitions & partitions)
@@ -94,7 +111,7 @@ bool ReadState::hasWork(const ClassifiedPartitions & partitions) const
     return false;
 }
 
-int64_t ReadState::calculateTimeToNextIdle(const StreamSettings & stream_settings) const
+Int64 ReadState::calculateTimeToNextIdle(const StreamSettings & stream_settings) const
 {
     const auto & watermark = stream_settings.watermark;
     const auto now = std::chrono::steady_clock::now();
@@ -130,20 +147,10 @@ PartitionCursor ReadState::getPartitionCursor(const std::string & partition) con
     return it == partition_cursors.end() ? PartitionCursor{} : it->second;
 }
 
-const std::map<std::string, PartitionCursor> & ReadState::getPartitionCursors() const
-{
-    return partition_cursors;
-}
-
 Field ReadState::getPartitionWatermark(const std::string & partition) const
 {
     auto it = partition_watermarks.find(partition);
     return it == partition_watermarks.end() ? Field{} : it->second;
-}
-
-Field ReadState::getGlobalWatermark() const
-{
-    return last_emitted_watermark;
 }
 
 bool ReadState::isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const

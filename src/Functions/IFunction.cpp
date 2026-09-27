@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -28,7 +27,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <algorithm>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -68,31 +66,6 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
         if (!isColumnConst(*arg.column))
             return false;
     return true;
-}
-
-/// Whether any of the `Nullable` arguments actually holds a NULL among the first `input_rows_count`
-/// rows. Cheaper than building the combined null map of all arguments, and it is all that is needed
-/// to decide whether the null rows have to be filtered out before execution.
-bool anyArgumentHasNullRows(const ColumnsWithTypeAndName & args, size_t input_rows_count)
-{
-    for (const auto & arg : args)
-    {
-        if (!arg.type->isNullable())
-            continue;
-
-        if (isColumnConst(*arg.column))
-        {
-            if (arg.column->onlyNull())
-                return true;
-            continue;
-        }
-
-        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-        if (!memoryIsZero(null_map.data(), 0, input_rows_count))
-            return true;
-    }
-
-    return false;
 }
 
 /// If the single-dictionary fast path applies (exactly one full LowCardinality argument and every
@@ -218,82 +191,6 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
 }
 
 
-namespace
-{
-
-/// `createBlockWithNestedColumns` only strips the null map, it does not touch the values under it, so
-/// the nested value of a null slot is whatever happened to be stored there. For a `Nullable(Enum)`
-/// that value is usually not a member of the type: both `INSERT ... VALUES (NULL)` and the padding of
-/// non-joined rows in a `LEFT JOIN` leave a raw 0 there, and 0 is a declared value only if the enum
-/// happens to define it. A function that reads the nested column of such an argument - `like`,
-/// `match`, anything that turns an `Enum` into its name - is then handed a code that does not exist
-/// and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose result is NULL anyway.
-///
-/// Normalize the null slots to the default of the nested type, which for an `Enum` is a declared
-/// value. With `only_enums` the other argument types are left alone, which is what the paths that
-/// discard the values of null rows afterwards want; the path that has to produce `f(default(input))`
-/// for a null row (see below) passes false and normalizes everything.
-///
-/// `only_enums` is deliberately not "every type whose payload some function might reject". An `Enum`
-/// payload is outside the domain of its own type - no valid `Enum` column can hold it - so
-/// `createBlockWithNestedColumns` hands the function a malformed column, and installing the type's
-/// default repairs a type invariant. A `String` or a number under a null map, in contrast, is a well
-/// formed value of its type, and a function that rejects it - `match` handed an invalid regular
-/// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
-/// non-null row. Installing the type default there would only swap one arbitrary value for another,
-/// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
-/// even a `countBytesInFilter`. The fix for that family is to stop evaluating the discarded rows,
-/// which is what the short-circuit branch below already does when
-/// `short_circuit_function_evaluation_for_nulls_threshold` lets it;
-/// see https://github.com/ClickHouse/ClickHouse/issues/119614.
-void patchNullSlots(
-    const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enums)
-{
-    for (size_t i = 0; i < args.size(); ++i)
-    {
-        if (!args[i].type->isNullable())
-            continue;
-        if (only_enums && !isEnum(removeNullable(args[i].type)))
-            continue;
-
-        const auto & nested_type = nested_args[i].type;
-
-        if (isColumnConst(*args[i].column))
-        {
-            if (args[i].column->onlyNull())
-                nested_args[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
-            continue;
-        }
-
-        const auto & null_map = assert_cast<const ColumnNullable &>(*args[i].column).getNullMapData();
-
-        bool has_any_null = false;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            if (null_map[row])
-            {
-                has_any_null = true;
-                break;
-            }
-        }
-        if (!has_any_null)
-            continue;
-
-        auto patched = nested_type->createColumn();
-        patched->reserve(input_rows_count);
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            if (null_map[row])
-                nested_type->insertDefaultInto(*patched);
-            else
-                patched->insertFrom(*nested_args[i].column, row);
-        }
-        nested_args[i].column = std::move(patched);
-    }
-}
-
-}
-
 ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -320,22 +217,6 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
-        /// A `Nullable`-typed argument may still be wrapped in `ColumnReplicated` when the function
-        /// opted out of the default implementation for replicated columns (e.g. `arrayElement`).
-        for (const auto & arg : args)
-        {
-            if (arg.type->isNullable() && typeid_cast<const ColumnReplicated *>(arg.column.get()))
-            {
-                ColumnsWithTypeAndName materialized_args = args;
-                for (auto & materialized_arg : materialized_args)
-                {
-                    if (materialized_arg.type->isNullable())
-                        materialized_arg.column = materialized_arg.column->convertToFullColumnIfReplicated();
-                }
-                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run);
-            }
-        }
-
         const bool result_is_nullable = result_type->isNullable();
 
         if (!result_is_nullable)
@@ -348,23 +229,50 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// produces a Nullable column whose nested data still contains `'x'`, so running the
             /// function on it would return `f('x')` instead of the desired `f('')`.
             ColumnsWithTypeAndName patched_columns = createBlockWithNestedColumns(args);
-            patchNullSlots(args, patched_columns, input_rows_count, /*only_enums=*/ false);
             auto temporary_result_type = removeNullable(result_type);
+
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                if (!args[i].type->isNullable())
+                    continue;
+                const auto & nested_type = patched_columns[i].type;
+
+                if (isColumnConst(*args[i].column))
+                {
+                    if (args[i].column->onlyNull())
+                        patched_columns[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
+                    continue;
+                }
+
+                const auto & nullable = assert_cast<const ColumnNullable &>(*args[i].column);
+                const auto & null_map = nullable.getNullMapData();
+
+                bool has_any_null = false;
+                for (size_t r = 0; r < input_rows_count; ++r)
+                {
+                    if (null_map[r])
+                    {
+                        has_any_null = true;
+                        break;
+                    }
+                }
+                if (!has_any_null)
+                    continue;
+
+                auto patched = nested_type->createColumn();
+                patched->reserve(input_rows_count);
+                for (size_t r = 0; r < input_rows_count; ++r)
+                {
+                    if (null_map[r])
+                        patched->insertDefault();
+                    else
+                        patched->insertFrom(*patched_columns[i].column, r);
+                }
+                patched_columns[i].column = std::move(patched);
+            }
 
             return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
         }
-
-        /// A function that declines execution on default arguments must not be executed on the rows
-        /// behind a NULL either. `createBlockWithNestedColumns` does not overwrite those rows, so the
-        /// nested column keeps whatever it holds there - for a column that was built as `Nullable`
-        /// from the start that is the type's default value - and a function that throws on it fails
-        /// on entirely valid data, e.g. `parseDateTime` over a `Nullable(String)` containing a NULL.
-        /// The result for those rows is masked out by [[wrapInNullable]] anyway, so filter them out
-        /// before executing instead. This is only needed when the input really contains a NULL: an
-        /// argument that is `Nullable` but has no NULL in it keeps every regular path, including the
-        /// numeric fast path below.
-        const bool must_filter_null_rows
-            = !canBeExecutedOnDefaultArguments() && anyArgumentHasNullRows(args, input_rows_count);
 
         bool all_columns_constant = true;
         bool all_numeric_types = true;
@@ -394,12 +302,11 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumn();
         }
 
-        if (all_columns_constant || (all_numeric_types && !must_filter_null_rows))
+        if (all_columns_constant || all_numeric_types)
         {
             /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
             /// That's why we add a fast path for this case.
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-            patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
             auto temporary_result_type = removeNullable(result_type);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
@@ -442,13 +349,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         }
 
         double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
-        bool should_short_circuit = result_null_map && rows_with_nulls > 0
-            && (must_filter_null_rows
-                || (short_circuit_function_evaluation_for_nulls
-                    && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold));
+        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && result_null_map
+            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-        patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
         auto temporary_result_type = removeNullable(result_type);
 
         if (!should_short_circuit)
@@ -559,18 +463,6 @@ IExecutableFunction::IExecutableFunction()
     }
 }
 
-bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const
-{
-    if (!isDeterministicInScopeOfQuery())
-        return false;
-
-    /// A lambda argument is as deterministic as its body: `arrayMap(i -> rand64(i), ...)` must run per output row.
-    return std::ranges::all_of(arguments, [](const auto & argument)
-    {
-        return allColumnFunctions(*argument.column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
-    });
-}
-
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -591,10 +483,8 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             /// fast path (and resizes the constants to the dictionary size); it returns nullptr and
             /// leaves the arguments intact when the assumption no longer holds, and we fall back to
             /// full materialization.
-            ColumnPtr indexes;
-            if (isDeterministicInScopeOfQuery())
-                indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
-                    columns_without_low_cardinality, can_be_executed_on_default_arguments);
+            ColumnPtr indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+                columns_without_low_cardinality, can_be_executed_on_default_arguments);
 
             /// Fast path: the row count comes from the (resized) nested dictionary column. Fallback:
             /// the constants keep their original row counts, so it is the original input_rows_count,
@@ -708,7 +598,7 @@ ColumnPtr IExecutableFunction::execute(
         }
 
         auto arguments_without_replicated = arguments;
-        if (has_full_columns || !common_replicated_indexes || !isCallDeterministicInScopeOfQuery(arguments))
+        if (has_full_columns || !common_replicated_indexes)
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
@@ -785,7 +675,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0 && isCallDeterministicInScopeOfQuery(arguments))
+        if (num_sparse_columns == 1 && num_full_columns == 0)
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;

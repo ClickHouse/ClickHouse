@@ -42,7 +42,6 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
     query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
     if (step)
     {
         plan_step_name = step->getName();
@@ -51,17 +50,10 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
     }
 }
 
-void IProcessor::setQueryPlanStepGroup(size_t group)
-{
-    query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
-}
-
 void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group)
 {
     query_plan_step = parent.query_plan_step;
     query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
     plan_step_name = parent.plan_step_name;
     plan_step_description = parent.plan_step_description;
     step_uniq_id = parent.step_uniq_id;

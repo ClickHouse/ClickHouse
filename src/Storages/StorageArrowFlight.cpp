@@ -9,7 +9,6 @@
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -183,7 +182,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     }
     auto schema = std::move(schema_result).ValueOrDie();
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", getFormatSettings(context_));
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
     return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
@@ -246,17 +245,8 @@ public:
             descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
         }
 
-        /// Mirrors `ArrowFlight::arrowConversionSettings`, including which schema settings it does not read
-        /// from the context; see the note there.
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
-        /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than
-        /// silently push it to the remote server as opaque bytes.
-        if (context)
-        {
-            arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef());
-            arrow_settings.format_settings = getFormatSettings(context);
-        }
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;
@@ -352,7 +342,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
                 config.dataset_name,
                 args.columns,
                 args.constraints,
-                args.getLocalContext());
+                args.getContext());
         },
         {
             .supports_schema_inference = true,
