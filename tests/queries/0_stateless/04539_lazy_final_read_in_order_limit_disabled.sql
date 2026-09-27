@@ -79,6 +79,19 @@ FROM (EXPLAIN SELECT k FROM t_lazy_final_gates_float FINAL WHERE v = 7 ORDER BY 
 SELECT 'float key, small limit:', countIf(explain LIKE '%InputSelector%') > 0
 FROM (EXPLAIN SELECT k FROM t_lazy_final_gates_float FINAL WHERE v = 7 LIMIT 10);
 
+-- And to a sorting key mixing `ASC` and `DESC` columns.
+DROP TABLE IF EXISTS t_lazy_final_gates_mixed;
+CREATE TABLE t_lazy_final_gates_mixed (k UInt64, k2 UInt64, v UInt64, s String) ENGINE = ReplacingMergeTree ORDER BY (k, k2 DESC);
+SYSTEM STOP MERGES t_lazy_final_gates_mixed;
+INSERT INTO t_lazy_final_gates_mixed SELECT number, 0, if(number < 20000, 7, 999), toString(number) FROM numbers(100000);
+INSERT INTO t_lazy_final_gates_mixed SELECT number, 0, if(number < 20000, 7, 999), 'updated' FROM numbers(100000);
+
+SELECT 'mixed key, no order, no limit:', countIf(explain LIKE '%InputSelector%') > 0
+FROM (EXPLAIN SELECT k FROM t_lazy_final_gates_mixed FINAL WHERE v = 7);
+
+SELECT 'mixed key, small limit:', countIf(explain LIKE '%InputSelector%') > 0
+FROM (EXPLAIN SELECT k FROM t_lazy_final_gates_mixed FINAL WHERE v = 7 LIMIT 10);
+
 -- When all selected parts do not intersect by the primary key, the whole FINAL read is
 -- replaced by a plain read. The replacement preserves the reading order and the early
 -- exit, so it must stay enabled for read-in-order and small-limit queries.
@@ -105,4 +118,5 @@ SELECT k, v FROM t_lazy_final_gates_disjoint FINAL WHERE v = 7 ORDER BY k LIMIT 
 
 DROP TABLE t_lazy_final_gates;
 DROP TABLE t_lazy_final_gates_float;
+DROP TABLE t_lazy_final_gates_mixed;
 DROP TABLE t_lazy_final_gates_disjoint;
