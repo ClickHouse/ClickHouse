@@ -1,5 +1,4 @@
--- every setting, changed or not
-compress	0	0	default
+-- settings changed or not
 max_bytes_to_keep	8192	1	definition
 max_rows_to_keep	0	0	default
 min_bytes_to_keep	4096	1	definition

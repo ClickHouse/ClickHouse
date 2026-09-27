@@ -1,4 +1,4 @@
--- `Join` keeps no settings object. Its creator resolves eight settings once - from the table's own `SETTINGS`
+-- `Join` keeps no settings object. Its creator resolves its settings once - from the table's own `SETTINGS`
 -- clause and, for what the clause leaves out, from the server's settings - and passes the results to the
 -- storage. `system.table_settings` reports the values the table holds, so a setting the clause leaves out is
 -- still visible, although `SHOW CREATE TABLE` never shows it.
@@ -12,8 +12,9 @@ DROP TABLE IF EXISTS join_session_1;
 CREATE TABLE join_stated (k UInt64, v UInt64) ENGINE = Join(ALL, LEFT, k)
     SETTINGS join_use_nulls = 1, join_overflow_mode = 'break', any_join_distinct_right_table_keys = 1, persistent = 0;
 
-SELECT '-- all eight settings are reported';
-SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'join_stated';
+SELECT '-- every setting the engine lists is reported';
+SELECT count() = (SELECT count() FROM system.engine_settings WHERE engine = 'Join')
+FROM system.table_settings WHERE database = currentDatabase() AND table = 'join_stated';
 
 SELECT '-- what the clause states is reported with its value, as the definition';
 SELECT name, value, source FROM system.table_settings
@@ -29,6 +30,7 @@ SELECT ts.name, ts.value = s.value AS holds_the_server_value, ts.source IN ('def
 FROM system.table_settings AS ts
 INNER JOIN system.settings AS s ON s.name = ts.name
 WHERE ts.database = currentDatabase() AND ts.table = 'join_stated' AND ts.source != 'definition'
+    AND ts.name IN ('join_any_take_last_row', 'max_bytes_in_join', 'max_rows_in_join')
 ORDER BY ts.name;
 
 -- `disk` and `persistent` have no server setting behind them, so they are not in the join above.
@@ -70,8 +72,7 @@ CREATE TEMPORARY TABLE join_temporary (k UInt64, v UInt64) ENGINE = Join(ANY, LE
 SELECT name, value, source FROM system.table_settings
 WHERE database = '' AND table = 'join_temporary' AND name = 'persistent';
 
-SELECT '-- `system.engine_settings` lists the same eight, as a table created now would get them';
-SELECT count() FROM system.engine_settings WHERE engine = 'Join';
+SELECT '-- `system.engine_settings` lists the same settings, as a table created now would get them';
 -- A table that states nothing reports exactly what the engine-level rows say.
 SELECT count() FROM (
     SELECT name, value, `default`, changed, description, type, tier FROM system.table_settings

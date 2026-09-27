@@ -1,5 +1,5 @@
--- all eight settings are reported
-8
+-- every setting the engine lists is reported
+1
 -- what the clause states is reported with its value, as the definition
 any_join_distinct_right_table_keys	1	definition
 join_overflow_mode	break	definition
@@ -20,8 +20,7 @@ max_rows_in_join	2
 join_any_take_last_row	1	definition
 -- a temporary table reports its definition too
 persistent	0	definition
--- `system.engine_settings` lists the same eight, as a table created now would get them
-8
+-- `system.engine_settings` lists the same settings, as a table created now would get them
 0
 -- and `Join` and `Set` describe the two settings they share alike
 0

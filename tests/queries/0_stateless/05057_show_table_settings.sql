@@ -9,8 +9,9 @@ DROP TABLE IF EXISTS mt;
 -- is the statement and its filters, and those need a table whose settings only this test writes.
 CREATE TABLE mt (a UInt64) ENGINE = Memory SETTINGS max_bytes_to_keep = 8192, min_bytes_to_keep = 4096;
 
-SELECT '-- every setting, changed or not';
-SHOW TABLE SETTINGS FROM mt;
+SELECT '-- settings changed or not';
+-- The `*_to_keep` settings rather than all of them, so that a setting `Memory` gains does not change the output.
+SHOW TABLE SETTINGS FROM mt LIKE '%_to_keep';
 
 SELECT '-- only what something other than the default set';
 SHOW CHANGED TABLE SETTINGS FROM mt;

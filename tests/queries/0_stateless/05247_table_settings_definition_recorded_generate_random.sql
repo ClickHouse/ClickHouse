@@ -1,6 +1,7 @@
 -- `GenerateRandom` reads three settings and folds them into a `GenerateRandomOptions` the storage keeps.
 -- The storage keeps the settings object as well, so a setting reports its own value and where it came
--- from, rather than the option it was folded into.
+-- from, rather than the option it was folded into. The three are named, so that a setting the engine gains does
+-- not change the output.
 
 DROP TABLE IF EXISTS generate_random_settings;
 CREATE TABLE generate_random_settings (a UInt64) ENGINE = GenerateRandom(1)
@@ -8,10 +9,11 @@ CREATE TABLE generate_random_settings (a UInt64) ENGINE = GenerateRandom(1)
 
 SELECT '-- the definition is recorded, and what it leaves out is the compiled-in default';
 SELECT name, value, `default`, changed, source FROM system.table_settings
-WHERE database = currentDatabase() AND table = 'generate_random_settings' ORDER BY name;
+WHERE database = currentDatabase() AND table = 'generate_random_settings'
+    AND name IN ('max_json_depth', 'max_json_keys_per_object', 'null_ratio') ORDER BY name;
 
 SELECT '-- the engine describes the same settings, at the values a table created now would get';
 SELECT name, value, `default`, changed, source FROM system.engine_settings
-WHERE engine = 'GenerateRandom' ORDER BY name;
+WHERE engine = 'GenerateRandom' AND name IN ('max_json_depth', 'max_json_keys_per_object', 'null_ratio') ORDER BY name;
 
 DROP TABLE generate_random_settings;

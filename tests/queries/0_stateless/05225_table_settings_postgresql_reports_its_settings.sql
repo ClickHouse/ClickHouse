@@ -21,8 +21,10 @@ ENGINE = PostgreSQL('127.0.0.1:5432', 'db', 'tbl', 'user', 'password')
 SETTINGS postgresql_connection_pool_size = 8;
 
 SELECT '-- the clause, the session and the default are told apart';
+-- One setting of each source, by name, so that a setting the engine gains does not change the output.
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 't_pg'
+    AND name IN ('postgresql_connection_attempt_timeout', 'postgresql_connection_pool_retries', 'postgresql_connection_pool_size')
 ORDER BY name;
 
 DROP TABLE t_pg;
