@@ -1916,14 +1916,12 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         shutdown_called);
 }
 
-ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(bool * read_from_shared_metadata) const
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
 {
     /// We do not store queue settings
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
-    if (read_from_shared_metadata)
-        *read_from_shared_metadata = false;
 
     /// If startup() for a table was not called, just use the default queue settings.
     /// The same holds after shutdown(), which drops the metadata handle while `startup_finished` stays set.
@@ -1934,28 +1932,31 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(bool * read_fr
     if (!metadata)
         return settings;
 
-    if (read_from_shared_metadata)
-        *read_from_shared_metadata = true;
-
+    /// What `ObjectStorageQueueTableMetadata` serializes to Keeper - not what its own `isStoredInKeeper` name list
+    /// claims - is shared by every replica, and an `ALTER` on another one changes it while this replica's stored
+    /// definition still states the old value. So it is recorded as `shared_metadata` here, where it is read, and
+    /// a field the serialization gains or loses is recorded, or not, in the same place. `parallel_inserts` is not
+    /// among them: the metadata declares it but never writes or reads it.
     const auto & table_metadata = metadata->getTableMetadata();
-    settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
-    settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
+    constexpr auto from_keeper = SettingOrigin::SharedMetadata;
+    settings.set(ObjectStorageQueueSetting::mode, table_metadata.mode, from_keeper);
+    settings.set(ObjectStorageQueueSetting::after_processing, table_metadata.after_processing.load(), from_keeper);
     if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
         settings[ObjectStorageQueueSetting::keeper_path] = zk_path.string();
     else
         settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
-    settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
-    settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
+    settings.set(ObjectStorageQueueSetting::loading_retries, table_metadata.loading_retries.load(), from_keeper);
+    settings.set(ObjectStorageQueueSetting::processing_threads_num, table_metadata.processing_threads_num.load(), from_keeper);
     settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
-    settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
-    settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;
-    settings[ObjectStorageQueueSetting::partitioning_mode] = table_metadata.partitioning_mode;
-    settings[ObjectStorageQueueSetting::partition_regex] = table_metadata.partition_regex;
-    settings[ObjectStorageQueueSetting::partition_component] = table_metadata.partition_component;
-    settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
-    settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
-    settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
+    settings.set(ObjectStorageQueueSetting::last_processed_path, table_metadata.last_processed_path, from_keeper);
+    settings.set(ObjectStorageQueueSetting::bucketing_mode, table_metadata.bucketing_mode, from_keeper);
+    settings.set(ObjectStorageQueueSetting::partitioning_mode, table_metadata.partitioning_mode, from_keeper);
+    settings.set(ObjectStorageQueueSetting::partition_regex, table_metadata.partition_regex, from_keeper);
+    settings.set(ObjectStorageQueueSetting::partition_component, table_metadata.partition_component, from_keeper);
+    settings.set(ObjectStorageQueueSetting::tracked_file_ttl_sec, table_metadata.tracked_files_ttl_sec.load(), from_keeper);
+    settings.set(ObjectStorageQueueSetting::tracked_files_limit, table_metadata.tracked_files_limit.load(), from_keeper);
+    settings.set(ObjectStorageQueueSetting::buckets, table_metadata.buckets.load(), from_keeper);
 
     auto cleanup_interval_ms = metadata->getCleanupIntervalMS();
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
@@ -2215,39 +2216,28 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
 {
     /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper, the
-    /// metadata object and plain members of this storage. It also reports whether it read the shared metadata -
-    /// it returns an untouched object before `startup()` finishes and after `shutdown()` - and that answer is
-    /// taken from this call rather than sampled later, which would describe the table a moment later.
-    bool rebuilt_from_shared_metadata = false;
-    auto settings = getSettings(&rebuilt_from_shared_metadata).enumerateSettings();
+    /// metadata object and plain members of this storage, and records `shared_metadata` for what it read from
+    /// Keeper. Before `startup()` finishes and after `shutdown()` it returns an untouched object, which records
+    /// nothing, so the recorded origins also say whether the shared metadata was read at all - from the same
+    /// call, rather than sampled later, which would describe the table a moment later.
+    auto settings = getSettings().enumerateSettings();
 
-    /// The fields `getSettings` reads from the table metadata serialized to Keeper, which is what
-    /// `ObjectStorageQueueTableMetadata`'s serialization writes rather than what its own
-    /// `isStoredInKeeper` name list claims: not `keeper_path`, which the storage keeps itself, and not
-    /// `parallel_inserts`, which the metadata declares but never writes or reads.
-    ///
-    /// Both lists name their settings as strings, and this one stays that way so the two can be read against
-    /// each other - which is what has to happen whenever that serialization gains or loses a field. A setting
-    /// named here that the metadata stops writing would be reported as coming from Keeper when it no longer
-    /// does; one it starts writing and this list misses would be reported as the definition's.
-    static const NameSet held_in_shared_metadata{
-        "mode", "after_processing", "loading_retries", "processing_threads_num",
-        "last_processed_path", "bucketing_mode", "partitioning_mode",
-        "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
-        "buckets"};
-
-    /// The rebuild assigns only what this engine keeps somewhere - in Keeper, in the metadata handle or in a
-    /// member of this storage. The rest, most of this struct since it carries the shared format settings, keeps a
-    /// compiled-in default even where the definition states it, because `registerQueueStorage` turned those into
-    /// the table's `FormatSettings`, which the rebuild never sees. Enumeration marks an assigned setting `Other`,
-    /// so this is the one moment the distinction is visible, before `setOriginByValue` overwrites it.
+    /// Enumeration reports a setting the rebuild assigned as `Default` only where it recorded nothing and left
+    /// the compiled-in default, so this is the one moment the three kinds are told apart: what came from Keeper,
+    /// what the rebuild took from this storage's members, and what it did not assign at all - most of this
+    /// struct, since it carries the shared format settings, which `registerQueueStorage` turned into the table's
+    /// `FormatSettings` and the rebuild never sees.
+    NameSet from_shared_metadata;
     NameSet not_assigned_by_rebuild;
     for (const auto & setting : settings)
-        if (setting.origin == SettingOrigin::Default
-            && (!rebuilt_from_shared_metadata || !held_in_shared_metadata.contains(setting.name)))
+    {
+        if (setting.origin == SettingOrigin::SharedMetadata)
+            from_shared_metadata.insert(setting.name);
+        else if (setting.origin == SettingOrigin::Default)
             not_assigned_by_rebuild.insert(setting.name);
+    }
 
-    /// `getSettings` assigns every setting it knows, so the changed bit distinguishes nothing. Recover it by value.
+    /// A member of this storage holds a value, not who set it. Recover that by value.
     setOriginByValue(settings);
 
     /// Read once: the names mark the origin and the values fill in what the rebuild left out, and both have
@@ -2270,10 +2260,8 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
             setEffectiveValue(settings, change.name, convertFieldToString(change.value));
 
     /// After the definition, because here the shared metadata is what the table uses: an `ALTER` on another
-    /// replica has already changed it while this replica's `CREATE` query still states the old value. Only where
-    /// the rebuild read it - otherwise naming `shared_metadata` would name a source never consulted.
-    if (rebuilt_from_shared_metadata)
-        setOrigin(settings, held_in_shared_metadata, SettingOrigin::SharedMetadata);
+    /// replica has already changed it while this replica's `CREATE` query still states the old value.
+    setOrigin(settings, from_shared_metadata, SettingOrigin::SharedMetadata);
 
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built, so the
     /// rebuilt object carries its default. Report what `partitioning_mode` says, last, so it takes that
@@ -2283,10 +2271,10 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// compiled-in default, never the folded value, and `use_hive_partitioning` already holds what the definition
     /// states - which is what the table works with, as its own `use_hive_partitioning` member is read from it.
     /// Folding then would report a stated `use_hive_partitioning = 1` as `0`, from a source that is not the one.
-    if (rebuilt_from_shared_metadata)
+    const String partitioning_mode{ObjectStorageQueueSettings::nameAtOffset(ObjectStorageQueueSetting::partitioning_mode.offset)};
+    if (from_shared_metadata.contains(partitioning_mode))
     {
-        const auto mode = std::ranges::find(
-            settings, ObjectStorageQueueSettings::nameAtOffset(ObjectStorageQueueSetting::partitioning_mode.offset), &SettingDescription::name);
+        const auto mode = std::ranges::find(settings, partitioning_mode, &SettingDescription::name);
         if (mode != settings.end())
             setEffectiveValue(
                 settings, ObjectStorageQueueSetting::use_hive_partitioning, mode->value == "hive" ? "1" : "0", mode->origin);

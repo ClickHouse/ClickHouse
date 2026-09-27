@@ -71,6 +71,16 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
         setOrigin(index, origin);
     }
 
+    /// Records `origin` for the setting whose field is at `offset`, which the caller has just assigned through
+    /// `operator[]`: for the typed `set` of a public settings class, whose values need not have a `Field` form -
+    /// an atomic or an enum member of a storage, say.
+    void recordOriginAtOffset(size_t offset, SettingOrigin origin)
+    {
+        const size_t index = TTraits::Accessor::instance().findByOffset(offset);
+        chassert(index != npos);
+        setOrigin(index, origin);
+    }
+
     /// The declared name of the setting whose field is at `offset`, for code that holds a typed `SettingIndex`
     /// and has to name the setting it points at - matching a row of a described vector, which is keyed by name.
     /// Defined here, where the traits are complete; a settings class surfaces it with
