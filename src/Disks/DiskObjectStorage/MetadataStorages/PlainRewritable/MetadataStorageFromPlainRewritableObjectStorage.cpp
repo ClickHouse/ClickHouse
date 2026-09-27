@@ -222,8 +222,15 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     /// and the writable load rewrites their `prefix.path` back. Nothing of it is deleted. A subsequent load skips
     /// them, because the removal may be running in this very process.
     ///
+    /// A marker can also say that a replacement of a file is pending (see `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`):
+    /// the backup of the target it marks may be the only copy of the target. The initial load copies a complete
+    /// backup back over the target before any listing, and then reclaims the backup like a committed removal.
+    ///
     /// The value is the original path of the subtree for a pending removal, and empty for a committed one.
     std::unordered_map<std::string, std::optional<std::string>> tombstones;
+    std::unordered_map<std::string, PlainRewritableLayout::PendingReplace> pending_replaces;
+    /// The backups of pending replacements that can be neither restored nor reclaimed: they are not loaded and not deleted.
+    std::unordered_set<std::string> kept_backups;
     for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
     {
         const auto marker = iterator->current();
@@ -266,6 +273,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             throw;
         }
 
+        /// The backup of a pending replacement is not loaded either, like one of a committed removal.
+        if (auto pending_replace = PlainRewritableLayout::parsePendingReplaceTombstoneContent(content))
+        {
+            pending_replaces.emplace(removed_name.value(), std::move(pending_replace.value()));
+            tombstones.emplace(std::move(removed_name.value()), std::nullopt);
+            continue;
+        }
+
         tombstones.emplace(std::move(removed_name.value()), PlainRewritableLayout::parsePendingTombstoneContent(content));
     }
 
@@ -273,6 +288,40 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         LOG_DEBUG(log, "Found {} removals that were not finished", tombstones.size());
 
     const bool remove_orphaned_objects = is_initial_load && !object_storage->isReadOnly();
+
+    /// A subsequent load leaves a pending replacement alone, because the move may be running in this very process.
+    if (remove_orphaned_objects)
+    {
+        for (const auto & [removed_name, pending_replace] : pending_replaces)
+        {
+            const auto backup_key = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, removed_name);
+            const auto target_key = layout->constructFileObjectKey(pending_replace.directory_remote_path, pending_replace.file_name);
+
+            /// The marker is written before the backup, and the target is touched only once the backup is complete,
+            /// so without a complete backup the target is intact. A backup of an unexpected size is kept together with
+            /// its marker instead of being reclaimed: it may still be the only copy of the target.
+            const auto backup_metadata = object_storage->tryGetObjectMetadata(backup_key, /*with_tags=*/ false);
+            if (backup_metadata && backup_metadata->size_bytes != pending_replace.size)
+            {
+                if (backup_metadata->size_bytes < pending_replace.size && object_storage->exists(StoredObject(target_key)))
+                {
+                    LOG_INFO(log, "The backup '{}' of '{}' is incomplete ({} of {} bytes), so the target was not touched",
+                        backup_key, target_key, backup_metadata->size_bytes, pending_replace.size);
+                }
+                else
+                {
+                    LOG_WARNING(log, "The backup '{}' of '{}' has {} bytes instead of {}, keeping it",
+                        backup_key, target_key, backup_metadata->size_bytes, pending_replace.size);
+                    kept_backups.insert(removed_name);
+                }
+            }
+            else if (backup_metadata)
+            {
+                LOG_INFO(log, "Restoring '{}' from its backup '{}' left by a replacement that was not committed", target_key, backup_key);
+                object_storage->copyObject(StoredObject(backup_key), StoredObject(target_key), settings, getWriteSettings());
+            }
+        }
+    }
 
     /// The data objects of an orphaned subtree have to be deleted before its `prefix.path` objects, and the
     /// markers only after both, for the same reason as in `RemoveRecursiveOperation::finalize`: whatever is
@@ -333,7 +382,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             /// Only a committed removal leaves a file in the root directory, a pending one is of a directory.
             if (auto it = tombstones.find(remote_file->getFileName()); it != tombstones.end() && !it->second)
             {
-                if (remove_orphaned_objects)
+                if (remove_orphaned_objects && !kept_backups.contains(remote_file->getFileName()))
                     orphaned_data_objects.emplace_back(remote_file->getPath());
                 continue;
             }
@@ -644,6 +693,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         size_t pending_removals = 0;
         for (const auto & [removed_name, pending_original_path] : tombstones)
         {
+            if (kept_backups.contains(removed_name))
+                continue;
             marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
             pending_removals += pending_original_path.has_value();
         }

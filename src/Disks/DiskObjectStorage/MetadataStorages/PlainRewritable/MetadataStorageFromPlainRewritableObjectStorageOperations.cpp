@@ -61,11 +61,11 @@ namespace
 ///
 /// A marker written with `pending_original_path` belongs to a removal that is not committed yet, see
 /// `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`.
-void writeTombstoneMarker(
+void writeTombstoneMarkerContent(
     IObjectStorage & object_storage,
     const PlainRewritableLayout & layout,
     const std::string & removed_name,
-    const std::optional<std::string> & pending_original_path = std::nullopt)
+    const std::string & content)
 {
     StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
     auto buf = object_storage.writeObject(
@@ -75,8 +75,31 @@ void writeTombstoneMarker(
         /*buf_size*/ 128,
         /*settings*/ getWriteSettingsForMetadata());
 
-    writeString(pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(*pending_original_path) : removed_name, *buf);
+    writeString(content, *buf);
     buf->finalize();
+}
+
+void writeTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const std::optional<std::string> & pending_original_path = std::nullopt)
+{
+    writeTombstoneMarkerContent(
+        object_storage,
+        layout,
+        removed_name,
+        pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(*pending_original_path) : removed_name);
+}
+
+/// See `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`.
+void writePendingReplaceTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const PlainRewritableLayout::PendingReplace & pending_replace)
+{
+    writeTombstoneMarkerContent(object_storage, layout, removed_name, PlainRewritableLayout::makePendingReplaceTombstoneContent(pending_replace));
 }
 
 void removeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
@@ -664,7 +687,14 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
-        writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
+        /// The target is deleted below and replaced only later, so until then the backup is its only copy: the marker
+        /// says the replacement is pending, which makes a load restore the backup rather than reclaim it.
+        pending_replace = PlainRewritableLayout::PendingReplace{
+            .directory_remote_path = directory_remote_path_to,
+            .file_name = normalized_path_to.filename().string(),
+            .size = fs_tree->getFileRemoteInfo(path_to).value().bytes_size,
+        };
+        writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
         object_storage->copyObject(
             /*object_from=*/StoredObject(remote_path_to),
             /*object_to=*/StoredObject(tmp_remote_path_to),
@@ -706,6 +736,11 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving from '{}' to '{}'", path_from, path_to);
         });
 
+        /// The replacement is in place, and the source is deleted only after this, so the move is complete as seen
+        /// from the object storage: from now on the backup of the target is garbage.
+        if (had_existing_target)
+            writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
+
         object_storage->removeObjectIfExists(StoredObject(remote_path_from));
     }
 
@@ -745,6 +780,17 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             read_settings,
             write_settings);
     });
+
+    /// The source is back under its own key, so rolling the target back completes the rollback. The marker may already
+    /// say that the replacement is committed, so a process that dies in the middle of this has to find it pending
+    /// again, to restore the target from the backup rather than reclaim the backup.
+    if (pending_replace)
+    {
+        undoWithRetries(log, fmt::format("mark the replacement of '{}' as pending", path_to), [&]
+        {
+            writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
+        });
+    }
 
     undoWithRetries(log, fmt::format("restore the blob of the target file '{}'", path_to), [&]
     {

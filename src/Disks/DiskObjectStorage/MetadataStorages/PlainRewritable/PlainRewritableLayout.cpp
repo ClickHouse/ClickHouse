@@ -1,6 +1,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
+#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 #include <Common/getRandomASCIIString.h>
 #include <base/find_symbols.h>
 
@@ -11,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
     : object_storage_common_key_prefix(object_storage_common_key_prefix_)
@@ -99,6 +106,29 @@ std::optional<std::string> PlainRewritableLayout::parsePendingTombstoneContent(s
         return std::nullopt;
 
     return std::string(content.substr(PENDING_TOMBSTONE_PREFIX.size()));
+}
+
+std::string PlainRewritableLayout::makePendingReplaceTombstoneContent(const PendingReplace & pending_replace)
+{
+    return fmt::format("{}{}\n{}\n{}", PENDING_REPLACE_TOMBSTONE_PREFIX, pending_replace.directory_remote_path, pending_replace.file_name, pending_replace.size);
+}
+
+std::optional<PlainRewritableLayout::PendingReplace> PlainRewritableLayout::parsePendingReplaceTombstoneContent(std::string_view content)
+{
+    if (!content.starts_with(PENDING_REPLACE_TOMBSTONE_PREFIX))
+        return std::nullopt;
+
+    std::vector<std::string> lines;
+    splitInto<'\n'>(lines, content.substr(PENDING_REPLACE_TOMBSTONE_PREFIX.size()));
+    /// Taking a malformed marker for a committed one would delete the only copy of the target.
+    if (lines.size() != 3 || lines[0].empty() || lines[1].empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed marker of a pending replacement: '{}'", content);
+
+    return PendingReplace{
+        .directory_remote_path = std::move(lines[0]),
+        .file_name = std::move(lines[1]),
+        .size = parse<size_t>(lines[2]),
+    };
 }
 
 std::string PlainRewritableLayout::constructTombstoneDirectoryKey() const

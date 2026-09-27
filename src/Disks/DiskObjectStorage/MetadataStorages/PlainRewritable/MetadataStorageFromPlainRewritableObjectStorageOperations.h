@@ -234,6 +234,8 @@ private:
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
+    /// What the marker of the backup of an existing target says until the replacement is in place.
+    std::optional<PlainRewritableLayout::PendingReplace> pending_replace;
     /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
     /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
     bool blob_move_attempted{false};

@@ -44,6 +44,23 @@ public:
     /// The content of any other marker is the removed name itself, and such a marker is committed.
     constexpr static std::string PENDING_TOMBSTONE_PREFIX = "pending\n";
 
+    /// `MoveFile` with replacement copies the target it overwrites to a backup under a removed name in `__root`, then
+    /// deletes the target and copies the source over it. Until the source is in place, the target key is either
+    /// missing or holds content of a move that is not committed, and the backup is the only copy of the target. So the
+    /// marker of the backup is first written as a pending replacement, with the key of the target and the size of the
+    /// backup, and rewritten as committed only once the source is in place. A pending replacement is rolled back during
+    /// the initial load: a complete backup is copied back over the target before the backup is reclaimed.
+    constexpr static std::string PENDING_REPLACE_TOMBSTONE_PREFIX = "pending replace\n";
+
+    struct PendingReplace
+    {
+        /// The target is `constructFileObjectKey(directory_remote_path, file_name)`.
+        std::string directory_remote_path;
+        std::string file_name;
+        /// The size of the target, to tell a complete backup from one the process died in the middle of writing.
+        size_t size = 0;
+    };
+
     static std::string generateRemovedName();
     static bool isRemovedName(std::string_view name);
     /// Whether the first component of a local path (as stored in `prefix.path`) is a removed name.
@@ -56,6 +73,8 @@ public:
     static std::string makePendingTombstoneContent(const std::string & original_local_path);
     /// The original path of the subtree if the content is the one of a pending marker.
     static std::optional<std::string> parsePendingTombstoneContent(std::string_view content);
+    static std::string makePendingReplaceTombstoneContent(const PendingReplace & pending_replace);
+    static std::optional<PendingReplace> parsePendingReplaceTombstoneContent(std::string_view content);
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
