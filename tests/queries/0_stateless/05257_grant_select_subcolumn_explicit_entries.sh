@@ -14,8 +14,8 @@ t="${CLICKHOUSE_DATABASE}.t"
 $CLICKHOUSE_CLIENT -q "
 DROP USER IF EXISTS $user;
 DROP ROLE IF EXISTS $role;
-CREATE TABLE t (id UInt32, p Tuple(s String, o String), j JSON) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t VALUES (1, ('s', 'o'), '{\"a\": \"a\", \"b\": \"b\"}');
+CREATE TABLE t (p Tuple(s String, o String), j JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t VALUES (('s', 'o'), '{\"a\": \"a\", \"b\": \"b\"}');
 CREATE USER $user;
 CREATE ROLE $role;
 "
@@ -36,16 +36,18 @@ check()
     echo "$line"
 }
 
-# The analyzer denies a query unless at least one top-level column of the table is visible to the user, so every
-# case also grants `id`, which is not among the checked columns.
 reset()
 {
-    $CLICKHOUSE_CLIENT -q "REVOKE ALL ON *.* FROM $user; REVOKE ALL ON *.* FROM $role; REVOKE $role FROM $user; GRANT SELECT(id) ON $t TO $user"
+    $CLICKHOUSE_CLIENT -q "REVOKE ALL ON *.* FROM $user; REVOKE ALL ON *.* FROM $role; REVOKE $role FROM $user"
 }
+
+reset
+check "no grants"
 
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(p) ON $t TO $user"
 check "GRANT(p)"
 
+# A grant on a subcolumn name alone also makes the table visible to the analyzer.
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(\`p.s\`) ON $t TO $user"
 check "GRANT(p.s)"
 
