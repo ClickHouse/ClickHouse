@@ -134,7 +134,7 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
     /// Only the conflict-detector path carries the per-operator subtree sets needed to keep these
     /// reachable cross-product orderings correct; the per-relation baseline leaves them disconnected.
     /// This runs once, outside the per-csg-cmp hot loop.
-    if (!(query_graph.use_conflict_detector_a || query_graph.use_conflict_detector_c))
+    if (query_graph.conflict_detector == JoinOrderConflictDetector::NONE)
         return;
 
     for (const auto & op : query_graph.conflict_ops)

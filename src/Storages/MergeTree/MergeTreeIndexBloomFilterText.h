@@ -153,7 +153,6 @@ private:
 
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
-
     StorageMetadataPtr metadata_snapshot;
 
     RPN rpn;

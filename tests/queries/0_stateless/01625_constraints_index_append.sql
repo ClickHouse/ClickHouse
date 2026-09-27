@@ -1,13 +1,16 @@
 -- Tags: no-parallel, no-flaky-check
 -- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result
 SET explain_query_plan_default = 'legacy';
+SET use_statistics_for_part_pruning = 1, materialize_statistics_on_insert = 1;
 DROP DATABASE IF EXISTS db_memory_01625;
 CREATE DATABASE db_memory_01625 ENGINE = Memory;
 USE db_memory_01625;
 
 DROP TABLE IF EXISTS index_append_test_test;
 
-CREATE TABLE index_append_test_test (i Int64, a UInt32, b UInt64, CONSTRAINT c1 ASSUME i <= 2 * b AND i + 40 > a) ENGINE = MergeTree() ORDER BY i;
+-- Pin min/max statistics so randomized statistics types do not change the asserted plans.
+CREATE TABLE index_append_test_test (i Int64, a UInt32, b UInt64, CONSTRAINT c1 ASSUME i <= 2 * b AND i + 40 > a) ENGINE = MergeTree() ORDER BY i
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO index_append_test_test VALUES (1, 10, 1), (2, 20, 2);
 

@@ -37,8 +37,8 @@ set -o pipefail
 
 # Capture the job start timestamp so the result file (written by the EXIT trap)
 # can report a real `start_time` and `duration`. Praktika's CIDB inserter
-# rejects `null` `start_time` (it calls `datetime.utcfromtimestamp(start_time)`
-# which fails with `'NoneType' object cannot be interpreted as an integer`).
+# rejects `null` `start_time` because `Utils.timestamp_to_str` needs a concrete
+# timestamp value.
 JOB_START_TIME=$(date +%s)
 
 REPO_DIR=$(readlink -f .)

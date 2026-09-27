@@ -14,6 +14,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
@@ -335,7 +336,7 @@ namespace
 
 /// The two part representations answer these questions with the same method names, so the checks
 /// below are written once. A concrete part must not be wrapped in a part-info here: the physical
-/// format is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+/// format is asked about parts that cannot be shared.
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part) { return part.checksums; }
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }

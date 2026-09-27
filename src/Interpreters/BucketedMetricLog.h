@@ -45,9 +45,55 @@ class BucketedMetricLog : public PeriodicLog<BucketedMetricLogElement>
     using PeriodicLog<BucketedMetricLogElement>::PeriodicLog;
 
 public:
-    static constexpr auto DESCRIPTION = R"(
-        Contains history of metrics values from tables system.metrics and system.events.
-        Periodically flushed to disk. Stores all metrics in a single Map column with bucketed serialization.)";
+    static constexpr auto DOCUMENTATION = R"DOCS_MD(
+.description
+Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
+
+This is the `bucketed` schema of `system.metric_log`. It stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)). Profile events are stored as increments during the collection interval, and current metrics are stored as values at collection time. Zero values are omitted; reading a missing key returns `0`.
+
+Every metric is also available through an `ALIAS` column named after the metric, so queries written for the default `wide` schema continue to work. The map uses bucketed serialization with 128 constant buckets, so reading one metric reads only one bucket.
+
+Each row also contains a snapshot of registered histogram metrics in the `histograms` Nested column. Bucket counts are cumulative since server startup. By default, histograms whose total `count` is zero are omitted, as are zero-counter buckets within emitted histograms. Set `system_metric_log_show_zero_values_in_histograms = 1` in the default user profile to retain them.
+
+Configure this schema with:
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
+.examples
+Read a profile event through its compatibility alias:
+
+```sql
+SELECT event_time, ProfileEvent_Query
+FROM system.metric_log
+ORDER BY event_time DESC
+LIMIT 10;
+```
+
+Read the latest snapshot of a histogram:
+
+```sql
+SELECT h.metric, h.labels, h.histogram, h.count, h.sum
+FROM system.metric_log
+ARRAY JOIN histograms AS h
+WHERE h.metric = 'keeper_response_time_ms' AND h.labels['operation_type'] = 'readonly'
+ORDER BY event_time DESC
+LIMIT 1;
+```
+
+.see_also
+- [metric_log setting](/reference/settings/server-settings/settings/other#metric_log) — Enabling and configuring the log.
+- [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](/reference/system-tables/events) — Contains a number of events that occurred.
+- [system.metrics](/reference/system-tables/metrics) — Contains instantly calculated metrics.
+- [Monitoring](/guides/oss/deployment-and-scaling/monitoring/monitoring) — Base concepts of ClickHouse monitoring.
+)DOCS_MD";
+    static constexpr const char * DOCUMENTATION_SOURCE = __builtin_FILE();
 
     /// Serialize the Map column into a constant number of buckets, so reading a single metric
     /// reads only a small fraction of the data. Parts created by inserts (zero level) use the
