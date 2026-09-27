@@ -38,7 +38,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(s, 'needle');
 SYSTEM FLUSH LOGS query_log;
 
 -- Posting blocks read by the two queries above, in execution order. Expected: 0 (skipped), 1 (read).
-SELECT ProfileEvents['TextIndexReadPostings']
+SELECT ProfileEvents['TextIndexReadPostings'] + ProfileEvents['TextIndexDensePostingsBuiltFromRanges']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase() AND type = 'QueryFinish'

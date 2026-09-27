@@ -1,0 +1,57 @@
+parts	tab_dense_none	1
+parts	tab_dense_pfor	1
+Ground truth
+aall	100000	4999950000
+bgap	99999	4999899999
+chead	99999	4999950000
+eblk	10000	249995000
+fseg	2048	2097152
+graw	10	5045
+kcross	1000	65499500
+any	11003	315495361
+Count
+none	bgap	99999
+none	chead	99999
+none	eblk	10000
+none	fseg	2048
+none	graw	10
+none	kcross	1000
+none	any	11003
+pfor	bgap	99999
+pfor	chead	99999
+pfor	eblk	10000
+pfor	fseg	2048
+pfor	graw	10
+pfor	kcross	1000
+pfor	any	11003
+Materialize
+none	aall	100000	4999950000
+none	bgap	99999	4999899999
+none	chead	99999	4999950000
+none	eblk	10000	249995000
+none	fseg	2048	2097152
+none	graw	10	5045
+none	kcross	1000	65499500
+none	any	11003	315495361
+pfor	aall	100000	4999950000
+pfor	bgap	99999	4999899999
+pfor	chead	99999	4999950000
+pfor	eblk	10000	249995000
+pfor	fseg	2048	2097152
+pfor	graw	10	5045
+pfor	kcross	1000	65499500
+pfor	any	11003	315495361
+05260_none_aall	1	0
+05260_none_bgap	0	1
+05260_none_chead	1	0
+05260_none_eblk	1	0
+05260_none_fseg	0	1
+05260_none_graw	1	0
+05260_none_kcross	1	0
+05260_pfor_aall	1	0
+05260_pfor_bgap	0	1
+05260_pfor_chead	1	0
+05260_pfor_eblk	1	0
+05260_pfor_fseg	0	1
+05260_pfor_graw	1	0
+05260_pfor_kcross	1	0

@@ -70,7 +70,7 @@ SYSTEM FLUSH LOGS query_log;
 -- reads none (its token is pruned before the postings are read), the whole-part query reads one.
 -- Expected: 0, 1. A leading wildcard is needed because the client stores the preceding comment as
 -- part of the query text; the readback excludes its own 'query_log' reference.
-SELECT ProfileEvents['TextIndexReadPostings'] > 0
+SELECT ProfileEvents['TextIndexReadPostings'] + ProfileEvents['TextIndexDensePostingsBuiltFromRanges'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase() AND type = 'QueryFinish'

@@ -59,6 +59,7 @@ namespace ProfileEvents
     extern const Event TextIndexReadSparseIndexBlocks;
     extern const Event TextIndexReadGranulesMicroseconds;
     extern const Event TextIndexReadPostings;
+    extern const Event TextIndexDensePostingsBuiltFromRanges;
     extern const Event TextIndexTokensCacheHits;
     extern const Event TextIndexTokensCacheMisses;
     extern const Event TextIndexTokensCacheNegativeHits;
@@ -293,6 +294,14 @@ static UInt64 getMaxSegmentCardinality(const TokenPostingsInfo & info, size_t se
     const auto & range = info.ranges[segment_idx];
     chassert(range.begin <= range.end);
     return std::min<UInt64>(info.cardinality, range.end - range.begin + 1);
+}
+
+/// A segment holds distinct row ids of its closed row range, so a token with as many row ids as its row range has rows
+/// is present in every row of it, and each segment is exactly its own row range.
+static bool isDenseOverRowRange(const TokenPostingsInfo & info)
+{
+    chassert(!info.ranges.empty());
+    return info.ranges.back().end - info.ranges.front().begin + 1 == info.cardinality;
 }
 
 /// The row range of a segment is written as its first and its last row id, so a decoded segment must start and end at them.
@@ -892,6 +901,15 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
 
     const auto load_postings = [&]
     {
+        if (isDenseOverRowRange(token_info))
+        {
+            ProfileEvents::increment(ProfileEvents::TextIndexDensePostingsBuiltFromRanges);
+            const auto & range = token_info.ranges[block_idx];
+            auto postings = std::make_shared<PostingList>();
+            postings->addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
+            return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
+        }
+
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
         auto postings = postings_serialization.deserializeToBitmap(*data_buffer, token_info, block_idx);

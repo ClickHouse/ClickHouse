@@ -1,0 +1,37 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>codec</name>
+           <values>
+               <value>none</value>
+               <value>bitpacking</value>
+               <value>pfor</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE text_index_dense_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx s TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <!-- `thread` is in every row, `blk` in every row of one contiguous million-row range, `k17` in one row of 64. -->
+    <fill_query>INSERT INTO text_index_dense_{codec} SELECT number, concat('thread k', toString(number % 64), if(number >= 5000000 AND number &lt; 6000000, ' blk', '')) FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_dense_{codec} FINAL</fill_query>
+
+    <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAllTokens(s, ['thread', 'k17'])</query>
+    <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAllTokens(s, ['thread', 'k17']) SETTINGS query_plan_optimize_count_from_text_index = 0, text_index_posting_list_apply_mode = 'materialize'</query>
+    <query>SELECT count() FROM text_index_dense_{codec} WHERE hasAllTokens(s, ['blk', 'k17'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_dense_{codec}</drop_query>
+</test>

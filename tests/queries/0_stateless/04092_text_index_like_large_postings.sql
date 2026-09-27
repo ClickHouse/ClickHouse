@@ -28,7 +28,8 @@ CREATE TABLE t_text_index_like_large
 ENGINE = MergeTree
 ORDER BY tuple();
 
-INSERT INTO t_text_index_like_large SELECT 'aaabbbccc' FROM numbers(100000);
+-- One row without the token, so the posting list is not built from its row range and its blocks are read.
+INSERT INTO t_text_index_like_large SELECT if(number = 50000, 'zzz', 'aaabbbccc') FROM numbers(100001);
 
 -- The matching query must return all rows. Without the fix it returned 0, because the
 -- pattern-matched token's multi-block posting list was never read.
