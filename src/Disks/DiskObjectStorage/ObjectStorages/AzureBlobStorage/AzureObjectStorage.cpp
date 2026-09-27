@@ -281,7 +281,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         restrict_seek,
         /* read_until_position */0,
         std::move(blob_storage_log),
-        connection_params.get()->getContainer());
+        connection_params.get()->getContainer(),
+        object.etag);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

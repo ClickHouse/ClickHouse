@@ -1819,7 +1819,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// file no matter how the setting is configured.
     String pinned_generation;
     if (object_info.metadata.has_value()
-        && (settings[Setting::s3_validate_etag_on_read] || object_info.require_read_pinned_to_generation))
+        && ((settings[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3)
+            || object_info.require_read_pinned_to_generation))
         pinned_generation = object_info.metadata->etag;
 
     if (object_info.require_read_pinned_to_generation && pinned_generation.empty())
