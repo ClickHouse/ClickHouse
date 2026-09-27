@@ -30,8 +30,7 @@
               "group": "Analytics em tempo real",
               "pages": [
                 "pt-BR/get-started/quickstarts/create-your-first-materialized-view",
-                "pt-BR/get-started/quickstarts/create-your-first-projection",
-                "pt-BR/get-started/quickstarts/tutorial"
+                "pt-BR/get-started/quickstarts/create-your-first-projection"
               ]
             },
             {

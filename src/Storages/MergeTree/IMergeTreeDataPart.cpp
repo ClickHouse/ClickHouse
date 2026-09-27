@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -970,6 +971,17 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
+SerializationPtr LoadedMergeTreeDataPartInfoForReader::getSerialization(const NameAndTypePair & column) const
+{
+    if (auto serialization = data_part->tryGetSerialization(column.name))
+        return serialization;
+
+    if (column.isSubcolumn() && containsObjectType(*column.getTypeInStorage()))
+        return column.getTypeInStorage()->getSubcolumnSerialization(
+            column.getSubcolumnName(), data_part->getSerialization(column.getNameInStorage()));
+    return data_part->getSerialization(column.name);
+}
+
 bool IMergeTreeDataPart::isMovingPart() const
 {
     fs::path part_directory_path = getDataPartStorage().getRelativePath();
@@ -1559,10 +1571,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
         {
-            auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
-                getDataPartStorage().getFullPath(), message);
-
             if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
@@ -1582,6 +1590,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 if (isEmpty())
                     e->addMessage("Part is empty");
             }
+
+            auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
+                getDataPartStorage().getFullPath(), message);
         }
 
         throw;
@@ -1903,11 +1915,14 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
         return;
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
