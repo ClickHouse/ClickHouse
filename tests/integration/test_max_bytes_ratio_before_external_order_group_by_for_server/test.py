@@ -99,13 +99,27 @@ def test_max_bytes_ratio_before_external_sort(node):
 
 
 @pytest.mark.parametrize(
-    "node,limit_follows_rss",
+    "node,limit_follows_rss,query",
     [
-        pytest.param(node_server, True, id="server"),
-        pytest.param(node_user, False, id="user"),
+        # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
+        pytest.param(
+            node_server,
+            True,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null",
+            id="server",
+        ),
+        # Peak memory usage: ~5.7GiB (7M unique 800-byte strings) against a 4GiB user limit. The final merge
+        # holds a block of every spilled run at once, so `max_block_size` is pinned to its default.
+        pytest.param(
+            node_user,
+            False,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 100) AS k FROM numbers(10000000, 7000000)) "
+            "SETTINGS max_memory_usage_for_user = '4Gi', max_block_size = 65409 FORMAT Null",
+            id="user",
+        ),
     ],
 )
-def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss):
+def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss, query):
     if sanitizer_build["thread"]:
         pytest.skip("TSan build is skipped due to memory overhead")
     if sanitizer_build["memory"]:
@@ -120,11 +134,6 @@ def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss):
         # into the harness's 600 second per-query cap. The user-limit parameter is unaffected:
         # `max_memory_usage_for_user` counts tracked bytes rather than RSS.
         pytest.skip("Address Sanitizer RSS overhead leaves no headroom under max_server_memory_usage")
-
-    # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
-    query = """
-    SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null
-    """
 
     settings = {
         "max_memory_usage": "0",

@@ -150,7 +150,11 @@ public:
         for (const auto & argument : arguments)
             arguments_column_names.push_back(argument.name);
 
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
+        /// The format name can arrive wrapped, e.g. from `formatRow(toLowCardinality('CSV'), ...)`.
+        const auto & format_name_argument = arguments.at(0).column;
+        const auto format_name_column
+            = format_name_argument ? format_name_argument->convertToFullColumnIfLowCardinality() : nullptr;
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(format_name_column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},

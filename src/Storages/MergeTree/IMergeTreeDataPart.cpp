@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -970,6 +971,17 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
+SerializationPtr LoadedMergeTreeDataPartInfoForReader::getSerialization(const NameAndTypePair & column) const
+{
+    if (auto serialization = data_part->tryGetSerialization(column.name))
+        return serialization;
+
+    if (column.isSubcolumn() && containsObjectType(*column.getTypeInStorage()))
+        return column.getTypeInStorage()->getSubcolumnSerialization(
+            column.getSubcolumnName(), data_part->getSerialization(column.getNameInStorage()));
+    return data_part->getSerialization(column.name);
+}
+
 bool IMergeTreeDataPart::isMovingPart() const
 {
     fs::path part_directory_path = getDataPartStorage().getRelativePath();
@@ -1464,8 +1476,17 @@ Estimates IMergeTreeDataPart::getEstimates() const
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Statistics are built from table metadata, which can name columns this part does not store:
+    /// an expired column `TTL` removes a column from the part after the statistics set is decided.
+    const auto & part_columns = getColumnsDescription();
+    Estimates stored_estimates;
+    for (const auto & [column_name, estimate] : new_estimates)
+        if (part_columns.tryGet(column_name))
+            stored_estimates.emplace(column_name, estimate);
+
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    estimates = std::move(stored_estimates);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1903,11 +1924,14 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
         return;
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
