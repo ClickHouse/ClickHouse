@@ -6533,13 +6533,56 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         const NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
 
         /// Find a SELECT-list node aliased as the USING identifier: top-level projection aliases first (pick-first, kept for compatibility), then nested-subexpression aliases.
+        /// Under `standard` matching an unquoted identifier matches aliases case-insensitively, except double-quoted ones;
+        /// aliases with different spellings that all match make the identifier ambiguous.
         auto find_aliased_node_in_projection = [&select_list_aliases, &nested_alias_matched, name_match_mode](const QueryNode * query_node_,
-                                                   const String & identifier_full_name_) -> QueryTreeNodePtr
+                                                   const String & identifier_full_name_,
+                                                   const IdentifierName & identifier_name_) -> QueryTreeNodePtr
         {
-            for (const auto & projection_node : query_node_->getProjection().getNodes())
+            IdentifierName foldable_name;
+            if (identifier_name_.size() == 1)
+                foldable_name = getFoldableSingleName(identifier_name_.front().spelling, identifier_name_.front().quote, name_match_mode);
+            auto alias_is_pinned = [](const String &, const QueryTreeNodePtr & node) { return node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; };
+
+            auto throw_ambiguous = [&](std::vector<String> candidates)
             {
-                if (projection_node->hasAlias() && identifier_full_name_ == projection_node->getAlias())
-                    return projection_node;
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "USING identifier '{}' is ambiguous under standard name matching. Candidates: {}",
+                    identifier_full_name_,
+                    fmt::join(candidates, ", "));
+            };
+
+            if (foldable_name.empty())
+            {
+                for (const auto & projection_node : query_node_->getProjection().getNodes())
+                {
+                    if (projection_node->hasAlias() && identifier_full_name_ == projection_node->getAlias())
+                        return projection_node;
+                }
+            }
+            else
+            {
+                QueryTreeNodePtr first_match;
+                std::vector<String> matched_aliases;
+                for (const auto & projection_node : query_node_->getProjection().getNodes())
+                {
+                    if (!projection_node->hasAlias() || alias_is_pinned({}, projection_node)
+                        || !foldable_name.matchesFolded(projection_node->getAlias()))
+                        continue;
+                    if (!first_match)
+                        first_match = projection_node;
+                    if (std::ranges::find(matched_aliases, projection_node->getAlias()) == matched_aliases.end())
+                        matched_aliases.push_back(projection_node->getAlias());
+                }
+
+                if (matched_aliases.size() > 1)
+                {
+                    std::ranges::sort(matched_aliases);
+                    throw_ambiguous(std::move(matched_aliases));
+                }
+
+                if (first_match)
+                    return first_match;
             }
 
             /// QueryExpressionsAliasVisitor applies SELECT-list scoping and stores clones of aliased nodes; it needs a mutable node, so clone first.
@@ -6552,14 +6595,28 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
 
             /// A lambda alias must not become a USING column.
-            auto it = select_list_aliases->alias_name_to_expression_node.find(identifier_full_name_);
-            if (it == select_list_aliases->alias_name_to_expression_node.end())
+            auto & alias_map = select_list_aliases->alias_name_to_expression_node;
+            auto it = alias_map.end();
+            if (foldable_name.empty())
+            {
+                it = alias_map.find(identifier_full_name_);
+            }
+            else
+            {
+                auto matches = collectFoldedNameMatches(alias_map, foldable_name, alias_is_pinned);
+                if (matches.size() > 1)
+                    throw_ambiguous(std::move(matches));
+                if (matches.size() == 1)
+                    it = alias_map.find(matches.front());
+            }
+
+            if (it == alias_map.end())
                 return nullptr;
 
             /// Do not pick an arbitrary expression among duplicated aliases.
             for (const auto & duplicated_node : select_list_aliases->nodes_with_duplicated_aliases)
             {
-                if (duplicated_node->hasAlias() && duplicated_node->getAlias() == identifier_full_name_)
+                if (duplicated_node->hasAlias() && duplicated_node->getAlias() == it->first)
                     return nullptr;
             }
 
@@ -6573,6 +6630,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
           */
         auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_projection](
                                                                    const String & identifier_full_name_,
+                                                                   const IdentifierName & identifier_name_,
                                                                    const TableExpressionNodePtr & left_table_expression,
                                                                    const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
         {
@@ -6580,7 +6638,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (!query_node)
                 return nullptr;
 
-            auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name_);
+            auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name_, identifier_name_);
             if (!matched_node)
                 return nullptr;
 
@@ -6681,7 +6739,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               * It's compatible with a default behavior for old analyzer.
               */
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
-                result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpressionNodeTyped(), scope);
+                result_left_table_expression = try_resolve_identifier_from_query_projection(
+                    identifier_full_name, identifier_node->getIdentifierName(), join_node_typed.getLeftTableExpressionNodeTyped(), scope);
 
             /// A nested-alias USING key cannot ship to a remote server (rendered SQL keeps only top-level projection aliases), so disable parallel replicas for such a query.
             if (result_left_table_expression && nested_alias_matched)
@@ -6738,7 +6797,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
                 if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
                 {
-                    if (auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name))
+                    if (auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name, identifier_node->getIdentifierName()))
                         extra_message = fmt::format(
                             ", but alias '{}' is present in SELECT list."
                             " You may try to SET analyzer_compatibility_join_using_top_level_identifier = 1, to allow to use it in USING clause",
