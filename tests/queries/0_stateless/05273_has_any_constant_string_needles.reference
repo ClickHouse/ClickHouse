@@ -9,6 +9,7 @@ long strings	1513	0	0	0
 no needle present	0	0
 empty needle array	0	0
 one row per block	1502	0
+100-row blocks	1502	0
 NULL needle	1245	0
 Nullable elements	1494	0
 needles of up to 256 bytes	815	0

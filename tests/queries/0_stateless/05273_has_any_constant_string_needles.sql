@@ -1,9 +1,11 @@
 -- `hasAny` with a constant array of strings must give the same answer as with the same array passed
--- as a non-constant argument, for `String`, `LowCardinality(String)` and `FixedString` elements, and for long strings:
--- needles of up to 256 bytes, a needle longer than that, and elements longer than every needle.
+-- as a non-constant argument, for `String`, `LowCardinality(String)` and `FixedString` elements, for blocks of one
+-- and of 100 rows, and for long strings: needles of up to 256 bytes, a needle longer than that, and elements longer
+-- than every needle.
 DROP TABLE IF EXISTS t_has_any_const_strings;
+-- Wide parts, so that `max_block_size` below splits the table into blocks of that size.
 CREATE TABLE t_has_any_const_strings (id UInt64, s Array(String), lc Array(LowCardinality(String)), fs Array(FixedString(20)))
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_has_any_const_strings SELECT number, a, a, arrayMap(x -> toFixedString(left(x, 20), 20), a)
 FROM (SELECT number, arrayMap(i -> [
         '', 'a', 'b', 'a\0', '\0a', 'tag1', 'tag12',
@@ -24,6 +26,7 @@ WITH (SELECT groupArray(concat('https://example.com/p/', toString(number * 2), '
 WITH ['absent1', 'absent2', 'absent3', 'absent4'] AS ns SELECT 'no needle present', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_strings;
 WITH [] AS ns SELECT 'empty needle array', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_strings;
 WITH [concat(repeat('x', 8), 'A', repeat('y', 8)), 'tag12', repeat('z', 16), '', 'absent'] AS ns SELECT 'one row per block', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_strings SETTINGS max_block_size = 1;
+WITH [concat(repeat('x', 8), 'A', repeat('y', 8)), 'tag12', repeat('z', 16), '', 'absent'] AS ns SELECT '100-row blocks', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_strings SETTINGS max_block_size = 100;
 WITH [NULL, 'a', 'b', 'tag1'] AS ns SELECT 'NULL needle', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_strings;
 WITH ['a', 'b', 'tag1', 'qq'] AS ns SELECT 'Nullable elements', countIf(hasAny(CAST(s, 'Array(Nullable(String))'), ns)), countIf(hasAny(CAST(s, 'Array(Nullable(String))'), ns) != hasAny(CAST(s, 'Array(Nullable(String))'), materialize(ns))) FROM t_has_any_const_strings;
 DROP TABLE t_has_any_const_strings;

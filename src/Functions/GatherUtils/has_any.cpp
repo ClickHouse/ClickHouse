@@ -26,12 +26,17 @@ bool hasAnyStringInConstNeedles(const GenericArraySource & first, const GenericA
         return false;
 
     const GenericArraySlice needles = second.getWhole();
-    if (needles.size < min_needles_for_lookup)
+    /// The generic path settles a row with one comparison when its first element is the first needle, so building the
+    /// set pays off only over enough rows: at least 4 per needle plus 1 per 8 needle bytes.
+    size_t min_rows = 4 * needles.size;
+    if (needles.size < min_needles_for_lookup || min_rows > size)
         return false;
 
     for (size_t i = needles.begin; i < needles.begin + needles.size; ++i)
     {
-        if (needle_column->getDataAt(i).size() > max_needle_size)
+        const size_t needle_size = needle_column->getDataAt(i).size();
+        min_rows += needle_size / 8;
+        if (needle_size > max_needle_size || min_rows > size)
             return false;
     }
 

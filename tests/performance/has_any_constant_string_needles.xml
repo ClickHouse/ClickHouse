@@ -30,6 +30,8 @@
     <query>SELECT count(), sum(id) FROM perf_has_any_hex WHERE hasAny(f, ['de18f0124d408ef2c603b9aff9d2af26', '85928bba4273dcab6da30ce739f0e795', '42059e385ea7750cbd9d9da014c47002', '28f384c14e68d2337c8a25c152389935'])</query>
     <query>SELECT count() FROM perf_has_any_256 WHERE hasAny(s, (SELECT groupArray(concat('n', leftPad(toString(number), 3, '0'), repeat('q', 252))) FROM numbers(32))) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM perf_has_any_1k WHERE hasAny(s, (SELECT groupArray(concat('n', toString(number), repeat('q', 1022))) FROM numbers(4))) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM numbers(5000000) WHERE hasAny([toString(number * 0)], arrayMap(x -> toString(x), range(1000))) SETTINGS max_block_size = 128, max_threads = 1</query>
+    <query>SELECT count() FROM numbers(20000) WHERE hasAny([toString(number)], (SELECT arrayPushBack(groupArray(concat('x', toString(number))), repeat('z', 300)) FROM numbers(255))) SETTINGS max_block_size = 1, max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS perf_has_any_tags</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_has_any_hex</drop_query>
