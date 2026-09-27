@@ -303,15 +303,36 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));
 
+        /// A union takes its column names from its first select, and so do the pinned (double-quoted) ones.
+        /// Keep their quotes, so the round trip preserves `standard` name matching.
+        const QueryNode * first_query = nullptr;
+        for (const IQueryTreeNode * current = this; current && !first_query;)
+        {
+            if (const auto * query_node = current->as<QueryNode>())
+                first_query = query_node;
+            else if (const auto * union_node = current->as<UnionNode>(); union_node && !union_node->getQueries().getNodes().empty())
+                current = union_node->getQueries().getNodes().front().get();
+            else
+                break;
+        }
+        const Names empty_pinned_names;
+        const Names & pinned_column_names = first_query ? first_query->getPinnedProjectionColumnNames() : empty_pinned_names;
+
         auto select_expression_list_ast = make_intrusive<ASTExpressionList>();
         select_expression_list_ast->children.reserve(recursive_cte_table->columns.size());
         for (const auto & recursive_cte_table_column : recursive_cte_table->columns)
-            select_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(recursive_cte_table_column.name));
+        {
+            auto column_quote = std::binary_search(pinned_column_names.begin(), pinned_column_names.end(), recursive_cte_table_column.name)
+                ? IdentifierPartQuote::DoubleQuoted
+                : IdentifierPartQuote::Unquoted;
+            select_expression_list_ast->children.push_back(
+                make_intrusive<ASTIdentifier>(IdentifierName({IdentifierPart{recursive_cte_table_column.name, column_quote}})));
+        }
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list_ast));
 
         auto table_expression_ast = make_intrusive<ASTTableExpression>();
-        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(cte_name));
+        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(IdentifierName({IdentifierPart{cte_name, cte_name_quote}})));
         table_expression_ast->database_and_table_name = table_expression_ast->children.back();
 
         auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
