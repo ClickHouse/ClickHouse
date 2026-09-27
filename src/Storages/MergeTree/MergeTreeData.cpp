@@ -14234,16 +14234,19 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
 
 bool MergeTreeData::readsColumnsWithoutTransformations(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    /// A missing mutations snapshot reads as "nothing pending" below, which is the unsafe answer here.
+    /// A missing mutations snapshot must not be read as "nothing pending".
     const auto * snapshot_data = storage_snapshot ? dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()) : nullptr;
     if (!snapshot_data || !snapshot_data->mutations_snapshot)
         return false;
 
-    /// The snapshot overload answers what this read will apply; the live one answers what is pending at
-    /// all, which the snapshot omits when the on-the-fly settings are off, and covers masking policies.
-    return getColumnDefaultnessStatsUnavailableReason(query_context, snapshot_data->mutations_snapshot)
-            == ColumnDefaultnessStatsUnavailableReason::None
-        && getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None;
+    /// The snapshot answers what this read will apply; the live check answers what is pending at all,
+    /// which the snapshot omits when the on-the-fly settings are off, and covers masking policies.
+    const auto & mutations_snapshot = *snapshot_data->mutations_snapshot;
+    if (query_context->getCurrentTransaction() || mutations_snapshot.hasPatchParts() || mutations_snapshot.hasDataMutations()
+        || mutations_snapshot.hasAlterMutations())
+        return false;
+
+    return getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None;
 }
 
 bool MergeTreeData::readIsBoundedBySpanLimit(ContextPtr query_context) const
