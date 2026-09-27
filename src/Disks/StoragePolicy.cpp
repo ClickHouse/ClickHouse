@@ -505,8 +505,10 @@ void StoragePolicy::validateDisksHaveDistinctStorageNamespaces() const
             if (data_source.type == DataSourceType::Local)
                 path = std::filesystem::weakly_canonical(path);
 
+            /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
+            /// so its identity is its description and path.
             String objects_namespace;
-            if (data_source.type == DataSourceType::ObjectStorage)
+            if (data_source.type == DataSourceType::ObjectStorage && data_source.object_storage_type != ObjectStorageType::None)
                 objects_namespace = disk->getObjectStorage()->getObjectsNamespace();
 
             StorageNamespace storage_namespace{
