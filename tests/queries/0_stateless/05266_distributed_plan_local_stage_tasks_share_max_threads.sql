@@ -22,10 +22,10 @@ SELECT k % 1000 AS g, count() FROM t_share_threads GROUP BY g FORMAT Null
 SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 4, max_threads = 16,
     log_comment = '05266_cascades';
 
--- Three reading tasks and 256 aggregating tasks.
+-- Three reading tasks and 32 aggregating tasks.
 SELECT k % 1000 AS g, count() FROM t_share_threads GROUP BY g FORMAT Null
 SETTINGS enable_cascades_optimizer = 0, distributed_plan_force_shuffle_aggregation = 1,
-    distributed_plan_default_reader_bucket_count = 3, distributed_plan_default_shuffle_join_bucket_count = 256,
+    distributed_plan_default_reader_bucket_count = 3, distributed_plan_default_shuffle_join_bucket_count = 32,
     max_threads = 16, log_comment = '05266_rule_based';
 
 -- A scalar subquery with its own SETTINGS is planned in that scope: its tasks share its max_threads,
