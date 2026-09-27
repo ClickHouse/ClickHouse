@@ -38,7 +38,7 @@
       concat(
         'q',
         arrayStringConcat(arrayMap(i -> char(97 + intDiv(number, toUInt64(pow(26, i))) % 26), range(5))),
-        if(intDiv(number, 8) % 100 < 6, concat(' qzzzzzz', char(97 + intDiv(number, 8) % 100)), ''))
+        if(intDiv(number, 8) % 100 &lt; 6, concat(' qzzzzzz', char(97 + intDiv(number, 8) % 100)), ''))
     FROM numbers(200000)
   </fill_query>
 
