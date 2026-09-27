@@ -7,8 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 echo 'DROP TABLE IF EXISTS long_insert' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @-
 echo 'CREATE TABLE long_insert (str String) ENGINE = Memory' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @-
 for string_size in 1 10 100 1000 10000 100000 1000000; do
-    # LC_ALL=C is needed because otherwise Perl will bark on bad tuned environment.
-    LC_ALL=C perl -we 'for my $letter ("a" .. "z") { print(($letter x '$string_size') . "\n") }' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&query=INSERT+INTO+long_insert+FORMAT+TabSeparated" --data-binary @-
+    for letter in {a..z}; do rep "$letter" "$string_size"; echo; done | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&query=INSERT+INTO+long_insert+FORMAT+TabSeparated" --data-binary @-
     echo 'SELECT substring(str, 1, 1) AS c, length(str) AS l FROM long_insert ORDER BY c, l' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @-
 done
 

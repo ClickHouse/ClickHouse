@@ -147,12 +147,12 @@ ClickHouse に生の CSV データを insert する場合は、次のように�
     ```java
     public static void main(String[] args) {
         // ClickHouseClient を設定
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // ElementConverter を作成
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
 
-        // sink を作成し、`setClickHouseFormat` でフォーマットを設定
+        // シンク を作成し、`setClickHouseFormat` でフォーマットを設定
         ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
                 convertorString,
                 MAX_BATCH_SIZE,
@@ -161,12 +161,12 @@ ClickHouse に生の CSV データを insert する場合は、次のように�
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
+                clientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 
-        // 最後に、DataStream を sink に接続します。
+        // 最後に、DataStream を シンク に接続します。
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         Path csvFilePath = new Path(fileFullName);
@@ -243,7 +243,7 @@ ClickHouse Sink をすぐに使い始められるように、Maven ベースの�
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clickHouseClientConfig
+        clientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```

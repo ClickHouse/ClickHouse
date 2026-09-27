@@ -392,13 +392,7 @@ INSERT INTO t VALUES (44), (28), (13), (85);
 SELECT groupBitOr(num) FROM t;
         )",
         R"(
--- Result:
--- binary     decimal
--- 01111101 = 125
-
-┌─groupBitOr(num)─┐
-│             125 │
-└─────────────────┘
+125
         )"
     }
     };
@@ -436,13 +430,7 @@ INSERT INTO t VALUES (44), (28), (13), (85);
 SELECT groupBitAnd(num) FROM t;
             )",
             R"(
--- Result:
--- binary     decimal
--- 00000100 = 4
-
-┌─groupBitAnd(num)─┐
-│                4 │
-└──────────────────┘
+4
             )"
     }
     };
@@ -480,13 +468,7 @@ INSERT INTO t VALUES (44), (28), (13), (85);
 SELECT groupBitXor(num) FROM t;
         )",
         R"(
--- Result:
--- binary     decimal
--- 01101000 = 104
-
-┌─groupBitXor(num)─┐
-│              104 │
-└──────────────────┘
+104
         )"
     }
     };

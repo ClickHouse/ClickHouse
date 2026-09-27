@@ -1,16 +1,40 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'سجل تغييرات Cloud - 2026'
-description: 'سجل تغييرات ClickHouse Cloud الذي يقدّم وصفًا لما هو جديد في كل إصدار من إصدارات ClickHouse Cloud'
+title: 'سجل تغييرات Cloud لعام 2026'
+description: 'سجل تغييرات ClickHouse Cloud الذي يصف المستجدات في كل إصدار من ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'التحديثات', 'الميزات الجديدة', 'تغييرات Cloud']
+keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'تحديثات', 'ميزات جديدة', 'تغييرات Cloud']
 rss: true
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-بالإضافة إلى Cloud changelog الخاص بـ ClickHouse Cloud، يُرجى أيضًا الاطلاع على صفحة [Cloud Compatibility](/ar/products/cloud/guides/cloud-compatibility).
+بالإضافة إلى سجل تغييرات ClickHouse Cloud هذا، يُرجى الاطلاع على صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
+
+<Update label="17 أغسطس 2026">
+  توسّع تحديثات هذا الأسبوع نطاق المنصة وتحسّن الرؤية التشغيلية. أصبح Managed Postgres متاحًا الآن على GCP لشركاء التصميم المختارين، وأصبحت إدارة موارد ClickStack ممكنة عبر Terraform provider الرسمي، كما توفّر إشعارات الفوترة الجديدة للعملاء تنبيهًا مبكرًا قبل انتهاء الأرصدة أو انقطاع الخدمة. أطلقنا أيضًا تتبعًا محسّنًا لـ ClickHouse Agents وتجربة تسجيل دخول أكثر سلاسة عبر SAML.
+
+  ### Managed Postgres متاح الآن على GCP
+
+  أصبح [ClickHouse Cloud Managed Postgres](/ar/products/managed-postgres/overview) متاحًا الآن على GCP لشركاء التصميم المختارين في جميع مناطق GCP العامة، مع `us-west1` كأول منطقة خاصة. يوسّع ذلك إتاحة Managed Postgres للعملاء الذين يبنون خدماتهم على GCP، ومن المقرر إطلاق المعاينة الخاصة في 2026-08.
+
+  ### إدارة موارد ClickStack باستخدام Terraform
+
+  يتوفر دعم ClickStack الآن في مرحلة Beta عبر الإصدار 3.25.0 من Terraform provider الرسمي [`ClickHouse/clickhouse`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). يمكن للفرق إنشاء لوحات المعلومات والتنبيهات والمصادر وعمليات البحث المحفوظة والاتصالات وwebhooks، وتحديثها واستيرادها وإزالتها باستخدام سير عمل `terraform plan` و`terraform apply` القياسي. يدعم التكامل كلاً من Managed ClickStack وعمليات النشر ذاتية الاستضافة.
+
+  ### إشعارات فوترة جديدة للأرصدة والمدفوعات
+
+  تُدار إشعارات الفوترة الآن عبر مركز إشعارات ClickHouse Cloud، وتُرسل من خلال وحدة التحكم والبريد الإلكتروني وSlack. يتلقى العملاء إشعارًا مسبقًا عندما توشك الأرصدة المدفوعة مسبقًا أو التجريبية على الانتهاء أو النفاد، بالإضافة إلى إشعارات عند إضافة أرصدة أو تغيير طرق الدفع أو دخول الحساب في فترة سماح بسبب عدم السداد. يوفّر ذلك وقتًا إضافيًا للتجديد أو إضافة أرصدة أو معالجة مشكلات الدفع قبل انقطاع الخدمة.
+
+  ### فتح آثار جلسات Langfuse من ClickHouse Agents
+
+  يمكن لمسؤولي المؤسسة الآن فتح جلسة Langfuse المقابلة مباشرةً من دردشة [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents/index) وفحص الآثار الخاصة بالمحادثة بأكملها. يسهّل ذلك التحقيق في سلوك الوكيل وتصحيح أخطاء عمليات التشغيل متعددة الخطوات. يتوفر هذا التحسين في بيتا عامة للمحادثات المنشأة حديثًا.
+
+  ### عمليات إعادة توجيه SAML تساعد في منع الحسابات المكررة
+
+  عندما يحاول مستخدم تسجيل الدخول باستخدام Google أو Microsoft في حين تكون SAML مهيأة لمؤسسته، يعيد ClickHouse Cloud توجيهه الآن إلى مسار تسجيل الدخول الصحيح عبر SAML. يساعد ذلك في منع المستخدمين من إنشاء مؤسسة منفصلة عن طريق الخطأ عندما كانوا يقصدون الوصول إلى حساب قائم.
+</Update>
 
 <Update label="13 يوليو 2026">
   تتضمن تحديثات هذا الأسبوع توجيهًا مثبتًا للنسخ المتماثلة عبر HTTPS العادي، وتواريخ بدء مخصّصة لفترة الفوترة، وعناصر تحكم جديدة في initial load لـ Object Storage ClickPipes.

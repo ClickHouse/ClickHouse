@@ -102,8 +102,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -124,6 +123,8 @@ public:
     /// Not null if the type stores the JSON text of each row in the source subcolumn.
     const SerializationPtr & getSourceSerialization() const { return source_serialization; }
     const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
+
+    static void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings);
 
 private:
     friend SerializationObjectDynamicPath;
@@ -175,8 +176,6 @@ protected:
     bool shouldSkipPath(const String & path) const;
     /// Top-level path with the name of the source subcolumn is not allowed in types with `with_source=1`.
     void checkPathIsNotReserved(const String & path) const;
-
-    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
