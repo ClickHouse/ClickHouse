@@ -31,7 +31,7 @@
     <query>SELECT count() FROM perf_has_any_256 WHERE hasAny(s, (SELECT groupArray(concat('n', leftPad(toString(number), 3, '0'), repeat('q', 252))) FROM numbers(32))) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM perf_has_any_512 WHERE hasAny(s, (SELECT groupArray(concat('n', toString(number), repeat('q', 510))) FROM numbers(4))) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM numbers(5000000) WHERE hasAny([toString(number * 0)], arrayMap(x -> toString(x), range(1000))) SETTINGS max_block_size = 128, max_threads = 1</query>
-    <query>SELECT count() FROM numbers(50000000) WHERE hasAny([toString(number * 0)], (SELECT arrayPushBack(groupArray(toString(number)), repeat('z', 300)) FROM numbers(255))) SETTINGS max_block_size = 1024, max_threads = 1</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE hasAny([toString(number * 0)], (SELECT arrayPushBack(groupArray(toString(number)), repeat('z', 300)) FROM numbers(245))) SETTINGS max_block_size = 1024, max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS perf_has_any_tags</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_has_any_hex</drop_query>
