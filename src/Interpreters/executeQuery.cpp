@@ -282,7 +282,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int FAULT_INJECTED;
@@ -1141,11 +1140,8 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast)
+void normalizeAnalyzerSettings(ASTPtr ast)
 {
-    if (ast->as<ASTSetQuery>())
-        return;
-
     auto field_to_bool = [](const Field & f) -> bool
     {
         if (f.getType() == Field::Types::String)
@@ -1161,14 +1157,10 @@ void validateAnalyzerSettings(ASTPtr ast)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            for (const auto * name : {"allow_experimental_analyzer", "enable_analyzer"})
+            for (auto & change : set_query->changes)
             {
-                const auto * value = set_query->changes.tryGet(name);
-                if (value && !field_to_bool(*value))
-                    throw Exception(
-                        ErrorCodes::INCORRECT_QUERY,
-                        "Setting '{}' is obsolete and cannot be disabled: the analyzer is the only supported query analysis",
-                        name);
+                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !field_to_bool(change.value))
+                    change.value = Field(true);
             }
         }
 
@@ -2305,7 +2297,7 @@ static BlockIO executeQueryImpl(
 
     /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9 and the old
     /// query analysis is gone, so nothing reads the value anymore. A change that would disable it is
-    /// refused where the settings constraints are consulted, but a settings profile from the server
+    /// rewritten to `1` where the settings constraints are consulted, but a settings profile from the server
     /// configuration is applied without them, so is a setting given to `clickhouse-local` on the command
     /// line, and so is a secondary query another server sent. Normalize it here, so that `getSetting`,
     /// `system.query_log` and a query this server sends on report the analysis that actually ran.
@@ -2841,7 +2833,7 @@ static BlockIO executeQueryImpl(
                 visitor.visit(out_ast);
             }
 
-            validateAnalyzerSettings(out_ast);
+            normalizeAnalyzerSettings(out_ast);
 
             if (settings[Setting::enforce_strict_identifier_format])
             {

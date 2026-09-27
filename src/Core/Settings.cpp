@@ -9290,9 +9290,9 @@ Cloud default value: `1`.
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Obsolete since v26.9: the analyzer cannot be disabled anymore.
 
-The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. In v26.10 the query analysis it used to switch to was removed. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
+The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 this setting was frozen at its only supported value, `1`, and the `compatibility` setting no longer reverts it. In v26.10 the query analysis it used to switch to was removed. For backward compatibility, setting it to `0` is accepted and replaced with `1`, so queries, session settings, settings profiles and client configurations that still set `enable_analyzer = 0` keep working, with the analyzer. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
 )", IMPORTANT | SettingsTierType::OBSOLETE, enable_analyzer, \
-        {"26.9", true, true, "The setting is obsolete: the analyzer is mandatory and the old query analysis is no longer supported. Disabling it is refused instead of being ignored, and `compatibility` with a version below 24.3 no longer reverts it."}, \
+        {"26.9", true, true, "The setting is obsolete: the analyzer is mandatory and the old query analysis is no longer supported. A change that would disable it is accepted and replaced with `1`, and `compatibility` with a version below 24.3 no longer reverts it."}, \
         {"24.8", 1, 1, "Added the alias `enable_analyzer`."}, \
         {"24.3", false, true, "Enable analyzer and planner by default."}) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
