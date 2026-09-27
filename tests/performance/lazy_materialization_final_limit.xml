@@ -1,0 +1,24 @@
+<test>
+    <!--
+        Lazy materialization for FINAL with a filter and a LIMIT without ORDER BY.
+        The filter cannot be moved to PREWHERE for FINAL, so without the optimization
+        every scanned row drags the wide payload column through the FINAL merge until
+        the limit is satisfied. The last query is a control: the ORDER BY + LIMIT
+        shape was optimized before and must not change.
+    -->
+    <create_query>
+        CREATE TABLE lazy_mat_final_limit (k UInt64, v UInt64, payload String)
+        ENGINE = ReplacingMergeTree
+        ORDER BY k
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES lazy_mat_final_limit</fill_query>
+    <fill_query>INSERT INTO lazy_mat_final_limit SELECT number, cityHash64(number, 1) % 10000, randomPrintableASCII(2000) FROM numbers_mt(500000)</fill_query>
+    <fill_query>INSERT INTO lazy_mat_final_limit SELECT number, cityHash64(number, 2) % 10000, randomPrintableASCII(2000) FROM numbers_mt(500000)</fill_query>
+
+    <query>SELECT k, payload FROM lazy_mat_final_limit FINAL WHERE v = 7 LIMIT 10 FORMAT Null</query>
+    <query>SELECT k, payload FROM lazy_mat_final_limit FINAL WHERE v = 7 LIMIT 100 FORMAT Null</query>
+    <query>SELECT k, payload FROM lazy_mat_final_limit FINAL WHERE v = 7 ORDER BY k LIMIT 10 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_mat_final_limit</drop_query>
+</test>

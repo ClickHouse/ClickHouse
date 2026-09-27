@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -53,11 +54,14 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
-    std::optional<size_t> getRemoteFileSize() const override;
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
+
+    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
 
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
@@ -67,9 +71,13 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
+    /// Creates the client on first use. Thread-safe.
+    const AzureBlobStorage::BlobClient & getBlobClient() const;
+
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
-    BlobClientPtr blob_client;
+    mutable BlobClientPtr blob_client;
+    mutable std::once_flag blob_client_created;
 
     const String path;
     size_t max_single_read_retries;
@@ -86,7 +94,7 @@ private:
     off_t read_until_position = 0;
 
     off_t offset = 0;
-    size_t total_size;
+    size_t total_size{};
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

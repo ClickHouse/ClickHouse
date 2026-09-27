@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <limits>
 
 #include <boost/math/distributions/normal.hpp>
@@ -48,7 +49,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
     {
         ConcatenatedSamples both(this->x, this->y);
         RanksArray ranks;
-        Float64 tie_correction;
+        Float64 tie_correction = 0;
 
         /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
@@ -143,7 +144,7 @@ private:
 
 public:
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
+        : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, params, createResultType())
     {
         if (params.size() > 2)
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require two parameter or less", getName());
@@ -182,6 +183,18 @@ public:
         return "mannWhitneyUTest";
     }
 
+    /// The parameters (alternative, continuity_correction) only affect finalization, not the
+    /// serialized state. Normalize to an empty parameter list so a new parameterized state and a
+    /// legacy parameterless state stay Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
+    }
+
     bool allocatesMemoryInArena() const override { return true; }
 
     static DataTypePtr createResultType()
@@ -215,7 +228,7 @@ public:
             data(place).addX(value, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -268,6 +281,7 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 }
 
 
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -303,7 +317,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
         )",
         R"(
 ┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
-│ (9,0.04042779918503192)                                │
+│ (9,0.04042779918502615)                                │
 └────────────────────────────────────────────────────────┘
         )"
     }

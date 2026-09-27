@@ -1,0 +1,8 @@
+-- mv_to_target points at the explicit destination
+mv_to_target	default	dst
+-- mv_with_inner points at an `.inner_id.<uuid>` table in the same database
+mv_with_inner	default	1
+-- non-MV tables have empty target_database / target_table
+dst		
+plain		
+src		

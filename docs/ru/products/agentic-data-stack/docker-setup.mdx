@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'Настройка Docker'
+title: 'Настройка Agentic Data Stack с помощью Docker Compose'
+description: 'Запустите весь Agentic Data Stack (ClickHouse, LibreChat, MCP-сервер и Langfuse) через Docker Compose'
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'Docker Compose', 'настройка', 'LibreChat', 'MCP', 'Langfuse']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Запустите полный Agentic Data Stack локально с помощью Docker Compose, чтобы сразу после первого входа задавать вопросы по своим данным. Одной командой `docker compose up` вы запустите [LibreChat](/ru/products/agentic-data-stack/components/librechat), [MCP-сервер ClickHouse](/ru/products/agentic-data-stack/components/mcp-server), [ClickHouse](/ru/get-started/setup/install) и [Langfuse](/ru/products/agentic-data-stack/components/langfuse) для обсервабилити.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* **Docker** с плагином Compose (Compose v2 или новее).
+* **Git** для клонирования репозитория.
+* API-ключ провайдера модели (например, OpenAI, Anthropic или Google). Агенту нужна модель, чтобы отвечать на вопросы, поэтому укажите ключ при настройке или добавьте его в интерфейсе LibreChat перед первым чатом.
+
+<div id="stand-up-the-stack">
+  ## Разверните стек
+</div>
+
+<Steps>
+  <Step title="Клонируйте репозиторий">
+    ```bash
+    git clone https://github.com/ClickHouse/agentic-data-stack
+    cd agentic-data-stack
+    ```
+
+    В репозитории есть файл `docker-compose.yml` в корне, поэтому весь стек можно поднять одной командой. Полный список сервисов см. в разделе [Архитектура](#how-it-is-wired).
+  </Step>
+
+  <Step title="Запустите скрипт подготовки демо">
+    ```bash
+    ./scripts/prepare-demo.sh
+    ```
+
+    Скрипт создаст файл `.env` с учетными данными для всех сервисов, а затем предложит интерактивное меню для настройки ключей API выбранного провайдера. Эти ключи API также можно задать напрямую в файле `.env`. Для любого пропущенного провайдера останется значение `user_provided`, поэтому позже вы сможете добавить свой ключ в интерфейсе LibreChat.
+
+    При первом запуске стек создает пользователя admin из `.env`. Логин по умолчанию: `admin@admin.com` / `password`.
+
+    <Accordion title="Задайте собственные учетные данные для входа">
+      Запустите `generate-env.sh` с этими переменными перед `prepare-demo.sh`:
+
+      ```bash
+      USER_EMAIL="you@example.com" USER_PASSWORD="supersecret" USER_NAME="YourName" ./scripts/generate-env.sh
+      ```
+
+      После этого `prepare-demo.sh` обнаружит существующий `.env` и сразу перейдет к настройке ключей API.
+    </Accordion>
+  </Step>
+
+  <Step title="Запустите сервисы в фоновом режиме">
+    ```bash
+    docker compose up -d
+    ```
+
+    Порядок запуска регулируется автоматически. LibreChat запускается только после того, как MCP-сервер станет доступен, поэтому при первой загрузке соединение с ClickHouse уже будет готово.
+  </Step>
+
+  <Step title="Откройте LibreChat и войдите">
+    Когда стек будет запущен, сервисы станут доступны в браузере:
+
+    * **LibreChat** (интерфейс чата) — [http://localhost:3080](http://localhost:3080)
+    * **Langfuse** (обсервабилити) — [http://localhost:3000](http://localhost:3000)
+    * **Admin Panel** (настройка LibreChat в браузере) — [http://localhost:3081](http://localhost:3081)
+    * **MinIO console** (объектное хранилище; учетные данные в `.env`) — [http://localhost:9091](http://localhost:9091)
+
+    Войдите в LibreChat с учетными данными администратора из файла `.env`.
+  </Step>
+
+  <Step title="Выберите модель">
+    По умолчанию модель уже выбрана. Если хотите ее изменить, откройте селектор моделей и выберите нужную.
+
+    <Image img="/images/agentic-data-stack/select-model.webp" alt="Селектор моделей LibreChat в левом верхнем углу, показывающий модель по умолчанию с подсказкой Select a model" size="md" />
+
+    Если во время настройки вы не задали ключ провайдера, добавьте его в интерфейсе.
+
+    <Accordion title="Задайте ключ провайдера в интерфейсе">
+      Откройте селектор моделей и нажмите **Set API Key** рядом с провайдером.
+
+      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Селектор моделей LibreChat с кнопкой Set API Key рядом с провайдером Anthropic" size="md" />
+
+      Вставьте свой ключ в диалоговое окно и нажмите **Submit**. Вы можете задать срок действия или сделать ключ бессрочным.
+
+      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="Диалоговое окно Set API Key for Anthropic с выпадающим списком срока действия, полем Key и кнопками Submit и Revoke" size="md" />
+    </Accordion>
+  </Step>
+
+  <Step title="Выберите MCP-сервер">
+    Стек заранее настраивает свои MCP-серверы в `librechat.yaml` LibreChat. В поле ввода сообщения нажмите **MCP Servers** и выберите **ClickHouse-Local**.
+
+    Чтобы использовать сервис ClickHouse Cloud, выберите **ClickHouse-Cloud**.
+
+    {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
+
+    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="Открытое меню MCP Servers в поле ввода LibreChat, показывающее ClickHouse-Local с зеленой точкой подключения и ClickHouse-Cloud" size="md" />
+  </Step>
+
+  <Step title="Задайте свой первый вопрос">
+    Например:
+
+    > Какие базы данных и таблицы доступны и сколько строк в самой большой таблице?
+
+    Агент использует инструменты MCP-сервера, чтобы получить список баз данных и таблиц, выполнять запросы к ClickHouse в режиме только для чтения и формировать ответ на основе результатов. Вам не нужно писать SQL.
+
+    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat отвечает на пример вопроса, вызывая инструменты MCP ClickHouse-Local и перечисляя доступные базы данных и таблицы" size="md" />
+  </Step>
+</Steps>
+
+<div id="stop-or-reset">
+  ## Остановить или сбросить стек
+</div>
+
+Остановите сервисы, ничего не удаляя:
+
+```bash
+docker compose down
+```
+
+Чтобы удалить все контейнеры и очистить все тома, чтобы начать с чистого листа, используйте скрипт сброса стека:
+
+```bash
+./scripts/reset-all.sh
+```
+
+<div id="how-it-is-wired">
+  ## Архитектура
+</div>
+
+`docker-compose.yml` — это небольшая точка входа, которая включает четыре файла Compose:
+
+| Файл Compose                 | Описание                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| `langfuse-compose.yml`       | Langfuse и связанные с ним сервисы (ClickHouse, PostgreSQL, Redis, MinIO)     |
+| `clickhouse-mcp-compose.yml` | MCP-сервер ClickHouse                                                         |
+| `librechat-compose.yml`      | LibreChat и связанные с ним сервисы (MongoDB, Meilisearch, pgvector, RAG API) |
+| `admin-panel-compose.yml`    | LibreChat Admin Panel                                                         |
+
+Есть две особенности, благодаря которым запуск одной командой работает:
+
+* **Проверки работоспособности и порядок запуска.** Compose использует проверки работоспособности, чтобы выстроить последовательность запуска. MCP-сервер ждёт ClickHouse, а LibreChat — MCP-сервер.
+* **Общий файл окружения.** В `.env` хранятся учётные данные и параметры подключения для каждого сервиса; они согласованы между собой, чтобы сервисы могли взаимодействовать друг с другом. Например, MCP-сервер подключается к ClickHouse с учётными данными ClickHouse из `.env`. LibreChat получает `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` и `LANGFUSE_BASE_URL`, поэтому каждая сессия по умолчанию трассируется в Langfuse.
+
+В этом stack ClickHouse выполняет две роли: это и бэкенд хранилища Langfuse, и база данных, к которой ваш агент отправляет запросы через MCP-сервер.
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+* Узнайте, за что отвечает каждый компонент этого стека: [MCP-сервер ClickHouse](/ru/products/agentic-data-stack/components/mcp-server), [LibreChat](/ru/products/agentic-data-stack/components/librechat) и [Langfuse](/ru/products/agentic-data-stack/components/langfuse).
+* См. [обзор](/ru/products/agentic-data-stack/overview), чтобы понять, как всё это работает вместе.
+* Чтобы опробовать стек на публичных датасетах без установки, воспользуйтесь [AgentHouse](https://llm.clickhouse.com) — размещённой демоверсией.

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <functional>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -6,8 +8,9 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -17,12 +20,16 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
+#include <Storages/StorageDictionary.h>
+#include <TableFunctions/ITableFunction.h>
 
-#include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
+#include <Access/Common/AccessType.h>
+
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -30,17 +37,21 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 namespace Setting
 {
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
+extern const SettingsBool make_distributed_plan;
+extern const SettingsBool enable_cascades_optimizer;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
+extern const SettingsBool validate_enum_literals_in_operators;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -86,70 +97,11 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
-enum class FunctionT
-{
-    invalid_t,
-    in_t,
-    comparison_t,
-};
-
-struct ConstantListCheckResult
-{
-    bool has_default_value{};
-    bool has_null{};
-};
-
-ConstantListCheckResult
-checkConstantList(const Field & default_value, const ConstantNode * constant_node, const DataTypePtr & dict_attr_type)
-{
-    ConstantListCheckResult result;
-    const auto & constant_field = constant_node->getValue();
-
-    auto check_element = [&](const Field & element)
-    {
-        if (element.isNull())
-        {
-            result.has_null = true;
-            return;
-        }
-        Field converted = tryConvertFieldToType(element, *dict_attr_type);
-        if (!converted.isNull() && converted == default_value)
-            result.has_default_value = true;
-    };
-
-    if (constant_field.getType() == Field::Types::Tuple)
-    {
-        for (const auto & element : constant_field.safeGet<Tuple>())
-            check_element(element);
-    }
-    else if (constant_field.getType() == Field::Types::Array)
-    {
-        for (const auto & element : constant_field.safeGet<Array>())
-            check_element(element);
-    }
-    else
-    {
-        check_element(constant_field);
-    }
-
-    return result;
-}
-
-template <FunctionT T>
 std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
 {
     const auto * function_node = node->as<FunctionNode>();
 
-    if (!function_node)
-        return std::nullopt;
-
-    const auto & function_name = function_node->getFunctionName();
-
-    if constexpr (T == FunctionT::in_t)
-        if (function_node->getResultType()->isNullable())
-            return std::nullopt;
-
-    if (!isSupportedDictGetFunction(function_name))
+    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
         return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -188,16 +140,6 @@ bool isInMemoryLayout(const String & type_name)
     return supported_layouts.contains(type_name);
 }
 
-template <typename Node>
-void resolveNode(const Node & node, const ContextPtr & context)
-{
-    if (node->isResolved())
-        return;
-
-    QueryTreeNodePtr querytree_node = node;
-    QueryAnalysisPass(/*only_analyze*/ false).run(querytree_node, context);
-}
-
 bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 {
     auto type = removeNullable(key_expr_node->getResultType());
@@ -213,14 +155,21 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
-bool isRewriteSemanticallySafe(const DataTypePtr & dict_attr_type, const DataTypePtr & dictget_result_type)
+bool isRewriteSemanticallySafe(
+    const DataTypePtr & dict_attr_type,
+    const DataTypePtr & dictget_result_type,
+    const Field & attr_null_value,
+    const ConstantNode & const_arg_node,
+    bool default_is_lhs,
+    const String & attr_comparison_function_name,
+    const ContextPtr & context)
 {
     /// Same underlying type after stripping `Nullable` / `LowCardinality` needed. If attribute `n`
     /// is `UInt32`, `dictGetUInt16(..., 'n', id) = 42` throws because the underlying types differ (`UInt32` vs `UInt16`)
     const bool stripped_types_match
         = removeLowCardinalityAndNullable(dict_attr_type)->equals(*removeLowCardinalityAndNullable(dictget_result_type));
-    // if (!stripped_types_match)
-    //     return false;
+    if (!stripped_types_match)
+        return false;
 
     /// `dictGet` and `IN` don't have the same stored-NULL attribute semantics.
     /// Example: if dictionary has `id = 1, name = NULL`, `dictGet(..., 1) = 'x'` gives
@@ -228,55 +177,100 @@ bool isRewriteSemanticallySafe(const DataTypePtr & dict_attr_type, const DataTyp
     /// `1 IN (...)` gives `0`. This is visible in projection or `isNull(predicate)`.
     /// Skip optimization when the attribute can contain `NULL`, including
     /// `LowCardinality(Nullable(...))`.
-    const bool is_nullable_or_low_cardinality_nullable = isNullableOrLowCardinalityNullable(dict_attr_type);
+    if (isNullableOrLowCardinalityNullable(dict_attr_type))
+        return false;
 
-    return stripped_types_match && !is_nullable_or_low_cardinality_nullable;
+    const DataTypePtr const_arg_type = const_arg_node.getResultType();
+    const Field & const_arg_value = const_arg_node.getValue();
 
-    // if (isNullableOrLowCardinalityNullable(dict_attr_type))
-    //     return false;
-    //
-    // return true;
+    auto default_column = ColumnWithTypeAndName(dict_attr_type->createColumnConst(1, attr_null_value), dict_attr_type, "default_value");
+    auto const_arg_column = ColumnWithTypeAndName(const_arg_type->createColumnConst(1, const_arg_value), const_arg_type, "const_value");
 
-    // /// `dictGet` and `IN` don't have the same missing-key default semantics.
-    // /// e.g: `dictGet(..., id) = ''` vs `id IN (SELECT id FROM dictionary(...) WHERE name = '')`
-    // /// Example: if dictionary has one row `id = 1, name = 'x'`, data has `id = 2`, and
-    // /// attribute `DEFAULT` is `''`, `dictGet(..., 2)` returns `''`, so
-    // /// `dictGet(..., id) = ''` is true for `id = 2`. The `IN` rewrite scans only
-    // /// dictionary keys, so the subquery has no `id = 2` and `2 IN (...)` is false.
-    // ///
-    // /// One of the alternatives is to add `OR id NOT IN (SELECT id FROM dictionary(...))` when the
-    // /// predicate is true for `DEFAULT`, but it requires another set with all dictionary keys.
-    // /// This can be expensive to materialize, so skip optimization for such case.
-    // ///
-    // /// As a result, given the current rewrite, if `const <op> DEFAULT` is false, only then the
-    // /// transformation is semantically correct.
-    // Field comparison_result;
-    // try
-    // {
-    //     auto function_resolver = FunctionFactory::instance().get(attr_comparison_function_name, context);
-    //     auto comparison_function_base = function_resolver->build(comparison_arguments);
-    //     auto comparison_result_column
-    //         = comparison_function_base->execute(comparison_arguments, comparison_function_base->getResultType(), 1, /* dry_run = */ false);
-    //     comparison_result = (*comparison_result_column)[0];
-    // }
-    // catch (const Exception &)
-    // {
-    //     /// The constant fold runs during optimization and can throw for values that runtime
-    //     /// would not evaluate. Example: `match('', '(')` throws `CANNOT_COMPILE_REGEXP`, but
-    //     /// `id < 0 AND match(dictGetString(...), '(')` can skip the `match` branch due to
-    //     /// short-circuit evaluation. If we throw here, the optimization breaks a query that
-    //     /// works without it. Skip optimization for such case.
-    //     return false;
-    // }
+    ColumnsWithTypeAndName comparison_arguments;
+    if (default_is_lhs)
+        comparison_arguments = {std::move(default_column), std::move(const_arg_column)};
+    else
+        comparison_arguments = {std::move(const_arg_column), std::move(default_column)};
 
-    // if (comparison_result.isNull())
-    //     return false;
+    /// `dictGet` and `IN` don't have the same missing-key default semantics.
+    /// e.g: `dictGet(..., id) = ''` vs `id IN (SELECT id FROM dictionary(...) WHERE name = '')`
+    /// Example: if dictionary has one row `id = 1, name = 'x'`, data has `id = 2`, and
+    /// attribute `DEFAULT` is `''`, `dictGet(..., 2)` returns `''`, so
+    /// `dictGet(..., id) = ''` is true for `id = 2`. The `IN` rewrite scans only
+    /// dictionary keys, so the subquery has no `id = 2` and `2 IN (...)` is false.
+    ///
+    /// One of the alternatives is to add `OR id NOT IN (SELECT id FROM dictionary(...))` when the
+    /// predicate is true for `DEFAULT`, but it requires another set with all dictionary keys.
+    /// This can be expensive to materialize, so skip optimization for such case.
+    ///
+    /// As a result, given the current rewrite, if `const <op> DEFAULT` is false, only then the
+    /// transformation is semantically correct.
+    Field comparison_result;
+    try
+    {
+        auto function_resolver = FunctionFactory::instance().get(attr_comparison_function_name, context);
+        auto comparison_function_base = function_resolver->build(comparison_arguments);
+        auto comparison_result_column
+            = comparison_function_base->execute(comparison_arguments, comparison_function_base->getResultType(), 1, /* dry_run = */ false);
+        comparison_result = (*comparison_result_column)[0];
+    }
+    catch (const Exception &)
+    {
+        /// The constant fold runs during optimization and can throw for values that runtime
+        /// would not evaluate. Example: `match('', '(')` throws `CANNOT_COMPILE_REGEXP`, but
+        /// `id < 0 AND match(dictGetString(...), '(')` can skip the `match` branch due to
+        /// short-circuit evaluation. If we throw here, the optimization breaks a query that
+        /// works without it. Skip optimization for such case.
+        return false;
+    }
 
-    // /// Check `const <op> DEFAULT` is false
-    // UInt64 comparison_result_uint = 0;
-    // return comparison_result.tryGet<UInt64>(comparison_result_uint) && comparison_result_uint == 0;
+    if (comparison_result.isNull())
+        return false;
+
+    /// Check `const <op> DEFAULT` is false
+    UInt64 comparison_result_uint = 0;
+    return comparison_result.tryGet<UInt64>(comparison_result_uint) && comparison_result_uint == 0;
 }
 
+/// Whether `dictGetX(dict, attr, key) = const` can be rewritten as `key IN dictGetKeys(dict, attr, const)`.
+/// The rewrite is only semantically equivalent under the three conditions checked below.
+bool canReplaceWithDictGetKeys(
+    const String & attr_comparison_function_name,
+    const String & dictget_function_name,
+    const DataTypePtr & dict_attr_col_type,
+    const DataTypePtr & dictget_return_type,
+    const DataTypePtr & const_arg_type)
+{
+    /// `dictGetKeys` finds rows where the attribute equals the constant. Other operators
+    /// (`<`, `like`, ...) ask for non-equality matches that `dictGetKeys` does not implement,
+    /// so the rewrite would change the predicate semantics. Skip optimization for such case.
+    if (attr_comparison_function_name != "equals")
+        return false;
+
+    /// The `dictGet`-family function must not perform an internal cast of the attribute that the
+    /// rewrite would lose. For the generic `dictGet`, the return type is the attribute type by
+    /// construction; for `dictGetX`, the return type must equal the attribute type.
+    /// Example: attribute `d` is `Date` and the query uses `dictGetDateTime(..., 'd', id)`.
+    /// `dictGetDateTime` casts the `Date` attribute to `DateTime` at runtime, so the comparison
+    /// happens in `DateTime` space. Rewriting to `dictGetKeys` would drop that cast and compare
+    /// in `Date` space instead, changing the predicate semantics. Skip optimization for such case.
+    if (dictget_function_name != "dictGet" && !dict_attr_col_type->equals(*dictget_return_type))
+        return false;
+
+    /// `=` coerces both sides to a least common supertype at the comparison site, while
+    /// `dictGetKeys` casts the comparison value to the attribute type internally. For the rewrite
+    /// to be equivalent, the supertype must be the attribute type itself. Otherwise the internal
+    /// cast can lose information that `=` would preserve.
+    /// Example: attribute `d` is `Date`, constant is `toDateTime('2025-01-01 12:00:00')`. We promote
+    /// both to `DateTime`, promoting `Date('2025-01-01')` to `DateTime('2025-01-01 00:00:00')`,
+    /// so the original predicate is false at noon. The rewrite would truncate `DateTime` to
+    /// `Date` inside `dictGetKeys` and find a spurious match for row `Date('2025-01-01')`. Skip
+    /// optimization for such case.
+    const DataTypePtr stripped_attr_type = removeLowCardinalityAndNullable(dict_attr_col_type);
+    const DataTypePtr stripped_const_type = removeLowCardinalityAndNullable(const_arg_type);
+    const DataTypePtr supertype = tryGetLeastSupertype(DataTypes{stripped_attr_type, stripped_const_type});
+    return supertype && supertype->equals(*stripped_attr_type);
+}
 
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
@@ -289,182 +283,232 @@ public:
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
-        if (getSettings()[Setting::rewrite_in_to_join])
-            return;
-
-        /// We build an `IN` set from the dictionary subquery, which respects `max_rows_in_set`,
-        /// `max_bytes_in_set` and `set_overflow_mode`. With `set_overflow_mode = 'break'`, the set
-        /// can be truncated and not contain all required elements, so the optimization can produce
-        /// wrong results. Skip optimization for such case.
-        if ((getSettings()[Setting::max_rows_in_set] != 0 || getSettings()[Setting::max_bytes_in_set] != 0)
-            && getSettings()[Setting::set_overflow_mode] == OverflowMode::BREAK)
-            return;
-
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
             return;
 
-        const String function_name = node_function->getFunctionName();
+        const String & function_name = node_function->getFunctionName();
+        if (function_name == "in" || function_name == "notIn")
+        {
+            rewriteIn(node, *node_function);
+            return;
+        }
 
-        static std::unordered_set<String> allowed_in_functions = {"in", "notIn"};
         static std::unordered_set<String> allowed_comparison_functions = {
             "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike", "match"};
 
-        FunctionT function_t;
+        const String attr_comparison_function_name = function_name;
+        if (!allowed_comparison_functions.contains(attr_comparison_function_name))
+            return;
 
-        if (allowed_in_functions.contains(function_name))
+        auto & arguments = node_function->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return;
+
+        enum class Side
         {
-            function_t = FunctionT::in_t;
+            LHS,
+            RHS,
+            NONE
+        };
+
+        Side dict_side = Side::NONE;
+        DictGetFunctionInfo dictget_function_info;
+
+        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+        {
+            dict_side = Side::LHS;
+            dictget_function_info = std::move(*info_lhs);
         }
-        else if (allowed_comparison_functions.contains(function_name))
+        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
         {
-            function_t = FunctionT::comparison_t;
+            dict_side = Side::RHS;
+            dictget_function_info = std::move(*info_rhs);
         }
         else
         {
             return;
         }
 
-        auto ctx = prepareTransformContext(node_function, function_t);
-        if (!ctx || ctx->null_in_list)
+        auto lookup = tryGetDictionaryLookup(dictget_function_info);
+        if (!lookup)
             return;
 
-        QueryTreeNodePtr final_in_expr;
+        const DictionaryAttribute & attr = lookup->dict->getStructure().getAttribute(lookup->attr_col_name);
+        DataTypePtr dict_attr_col_type = attr.type;
 
-        switch (function_t)
+        const auto * const_arg_node = (dict_side == Side::LHS) ? arguments[1]->as<ConstantNode>() : arguments[0]->as<ConstantNode>();
+
+        /// Skip rewrites that would change query behavior. Details are in the function.
+        if (!isRewriteSemanticallySafe(
+                dict_attr_col_type,
+                dictget_function_info.return_type,
+                attr.null_value,
+                *const_arg_node,
+                dict_side == Side::LHS,
+                attr_comparison_function_name,
+                getContext()))
+            return;
+
+        const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
+                                                                    : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+
+        const bool can_replace_with_dictgetkeys = canReplaceWithDictGetKeys(
+            attr_comparison_function_name,
+            dictget_function_name,
+            dict_attr_col_type,
+            dictget_function_info.return_type,
+            const_arg_node->getResultType());
+
+        /// Preserve the original result type of the comparison node.
+        /// For example, original "equals(...)" might have result type Nullable(UInt8),
+        /// while "IN" might return UInt8.
+        DataTypePtr original_result_type = node_function->getResultType();
+
+        if (can_replace_with_dictgetkeys)
         {
-            case FunctionT::in_t: {
-                bool need_negated_condition = (function_name == "in") ? ctx->default_value_in_list : !ctx->default_value_in_list;
-                if (need_negated_condition)
-                {
-                    /// IN & default_value in list:         key NOT IN (SELECT id WHERE attr NOT IN values)
-                    /// NOT IN & default_value not in list: key NOT IN (SELECT id WHERE attr IN values)
-                    auto negated_where_condition = buildNegatedWhereCondition(*ctx, function_name);
-                    auto subquery = buildSubquery(*ctx, negated_where_condition);
+            /// Build dictGetKeys('dict_name', 'attr_name', value_expr)
+            auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
+            auto & dict_get_keys_args = dict_get_keys_fn->getArguments().getNodes();
 
-                    auto in_expr = buildInExpression(*ctx, subquery);
-                    final_in_expr = buildNotExpression(in_expr);
-                }
-                else
+            dict_get_keys_args.push_back(dictget_function_info.dict_name_node);
+            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node);
+            dict_get_keys_args.push_back(dict_side == Side::LHS ? arguments[1] : arguments[0]);
+
+            QueryAnalyzer analyzer(false);
+            QueryTreeNodePtr node_function_ptr = dict_get_keys_fn;
+            analyzer.resolveConstantExpression(node_function_ptr, nullptr, getContext());
+
+            /// `resolveConstantExpression` intentionally skips folding large constants
+            /// (see `column->byteSize() < 1_MiB` in `src/Analyzer/Resolve/resolveFunction.cpp`).
+            /// In that case `dictGetKeys` remains a `FunctionNode`; fall back to the IN-subquery
+            /// path below instead of throwing.
+            if (const auto * keys_constant = node_function_ptr->as<ConstantNode>())
+            {
+                const Field & keys_field = keys_constant->getValue();
+
+                if (keys_field.getType() != Field::Types::Array)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "dictGetKeys expected to return Array field. Actual type: {}", keys_field.getType());
+
+                const auto & keys_array = keys_field.safeGet<Array>();
+                const size_t keys_size = keys_array.size();
+
+                /// No keys -> the predicate is always false. We can replace the entire comparison
+                /// with the constant `0`, but only when the predicate's result type is not Nullable
+                /// (`Nullable(UInt8)` or `LowCardinality(Nullable(UInt8))`). For Nullable predicates
+                /// `dictGet` can produce `NULL` per row (e.g. when the key column is `Nullable` and
+                /// the row's key is `NULL`, or when the attribute itself is `Nullable`), and
+                /// `NULL = const` is `NULL`. Replacing such a row with `0` flips a NULL into a
+                /// non-null `0` - observable via `isNull(predicate)`.
+                /// `SELECT count() WHERE isNull(predicate)` returns `1` without the rewrite and
+                /// `0` with it.
+                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
-                    /// IN & default_value not in list:     key IN (SELECT id WHERE attr IN values)
-                    /// NOT IN & default_value in list:     key IN (SELECT id WHERE attr NOT IN values)
-                    auto where_condition = buildWhereCondition(*ctx, node_function, function_name, function_t);
-                    auto subquery = buildSubquery(*ctx, where_condition);
-                    final_in_expr = buildInExpression(*ctx, subquery);
+                    auto zero_type = std::make_shared<DataTypeUInt8>();
+                    auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
+                    node = preserveResultType(zero_node, original_result_type);
+                    return;
                 }
-                break;
-            }
-            case FunctionT::comparison_t: {
-                auto where_condition = buildWhereCondition(*ctx, node_function, function_name, function_t);
-                auto subquery = buildSubquery(*ctx, where_condition);
-                final_in_expr = buildInExpression(*ctx, subquery);
-                break;
-            }
-            default: {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected function type {} in InverseDictionaryLookupPass",
-                    magic_enum::enum_name(function_t));
+
+                /// Single key -> key_expr = <that key>
+                if (keys_size == 1)
+                {
+                    const Field & single_key_field = keys_array.front();
+
+                    const DataTypePtr & single_key_value_type
+                        = assert_cast<const DataTypeArray &>(*keys_constant->getResultType()).getNestedType();
+
+                    auto single_key_const = std::make_shared<ConstantNode>(single_key_field, single_key_value_type);
+
+                    auto equals_node = std::make_shared<FunctionNode>("equals");
+                    equals_node->markAsOperator();
+                    equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
+                    resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
+
+                    node = preserveResultType(equals_node, original_result_type);
+                    return;
+                }
+
+                /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+                const auto in_function_name = getInFunctionNameForPassCreatedNode(
+                    "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+                if (!in_function_name)
+                    return;
+
+                /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
+                auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
+
+                auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
+                in_function_node->markAsOperator();
+                in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
+                resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
+
+                node = preserveResultType(in_function_node, original_result_type);
+                return;
             }
         }
 
-        DataTypePtr original_result_type = node_function->getResultType();
-        QueryTreeNodePtr replacement_node = final_in_expr;
-        if (original_result_type && !final_in_expr->getResultType()->equals(*original_result_type))
-            replacement_node = createCastFunction(final_in_expr, original_result_type, getContext());
+        if (!canBuildDictionarySubquery())
+            return;
 
-        node = std::move(replacement_node);
+        auto attr_comparison_function_node = std::static_pointer_cast<FunctionNode>(node_function->clone());
+        attr_comparison_function_node->markAsOperator();
+        /// The clone copies `parenthesized` from `node_function`, but this is now a fresh comparison
+        /// node placed inside a synthetic subquery's WHERE — it should not inherit the original
+        /// parens.
+        attr_comparison_function_node->setParenthesized(false);
+
+        auto in_function_node = buildKeyInDictionarySubquery(
+            *lookup,
+            /* negate */ false,
+            [&](const QueryTreeNodePtr & attr_col_node)
+            {
+                if (dict_side == Side::LHS)
+                    attr_comparison_function_node->getArguments().getNodes() = {attr_col_node, arguments[1]};
+                else
+                    attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node};
+                resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
+                return attr_comparison_function_node;
+            });
+
+        if (!in_function_node)
+            return;
+
+        node = preserveResultType(std::move(in_function_node), original_result_type);
     }
 
 private:
-    enum class DictSide
+    /// The dictionary behind a `dictGet`-family call, with everything the `IN (SELECT ... FROM dictionary(...))` rewrite needs.
+    struct DictionaryLookup
     {
-        NONE,
-        LHS,
-        RHS,
+        DictGetFunctionInfo dictget_function_info;
+        String dict_name;
+        std::shared_ptr<const IDictionary> dict;
+        NamesAndTypes key_cols;
+        String attr_col_name;
     };
 
-    struct TransformContext
+    /// Returns the dictionary lookup if the dictionary of the `dictGet`-family call is suitable for the rewrite.
+    std::optional<DictionaryLookup> tryGetDictionaryLookup(const DictGetFunctionInfo & dictget_function_info)
     {
-        DictGetFunctionInfo dictget_info;
-        DictSide side;
-        QueryTreeNodePtr constant_arg; ///< The constant argument (RHS for IN, side-dependent for comparison)
-        std::vector<NameAndTypePair> key_cols;
-        QueryTreeNodePtr dict_table_function;
-        QueryTreeNodePtr attr_col_node_casted;
-        bool default_value_in_list{};
-        bool null_in_list{};
-    };
-
-    /// Validates the function arguments and extracts dictionary/attribute information.
-    /// Returns nullopt if the pattern doesn't match or dictionary is not suitable.
-    std::optional<TransformContext> prepareTransformContext(FunctionNode * node_function, FunctionT function_t)
-    {
-        auto & arguments = node_function->getArguments().getNodes();
-        if (arguments.size() != 2)
-            return std::nullopt;
-
-        DictSide side;
-        DictGetFunctionInfo dictget_info;
-        QueryTreeNodePtr constant_arg;
-
-        switch (function_t)
-        {
-            case FunctionT::in_t: {
-                auto info = tryParseDictFunctionCall<FunctionT::in_t>(arguments[0]);
-                if (!info)
-                    return std::nullopt;
-                if (!arguments[1]->as<ConstantNode>())
-                    return std::nullopt;
-                side = DictSide::LHS;
-                dictget_info = std::move(*info);
-                constant_arg = arguments[1];
-                break;
-            }
-            case FunctionT::comparison_t: {
-                if (auto info_lhs = tryParseDictFunctionCall<FunctionT::comparison_t>(arguments[0]);
-                    info_lhs && arguments[1]->as<ConstantNode>())
-                {
-                    side = DictSide::LHS;
-                    dictget_info = std::move(*info_lhs);
-                    constant_arg = arguments[1];
-                }
-                else if (
-                    auto info_rhs = tryParseDictFunctionCall<FunctionT::comparison_t>(arguments[1]);
-                    info_rhs && arguments[0]->as<ConstantNode>())
-                {
-                    side = DictSide::RHS;
-                    dictget_info = std::move(*info_rhs);
-                    constant_arg = arguments[0];
-                }
-                else
-                {
-                    return std::nullopt;
-                }
-                break;
-            }
-            default: {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected function type {} in InverseDictionaryLookupPass",
-                    magic_enum::enum_name(function_t));
-            }
-        }
-
+        /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
-        const String dict_name = dictget_info.dict_name_node->getValue().safeGet<String>();
-        const auto dict = helper.getDictionary(dict_name);
+        String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
+        auto dict = helper.getDictionary(dict_name);
         if (!dict)
             return std::nullopt;
 
         const String dict_type_name = dict->getTypeName();
+
         if (!isInMemoryLayout(dict_type_name))
             return std::nullopt;
 
 
-        std::vector<NameAndTypePair> key_cols;
+        NamesAndTypes key_cols;
+
         const auto & dict_structure = dict->getStructure();
 
         if (dict_structure.id)
@@ -501,143 +545,234 @@ private:
         /// Single-key dictionaries are not affected. Example: if `id` is `Nullable(UInt64)`,
         /// `dictGet(..., id) = 'x'` gives `NULL` for `id = NULL`, and `id IN (...)` also gives
         /// `NULL` for `id = NULL`.
-        if (dict_structure.key && hasNullableComponentInComplexKey(dictget_info.key_expr_node))
+        if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
             return std::nullopt;
 
-        const String attr_col_name = dictget_info.attr_col_name_node->getValue().safeGet<String>();
+        String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
+
         if (!dict_structure.hasAttribute(attr_col_name))
             return std::nullopt;
 
-        const DictionaryAttribute & attr = dict_structure.getAttribute(attr_col_name);
-        DataTypePtr dict_attr_col_type = attr.type;
-
-        // const auto * const_arg_node = (side == DictSide::LHS) ? arguments[1]->as<ConstantNode>() : arguments[0]->as<ConstantNode>();
-
-        /// Skip rewrites that would change query behavior. Details are in the function.
-        if (!isRewriteSemanticallySafe(dict_attr_col_type, dictget_info.return_type))
-            return std::nullopt;
-        const auto & dict_attr = dict_structure.getAttribute(attr_col_name);
-
-        Field default_value = dict_attr.null_value;
-
-        /// For IN/notIn operations, check if the default value is in the constant list.
-        ConstantListCheckResult check_result{};
-        if (function_t == FunctionT::in_t)
-        {
-            const auto * constant_node = constant_arg->as<ConstantNode>();
-            if (constant_node)
-                check_result = checkConstantList(default_value, constant_node, dict_attr_col_type);
-        }
-
-        auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(dictget_info.dict_name_node);
-        resolveNode(dict_table_function, getContext());
-
-        NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
-        auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
-
-        QueryTreeNodePtr attr_col_node_casted = attr_col_node;
-        if (!attr_col_node->getResultType()->equals(*dictget_info.return_type))
-        {
-            attr_col_node_casted = createCastFunction(attr_col_node, dictget_info.return_type, getContext());
-        }
-
-        return TransformContext{
-            .dictget_info = std::move(dictget_info),
-            .side = side,
-            .constant_arg = std::move(constant_arg),
+        return DictionaryLookup{
+            .dictget_function_info = dictget_function_info,
+            .dict_name = std::move(dict_name),
+            .dict = std::move(dict),
             .key_cols = std::move(key_cols),
-            .dict_table_function = std::move(dict_table_function),
-            .attr_col_node_casted = std::move(attr_col_node_casted),
-            .default_value_in_list = check_result.has_default_value,
-            .null_in_list = check_result.has_null,
+            .attr_col_name = std::move(attr_col_name),
         };
     }
 
-    /// Builds the WHERE condition for the subquery.
-    /// For IN: builds attr_col IN (consts)
-    /// For comparison: builds attr_col op const (respecting side for argument order)
-    QueryTreeNodePtr
-    buildWhereCondition(const TransformContext & ctx, FunctionNode * original_function, const String & function_name, FunctionT function_t)
+    /// Rewrites `dictGetX(dict, attr, key) [NOT] IN (constants)`.
+    ///
+    /// For a key present in the dictionary, `dictGetX` returns the attribute value, so the predicate
+    /// is `attr [NOT] IN (constants)`. For a missing key, `dictGetX` returns the attribute's `DEFAULT`,
+    /// so the predicate is the same for all missing keys and known in advance. The rewrite scans only
+    /// the dictionary keys, so it picks the form that gives the right answer for the missing keys too:
+    ///
+    ///     key IN (SELECT key FROM dictionary(dict) WHERE attr IN (constants))          -- IN,     DEFAULT not in the list
+    ///     key NOT IN (SELECT key FROM dictionary(dict) WHERE attr NOT IN (constants))  -- IN,     DEFAULT in the list
+    ///     key IN (SELECT key FROM dictionary(dict) WHERE attr NOT IN (constants))      -- NOT IN, DEFAULT in the list
+    ///     key NOT IN (SELECT key FROM dictionary(dict) WHERE attr IN (constants))      -- NOT IN, DEFAULT not in the list
+    void rewriteIn(QueryTreeNodePtr & node, FunctionNode & node_function)
     {
-        auto where_function_node = std::static_pointer_cast<FunctionNode>(original_function->clone());
-        where_function_node->markAsOperator();
+        const bool is_not_in = node_function.getFunctionName() == "notIn";
 
-        if (function_t == FunctionT::in_t)
-        {
-            where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
-        }
-        else
-        {
-            if (ctx.side == DictSide::LHS)
-                where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
-            else
-                where_function_node->getArguments().getNodes() = {ctx.constant_arg, ctx.attr_col_node_casted};
-        }
+        auto & arguments = node_function.getArguments().getNodes();
+        if (arguments.size() != 2)
+            return;
 
-        resolveOrdinaryFunctionNodeByName(*where_function_node, function_name, getContext());
-        return where_function_node;
+        auto dictget_function_info = tryParseDictFunctionCall(arguments[0]);
+        const auto * constants_node = arguments[1]->as<ConstantNode>();
+        if (!dictget_function_info || !constants_node)
+            return;
+
+        /// A `Nullable` result means a `Nullable` key, and `dictGetX` returns `NULL` for a `NULL` key.
+        /// Whether `NULL [NOT] IN (...)` then gives `NULL` or `0` depends on the `in` function rather than
+        /// on the dictionary. Skip optimization for such case.
+        if (isNullableOrLowCardinalityNullable(dictget_function_info->return_type))
+            return;
+
+        auto lookup = tryGetDictionaryLookup(*dictget_function_info);
+        if (!lookup)
+            return;
+
+        const DictionaryAttribute & attr = lookup->dict->getStructure().getAttribute(lookup->attr_col_name);
+
+        /// Same conditions as for comparisons, see `isRewriteSemanticallySafe`.
+        if (!removeLowCardinalityAndNullable(attr.type)->equals(*removeLowCardinalityAndNullable(dictget_function_info->return_type)))
+            return;
+        if (isNullableOrLowCardinalityNullable(attr.type))
+            return;
+
+        const auto default_in_list = isDefaultValueInConstantSet(attr.null_value, dictget_function_info->return_type, *constants_node);
+        if (!default_in_list)
+            return;
+
+        if (!canBuildDictionarySubquery())
+            return;
+
+        const String attr_in_function_name = *default_in_list ? "notIn" : "in";
+        auto in_function_node = buildKeyInDictionarySubquery(
+            *lookup,
+            /* negate */ *default_in_list != is_not_in,
+            [&](const QueryTreeNodePtr & attr_col_node) -> QueryTreeNodePtr
+            {
+                const auto name = getInFunctionNameForPassCreatedNode(attr_in_function_name, attr_col_node->getResultType(), getContext());
+                if (!name)
+                    return nullptr;
+                auto attr_in_function_node = std::make_shared<FunctionNode>(*name);
+                attr_in_function_node->markAsOperator();
+                attr_in_function_node->getArguments().getNodes() = {attr_col_node, arguments[1]};
+                resolveOrdinaryFunctionNodeByName(*attr_in_function_node, *name, getContext());
+                return attr_in_function_node;
+            });
+
+        if (!in_function_node)
+            return;
+
+        node = preserveResultType(std::move(in_function_node), node_function.getResultType());
     }
 
-    /// Builds the negated WHERE condition for optimized rewrite.
-    /// For IN: builds attr_col NOT IN (consts)
-    /// For NOT IN: builds attr_col IN (consts)
-    QueryTreeNodePtr buildNegatedWhereCondition(const TransformContext & ctx, const String & original_function_name)
+    /// Whether the `IN (SELECT ... FROM dictionary(...))` rewrite is allowed.
+    bool canBuildDictionarySubquery()
     {
-        String negated_function_name = (original_function_name == "in") ? "notIn" : "in";
+        /// The `IN (SELECT ... FROM dictionary(...))` rewrite conflicts with a forced IN->JOIN
+        /// rewrite and with the Cascades distributed planner's own IN handling, so skip it in those
+        /// cases. The constant-fold rewrites stay enabled.
+        if (getSettings()[Setting::rewrite_in_to_join]
+            || (getSettings()[Setting::make_distributed_plan] && getSettings()[Setting::enable_cascades_optimizer]))
+            return false;
 
-        auto where_function_node = std::make_shared<FunctionNode>(negated_function_name);
-        where_function_node->markAsOperator();
-        where_function_node->getArguments().getNodes() = {ctx.attr_col_node_casted, ctx.constant_arg};
+        /// We build an `IN` set from the dictionary subquery, which respects `max_rows_in_set`,
+        /// `max_bytes_in_set` and `set_overflow_mode`. With `set_overflow_mode = 'break'`, the set
+        /// can be truncated and not contain all required elements, so the optimization can produce
+        /// wrong results. Skip optimization for such case.
+        if ((getSettings()[Setting::max_rows_in_set] != 0 || getSettings()[Setting::max_bytes_in_set] != 0)
+            && getSettings()[Setting::set_overflow_mode] == OverflowMode::BREAK)
+            return false;
 
-        resolveOrdinaryFunctionNodeByName(*where_function_node, negated_function_name, getContext());
-        return where_function_node;
+        /// Only the `IN (SELECT ... FROM dictionary(...))` rewrite uses the `dictionary()`
+        /// table function, which requires the `CREATE TEMPORARY TABLE` grant; if it is missing, skip
+        /// the optimization to avoid `ACCESS_DENIED`. The constant-fold path (`key = const`,
+        /// `key IN [..]`, or `0`) does not build a `dictionary()` subquery and only needs the normal
+        /// dictionary access of `dictGetKeys`, so it is intentionally not gated by this grant.
+        /// Checked only right before building the subquery: `getAccess` touches the access
+        /// storage, and query analysis must not depend on it for queries that do not reach this path
+        /// (in particular internal queries, which otherwise block whenever the replicated access
+        /// storage is being refreshed).
+        return isCreateTemporaryTableGranted();
     }
 
-    QueryTreeNodePtr buildSubquery(const TransformContext & ctx, const QueryTreeNodePtr & where_condition)
+    /// Builds `key [NOT] IN (SELECT key_cols FROM dictionary(dict_name) WHERE <build_where(attr_col)>)`.
+    /// Returns `nullptr` if the rewrite is not possible.
+    QueryTreeNodePtr buildKeyInDictionarySubquery(
+        const DictionaryLookup & lookup, bool negate, const std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)> & build_where)
     {
+        const auto & key_expr_node = lookup.dictget_function_info.key_expr_node;
+
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto in_function_name = getInFunctionNameForPassCreatedNode(negate ? "notIn" : "in", key_expr_node->getResultType(), getContext());
+        if (!in_function_name)
+            return nullptr;
+
+        const auto & dict_structure = lookup.dict->getStructure();
+
+        auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
+        dict_table_function->getArguments().getNodes().push_back(lookup.dictget_function_info.dict_name_node);
+
+        auto dict_table_storage = std::make_shared<StorageDictionary>(
+            StorageID(ITableFunction::getDatabaseName(), "dictionary"),
+            lookup.dict_name,
+            ColumnsDescription{StorageDictionary::getNamesAndTypes(dict_structure, /*validate_id_type*/ false)},
+            String{},
+            StorageDictionary::Location::Custom,
+            getContext());
+
+        dict_table_function->resolve({}, std::move(dict_table_storage), getContext(), {});
+
+        NameAndTypePair attr_col{lookup.attr_col_name, dict_structure.getAttribute(lookup.attr_col_name).type};
+        auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
+
+        auto where_node = build_where(attr_col_node);
+        if (!where_node)
+            return nullptr;
+
+        /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->setIsSubquery(true);
-        subquery_node->getJoinTree() = ctx.dict_table_function;
-        subquery_node->getWhere() = where_condition;
+        subquery_node->getJoinTreeNode() = dict_table_function;
+        subquery_node->getWhere() = std::move(where_node);
 
-        for (const auto & key_col : ctx.key_cols)
+        for (const auto & key_col_node : lookup.key_cols)
         {
-            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col, ctx.dict_table_function));
+            subquery_node->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(key_col_node, dict_table_function));
         }
-        subquery_node->resolveProjectionColumns(ctx.key_cols);
+        subquery_node->resolveProjectionColumns(lookup.key_cols);
 
-        return subquery_node;
-    }
-
-    QueryTreeNodePtr buildInExpression(const TransformContext & ctx, const QueryTreeNodePtr & subquery)
-    {
-        auto in_function_node = std::make_shared<FunctionNode>("in");
+        auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
         in_function_node->markAsOperator();
-        in_function_node->getArguments().getNodes() = {ctx.dictget_info.key_expr_node, subquery};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+        QueryTreeNodePtr querytree_subquery_node = subquery_node;
+        in_function_node->getArguments().getNodes() = {key_expr_node, querytree_subquery_node};
+        resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
+
         return in_function_node;
     }
 
-    QueryTreeNodePtr buildNotExpression(const QueryTreeNodePtr & expr)
+    /// Whether the attribute `DEFAULT` is an element of the constant right-hand side of `IN`, converted to
+    /// `lhs_type` in the same way as the set of `IN` itself. Returns `std::nullopt` if the constant contains `NULL`.
+    std::optional<bool> isDefaultValueInConstantSet(const Field & default_value, const DataTypePtr & lhs_type, const ConstantNode & constants_node)
     {
-        auto not_function_node = std::make_shared<FunctionNode>("not");
-        not_function_node->getArguments().getNodes() = {expr};
-        resolveOrdinaryFunctionNodeByName(*not_function_node, "not", getContext());
-        return not_function_node;
+        const Field constants = constants_node.getValue();
+        auto is_null = [](const Field & element) { return element.isNull(); };
+        if (constants.isNull()
+            || (constants.getType() == Field::Types::Tuple && std::ranges::any_of(constants.safeGet<Tuple>(), is_null))
+            || (constants.getType() == Field::Types::Array && std::ranges::any_of(constants.safeGet<Array>(), is_null)))
+            return std::nullopt;
+
+        const auto set_elements = getSetElementsForConstantValue(
+            lhs_type,
+            constants_node.getColumn(),
+            constants_node.getResultType(),
+            GetSetElementParams{
+                .transform_null_in = false,
+                .forbid_unknown_enum_values = getSettings()[Setting::validate_enum_literals_in_operators],
+            });
+
+        if (set_elements.size() != 1)
+            return std::nullopt;
+
+        const auto & elements = set_elements.front();
+        auto default_column = elements.type->createColumnConst(1, convertFieldToType(default_value, *elements.type))->convertToFullColumnIfConst();
+
+        for (size_t row = 0; row < elements.column->size(); ++row)
+        {
+            if (elements.column->compareAt(row, 0, *default_column, /* nan_direction_hint */ 1) == 0)
+                return true;
+        }
+        return false;
     }
+
+    QueryTreeNodePtr preserveResultType(QueryTreeNodePtr replacement_node, const DataTypePtr & original_result_type)
+    {
+        if (original_result_type && !replacement_node->getResultType()->equals(*original_result_type))
+            return createCastFunction(std::move(replacement_node), original_result_type, getContext());
+        return replacement_node;
+    }
+
+    bool isCreateTemporaryTableGranted()
+    {
+        if (!create_temporary_table_granted.has_value())
+            create_temporary_table_granted = getContext()->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE);
+        return *create_temporary_table_granted;
+    }
+
+    std::optional<bool> create_temporary_table_granted;
 };
 
 }
 
 void InverseDictionaryLookupPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
-    /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
-    /// skip the optimization to avoid `ACCESS_DENIED`.
-    if (!context->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
-        return;
-
     InverseDictionaryLookupVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }

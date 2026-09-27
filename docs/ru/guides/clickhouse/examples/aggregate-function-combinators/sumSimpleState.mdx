@@ -1,0 +1,114 @@
+---
+slug: '/examples/aggregate-function-combinators/sumSimpleState'
+title: 'sumSimpleState'
+description: 'Пример использования комбинатора sumSimpleState'
+keywords: ['сумма', 'состояние', 'простой', 'комбинатор', 'примеры', 'sumSimpleState']
+sidebarTitle: 'sumSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`SimpleState`](/ru/reference/functions/aggregate-functions/combinators#-simplestate) можно применить к функции [`sum`](/ru/reference/functions/aggregate-functions/sum),
+чтобы вычислить сумму всех входных значений. Он возвращает результат
+типа [`SimpleAggregateFunction`](/ru/reference/data-types/simpleaggregatefunction).
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="tracking-post-votes">
+  ### Отслеживание положительных и отрицательных голосов
+</div>
+
+Рассмотрим практический пример с таблицей, в которой отслеживаются голоса за посты.
+Для каждого поста мы хотим поддерживать накопительные итоги по положительным и отрицательным голосам, а также
+общий рейтинг. Для этого сценария хорошо подходит тип `SimpleAggregateFunction` с sum,
+поскольку нам нужно хранить только накопительные итоги, а не полное состояние
+агрегации. В результате это будет быстрее и не потребует слияния
+частичных состояний агрегатных функций.
+
+Сначала создадим таблицу для исходных данных:
+
+```sql title="Query"
+CREATE TABLE raw_votes
+(
+    post_id UInt32,
+    vote_type Enum8('upvote' = 1, 'downvote' = -1)
+)
+ENGINE = MergeTree()
+ORDER BY post_id;
+```
+
+Далее создадим целевую таблицу, в которой будут храниться агрегированные данные:
+
+```sql
+CREATE TABLE vote_aggregates
+(
+    post_id UInt32,
+    upvotes SimpleAggregateFunction(sum, UInt64),
+    downvotes SimpleAggregateFunction(sum, UInt64),
+    score SimpleAggregateFunction(sum, Int64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY post_id;
+```
+
+Затем мы создаём materialized view со столбцами типа `SimpleAggregateFunction`:
+
+```sql
+CREATE MATERIALIZED VIEW mv_vote_processor TO vote_aggregates
+AS
+SELECT
+  post_id,
+  -- Начальное значение для состояния суммы (1 если upvote, иначе 0)
+  toUInt64(vote_type = 'upvote') AS upvotes,
+  -- Начальное значение для состояния суммы (1 если downvote, иначе 0)
+  toUInt64(vote_type = 'downvote') AS downvotes,
+  -- Начальное значение для состояния суммы (1 для upvote, -1 для downvote)
+  toInt64(vote_type) AS score
+FROM raw_votes;
+```
+
+Вставьте тестовые данные:
+
+```sql
+INSERT INTO raw_votes VALUES
+    (1, 'upvote'),
+    (1, 'upvote'),
+    (1, 'downvote'),
+    (2, 'upvote'),
+    (2, 'downvote'),
+    (3, 'downvote');
+```
+
+Выполните запрос к materialized view с помощью комбинатора `SimpleState`:
+
+```sql
+SELECT
+  post_id,
+  sum(upvotes) AS total_upvotes,
+  sum(downvotes) AS total_downvotes,
+  sum(score) AS total_score
+FROM vote_aggregates -- Запрос к целевой таблице
+GROUP BY post_id
+ORDER BY post_id ASC;
+```
+
+```response
+┌─post_id─┬─total_upvotes─┬─total_downvotes─┬─total_score─┐
+│       1 │             2 │               1 │           1 │
+│       2 │             1 │               1 │           0 │
+│       3 │             0 │               1 │          -1 │
+└─────────┴───────────────┴─────────────────┴─────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`sum`](/ru/reference/functions/aggregate-functions/sum)
+* [`SimpleState комбинатор`](/ru/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/ru/reference/data-types/simpleaggregatefunction)

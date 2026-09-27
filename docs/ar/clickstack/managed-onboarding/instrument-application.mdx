@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/instrument-application
+title: 'جهّز تطبيقًا للرصد خلال 5 دقائق باستخدام Managed ClickStack'
+description: 'جهّز تطبيق Node.js باستخدام OpenTelemetry وأرسل logs وmetrics وtraces الخاصة به إلى Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import InstrumentApplication from '/snippets/ar/clickstack/_instrument_application.mdx';
+
+يوضح هذا الدليل كيفية تهيئة تطبيق Node.js صغير باستخدام OpenTelemetry لإرسال السجلات والمقاييس والتتبعات الخاصة به إلى Managed ClickStack. وقد جرى تهيئة الواجهة الخلفية من دون أي تغييرات على الشفرة المصدرية للتطبيق.
+
+إن [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) هو تطبيق Node.js ينفّذ استعلامات على dataset ‏HackerNews المستضاف في العرض التجريبي العام لـ ClickHouse. ويستند كل مخطط وجدول ومربع بحث إلى استعلام ClickHouse حقيقي، لذا ينتج عن كل تفاعل trace يكون الـ span الرئيسي فيه هو استدعاء HTTPS الصادر من الواجهة الخلفية إلى ClickHouse.
+
+يفترض هذا الدليل أنك أكملت [Setting up your OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) وأن لديك مجمّع ClickStack قيد التشغيل ويمكن الوصول إليه من الجهاز الذي تشغّل عليه هذا التطبيق. **تأكد من أنك دوّنت نقطة نهاية OTLP الخاصة به** و`OTLP_AUTH_TOKEN` الذي عيّنته عند نشره.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* مجمّع ClickStack يمكن الوصول إليه من هذا الجهاز. إذا لم تكن قد نشرت واحدًا بعد، فاتبع أولًا [إعداد OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
+* نقطة نهاية OTLP لذلك المجمّع و`OTLP_AUTH_TOKEN` الذي ضبطته عليه.
+* Node 18+ وnpm.
+
+<InstrumentApplication />
+
+<div id="further-reading">
+  ## للمزيد من القراءة
+</div>
+
+* [مراقبة Kubernetes](/ar/clickstack/managed-onboarding/monitoring-kubernetes): اجمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود.
+* [مراقبة سجلات AWS CloudWatch](/ar/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبل CloudWatch في OpenTelemetry.
+* [Session Replay](/ar/clickstack/features/session-replay): نظرة عامة على الميزة، وخيارات SDK، وعناصر التحكّم في الخصوصية.
+* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production) للاطلاع على التوصيات الخاصة بالتشغيل في بيئة الإنتاج.

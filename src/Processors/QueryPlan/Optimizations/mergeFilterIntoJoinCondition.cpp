@@ -1,8 +1,17 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/getLeastSupertype.h>
+
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -123,27 +132,132 @@ ExpressionSide getExpressionSide(
 
 using JoinConditionParts = std::vector<ActionsDAG>;
 
+/// A conjunct left alone once the others moved into the JOIN loses the boolean conversion the
+/// enclosing `and` gave it, so it has to be converted explicitly.
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
     const ActionsDAG::Node * original_predicate,
     const ActionsDAG::Node * new_predicate_expr)
 {
-    if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
-    {
-        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
-    }
-    else
-    {
-        return filter_dag.addAlias(*new_predicate_expr, original_predicate->result_name);
-    }
+    const auto & node = filter_dag.addBooleanCondition(*new_predicate_expr, original_predicate->result_type, nullptr);
+    return filter_dag.addAlias(node, original_predicate->result_name);
 };
 
+
+/// The body of a lambda is a separate `ActionsDAG`, not reachable from the outer one: a
+/// non-deterministic call that depends on a lambda argument stays inside it, and only a nullary one
+/// is hoisted out. Return that inner DAG so that the walk below can descend into it.
+const ActionsDAG * getLambdaBody(const IFunctionBase & function)
+{
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return &expression->getAcionsDAG();
+
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return &capture->getAcionsDAG();
+
+    return nullptr;
+}
+
+/// The `ColumnFunction` a `COLUMN` node holds, if it holds one. A lambda that captures nothing but
+/// constants is folded into a constant, and then the lambda exists only as this column value.
+const ColumnFunction * tryGetColumnFunction(const IColumn & column)
+{
+    const IColumn * unwrapped = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(unwrapped))
+        unwrapped = &column_const->getDataColumn();
+
+    return typeid_cast<const ColumnFunction *>(unwrapped);
+}
+
+/// Whether the subtree rooted at `node` contains a function that can give different results for two
+/// rows with equal inputs. Such a conjunct has to stay in the filter: the join condition is evaluated
+/// once per join input row rather than once per output row, and with `enable_join_runtime_filters`
+/// the expression is additionally cloned into the build-side runtime filter, a second and independent
+/// evaluation site. The main filter pushdown refuses to move non-deterministic conjuncts for the same
+/// reason.
+bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
+{
+    std::vector<const ActionsDAG::Node *> nodes{node};
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+
+    /// The columns captured by a folded lambda are not nodes of any `ActionsDAG`, so they need a
+    /// worklist of their own.
+    std::vector<const IColumn *> columns;
+    std::unordered_set<const IColumn *> visited_columns;
+
+    /// Whether `function` itself is non-deterministic; the nodes of its lambda body, if it has one,
+    /// are queued for the walk.
+    auto is_non_deterministic = [&](const IFunctionBase & function)
+    {
+        if (!function.isDeterministicInScopeOfQuery())
+            return true;
+
+        if (const auto * body = getLambdaBody(function))
+            for (const auto & inner : body->getNodes())
+                nodes.push_back(&inner);
+
+        return false;
+    };
+
+    while (!nodes.empty() || !columns.empty())
+    {
+        if (!nodes.empty())
+        {
+            const auto * current = nodes.back();
+            nodes.pop_back();
+
+            if (!visited_nodes.insert(current).second)
+                continue;
+
+            if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base)
+            {
+                if (is_non_deterministic(*current->function_base))
+                    return true;
+            }
+            else if (current->type == ActionsDAG::ActionType::COLUMN && current->column)
+            {
+                /// A lambda that captures nothing takes no arguments, so it is folded into a `COLUMN`
+                /// node holding a `ColumnFunction` and the `FUNCTION` branch above never sees it.
+                columns.push_back(current->column.get());
+            }
+
+            for (const auto * child : current->children)
+                nodes.push_back(child);
+
+            continue;
+        }
+
+        const auto * current = columns.back();
+        columns.pop_back();
+
+        if (!visited_columns.insert(current).second)
+            continue;
+
+        const auto * column_function = tryGetColumnFunction(*current);
+        if (!column_function)
+            continue;
+
+        if (is_non_deterministic(*column_function->getFunction()))
+            return true;
+
+        /// A lambda that captures nothing is hoisted to the outermost level by the planner, so an
+        /// enclosing lambda *captures* it. When that enclosing lambda is folded into a constant in
+        /// turn, its own child edges are gone from the DAG and the nested lambda is reachable only
+        /// through the captured columns.
+        for (const auto & captured : column_function->getCapturedColumns())
+            if (captured.column)
+                columns.push_back(captured.column.get());
+    }
+
+    return false;
+}
 
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
-    const Names & right_stream_available_columns
+    const Names & right_stream_available_columns,
+    const bool allow_dynamic_type_in_join_keys
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -174,11 +288,25 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         bool is_equality = conjunct->type == ActionsDAG::ActionType::FUNCTION && conjunct->function_base->getName() == "equals";
         if (is_equality)
         {
+            if (subtreeContainsNonDeterministicFunction(conjunct))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
             const auto * lhs = conjunct->children[0];
             const auto * rhs = conjunct->children[1];
 
-            /// We can't push equality condition into JOIN if types are not equal.
-            if (!lhs->result_type->equals(*rhs->result_type))
+            /// Dynamic type in join keys can lead to unexpected results
+            if (!allow_dynamic_type_in_join_keys && (hasDynamicType(lhs->result_type) || hasDynamicType(rhs->result_type)))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
+            /// We can't push equality condition into JOIN if types do not have a common super type.
+            if (!lhs->result_type->equals(*rhs->result_type)
+                && !tryGetLeastSupertype(DataTypes{lhs->result_type, rhs->result_type}))
             {
                 rejected_conjuncts.push_back(conjunct);
                 continue;
@@ -209,10 +337,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             auto it = conjuncts_to_replace.find(output);
             if (it != conjuncts_to_replace.end())
             {
-                output = &filter_dag.addColumn(ColumnWithTypeAndName(
-                    output->result_type->createColumnConst(1, 1),
-                    output->result_type,
-                    output->result_name));
+                auto const_column = output->result_type->createColumnConst(0, 1);
+                output = &filter_dag.addColumn(std::move(const_column), output->result_type, output->result_name);
             }
         }
 
@@ -222,6 +348,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         }
         else if (rejected_conjuncts.size() > 1)
         {
+            /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
                 filter_dag,
@@ -266,6 +393,12 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (strictness != JoinStrictness::Unspecified && strictness != JoinStrictness::All)
         return 0;
 
+    /// Merging a condition can make a prepared join storage fail because it no longer recognizes the key.
+    auto is_storage_join = child_node->children.size() == 2
+        && typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get()) != nullptr;
+    if (is_storage_join)
+        return 0;
+
     const auto & join_header = child->getOutputHeader();
     const auto & left_stream_header = child->getInputHeaders().front();
     const auto & right_stream_header = child->getInputHeaders().back();
@@ -293,12 +426,15 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto left_stream_available_columns = get_available_columns(*left_stream_header);
     auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
+    const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
+
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
-        right_stream_available_columns);
+        right_stream_available_columns,
+        allow_dynamic_type_in_join_keys);
 
     if (equality_predicates.empty())
         return 0;

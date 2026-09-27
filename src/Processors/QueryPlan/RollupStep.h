@@ -21,6 +21,13 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
+    QueryPlanStepPtr clone() const override;
+
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serialize(Serialization & ctx) const override;
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+    bool isSerializable() const override { return true; }
+
 private:
     void updateOutputHeader() override;
 

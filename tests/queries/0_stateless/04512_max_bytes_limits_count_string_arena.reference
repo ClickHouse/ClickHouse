@@ -1,0 +1,6 @@
+-- DISTINCT, throw: trips on string payload, not only on the hash buffer
+-- DISTINCT, break: stops near the limit instead of retaining the full payload
+1	1
+-- IN set, throw: trips on string payload
+-- fixed-size keys are unaffected: the same limit passes without string keys
+10000
