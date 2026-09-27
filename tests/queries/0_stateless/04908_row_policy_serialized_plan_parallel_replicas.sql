@@ -15,7 +15,7 @@ SET parallel_replicas_mark_segment_size = 1, merge_tree_min_rows_for_concurrent_
 DROP TABLE IF EXISTS pr_rp;
 
 CREATE TABLE pr_rp (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x
-    SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO pr_rp SELECT number, number FROM numbers(2000000);
 
 DROP ROW POLICY IF EXISTS pr_rp_policy ON pr_rp;
