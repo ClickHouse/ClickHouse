@@ -711,6 +711,7 @@ void considerEnablingParallelReplicas(
     /// runs, and considering the set-building plan adds one.
     if (typeid_cast<const CreatingSetStep *>(root.step.get()))
     {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanShapeNotSupported);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The plan builds a set, its root must be preserved. Skipping optimization");
         return;
     }
