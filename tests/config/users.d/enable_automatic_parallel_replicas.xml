@@ -25,7 +25,9 @@
                  leave these jobs exercising the probe rather than the rewrite: at the defaults only 86
                  of 7366 cost model evaluations got past them, and 76 switched.
 
-                 This setting ignores both, so the cost model decides every query. It deliberately does
+                 This setting ignores the second one only - the first is disabled by the
+                 `automatic_parallel_replicas_min_bytes_per_replica` 0 above, and the two together are
+                 what let the cost model decide these queries. It deliberately does
                  NOT touch read task sizing; an earlier attempt forced the same effect by setting
                  `merge_tree_min_bytes_per_task_for_remote_reading` to 0, which also shrank real read
                  tasks and broke four tests that assert on S3 request counts and query-condition-cache
