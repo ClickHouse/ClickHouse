@@ -1403,6 +1403,26 @@ rows that a background merge collapses together share the same values. When the 
 engine is specified inline as above, `TimeSeries` sets `allow_dimensions_outside_sorting_key = 1` on it automatically;
 for a manually created [external](#external-target-tables) aggregating tags table you must set it yourself.
 
+## Retention {#retention}
+
+By default the [samples](#samples-table) table has no `TTL`, so samples are kept forever.
+To delete old samples, declare a `TTL` in the engine of the inner samples table:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp)
+    TTL timestamp + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+With `ttl_only_drop_parts` a part is dropped as a whole when all its samples are expired, instead of being rewritten.
+Partitioning by day keeps the samples of different days in different parts, so each day is dropped as soon as it expires.
+
+The [recent samples](#recent-samples-table) table keeps its own `TTL` set by the [recent_samples_ttl_seconds](#settings) setting.
+Keep the `TTL` of the samples table longer than that, otherwise a query whose time range fits in the recent samples window
+can return samples which are already deleted from the samples table.
+
+The [tags](#tags-table) table has no `TTL`: a time series stays in it after all its samples are deleted.
+
 ## External target tables {#external-target-tables}
 
 It's possible to make a `TimeSeries` table use a manually created table:

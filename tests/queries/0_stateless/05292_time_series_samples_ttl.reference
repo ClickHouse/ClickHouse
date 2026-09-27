@@ -1,0 +1,6 @@
+toDate(timestamp)
+recentsamples	toDateTime(timestamp) + toIntervalSecond(345600)
+samples	timestamp + toIntervalDay(30)
+samples	2
+tags	new_metric
+tags	old_metric
