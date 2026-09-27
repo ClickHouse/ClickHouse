@@ -176,6 +176,47 @@ namespace
         return result;
     }
 
+    /// Parses an RFC3339 time zone: 'Z', '+hh:mm' or '-hh:mm'. Returns the offset in seconds.
+    std::optional<Int64> tryParseTimeZoneOffset(std::string_view str)
+    {
+        if (str == "Z")
+            return 0;
+
+        if (str.size() != 6 || (str[0] != '+' && str[0] != '-') || str[3] != ':' || !isNumericASCII(str[1]) || !isNumericASCII(str[2])
+            || !isNumericASCII(str[4]) || !isNumericASCII(str[5]))
+            return {};
+
+        Int64 hours = (str[1] - '0') * 10 + (str[2] - '0');
+        Int64 minutes = (str[4] - '0') * 10 + (str[5] - '0');
+        if (hours > 23 || minutes > 59)
+            return {};
+
+        Int64 offset = (hours * 60 + minutes) * 60;
+        return (str[0] == '-') ? -offset : offset;
+    }
+
+    /// Parses '2023-11-14 22:13:20' in the default time zone, or an RFC3339 time like '2023-11-14T22:13:20.5+02:00' in its own zone.
+    bool tryParseDateTime(std::string_view str, UInt32 scale, DateTime64 & result)
+    {
+        std::optional<Int64> offset;
+        if (str.size() > 19 && str[10] == 'T')
+        {
+            size_t zone_size = str.ends_with('Z') ? 1 : 6;
+            offset = tryParseTimeZoneOffset(str.substr(str.size() - zone_size));
+            if (offset)
+                str.remove_suffix(zone_size);
+        }
+
+        /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
+        ReadBufferFromString buf{str};
+        if (!tryReadDateTime64Text(result, scale, buf, offset ? DateLUT::instance("UTC") : DateLUT::instance(),
+                /* allowed_date_delimiters = */ nullptr, /* allowed_time_delimiters = */ nullptr, /* saturate_on_overflow = */ false)
+            || !buf.eof())
+            return false;
+
+        return !offset || !common::subOverflow(result.value, getFromInt<DateTime64>(*offset, scale).value, result.value);
+    }
+
     template <is_decimal T>
     T parseFromString(std::string_view str, UInt32 scale)
     {
@@ -189,11 +230,7 @@ namespace
                     str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
 
-            /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
-            ReadBufferFromString buf{str};
-            if (tryReadDateTime64Text(result, scale, buf, DateLUT::instance(),
-                    /* allowed_date_delimiters = */ nullptr, /* allowed_time_delimiters = */ nullptr, /* saturate_on_overflow = */ false)
-                && buf.eof())
+            if (tryParseDateTime(str, scale, result))
                 return result;
         }
         else
