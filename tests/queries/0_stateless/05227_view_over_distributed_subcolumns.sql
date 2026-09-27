@@ -4,6 +4,9 @@
 -- every subcolumn kind used to fail with `NOT_FOUND_COLUMN_IN_BLOCK`. Such a read now falls back to
 -- the regular `StorageView` path, which wraps the body in `SELECT <subcolumn> FROM (<body>)`.
 
+-- The fix is in the analyzer's `PlannerJoinTree`; the old analyzer path is not covered here.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_05227;
 DROP TABLE IF EXISTS t_05227_dist;
 DROP VIEW IF EXISTS v_05227;
