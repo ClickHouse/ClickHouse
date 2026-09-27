@@ -2776,6 +2776,7 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
         }
         filter.pending = false;
     };
+    static const FormatSettings default_format_settings;
     String path;
     String scope_path;
     std::vector<String> types;
@@ -2788,9 +2789,17 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
         path.resize(shared);
         size_t suffix_size = 0;
         readVarUInt(suffix_size, directory);
-        SerializationString::checkStringSize(suffix_size, {});
-        path.resize(shared + suffix_size);
-        directory.readStrict(path.data() + shared, suffix_size);
+        SerializationString::checkStringSize(suffix_size, default_format_settings);
+        if (directory.available() >= suffix_size)
+        {
+            path.append(directory.position(), suffix_size);
+            directory.position() += suffix_size;
+        }
+        else
+        {
+            path.resize(shared + suffix_size);
+            directory.readStrict(path.data() + shared, suffix_size);
+        }
 
         bool needed = !condition || condition->usesPath(path);
         PathFilter * filter = needed ? &paths[path] : nullptr;
@@ -2805,6 +2814,18 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
         readVarUInt(scope_count, directory);
         for (size_t j = 0; j < scope_count; ++j)
         {
+            /// Most paths are not used by the condition, so their scopes are skipped without copying the strings.
+            if (!filter)
+            {
+                skipStringBinary(directory);
+                directory.ignore(2); /// role and flags
+                size_t type_count = 0;
+                readVarUInt(type_count, directory);
+                for (size_t k = 0; k < type_count; ++k)
+                    skipStringBinary(directory);
+                continue;
+            }
+
             readStringBinary(scope_path, directory);
             UInt8 role = 0;
             UInt8 flags = 0;
@@ -2815,8 +2836,7 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
             types.resize(type_count);
             for (auto & type : types)
                 readStringBinary(type, directory);
-            if (filter)
-                addScope(*filter, path, scope_path, role, flags, types);
+            addScope(*filter, path, scope_path, role, flags, types);
         }
         if (filter)
             finishPath(*filter);
