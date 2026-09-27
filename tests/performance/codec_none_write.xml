@@ -1,0 +1,32 @@
+<test>
+    <!-- A single-threaded wide-String INSERT makes NONE-coded column writes dominate. -->
+
+    <create_query>
+        CREATE TABLE none_write
+        (
+            a String CODEC(NONE),
+            b String CODEC(NONE),
+            c String CODEC(NONE),
+            d String CODEC(NONE),
+            e String CODEC(NONE),
+            f String CODEC(NONE),
+            g String CODEC(NONE),
+            h String CODEC(NONE)
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 parts_to_delay_insert = 5000, parts_to_throw_insert = 5000
+    </create_query>
+    <create_query>SYSTEM STOP MERGES none_write</create_query>
+
+    <query>
+        INSERT INTO none_write
+        WITH concat(toString(number), repeat('x', 64)) AS value
+        SELECT value, value, value, value, value, value, value, value
+        FROM numbers(3000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1
+    </query>
+
+    <drop_query>SYSTEM START MERGES none_write</drop_query>
+    <drop_query>DROP TABLE IF EXISTS none_write</drop_query>
+</test>

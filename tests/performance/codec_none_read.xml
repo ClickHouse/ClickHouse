@@ -1,0 +1,33 @@
+<test>
+    <!-- Read performance of columns compressed with CODEC(NONE).
+
+         NONE is used for data that does not compress (for example vector embeddings), so reading it
+         back fast matters. This PR changes the on-disk block layout of NONE blocks slightly (block
+         sizes become bounded by the output buffer, with an occasional shorter block at a buffer
+         boundary), so this test also guards against a read regression caused by that layout change:
+         in the PR-vs-master comparison the table is filled by each server's own write path (old vs
+         new layout) and then scanned by the identical read code.
+
+         The query is single-threaded so the scan time is large enough to measure reliably. -->
+
+    <create_query>
+        CREATE TABLE none_read
+        (
+            a UInt64 CODEC(NONE),
+            b UInt64 CODEC(NONE),
+            c UInt64 CODEC(NONE),
+            d Float64 CODEC(NONE)
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO none_read
+        SELECT number, number * 2, number * 3, toFloat64(number) / 3
+        FROM numbers(100000000)
+    </fill_query>
+
+    <query>SELECT sum(a), sum(b), sum(c), sum(d) FROM none_read SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS none_read</drop_query>
+</test>
