@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -1169,7 +1170,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// non-constant child, and reads nothing out of an `isNotDistinctFrom` or anything below an `or`. Each
 /// miss costs it one optimization. A miss here would let the fragment read in order off a condition the
 /// replicas do not have, so this stays a superset of whatever that analysis can find.
-static bool mayFixColumn(const ActionsDAG::Node * condition)
+/// With `only_those_the_splice_drops`, count only an equality the splice into the query the replicas run
+/// cannot carry - per equality rather than per condition, because the splice drops one conjunct and keeps
+/// the others.
+static bool mayFixColumn(const ActionsDAG::Node * condition, bool only_those_the_splice_drops = false)
 {
     std::vector<const ActionsDAG::Node *> stack{condition};
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -1183,7 +1187,8 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
-            if (name == "equals" || name == "isNotDistinctFrom")
+            if ((name == "equals" || name == "isNotDistinctFrom")
+                && (!only_those_the_splice_drops || remoteRewriteDropsCondition(*node)))
                 return true;
         }
 
@@ -1494,15 +1499,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// by the rewrite that splices the condition into their query, and the answer is carried on
         /// this step.
         ///
-        /// One answer for the whole fragment, though the splice works conjunct by conjunct and can
-        /// drop some of them. That is enough because the two lists do not meet: what fixes a column
-        /// is an `equals` against a constant reached through `and`
-        /// (`appendFixedColumnsFromFilterExpression`), and what the splice drops is the
-        /// non-deterministic, the stateful and what it cannot name (`tryBuildAdditionalFilterAST`) -
-        /// a constant is none of those. Teach either side something new - an `in` against a
-        /// one-element set, say - and this has to be revisited; test 05255 pins it.
+        /// The fragment's answer covers all of it, while the splice works conjunct by conjunct and can
+        /// drop one, so the reasons it drops a conjunct are asked here as well. Most of them cannot meet
+        /// a fixed column: what fixes one is an `equals` against a constant
+        /// (`appendFixedColumnsFromFilterExpression`), and the splice drops the non-deterministic, the
+        /// stateful and what it cannot name (`tryBuildAdditionalFilterAST`) - a constant is none of
+        /// those. A lambda can meet one, because a sorting key may be a higher-order expression, so that
+        /// case is asked for. Teach either side something new - an `in` against a one-element set, say -
+        /// and this has to be revisited; tests 05255 and 05259 pin the two shapes.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        if (!parallel_replicas_local_plan->replicasGetPushedConditions() && condition && mayFixColumn(condition))
+        const bool an_equality_stays_behind = condition && mayFixColumn(condition, /*only_those_the_splice_drops=*/ true);
+        if (condition && mayFixColumn(condition)
+            && (!parallel_replicas_local_plan->replicasGetPushedConditions() || an_equality_stays_behind))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized

@@ -9227,7 +9227,7 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0, \
-        {"25.12", false, false, "Allow usage of materialized views with parallel replicas"}) \
+        {"25.12", false, true, "Allow usage of materialized views with parallel replicas"}) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, true, R"(
 Push a condition standing above the part of the query parallel replicas execute into that part, and into the query the replicas are sent, so that they filter by it as well.
 
