@@ -109,6 +109,15 @@ struct TopKFilterInfo
     bool dynamic_filter_pending = false;
 };
 
+namespace QueryPlanOptimizations
+{
+/// The PREWHERE that `installTopKDynamicFilter` gives a read whose current PREWHERE is `existing_prewhere_info`
+/// (may be null): `__topKFilter` merged into it as the first conjunct. Null when the filter cannot share it.
+/// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
+/// the executed read writes its entries under it.
+PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
+}
+
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 

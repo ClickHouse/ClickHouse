@@ -1683,12 +1683,22 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const ContextPtr & context,
     LoggerPtr log)
 {
+    /// A TopK read analyzed before `installTopKDynamicFilter` has run (projection candidate analysis
+    /// does that) does not have `__topKFilter` in its PREWHERE yet, but the executed read writes its
+    /// entries under the PREWHERE with it. Consult under that one, or a warm query never hits them.
+    PrewhereInfoPtr prewhere_info_for_cache = select_query_info.prewhere_info;
+    if (top_k_filter_info && top_k_filter_info->dynamic_filter_pending && !select_query_info.input_order_info)
+    {
+        if (auto with_top_k_filter = QueryPlanOptimizations::buildTopKDynamicFilterPrewhere(prewhere_info_for_cache, *top_k_filter_info))
+            prewhere_info_for_cache = std::move(with_top_k_filter);
+    }
+
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
             /// by normal reads: those may exclude a granule whose only matching rows are deleted.
             || !settings[Setting::apply_deleted_mask]
-            || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
+            || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
             || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
@@ -1897,7 +1907,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return stats;
     };
 
-    if (const auto & prewhere_info = select_query_info.prewhere_info)
+    if (const auto & prewhere_info = prewhere_info_for_cache)
     {
         for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
         {
