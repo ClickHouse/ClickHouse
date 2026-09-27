@@ -79,8 +79,8 @@ def snapshot_query(times, config=SELECTION_CONFIG):
         SELECT check_start_time, check_name, uniqExact(test_name) AS exported_tests
         FROM checks_coverage_lines
         WHERE check_start_time IN ({keys})
-          AND check_name LIKE 'Stateless%per_test_coverage%'
-          AND match(test_name, '^[0-9]{{5}}_')
+          AND check_name LIKE {sql_string(config.coverage_check_name_like)}
+          AND match(test_name, {sql_string(config.coverage_test_name_pattern)})
         GROUP BY check_start_time, check_name
         HAVING exported_tests >= {config.min_exported_tests_per_shard}
         ORDER BY check_start_time DESC, check_name
@@ -160,7 +160,7 @@ def build_selector_smoke_seed_query(source, config=SELECTION_CONFIG):
                    line_start, line_end, test_name
             FROM {source}
               AND (startsWith(file, 'src/') OR startsWith(file, './src/'))
-              AND match(test_name, '^[0-9]{{5}}_')
+              AND match(test_name, {sql_string(config.coverage_test_name_pattern)})
         )
         GROUP BY canonical_file, line_start, line_end
         HAVING line_end >= line_start
@@ -205,7 +205,7 @@ def build_candidate_query(
                    medianExact(min_depth) AS entry_count
             FROM checks_coverage_lines
             WHERE {snapshot_predicate(snapshots)}
-              AND match(test_name, '^[0-9]{{5}}_')
+              AND match(test_name, {sql_string(config.coverage_test_name_pattern)})
               AND line_end >= line_start
               AND ({' OR '.join(conditions)})
             GROUP BY canonical_file, line_start, line_end, test_name, check_start_time, check_name
