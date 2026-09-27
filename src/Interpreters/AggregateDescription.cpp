@@ -169,10 +169,13 @@ void serializeAggregateDescriptions(
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        /// The aggregate's own name and its argument names are plan-build-local in a cache key;
-        /// see `writeCacheKeyColumnName`.
+        /// `column_name` is the rendered call (`calculateActionNodeName`), a label rather than semantic
+        /// state, and the shard rewrite can render it differently for the same aggregate by inlining
+        /// aliases. A cache key leaves it out and keeps what the call is made of - the argument names, the
+        /// function and its parameters, all written below. The argument names, which are column
+        /// references, still go through `writeCacheKeyColumnName`.
         if (for_cache_key)
-            writeCacheKeyColumnName(aggregate.column_name, input_header, out);
+            writeStringBinary(String{}, out);
         else
             writeStringBinary(aggregate.column_name, out);
 
@@ -246,13 +249,14 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 }
 
 void serializeAggregateDescriptionsWithoutArguments(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * /*input_header*/)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
+        /// A rendered label, left out of a cache key - see `serializeAggregateDescriptions`.
         if (for_cache_key)
-            writeCacheKeyColumnName(aggregate.column_name, input_header, out);
+            writeStringBinary(String{}, out);
         else
             writeStringBinary(aggregate.column_name, out);
         writeStringBinary(aggregate.function->getName(), out);
