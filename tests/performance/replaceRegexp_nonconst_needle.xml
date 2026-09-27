@@ -1,0 +1,8 @@
+<!-- `replaceRegexpAll` with a non-constant pattern column that repeats a few values -->
+<test>
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon.' AS s SELECT replaceRegexpAll(materialize(s), ['[aeiou]+', '\\s+', 'Colonel (\\w+)', 'e.'][(number % 4) + 1], '_') FROM numbers_mt(500000) FORMAT Null</query>
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon.' AS s SELECT replaceRegexpAll(materialize(s), toLowCardinality(['[aeiou]+', '\\s+', 'Colonel (\\w+)', 'e.'][(number % 4) + 1]), '_') FROM numbers_mt(500000) FORMAT Null</query>
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon.' AS s SELECT replaceRegexpAll(materialize(s), ['[aeiou]+', '\\s+', 'Colonel (\\w+)', 'e.'][(number % 4) + 1], ['_', '-', ''][(number % 3) + 1]) FROM numbers_mt(500000) FORMAT Null</query>
+    <!-- all patterns distinct, each with a large DFA: nothing to reuse, must not regress -->
+    <query>WITH arrayStringConcat(arrayMap(x -> if(cityHash64(x) % 2 = 0, 'a', 'b'), range(4000))) AS hs SELECT replaceRegexpAll(materialize(hs), concat('a[ab]{14}c', toString(number)), '_') FROM numbers_mt(500) FORMAT Null</query>
+</test>
