@@ -25,10 +25,12 @@ for u in "${DENIED}" "${GRANTED}"; do
     $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${u}"
     $CLICKHOUSE_CLIENT -q "CREATE USER ${u} IDENTIFIED WITH no_password"
 done
-# Neither user is granted `SELECT` on the system table: like `system.tables`, it is readable by everyone, and the
-# point is that it yields no rows for a table the reader has no `SHOW TABLES` on. So `SHOW TABLES` on the table is
-# all `SHOW TABLE SETTINGS` needs, as it is all `SHOW COLUMNS` needs.
+# Reading `system.table_settings` needs a `SELECT` grant on it, as `system.parts` and `system.s3_queue_settings`
+# do, and both users hold one: what is under test here is the second gate - that the table yields no rows for a
+# table the reader has no `SHOW TABLES` on, rather than that the query is refused outright. `05263` covers the first.
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${DENIED}"
 $CLICKHOUSE_CLIENT -q "GRANT SHOW TABLES ON ${DB}.mt TO ${GRANTED}"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${GRANTED}"
 
 echo "-- without SHOW TABLES, system.table_settings yields nothing for the table"
 $CLICKHOUSE_CLIENT --user="${DENIED}" -q \

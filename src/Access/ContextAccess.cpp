@@ -226,7 +226,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "databases",
             "tables",
             "columns",
-            "table_settings",
 
             /// Specific to the current session
             "settings",

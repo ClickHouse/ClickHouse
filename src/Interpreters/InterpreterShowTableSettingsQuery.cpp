@@ -103,7 +103,8 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
 
     /// As `SHOW CREATE TABLE` does: a table the user may not see, or one that does not exist, is an error, not an
     /// empty result, which would read as a table with no settings. `system.table_settings` shows a table to whoever
-    /// may `SHOW TABLES` it. A temporary table belongs to the session and needs no grant.
+    /// may `SHOW TABLES` it; a temporary table belongs to the session and needs no such grant. The `SELECT` grant on
+    /// `system.table_settings` itself, which every table needs, is checked when the rewritten query reads it.
     if (!database.empty())
     {
         getContext()->checkAccess(AccessType::SHOW_TABLES, database, query.table);

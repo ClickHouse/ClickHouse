@@ -567,6 +567,10 @@ is specified, the table is looked up in the current database; as in `SHOW CREATE
 table of the session with that name takes precedence. A table that does not exist, or that the user
 has no `SHOW TABLES` privilege on, is an error rather than an empty result.
 
+The statement reads [system.table_settings](/reference/system-tables/table_settings), so it also needs the
+`SELECT` privilege on that table - for a temporary table of the session too - as `SHOW INDEX` needs it on
+`system.data_skipping_indices`.
+
 The pattern of `LIKE` and `ILIKE` is matched against every name a setting answers to, including its
 aliases, and the setting is printed under its current name. `NOT LIKE` leaves out a setting when any
 of its names matches.

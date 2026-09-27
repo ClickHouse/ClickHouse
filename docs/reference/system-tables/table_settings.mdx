@@ -18,7 +18,7 @@ The value of a setting a named collection supplied is shown as `[HIDDEN]`, with 
 
 A secret the server configuration supplied - the password of its `nats` or `rabbitmq` section, which a table that states no authentication of its own uses - is always shown as `[HIDDEN]`: it belongs to whoever runs the server, and `displaySecretsInShowAndSelect` does not reveal it.
 
-A table is shown to a user who has the `SHOW TABLES` privilege on it. The [SHOW TABLE SETTINGS](/reference/statements/show) statement reads this table for one table.
+Reading this table needs the `SELECT` privilege on it, as [system.parts](/reference/system-tables/parts) does, and a table is shown to a user who also has the `SHOW TABLES` privilege on it. A row can say more than the table's `CREATE` query: a value the server configuration set, a macro expanded, state held in Keeper - each of which another system table also keeps behind a grant. The [SHOW TABLE SETTINGS](/reference/statements/show) statement reads this table for one table, and so needs the same privileges.
 
 ## Columns {#columns}
 

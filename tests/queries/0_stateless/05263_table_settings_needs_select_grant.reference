@@ -1,0 +1,8 @@
+-- SHOW TABLES on the table, and no grant on the system table: both surfaces refuse
+ACCESS_DENIED
+ACCESS_DENIED
+-- the reader's own temporary table too, since the statement reads the same table
+ACCESS_DENIED
+-- with the grant, both read the table
+index_granularity	4096	definition
+index_granularity	4096	1	definition

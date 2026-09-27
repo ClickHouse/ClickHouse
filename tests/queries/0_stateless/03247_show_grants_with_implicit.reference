@@ -20,7 +20,6 @@ GRANT SELECT ON system.quota_usage
 GRANT SELECT ON system.settings
 GRANT SELECT ON system.table_engines
 GRANT SELECT ON system.table_functions
-GRANT SELECT ON system.table_settings
 GRANT SELECT ON system.tables
 GRANT SELECT ON system.time_zones
 GRANT SELECT ON system.user_query_log

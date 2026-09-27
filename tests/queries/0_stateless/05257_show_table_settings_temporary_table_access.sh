@@ -24,8 +24,8 @@ $CLICKHOUSE_CLIENT -q "
 CREATE TABLE ${DB}.shadowed (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4096"
 
 $CLICKHOUSE_CLIENT -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
-# Enough to make a temporary table, and nothing on the permanent table. `system.table_settings` needs no grant:
-# like `system.tables`, it is readable by everyone and shows only the tables the reader may see.
+# Enough to reach the surface and to make a temporary table, and nothing on the permanent table.
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${USER}"
 $CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${USER}"
 
 echo "-- its own temporary table, with no grant on any table, reports its definition"
