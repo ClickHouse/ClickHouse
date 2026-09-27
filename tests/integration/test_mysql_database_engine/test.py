@@ -101,88 +101,88 @@ def test_table_settings_for_mysql_database(started_cluster):
         )
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_database")
-        clickhouse_node.query(
-            "CREATE DATABASE test_settings_database ENGINE = MySQL("
-            f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}') "
-            "SETTINGS connection_pool_size = 5"
-        )
-
-        settings = clickhouse_node.query(
-            "SELECT name FROM system.table_settings "
-            "WHERE database = 'test_settings_database' AND table = 't' ORDER BY name"
-        )
-        assert "connection_pool_size" in settings
-
-        # The database resolves its settings into the connection pool its tables share, and hands them to
-        # every table it makes, so the tables report what they work with rather than the compiled-in
-        # defaults. The source is `other`, not `definition`: the value came from the database's clause, and
-        # no table of it states anything itself.
-        assert (
-            clickhouse_node.query(
-                "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
-                "AND table = 't' AND name = 'connection_pool_size'"
-            ).strip()
-            == "5\tother"
-        )
-        # And a setting the clause leaves out is at its own default, not at something the pool invented.
-        assert (
-            clickhouse_node.query(
-                "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
-                "AND table = 't' AND name = 'connection_max_tries'"
-            ).strip()
-            == "3\tdefault"
-        )
-
-        # The statement reaches them even when the caller has remote databases hidden: naming one turns
-        # `show_remote_databases_in_system_tables` on for that statement. The setting is on by default, so
-        # it is turned off for every `SHOW TABLE SETTINGS` below - otherwise they pass without that path.
-        shown = clickhouse_node.query(
-            "SHOW TABLE SETTINGS FROM test_settings_database.t",
-            settings={"show_remote_databases_in_system_tables": 0},
-        )
-        assert "connection_pool_size" in shown
-
-        # And the setting still governs it: turning it off hides the database again.
-        hidden = clickhouse_node.query(
-            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database' "
-            "SETTINGS show_remote_databases_in_system_tables = 0"
-        )
-        assert hidden.strip() == "0"
-
-        # `SHOW TABLE SETTINGS` turns the visibility setting on for a database named explicitly.
-        # That must not also hand out rows the user has no `SHOW TABLES` for: the statement refuses
-        # the table, as `SHOW CREATE TABLE` does. Proven here rather than in a stateless test because
-        # only a reachable remote database has rows for the enabling path to reveal.
         clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
-        clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
+        try:
+            clickhouse_node.query(
+                "CREATE DATABASE test_settings_database ENGINE = MySQL("
+                f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}') "
+                "SETTINGS connection_pool_size = 5"
+            )
 
-        denied = clickhouse_node.query(
-            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database'",
-            user="mysql_settings_denied",
-        )
-        assert denied.strip() == "0"
+            settings = clickhouse_node.query(
+                "SELECT name FROM system.table_settings "
+                "WHERE database = 'test_settings_database' AND table = 't' ORDER BY name"
+            )
+            assert "connection_pool_size" in settings
 
-        denied_show = clickhouse_node.query_and_get_error(
-            "SHOW TABLE SETTINGS FROM test_settings_database.t",
-            user="mysql_settings_denied",
-            settings={"show_remote_databases_in_system_tables": 0},
-        )
-        assert "ACCESS_DENIED" in denied_show
+            # The database hands its settings to every table it makes - each table copies its connection pool
+            # from the database's rather than sharing it - so the tables report what they work with rather than
+            # the compiled-in defaults. The source is `other`, not `definition`: the value came from the
+            # database's clause, and no table of it states anything itself.
+            assert (
+                clickhouse_node.query(
+                    "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
+                    "AND table = 't' AND name = 'connection_pool_size'"
+                ).strip()
+                == "5\tother"
+            )
+            # And a setting the clause leaves out is at its own default, not at something the pool invented.
+            assert (
+                clickhouse_node.query(
+                    "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
+                    "AND table = 't' AND name = 'connection_max_tries'"
+                ).strip()
+                == "3\tdefault"
+            )
 
-        clickhouse_node.query(
-            "GRANT SHOW TABLES ON test_settings_database.t TO mysql_settings_denied"
-        )
-        granted_show = clickhouse_node.query(
-            "SHOW TABLE SETTINGS FROM test_settings_database.t",
-            user="mysql_settings_denied",
-            settings={"show_remote_databases_in_system_tables": 0},
-        )
-        assert "connection_pool_size" in granted_show
+            # The statement reaches them even when the caller has remote databases hidden: naming one turns
+            # `show_remote_databases_in_system_tables` on for that statement. The setting is on by default, so
+            # it is turned off for every `SHOW TABLE SETTINGS` below - otherwise they pass without that path.
+            shown = clickhouse_node.query(
+                "SHOW TABLE SETTINGS FROM test_settings_database.t",
+                settings={"show_remote_databases_in_system_tables": 0},
+            )
+            assert "connection_pool_size" in shown
 
-        clickhouse_node.query("DROP USER mysql_settings_denied")
+            # And the setting still governs it: turning it off hides the database again.
+            hidden = clickhouse_node.query(
+                "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database' "
+                "SETTINGS show_remote_databases_in_system_tables = 0"
+            )
+            assert hidden.strip() == "0"
 
-        mysql_node.query("DROP DATABASE test_settings_database")
-        clickhouse_node.query("DROP DATABASE test_settings_database")
+            # `SHOW TABLE SETTINGS` turns the visibility setting on for a database named explicitly.
+            # That must not also hand out rows the user has no `SHOW TABLES` for: the statement refuses
+            # the table, as `SHOW CREATE TABLE` does. Proven here rather than in a stateless test because
+            # only a reachable remote database has rows for the enabling path to reveal.
+            clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
+
+            denied = clickhouse_node.query(
+                "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database'",
+                user="mysql_settings_denied",
+            )
+            assert denied.strip() == "0"
+
+            denied_show = clickhouse_node.query_and_get_error(
+                "SHOW TABLE SETTINGS FROM test_settings_database.t",
+                user="mysql_settings_denied",
+                settings={"show_remote_databases_in_system_tables": 0},
+            )
+            assert "ACCESS_DENIED" in denied_show
+
+            clickhouse_node.query(
+                "GRANT SHOW TABLES ON test_settings_database.t TO mysql_settings_denied"
+            )
+            granted_show = clickhouse_node.query(
+                "SHOW TABLE SETTINGS FROM test_settings_database.t",
+                user="mysql_settings_denied",
+                settings={"show_remote_databases_in_system_tables": 0},
+            )
+            assert "connection_pool_size" in granted_show
+        finally:
+            clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_database")
+            mysql_node.query("DROP DATABASE IF EXISTS test_settings_database")
 
 
 def test_table_settings_for_mysql_database_from_named_collection(started_cluster):

@@ -1,3 +1,5 @@
+import xml.etree.ElementTree as ET
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -46,6 +48,15 @@ def started_cluster():
         cluster.shutdown()
 
 
+def merge_tree_config_keys(instance):
+    """The keys of the `<merge_tree>` section of the config `instance` loaded, all of its files merged."""
+    preprocessed = instance.exec_in_container(
+        ["cat", "/var/lib/clickhouse/preprocessed_configs/config.xml"]
+    )
+    section = ET.fromstring(preprocessed).find("merge_tree")
+    return sorted(child.tag for child in section) if section is not None else []
+
+
 def source_of(setting, table="t"):
     return node.query(
         f"SELECT source FROM system.table_settings "
@@ -60,18 +71,15 @@ def test_config_assignment_is_reported(started_cluster):
     # A setting the config does not mention at all.
     assert source_of("merge_max_block_size_bytes") == "default"
 
-    # Nothing beyond what a config section assigned is attributed to one, so the reporting does not
-    # over-apply. Two of these come from this test's config and two from the integration harness's
-    # own `helpers/0_common_instance_config.xml`, which sets them for every instance.
-    assert node.query(
+    # Exactly what the `<merge_tree>` section assigns is attributed to it, so the reporting neither misses one
+    # nor over-applies. The section is read from the config the server loaded rather than listed here, because
+    # the integration harness adds keys of its own (`helpers/0_common_instance_config.xml`) to every instance.
+    reported = node.query(
         "SELECT name FROM system.table_settings "
         "WHERE database = currentDatabase() AND table = 't' AND source = 'config' ORDER BY name"
-    ).split() == [
-        "max_suspicious_broken_parts",
-        "merge_max_block_size",
-        "vertical_merge_algorithm_min_columns_to_activate",
-        "vertical_merge_algorithm_min_rows_to_activate",
-    ]
+    ).split()
+    assert reported == merge_tree_config_keys(node)
+    assert {"max_suspicious_broken_parts", "merge_max_block_size"} <= set(reported)
 
     node.query("DROP TABLE t SYNC")
 

@@ -3356,14 +3356,13 @@ def test_table_settings_reported(started_cluster):
     # `system.table_settings` reports the settings a table works with. The standalone
     # `MaterializedPostgreSQL` engine consumes its settings at construction, so it keeps them to be able to
     # answer; a table of a `MaterializedPostgreSQL` *database* is built by a constructor that receives none -
-    # there the settings belong to the database - and reports nothing.
+    # there the replication settings belong to the database - and reports only its nested storage's settings.
     table = "test_settings"
     pg_manager.create_and_fill_postgres_table(table)
 
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Integer, value Integer, PRIMARY KEY (key))
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
             'postgres_database', '{table}', 'postgres', '{pg_pass}')
