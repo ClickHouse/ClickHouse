@@ -148,7 +148,7 @@ void registerStorageKafka(StorageFactory & factory)
                 "in SETTINGS cannot be specified at the same time", \
                 #ARG_NUM, \
                 #PAR_NAME); \
-        /* move engine args to settings */ \
+        /* move engine args to settings - the table's definition states them as surely as its SETTINGS clause */ \
         if constexpr ((EVAL) == 1) \
         { \
             engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
@@ -158,7 +158,10 @@ void registerStorageKafka(StorageFactory & factory)
             engine_args[(ARG_NUM)-1] \
                 = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
         } \
-        (*kafka_settings)[KafkaSetting::PAR_NAME] = checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME); \
+        kafka_settings->set( \
+            KafkaSetting::PAR_NAME, \
+            checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME), \
+            SettingOrigin::Definition); \
     }
 
         /** Arguments of engine is following:

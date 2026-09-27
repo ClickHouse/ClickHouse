@@ -1,0 +1,13 @@
+-- Kafka positional arguments
+kafka_broker_list	localhost:9092	definition
+kafka_format	CSV	definition
+kafka_group_name	group	definition
+kafka_max_block_size	17	definition
+kafka_topic_list	topic	definition
+-- RabbitMQ queue base and vhost
+address	rabbitmq_queue_base	default_address	other
+address	rabbitmq_vhost	stated	definition
+generated	rabbitmq_queue_base	default_generated	other
+generated	rabbitmq_vhost	/	default
+stated	rabbitmq_queue_base	qb	definition
+stated	rabbitmq_vhost	/	default
