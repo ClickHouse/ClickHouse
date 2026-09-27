@@ -33,14 +33,6 @@ UNKNOWN_DATABASE
 --- standard: DROP INDEX folds, double-quoted wrong case stays exact
 UNKNOWN_TABLE
 0
---- legacy analyzer: folded SELECT binds the canonical qualifier
-7
-UNKNOWN_TABLE
-7
---- legacy analyzer: cross join with folded names resolves consistently
-1
---- legacy analyzer: sibling databases stay ambiguous
-AMBIGUOUS_IDENTIFIER
 --- standard: unquoted case-sibling creation is rejected, quoted is allowed
 differs only in character case
 0

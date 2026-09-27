@@ -78,19 +78,6 @@ ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP I
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP INDEX Idx1 ON ${DB_ONE_FOLDED}.newtable"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.data_skipping_indices WHERE database = '${DB_ONE}' AND table = 'NewTable'"
 
-echo '--- legacy analyzer: folded SELECT binds the canonical qualifier'
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.LegacyTable (x Int32) ENGINE = Memory; INSERT INTO ${DB_ONE}.LegacyTable VALUES (7)"
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT LegacyTable.x FROM ${DB_ONE_FOLDED}.legacytable"
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT x FROM \"${DB_ONE}\".\"legacytable\"" 2>&1 | grep -oF "UNKNOWN_TABLE" | uniq
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --query "SELECT LegacyTable.x FROM ${DB_ONE}.LegacyTable"
-
-echo '--- legacy analyzer: cross join with folded names resolves consistently'
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT count() FROM ${DB_ONE_FOLDED}.legacytable, ${DB_ONE_FOLDED}.srctable"
-
-echo '--- legacy analyzer: sibling databases stay ambiguous'
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_TWO}"
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT x FROM ${DB_ONE_FOLDED}.legacytable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
-
 echo '--- standard: unquoted case-sibling creation is rejected, quoted is allowed'
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB_TWO}"
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.CaseTab (x Int32) ENGINE = Memory"

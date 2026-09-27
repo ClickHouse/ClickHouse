@@ -18,8 +18,7 @@ cleanup()
 trap cleanup EXIT
 cleanup
 
-# Column matching is implemented only for the analyzer; force it so old-analyzer suites pass.
-STANDARD="${CLICKHOUSE_CLIENT} --enable_analyzer=1 --database_and_table_name_matching=standard --column_and_query_name_matching=standard"
+STANDARD="${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --column_and_query_name_matching=standard"
 
 # Atomic pinned explicitly: the test detaches and re-attaches this database to force a metadata reload.
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB} ENGINE = Atomic"
