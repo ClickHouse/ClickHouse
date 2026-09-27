@@ -45,6 +45,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
+#include <ctime>
 #include <fmt/format.h>
 
 
@@ -60,6 +61,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsSeconds promql_range_query_cache_min_age;
+    extern const SettingsSeconds promql_range_query_split_interval;
 }
 
 namespace TimeSeriesSetting
@@ -84,6 +87,73 @@ Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 time_scale)
         ++timestamp_ticks;
 
     return Decimal64{timestamp_ticks};
+}
+
+/// Returns the first step of each chunk of a range query: its start, then the first step at or after each later multiple of the interval.
+std::vector<DateTime64> getRangeQueryChunkStarts(const PrometheusQueryEvaluationSettings & settings, Int64 interval_seconds)
+{
+    const Int64 start = settings.start_time->value;
+    const Int64 end = settings.end_time->value;
+    const Int64 step = settings.step->value;
+    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(settings.time_scale);
+
+    std::vector<DateTime64> chunk_starts{DateTime64{start}};
+    if (step <= 0 || interval_seconds <= 0 || interval_seconds > (end - start) / scale_multiplier)
+        return chunk_starts;
+
+    const Int64 interval = interval_seconds * scale_multiplier;
+    Int64 chunk_start = start;
+    while (true)
+    {
+        /// The next multiple of the interval, rounded up to a step.
+        const Int64 boundary = chunk_start - chunk_start % interval + interval;
+        chunk_start = start + (boundary - start + step - 1) / step * step;
+        if (chunk_start > end)
+            return chunk_starts;
+        chunk_starts.emplace_back(chunk_start);
+    }
+}
+
+/// Returns true if the query refers to its whole evaluation range, so evaluating it in chunks would change its result.
+bool usesWholeEvaluationRange(const PrometheusQueryTree::Node & node)
+{
+    if (node.node_type == PrometheusQueryTree::NodeType::Offset)
+    {
+        auto at_modifier = static_cast<const PrometheusQueryTree::Offset &>(node).at_modifier;
+        if (at_modifier == PrometheusQueryTree::Offset::AtModifier::Start || at_modifier == PrometheusQueryTree::Offset::AtModifier::End)
+            return true;
+    }
+    else if (node.node_type == PrometheusQueryTree::NodeType::Function)
+    {
+        const auto & function_name = static_cast<const PrometheusQueryTree::Function &>(node).function_name;
+        if (function_name == "start" || function_name == "end" || function_name == "range")
+            return true;
+    }
+
+    for (const auto * child : node.children)
+    {
+        if (usesWholeEvaluationRange(*child))
+            return true;
+    }
+    return false;
+}
+
+/// Returns true if the query can read samples newer than its evaluation time, because of a negative offset or an `@` modifier.
+bool readsSamplesAfterEvaluationTime(const PrometheusQueryTree::Node & node)
+{
+    if (node.node_type == PrometheusQueryTree::NodeType::Offset)
+    {
+        const auto & offset_node = static_cast<const PrometheusQueryTree::Offset &>(node);
+        if (offset_node.hasAtModifier() || (offset_node.offset_value && (offset_node.offset_value->value < 0)))
+            return true;
+    }
+
+    for (const auto * child : node.children)
+    {
+        if (readsSamplesAfterEvaluationTime(*child))
+            return true;
+    }
+    return false;
 }
 
 /// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
@@ -238,6 +308,14 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, time_scale);
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
+
+        auto split_interval = getContext()->getSettingsRef()[Setting::promql_range_query_split_interval].totalSeconds();
+        auto chunk_starts = getRangeQueryChunkStarts(evaluation_settings, split_interval);
+        if (chunk_starts.size() > 1 && !usesWholeEvaluationRange(*query_tree->getRoot()))
+        {
+            executeRangeQueryInChunks(response, query_tree, evaluation_settings, chunk_starts, query_finish_callback);
+            return;
+        }
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
@@ -246,13 +324,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// Isolate the settings required by generated PromQL from the request context.
-    auto query_context = Context::createCopy(getContext());
-    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        query_context->setSetting("enable_materialized_cte", true);
-
-    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
-
+    auto query_context = makeQueryContext();
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
@@ -275,6 +347,145 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// Release the query slot early so a slow client draining the response does not keep occupying it,
     /// then flush the response (query_finish_callback) and record QueryFinish.
     finishExecutedQuery(io, query_finish_callback);
+}
+
+ContextMutablePtr PrometheusHTTPProtocolAPI::makeQueryContext() const
+{
+    /// Isolate the settings required by generated PromQL from the request context.
+    auto query_context = Context::createCopy(getContext());
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        query_context->setSetting("enable_materialized_cte", true);
+
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    return query_context;
+}
+
+void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
+    WriteBuffer & response,
+    const std::shared_ptr<const PrometheusQueryTree> & query_tree,
+    PrometheusQueryEvaluationSettings evaluation_settings,
+    const std::vector<DateTime64> & chunk_starts,
+    QueryFinishCallback query_finish_callback)
+{
+    const auto scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(evaluation_settings.time_scale);
+    const auto end_time = *evaluation_settings.end_time;
+    const auto step = *evaluation_settings.step;
+
+    const auto cache_min_age = getContext()->getSettingsRef()[Setting::promql_range_query_cache_min_age].totalSeconds();
+    const bool can_cache = !readsSamplesAfterEvaluationTime(*query_tree->getRoot());
+    const Int64 cache_max_end_seconds = time(nullptr) - cache_min_age;
+
+    std::vector<Blocks> chunks(chunk_starts.size());
+    for (size_t i = 0; i != chunk_starts.size(); ++i)
+    {
+        evaluation_settings.start_time = chunk_starts[i];
+        evaluation_settings.end_time = (i + 1 < chunk_starts.size()) ? DateTime64{chunk_starts[i + 1].value - step.value} : end_time;
+
+        PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
+        auto sql_query = converter.getSQL();
+        LOG_TRACE(log, "SQL query to execute for chunk {} of {}:\n{}", i + 1, chunk_starts.size(), sql_query->formatForLogging());
+
+        auto query_context = makeQueryContext();
+        if (cache_min_age > 0)
+        {
+            bool use_query_cache = can_cache && (evaluation_settings.end_time->value / scale_multiplier < cache_max_end_seconds);
+            query_context->setSetting("use_query_cache", use_query_cache);
+            if (use_query_cache)
+                query_context->setSetting("query_cache_nondeterministic_function_handling", String("save"));
+        }
+
+        auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
+
+        try
+        {
+            PullingAsyncPipelineExecutor executor(io.pipeline);
+            Block block;
+            while (executor.pull(block))
+            {
+                if (block.rows() > 0)
+                    chunks[i].push_back(std::move(block));
+            }
+            io.pipeline.finalizeWriteInQueryResultCache();
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
+
+        finishExecutedQuery(io, {});
+    }
+
+    writeQueryResponseHeader(response, PrometheusQueryResultType::RANGE_VECTOR);
+    writeQueryResponseRangeVectorChunks(response, chunks);
+    writeQueryResponseFooter(response);
+
+    if (query_finish_callback)
+        query_finish_callback();
+}
+
+void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(WriteBuffer & response, const std::vector<Blocks> & chunks)
+{
+    struct Position
+    {
+        size_t block = 0;
+        size_t row = 0;
+    };
+    std::vector<Position> positions(chunks.size());
+
+    auto get_tags = [&](size_t chunk) -> const IColumn &
+    {
+        const auto & block = chunks[chunk][positions[chunk].block];
+        return typeid_cast<const ColumnArray &>(*block.getByName(TimeSeriesColumnNames::Tags).column);
+    };
+
+    bool first_series = true;
+    while (true)
+    {
+        /// Find the chunk whose current series has the smallest tags, like ORDER BY tags in the SQL of each chunk.
+        std::optional<size_t> min_chunk;
+        for (size_t i = 0; i != chunks.size(); ++i)
+        {
+            if (positions[i].block == chunks[i].size())
+                continue;
+            if (!min_chunk || get_tags(i).compareAt(positions[i].row, positions[*min_chunk].row, get_tags(*min_chunk), 1) < 0)
+                min_chunk = i;
+        }
+
+        if (!min_chunk)
+            break;
+
+        const Block & min_block = chunks[*min_chunk][positions[*min_chunk].block];
+        const size_t min_row = positions[*min_chunk].row;
+        const auto & min_tags = get_tags(*min_chunk);
+
+        if (!first_series)
+            writeString(",", response);
+        first_series = false;
+
+        writeString(R"({"metric":)", response);
+        writeTags(response, min_block, min_row);
+        writeString(R"(,"values":[)", response);
+
+        /// Chunks before `min_chunk` have greater tags, the next ones may have the same series.
+        bool need_comma = false;
+        for (size_t i = *min_chunk; i != chunks.size(); ++i)
+        {
+            auto & position = positions[i];
+            if ((position.block == chunks[i].size()) || (get_tags(i).compareAt(position.row, min_row, min_tags, 1) != 0))
+                continue;
+
+            writeSamples(response, chunks[i][position.block], position.row, need_comma);
+
+            if (++position.row == chunks[i][position.block].rows())
+            {
+                ++position.block;
+                position.row = 0;
+            }
+        }
+
+        writeString("]}", response);
+    }
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
@@ -461,22 +672,6 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
-    const auto & time_series_column_with_type
-        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
-    const auto & time_series_column = time_series_column_with_type.column;
-    const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
-    const auto & offsets = array_column.getOffsets();
-    const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
-    const auto & timestamp_column = tuple_column.getColumn(0);
-    const auto & value_column = tuple_column.getColumn(1);
-
-    auto timestamp_data_type
-        = typeid_cast<const DataTypeTuple &>(
-              *typeid_cast<const DataTypeArray &>(*time_series_column_with_type.type).getNestedType())
-              .getElement(0);
-
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
-
     bool need_comma = !first;
 
     for (size_t i = 0; i < result_block.rows(); ++i)
@@ -493,25 +688,46 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
         // Extract time series data
         writeString(R"("values":[)", response);
-
-        size_t start = (i == 0) ? 0 : offsets[i-1];
-        size_t end = offsets[i];
-
-        for (size_t j = start; j < end; ++j)
-        {
-            if (j > start)
-                writeString(",", response);
-
-            writeString("[", response);
-            DateTime64 timestamp = timestamp_column.getInt(j);
-            writeTimestamp(response, timestamp, timestamp_scale);
-            writeString(",\"", response);
-            Float64 value = value_column.getFloat64(j);
-            writeScalar(response, value);
-            writeString("\"]", response);
-        }
-
+        bool need_sample_comma = false;
+        writeSamples(response, result_block, i, need_sample_comma);
         writeString("]}", response);
+        need_comma = true;
+    }
+}
+
+void PrometheusHTTPProtocolAPI::writeSamples(WriteBuffer & response, const Block & result_block, size_t row_index, bool & need_comma)
+{
+    const auto & time_series_column_with_type
+        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
+    const auto & time_series_column = time_series_column_with_type.column;
+    const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
+    const auto & offsets = array_column.getOffsets();
+    const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+    const auto & timestamp_column = tuple_column.getColumn(0);
+    const auto & value_column = tuple_column.getColumn(1);
+
+    auto timestamp_data_type
+        = typeid_cast<const DataTypeTuple &>(
+              *typeid_cast<const DataTypeArray &>(*time_series_column_with_type.type).getNestedType())
+              .getElement(0);
+
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+
+    size_t start = (row_index == 0) ? 0 : offsets[row_index - 1];
+    size_t end = offsets[row_index];
+
+    for (size_t j = start; j < end; ++j)
+    {
+        if (need_comma)
+            writeString(",", response);
+
+        writeString("[", response);
+        DateTime64 timestamp = timestamp_column.getInt(j);
+        writeTimestamp(response, timestamp, timestamp_scale);
+        writeString(",\"", response);
+        Float64 value = value_column.getFloat64(j);
+        writeScalar(response, value);
+        writeString("\"]", response);
         need_comma = true;
     }
 }

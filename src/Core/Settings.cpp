@@ -10483,6 +10483,23 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    \
+    DECLARE(Seconds, promql_range_query_split_interval, 0, R"(
+If greater than zero, a range query of the Prometheus HTTP API (`/api/v1/query_range`) at least this long is evaluated in chunks, one after another, and the results of the chunks are merged.
+The chunks start at the first steps after multiples of this interval since the Unix epoch, so the same chunks repeat when a dashboard is refreshed.
+This bounds the peak memory of the query by the memory of one chunk, but makes the query slower unless the chunks are read from the query cache (see `promql_range_query_cache_min_age`).
+A query using `@ start()` or `@ end()` is not split. 0 disables splitting.
+)", PRIVATE_PREVIEW, \
+        {"26.10", 0, 0, "New setting."}) \
+    \
+    DECLARE(Seconds, promql_range_query_cache_min_age, 0, R"(
+If greater than zero, a chunk of a range query split by `promql_range_query_split_interval` that ends more than this many seconds ago
+is executed with `use_query_cache = 1` and `query_cache_nondeterministic_function_handling = 'save'`, and a newer chunk is executed with `use_query_cache = 0`.
+The other query cache settings, like `query_cache_ttl`, apply as usual.
+A query with a negative `offset` or an `@` modifier can read samples newer than its chunk, so its chunks are not cached. 0 disables caching of chunks.
+)", PRIVATE_PREVIEW, \
+        {"26.10", 0, 0, "New setting."}) \
+    \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \
