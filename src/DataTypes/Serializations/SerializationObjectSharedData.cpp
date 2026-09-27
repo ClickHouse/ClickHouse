@@ -634,7 +634,7 @@ void SerializationObjectSharedData::deserializeChunkStructurePrefix(
         if (structure_state.need_all_paths)
             chunk_structure.all_paths.push_back(path);
 
-        cancellation_checker.check();
+        cancellation_checker.check(path.size());
     }
 }
 

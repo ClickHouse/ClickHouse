@@ -43,21 +43,23 @@ bool isPrefixReadCancelled(std::exception_ptr exception_ptr);
 class PrefixReadCancellationChecker
 {
 public:
-    /// Polls once unconditionally, so a cancellation already pending at prefix entry is honoured
-    /// without waiting out a period. Touching the throttle starts this thread's clock here rather than
-    /// at the first `check`, and leaves the elapsed period alone, so a later prefix does not restart it.
+    /// Touching the throttle starts this thread's clock here rather than at the first `check`, and leaves
+    /// the elapsed period alone, so a later prefix does not restart it.
     PrefixReadCancellationChecker()
+        : throttle(throttleState())
     {
-        static_cast<void>(throttleState());
-        throwIfCancelled();
     }
 
     /// Throws the cancellation cause if the query is cancelled and the period has elapsed. Inert for a
-    /// thread group with no process-list element, which is how ordinary merges and part checks run; a
-    /// merge started by `OPTIMIZE` does carry one and is cancellable.
-    void check()
+    /// thread group with no process-list element, which is how background merges and part checks run.
+    /// `processed_bytes` is the work done since the previous call, such as one name's length.
+    void check(size_t processed_bytes = clock_read_bytes)
     {
-        auto & throttle = throttleState();
+        throttle.unclocked_bytes += processed_bytes + min_call_bytes;
+        if (throttle.unclocked_bytes < clock_read_bytes)
+            return;
+
+        throttle.unclocked_bytes = 0;
         const UInt64 elapsed = throttle.stopwatch.elapsedMicroseconds();
         if (elapsed < throttle.last_check_time + check_period_microseconds)
             return;
@@ -71,13 +73,15 @@ private:
     /// `message()`. A cause that is not a `DB::Exception` is propagated untouched.
     static void throwIfCancelled();
 
-    /// When this thread last polled. Thread state, not per-object: one `work()` span reads many
-    /// prefixes, so per-object state would restart the period for each and make the bound
-    /// O(number of prefixes). A stale timestamp can only make the next poll fire sooner.
+    /// When this thread last polled, and how much work it did since it last read the clock. Thread
+    /// state, not per-object: one `work()` span reads many prefixes, so per-object state would restart
+    /// the period for each and make the bound O(number of prefixes). A stale timestamp can only make the
+    /// next poll fire sooner.
     struct ThrottleState
     {
         Stopwatch stopwatch;
         UInt64 last_check_time = 0;
+        size_t unclocked_bytes = 0;
     };
 
     /// Defined out of line so there is one state per thread, not one per shared library: a mutable
@@ -87,6 +91,12 @@ private:
     /// Bounds the cancellation delay contributed by prefix reads to ~10 ms of reading, so the
     /// predicate runs at most ~100 times per second regardless of how many paths there are.
     static constexpr UInt64 check_period_microseconds = 10 * 1000;
+
+    /// The clock is read at least every 4 KiB of work and every 256 calls.
+    static constexpr size_t clock_read_bytes = 4096;
+    static constexpr size_t min_call_bytes = 16;
+
+    ThrottleState & throttle;
 };
 
 /// Chunked `readStringBinary`: the READ is chunked, and so is the value-initialization `resize` performs
@@ -102,6 +112,14 @@ inline void readStringBinaryCancellable(String & s, ReadBuffer & buf, PrefixRead
 
     if (size > DEFAULT_MAX_STRING_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+    /// One chunk: read it whole, as `readStringBinary` does.
+    if (size <= read_chunk_size)
+    {
+        s.resize(size);
+        buf.readStrict(s.data(), size);
+        return;
+    }
 
     /// One allocation for the declared length: growing in steps instead relocates the whole buffer each
     /// time capacity doubles, and a relocation near the end copies half the name uninterruptibly.
@@ -120,8 +138,7 @@ inline void readStringBinaryCancellable(String & s, ReadBuffer & buf, PrefixRead
                 "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes_read + bytes_copied, size);
 
         bytes_read += bytes_copied;
-        /// Not after the last chunk: every caller polls once per name it reads, so a name that fits in
-        /// one chunk would otherwise read the clock twice.
+        /// Not after the last chunk: every caller polls once per name it reads.
         if (bytes_read < size)
             cancellation_checker.check();
     }

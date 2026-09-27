@@ -706,7 +706,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                 String path;
                 readStringBinaryCancellable(path, *structure_stream, cancellation_checker);
                 structure_state->flattened_paths.push_back(std::move(path));
-                cancellation_checker.check();
+                cancellation_checker.check(structure_state->flattened_paths.back().size());
             }
         }
         else if (structure_state->serialization_version.value == SerializationVersion::STRING)
@@ -732,14 +732,14 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                 String path;
                 readStringBinaryCancellable(path, *structure_stream, cancellation_checker);
                 structure_state->sorted_dynamic_paths->push_back(std::move(path));
-                cancellation_checker.check();
+                cancellation_checker.check(structure_state->sorted_dynamic_paths->back().size());
             }
             /// Expanded from a range `insert` so the hash inserts are checkpointed too: the path count
             /// is unbounded, so a range `insert` would be an uninterruptible span of the same size.
             for (const auto & path : *structure_state->sorted_dynamic_paths)
             {
                 structure_state->dynamic_paths.insert(path);
-                cancellation_checker.check();
+                cancellation_checker.check(path.size());
             }
 
             /// If we have V3 Object serialization, read shared data serialization version.
@@ -773,7 +773,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     for (const auto & path : *structure_state->sorted_dynamic_paths)
                     {
                         readVarUInt(statistics.dynamic_paths_statistics[path], *structure_stream);
-                        cancellation_checker.check();
+                        cancellation_checker.check(path.size());
                     }
 
                     /// Second, read shared data paths statistics.
@@ -785,7 +785,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     {
                         readStringBinaryCancellable(path, *structure_stream, cancellation_checker);
                         readVarUInt(statistics.shared_data_paths_statistics[path], *structure_stream);
-                        cancellation_checker.check();
+                        cancellation_checker.check(path.size());
                     }
 
                     structure_state->statistics = std::make_shared<const ColumnObject::Statistics>(std::move(statistics));

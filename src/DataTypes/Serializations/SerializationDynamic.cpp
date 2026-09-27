@@ -481,7 +481,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                     {
                         readStringBinaryCancellable(variant_name, *structure_stream, cancellation_checker);
                         readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
-                        cancellation_checker.check();
+                        cancellation_checker.check(variant_name.size());
                     }
 
                     structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));

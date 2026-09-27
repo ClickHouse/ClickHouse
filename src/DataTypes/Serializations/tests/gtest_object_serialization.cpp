@@ -527,10 +527,8 @@ std::string makeGranulePrefixWithPaths(const std::vector<std::string> & paths)
 /// name has consumed only a few chunks of that name, whereas one that consumes the name in a single
 /// `readStrict` has served all of it before anything can throw.
 ///
-/// `cancel_after_bytes` cancels the query from inside the read, once that many bytes have been served.
-/// That is what keeps the assertions about the in-loop checkpoints honest: the checkpoint also polls
-/// once at prefix entry, so a fixture that cancels beforehand is interrupted there and would pass with
-/// no in-loop checkpoint at all.
+/// `cancel_after_bytes` cancels the query from inside the read, once that many bytes have been served,
+/// so the cancellation lands inside the loop under test rather than before it.
 ///
 /// `on_chunk` is called after each chunk has been served, with the number of bytes served so far. It is
 /// what lets a cell observe the read's own state WHILE the read is running rather than after it has
@@ -657,8 +655,8 @@ size_t readGranulePrefix(
 /// consuming more than `max_served_bytes` of the prefix - the read must not merely throw eventually,
 /// it must throw from inside the loop it is supposed to be interruptible in.
 ///
-/// The cancellation is raised from inside the read, after `cancel_after_bytes`, so the checkpoint's
-/// entry poll cannot satisfy the assertion on its own.
+/// The cancellation is raised from inside the read, after `cancel_after_bytes`, so only a checkpoint
+/// inside the loop can satisfy the assertion.
 void expectCancelledBefore(
     const std::string & structure_prefix_bytes,
     size_t max_served_bytes,
@@ -925,14 +923,12 @@ TEST(ObjectSerialization, PrefixReadObservesCancellation)
         const std::string short_names = makeGranulePrefixWithPaths(makeShortPaths(8000));
 
         /// Cancelled from inside the read, one chunk past the granule header, so the interruption has to
-        /// come from a checkpoint in the loop: the header is read before the checker is constructed, so
-        /// its entry poll runs while the query is still live.
+        /// come from a checkpoint in the loop.
         expectCancelledBefore(short_names, short_names.size() / 2, [&] { query.cancel(); }, 2 * 4096);
     });
 
-    /// A fresh query for the second cell. The cancellation has to be raised by THIS read; a query left
-    /// cancelled by the previous cell would be observed at prefix entry, and then the assertion would
-    /// say nothing about the loop.
+    /// A fresh query for the second cell, so the cancellation is raised by THIS read and not left over
+    /// from the previous cell.
     runInFreshThread([]
     {
         ThreadStatus thread_status;
@@ -962,10 +958,10 @@ TEST(ObjectSerialization, LongPathNameObservesCancellation)
         const size_t name_size = 1024 * 1024;
         const std::string bytes = makeGranulePrefixWithPaths({std::string(name_size, 'x')});
 
-        /// Cancelled one chunk past the granule header, i.e. already inside the name, so the entry poll
-        /// cannot satisfy the bound. The read consumes the name in 64 KiB steps and only checks between
-        /// them, so the interruption lands on a 64 KiB boundary; a quarter of the name is far inside
-        /// that granularity while still proving the name was not consumed whole.
+        /// Cancelled one chunk past the granule header, i.e. already inside the name. The read consumes
+        /// the name in 64 KiB steps and only checks between them, so the interruption lands on a 64 KiB
+        /// boundary; a quarter of the name is far inside that granularity while still proving the name
+        /// was not consumed whole.
         expectCancelledBefore(bytes, name_size / 4, [&] { query.cancel(); }, 2 * 4096);
     });
 }
@@ -1100,9 +1096,9 @@ TEST(ObjectSerialization, LargeDeclaredPathNameIsNotValueInitializedWhole)
 }
 
 /// A path name of exactly one `read_chunk_size` (64 KiB), which is the case that pins WHEN the
-/// checkpoint's throttle starts running. Such a name is consumed in a single step of
-/// `readStringBinaryCancellable`'s chunk loop, so the read reaches only the FIRST `check()` on the
-/// thread, the loop-body one after that name. The throttle is thread-local state, so if it only started
+/// checkpoint's throttle starts running. Such a name is read in a single step by
+/// `readStringBinaryCancellable`, so the read reaches only the FIRST `check()` on the thread, the
+/// loop-body one after that name. The throttle is thread-local state, so if it only started
 /// running when that first `check()` created it, the call would read ~0 elapsed and skip its own poll,
 /// and this read would run to the end of the prefix however long it took; the checker's constructor
 /// touching the throttle is what makes the first poll happen.
@@ -1122,9 +1118,9 @@ TEST(ObjectSerialization, SingleChunkPathNameObservesCancellationOnTheFirstPrefi
         const std::string bytes
             = makeGranulePrefixWithPaths({std::string(name_size, 'x'), std::string(name_size, 'x')});
 
-        /// Cancelled two chunks in, i.e. inside name 1, so neither the entry poll nor the cancellation's
-        /// own timing can satisfy the bound. Three quarters of the prefix sits between "stopped after
-        /// name 1" (~68 KiB) and "consumed both names" (~128 KiB).
+        /// Cancelled two chunks in, i.e. inside name 1, so the cancellation's own timing cannot satisfy
+        /// the bound. Three quarters of the prefix sits between "stopped after name 1" (~68 KiB) and
+        /// "consumed both names" (~128 KiB).
         expectCancelledBefore(bytes, bytes.size() * 3 / 4, [&] { query.cancel(); }, 2 * 4096);
     });
 }
@@ -1333,10 +1329,9 @@ TEST(ObjectSerialization, PrefixReadDynamicStructureV3BoundsVariantCanonicalizat
         /// the stream: that is what makes the canonicalization the pass that crosses the period.
         ///
         /// The cancellation is delivered on the LAST bytes, so every per-description checkpoint has
-        /// already run while the query was live. The chunk size has to keep it off the FIRST chunk - the
-        /// version word is read before the checker is constructed, so a cancellation delivered on chunk 1
-        /// would be seen by the checker's own entry poll and the cell would pass without reaching the
-        /// loop at all.
+        /// already run while the query was live. The chunk size has to keep it off the FIRST chunk: a
+        /// prefix served in one chunk counts as served in full before any checkpoint runs, so the cell
+        /// would pass whichever checkpoint threw.
         static constexpr size_t chunk_size = 64 * 1024;
         size_t served_bytes = 0;
         try
@@ -1367,9 +1362,8 @@ TEST(ObjectSerialization, PrefixReadDynamicStructureV3BoundsVariantCanonicalizat
 /// the shape a real read has (a Compact part reads a prefix per column per mark, a Wide part one per
 /// granule, a Compact shared-data read one per bucket).
 ///
-/// This pins the BOUND, not the throttle state's lifetime: it cannot distinguish thread-lived state
-/// from per-prefix state, because the constructor's entry poll throws on a prefix that starts already
-/// cancelled either way. The lifetime's rationale is in `PrefixReadCancellationChecker.h`.
+/// This pins the throttle state's lifetime: state restarted per prefix never reaches the period, so the
+/// read would run to the end. The lifetime's rationale is in `PrefixReadCancellationChecker.h`.
 TEST(ObjectSerialization, CumulativeSubThresholdPrefixesObserveCancellation)
 {
     runInFreshThread([]
@@ -1381,10 +1375,9 @@ TEST(ObjectSerialization, CumulativeSubThresholdPrefixesObserveCancellation)
         /// single prefix can cross it on its own.
         const std::string small = makeGranulePrefixWithPaths(makeShortPaths(1000));
 
-        /// Cancelled from inside the FIRST prefix, one chunk in, and every later prefix then starts
-        /// already cancelled. The entry poll therefore interrupts prefix 2 at the latest, so what this
-        /// cell pins is not "some prefix is interrupted" but the bound: the read must stop within a
-        /// couple of prefixes rather than running to 40.
+        /// Cancelled from inside the FIRST prefix, one chunk in. Each prefix waits out two 2 ms chunk
+        /// delays, so the period has elapsed by prefix 3 and the read must stop within a couple of
+        /// prefixes rather than running to 40.
         size_t served_bytes = 0;
         size_t completed = 0;
         auto cancel = [&] { query.cancel(); };
@@ -1450,9 +1443,8 @@ TEST(ObjectSerialization, CancelledPrefixReadIsKeyedOnTheExceptionAndDoesNotChan
 
         /// The same read failure, raised while the query IS cancelled, must still answer false: this is
         /// the window in which a "is the query cancelled right now" test would wrongly suppress a
-        /// genuine corruption report. Hand-built rather than driven through a read, because the
-        /// checkpoint polls once at prefix entry, so a read started after `cancel()` is interrupted
-        /// there and never reaches the truncated bytes - a real cancellation, correctly reported as one.
+        /// genuine corruption report. Hand-built rather than driven through a read, so that no checkpoint
+        /// can be what raised it.
         query.cancel();
         try
         {
