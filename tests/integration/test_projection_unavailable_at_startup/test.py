@@ -203,6 +203,15 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     node.query("INSERT INTO dl.t6 SELECT number, number FROM numbers(100)")
 
+    # Unlike `t6`'s untyped codec, `t7` pins the output type of `b`. Its declaration
+    # must remain valid when an ALTER runs while the projection cannot be analyzed.
+    node.query("CREATE TABLE dl.t7 (a UInt64, b UInt64, d UInt64, c UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t7 ADD PROJECTION pp (b UInt64 CODEC(ZSTD)) "
+        "AS (SELECT b, d, a GROUP BY 1, 2, 3)",
+        settings=POSITIONAL,
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -218,6 +227,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert part_types("t5") == "Wide"
     assert projections("t6") == "1"
     assert active_projection_parts("t6") == "1"
+    assert projections("t7") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.restart_clickhouse()
@@ -230,6 +240,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t4") == "1"  # only `qq` can be analyzed without the setting
     assert projections("t5") == "0"
     assert projections("t6") == "0"
+    assert projections("t7") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -305,6 +316,19 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     ).strip() == "UInt32"
     assert projection_dirs_in_active_parts("t6") == []
     assert declarations_on_disk("t6") == 1
+
+    for statement, reason in (
+        ("MODIFY COLUMN b UInt32", "declares an explicit column type"),
+        ("DROP COLUMN b", "references it"),
+        ("RENAME COLUMN b TO bb", "references it"),
+    ):
+        error = node.query_and_get_error(f"ALTER TABLE dl.t7 {statement}")
+        assert "projection `pp`" in error and reason in error
+
+    # A type change in an unpinned output and a change to an unused column remain legal.
+    node.query("ALTER TABLE dl.t7 MODIFY COLUMN d UInt32")
+    node.query("ALTER TABLE dl.t7 DROP COLUMN c")
+    assert declarations_on_disk("t7") == 1
 
     # A mutation is not a metadata `ALTER`, so it is not refused. Nothing knows whether `pp`'s
     # materialized data still matches the rows it rewrites, so that data must be left out of the new
@@ -414,6 +438,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t") == "1"
     assert active_projection_parts("t") == "1"
     assert projections("t6") == "1"
+    assert projections("t7") == "1"
     assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 

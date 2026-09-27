@@ -35,12 +35,15 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -119,6 +122,54 @@ bool shouldValidateProjectionCodecs(const ContextPtr & context)
 #endif
 
     return true;
+}
+
+bool projectionQueryReferencesColumn(const IAST & ast, const String & column_name)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        if (identifier->name() == column_name || identifier->name().starts_with(column_name + "."))
+            return true;
+    }
+
+    /// A projection that expands a wildcard depends on every source column.
+    if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>())
+        return true;
+
+    for (const auto & child : ast.children)
+        if (projectionQueryReferencesColumn(*child, column_name))
+            return true;
+
+    return false;
+}
+
+bool explicitProjectionColumnTypeDependsOn(const ASTProjectionDeclaration & declaration, const String & source_column)
+{
+    if (!declaration.columns)
+        return false;
+
+    const auto * query = declaration.query->as<ASTProjectionSelectQuery>();
+    if (!query || !query->select())
+        return true;
+
+    const auto & select_expressions = query->select()->children;
+    for (const auto & child : declaration.columns->children)
+    {
+        const auto & declared_column = child->as<const ASTColumnDeclaration &>();
+        if (!declared_column.getType())
+            continue;
+
+        for (const auto & expression : select_expressions)
+        {
+            if (expression->as<ASTAsterisk>() || expression->as<ASTQualifiedAsterisk>())
+                return true;
+            if (expression->getAliasOrColumnName() == declared_column.name
+                && projectionQueryReferencesColumn(*expression, source_column))
+                return true;
+        }
+    }
+
+    return false;
 }
 
 /// Whether the two names name one setting: a `MergeTree` setting can have two names.
@@ -1854,6 +1905,45 @@ void AlterCommands::apply(
     }
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
+
+    if (columns_changed)
+    {
+        /// Check the stored query AST as well as analyzed projections. An unavailable projection
+        /// cannot be rebuilt here, but a referenced column that disappears will still be missing
+        /// when the projection can be analyzed again. Explicit output types likewise cannot be
+        /// trusted after changing an input type. Use only stored syntax and column types so the
+        /// decision is the same on replicas with different projection-analysis settings.
+        auto check_projection = [&](const ASTPtr & definition_ast)
+        {
+            const auto & declaration = definition_ast->as<const ASTProjectionDeclaration &>();
+            if (!declaration.query)
+                return;
+
+            for (const auto & old_column : metadata.columns)
+            {
+                if (!projectionQueryReferencesColumn(*declaration.query, old_column.name))
+                    continue;
+
+                if (!metadata_copy.columns.has(old_column.name))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot remove or rename column {} because projection {} references it",
+                        backQuote(old_column.name), backQuote(declaration.name));
+
+                if (explicitProjectionColumnTypeDependsOn(declaration, old_column.name)
+                    && old_column.type->getName() != metadata_copy.columns.get(old_column.name).type->getName())
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot change type of column {} because projection {} references it and declares an explicit column type",
+                        backQuote(old_column.name), backQuote(declaration.name));
+            }
+        };
+
+        for (const auto & projection : metadata_copy.projections)
+            check_projection(projection.definition_ast);
+        for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
+            check_projection(definition_ast);
+    }
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
