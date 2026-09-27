@@ -3631,7 +3631,7 @@ class TestCase:
                         )
                 except Exception as e:
                     # An escaping exception returns UNKNOWN without stopping the run, so
-                    # the group would stay live and keep the stdout it inherited.
+                    # the group would stay live.
                     print(f"Warning: could not kill the test group: {e}", file=sys.stderr)
                     try:
                         os.killpg(pgid, signal.SIGKILL)
@@ -8021,8 +8021,8 @@ def quiesce_workers_and_reap(processes, worker_pids):
 
     The reap walks the record directory once, so it is only complete when no worker can
     still add a record: a worker that writes its next `<token>.<worker>.<pgid>` after that
-    walk keeps its group alive holding the runner's stdout. Stopping the workers first is
-    what makes the single walk enough.
+    walk leaves that group unreaped. Stopping the workers first is what makes the single
+    walk enough.
 
     Every signal the runner handles is ignored throughout, because terminating a worker
     makes it broadcast SIGTERM to the whole group via `stop_tests`.
