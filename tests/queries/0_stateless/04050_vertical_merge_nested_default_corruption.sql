@@ -728,3 +728,49 @@ WHERE database = currentDatabase() AND table = 't_nested_missing_marker' AND act
 SELECT id, `n.a`, `n.b` FROM t_nested_missing_marker ORDER BY id;
 
 DROP TABLE t_nested_missing_marker;
+
+-- A projection rebuilt during the merge must see the same value of an affected column as ordinary
+-- reads of the merged part. `m` is absent from every source part and `n.b` reads it through the
+-- non-`Nested` intermediate `tmp`: the merge reconciles `n.b` with the shared `Nested` offsets
+-- (`['','']`), while recomputing the `DEFAULT` on read would give `[]`. The column is therefore
+-- written by the merge instead of being expired.
+DROP TABLE IF EXISTS t_nested_default_projection_consistency;
+
+CREATE TABLE t_nested_default_projection_consistency (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_default_projection_consistency;
+
+INSERT INTO t_nested_default_projection_consistency VALUES (1, [10,20]);
+INSERT INTO t_nested_default_projection_consistency VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_default_projection_consistency ADD COLUMN m Array(String);
+ALTER TABLE t_nested_default_projection_consistency ADD COLUMN tmp Array(String) DEFAULT m;
+ALTER TABLE t_nested_default_projection_consistency ADD COLUMN `n.b` Array(String) DEFAULT tmp;
+ALTER TABLE t_nested_default_projection_consistency ADD PROJECTION p_b
+    (SELECT id, `n.b` ORDER BY id);
+
+SYSTEM START MERGES t_nested_default_projection_consistency;
+OPTIMIZE TABLE t_nested_default_projection_consistency FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_default_projection_consistency;
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_default_projection_consistency' AND active AND column = 'n.b';
+SELECT id, `n.a`, `n.b` FROM t_nested_default_projection_consistency ORDER BY id SETTINGS optimize_use_projections = 0;
+SELECT id, `n.b` FROM mergeTreeProjection(currentDatabase(), t_nested_default_projection_consistency, p_b) ORDER BY id;
+-- Both must agree: no row of the projection differs from the base table.
+SELECT count() FROM
+(
+    SELECT id, `n.b` FROM t_nested_default_projection_consistency SETTINGS optimize_use_projections = 0
+    EXCEPT
+    SELECT id, `n.b` FROM mergeTreeProjection(currentDatabase(), t_nested_default_projection_consistency, p_b)
+);
+
+DROP TABLE t_nested_default_projection_consistency;
