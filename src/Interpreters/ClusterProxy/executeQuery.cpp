@@ -604,7 +604,7 @@ void executeQuery(
                 shard_info,
                 not_optimized_cluster->getSlotToShard(),
             };
-            optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
+            optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }
 
         // decide for each shard if parallel reading from replicas should be enabled
