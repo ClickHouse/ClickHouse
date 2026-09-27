@@ -7130,7 +7130,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// The expressions of the WITH section are resolved through their aliases, so check them for `IN` with a subquery before
     /// they are removed (see the replacement of cluster engines by their `*Cluster` variant below). A CTE is a separate query,
     /// which is checked when it is resolved.
-    TableFunctionsWithClusterAlternativesVisitor with_section_visitor(scope);
+    const bool aliases_visible_from_parent_scopes = scope.context->getSettingsRef()[Setting::enable_global_with_statement];
+    TableFunctionsWithClusterAlternativesVisitor with_section_visitor(scope, aliases_visible_from_parent_scopes);
     for (const auto & with_node : query_node_typed.getWith().getNodes())
     {
         const auto * with_query = with_node->as<QueryNode>();
@@ -7172,7 +7173,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTreeNode());
 
-    TableFunctionsWithClusterAlternativesVisitor table_function_visitor(scope);
+    TableFunctionsWithClusterAlternativesVisitor table_function_visitor(scope, aliases_visible_from_parent_scopes);
     table_function_visitor.visit(query_node);
     /// `parallel_replicas_allow_in_with_subquery = 0` is also checked by the planner, but only once the storages are
     /// chosen, when a cluster engine has already been replaced by its `*Cluster` variant, which ships the `IN` subquery

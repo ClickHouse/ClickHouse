@@ -9,7 +9,6 @@
 #include <Analyzer/Resolve/ScopeAliases.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
-#include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -23,19 +22,14 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool enable_global_with_statement;
-}
-
 class TableFunctionsWithClusterAlternativesVisitor : public InDepthQueryTreeVisitor<TableFunctionsWithClusterAlternativesVisitor, /*const_visitor=*/true>
 {
 public:
     /// `scope` is the scope of the visited query. An identifier on the right side of `IN` that names an alias of this
-    /// scope, or of a parent scope with `enable_global_with_statement`, is resolved to the aliased expression rather
-    /// than to a table or a CTE.
-    explicit TableFunctionsWithClusterAlternativesVisitor(const IdentifierResolveScope & scope)
-        : aliases_visible_from_parent_scopes(scope.context->getSettingsRef()[Setting::enable_global_with_statement])
+    /// scope, or of a parent scope if `aliases_visible_from_parent_scopes_` (`enable_global_with_statement`), is resolved
+    /// to the aliased expression rather than to a table or a CTE.
+    TableFunctionsWithClusterAlternativesVisitor(const IdentifierResolveScope & scope, bool aliases_visible_from_parent_scopes_)
+        : aliases_visible_from_parent_scopes(aliases_visible_from_parent_scopes_)
     {
         alias_scopes.push_back(&scope.aliases);
         if (aliases_visible_from_parent_scopes)
