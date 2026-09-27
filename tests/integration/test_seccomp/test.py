@@ -345,3 +345,40 @@ def test_log_mode_starts_where_seccomp_is_unavailable(started_cluster):
             ],
             user="root",
         )
+
+
+def test_reloaded_setting_does_not_replace_the_one_in_force(started_cluster):
+    # A filter cannot be installed, removed or relaxed after startup, so a changed `seccomp` in a
+    # reloaded configuration changes nothing until a restart - and `system.server_settings` keeps
+    # showing the mode in force, rather than one that is not.
+    for node, installed, reloaded, config, seccomp_status in [
+        (disabled_node, "disabled", "errno", "disabled.xml", SECCOMP_MODE_DISABLED),
+        (errno_node, "errno", "disabled", "errno.xml", SECCOMP_MODE_FILTER),
+    ]:
+        with node.with_replace_config(
+            f"/etc/clickhouse-server/config.d/{config}",
+            f"<clickhouse><seccomp>{reloaded}</seccomp></clickhouse>",
+            reload_before=True,
+            reload_after=True,
+        ):
+            assert (
+                node.query(
+                    "SELECT value, changeable_without_restart FROM system.server_settings WHERE name = 'seccomp'"
+                )
+                == f"{installed}\tNo\n"
+            )
+            assert (
+                get_status_field(node, get_server_pid(node), "Seccomp")
+                == seccomp_status
+            )
+            # See `test_setting_from_zookeeper_is_the_one_installed` for the dots.
+            assert node.contains_in_log(
+                f"server setting was changed from .{installed}. to .{reloaded}. in the configuration"
+            )
+
+        assert (
+            node.query(
+                "SELECT value FROM system.server_settings WHERE name = 'seccomp'"
+            )
+            == f"{installed}\n"
+        )

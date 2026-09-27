@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace DB
@@ -31,6 +32,11 @@ enum class SeccompMode : uint8_t
     /// signal handler runs.
     Kill,
 };
+
+/// The mode the server passed to `installSeccompFilter` at startup, or nothing if it has not called
+/// it. This, not the configuration, is the policy in force: the configuration can be reloaded, but
+/// the filter cannot be changed once installed - nor installed later, if it was not at startup.
+std::optional<SeccompMode> getInstalledSeccompMode();
 
 #if defined(OS_LINUX)
 

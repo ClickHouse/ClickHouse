@@ -3818,6 +3818,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
 
+    /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded
+    /// configuration that says otherwise does not describe the policy in force.
+    if (const auto seccomp_mode = getInstalledSeccompMode())
+        changeable_settings.insert(
+            {"seccomp", {SettingFieldSeccompMode(*seccomp_mode).toString(), ChangeableWithoutRestart::No}});
+
     /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
     /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.
     const auto & config = context->getConfigRef();

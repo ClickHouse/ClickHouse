@@ -1,5 +1,7 @@
 #include <Common/SeccompFilter.h>
 
+#include <atomic>
+
 /// Declared for the whole file, not inside the architecture branches below: each branch uses only
 /// some of these, and a declaration per branch is a duplicate to the style check, which reads the
 /// file as text.
@@ -7,6 +9,34 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+}
+
+namespace DB
+{
+
+namespace
+{
+
+/// The mode `installSeccompFilter` was called with, or -1 if it has not been called.
+std::atomic<int> installed_mode{-1};
+
+#if defined(OS_LINUX)
+void rememberInstalledMode(SeccompMode mode)
+{
+    installed_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
+}
+#endif
+
+}
+
+std::optional<SeccompMode> getInstalledSeccompMode()
+{
+    const int mode = installed_mode.load(std::memory_order_relaxed);
+    if (mode < 0)
+        return std::nullopt;
+    return static_cast<SeccompMode>(mode);
+}
+
 }
 
 /// A policy is a list of system call numbers, and those are specific to an architecture, so only
@@ -813,6 +843,8 @@ void setNoNewPrivs()
 
 SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 {
+    rememberInstalledMode(mode);
+
     if (mode == SeccompMode::Disabled)
         return {};
 
@@ -929,6 +961,8 @@ namespace DB
 
 SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 {
+    rememberInstalledMode(mode);
+
     if (mode == SeccompMode::Disabled)
         return {};
 

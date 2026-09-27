@@ -2602,6 +2602,16 @@ try
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
+            /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
+            if (const auto installed_seccomp_mode = getInstalledSeccompMode();
+                installed_seccomp_mode && *installed_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
+                LOG_WARNING(
+                    log,
+                    "The `seccomp` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
+                    "after a restart: the seccomp policy of a running process cannot be changed",
+                    SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
+                    new_server_settings[ServerSetting::seccomp].toString());
+
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
             const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
