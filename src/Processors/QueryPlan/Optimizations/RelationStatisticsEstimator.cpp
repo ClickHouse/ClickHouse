@@ -168,14 +168,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     ? static_cast<const ActionsDAG::Node *>(
                           prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats{
-                    .estimated_rows = relation_profile.rows,
-                    .column_stats = relation_profile.column_stats,
-                    .table_name = table_display_name,
-                    .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
-                return stats;
+                /// Statistics of other columns say nothing about the filter, so a relation whose filter reads
+                /// no column with statistics is estimated as if the table had no statistics.
+                if ((!filter && !prewhere_node)
+                    || estimator->filterReadsColumnWithStatistics(reading->getStorageMetadata(), filter, prewhere_node))
+                {
+                    auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                    RelationStats stats{
+                        .estimated_rows = relation_profile.rows,
+                        .column_stats = relation_profile.column_stats,
+                        .table_name = table_display_name,
+                        .source = RowEstimateSource::Statistics};
+                    LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                    return stats;
+                }
             }
         }
         if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
