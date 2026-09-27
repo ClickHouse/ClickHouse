@@ -121,7 +121,7 @@ DROP TABLE cast_04839;
 CREATE TABLE index_04839 (id UInt64, j JSON(a DateTime('UTC')), INDEX paths JSONAllPaths(j) TYPE bloom_filter GRANULARITY 1, INDEX text toString(j) TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO index_04839 SELECT number, if(number = 7, '{"needle":1}', toJSONString(map('a', toString(toDateTime('2020-01-01 00:00:00', 'UTC') + number * 3600)))) FROM numbers(24);
 ALTER TABLE index_04839 MODIFY COLUMN j JSON(a DateTime('UTC'), SHARED REGEXP '^zzz$');
-SELECT 'rules-only alter', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM index_04839 WHERE has(JSONAllPaths(j), 'needle')) WHERE explain LIKE '%Granules%';
+SELECT 'rules-only alter', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM index_04839 WHERE has(JSONAllPaths(j), 'needle') SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Granules%';
 ALTER TABLE index_04839 MODIFY COLUMN j JSON(a DateTime('Asia/Tokyo'), SHARED REGEXP '^yyy$');
 SELECT 'rules and timezone alter', id FROM index_04839 WHERE toString(j) = '{"a":"2020-01-01 09:00:00"}';
 DROP TABLE index_04839;
