@@ -54,6 +54,15 @@ bool hasFloatingPoint(const DataTypePtr & type)
     return found;
 }
 
+/// A `NULL` nested inside a container type (e.g. `Tuple(Nullable(UInt32))`) makes the comparison functions
+/// return `Nullable(UInt8)` and ignores `nulls_direction`; the column comparison path handles both.
+bool hasNestedNullable(const DataTypePtr & type)
+{
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || child.isNullable(); });
+    return found;
+}
+
 }
 
 namespace ErrorCodes
@@ -125,7 +134,7 @@ public:
             auto data_type = arguments[0].type;
 
             if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
-                || hasFloatingPoint(data_type))
+                || hasFloatingPoint(data_type) || hasNestedNullable(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
@@ -150,7 +159,7 @@ private:
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for `Nullable`, collation-aware, floating-point, and non-vectorizable `Tuple` types.
+    /// General path for `Nullable` (also nested), collation-aware, floating-point, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
