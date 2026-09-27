@@ -108,6 +108,7 @@ def make_case(name):
     case.case_file = os.path.join(work_dir, name + ".sh")
     case.ext = ".sh"
     case.tags = set()
+    case.is_concurrent = False
     case.memory_limit = 0
     case.stdout_file = os.path.join(work_dir, name + ".stdout")
     case.stderr_file = os.path.join(work_dir, name + ".stderr")
@@ -115,8 +116,10 @@ def make_case(name):
         bash_tracing_file=os.path.join(work_dir, name + ".xtrace"),
         cloud=False,
         debug_log_file=os.path.join(work_dir, name + ".debuglog"),
+        flaky_check=False,
         hide_db_name=False,
         memory_limit=0,
+        no_self_parallel=False,
         replicated_database=False,
         secure=False,
         shared_catalog=False,
