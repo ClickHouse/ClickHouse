@@ -5,6 +5,8 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
 namespace DB
@@ -18,6 +20,18 @@ class IfConstantConditionVisitor : public InDepthQueryTreeVisitorWithContext<IfC
 public:
     using Base = InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>;
     using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        const auto * query_node = node->as<QueryNode>();
+        if (query_node && foldingMergesGroupingKeys(*query_node))
+            skipped_queries.insert(node.get());
+    }
+
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
+    {
+        return !skipped_queries.contains(parent.get());
+    }
 
     /// After the arguments, so that a chain collapses in one visit and visiting a shared node again is a no-op.
     void leaveImpl(QueryTreeNodePtr & node)
@@ -68,6 +82,41 @@ public:
             node = std::move(nullable_argument_node);
         }
     }
+
+private:
+    /// ROLLUP, CUBE and GROUPING SETS take their grouping sets from the distinct keys, so folding must not make two keys equal.
+    bool foldingMergesGroupingKeys(const QueryNode & query_node) const
+    {
+        if (!query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube() && !query_node.isGroupByWithGroupingSets())
+            return false;
+
+        QueryTreeNodePtrWithHashIgnoreAliasesSet keys;
+        QueryTreeNodePtrWithHashIgnoreAliasesSet folded_keys;
+        auto add_key = [&](const QueryTreeNodePtr & key)
+        {
+            keys.insert(key);
+            auto folded_key = key->clone();
+            IfConstantConditionVisitor(getContext()).visit(folded_key);
+            folded_keys.insert(std::move(folded_key));
+        };
+
+        for (const auto & group_by_node : query_node.getGroupBy().getNodes())
+        {
+            if (query_node.isGroupByWithGroupingSets())
+            {
+                for (const auto & key : group_by_node->as<ListNode &>().getNodes())
+                    add_key(key);
+            }
+            else
+            {
+                add_key(group_by_node);
+            }
+        }
+
+        return folded_keys.size() < keys.size();
+    }
+
+    std::unordered_set<const IQueryTreeNode *> skipped_queries;
 };
 
 }

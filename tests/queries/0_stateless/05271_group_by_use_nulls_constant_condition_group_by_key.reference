@@ -34,6 +34,7 @@ if, rollup, Nullable	true
 if, rollup, Nullable	\N
 if and bare key, rollup	true
 if and bare key, rollup	\N
+if and bare key, rollup	\N
 if, totals	true
 
 if, totals	\N
@@ -51,6 +52,18 @@ other branch not a key	x	1
 other branch not a key	\N	1
 nested, other branch not a key	x	1
 nested, other branch not a key	\N	1
+collapses to another key, rollup			3	1
+collapses to another key, rollup	x		1	1
+collapses to another key, rollup	x	x	0	1
+collapses to another key, cube			1
+collapses to another key, cube		x	1
+collapses to another key, cube	x		1
+collapses to another key, cube	x	x	1
+collapses to another key, grouping sets		x	1
+collapses to another key, grouping sets	x		1
+collapses to another key, rollup, nulls	x	x	1
+collapses to another key, rollup, nulls	x	\N	1
+collapses to another key, rollup, nulls	\N	\N	1
 dictionary condition, rollup	true
 dictionary condition, rollup	\N
 nested dictionary condition, rollup	true

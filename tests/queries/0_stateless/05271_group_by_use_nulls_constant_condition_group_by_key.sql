@@ -122,6 +122,20 @@ GROUP BY k WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nulls = 1;
 SELECT 'nested, other branch not a key', if(0, b, if(0, b, a)) AS k, count() FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0
 GROUP BY k WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nulls = 1;
 
+-- A key that collapses to another key keeps its own grouping sets.
+SELECT 'collapses to another key, rollup', a, if(0, b, if(0, b, a)) AS k, grouping(a, k), count()
+FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY ROLLUP(a, k) ORDER BY a, k;
+
+SELECT 'collapses to another key, cube', a, if(0, b, if(0, b, a)) AS k, count()
+FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY CUBE(a, k) ORDER BY a, k;
+
+SELECT 'collapses to another key, grouping sets', a, if(0, b, if(0, b, a)) AS k, count()
+FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY GROUPING SETS ((a), (k)) ORDER BY a, k;
+
+SELECT 'collapses to another key, rollup, nulls', a, if(0, b, if(0, b, a)) AS k, count()
+FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY ROLLUP(a, k) ORDER BY a NULLS LAST, k NULLS LAST
+SETTINGS group_by_use_nulls = 1;
+
 -- The condition becomes constant only when the dictionary lookup, which matches no key, is optimized away.
 SELECT 'dictionary condition, rollup', (SELECT c0) FROM (SELECT 1::Bool AS c0, 1::UInt64 AS id) t0
 GROUP BY if(dictGet('d05271', 'v', id) = 'x', false, c0) WITH ROLLUP
