@@ -216,16 +216,14 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// Give the step its own input header: a column name in its payload is then identified by where it
     /// sits in that header as well as by its (normalized) text, which is what keeps the same name taken
     /// from two different join inputs apart. See `writeCacheKeyColumnName`.
-    /// The per-step version selects how the step writes its own payload, exactly as it does on the wire
-    /// (`QueryPlan::serialize`): at the default 0 a step that has bumped its format would write the older
-    /// shape here and two steps differing only in a newer field would share a key.
+    /// `step_version` is set below, inside the `isSerializable` guard: `versionToWrite` throws for a step
+    /// the registry does not know, and this runs for every transforming step in the plan, serializable or
+    /// not - a `FilledJoin` (a direct join) reached it and the query failed with `Unknown query plan step`.
     IQueryPlanStep::Serialization ctx{
         .out = wbuf,
         .registry = registry,
         .for_cache_key = true,
         .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-        .step_version = QueryPlanStepRegistry::instance().versionToWrite(
-            transform.getSerializationName(), DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
         .input_header = transform.getInputHeaders().empty() ? nullptr : transform.getInputHeaders().front().get()};
 
     const auto step_name = transform.getSerializationName();
