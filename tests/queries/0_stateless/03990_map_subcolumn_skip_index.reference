@@ -66,6 +66,8 @@ Granules: 1/1
 1	1
 -- text index on mapValues: indexed count, oracle
 1	1
+-- text index with the keyValuePairs tokenizer: indexed count, oracle
+1	1
 -- physical column named m.key_nokey: indexed count, oracle
 1	1
 -- physical column named m.key_nokey, text index on mapKeys: indexed count, oracle

@@ -402,6 +402,25 @@ FROM t_shadow_dynamic_text WHERE hasToken(j.m.key_nokey, 'hello') SETTINGS use_s
 
 DROP TABLE t_shadow_dynamic_text;
 
+DROP TABLE IF EXISTS t_shadow_dynamic_kv;
+
+-- And a `text` index with the `keyValuePairs` tokenizer on the whole map.
+CREATE TABLE t_shadow_dynamic_kv
+(
+    j JSON,
+    `j.m` Map(String, String),
+    INDEX idx `j.m` TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_dynamic_kv VALUES ('{"m.key_nokey":"hello"}', {'abc':'x'});
+
+SELECT '-- text index with the keyValuePairs tokenizer: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_dynamic_kv WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_dynamic_kv WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_dynamic_kv;
+
 DROP TABLE IF EXISTS t_shadow_physical;
 
 -- A physical column can carry the name too.
