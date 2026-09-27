@@ -42,7 +42,6 @@
 #include <Common/quoteString.h>
 
 #include <fmt/ranges.h>
-#include <base/scope_guard.h>
 #include <Core/IdentifierName.h>
 #include <Core/Settings.h>
 
@@ -6439,7 +6438,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             NameSet seen;
             for (const auto & col_name : left_cols)
             {
-                if (col_name.find('.') != std::string::npos)
+                if (col_name.contains('.'))
                     continue;
 
                 auto folded_key = foldIdentifierCaseASCII(col_name);
@@ -6481,7 +6480,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             for (const auto & col_name : left_cols)
             {
                 /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-                if (col_name.find('.') != std::string::npos)
+                if (col_name.contains('.'))
                     continue;
 
                 if (right_cols.contains(col_name) && !seen.contains(col_name))
@@ -6544,7 +6543,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 foldable_name = getFoldableSingleName(identifier_name_.front().spelling, identifier_name_.front().quote, name_match_mode);
             auto alias_is_pinned = [](const String &, const QueryTreeNodePtr & node) { return node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; };
 
-            auto throw_ambiguous = [&](std::vector<String> candidates)
+            auto throw_ambiguous = [&](const std::vector<String> & candidates)
             {
                 throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                     "USING identifier '{}' is ambiguous under standard name matching. Candidates: {}",
@@ -6578,7 +6577,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 if (matched_aliases.size() > 1)
                 {
                     std::ranges::sort(matched_aliases);
-                    throw_ambiguous(std::move(matched_aliases));
+                    throw_ambiguous(matched_aliases);
                 }
 
                 if (first_match)
@@ -6605,7 +6604,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 auto matches = collectFoldedNameMatches(alias_map, foldable_name, alias_is_pinned);
                 if (matches.size() > 1)
-                    throw_ambiguous(std::move(matches));
+                    throw_ambiguous(matches);
                 if (matches.size() == 1)
                     it = alias_map.find(matches.front());
             }
