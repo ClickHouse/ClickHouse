@@ -1147,13 +1147,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_required_by_rebuilt_consumers.emplace(column_name);
         }
 
-        /// A column expired because its `DEFAULT` cannot be materialized here is not dropped from
-        /// the merge when one of those consumers needs it: nothing else would produce it, and the
-        /// TTL step must not (see below). Reading it instead goes through
-        /// `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with the
-        /// offsets the source parts store, so the rebuild sees a well-formed value. The column stays
-        /// in `new_data_part->expired_columns`, so `removeEmptyColumnsFromPart` still drops its
-        /// files from the written `Wide` part and the value is recomputed on read.
+        /// A column expired because its `DEFAULT` cannot be materialized here is not expired after all
+        /// when one of those consumers needs it: nothing else would produce it, and the TTL step must
+        /// not (see below). It is merged and written like any other column instead. Reading it goes
+        /// through `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with
+        /// the offsets the source parts store, so the written `Nested` offsets are not corrupted.
+        /// Writing it is what keeps the rebuilt consumer consistent with the base part: if the column
+        /// were still dropped from the written part, ordinary reads would recompute it from its
+        /// `DEFAULT` without that reconciliation, and could return a value different from the one the
+        /// projection or skip index was built from.
         NameSet columns_kept_for_rebuilt_consumers;
         NameSet columns_to_drop_from_merge;
         for (const auto & name : expired_columns)
@@ -1165,48 +1167,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_to_drop_from_merge.emplace(name);
         }
 
-        /// Such a column has to be produced in the horizontal stage. The vertical stage writes every
-        /// gathered column through its own output stream, which drops the files of an expired column
-        /// and takes it out of the part's column list right away, and the final `finalizePart` would
-        /// then fail to enumerate its streams. Move it, together with the per-column skip indexes
-        /// built from it, the same way `extractMergingAndGatheringColumns` does for a column that
-        /// another merged consumer needs.
-        if (!columns_kept_for_rebuilt_consumers.empty())
+        for (const auto & name : columns_kept_for_rebuilt_consumers)
         {
-            const auto gathering_column_names = global_ctx->gathering_columns.getNameSet();
-            NameSet columns_to_move;
-            for (const auto & name : columns_kept_for_rebuilt_consumers)
-            {
-                if (gathering_column_names.contains(name))
-                    columns_to_move.emplace(name);
-            }
-
-            if (!columns_to_move.empty())
-            {
-                for (const auto & name : columns_to_move)
-                {
-                    auto it = global_ctx->skip_indexes_by_column.find(name);
-                    if (it == global_ctx->skip_indexes_by_column.end())
-                        continue;
-
-                    for (auto & index : it->second)
-                        global_ctx->merging_skip_indexes.push_back(std::move(index));
-
-                    global_ctx->skip_indexes_by_column.erase(it);
-                }
-
-                global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_move);
-
-                /// Keep the order of `storage_columns`, which both lists are derived from.
-                const auto merging_column_names = global_ctx->merging_columns.getNameSet();
-                NamesAndTypesList merging_columns;
-                for (const auto & column : global_ctx->storage_columns)
-                {
-                    if (merging_column_names.contains(column.name) || columns_to_move.contains(column.name))
-                        merging_columns.push_back(column);
-                }
-                global_ctx->merging_columns = std::move(merging_columns);
-            }
+            global_ctx->new_data_part->expired_columns.erase(name);
+            global_ctx->columns_expired_by_unmaterializable_default.erase(name);
         }
 
         global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_drop_from_merge);
@@ -1224,8 +1188,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 /// logically reads. A column expired because its `DEFAULT` cannot be materialized
                 /// here must be left out of that: evaluating it is what writes array sizes that
                 /// disagree with the shared `Nested` offsets, and the expression is not even
-                /// resolvable there when it reads an `ALIAS` column. Such a column is either kept on
-                /// the merge path above, or recomputed on read, where the full context is available.
+                /// resolvable there when it reads an `ALIAS` column. Such a column is either written
+                /// by the merge (see above), or recomputed on read, where the full context is available.
                 if (is_dropped && !global_ctx->columns_expired_by_unmaterializable_default.contains(column.name))
                     expired_out.push_back(column);
 
