@@ -2,6 +2,7 @@
 
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -31,9 +32,9 @@ public:
             auto type_removed_nullable = removeNullable(type);
             WhichDataType which(type_removed_nullable);
 
-            if (which.isDate())
+            if (which.isDateOrDate32())
                 has_date = true;
-            if (which.isDateTime())
+            if (which.isDateTimeOrDateTime64())
                 has_datetime = true;
 
             if (has_date && has_datetime)
@@ -53,7 +54,7 @@ public:
         auto * head = b.GetInsertBlock();
         auto * join = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
 
-        std::vector<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
+        VectorWithMemoryTracking<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
         for (size_t i = 0; i + 1 < arguments.size(); i += 2)
         {
             auto * then = llvm::BasicBlock::Create(head->getContext(), "then_" + std::to_string(i), head->getParent());
@@ -63,7 +64,7 @@ public:
             b.CreateCondBr(nativeBoolCast(b, cond), then, next);
             b.SetInsertPoint(then);
 
-            /// Use `nativeCastWithDecimalScale` to correctly lift integer/float branches to a
+            /// Use `nativeCastWithDecimalScale` to correctly lift integer branches to a
             /// `Decimal` `result_type` (and to convert between `Decimal` types of different scales).
             /// Plain `nativeCast` reinterprets the integer bits without applying the `10^scale`
             /// factor, which silently produces wrong values when the analyzer leaves a non-`Decimal`

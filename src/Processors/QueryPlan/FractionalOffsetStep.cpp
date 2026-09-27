@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/types.h>
 #include <Common/JSONBuilder.h>
@@ -41,6 +42,10 @@ void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, co
     auto transform = std::make_shared<FractionalOffsetTransform>(pipeline.getHeader(), fractional_offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void FractionalOffsetStep::describeActions(FormatSettings & settings) const
@@ -61,12 +66,13 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
-    Float64 offset;
+    Float64 offset = 0;
     readFloatBinary(offset, ctx.in);
 
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalOffset", FractionalOffsetStep::deserialize);

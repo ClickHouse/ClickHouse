@@ -3,9 +3,36 @@
 #include <Common/ColumnsHashing.h>
 
 #include <Columns/ColumnString.h>
+#include <Interpreters/TopKAggregationHeap.h>
+
 namespace DB
 {
 class IColumn;
+
+/// The aggregation "data" is a map (real `mapped_type`, e.g. `AggregateDataPtr`) for normal `GROUP BY`,
+/// and a set (cell reports `VoidMapped`) for `GROUP BY` without aggregate functions. Collapse `VoidMapped`
+/// to `void` so that the shared `ColumnsHashing` `HashMethod`s run in set mode (`has_mapped == false`) over
+/// the set data, while map data is unaffected. Mirrors `SetMethodMapped` in SetVariants.h.
+template <typename TData>
+using AggregationMethodMapped
+    = std::conditional_t<std::is_same_v<typename TData::mapped_type, VoidMapped>, void, typename TData::mapped_type>;
+
+/// A set method holds keys only - no `AggregateDataPtr` per cell - so it has no aggregate state to build,
+/// merge or convert. The halves of `Aggregator` that maintain per-key state are constrained on
+/// `MapAggregationMethod`/`MapAggregationState` and get a `SetAggregation*` overload instead, so that the
+/// state-maintaining code is never instantiated for a set method. That is deliberate rather than incidental:
+/// it will not compile for one (there is no mapped value to take), and it must not silently no-op either.
+template <typename Method>
+concept SetAggregationMethod = std::is_void_v<typename Method::Mapped>;
+template <typename Method>
+concept MapAggregationMethod = !SetAggregationMethod<Method>;
+
+/// The same distinction seen through a `ColumnsHashing` `HashMethod` state, which spells it `has_mapped`.
+template <typename State>
+concept SetAggregationState = !State::has_mapped;
+template <typename State>
+concept MapAggregationState = State::has_mapped;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -14,9 +41,10 @@ struct AggregationMethodOneNumber
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -57,9 +85,10 @@ struct AggregationMethodString
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodString() = default;
 
@@ -93,9 +122,10 @@ struct AggregationMethodStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -120,15 +150,54 @@ struct AggregationMethodStringNoCache
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
 
-/// For the case where there is one fixed-length string key.
+/// For the case where there is one string key, stored as `PackedStringRef`.
 template <typename TData>
-struct AggregationMethodFixedString
+struct AggregationMethodPackedString
 {
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
+
+    AggregationMethodPackedString() = default;
+
+    template <typename Other>
+    explicit AggregationMethodPackedString(const Other & other) : data(other.data)
+    {
+    }
+
+    explicit AggregationMethodPackedString(size_t size_hint) : data(size_hint) { }
+
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodPackedString<typename Data::value_type, Mapped, use_cache>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
+
+    static const bool low_cardinality_optimization = false;
+    static const bool one_key_nullable_optimization = false;
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void
+    insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
+    {
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data(), key.size());
+    }
+};
+
+/// For the case where there is one fixed-length string key.
+template <typename TData>
+struct AggregationMethodFixedString
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = AggregationMethodMapped<Data>;
+
+    Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -159,9 +228,10 @@ struct AggregationMethodFixedStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -196,6 +266,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
+    using Base::top_k_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -228,11 +299,12 @@ struct AggregationMethodKeysFixed
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -277,9 +349,10 @@ struct AggregationMethodSerialized
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
+    TopKAggregationHeap<Key> top_k_heap;
 
     AggregationMethodSerialized() = default;
 

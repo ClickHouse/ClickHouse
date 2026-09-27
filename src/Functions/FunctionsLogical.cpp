@@ -19,6 +19,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstring>
 #include <algorithm>
@@ -33,7 +34,7 @@ REGISTER_FUNCTION(Logical)
         FunctionDocumentation::Description description = R"(
 Calculates the logical conjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
@@ -51,7 +52,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT and(0, 1, -2);", "0"},
-            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "\\N"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -64,7 +65,7 @@ Returns:
         FunctionDocumentation::Description description = R"(
 Calculates the logical disjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](https://clickhouse.com/docs/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
@@ -82,7 +83,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
-            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
+            {"With NULL", "SELECT or(0, NULL);", "\\N"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -157,7 +158,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
@@ -186,7 +187,7 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (Int64 i = static_cast<Int64>(in.size()) - 1; i >= 0; --i)
     {
-        UInt8 x;
+        UInt8 x = 0;
 
         if (in[i]->onlyNull())
             x = func(Null());
@@ -708,7 +709,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
-                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
+                    "argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
         if (!(isNativeNumber(arg_type)
@@ -785,7 +786,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info;
+    MaskInfo mask_info{};
     for (size_t i = 1; i <= arguments.size(); ++i)
     {
         if (inverted)
@@ -833,7 +834,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        std::vector<size_t> short_circuit_args_index;
+        VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)

@@ -4,6 +4,7 @@
 %readonly-tables
 %includes
 %compare-strncmp
+%global-table
 %{
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
@@ -2250,4 +2251,27 @@ const char *glyph;
 "zwj;", "‍"
 "zwnj;", "‌"
 %%
+
+[[maybe_unused]] static constexpr bool html_entity_expansion_within_6_5 = []() constexpr
+{
+    for (const auto & entry : wordlist)
+    {
+        if (entry.glyph == nullptr)
+            continue;
+        size_t name_len = 0;
+        while (entry.name[name_len] != '\0')
+            ++name_len;
+        size_t glyph_len = 0;
+        while (entry.glyph[glyph_len] != '\0')
+            ++glyph_len;
+        if (glyph_len * 5 > (name_len + 1) * 6)
+            return false;
+    }
+    return true;
+}();
+static_assert(
+    html_entity_expansion_within_6_5,
+    "An HTML entity decodes to more than 6/5 of its byte length; "
+    "update the output buffer size in decodeHTMLComponent.cpp");
+
 // NOLINTEND(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr,modernize-macro-to-enum)

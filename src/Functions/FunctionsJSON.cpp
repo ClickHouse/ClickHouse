@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
 
@@ -27,6 +28,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
@@ -48,6 +50,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -126,7 +129,7 @@ public:
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
             size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -252,11 +255,49 @@ public:
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
-            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
-            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
-            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
-            auto merged_type = data_type_object.getSubcolumnType(combined_name);
-            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
+            /// For typed paths getSubcolumn returns only the literal value. For non-typed paths it returns
+            /// a Dynamic column: literal if present, sub-object as JSON if not, NULL otherwise.
+            /// When type_json_skip_null_typed_paths is enabled, use extractCombinedSubcolumn for every path
+            /// (including typed ones) so a NULL typed literal still surfaces a non-empty sub-object, and
+            /// a parent whose typed descendants are all NULL is treated as absent.
+            String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
+            const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+            bool treat_typed_as_always_present = is_typed_path && !skip_null;
+
+            auto merged = skip_null
+                ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
+                : data_type_object.getSubcolumn(combined_name, object_column);
+            auto merged_type = skip_null
+                ? data_type_object.getDynamicType()
+                : data_type_object.getSubcolumnType(combined_name);
+
+            /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
+            /// cast the extracted value to UInt8 and silently return the value itself.
+            constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
+
+            if constexpr (is_has)
+            {
+                if (treat_typed_as_always_present)
+                    return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
+
+                auto result = ColumnVector<UInt8>::create(input_rows_count);
+                auto & data = result->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    data[i] = merged->isNullAt(i) ? 0 : 1;
+                return result;
+            }
+
+            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
+            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
+            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
+
+            if constexpr (is_extract_bool)
+            {
+                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, DataTypeFactory::instance().get("Bool"));
+                return removeNullable(casted);
+            }
 
             /// For JSONExtractRaw: serialize each value as a JSON string
             constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
@@ -268,7 +309,7 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    if (merged->isDefaultAt(i))
+                    if (!treat_typed_as_always_present && merged->isNullAt(i))
                     {
                         raw_col->insertDefault();
                     }
@@ -311,13 +352,13 @@ private:
         String key;
     };
 
-    static std::vector<FunctionJSONHelpers::Move> prepareMoves(
+    static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
         const ColumnsWithTypeAndName & columns,
         size_t first_index_argument,
         size_t num_index_arguments)
     {
-        std::vector<Move> moves;
+        VectorWithMemoryTracking<Move> moves;
         moves.reserve(num_index_arguments);
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
@@ -351,7 +392,7 @@ private:
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser, bool case_insensitive = false>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
-                             const typename JSONParser::Element & document, const std::vector<Move> & moves,
+                             const typename JSONParser::Element & document, const VectorWithMemoryTracking<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
@@ -507,7 +548,7 @@ constexpr bool functionForcesTheReturnType()
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class ExecutableFunctionJSON : public IExecutableFunction
+class ExecutableFunctionJSON final : public IExecutableFunction
 {
 
 public:
@@ -595,7 +636,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class FunctionBaseFunctionJSON : public IFunctionBase
+class FunctionBaseFunctionJSON final : public IFunctionBase
 {
 public:
     explicit FunctionBaseFunctionJSON(
@@ -645,7 +686,7 @@ private:
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver : public IFunctionOverloadResolver
+class JSONOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -660,7 +701,11 @@ public:
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
         , format_settings(getFormatSettings(context))
-    {}
+    {
+        /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
+        /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
+        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -796,7 +841,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        size_t size;
+        size_t size = 0;
         if (element.isArray())
             size = element.getArray().size();
         else if (element.isObject())
@@ -843,7 +888,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
+        static const DataTypeEnum<Int8>::Values values = {
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},
@@ -860,7 +905,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        UInt8 type;
+        UInt8 type = 0;
         switch (element.type())
         {
             case ElementType::INT64:
@@ -914,11 +959,11 @@ public:
         static const std::unique_ptr<JSONExtractTreeNode<JSONParser>> node = buildJSONExtractTree<JSONParser>(std::make_shared<DataTypeNumber<NumberType>>());
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String & error)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, /*no_int_truncation_from_double=*/false, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, /*no_int_truncation_from_double=*/false, format_settings.precise_float_parsing, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
@@ -950,7 +995,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        bool value;
+        bool value = false;
         switch (element.type())
         {
             case ElementType::BOOL:
@@ -1261,7 +1306,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
             )",
             R"(
 1
-0
+1
             )"
         }
         };
@@ -1289,7 +1334,7 @@ SELECT isValidJSON('not JSON') = 0;
             )",
             R"(
 1
-0
+1
             )"
         },
         {
@@ -1308,9 +1353,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 1
 1
 1
-1
 0
-
             )"
         }
         };
@@ -1576,9 +1619,9 @@ Parses JSON and extracts a value with given ClickHouse data type.
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') AS res;
             )",
             R"(
-┌─res──────────────────────────────┐
-│ ('hello',[-100,200,300])         │
-└──────────────────────────────────┘
+┌─res──────────────────────┐
+│ ('hello',[-100,200,300]) │
+└──────────────────────────┘
             )"
         }
         };
@@ -1604,12 +1647,12 @@ Parses key-value pairs from a JSON where the values are of the given ClickHouse 
         {
             "Usage example",
             R"(
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
-            )",
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
+        )",
             R"(
-┌─res────────────────────┐
+┌─res────────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────┘
+└────────────────────────────┘
             )"
         }
         };
@@ -1637,9 +1680,9 @@ Returns a part of JSON as unparsed string.
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────┐
-│ [-100,200.0,300] │
-└──────────────────┘
+┌─res────────────┐
+│ [-100,200,300] │
+└────────────────┘
             )"
         }
         };
@@ -1667,9 +1710,9 @@ Returns an array with elements of JSON array, each represented as unparsed strin
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────────────────┐
-│ ['-100','200.0','"hello"']   │
-└──────────────────────────────┘
+┌─res──────────────────────┐
+│ ['-100','200','"hello"'] │
+└──────────────────────────┘
             )"
         }
         };
@@ -1698,7 +1741,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
             )",
             R"(
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200.0]'),('b','"hello"')] │
+│ [('a','[-100,200]'),('b','"hello"')] │
 └──────────────────────────────────────┘
             )"}
         };
@@ -1726,9 +1769,9 @@ Parses a JSON string and extracts the keys.
 SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
             )",
             R"(
-┌─res─────────┐
-│ ['a','b']   │
-└─────────────┘
+┌─res───────┐
+│ ['a','b'] │
+└───────────┘
             )"
         }
         };

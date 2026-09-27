@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionHighlight : public IFunction
+class FunctionHighlight final : public IFunction
 {
     const UInt64 max_matches_per_row;
 
@@ -157,7 +157,7 @@ public:
                 getName(), needles_array.size());
 
         /// Build string_view vector pointing into the Array's Field storage
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_array.size());
         for (const auto & element : needles_array)
             needles.emplace_back(element.safeGet<String>());

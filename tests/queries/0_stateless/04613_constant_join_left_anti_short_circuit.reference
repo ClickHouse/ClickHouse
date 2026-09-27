@@ -1,0 +1,13 @@
+left anti true, right non-empty
+0
+left anti true, right empty
+10
+left anti false, right non-empty
+10
+right anti true, left non-empty
+0
+right anti true, left empty
+1
+left anti true short-circuits the left side
+0
+1
