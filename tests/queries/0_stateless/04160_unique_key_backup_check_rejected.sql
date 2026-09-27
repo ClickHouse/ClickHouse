@@ -4,7 +4,7 @@
 -- sidecars would be omitted -- they reach the backup now -- but because restore renames every
 -- part while a bitmap names its target in its file name. All keys distinct.
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS uk_guard;
