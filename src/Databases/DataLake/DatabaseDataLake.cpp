@@ -905,8 +905,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto catalog_uuid = table_metadata.getTableUUID();
     const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
 
-    /// Glue and Hive report no table UUID, so a table recreated under the same name and location has the same key;
-    /// the metadata file the catalog points to tells them apart.
+    /// Glue and Hive report no table UUID, so a table recreated under the same name and location has the same key.
     const auto is_same_table = [&](const StatefulTable & entry)
     {
         if (!(entry.endpoint == table_endpoint && entry.uuid == table_uuid && entry.settings_version == settings_version))
@@ -947,7 +946,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached && is_same_table(*cached))
             return reuse_stateful_table(cached->storage);
-        /// A test keeps a mismatched entry, so that the insert below loses the race to a storage of another table.
+        /// Test-only: the mismatched entry stays, so the insert below loses the race to it.
         bool keep_mismatched_entry = false;
         fiu_do_on(FailPoints::datalake_keep_mismatched_stateful_table, { keep_mismatched_entry = true; });
         if (!keep_mismatched_entry)
@@ -1100,8 +1099,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached)
         {
-            /// Lost a race to another query, so ours is not cached. If the cached storage is not this lookup's table,
-            /// this query is served by ours and the next lookup decides about the cached one.
+            /// Lost a race to another query; ours is not cached, and serves this query only if the cached one is another table.
             result_storage->shutdown(/*is_drop*/ false);
             if (is_same_table(*cached))
                 return reuse_stateful_table(cached->storage);

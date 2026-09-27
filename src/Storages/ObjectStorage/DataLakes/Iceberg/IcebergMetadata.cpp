@@ -244,8 +244,7 @@ bool IcebergMetadata::isMetadataFileOfThisTable(const String & path, ContextPtr 
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method);
-    /// A table recreated at the same location writes a `v<N>.metadata.json` under the same name, so a copy of such a
-    /// file cached under this table's uuid can be the previous table's.
+    /// A table recreated at the same location reuses `v<N>.metadata.json` names, so a cached copy can be the old table's.
     const bool name_can_be_reused = isVersionNumberedCommitScheme(std::filesystem::path(metadata_file_path).filename());
     auto metadata_object = getMetadataJSONObject(
         metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method,
