@@ -77,6 +77,17 @@ SELECT match(explain, 'x2\\[[0-9]+\\]') FROM
 )
 WHERE explain LIKE '%Join:%';
 
+-- A filter that reads columns only inside `indexHint` removes no rows and keeps the statistics estimate.
+SELECT match(explain, 'x1\\[[0-9]+\\]') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT x0.Id, x1.Id
+    FROM t1 AS x0
+    INNER JOIN t2 AS x1 ON (CAST(x1.j.eid, 'Nullable(String)') = x0.Id)
+    WHERE has(CAST(x0.j.k, 'Array(String)'), 'A') AND indexHint(has(CAST(x1.j.k, 'Array(String)'), 'C'))
+)
+WHERE explain LIKE '%Join:%';
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;

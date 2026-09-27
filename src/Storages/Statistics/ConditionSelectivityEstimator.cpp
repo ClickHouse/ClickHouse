@@ -304,7 +304,7 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
     return parent_name;
 }
 
-bool ConditionSelectivityEstimator::filterReadsColumnWithStatistics(
+bool ConditionSelectivityEstimator::filterReadsOnlyColumnsWithoutStatistics(
     const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     std::vector<const ActionsDAG::Node *> stack;
@@ -315,6 +315,7 @@ bool ConditionSelectivityEstimator::filterReadsColumnWithStatistics(
             stack.push_back(root);
     }
 
+    bool reads_column = false;
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -340,7 +341,8 @@ bool ConditionSelectivityEstimator::filterReadsColumnWithStatistics(
 
             auto it = column_estimators.find(column_name);
             if (it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
-                return true;
+                return false;
+            reads_column = true;
             continue;
         }
 
@@ -348,7 +350,7 @@ bool ConditionSelectivityEstimator::filterReadsColumnWithStatistics(
             stack.push_back(child);
     }
 
-    return false;
+    return reads_column;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const

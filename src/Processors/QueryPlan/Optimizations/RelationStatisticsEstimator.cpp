@@ -168,10 +168,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     ? static_cast<const ActionsDAG::Node *>(
                           prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                /// Statistics of other columns say nothing about the filter, so a relation whose filter reads
-                /// no column with statistics is estimated as if the table had no statistics.
-                if ((!filter && !prewhere_node)
-                    || estimator->filterReadsColumnWithStatistics(reading->getStorageMetadata(), filter, prewhere_node))
+                /// Statistics of other columns say nothing about the filter, so a relation whose filter reads only
+                /// columns without statistics is estimated as if the table had no statistics.
+                if (!estimator->filterReadsOnlyColumnsWithoutStatistics(reading->getStorageMetadata(), filter, prewhere_node))
                 {
                     auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                     RelationStats stats{
