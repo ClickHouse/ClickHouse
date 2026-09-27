@@ -462,7 +462,7 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
         }
         else
         {
-            /// Residuals over different tables lose their per-branch correlation inside the fused `OR`.
+            /// A cost limit, not needed for the answers: an `OR` over residuals of different tables can only filter joined rows.
             if (residual_sources.size() > 1)
                 return {};
 

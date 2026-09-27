@@ -6896,7 +6896,7 @@ value, whatever that value is: each of them is checked against the fused read or
 per-branch ones, and a query tree cannot tell how either compares to the bound.
 
 A single table is skipped the same way when a limit on how far one read may span is in force for it:
-an effective non-zero `max_partitions_to_read` (the query setting when it is set, the table's own
+an effective positive `max_partitions_to_read` (the query setting when it is set, the table's own
 otherwise), or a table that sets both `max_concurrent_queries` and
 `min_marks_to_honor_max_concurrent_queries` to non-zero values. The fused read spans the union of the
 partitions and the marks the branches read, so each of those is evaluated against that union.

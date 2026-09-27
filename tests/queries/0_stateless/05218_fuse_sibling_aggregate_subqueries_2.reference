@@ -9,7 +9,7 @@
 -- 25 sibling branches must read one snapshot of the table, not one each
 25a fused	0
 25b fused	1
--- 26 residuals over two tables lose their per-branch correlation inside the fused OR; over one table they do not
+-- 26 residuals over two tables are not fused, residuals over one table are
 26a	120	120
 26a	120	120
 26a fused	0

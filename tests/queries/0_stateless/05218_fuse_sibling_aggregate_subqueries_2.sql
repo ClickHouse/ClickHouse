@@ -108,7 +108,7 @@ SELECT '-- 25 sibling branches must read one snapshot of the table, not one each
 SELECT '25a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, enable_shared_storage_snapshot_in_query = 0);
 SELECT '25b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, enable_shared_storage_snapshot_in_query = 1);
 
-SELECT '-- 26 residuals over two tables lose their per-branch correlation inside the fused OR; over one table they do not';
+SELECT '-- 26 residuals over two tables are not fused, residuals over one table are';
 SELECT '26a', a, b FROM (SELECT count() AS a FROM f1, f2 WHERE f1.g = f2.g AND f1.x = 1 AND f2.x = 1) AS x, (SELECT count() AS b FROM f1, f2 WHERE f1.g = f2.g AND f1.x = 2 AND f2.x = 2) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '26a', a, b FROM (SELECT count() AS a FROM f1, f2 WHERE f1.g = f2.g AND f1.x = 1 AND f2.x = 1) AS x, (SELECT count() AS b FROM f1, f2 WHERE f1.g = f2.g AND f1.x = 2 AND f2.x = 2) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '26a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM f1, f2 WHERE f1.g = f2.g AND f1.x = 1 AND f2.x = 1) AS x, (SELECT count() AS b FROM f1, f2 WHERE f1.g = f2.g AND f1.x = 2 AND f2.x = 2) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
