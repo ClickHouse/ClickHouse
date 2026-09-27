@@ -154,6 +154,14 @@ void MergeTreeReaderStream::init()
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)
 {
     init();
+
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
+    {
+        seekToMark(MarkInCompressedFile{0, 0});
+        return;
+    }
+
     loadMarks();
 
     const auto & mark = marks_getter->getMark(row_index, column_position);
@@ -214,6 +222,11 @@ size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, si
 
 bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
 {
+    /// All marks of an empty file point to its beginning, so there is at most one distinct mark,
+    /// and there is no need to load them.
+    if (file_size == 0)
+        return (marks_count == 0 ? 0 : 1) <= max_transitions;
+
     auto marks = marks_loader->loadMarks();
 
     size_t num_distinct = 0;
@@ -284,6 +297,10 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 
     /// Special case, can happen in Collapsing/Replacing engines
     if (marks_count == 0)
+        return 0;
+
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
         return 0;
 
     chassert(right_mark <= marks_count);
@@ -376,6 +393,10 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 
 std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumn::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
 {
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
+        return {0, 0};
+
     loadMarks();
 
     size_t max_range_bytes = 0;

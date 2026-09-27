@@ -356,6 +356,8 @@ std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 }
 
 
+/// Shared with `MergeTreeData::checkMutationIsPossible`, so of the commands that reach the
+/// heavyweight mutation path, the ones answering here are exactly the ones it refuses.
 bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
