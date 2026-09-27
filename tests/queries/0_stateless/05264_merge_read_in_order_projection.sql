@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_partial;
 DROP TABLE IF EXISTS t_merge;
 DROP TABLE IF EXISTS t_agree;
+DROP TABLE IF EXISTS t_desc;
 
 CREATE TABLE t_proj (a Int32, b Int32, PROJECTION p (SELECT a, b ORDER BY b)) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_proj SELECT number % 10, number FROM numbers(100000);
@@ -62,6 +63,14 @@ SELECT count() > 0 FROM (
     SETTINGS force_optimize_projection = 1, explain_query_plan_default = 'pretty'
 ) WHERE explain ILIKE '%Read type: InOrder%';
 
+-- A projection sorted ascending by the column that the table's key sorts descending is not read in order either.
+CREATE TABLE t_desc (a Int32, b Int32, PROJECTION p (SELECT a, b ORDER BY (a, b))) ENGINE = MergeTree ORDER BY a DESC;
+INSERT INTO t_desc SELECT number % 10, number FROM numbers(1000);
+SELECT groupArray(a) FROM (SELECT a FROM merge(currentDatabase(), '^t_desc$') WHERE b < 5000 ORDER BY a DESC LIMIT 12) SETTINGS prefer_optimize_projection = 1;
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT groupArray(a) FROM (SELECT a FROM merge(currentDatabase(), '^t_desc$') WHERE b < 5000 ORDER BY a DESC LIMIT 12)
+    SETTINGS prefer_optimize_projection = 1, force_optimize_projection_name = 'p', explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Read type: Default%';
+
+DROP TABLE t_desc;
 DROP TABLE t_agree;
 DROP TABLE t_merge;
 DROP TABLE t_plain;
