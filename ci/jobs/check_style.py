@@ -11,6 +11,12 @@ from pathlib import Path
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
+from ci.jobs.scripts.settings_history import (
+    SETTINGS_DECLARATION_FILES,
+    current_version as settings_current_version,
+    violation_message as settings_violation_message,
+    violations as settings_history_violations,
+)
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -1273,260 +1279,39 @@ def check_clickhouse_spelling():
     return ""
 
 
-# Where the settings themselves are declared, per `SettingsChangesHistory.cpp` namespace. Used to
-# tell a setting that a change REMOVED from the code apart from one that still exists - only the
-# latter can be recorded in the history at all (see `check_settings_changes_history`). Mirrors
-# `LIST_OF_SETTINGS` in src/Core/Settings.cpp and `MERGE_TREE_SETTINGS` in
-# src/Storages/MergeTree/MergeTreeSettings.cpp.
-_SETTINGS_DECLARATION_SOURCES = {
-    "Session": ("src/Core/Settings.cpp", "src/Core/FormatFactorySettings.h"),
-    "MergeTree": ("src/Storages/MergeTree/MergeTreeSettings.cpp",),
-}
-
-# `DECLARE(Type, name, default, R"(...)", tier)` and its aliasing variant.
-_SETTINGS_DECLARE_RE = re.compile(
-    r"^\s*DECLARE(?:_WITH_ALIAS)?\(\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
-)
-# `MAKE_OBSOLETE(M, Type, name, default)` and friends. An obsolete or deprecated setting is still
-# a setting - it keeps its row in system.settings - so its history records are still required.
-# The longest alternative comes first: `MAKE_OBSOLETE` is a prefix of
-# `MAKE_OBSOLETE_MERGE_TREE_SETTING`.
-_SETTINGS_OBSOLETE_RE = re.compile(
-    r"^\s*MAKE_(?:OBSOLETE_MERGE_TREE_SETTING|OBSOLETE|DEPRECATED_BY_SERVER_CONFIG)\("
-    r"\s*\w+\s*,\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
-)
-# The alias of a `DECLARE_WITH_ALIAS` sits on the line that closes the declaration:
-# `)", 0, insert_distributed_sync) \`. An alias is a settable name of its own - system.settings
-# has a row for it and history records may use it, `applyCompatibilitySetting` resolves aliases -
-# so it counts as declared.
-_SETTINGS_ALIAS_RE = re.compile(r'^\)"\s*,\s*[^,]+,\s*([A-Za-z0-9_]+)\)\s*\\?\s*$')
-
-
-def declared_setting_names():
-    """`({namespace: {name, ...}}, "")` for every setting declared in the checked-out tree, or
-    `(None, error)` when the declarations could not be read.
-
-    Fail-close: a missing file or a namespace that parses to nothing means the declaration macros
-    or their files moved, and quietly returning an empty set would exempt every setting from the
-    current-version-block rule in `check_settings_changes_history`. Pure text parsing of the
-    declaration macros."""
-    names = {}
-    for namespace, sources in _SETTINGS_DECLARATION_SOURCES.items():
-        found = set()
-        for source in sources:
-            source_path = Path(source)
-            if not source_path.is_file():
-                return None, (
-                    f"Cannot validate the settings history: the {namespace} settings are "
-                    f"declared in {source}, which does not exist. If the declarations moved, "
-                    f"update _SETTINGS_DECLARATION_SOURCES in ci/jobs/check_style.py."
-                )
-            for line in source_path.read_text(
-                encoding="utf-8", errors="ignore"
-            ).splitlines():
-                for regexp in (
-                    _SETTINGS_DECLARE_RE,
-                    _SETTINGS_OBSOLETE_RE,
-                    _SETTINGS_ALIAS_RE,
-                ):
-                    m = regexp.match(line)
-                    if m:
-                        found.add(m.group(1))
-                        break
-        if not found:
-            return None, (
-                f"Cannot validate the settings history: no {namespace} setting declaration was "
-                f"found in {', '.join(sources)}. If the declaration macros changed, update the "
-                f"parser in ci/jobs/check_style.py."
-            )
-        names[namespace] = found
-    return names, ""
-
-
 def check_settings_changes_history():
-    """Every setting added, value-changed, removed, moved to another block, or sitting in a
-    block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
-    this change must be recorded under the CURRENT version block (in addition to any older block
-    used for backports), so the settings history stays consistent with the release version
-    (together with the 03999_stateless_settings_history functional test, which checks that
-    the recorded value matches the final Settings state).
+    """The settings-history rules of ci/jobs/scripts/settings_history.py, applied to the PR / merge-queue diff of
+    the settings declaration files as parsed by the store_data.py workflow hook. The same check runs locally with
+    `python3 -m ci.jobs.scripts.settings_history`. Returns "" on success or a non-empty error string on failure
+    (consumed by Result.from_commands_run).
 
-    Removals count too: the functional test only compares the current default with the NEWEST
-    recorded value, so a change that reverts a default to an older value could delete the record
-    of the original change instead of recording the revert, and both guards would stay green
-    while `compatibility` would hand out the wrong value for the release that shipped the other
-    default. Deleting a phantom record stays possible - see the gate below, it is a change that
-    touches this file alone. Moves count for the same reason: re-adding an unchanged record under
-    an older block leaves the newest recorded value intact, so the functional test passes while
-    `compatibility` attributes the default flip to the wrong release. A block header edit does
-    the same to every record of that block at once, without touching a single entry line, so
-    such a change reports the whole block.
-
-    A record RENAMED in place - removed and re-added in the same block, identical apart from the
-    setting name - is reported under the new name only (see `parse_settings_history_changes`).
-    The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
-    rejects a documented name that no longer exists, so requiring it would leave no history file
-    that satisfies both guards.
-
-    A setting REMOVED from the code is exempt for the same reason: its records have to go with it.
-    A record naming a setting that is not in system.settings / system.merge_tree_settings is
-    rejected by 03999_stateless_settings_history, and `applyCompatibilitySetting` resolves every
-    recorded name, so nothing can be recorded for a setting that no longer exists - demanding an
-    entry would leave no way to drop a setting that was never released. The exemption is also safe:
-    `compatibility` only ever restores values of settings that exist, so a setting that is gone has
-    no default left for any release to disagree about - unlike the deletion of a record of a
-    setting that stays, which is what the removals paragraph above is about. A setting that is
-    merely made OBSOLETE keeps its row in system.settings, so its records stay required; only a
-    real removal is exempt.
-
-    Runs only when that file changed; the list of changed setting names is provided by the
-    store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
-    success or a non-empty error string on failure (consumed by Result.from_commands_run).
-    Pure text parsing - no C++ syntax analysis.
-
-    A change that touches no C++ source at all besides SettingsChangesHistory.cpp cannot have
-    changed any setting's compiled default, so it is a historical correction - fixing what a past
-    release recorded - not a default change made now, and it is allowed (the check skips).
-    Requiring it under the current version block would tell `compatibility` the value changed
-    again in this release. The gate deliberately keys off any src/ source file rather than the
-    declaration files alone: a default can come from a constant defined elsewhere (for example
-    `DEFAULT_INSERT_BLOCK_SIZE` or `DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC` in src/Core/Defines.h),
-    and a narrower gate would let such a change be recorded in an older block unnoticed. Build
-    definitions are treated the same way: defaults also switch on compile definitions such as
-    `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE`, which come from CMake files and config
-    templates, so changes to CMakeLists.txt / *.cmake / *.h.in also enforce the rule.
-
-    Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
-    queue), fail rather than silently pass - a green here would defeat the purpose."""
-    path = "src/Core/SettingsChangesHistory.cpp"
+    Fail-close: if a declaration file changed but the hook could not fetch the diff (e.g. in the merge queue),
+    fail rather than silently pass - a green here would defeat the purpose."""
     kv = Info().get_kv_data() or {}
     changed_files = kv.get("changed_files")
 
     if changed_files is None:
         # changed_files is stored fail-close by the store_data.py hook for every PR and
-        # merge-queue run; its absence means the check cannot know whether the file changed.
+        # merge-queue run; its absence means the check cannot know whether the files changed.
         return (
             "Could not determine changed files (no 'changed_files' recorded by the "
             "store_data.py workflow hook); refusing to pass the settings-history check."
         )
-    if path not in changed_files:
-        # The history file was not changed in this run - nothing to validate.
-        return ""
-
-    # A change that touches no default-bearing source besides this file cannot have changed any
-    # setting's compiled default, so it is a historical correction (fixing what a past release
-    # recorded), not a default change made now - it must not be forced into the current version
-    # block. Enforce the current-block rule as soon as any other source file changed: defaults
-    # are not only written in the declaration files, they can come from constants defined
-    # anywhere (for example src/Core/Defines.h). Build definitions count as sources too:
-    # defaults switch on compile definitions such as `CLICKHOUSE_CLOUD` and
-    # `ENABLE_DISTRIBUTED_CACHE`, which are driven by CMake files and config templates
-    # (CMakeLists.txt, *.cmake, src/Common/config.h.in), so anything narrower would leave a
-    # silent hole. The price is over-strictness for a change that corrects an old entry and
-    # edits unrelated code in the same commit - the message below says how to proceed.
-    def is_default_bearing_source(f):
-        if f == path:
-            return False
-        if f.startswith("src/") and f.endswith((".h", ".cpp", ".inc")):
-            return True
-        return f.rsplit("/", 1)[-1] == "CMakeLists.txt" or f.endswith(
-            (".cmake", ".cmake.in", ".h.in", ".hpp.in")
-        )
-
-    other_sources_changed = any(is_default_bearing_source(f) for f in changed_files)
-    if not other_sources_changed:
+    if not any(path in changed_files for path in SETTINGS_DECLARATION_FILES):
         return ""
 
     fetch_error = kv.get("settings_history_fetch_error")
-    changed = kv.get("settings_history_changed_settings")
-    if fetch_error or changed is None:
+    changes = kv.get("settings_declaration_changes")
+    if fetch_error or changes is None:
         return (
-            f"{path} changed but its diff could not be fetched to validate the settings "
-            f"history (the check must not be skipped when the file changed). "
+            f"The settings declaration files changed but their diff could not be fetched to "
+            f"validate the settings history (the check must not be skipped when they changed). "
             f"Error: {fetch_error or 'no data recorded by the store_data.py workflow hook'}."
         )
-    if not changed:
-        # The file changed but no setting record was added, value-edited, removed or moved and
-        # no block header changed (e.g. only reason-text edits, or entries reordered inside one
-        # block) - nothing to validate against the current version block.
-        return ""
 
-    declared, declared_error = declared_setting_names()
-    if declared_error:
-        return declared_error
-
-    def setting_still_exists(item):
-        """Whether the reported setting is still declared, i.e. whether the history can record it
-        at all - a setting this change removed from the code cannot be recorded anywhere (see the
-        removal paragraph in the docstring). Direction-agnostic on purpose: a record ADDED for a
-        name that is not declared is a dangling record, which 03999_stateless_settings_history
-        rejects outright, so there is nothing for this check to demand on top of that."""
-        declared_in_namespace = declared.get(item["namespace"])
-        if declared_in_namespace is None:
-            # An unrecognized namespace cannot be resolved to declarations - do not exempt it.
-            return True
-        return item["name"] in declared_in_namespace
-
-    changed = [item for item in changed if setting_still_exists(item)]
-    if not changed:
-        # Every reported setting was removed from the code by this change - nothing left to
-        # record in the current version block.
-        return ""
-
-    version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
-    current_version = "{}.{}".format(
-        re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
-        re.search(r"SET\(VERSION_MINOR (\d+)\)", version_txt).group(1),
-    )
-
-    namespace_by_map = {
-        "settings_changes_history": "Session",
-        "merge_tree_settings_changes_history": "MergeTree",
-    }
-    block_re = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
-    entry_re = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
-
-    # Names recorded under the current version block, per namespace, from the final file.
-    current_block = {"Session": set(), "MergeTree": set()}
-    namespace, version = None, None
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            mb = block_re.search(line)
-            if mb and mb.group(1) in namespace_by_map:
-                namespace, version = namespace_by_map[mb.group(1)], mb.group(2)
-                continue
-            me = entry_re.match(line)
-            if me and namespace and version == current_version:
-                current_block[namespace].add(me.group(1))
-
-    # `changed` is a list of {"namespace", "name"} records produced by the hook, where the
-    # namespace is taken from the block the added line sits in - so an overlapping name
-    # changed only in one namespace is not spuriously required in the other.
-    violations = []
-    for item in changed:
-        namespace, name = item["namespace"], item["name"]
-        if name not in current_block.get(namespace, set()):
-            violations.append(
-                f"  {namespace} setting '{name}' must be recorded in the '{current_version}' block"
-            )
-
-    if violations:
-        return (
-            f"These settings were added, value-changed, removed, moved to another block, or "
-            f"sit in a block whose `addSettingsChanges` header changed, in {path}, "
-            f"but are not recorded "
-            f"under the current version ('{current_version}') block of "
-            f"SettingsChangesHistory.cpp. Add "
-            f"an entry for each under the '{current_version}' block (older blocks may keep their "
-            f"entries for backports). If this is a correction of what an older release recorded "
-            f"and not a default change made here, split it into a change that touches only "
-            f"{path}. If you REMOVED a setting from the code, remove its declaration in this "
-            f"same change - a record is only demanded for a setting that is still declared. "
-            f"If you RENAMED a setting, keep its record in the same block and change "
-            f"only the name in it - the values and the reason text must stay identical for the "
-            f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
-        )
-    return ""
+    version = settings_current_version()
+    found = settings_history_violations(changes, version)
+    return settings_violation_message(found, version) if found else ""
 
 
 def parse_args():

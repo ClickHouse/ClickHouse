@@ -37,7 +37,7 @@ SETTINGS serialize_query_plan = 1,
          max_threads = 0,
          use_concurrency_control = 0,
          -- Required by the second firing oracle below. It defaults true, but it flipped false to
-         -- true in the 24.3 block of `SettingsChangesHistory.cpp`, so a `compatibility` draw
+         -- true in its 24.3 history record, so a `compatibility` draw
          -- below 24.3 turns it off and that oracle would silently read 0.
          log_processors_profiles = 1,
          log_comment = '04653_merging_aggregated_deserialized_thread_count';
