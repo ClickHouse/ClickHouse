@@ -1245,7 +1245,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
-        /// A search that accepts only a string haystack reads only the path's `String` values, whose text the index holds.
+        /// Only a `String` value, whose text the index holds, can satisfy a search that accepts only a string haystack.
         const bool reads_only_strings = !index_column_node.isFunction() && searchesOnlyStrings(function_name)
             && WhichDataType(value_type).isStringOrFixedString();
         if (!reads_only_strings && readsDynamicOrVariantValues(index_column_node))
