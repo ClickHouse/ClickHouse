@@ -108,16 +108,22 @@ namespace DB
         }
 
         String database_name = loop_database_name;
+        String table_name = loop_table_name;
+        /// central resolution fills the current database and any namespace prefix
         if (database_name.empty())
-            database_name = context->getCurrentDatabase();
+        {
+            const auto resolved = context->resolveStorageID({"", table_name}, Context::ResolveOrdinary);
+            database_name = resolved.database_name;
+            table_name = resolved.table_name;
+        }
 
         /// Reading the schema requires SHOW COLUMNS, same as a direct DESCRIBE of the table.
-        context->checkAccess(AccessType::SHOW_COLUMNS, database_name, loop_table_name);
+        context->checkAccess(AccessType::SHOW_COLUMNS, database_name, table_name);
 
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        auto storage = database->tryGetTable(loop_table_name, context);
+        auto storage = database->tryGetTable(table_name, context);
         if (!storage)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", table_name, database_name);
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         return metadata_snapshot->getColumns();
@@ -134,14 +140,20 @@ namespace DB
         if (!inner_table_function_ast)
         {
             String database_name = loop_database_name;
+            String inner_table_name = loop_table_name;
+            /// central resolution fills the current database and any namespace prefix
             if (database_name.empty())
-                database_name = context->getCurrentDatabase();
+            {
+                const auto resolved = context->resolveStorageID({"", inner_table_name}, Context::ResolveOrdinary);
+                database_name = resolved.database_name;
+                inner_table_name = resolved.table_name;
+            }
 
             auto database = DatabaseCatalog::instance().getDatabase(database_name);
-            storage = database->tryGetTable(loop_table_name, context);
+            storage = database->tryGetTable(inner_table_name, context);
             if (!storage)
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
-            context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", inner_table_name, database_name);
+            context->checkAccess(AccessType::SELECT, database_name, inner_table_name);
 
             /// An `Alias` publishes its target's metadata to the caller before any row is read, so
             /// the target must be readable in full here; the per-column check happens later, once
@@ -151,7 +163,7 @@ namespace DB
                 throw Exception(
                     ErrorCodes::ACCESS_DENIED,
                     "Not enough privileges to read the table that {} points to",
-                    StorageID{database_name, loop_table_name}.getNameForLogs());
+                    StorageID{database_name, inner_table_name}.getNameForLogs());
         }
         else
         {

@@ -1,0 +1,12 @@
+-- scope entered, physical database reported
+1	1
+1
+-- creating a database named db.ns must not retarget the active scope
+1
+1
+ns.t
+-- the next USE re-evaluates the name, now the exact database wins
+1
+0
+-- dropping the database must not silently turn the session into a scope
+1

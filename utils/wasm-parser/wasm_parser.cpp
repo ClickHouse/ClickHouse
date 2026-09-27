@@ -95,7 +95,8 @@ DB::ASTPtr parse(const char * query, uint32_t size, std::string & error, DB::Par
     DB::ParserQuery parser(end);
     return DB::tryParseQuery(
         parser, query, end, error, /*hilite=*/false, "query", /*allow_multi_statements=*/false,
-        MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/true, diagnostics);
+        MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/true,
+        /*allow_multipart_table_paths=*/false, diagnostics);
 }
 
 void writeJSONText(std::string_view text, DB::WriteBuffer & out)

@@ -17,6 +17,7 @@
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -170,6 +171,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <fmt/format.h>
 
 namespace fs = std::filesystem;
 
@@ -304,6 +306,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
@@ -1588,7 +1591,7 @@ const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; 
 
 String Context::resolveDatabase(const String & database_name) const
 {
-    String res = database_name.empty() ? getCurrentDatabase() : database_name;
+    String res = database_name.empty() ? getCurrentDatabase().getFullName() : database_name;
     if (res.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
     return res;
@@ -2242,26 +2245,28 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
-    if (!database.empty())
-        DatabaseCatalog::instance().assertDatabaseExists(database);
 
-    /// Apply user's profiles, constraints, settings, roles.
-    std::lock_guard lock(mutex);
+    {
+        /// Apply user's profiles, constraints, settings, roles.
+        std::lock_guard lock(mutex);
 
-    setUserIDWithLock(user_id_, lock);
+        setUserIDWithLock(user_id_, lock);
 
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
-    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
+        /// A profile can specify a value and a readonly constraint for same setting at the same time,
+        /// so we shouldn't check constraints here.
+        setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(default_roles, lock);
-    setExternalRolesWithLock(external_roles_, lock);
-    setAuthenticationGrantsWithLock(authentication_grants_, lock);
-    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
+        setCurrentRolesWithLock(default_roles, lock);
+        setExternalRolesWithLock(external_roles_, lock);
+        setAuthenticationGrantsWithLock(authentication_grants_, lock);
+        setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
+    }
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
+    /// A dotted name may select a namespace; validate it with the user's own profiles
+    /// already applied, and never under the mutex (the validation may query a catalog).
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
+        setCurrentDatabase(database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -2479,7 +2484,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database.getFullName(), client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -3184,9 +3189,10 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
+    String database_name = getCurrentDatabase().getFullName();
     String table_name = function->name;
 
+    bool view_name_is_qualified = false;
     if (function->isCompoundName())
     {
         std::vector<std::string> parts;
@@ -3196,8 +3202,15 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         {
             database_name = std::move(parts[0]);
             table_name = std::move(parts[1]);
+            view_name_is_qualified = true;
         }
     }
+
+    /// an unqualified (param view) name would bind to the parent database, ignoring the selected namespace
+    if (!view_name_is_qualified && getCurrentDatabase().hasTablePrefix())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Parameterized views and unqualified table functions are not supported while a table "
+            "namespace is selected; qualify the name with its database");
 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
@@ -3840,12 +3853,11 @@ void Context::setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const Set
     settings_constraints_and_current_profiles = std::move(constraints_and_profiles);
 }
 
-String Context::getCurrentDatabase() const
+CurrentDatabaseInfo Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
     return current_database;
 }
-
 
 String Context::getInitialQueryId() const
 {
@@ -3867,27 +3879,46 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     if (!current_database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Default database name cannot be changed in global context without server restart");
 
-    current_database = name;
+    /// a physical database name, never a namespace path
+    current_database = CurrentDatabaseInfo(doubleQuoteString(name));
 }
 
 /// Existence is checked by the callers before they take `mutex`: the check resolves typo hints,
 /// which read this same `mutex`.
-void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(const CurrentDatabaseInfo & database_info, const std::lock_guard<ContextSharedMutex> &)
 {
-    if (name.empty())
+    if (database_info.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    current_database = name;
-    mirrorCurrentDatabaseIntoSetting(name);
+    current_database = database_info;
+    mirrorCurrentDatabaseIntoSetting(database_info.getFullName());
     need_recalculate_access = true;
 }
 
 void Context::setCurrentDatabase(const String & name)
 {
-    DatabaseCatalog::instance().assertDatabaseExists(name);
+    const auto info = CurrentDatabaseInfo(name);
+
+    /// a quoted spelling resolved to another name: constraints on `database` must see what is selected
+    if (info.getFullName() != name)
+    {
+        SettingsChanges database_change;
+        database_change.setSetting("database", info.getFullName());
+        checkSettingsConstraints(std::as_const(database_change), SettingSource::QUERY);
+    }
+
+    DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(info);
 
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
+    setCurrentDatabaseWithLock(info, lock);
+}
+
+void Context::setCurrentDatabase(const CurrentDatabaseInfo & database_info)
+{
+    DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(database_info);
+
+    std::lock_guard lock(mutex);
+    setCurrentDatabaseWithLock(database_info, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3896,7 +3927,8 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
     std::lock_guard lock(mutex);
-    current_database = name;
+    /// a physical database name, never a namespace path
+    current_database = CurrentDatabaseInfo(doubleQuoteString(name));
     mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
 }
@@ -8507,7 +8539,11 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected"));
             return StorageID::createEmpty();
         }
-        storage_id.database_name = current_database;
+        storage_id.database_name = current_database.getDatabasePart();
+        /// the current database may be a logical namespace path, fold it into the table name
+        if (current_database.hasTablePrefix())
+            storage_id.table_name = fmt::format("{}.{}", current_database.getTablePrefixPart(), storage_id.table_name);
+
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }

@@ -547,7 +547,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         /// uses the credential later. There is no context when the user is loaded from a storage, but
         /// in that case the elements were already bound at the time of CREATE/ALTER.
         if (context)
-            grants.replaceEmptyDatabase(context->getCurrentDatabase());
+            grants.replaceEmptyDatabase(context->getCurrentDatabase().getFullName());
 
         /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
         /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter

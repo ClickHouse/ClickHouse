@@ -16,6 +16,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
 {
     for (const auto & name : CompressionCodecFactory::instance().getGateSettingNames())
         context->setSetting(name, 1);
+    context->setSetting("allow_experimental_table_namespaces", 1);
     context->setSetting("allow_experimental_funnel_functions", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_fuzz_query_functions", 1);

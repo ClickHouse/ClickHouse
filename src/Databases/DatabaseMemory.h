@@ -19,6 +19,8 @@ namespace DB
 class DatabaseMemory final : public DatabaseWithOwnTablesBase
 {
 public:
+    TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::Lexical; }
+
     DatabaseMemory(const String & name_, ContextPtr context);
 
     String getEngineName() const override { return "Memory"; }

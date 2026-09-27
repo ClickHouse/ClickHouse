@@ -29,6 +29,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
@@ -428,7 +429,10 @@ void TCPHandler::runImpl()
         receiveHello();
 
         if (!default_database.empty())
-            DatabaseCatalog::instance().assertDatabaseExists(default_database);
+        {
+            const auto database_info = CurrentDatabaseInfo(default_database);
+            DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(database_info);
+        }
 
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)

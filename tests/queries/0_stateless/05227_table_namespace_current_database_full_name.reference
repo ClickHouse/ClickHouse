@@ -1,0 +1,13 @@
+-- query_log keeps the full name, currentDatabase() the physical database
+1
+1
+-- a deeper path splits at the first dot only
+3
+1
+full_name_ns_DB	DB.ns
+full_name_sub_DB	DB.ns.sub
+-- the query result cache keys the database and the namespace separately
+1
+2
+-- a quoted dotted database name is not split
+t

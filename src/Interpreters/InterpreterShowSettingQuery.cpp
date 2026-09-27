@@ -41,7 +41,7 @@ void registerInterpreterShowSettingQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowSettingQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowSettingQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowSettingQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

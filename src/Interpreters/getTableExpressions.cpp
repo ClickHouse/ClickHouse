@@ -188,7 +188,7 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
 {
     TablesWithColumns tables_with_columns;
 
-    String current_database = context->getCurrentDatabase();
+    String current_database = context->getCurrentDatabase().getFullName();
 
     for (const ASTTableExpression * table_expression : table_expressions)
     {

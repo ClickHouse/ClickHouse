@@ -26,6 +26,7 @@
 #include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -294,7 +295,22 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
-    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
+    if (const auto database_info = getContext()->getCurrentDatabase(); database_info.hasTablePrefix())
+    {
+        const bool has_unqualified_target
+            = (show_query.database_and_table_name && show_query.database_and_table_name->first.empty())
+            || (show_query.row_policy_names
+                && std::any_of(show_query.row_policy_names->full_names.begin(), show_query.row_policy_names->full_names.end(),
+                    [](const auto & full_name) { return full_name.database.empty(); }));
+        if (has_unqualified_target)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "An unqualified policy target is not supported while a table namespace is selected "
+                "(USE {}.{}); qualify the table with its database explicitly",
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()));
+    }
+
+    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
@@ -453,7 +469,7 @@ void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory
     {
         return std::make_unique<InterpreterShowCreateAccessEntityQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowCreateAccessEntityQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowCreateAccessEntityQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

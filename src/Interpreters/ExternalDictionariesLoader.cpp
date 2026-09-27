@@ -96,7 +96,7 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    auto resolved = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    auto resolved = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase().getFullName());
     local_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, resolved.qualified_name.getFullName());
     return std::move(resolved.key);
 }
@@ -236,7 +236,7 @@ void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::stri
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
     /// Recording usage needed to verify if query is supported for distributed execution under make_distributed_plan=1
-    const auto name = qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
+    const auto name = qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase().getFullName());
     query_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, name.getFullName());
     return name;
 }

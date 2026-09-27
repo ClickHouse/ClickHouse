@@ -41,6 +41,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsString database;
@@ -237,7 +238,7 @@ void LocalConnection::sendQuery(
     /// but don't attempt to do it if we are already in that database.
     /// (there is a rare case when it matters - if we deleted the current database,
     // we can still do some queries, but we cannot switch to the same database)
-    if (!current_database.empty() && current_database != query_context->getCurrentDatabase())
+    if (!current_database.empty() && current_database != query_context->getCurrentDatabase().getFullName())
         query_context->setCurrentDatabase(current_database);
 
     /// Keep the `database` setting consistent with the connection's current database. The setting is
@@ -274,6 +275,7 @@ void LocalConnection::sendQuery(
     state->allow_settings_after_format_in_insert = query_context->getSettingsRef()[Setting::allow_settings_after_format_in_insert];
     state->implicit_select = query_context->getSettingsRef()[Setting::implicit_select];
     state->enable_trino_dialect = query_context->getSettingsRef()[Setting::enable_trino_dialect];
+    state->allow_experimental_table_namespaces = query_context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
     state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
     state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
     state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
@@ -391,7 +393,8 @@ void LocalConnection::sendQuery(
                 /*allow_multi_statements*/ false,
                 state->max_query_size,
                 state->max_parser_depth,
-                state->max_parser_backtracks);
+                state->max_parser_backtracks,
+                state->allow_experimental_table_namespaces);
         }
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
