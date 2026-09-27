@@ -1170,7 +1170,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// non-constant child, and reads nothing out of an `isNotDistinctFrom` or anything below an `or`. Each
 /// miss costs it one optimization. A miss here would let the fragment read in order off a condition the
 /// replicas do not have, so this stays a superset of whatever that analysis can find.
-static bool mayFixColumn(const ActionsDAG::Node * condition)
+/// With `only_those_the_splice_drops`, count only an equality the splice into the query the replicas run
+/// cannot carry - per equality rather than per condition, because the splice drops one conjunct and keeps
+/// the others.
+static bool mayFixColumn(const ActionsDAG::Node * condition, bool only_those_the_splice_drops = false)
 {
     std::vector<const ActionsDAG::Node *> stack{condition};
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -1184,46 +1187,13 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
-            if (name == "equals" || name == "isNotDistinctFrom")
+            if ((name == "equals" || name == "isNotDistinctFrom")
+                && (!only_those_the_splice_drops || remoteRewriteDropsCondition(*node)))
                 return true;
         }
 
         for (const auto * child : node->children)
             stack.push_back(child);
-    }
-
-    return false;
-}
-
-/// Whether the splice into the query the replicas run would drop a conjunct that may fix a column, which
-/// is the one way a condition the fragment is given can order this read and not theirs. Asked conjunct by
-/// conjunct, the way the splice itself drops them and the way `appendFixedColumnsFromFilterExpression`
-/// walks a condition, because asking it of the whole condition would also catch
-/// `k = 5 AND arrayExists(x -> ..., arr)`, where `k = 5` does travel - and withholding the ordering there
-/// leaves the replicas the ones reading in order, diverging the other way round.
-static bool aFixingConjunctWouldBeDroppedByTheSplice(const ActionsDAG::Node & condition)
-{
-    std::vector<const ActionsDAG::Node *> conjuncts{&condition};
-    while (!conjuncts.empty())
-    {
-        const auto * node = conjuncts.back();
-        conjuncts.pop_back();
-
-        if (node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            conjuncts.push_back(node->children.front());
-            continue;
-        }
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
-        {
-            for (const auto * child : node->children)
-                conjuncts.push_back(child);
-            continue;
-        }
-
-        if (mayFixColumn(node) && remoteRewriteDropsCondition(*node))
-            return true;
     }
 
     return false;
@@ -1538,9 +1508,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// case is asked for. Teach either side something new - an `in` against a one-element set, say -
         /// and this has to be revisited; tests 05255 and 05259 pin the two shapes.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        const bool condition_reaches_the_replicas = parallel_replicas_local_plan->replicasGetPushedConditions()
-            && !(condition && aFixingConjunctWouldBeDroppedByTheSplice(*condition));
-        if (!condition_reaches_the_replicas && condition && mayFixColumn(condition))
+        const bool an_equality_stays_behind = condition && mayFixColumn(condition, /*only_those_the_splice_drops=*/ true);
+        if (condition && mayFixColumn(condition)
+            && (!parallel_replicas_local_plan->replicasGetPushedConditions() || an_equality_stays_behind))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized
