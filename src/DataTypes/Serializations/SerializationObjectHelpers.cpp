@@ -163,9 +163,24 @@ SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data
     {
         size_t offset_start = (*shared_data_offsets)[ssize_t(i) - 1];
         size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
+
+        /// Adjacent rows often have the same paths. Then the buckets of the paths of the previous row are reused,
+        /// because comparing the paths is cheaper than hashing them.
+        bool same_paths_as_previous_row = false;
+        if (i != start)
+        {
+            size_t previous_offset_start = (*shared_data_offsets)[ssize_t(i) - 2];
+            same_paths_as_previous_row = offset_end - offset_start == offset_start - previous_offset_start;
+            for (size_t j = offset_start; same_paths_as_previous_row && j != offset_end; ++j)
+                same_paths_as_previous_row = shared_data_paths->getDataAt(j) == shared_data_paths->getDataAt(j - (offset_end - offset_start));
+        }
+        const size_t previous_row_buckets = path_buckets.size() - (offset_end - offset_start);
+
         for (size_t j = offset_start; j != offset_end; ++j)
         {
-            size_t bucket = getSharedDataPathBucket(shared_data_paths->getDataAt(j), num_buckets);
+            size_t bucket = same_paths_as_previous_row
+                ? path_buckets[previous_row_buckets + (j - offset_start)]
+                : getSharedDataPathBucket(shared_data_paths->getDataAt(j), num_buckets);
             path_buckets.push_back(static_cast<UInt8>(bucket));
             ++bucket_num_paths[bucket];
             /// The number of chars occupied by value `j` (exactly what `insertFrom` appends) is the
@@ -300,6 +315,27 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
         std::tie(shared_data_paths_buckets[i], shared_data_values_buckets[i], shared_data_offsets_buckets[i]) = ColumnObject::getSharedDataPathsValuesAndOffsets(*shared_data_buckets[i]);
 
     size_t num_rows = shared_data_buckets[0]->size();
+
+    /// All paths and values of the buckets are copied, so their sizes are known. The column may be appended to by
+    /// several calls, so it grows like with insertions.
+    if (!paths_prefix)
+    {
+        size_t num_paths = 0;
+        size_t paths_chars = 0;
+        size_t values_chars = 0;
+        for (size_t i = 0; i != shared_data_buckets.size(); ++i)
+        {
+            num_paths += shared_data_paths_buckets[i]->size();
+            paths_chars += shared_data_paths_buckets[i]->getChars().size();
+            values_chars += shared_data_values_buckets[i]->getChars().size();
+        }
+        shared_data_paths->getOffsets().reserve(shared_data_paths->size() + num_paths);
+        shared_data_paths->getChars().reserve(shared_data_paths->getChars().size() + paths_chars);
+        shared_data_values->getOffsets().reserve(shared_data_values->size() + num_paths);
+        shared_data_values->getChars().reserve(shared_data_values->getChars().size() + values_chars);
+        shared_data_offsets->reserve(shared_data_offsets->size() + num_rows);
+    }
+
     std::vector<std::tuple<std::string_view, size_t, size_t>> all_paths;
     /// Adjacent rows often have the same paths. Then the sorted order of the previous row, as pairs of
     /// (bucket, position of the path in the row in this bucket), is valid for the current row.
