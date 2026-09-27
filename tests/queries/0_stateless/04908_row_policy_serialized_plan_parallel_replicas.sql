@@ -1,4 +1,5 @@
 -- Tags: long, no-parallel-replicas
+-- Random settings limits: optimize_read_in_order=(1, None)
 
 SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
@@ -33,3 +34,18 @@ DROP ROW POLICY pr_rp_policy ON pr_rp;
 SELECT 'no policy', count() FROM pr_rp SETTINGS optimize_trivial_count_query = 0;
 
 DROP TABLE pr_rp;
+
+-- A policy fixing the first sorting key column makes ORDER BY on the second one a read in order.
+-- With no matching row the initiator reads no part, and every replica must still pick the same
+-- reading mode for the table.
+DROP TABLE IF EXISTS pr_rp_key;
+CREATE TABLE pr_rp_key (a String, b UInt64) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1;
+INSERT INTO pr_rp_key VALUES ('engineering', 1), ('finance', 2), ('engineering', 3), ('hr', 4);
+
+DROP ROW POLICY IF EXISTS pr_rp_key_policy ON pr_rp_key;
+CREATE ROW POLICY pr_rp_key_policy ON pr_rp_key FOR SELECT USING a = 'nomatch' TO ALL;
+SELECT 'no row, in order';
+SELECT a, b FROM pr_rp_key ORDER BY b;
+
+DROP ROW POLICY pr_rp_key_policy ON pr_rp_key;
+DROP TABLE pr_rp_key;
