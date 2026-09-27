@@ -1,0 +1,32 @@
+subquery without step, default step 15s:
+20
+20
+[('l','a')]	[20,20,20,20,20,20]
+subquery without step, promql_default_subquery_step = 60:
+5
+5
+[('l','a')]	[5,5,5,5,5,5]
+an explicit subquery step wins:
+10
+instant selector two minutes after the last sample, default lookback 5m:
+[('__name__','m'),('l','a')]	1
+[('__name__','m'),('l','a')]	[('1970-01-12 13:57:00.000',1),('1970-01-12 13:58:00.000',1),('1970-01-12 13:59:00.000',1),('1970-01-12 14:00:00.000',1),('1970-01-12 14:01:00.000',1)]
+promql_lookback_delta = 60:
+0
+[('__name__','m'),('l','a')]	1
+[('__name__','m'),('l','a')]	[('1970-01-12 13:57:00.000',1)]
+fractional values are rounded up to milliseconds:
+1
+0
+1
+0
+299
+300
+zero means the default:
+1
+0
+20
+negative values are rejected:
+the promql dialect:
+[('__name__','m'),('l','a')]	1970-01-12 13:59:00.000	1
+[('l','a')]	1970-01-12 13:57:00.000	5

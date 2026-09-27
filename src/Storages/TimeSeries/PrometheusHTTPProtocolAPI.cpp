@@ -60,6 +60,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsSeconds promql_default_subquery_step;
+    extern const SettingsSeconds promql_lookback_delta;
 }
 
 namespace TimeSeriesSetting
@@ -206,6 +208,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.time_scale = getPromQLResultTimestampScale(evaluation_settings.table_timestamp_type);
     evaluation_settings.time_zone = getPromQLResultTimeZone(evaluation_settings.table_timestamp_type);
     const UInt32 time_scale = evaluation_settings.time_scale;
+
+    /// Zero means the default, as in Prometheus.
+    const auto & settings = getContext()->getSettingsRef();
+    if (Int64 lookback_delta = settings[Setting::promql_lookback_delta].totalMicroseconds())
+        evaluation_settings.instant_selector_window = convertMicrosecondsToTimeSeriesDuration(lookback_delta, time_scale);
+    if (Int64 subquery_step = settings[Setting::promql_default_subquery_step].totalMicroseconds())
+        evaluation_settings.default_subquery_step = convertMicrosecondsToTimeSeriesDuration(subquery_step, time_scale);
 
     if (!params.lookback_delta_param.empty())
     {

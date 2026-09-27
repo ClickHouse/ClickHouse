@@ -287,4 +287,14 @@ Decimal64 parseTimeSeriesDuration(const Field & field, const DataTypePtr & field
     return getFromField<Decimal64>(field, field_data_type, duration_scale);
 }
 
+Decimal64 convertMicrosecondsToTimeSeriesDuration(Int64 microseconds, UInt32 duration_scale)
+{
+    constexpr UInt32 microseconds_scale = 6;
+    if (microseconds <= 0 || duration_scale >= microseconds_scale)
+        return getFromDecimal<Decimal64>(microseconds, microseconds_scale, duration_scale);
+
+    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(microseconds_scale - duration_scale);
+    return Decimal64{microseconds / divisor + (microseconds % divisor != 0)};
+}
+
 }

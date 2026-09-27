@@ -10492,6 +10492,21 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    \
+    DECLARE(Seconds, promql_lookback_delta, 300, R"(
+The lookback period of PromQL instant selectors, in seconds: an instant selector returns the latest sample newer than this.
+Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API,
+where the `lookback_delta` URL parameter takes priority. It is the same as the `--query.lookback-delta` flag of Prometheus:
+0 means the default of 5 minutes.
+)", PRIVATE_PREVIEW, \
+        {"26.10", 300, 300, "New setting."}) \
+    \
+    DECLARE(Seconds, promql_default_subquery_step, 15, R"(
+The step of PromQL subqueries written without one, such as `max_over_time(rate(x[1m])[30m:])`, in seconds.
+Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API.
+0 means the default of 15 seconds. Prometheus uses its global `evaluation_interval` here, which is 1 minute by default.
+)", PRIVATE_PREVIEW, \
+        {"26.10", 15, 15, "New setting."}) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \

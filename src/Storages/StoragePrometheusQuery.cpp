@@ -35,6 +35,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsSeconds promql_default_subquery_step;
+    extern const SettingsSeconds promql_lookback_delta;
 }
 
 namespace
@@ -160,6 +162,12 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
+    /// Zero means the default, as in Prometheus.
+    const auto & settings = context->getSettingsRef();
+    if (Int64 lookback_delta = settings[Setting::promql_lookback_delta].totalMicroseconds())
+        evaluation_settings.instant_selector_window = convertMicrosecondsToTimeSeriesDuration(lookback_delta, time_scale);
+    if (Int64 subquery_step = settings[Setting::promql_default_subquery_step].totalMicroseconds())
+        evaluation_settings.default_subquery_step = convertMicrosecondsToTimeSeriesDuration(subquery_step, time_scale);
     return config;
 }
 

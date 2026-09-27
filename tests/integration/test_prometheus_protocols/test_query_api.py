@@ -189,6 +189,48 @@ def test_query_lookback_delta():
     assert "Cannot parse duration" in error
 
 
+def test_query_lookback_delta_setting():
+    query = 'foo{shape="circle"}'
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [151, "16"]}]}'
+
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=151,
+            params={"promql_lookback_delta": "0.5"},
+        )
+        == '{"resultType": "vector", "result": []}'
+    )
+
+    # The `lookback_delta` parameter takes priority over the setting.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=151,
+            params={"promql_lookback_delta": "0.5", "lookback_delta": "5m"},
+        )
+        == expected
+    )
+
+    # Zero means the default.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=151,
+            params={"promql_lookback_delta": "0"},
+        )
+        == expected
+    )
+
+
+def test_query_default_subquery_step_setting():
+    query = 'count_over_time(foo{shape="circle"}[30s:])'
+
+    def count_points(params):
+        return execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params=params)
+
+    assert count_points({}) == '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "2"]}]}'
+    assert count_points({"promql_default_subquery_step": "10"}) == '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "3"]}]}'
+    assert count_points({"promql_default_subquery_step": "0"}) == count_points({})
+
+
 def test_query_lookback_delta_low_timestamp_precision():
     old_sample = execute_query_via_http_api(
         node.ip_address, 9093, "/dynamic_table/api/v1/query",
