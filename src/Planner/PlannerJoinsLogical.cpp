@@ -430,8 +430,8 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 // TODO(antaljanosbenjamin/vdimir): Analyze the expressions first, so join clauses are not built unnecessarily.
                 size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
                 bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
-                /// Without key expressions the clauses differ only by the conditions evaluated before matching. If one
-                /// clause has none, splitting cannot narrow what an ALL join matches.
+                /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
+                /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
                 if (with_key_expression == 0 && builder_context.join_operator.strictness == JoinStrictness::All)
                     plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
                     {
