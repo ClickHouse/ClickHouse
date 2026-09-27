@@ -237,6 +237,21 @@ PREWHERE s = ''
 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
 
+-- Explicit subcolumns must also work when no cross-reader co-read is needed.
+SELECT 'mixed String and size share a PREWHERE reader';
+SELECT id, s, s.size
+FROM test_string_filter_mixed
+PREWHERE s.size + position(s, 'e') > 6
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0, enable_multiple_prewhere_read_steps = 1;
+
+SELECT 'mixed String and size share the main reader';
+SELECT id, s, s.size
+FROM test_string_filter_mixed
+PREWHERE id > 8
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0, enable_multiple_prewhere_read_steps = 1;
+
 DROP TABLE test_string_filter_mixed;
 
 DROP TABLE IF EXISTS test_string_filter_multistep;

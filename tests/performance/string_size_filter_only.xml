@@ -1,5 +1,7 @@
-<test>
-    <!-- Compare the same workload with the full-String size rewrite enabled and disabled. -->
+<test run_all_queries="1">
+    <!-- Keep both setting variants when CI uses a soft query limit.
+         In this PR, the new setting makes the test PR-only: compare the paired
+         runtimes explicitly, rather than expecting a master/PR speedup row. -->
     <settings>
         <max_threads>1</max_threads>
         <max_insert_threads>4</max_insert_threads>

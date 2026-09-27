@@ -589,11 +589,25 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 return std::find(columns.begin(), columns.end(), parent_name) != columns.end();
             };
 
-            /// Size-only reads need no companion. Check demand before resolving part
-            /// columns and enumerating serialization streams for every read task.
+            /// If the earliest use already reads both columns, they share a reader.
+            /// The same applies when both are only needed after PREWHERE.
+            auto has_separate_reads = [&]
+            {
+                for (const auto & columns : required_source_columns_by_step)
+                {
+                    const bool reads_parent = needs_parent(columns);
+                    const bool reads_size = std::find(columns.begin(), columns.end(), name) != columns.end();
+                    if (reads_parent || reads_size)
+                        return reads_parent != reads_size;
+                }
+                return false;
+            };
+
+            /// Size-only and same-reader reads need no companion. Check demand before
+            /// resolving part columns and enumerating serialization streams for every read task.
             if ((needs_parent(column_to_read_after_prewhere)
                     || std::any_of(required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent))
-                && isLegacyStringSize(name, parent_name))
+                && has_separate_reads() && isLegacyStringSize(name, parent_name))
             {
                 legacy_string_companions.emplace(name, parent_name);
                 legacy_string_companions.emplace(parent_name, name);

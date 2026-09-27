@@ -59,5 +59,15 @@
     <query tag="Full String read planning control">
         SELECT s FROM string_size_read_planning_{serialization} FORMAT Null
     </query>
+    <!-- A single predicate reads the parent and size together, even with multiple steps enabled. -->
+    <query tag="String size planning in the same PREWHERE step">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size + position(s, 'x') &gt; 0 FORMAT Null
+    </query>
+    <!-- An unrelated early filter leaves both String columns in the same main reader. -->
+    <query tag="String size planning in the same main reader">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE id % 3 != 0 FORMAT Null
+    </query>
     <drop_query>DROP TABLE IF EXISTS string_size_read_planning_{serialization}</drop_query>
 </test>

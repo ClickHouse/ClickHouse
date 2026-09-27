@@ -64,6 +64,13 @@ modern	11
 	7
 	8
 	10
+mixed String and size share a PREWHERE reader
+9	legacy	6
+11	modern	6
+mixed String and size share the main reader
+9	legacy	6
+10		0
+11	modern	6
 legacy String size predicate written first in multi-step PREWHERE
 1	foo
 3	foo
