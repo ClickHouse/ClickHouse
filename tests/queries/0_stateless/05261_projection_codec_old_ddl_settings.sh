@@ -88,13 +88,13 @@ ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_alter'"
 
-expect_disabled_before_enqueue alter_modify "
-    ALTER TABLE ${alter_table} ON CLUSTER test_shard_localhost MODIFY COLUMN x UInt64"
+${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" --distributed_ddl_entry_format_version=1 -q "
+    ALTER TABLE ${alter_table} ON CLUSTER test_shard_localhost MODIFY COLUMN x UInt64 FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT type FROM system.columns
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_alter' AND name = 'x'"
 
 ${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
-    ALTER TABLE ${alter_table} ON CLUSTER test_shard_localhost MODIFY COLUMN x UInt64 FORMAT Null"
+    ALTER TABLE ${alter_table} ON CLUSTER test_shard_localhost MODIFY COLUMN x Float64 FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT type FROM system.columns
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_alter' AND name = 'x'"
 

@@ -386,8 +386,7 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
     const ProjectionDescription & projection,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool attach_short_syntax,
-    const ProjectionDescription * previous_projection)
+    bool attach_short_syntax)
 {
     /// Stored metadata was checked when it was first supplied by a user. Rechecking it during a replay
     /// would make acceptance depend on the replaying session's settings.
@@ -407,17 +406,6 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
 
         const auto column_name = getProjectionStorageColumnName(declared_column.name, projection.with_parent_part_offset);
         const auto & column = projection_columns.get(column_name);
-
-        /// An unrelated `ALTER` must not require the setting that originally allowed a stored codec.
-        /// Revalidate only when rebuilding the declaration against a different resolved type.
-        if (previous_projection)
-        {
-            const auto previous_column_name = getProjectionStorageColumnName(
-                declared_column.name, previous_projection->with_parent_part_offset);
-            const auto * previous_column = previous_projection->metadata->getColumns().tryGet(previous_column_name);
-            if (previous_column && previous_column->type->getName() == column.type->getName())
-                continue;
-        }
 
         CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
             column.codec,

@@ -193,14 +193,15 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     node.query("INSERT INTO dl.t5 SELECT number, toString(number) FROM numbers(100)")
 
-    # An unavailable declaration with a gated codec must not bypass codec revalidation when an
-    # ALTER changes a source column type. The positional expression makes it unavailable after restart.
+    # The positional expression makes this declaration unavailable after restart. Its accepted
+    # codec must not require the old session's setting when the source column type changes.
     node.query("CREATE TABLE dl.t6 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
     node.query(
         "ALTER TABLE dl.t6 ADD PROJECTION pp (b CODEC(Delta, Delta)) "
         "AS (SELECT b, a GROUP BY 1, 2)",
         settings={**POSITIONAL, "allow_suspicious_codecs": 1},
     )
+    node.query("INSERT INTO dl.t6 SELECT number, number FROM numbers(100)")
 
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
@@ -216,6 +217,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert active_projection_parts("t5") == "2"
     assert part_types("t5") == "Wide"
     assert projections("t6") == "1"
+    assert active_projection_parts("t6") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.restart_clickhouse()
@@ -295,12 +297,13 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert "PROJECTION" in node.query("SHOW CREATE TABLE dl.t")
     assert declarations_on_disk("t") == 1
 
-    # Retyping a source column can invalidate the unavailable declaration and its stored codec.
-    error = node.query_and_get_error("ALTER TABLE dl.t6 MODIFY COLUMN b UInt32")
-    assert "projection pp is declared but could not be analyzed" in error
+    # The type change rewrites the part and drops the unavailable projection data. The accepted
+    # codec declaration survives, ready to be analyzed again with the new type after restart.
+    node.query("ALTER TABLE dl.t6 MODIFY COLUMN b UInt32", settings={"mutations_sync": 2})
     assert node.query(
         "SELECT type FROM system.columns WHERE database = 'dl' AND table = 't6' AND name = 'b'"
-    ).strip() == "UInt64"
+    ).strip() == "UInt32"
+    assert projection_dirs_in_active_parts("t6") == []
     assert declarations_on_disk("t6") == 1
 
     # A mutation is not a metadata `ALTER`, so it is not refused. Nothing knows whether `pp`'s
@@ -411,6 +414,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t") == "1"
     assert active_projection_parts("t") == "1"
     assert projections("t6") == "1"
+    assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 
     # The declaration coming back is only half the claim: the projection data written before the

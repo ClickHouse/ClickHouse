@@ -1904,23 +1904,16 @@ void AlterCommands::apply(
         }
     }
 
-    /// Changes in columns may lead to changes in projections
+    /// Changes in columns may lead to changes in projections. An existing codec was checked
+    /// against the user's settings when it was declared; rebuilding it checks compatibility with
+    /// the new type and rejects lossy codecs, without depending on this ALTER's session settings.
     ProjectionsDescription new_projections;
-    const bool validate_projection_codecs = shouldValidateProjectionCodecs(context);
     for (const auto & projection : metadata_copy.projections)
     {
         try
         {
             /// Check if we can still build projection from new metadata.
             auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context);
-            if (validate_projection_codecs)
-            {
-                const ProjectionDescription * previous_projection = nullptr;
-                if (metadata.projections.has(projection.name))
-                    previous_projection = &metadata.projections.get(projection.name);
-                ProjectionDescription::validateDeclaredColumnCodecs(
-                    new_projection, context, LoadingStrictnessLevel::CREATE, true, previous_projection);
-            }
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");

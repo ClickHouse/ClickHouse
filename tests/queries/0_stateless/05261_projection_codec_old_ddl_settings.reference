@@ -9,6 +9,5 @@ alter_add rejected
 1
 1
 1
-alter_modify rejected
-Float64
 UInt64
+Float64

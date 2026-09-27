@@ -6402,50 +6402,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
-    /// info rather than in a ZooKeeper metadata transaction.
-    bool is_secondary_replay = is_replay_on_another_replica;
-#if CLICKHOUSE_CLOUD
-    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
-        is_secondary_replay = true;
-#endif
-
-    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate. Do not
-    /// change the source columns it will see after a restart: that could leave existing projection parts with
-    /// stale data or grandfather a declared codec against a different resolved type. Other ALTERs and changes
-    /// to a column's comment, codec, TTL, statistics, or settings leave that source schema intact.
-    if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
-    {
-        for (const auto & command : commands)
-        {
-            if (command.ignore)
-                continue;
-
-            bool changes_source_columns = command.type == AlterCommand::ADD_COLUMN
-                || command.type == AlterCommand::DROP_COLUMN
-                || command.type == AlterCommand::RENAME_COLUMN;
-            if (command.type == AlterCommand::MODIFY_COLUMN)
-                changes_source_columns = command.data_type
-                    || command.default_expression
-                    || command.first
-                    || !command.after_column.empty()
-                    || command.to_remove == AlterCommand::RemoveProperty::DEFAULT
-                    || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
-                    || command.to_remove == AlterCommand::RemoveProperty::ALIAS;
-            if (!changes_source_columns)
-                continue;
-
-            throw Exception(
-                ErrorCodes::ILLEGAL_PROJECTION,
-                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
-                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
-                "restarting the server may make the projection usable again; otherwise drop the declaration with "
-                "ALTER TABLE ... DROP PROJECTION",
-                getStorageID().getNameForLogs(),
-                fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
-        }
-    }
-
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 

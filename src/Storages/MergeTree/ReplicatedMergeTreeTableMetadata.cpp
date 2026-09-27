@@ -436,6 +436,8 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
+    /// Keep the spelling of an untyped codec: `Delta` and `Delta(4)` may resolve identically
+    /// now, but after `MODIFY COLUMN` widens the output, only the omitted argument adapts.
     if (projections != parsed_zk_projections)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
@@ -495,6 +497,9 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
         diff.new_skip_indices = from_zk.skip_indices;
     }
 
+    /// For an untyped projection column, an omitted codec argument (e.g. `Delta`) is resolved
+    /// again after a type change. An explicit argument (e.g. `Delta(4)`) stays fixed. Their
+    /// current codecs may match, but the definitions are not equivalent across future `ALTER`s.
     if (projections != from_zk.projections)
     {
         diff.projections_changed = true;
