@@ -1377,8 +1377,7 @@ static bool tryAddDisjunctiveConditions(
 {
     auto is_disjunction = [](const JoinActionRef & expression) { return expression.isFunction(JoinConditionOperator::Or); };
 
-    /// Join reordering can put an OR into one join with conditions of other JOIN ON clauses; such a join is planned
-    /// as the OR with them added to every branch instead of a cross join.
+    /// Join reordering can put an OR into one join with conditions of other JOIN ON clauses; those go into every branch.
     if (join_expressions.size() != 1
         && (throw_on_error || planning_context.is_storage_join || std::ranges::count_if(join_expressions, is_disjunction) != 1))
         return false;

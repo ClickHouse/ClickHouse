@@ -70,7 +70,6 @@ inline double computeSelectivity(
 
 /// An OR is a join on its branches only where every branch has a key between the two sides. It then matches a pair of
 /// rows only where one branch does, and only where a key common to all branches does. Elsewhere it is a filter.
-/// `is_across(lhs_sources, rhs_sources)` tells whether an equality's operands are on opposite sides of the join.
 template <typename IsAcross>
 double computeDisjunctionSelectivity(
     const QueryGraph & query_graph, const PlanMemo & dp_table, const JoinActionRef & disjunction, const IsAcross & is_across)

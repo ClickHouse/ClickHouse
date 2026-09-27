@@ -103,7 +103,7 @@ double computeSelectivity(
     const BitSet & right,
     bool is_inner_step)
 {
-    /// Transitively-equivalent columns spanning both sides: each such class is a key of the join.
+    /// Account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
     std::unordered_set<ConstClassPtr> visited;
     double equivalence_selectivity = 1.0;
