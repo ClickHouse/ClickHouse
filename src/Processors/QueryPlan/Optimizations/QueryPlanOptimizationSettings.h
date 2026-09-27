@@ -22,6 +22,8 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
 
+struct DistributedPlanLocalObject;
+
 struct QueryPlanOptimizationSettings
 {
     QueryPlanOptimizationSettings(
@@ -87,7 +89,6 @@ struct QueryPlanOptimizationSettings
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     UInt64 top_k_optimization_observation_rows = 65536;
-    bool derive_not_null_filters_from_joins;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -99,11 +100,10 @@ struct QueryPlanOptimizationSettings
     UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
-    /// Conflict detectors for join reordering validity in the
-    /// DPsub algorithm, instead of the default per-relation ON-clause restriction. CD-A is correct
-    /// but incomplete; CD-C is correct and complete. CD-C takes precedence when both are set.
-    bool query_plan_optimize_join_order_use_conflict_detector_a = false;
-    bool query_plan_optimize_join_order_use_conflict_detector_c = false;
+    /// Conflict detector deciding join reordering validity in the DPsub algorithm, instead of the
+    /// default per-relation ON-clause restriction. CD-A is correct but incomplete; CD-C is correct
+    /// and complete.
+    JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
 
     /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
     /// defaults (false). The conflict detectors' null-rejection analysis only
@@ -129,7 +129,6 @@ struct QueryPlanOptimizationSettings
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
-    bool allow_derived_not_null_filters_execution;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -140,6 +139,9 @@ struct QueryPlanOptimizationSettings
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
+    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
+    /// query context's, read by the fallback decision. Null outside a query.
+    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
@@ -268,8 +270,6 @@ struct QueryPlanOptimizationSettings
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
-
-    double max_selectivity_for_not_null_filters_execution;
 };
 
 }

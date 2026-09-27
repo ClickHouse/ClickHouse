@@ -103,7 +103,7 @@ SET rewrite_in_to_join = 0;
 -- node, so the asserted shape would depend on the fake data instead of the hints.
 SET use_index_for_in_with_subqueries = 0;
 SET correlated_subqueries_use_in_memory_buffer = 0;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 -- The CI test profile sets non-zero max_rows_in_join/max_bytes_in_join, which alters the
 -- correlated-subquery join order. Pin to 0 so the asserted plan is stable.
 SET max_rows_in_join = 0;
@@ -113,7 +113,6 @@ SET query_plan_join_swap_table = 0;
 -- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_convert_outer_join_to_inner_join = 1;
-SET query_plan_derive_not_null_filters_from_joins = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_merge_filters = 1;

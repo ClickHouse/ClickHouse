@@ -206,24 +206,11 @@ orc::MemoryPool & getORCMemoryPool()
     return pool;
 }
 
-/// Resolves the CH type of `name` against `header`, following dots into tuple elements when the
-/// header carries only the parent column (which is the case for ORC, whose reader is not asked for
-/// individual tuple elements). Returns nullptr when no prefix of `name` is a header column.
-static DataTypePtr findHeaderTypeByPath(const Block & header, const String & name, bool ignore_case)
+struct ORCPredicateColumnTypes
 {
-    if (const auto * column = header.findByName(name, ignore_case))
-        return column->type;
-
-    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
-    {
-        const auto * column = header.findByName(String(column_name), ignore_case);
-        if (!column)
-            continue;
-        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
-            return subcolumn_type;
-    }
-    return nullptr;
-}
+    DataTypePtr result_type;
+    DataTypePtr declared_type;
+};
 
 /// True when `path` is a named tuple element at every level, so it is a file leaf with its own
 /// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
@@ -264,19 +251,35 @@ static bool isNamedTupleElementPath(const IDataType & type, std::string_view pat
     return false;
 }
 
-/// Resolves `name` as a named tuple element of a header column, through the same
-/// tryGetSubcolumnType lookup the search argument builder resolves it with.
-static DataTypePtr findTupleElementKeyType(const Block & header, const String & name, bool ignore_case)
+/// Resolves a named tuple element and retains its declared type before ancestor wrappers are applied.
+static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
+    const Block & header, const String & name, bool ignore_case)
 {
     for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
         const auto * column = header.findByName(String(column_name), ignore_case);
         if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
             continue;
-        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
-            return subcolumn_type;
+        if (auto subcolumn = column->type->tryGetSubcolumnInfo(subcolumn_name))
+        {
+            const auto & path = subcolumn->substreams_path;
+            chassert(!path.empty() && path.back().data.type);
+            /// A dotted field name can also resolve to a virtual subcolumn of another element.
+            if (path.back().type != ISerialization::Substream::TupleElement)
+                continue;
+            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type};
+        }
     }
-    return nullptr;
+    return {};
+}
+
+/// Resolves predicate types from the reader header, which can contain only the parent tuple column.
+static std::optional<ORCPredicateColumnTypes> findHeaderTypesByPath(
+    const Block & header, const String & name, bool ignore_case)
+{
+    if (const auto * column = header.findByName(name, ignore_case))
+        return ORCPredicateColumnTypes{column->type, column->type};
+    return findTupleElementKeyTypes(header, name, ignore_case);
 }
 
 /// KeyCondition derives its key names from this block, and the ORC header carries only the parent
@@ -292,8 +295,8 @@ static Block buildORCKeyConditionBlock(const Block & header, const ActionsDAG * 
     {
         if (keys.has(required.name))
             continue;
-        if (auto type = findTupleElementKeyType(header, required.name, ignore_case))
-            keys.insert({type->createColumn(), type, required.name});
+        if (auto types = findTupleElementKeyTypes(header, required.name, ignore_case))
+            keys.insert({types->result_type->createColumn(), types->result_type, required.name});
     }
     return keys;
 }
@@ -782,8 +785,8 @@ static void buildORCSearchArgumentImpl(
 
             /// The predicate column may be a tuple element (`t.x`), which the ORC header does not
             /// carry as a flat entry, so resolve it through the type as well as through the schema.
-            auto column_type = findHeaderTypeByPath(header, column_name, ignore_case);
-            if (!column_type)
+            auto column_types = findHeaderTypesByPath(header, column_name, ignore_case);
+            if (!column_types)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
@@ -792,6 +795,7 @@ static void buildORCSearchArgumentImpl(
             /// The resolver rewrites the type it is given when it descends a LIST (a flattened
             /// Nested column), so give it a scratch copy: the guards below must judge the key's
             /// own type, which is what KeyCondition's RPN holds.
+            const auto & column_type = column_types->result_type;
             auto resolved_type = column_type;
             const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
             if (!orc_type)
@@ -825,12 +829,17 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
-            /// If null_as_default is true, the only difference is nullable, and the evaluations of current RPNElement based on default and null field
-            /// have the same result, we still should push down current filter.
-            if (format_settings.null_as_default && !column_type->isNullable() && !column_type->isLowCardinalityNullable())
+            /// A non-nullable element converts NULL to its default even when a nullable ancestor makes
+            /// its extracted type nullable. Pruning must agree with the values produced by the reader.
+            const auto & declared_type = column_types->declared_type;
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(declared_type))
             {
-                bool match_if_null = evaluateRPNElement({}, curr);
-                bool match_if_default = evaluateRPNElement(column_type->getDefault(), curr);
+                /// Use the column default inserted by `insertNullAsDefaultIfNeeded`. It differs from
+                /// the type default for `Date32`.
+                auto default_column = declared_type->createColumn();
+                default_column->insertDefault();
+                const bool match_if_null = evaluateRPNElement({}, curr);
+                const bool match_if_default = evaluateRPNElement((*default_column)[0], curr);
                 if (match_if_default != match_if_null)
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -847,6 +856,14 @@ static void buildORCSearchArgumentImpl(
 
             if (need_wrap_not)
                 builder.startNot();
+
+            /// A relaxed atom can be false even when its approximation is true. Preserve that
+            /// possibility before negation, as `KeyCondition` does with `can_be_false`.
+            if (curr.relaxed)
+            {
+                builder.startAnd();
+                builder.literal(orc::TruthValue::YES_NO);
+            }
 
             if (contains_is_null)
             {
@@ -938,14 +955,27 @@ static void buildORCSearchArgumentImpl(
                     literals.emplace_back(*literal);
                 }
 
-                /// set has zero element
-                if (literals.empty())
-                    builder.literal(orc::TruthValue::YES);
-                else if (fail)
+                if (fail)
                     builder.literal(orc::TruthValue::YES_NO_NULL);
+                else if (literals.empty())
+                    builder.literal(orc::TruthValue::NO);
                 else
+                {
+                    /// A set without NULL has no NULL matches. ORC evaluates `IN` as NULL for a
+                    /// NULL key, so exclude NULL explicitly before applying any outer negation.
+                    /// This preserves `nullIn` and `notNullIn` semantics. For regular nullable
+                    /// `IN`, it can only retain extra rows, which the query filter removes.
+                    builder.startAnd();
+                    builder.startNot();
+                    builder.isNull(orc_type->getColumnId(), *predicate_type);
+                    builder.end();
                     builder.in(orc_type->getColumnId(), *predicate_type, literals);
+                    builder.end();
+                }
             }
+
+            if (curr.relaxed)
+                builder.end();
 
             if (need_wrap_not)
                 builder.end();

@@ -309,7 +309,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -338,7 +338,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -1450,6 +1450,8 @@ void registerStorageLog(StorageFactory & factory)
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
+
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());

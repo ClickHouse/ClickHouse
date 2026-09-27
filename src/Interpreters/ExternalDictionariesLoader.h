@@ -28,15 +28,26 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    void reloadDictionary(const QualifiedTableName & dictionary_name) const;
+    void reloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     bool unloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    bool unloadDictionary(const QualifiedTableName & dictionary_name) const;
+    bool unloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     void unloadAllDictionaries() const;
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
+
+    /// Translates the name a query uses (`db.dict`, or `dict` against the current database) into the key the loader
+    /// stores the dictionary under (the UUID for a DDL dictionary, the name for an XML one), recording the query's use of
+    /// the dictionary (`DistributedPlanLocalObject`) on the way. Every consumer that names a dictionary goes through one of these.
+    std::string resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const;
+    std::string resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
+
+    /// The same, but resolving an unqualified name against the given database rather than the
+    /// current database of a context. Used when the name has to resolve against the database
+    /// owning the definition, e.g. when the metadata of a table is loaded.
+    QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
@@ -74,12 +85,21 @@ protected:
     void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 
-    std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
+    /// Both readings of one resolution: the key the loader stores the dictionary under, and the name as a query refers
+    /// to it with the database filled in, which the context overloads record.
+    struct ResolvedDictionaryName
+    {
+        std::string key;
+        QualifiedTableName qualified_name;
+    };
+
+    /// Resolution without a record.
+    ResolvedDictionaryName resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;
 
     /// Try convert qualified dictionary name to persistent UUID
-    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
+    ResolvedDictionaryName resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
 
     std::string resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name) const;
 

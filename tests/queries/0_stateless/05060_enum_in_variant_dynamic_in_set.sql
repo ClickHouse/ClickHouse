@@ -103,31 +103,6 @@ SELECT 'dyn_date_from_datetime', (SELECT arraySort(groupArray(d)) FROM carrier_d
     = (SELECT arraySort(groupArray(d)) FROM carrier_date
         WHERE d IN (CAST('2020-01-02 05:00:00', 'DateTime(\'UTC\')')));
 
--- The two analyzers build a constant set through different code, so pin both here rather than relying
--- on the one CI job that still runs the old one.
-SET enable_analyzer = 0;
-
-SELECT 'dyn_in_old', (SELECT arraySort(groupArray(v)) FROM carrier_str
-        WHERE v IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic)))
-    = (SELECT arraySort(groupArray(v)) FROM carrier_str WHERE v IN ('7'));
-
-SELECT 'dyn_not_in_old', (SELECT arraySort(groupArray(v)) FROM carrier_str
-        WHERE v NOT IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic)))
-    = (SELECT arraySort(groupArray(v)) FROM carrier_str WHERE v NOT IN ('7'));
-
-SELECT 'var_in_old', (SELECT arraySort(groupArray(v)) FROM carrier_str
-        WHERE v IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Variant(Array(UInt8), Enum8('7' = 3)))))
-    = (SELECT arraySort(groupArray(v)) FROM carrier_str WHERE v IN ('7'));
-
-SELECT 'dyn_list_in_old', (SELECT arraySort(groupArray(v)) FROM carrier_str
-        WHERE v IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic), 'zz'))
-    = (SELECT arraySort(groupArray(v)) FROM carrier_str WHERE v IN ('7', 'zz'));
-
-SELECT 'var_values_old', (SELECT x FROM values('x String',
-    CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Variant(Array(UInt8), Enum8('7' = 3))))) = '7';
-
-SET enable_analyzer = 1;
-
 -- Correctness could also be restored by declining the index, which would silently cost pruning, so the
 -- wrapped constant must prune exactly as much as the equivalent `String` literal.
 SELECT 'dyn_still_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
