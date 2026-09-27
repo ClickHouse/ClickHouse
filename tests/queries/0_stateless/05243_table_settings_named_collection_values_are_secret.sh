@@ -25,7 +25,8 @@ $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${READER}"
 
 $CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC} AS
     kafka_broker_list = 'secret-broker.invalid:9092', kafka_topic_list = 'secret_topic',
-    kafka_group_name = 'secret_group', kafka_format = 'CSV'"
+    kafka_group_name = 'secret_group', kafka_format = 'CSV',
+    format_avro_schema_registry_url = 'http://user:password@secret-registry.invalid:8081'"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE kafka_from_collection (a UInt64) ENGINE = Kafka(${NC})"
 
 $CLICKHOUSE_CLIENT -q "CREATE USER ${READER} IDENTIFIED WITH no_password"
@@ -39,6 +40,8 @@ echo "-- nor may it read the table's definition, which would name the collection
 $CLICKHOUSE_CLIENT --user "${READER}" -q "SHOW CREATE TABLE ${CLICKHOUSE_DATABASE}.kafka_from_collection" 2>&1 \
     | grep -o -m1 'ACCESS_DENIED'
 
+# `format_avro_schema_registry_url` has a masking rule of its own, which hides only the credentials of the URL.
+# A collection's value is hidden whole regardless, host and all.
 echo "-- so system.table_settings names the settings the collection supplied, and hides their values"
 $CLICKHOUSE_CLIENT --user "${READER}" -q "
     SELECT name, value, is_masked, source FROM system.table_settings

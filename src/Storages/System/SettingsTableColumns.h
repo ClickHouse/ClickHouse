@@ -67,8 +67,11 @@ public:
     {
         if (!masks(setting))
             return setting.value;
-        /// A collection's value has no masked form of its own: nothing of it may be shown.
-        return setting.masked_value.empty() ? std::string_view{"[HIDDEN]"} : std::string_view{setting.masked_value};
+        /// Nothing of a collection's value may be shown, not even the part a masking rule leaves visible - the
+        /// host in `http://[HIDDEN]@registry:8081` says where the table points as much as the whole URL does.
+        if (setting.origin == SettingOrigin::NamedCollection || setting.masked_value.empty())
+            return "[HIDDEN]";
+        return setting.masked_value;
     }
 
     /// Whether the query reads the next column - for a value that is work to build.
