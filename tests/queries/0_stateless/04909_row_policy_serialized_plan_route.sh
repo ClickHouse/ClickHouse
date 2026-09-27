@@ -7,13 +7,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Counts, for the secondary queries of one initial query, how many were given a plan the initiator had
 # already built. A node logs this message only when it receives such a plan. A secondary query counts
-# however it ended: once every mark is handed out, the initiator cancels the replicas that got none.
-# Prints "<secondary queries> <of them given a plan>".
+# once however it ended: once every mark is handed out, the initiator cancels the replicas that got none,
+# and such a replica can log an exception after its QueryFinish row when its last write finds the
+# connection closed. Prints "<secondary queries> <of them given a plan>".
 route_of() {
     $CLICKHOUSE_CLIENT -q "
-        SELECT count(), countIf(has_plan) FROM
+        SELECT uniqExact(query_id), uniqExactIf(query_id, has_plan) FROM
         (
-            SELECT query_id IN (
+            SELECT query_id, query_id IN (
                 SELECT query_id FROM system.text_log
                 WHERE event_date >= yesterday() AND event_time >= now() - 600
                   AND logger_name = 'TCPHandler' AND message = 'Received query plan'
