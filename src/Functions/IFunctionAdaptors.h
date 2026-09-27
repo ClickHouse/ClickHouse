@@ -106,6 +106,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
+    bool canThrow(const DataTypesWithConstInfo & args) const override { return function->canThrow(args); }
+
     bool isNameInsensitive() const override { return function->isNameInsensitive(); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }

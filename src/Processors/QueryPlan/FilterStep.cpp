@@ -215,8 +215,45 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
+/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
+/// be stateless and have no observable side effects. See setting `short_circuit_function_evaluation_reorder_arguments`.
+static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            const auto & function = *node->function_base;
+            if (function.isStateful()
+                || function.hasObservableSideEffects()
+                || function.isSuitableForShortCircuitArgumentsExecution(arguments)
+                || function.canThrow(arguments))
+                return false;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return true;
+}
+
 /// Try to split the left most AND atom to a separate DAG.
-static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name)
+/// With `reorder`, the left most atom that can be moved to the front of the chain is preferred.
+static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     const auto * filter = &dag.findInOutputs(filter_name);
     while (filter->type == ActionsDAG::ActionType::ALIAS)
@@ -225,7 +262,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     if (filter->type != ActionsDAG::ActionType::FUNCTION || filter->function_base->getName() != "and")
         return {};
 
-    const ActionsDAG::Node * condition_to_split = nullptr;
+    /// Non-trivial atoms from left to right.
+    std::vector<const ActionsDAG::Node *> atoms;
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(filter);
     while (!nodes.empty())
@@ -242,25 +280,31 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
             continue;
         }
 
-        if (isTrivialSubtree(node))
-            continue;
-
-        /// Do not split subtree if it's the last non-trivial one.
-        /// So, split the first found condition only when there is a another one found.
-        if (condition_to_split)
-            return splitSingleAndFilter(dag, condition_to_split);
-
-        condition_to_split = node;
+        if (!isTrivialSubtree(node))
+            atoms.push_back(node);
     }
 
-    return {};
+    /// Do not split subtree if it's the last non-trivial one.
+    if (atoms.size() < 2)
+        return {};
+
+    /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
+    /// split the cheap one first. The atoms that are not moved keep their relative order.
+    if (reorder)
+    {
+        for (const auto * atom : atoms)
+            if (canBeMovedToTheFrontOfAndChain(atom))
+                return splitSingleAndFilter(dag, atom);
+    }
+
+    return splitSingleAndFilter(dag, atoms.front());
 }
 
-static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     std::vector<ActionsAndName> res;
 
-    while (auto condition = trySplitSingleAndFilter(dag, filter_name))
+    while (auto condition = trySplitSingleAndFilter(dag, filter_name, reorder))
         res.push_back(std::move(*condition));
 
     return res;
@@ -304,7 +348,8 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(
+            actions_dag, filter_column_name, settings.getActionsSettings().short_circuit_function_evaluation_reorder_arguments);
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every FilterTransform instance: the computation is linear in the size
@@ -360,9 +405,11 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     auto cloned_dag = actions_dag.clone();
 
+    /// The query settings are not available here, so the atoms are shown in the order for the default
+    /// `short_circuit_function_evaluation_reorder_arguments = 1`.
     std::vector<ActionsAndName> and_atoms;
     if (!settings.pretty && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, /*reorder=*/ true);
 
     for (auto & and_atom : and_atoms)
     {
@@ -404,7 +451,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
     std::vector<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, /*reorder=*/ true);
 
     for (auto & and_atom : and_atoms)
     {

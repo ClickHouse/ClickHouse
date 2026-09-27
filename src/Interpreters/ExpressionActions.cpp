@@ -49,7 +49,11 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
+    const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation, bool reorder_arguments);
+
+static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
     : actions_dag(std::move(actions_dag_))
@@ -57,14 +61,19 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
+        actions_dag, settings.short_circuit_function_evaluation, settings.short_circuit_function_evaluation_reorder_arguments);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
-    linearizeActions(lazy_executed_nodes);
+    std::unordered_set<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
+    if (settings.short_circuit_function_evaluation_reorder_arguments && !lazy_executed_nodes.empty())
+        reorderable_short_circuit_arguments = findReorderableShortCircuitArguments(actions_dag, lazy_executed_nodes);
+
+    linearizeActions(lazy_executed_nodes, reorderable_short_circuit_arguments);
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
@@ -304,7 +313,37 @@ static bool findLazyExecutedNodes(
     return has_lazy_node;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
+/// Will the node be executed on all rows (not lazily) in the `enable` mode of short-circuit function evaluation?
+/// This is the case if it doesn't contain functions that are suitable for short-circuit arguments execution.
+static bool isCheapForShortCircuitEvaluation(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, bool> & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    bool res = false;
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::COLUMN:
+            res = true;
+            break;
+        case ActionsDAG::ActionType::ALIAS:
+            res = isCheapForShortCircuitEvaluation(node->children.front(), cache);
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            res = !node->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(node->children))
+                && std::ranges::all_of(node->children, [&](const auto * child) { return isCheapForShortCircuitEvaluation(child, cache); });
+            break;
+        default:
+            break;
+    }
+
+    cache[node] = res;
+    return res;
+}
+
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
+    const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation, bool reorder_arguments)
 {
     if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
         return {};
@@ -313,11 +352,37 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 
     /// Firstly, find all short-circuit functions and get their settings.
     std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
+    std::unordered_map<const ActionsDAG::Node *, bool> is_cheap_cache;
     for (const auto & node : nodes)
     {
         IFunctionBase::ShortCircuitSettings short_circuit_settings;
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
+        {
+            /// The argument with disabled lazy execution is executed on all rows. If it is heavy, while another argument
+            /// is cheap, and the function allows it, execute the cheap argument on all rows instead, so that the heavy one
+            /// is executed lazily, only on the rows that passed the cheap one. Example: `heavy(x) AND y > 0`.
+            /// It is safe: the cheap argument is executed on all rows anyway (it is not lazy), and the heavy one is
+            /// executed on a subset of the rows it was executed on before.
+            /// In the `force_enable` mode all arguments are lazy, so there is no cheap argument that is executed anyway.
+            if (reorder_arguments
+                && short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::ENABLE
+                && short_circuit_settings.arguments_are_commutative
+                && short_circuit_settings.arguments_with_disabled_lazy_execution.size() == 1
+                && short_circuit_settings.arguments_with_disabled_lazy_execution.contains(0)
+                && !isCheapForShortCircuitEvaluation(node.children[0], is_cheap_cache))
+            {
+                for (size_t i = 1; i < node.children.size(); ++i)
+                {
+                    if (isCheapForShortCircuitEvaluation(node.children[i], is_cheap_cache))
+                    {
+                        short_circuit_settings.arguments_with_disabled_lazy_execution = {i};
+                        break;
+                    }
+                }
+            }
+
             short_circuit_nodes[&node] = short_circuit_settings;
+        }
     }
 
     /// If there are no short-circuit functions, no need to do anything.
@@ -344,7 +409,83 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
-void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+/// Can the node be executed on more rows than it is executed on now, with no difference but the time?
+/// The nodes that are not executed lazily are executed on all rows already. For a lazily executed node,
+/// all functions that are executed lazily must be unable to throw, be stateless and have no observable side effects.
+static bool canBeExecutedOnMoreRows(
+    const ActionsDAG::Node * node,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::unordered_map<const ActionsDAG::Node *, bool> & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    bool res = false;
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::COLUMN:
+            res = true;
+            break;
+        case ActionsDAG::ActionType::ALIAS:
+            res = canBeExecutedOnMoreRows(node->children.front(), lazy_executed_nodes, cache);
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            if (!lazy_executed_nodes.contains(node))
+                res = true;
+            else
+                res = !node->function_base->isStateful()
+                    && !node->function_base->hasObservableSideEffects()
+                    && !node->function_base->canThrow(getDataTypesWithConstInfoFromNodes(node->children))
+                    && std::ranges::all_of(node->children, [&](const auto * child) { return canBeExecutedOnMoreRows(child, lazy_executed_nodes, cache); });
+            break;
+        default:
+            break;
+    }
+
+    cache[node] = res;
+    return res;
+}
+
+/** Find the lazily executed arguments of short-circuit functions with commutative arguments (`and`, `or`) that can be
+  * executed before the arguments that precede them. Such an argument is executed on more rows than in the original
+  * order, so it is allowed only if this changes nothing but the time, see `canBeExecutedOnMoreRows`.
+  * The other lazy arguments, for example `intDiv(1, x)` in `x != 0 AND intDiv(1, x) > 0`, keep all the arguments that
+  * precede them in front of them.
+  * The function chooses the order of these arguments by the statistics collected during the execution,
+  * see `ShortCircuitArgumentStatistics`.
+  */
+static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+{
+    std::unordered_set<const ActionsDAG::Node *> res;
+    std::unordered_map<const ActionsDAG::Node *, bool> cache;
+
+    for (const auto & node : actions_dag.getNodes())
+    {
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        if (node.type != ActionsDAG::ActionType::FUNCTION
+            || !node.function_base->isShortCircuit(short_circuit_settings, node.children.size())
+            || !short_circuit_settings.arguments_are_commutative)
+            continue;
+
+        for (const auto * child : node.children)
+        {
+            /// The column of a lazily executed function is passed through aliases as is.
+            while (child->type == ActionsDAG::ActionType::ALIAS)
+                child = child->children.front();
+
+            if (lazy_executed_nodes.contains(child) && canBeExecutedOnMoreRows(child, lazy_executed_nodes, cache))
+                res.insert(child);
+        }
+    }
+
+    return res;
+}
+
+void ExpressionActions::linearizeActions(
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const std::unordered_set<const ActionsDAG::Node *> & reorderable_short_circuit_arguments)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
@@ -436,7 +577,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        if (reorderable_short_circuit_arguments.contains(node))
+            action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
 
         for (const auto & parent : cur_info.parents)
         {
@@ -683,7 +826,15 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             }
 
             if (action.is_lazy_executed)
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+                res_column.column = ColumnFunction::create(
+                    num_rows,
+                    action.node->function_base,
+                    std::move(arguments),
+                    /*is_short_circuit_argument_=*/ true,
+                    action.node->is_function_compiled,
+                    /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                    /*allow_lazy_replicated_captures_=*/ false,
+                    action.short_circuit_argument_statistics);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);

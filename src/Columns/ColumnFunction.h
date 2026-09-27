@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
@@ -30,7 +31,8 @@ private:
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
         bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
-        bool allow_lazy_replicated_captures_ = false);
+        bool allow_lazy_replicated_captures_ = false,
+        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -192,6 +194,7 @@ public:
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
 
     const FunctionBasePtr & getFunction() const { return function; }
+    const ShortCircuitArgumentStatisticsPtr & getShortCircuitArgumentStatistics() const { return short_circuit_argument_statistics; }
     const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
 
 private:
@@ -218,6 +221,11 @@ private:
     /// If true, replicate function wraps captured columns into ColumnReplicated instead of physically copying them.
     /// Controlled by the setting enable_lazy_columns_replication.
     bool allow_lazy_replicated_captures = false;
+
+    /// Set for a lazy executed argument of a short-circuit function with commutative arguments (`and`, `or`),
+    /// if the argument can be executed before the arguments that precede it, see ExpressionActions.cpp for details.
+    /// The function uses these statistics to choose the order in which it executes such arguments.
+    ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };
