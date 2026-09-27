@@ -1,0 +1,18 @@
+decreasing bucket is raised to the previous one
+0.85
+0.85
+[0.5,0.85]
+decreasing +Inf bucket
+[0.0045,8.5,979.7499999999998]
+tiny float increase is ignored, an integer one is not
+1
+2
+no observations
+nan
+[nan,nan]
+PromQL
+0.85
+0.0045
+8.5
+979.7499999999998
+nan
