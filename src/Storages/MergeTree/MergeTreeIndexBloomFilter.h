@@ -93,7 +93,6 @@ public:
     std::string getDescription() const override { return ""; }
 
 private:
-    /// The table's columns, to tell a JSON path apart from a column merely named like one.
     StorageMetadataPtr metadata_snapshot;
     const Block & header;
     const size_t hash_functions;

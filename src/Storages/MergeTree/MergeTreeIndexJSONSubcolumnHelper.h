@@ -23,8 +23,7 @@ struct JSONSubcolumnIndexInfo
     size_t header_position;        /// position of JSONAllPaths column in the index header
 };
 
-/// The columns a candidate name is resolved against. Without a metadata snapshot there is nothing
-/// to resolve against, and an empty list refuses every match, which cannot drop rows.
+/// The columns a candidate name is resolved against; empty without a snapshot, which refuses every match.
 const ColumnsDescription & getColumnsToMatchJSONSubcolumn(const StorageMetadataPtr & metadata_snapshot);
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
@@ -35,10 +34,8 @@ const ColumnsDescription & getColumnsToMatchJSONSubcolumn(const StorageMetadataP
 /// The `json_function_name` parameter specifies which index function to look for (e.g. "JSONAllPaths",
 /// "JSONAllValues").
 ///
-/// A name is accepted only if `columns` resolves it to a subcolumn of the same storage column as the
-/// index's JSON column, reached from it by JSON path steps and then by descents that still read the
-/// value stored at that path. A column may legally be named `` `j.a` `` beside a `JSON` column `j`,
-/// so the rendered name does not say whose name it is; the path itself is read off the rendered name.
+/// A name is accepted only if `columns` resolves it to a subcolumn reached from the index's JSON column
+/// by JSON path steps, then only by descents that still read the value stored at that path.
 ///
 /// Returns nullopt if:
 ///   - No matching index column is found in the header

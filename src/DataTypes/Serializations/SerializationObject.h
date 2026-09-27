@@ -79,13 +79,10 @@ public:
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
-    /// Whether a substream descends into one JSON path. Subcolumn names are flat and an object
-    /// claims any path name, so a name alone cannot say whether it is reached through the object;
-    /// only these two substream types say so, and they carry the path in `object_path_name`.
+    /// Whether a substream descends into one JSON path; the path is in `object_path_name`.
     static bool isPathStep(const Substream & substream);
 
-    /// Whether a substream contributes nothing to a subcolumn's rendered name and may therefore sit
-    /// between an object and its path steps.
+    /// Whether a substream adds nothing to a subcolumn's name and may sit between an object and its path steps.
     static bool isTransparentWrapper(const Substream & substream);
 
     void serializeBinaryBulkStatePrefix(

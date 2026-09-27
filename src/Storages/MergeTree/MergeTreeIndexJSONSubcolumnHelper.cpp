@@ -41,10 +41,8 @@ static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
 namespace
 {
 
-/// `Substream` has no `operator==`, and its identity is the type plus whichever name member that
-/// type uses: `name_of_substream` for `Substream::named_types`, `object_path_name` for the two
-/// Object path steps, `variant_element_name` for Variant elements, `bucket` for bucketed ones.
-/// A substream only ever fills the one it needs, so comparing all of them is exhaustive.
+/// `Substream` has no `operator==`; its identity is the type plus the one name member that type fills,
+/// so comparing every name member is exhaustive.
 bool substreamsEqual(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
 {
     return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
@@ -52,13 +50,8 @@ bool substreamsEqual(const ISerialization::Substream & lhs, const ISerialization
         && lhs.bucket == rhs.bucket;
 }
 
-/// Whether the substream path from `from` onward descends into the value stored at the path instead
-/// of reading a property derived from it. Both index contents require this, for different reasons.
-/// `JSONAllValues` holds the values the paths carry, so a length or a discriminator is a constant
-/// that value set can never contain and the granule is pruned exactly when the predicate is true.
-/// `JSONAllPaths` answers from the path set, which is equivalent only while an absent path makes the
-/// predicate false; a null map is 1 precisely where the path is ABSENT, so it inverts that.
-/// The allowed set is closed: a substream type nobody has classified must refuse, not slip through.
+/// Whether the substreams from `from` onward read the value stored at the JSON path, not a property derived
+/// from it: `JSONAllValues` never holds a length or a discriminator, and a null map is 1 where the path is absent.
 bool isValuePreservingTail(const ISerialization::SubstreamPath & path, size_t from)
 {
     using Substream = ISerialization::Substream;
@@ -86,8 +79,7 @@ bool isValuePreservingTail(const ISerialization::SubstreamPath & path, size_t fr
     return true;
 }
 
-/// A name resolved through the table metadata: the storage column it belongs to, and which substream
-/// of that column's type it is (empty when the name is the column itself).
+/// `substreams_path` is empty when the name is the storage column itself.
 struct ResolvedName
 {
     String name_in_storage;
@@ -106,19 +98,14 @@ std::optional<ResolvedName> substreamPathOf(const NameAndTypePair & column)
     return ResolvedName{column.getNameInStorage(), std::move(info->substreams_path)};
 }
 
-/// Resolve `name` with the machinery the query itself uses, so index analysis and the read agree by
-/// construction, and in the resolver's own order: whole-name column and precomputed static
-/// subcolumn first, a dynamic path under a declared column only after. The order is part of the
-/// answer, since a registered static subcolumn wins over a shorter dynamic root that also claims
-/// the name.
+/// Resolves `name` in the order `ColumnsDescription` itself uses, which decides the owner: a whole column or a
+/// registered static subcolumn first, then a dynamic path under the shortest declared root.
 std::optional<ResolvedName> resolveName(const ColumnsDescription & columns, const String & name)
 {
     if (auto column = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), name))
         return substreamPathOf(*column);
 
-    /// Every declared column that could own a path of this name, in ONE pass over the schema: index
-    /// analysis precedes any read and observes no cancellation, so its cost must stay bounded by the
-    /// schema rather than by the name, which can embed a folded constant.
+    /// One pass over the schema: `name` can embed a folded constant, and index analysis cannot be cancelled.
     std::vector<const ColumnDescription *> roots;
     for (const auto & column : columns)
     {
@@ -129,8 +116,7 @@ std::optional<ResolvedName> resolveName(const ColumnsDescription & columns, cons
         roots.push_back(&column);
     }
 
-    /// Shortest first, as the resolver does. Two distinct names cannot tie here: both are dot-prefixes
-    /// of `name`, so equal length makes them the same name.
+    /// Shortest first, as the resolver does; two roots cannot tie, both being dot-prefixes of `name`.
     std::sort(roots.begin(), roots.end(), [](const auto * lhs, const auto * rhs) { return lhs->name.size() < rhs->name.size(); });
 
     for (const auto * root : roots)
@@ -143,8 +129,7 @@ std::optional<ResolvedName> resolveName(const ColumnsDescription & columns, cons
     return std::nullopt;
 }
 
-/// Whether `name` is reached from `json_column` by at least one JSON path step, followed only by
-/// descents that still read the value stored at that path.
+/// Whether `name` is `json_column` followed by at least one JSON path step and then a value-preserving tail.
 bool isJSONPathOfColumn(const ResolvedName & json_column, const ResolvedName & name)
 {
     if (json_column.name_in_storage != name.name_in_storage)
@@ -249,9 +234,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         || isPrefixedSubcolumn(matched_subcolumn, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
         return std::nullopt;
 
-    /// Only the entry the scan selected is validated; a longer entry that also owns the name is not
-    /// tried in its place. Probing that one asks for the path the name denotes inside it, and
-    /// `JSONAllPaths` emits only the first element of a path that continues into a nested object.
+    /// Only the selected entry is validated: a longer owner would be probed for a nested path `JSONAllPaths` never emits.
     auto resolved_json_column = resolveName(columns, String(matched_json_column));
     auto resolved_name = resolveName(columns, column_name);
     if (!resolved_json_column || !resolved_name)

@@ -148,7 +148,6 @@ private:
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
-    /// The table's columns, to tell a JSON path apart from a column merely named like one.
     StorageMetadataPtr metadata_snapshot;
     Names index_columns;
     DataTypes index_data_types;
