@@ -179,7 +179,7 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         /// Also, calculate the widths for the names of columns.
         {
-            /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<TAB>b``), and
+            /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<CR>b``), and
             /// the header is a single line, so a line feed in a name is replaced as well.
             String elem_name = elem.name;
             if (format_settings.pretty.display_control_characters)
@@ -733,8 +733,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
     /// Make non-printable control characters visible instead of being silently swallowed by the
     /// terminal. Trailing whitespace is highlighted in the same pass: it must be detected on the
-    /// pre-replacement bytes, because the replacement turns a trailing tab or carriage return into
-    /// a Control Picture that `highlightTrailingSpaces` would not recognize.
+    /// pre-replacement bytes, because the replacement turns a trailing carriage return into a
+    /// Control Picture that `highlightTrailingSpaces` would not recognize.
     /// The line feed is never replaced, so splitting the value into lines and replacing the control
     /// characters commute: the fragments are the same ones `calculateWidths` measured.
     if (format_settings.pretty.display_control_characters)

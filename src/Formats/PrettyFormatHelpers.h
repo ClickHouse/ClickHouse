@@ -24,14 +24,15 @@ String highlightTrailingSpaces(String source);
 
 /// Replace non-printable control characters (C0 controls and DEL) with the corresponding
 /// Unicode "Control Pictures" (U+2400..U+2421), so they become visible instead of being swallowed.
-/// `ESC` and the line feed are deliberately kept intact, because a terminal interprets them rather
-/// than swallowing them: ANSI escape sequences carried by the data have to keep working (this is
-/// what makes visualizations possible), and a multi-line value is meant to be read and copy-pasted
-/// across lines.
+/// `TAB`, the line feed and `ESC` are deliberately kept intact, because a terminal interprets them
+/// rather than swallowing them: a tab advances to the next tab stop, a multi-line value is meant to
+/// be read and copy-pasted across lines, and ANSI escape sequences carried by the data have to keep
+/// working (this is what makes visualizations possible).
 /// With `highlight_trailing_whitespace`, trailing whitespace is also highlighted the same way as
 /// `highlightTrailingSpaces` does. It has to happen in one pass here, because the trailing
-/// whitespace must be detected on the pre-replacement bytes: after the replacement, trailing tabs
-/// and newlines are Control Pictures that the highlighter would not recognize.
+/// whitespace must be detected on the pre-replacement bytes: after the replacement, a trailing
+/// carriage return, form feed or vertical tab is a Control Picture that the highlighter would not
+/// recognize.
 /// With `replace_line_feeds`, the line feed is replaced as well. The column names use it: a name is
 /// rendered on a single line by construction - padded to a fixed width by `Vertical`, and put into
 /// the one-line header and footer by the `Pretty*` formats - so there a line feed only deforms the

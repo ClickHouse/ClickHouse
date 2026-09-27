@@ -37,7 +37,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
-        /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<TAB>b``), so it gets
+        /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<CR>b``), so it gets
         /// the same treatment as the values: the replacement happens before truncation, because a
         /// Control Picture takes one visible position while the raw control character takes none.
         String name = sample.getByPosition(i).name;
@@ -103,8 +103,8 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
 
         /// Make non-printable control characters visible instead of being silently swallowed.
         /// Trailing whitespace is highlighted in the same pass: it must be detected on the
-        /// pre-replacement bytes, because the replacement turns trailing tabs and newlines into
-        /// Control Pictures that `highlightTrailingSpaces` would not recognize.
+        /// pre-replacement bytes, because the replacement turns a trailing carriage return, form
+        /// feed or vertical tab into a Control Picture that `highlightTrailingSpaces` would not recognize.
         if (format_settings.pretty.display_control_characters)
             serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value), format_settings.pretty.highlight_trailing_spaces);
 

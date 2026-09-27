@@ -167,8 +167,9 @@ String replaceControlCharactersWithPictures(String source, bool highlight_traili
         }
     }
 
-    /// The trailing whitespace is detected on the original bytes: after the replacement, trailing
-    /// tabs and newlines are Control Pictures that `highlightTrailingSpaces` would not recognize.
+    /// The trailing whitespace is detected on the original bytes: after the replacement, a trailing
+    /// carriage return, form feed or vertical tab is a Control Picture that `highlightTrailingSpaces`
+    /// would not recognize.
     const size_t highlight_start_pos = highlight_trailing_whitespace ? trailingWhitespaceStart(source) : source.size();
     const bool highlight = highlight_start_pos < source.size();
 
