@@ -28,6 +28,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -706,29 +707,20 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             make_intrusive<ASTLiteral>(Field(UInt8(0))));
     }
 
-    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
+    /// The expression is a predicate (or, for `parallel_replicas_custom_key`, a key) over the rows of a single table
+    /// expression, not a projection, so a column matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would
+    /// only ever expand into the argument list of a function such as `ignore(*)`. Reject it deliberately, with a
+    /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope. The
+    /// check descends into SQL UDF bodies, and skips subqueries, e.g. `x IN (SELECT * FROM allowed)`, which resolve
+    /// against their own tables.
+    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
+            "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",
+            matcher->formatForErrorMessage(),
+            filter_expression->formatForErrorMessage());
 
-    /// A filter is a predicate over the rows of a single table expression, not a projection, so a column
-    /// matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would only ever expand into the argument
-    /// list of a function such as `ignore(*)`, which is never a useful filter. Reject it deliberately, with a
-    /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope.
-    /// A matcher inside a subquery of the filter, e.g. `x IN (SELECT * FROM allowed)`, resolves against that
-    /// subquery's own tables and is fine, so subqueries are not descended into.
-    traverseQueryTree(
-        filter_query_tree,
-        [](const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
-        {
-            return !isQueryOrUnionNode(child);
-        },
-        [&](const QueryTreeNodePtr & node)
-        {
-            if (node->getNodeType() == QueryTreeNodeType::MATCHER)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Column matcher {} is not allowed in a filter expression (a row policy, `additional_table_filters` "
-                    "or `additional_result_filter`); list the columns explicitly. In filter {}",
-                    node->formatASTForErrorMessage(),
-                    filter_query_tree->formatASTForErrorMessage());
-        });
+    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);

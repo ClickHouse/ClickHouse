@@ -20,8 +20,18 @@ SELECT a FROM t_05227 ORDER BY a LIMIT 3 SETTINGS additional_result_filter = 'no
 -- A matcher inside a subquery of the filter resolves against the subquery's own table and is fine.
 SELECT 'subquery in a filter', count() FROM t_05227 WHERE 1 SETTINGS additional_table_filters = {'t_05227': 'a IN (SELECT * FROM allowed_05227)'};
 
-CREATE ROW POLICY OR REPLACE p_05227 ON t_05227 USING not ignore(*) TO ALL;
-SELECT count() FROM t_05227; -- { serverError BAD_ARGUMENTS }
+-- A matcher hidden in a SQL UDF body is rejected the same way.
+DROP FUNCTION IF EXISTS udf_matcher_05227;
+CREATE FUNCTION udf_matcher_05227 AS () -> ignore(*);
+SELECT count() FROM t_05227 WHERE 1 SETTINGS additional_table_filters = {'t_05227': 'not udf_matcher_05227()'}; -- { serverError BAD_ARGUMENTS }
+
+-- A row policy with a matcher is rejected when it is created or altered, not only on the next read.
+CREATE ROW POLICY OR REPLACE p_05227 ON t_05227 USING not ignore(*) TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY OR REPLACE p_05227 ON t_05227 USING not udf_matcher_05227() TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY OR REPLACE p_05227 ON t_05227 USING a < 50 TO ALL;
+ALTER ROW POLICY p_05227 ON t_05227 USING not ignore(COLUMNS('.*')); -- { serverError BAD_ARGUMENTS }
+SELECT 'row policy kept after a rejected ALTER', count() FROM t_05227;
+DROP FUNCTION udf_matcher_05227;
 
 CREATE ROW POLICY OR REPLACE p_05227 ON t_05227 USING a IN (SELECT * FROM allowed_05227) TO ALL;
 SELECT 'subquery in a row policy', count() FROM t_05227;
