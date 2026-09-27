@@ -131,10 +131,8 @@ void IStorageCluster::read(
     /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
 
-    /// A replica resolves `additional_table_filters` against the forwarded query, in which the table expression has a
-    /// generated alias, so it misses an entry keyed by the alias. Unless the initiator filters the fetched rows itself,
-    /// forward the entry resolved here in front of the others, keyed by the name the replica resolves for the table
-    /// function, so that the replica applies it below the query's `WHERE`, as for a plain read.
+    /// Replicas match `additional_table_filters` (first matching entry wins) against the forwarded query, whose table
+    /// expression has a generated alias. At `FetchColumns` the initiator applies `additional_filter_ast` itself.
     if (query_info.additional_filter_ast && processed_stage != QueryProcessingStage::FetchColumns)
     {
         if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
