@@ -49,7 +49,9 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <Poco/Channel.h>
 #include <Poco/ConsoleChannel.h>
+#include <Poco/Message.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -441,6 +443,32 @@ public:
     pcg64 rng;
 };
 
+namespace
+{
+
+/// Keeps the log messages of a test, so it can assert that a line was written.
+class LogMessageCollector : public Poco::Channel
+{
+public:
+    void log(const Poco::Message & message) override
+    {
+        std::lock_guard lock(mutex);
+        messages.push_back(message.getText());
+    }
+
+    bool contains(const std::string & substring) const
+    {
+        std::lock_guard lock(mutex);
+        return std::ranges::any_of(messages, [&](const auto & text) { return text.contains(substring); });
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::vector<std::string> messages;
+};
+
+}
+
 TEST_F(FileCacheTest, FilesInCacheDirectoryAreIgnoredOnLoad)
 {
     /// Only directories under the cache directory hold cached data. A file there, which a server
@@ -472,11 +500,24 @@ TEST_F(FileCacheTest, FilesInCacheDirectoryAreIgnoredOnLoad)
         buf.finalize();
     }
 
+    /// Collect from the logger of the cache below alone, so no other logger keeps this channel.
+    const auto logger = getLogger("FileCache(FilesInCacheDirectoryAreIgnoredOnLoad2)");
+    Poco::AutoPtr<LogMessageCollector> messages(new LogMessageCollector);
+    Poco::AutoPtr<Poco::Channel> previous_channel(logger->getChannel(), true);
+    const auto previous_level = logger->getLevel();
+    logger->setChannel(messages);
+    logger->setLevel("warning");
+    SCOPE_EXIT({
+        logger->setChannel(previous_channel);
+        logger->setLevel(previous_level);
+    });
+
     auto reopened = DB::FileCache("FilesInCacheDirectoryAreIgnoredOnLoad2", settings);
     reopened.initialize();
     ASSERT_EQ(reopened.getUsedCacheSize(), 5);
     assertEqual(reopened.getFileSegmentInfos(key, user.user_id), { Range(0, 4) });
     ASSERT_TRUE(fs::exists(unknown_file));
+    ASSERT_TRUE(messages->contains("unknown_file (not a directory), will skip it"));
 }
 
 TEST_F(FileCacheTest, LRUPolicy)
