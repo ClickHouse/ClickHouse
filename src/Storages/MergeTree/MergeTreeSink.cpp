@@ -34,12 +34,14 @@ namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
 {
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
@@ -412,6 +414,18 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
 {
+    /// The deduplication log is not aware of transactions. Inside a transaction the part is committed below only at the
+    /// level of `MergeTreeData`. It becomes visible at the `COMMIT` of the transaction, or is removed at its `ROLLBACK`.
+    /// The block IDs would outlive a `ROLLBACK`, so a retry of the insert would be deduplicated against rows that do not
+    /// exist, and inserts of other sessions would be deduplicated against a part that is not committed yet.
+    if (!deduplication_hashes.empty() && context->getCurrentTransaction()
+        && context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Deduplication of inserts into table {} with `non_replicated_deduplication_window` is not supported inside "
+            "transactions. Insert outside of the transaction, or disable deduplication for this insert with "
+            "`deduplicate_insert = 'disable'`",
+            storage.getStorageID().getNameForLogs());
+
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());

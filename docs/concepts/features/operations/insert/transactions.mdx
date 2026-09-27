@@ -83,6 +83,7 @@ For application workloads, consider [ClickHouse Managed Postgres](/products/mana
 - This is an experimental feature, and changes should be expected.
 - If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
 - Nested transactions are not supported; finish the current transaction and start a new one instead
+- Deduplicated inserts into a table with [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) greater than zero are rejected with `NOT_IMPLEMENTED`. Run them outside of the transaction, or disable deduplication for them with [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) set to `'disable'`.
 
 ### Configuration {#configuration}
 
