@@ -12,9 +12,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/stripQuerySettings.h>
-#include <Planner/Utils.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -135,27 +133,22 @@ void IStorageCluster::read(
 
     /// A replica resolves `additional_table_filters` against the forwarded query, in which the table expression has a
     /// generated alias, so it misses an entry keyed by the alias. Unless the initiator filters the fetched rows itself,
-    /// forward the filter resolved here as a condition of the query, and drop the entries naming the table function,
-    /// which the replica would resolve to this read as well.
+    /// forward the entry resolved here in front of the others, keyed by the name the replica resolves for the table
+    /// function, so that the replica applies it below the query's `WHERE`, as for a plain read.
     if (query_info.additional_filter_ast && processed_stage != QueryProcessingStage::FetchColumns)
     {
         if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
         {
-            const auto full_name = StorageID(ITableFunction::getDatabaseName(), table_function->name).getFullNameNotQuoted();
-
-            ASTPtr filter = buildFilterQueryTree(query_info.additional_filter_ast, query_info.table_expression, context)
-                ->toAST({.qualify_indentifiers_with_database = false});
-            query_to_send = query_to_send->clone();
-            auto & select = query_to_send->as<ASTSelectQuery &>();
-            if (auto where = select.where())
-                filter = makeASTOperator("and", std::move(where), std::move(filter));
-            select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+            Tuple resolved_filter;
+            resolved_filter.push_back(StorageID(ITableFunction::getDatabaseName(), table_function->name).getFullNameNotQuoted());
+            resolved_filter.push_back(query_info.additional_filter_ast->formatWithSecretsOneLine());
 
             Map forwarded_filters;
+            forwarded_filters.push_back(std::move(resolved_filter));
             for (const auto & entry : context->getSettingsRef()[Setting::additional_table_filters].value)
-                if (entry.safeGet<Tuple>().at(0).safeGet<String>() != full_name)
-                    forwarded_filters.push_back(entry);
+                forwarded_filters.push_back(entry);
 
+            query_to_send = query_to_send->clone();
             static constexpr std::string_view additional_table_filters_name[] = {"additional_table_filters"};
             removeSettingsFromQueryTopLevel(query_to_send, additional_table_filters_name);
 
