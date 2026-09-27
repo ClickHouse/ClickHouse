@@ -82,6 +82,11 @@ WITH mat AS MATERIALIZED (SELECT 2 AS y)
 SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) ORDER BY s
 SETTINGS correlated_subqueries_default_join_kind = 'left';
 
+-- `make_distributed_plan` also takes this path: the plan cannot be distributed and runs locally.
+WITH mat AS MATERIALIZED (SELECT 2 AS y)
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 1;
+
 -- The same CTE read both inside the duplicated body and outside it: one writer, readers on both
 -- sides of the set gate.
 WITH mat AS MATERIALIZED (SELECT 2 AS y)
