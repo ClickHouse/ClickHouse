@@ -92,6 +92,19 @@ WHERE (name, val, d, u, ip, dec) IN (SELECT * FROM v_pv(
     dec = 1.25))
 SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, enable_analyzer = 1, log_comment = 'pv_forwarded_scalar';
 
+-- EXPLAIN SYNTAX inlines the view through FunctionParameterValuesVisitor, the AST-side collector.
+SELECT 'ast-cast', explain FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM v_pv(
+    name = 'a1',
+    val = CAST('y', 'Enum8(\'x\' = 0, \'y\' = 1)'),
+    d = CAST('2020-01-02', 'Date'),
+    u = CAST('00000000-0000-0000-0000-000000000001', 'UUID'),
+    ip = CAST('1.2.3.4', 'IPv4'),
+    dec = CAST(1.25, 'Decimal(10, 2)')));
+
+-- The array as the initiator renders it: without its type the enum travels as 1 and cannot be parsed.
+SELECT 'ast-cast-array', explain FROM (EXPLAIN SYNTAX oneline = 1 SELECT name, val
+FROM v_pv_array(tuples = _CAST([('a1', 1), ('a2', 0)], 'Array(Tuple(String, Enum8(\'x\' = 0, \'y\' = 1)))')));
+
 SYSTEM FLUSH LOGS query_log;
 
 -- The shard really received both view calls as text: non-initial queries mentioning them ran.
