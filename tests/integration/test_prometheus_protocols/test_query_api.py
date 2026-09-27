@@ -228,6 +228,25 @@ def test_error_while_parsing():
     assert "while parsing PromQL query" in error_message
 
 
+# Errors raised before the query runs (a bad setting, a wrong password) keep their HTTP status
+# and come as a Prometheus error response `{"status":"error",...}` too.
+def test_error_before_dispatch():
+    node.query("CREATE USER IF NOT EXISTS prometheus_password_user IDENTIFIED BY 'right'")
+    for params, status_code, error_type, error in (
+        ({"no_such_setting": "1"}, 404, "not_found", "UNKNOWN_SETTING"),
+        ({"max_threads": "abc"}, 400, "bad_data", "CANNOT_PARSE"),
+        ({"user": "prometheus_password_user", "password": "wrong"}, 403, "bad_data", "AUTHENTICATION_FAILED"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == status_code, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == error_type
+        assert error in extract_error_from_http_api_response(response)
+    node.query("DROP USER prometheus_password_user")
+
+
 # Checks the case when an exception appears before any block has been written to the response buffer.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
 def test_error_before_first_block():
