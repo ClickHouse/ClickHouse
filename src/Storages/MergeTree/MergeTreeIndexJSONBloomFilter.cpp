@@ -77,6 +77,7 @@ extern const int CORRUPTED_DATA;
 extern const int INCORRECT_DATA;
 extern const int INCORRECT_NUMBER_OF_COLUMNS;
 extern const int LOGICAL_ERROR;
+extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 struct JSONBloomFilterDynamicProbe
@@ -636,6 +637,8 @@ private:
         bool has_dynamic_structure = false;
         bool is_dynamic_complex = false;
         bool raw_value = false;
+        /// The value can be emitted from its binary representation, see `emitBinaryValue`.
+        bool can_walk_binary = false;
         /// For arrays, the info of the element type, which is found by name otherwise.
         mutable const TypeInfo * array_element_info = nullptr;
         mutable UnorderedMapWithMemoryTracking<
@@ -710,6 +713,22 @@ private:
         return shared_path_plans_by_prefixes[role_index][{String(logical_prefix), String(hash_prefix)}];
     }
 
+    SharedPathPlan & getSharedPathPlan(
+        SharedPathPlans & shared_path_plans, std::string_view logical_prefix, std::string_view hash_prefix, std::string_view path)
+    {
+        auto plan_it = shared_path_plans.find(path);
+        if (plan_it == shared_path_plans.end())
+        {
+            SharedPathPlan shared_plan;
+            shared_plan.logical_path = appendPath(logical_prefix, path);
+            shared_plan.hash_path = appendPath(hash_prefix, path);
+            shared_plan.should_visit = path_matcher.shouldVisit(shared_plan.logical_path);
+            shared_plan.should_index = path_matcher.shouldIndex(shared_plan.logical_path);
+            plan_it = shared_path_plans.try_emplace(String(path), std::move(shared_plan)).first;
+        }
+        return plan_it->second;
+    }
+
     const TypeInfo & getTypeInfo(
         const DataTypePtr & type,
         SerializationPtr serialization = {},
@@ -736,6 +755,7 @@ private:
         info.is_dynamic_complex = typeid_cast<const DataTypeObject *>(type.get()) || typeid_cast<const DataTypeArray *>(type.get())
             || typeid_cast<const DataTypeMap *>(type.get()) || typeid_cast<const DataTypeTuple *>(type.get()) || info.has_dynamic_structure;
         info.raw_value = canHashRawValue(*type);
+        info.can_walk_binary = canWalkBinary(*type);
         if (!isDynamic(type) && !info.which.isNothing() && !info.which.isVariant() && !info.is_dynamic_complex)
         {
             info.serialization = serialization ? std::move(serialization) : type->getDefaultSerialization();
@@ -926,17 +946,7 @@ private:
             for (size_t shared_index = start; shared_index != end; ++shared_index)
             {
                 const auto path = shared_data_paths->getDataAt(shared_index);
-                auto plan_it = shared_path_plans.find(path);
-                if (plan_it == shared_path_plans.end())
-                {
-                    SharedPathPlan shared_plan;
-                    shared_plan.logical_path = appendPath(logical_prefix, path);
-                    shared_plan.hash_path = appendPath(hash_prefix, path);
-                    shared_plan.should_visit = path_matcher.shouldVisit(shared_plan.logical_path);
-                    shared_plan.should_index = path_matcher.shouldIndex(shared_plan.logical_path);
-                    plan_it = shared_path_plans.try_emplace(String(path), std::move(shared_plan)).first;
-                }
-                auto & shared_plan = plan_it->second;
+                auto & shared_plan = getSharedPathPlan(shared_path_plans, logical_prefix, hash_prefix, path);
                 if (!shared_plan.should_visit)
                     continue;
                 const auto value_data = shared_data_values->getDataAt(shared_index);
@@ -978,9 +988,9 @@ private:
         }
         else
         {
-            auto decoded = decodeJSONDataType(buffer, serializations_cache);
-            type_info_ptr = &getTypeInfo(decoded.type, decoded.serialization, decoded.name);
-            serialization = std::move(decoded.serialization);
+            const auto & decoded = decodeValueType(buffer);
+            type_info_ptr = decoded.type_info;
+            serialization = decoded.serialization;
             if (shared_plan)
             {
                 shared_plan->last_encoded_type.assign(value_data.begin(), value_data.begin() + (buffer.position() - value_data.data()));
@@ -1015,6 +1025,14 @@ private:
             return;
         }
 
+        if (type_info.can_walk_binary)
+        {
+            ++temporary_column_depth;
+            emitBinaryValue(hash_path, logical_path, role, type_info, buffer, should_index);
+            --temporary_column_depth;
+            return;
+        }
+
         auto & available_columns = shared_columns_cache[type_info.name];
         auto column = available_columns.empty() ? type->createColumn() : std::move(available_columns.back());
         if (!available_columns.empty())
@@ -1031,6 +1049,265 @@ private:
         --temporary_column_depth;
         column->popBack(1);
         available_columns.push_back(std::move(column));
+    }
+
+    /// A JSON value in shared data keeps its values in shared data too if it has no typed paths, no paths to skip and
+    /// no dynamic paths, so its binary representation is a list of paths and `Dynamic` values.
+    static bool isObjectWithOnlySharedData(const DataTypeObject & object_type)
+    {
+        return object_type.getTypedPaths().empty() && object_type.getPathsToSkip().empty()
+            && object_type.getPathRegexpsToSkip().empty() && object_type.getMaxDynamicPaths() == 0;
+    }
+
+    static bool isBinaryScalar(const IDataType & type)
+    {
+        const WhichDataType which(type);
+        return which.isNativeNumber() || which.isStringOrFixedString();
+    }
+
+    /// Whether a non-null value of a complex type in shared data can be emitted by `emitBinaryValue`, which reads its
+    /// binary representation, instead of deserializing it into a temporary column and emitting the column. The value
+    /// deserialized into a column would keep all paths of its objects in shared data, and a path in shared data is
+    /// emitted from its binary value, so both emit the same tokens in the same order.
+    static bool canWalkBinary(const IDataType & type)
+    {
+        if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+            return isObjectWithOnlySharedData(*object_type);
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+        {
+            const auto & nested_type = array_type->getNestedType();
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+                return isBinaryScalar(*nullable_type->getNestedType());
+            return isBinaryScalar(*nested_type) || canWalkBinary(*nested_type);
+        }
+        return false;
+    }
+
+    /// The same as `emitValue` for a non-null dynamic value of a type from `canWalkBinary` (or of an element of it),
+    /// deserialized from `buffer`.
+    void emitBinaryValue(
+        std::string_view hash_path,
+        std::string_view logical_path,
+        JSONBloomRole role,
+        const TypeInfo & type_info,
+        ReadBufferFromMemory & buffer,
+        bool index_path)
+    {
+        const auto & type = type_info.type;
+        if (!index_path && !type_info.has_json_path_descendants)
+        {
+            skipBinaryValue(type, buffer);
+            return;
+        }
+
+        if (index_path && type_info.is_dynamic_complex)
+            addPresence(logical_path, hash_path, role, JSONBloomFilterTokens::PresenceKind::Complex);
+
+        if (typeid_cast<const DataTypeObject *>(type.get()))
+        {
+            emitBinaryObject(hash_path, logical_path, role, buffer);
+            return;
+        }
+
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            emitBinaryArray(hash_path, logical_path, *array_type, type_info, buffer, index_path);
+            return;
+        }
+
+        ScalarPlan keyed_plan;
+        auto & plan = prepareScalar(hash_path, logical_path, role, true, type_info, keyed_plan);
+        tokens.addValue(*plan.path_id, hashSharedScalar(plan.seed, *type, buffer, format_settings));
+    }
+
+    /// The same as `emitArray`.
+    void emitBinaryArray(
+        std::string_view hash_path,
+        std::string_view logical_path,
+        const DataTypeArray & array_type,
+        const TypeInfo & array_info,
+        ReadBufferFromMemory & buffer,
+        bool index_path)
+    {
+        const auto & nested_type = array_type.getNestedType();
+        if (!array_info.array_element_info)
+            array_info.array_element_info = &getTypeInfo(removeJSONBloomWrappers(nested_type));
+        const auto & nested_type_info = *array_info.array_element_info;
+        const bool is_nullable = nested_type->isNullable();
+
+        const size_t size = readBinaryArraySize(buffer);
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (is_nullable)
+            {
+                UInt8 is_null = 0;
+                readBinary(is_null, buffer);
+                if (is_null)
+                    continue;
+            }
+            emitBinaryValue(hash_path, logical_path, JSONBloomRole::ArrayElement, nested_type_info, buffer, index_path);
+        }
+    }
+
+    /// The same as deserializing a JSON value with only shared data (see `SerializationObject::deserializeBinary`) and
+    /// `emitObject` for it: the non-null values of the paths are sorted, and each one is emitted by `emitSharedValue`.
+    void emitBinaryObject(std::string_view hash_path, std::string_view logical_path, JSONBloomRole role, ReadBufferFromMemory & buffer)
+    {
+        size_t num_paths = 0;
+        readVarUInt(num_paths, buffer);
+        std::vector<std::pair<std::string_view, std::string_view>> paths_and_values;
+        for (size_t i = 0; i != num_paths; ++i)
+        {
+            const auto path = readBinaryStringView(buffer);
+            const char * value_begin = buffer.position();
+            if (!skipDynamicValue(buffer))
+                paths_and_values.emplace_back(path, std::string_view(value_begin, buffer.position() - value_begin));
+        }
+        std::sort(paths_and_values.begin(), paths_and_values.end());
+
+        auto & shared_path_plans = getSharedPathPlans(role, logical_path, hash_path);
+        for (size_t i = 0; i != paths_and_values.size(); ++i)
+        {
+            const auto & [path, value] = paths_and_values[i];
+            if (i != 0 && path == paths_and_values[i - 1].first)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                continue;
+            }
+
+            auto & shared_plan = getSharedPathPlan(shared_path_plans, logical_path, hash_path, path);
+            if (shared_plan.should_visit)
+                emitSharedValue(shared_plan.hash_path, shared_plan.logical_path, role, shared_plan.should_index, value, &shared_plan);
+        }
+    }
+
+    size_t readBinaryArraySize(ReadBufferFromMemory & buffer) const
+    {
+        size_t size = 0;
+        readVarUInt(size, buffer);
+        if (format_settings.binary.max_binary_array_size && size > format_settings.binary.max_binary_array_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting format_binary_max_array_size",
+                size,
+                format_settings.binary.max_binary_array_size);
+        return size;
+    }
+
+    std::string_view readBinaryStringView(ReadBufferFromMemory & buffer) const
+    {
+        UInt64 size = 0;
+        readVarUInt(size, buffer);
+        SerializationString::checkStringSize(size, format_settings);
+        if (size > buffer.available())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Cannot read all data. Bytes read: {}. Bytes expected: {}.", buffer.available(), std::to_string(size));
+        std::string_view result(buffer.position(), size);
+        buffer.position() += size;
+        return result;
+    }
+
+    struct DecodedValueType
+    {
+        String encoded_type;
+        const TypeInfo * type_info = nullptr;
+        SerializationPtr serialization;
+    };
+
+    /// Reads the type of a `Dynamic` value. Values of a few types are the most common, so the recently read types are
+    /// remembered with their binary encoding. The encoding is prefix-free, so a remembered encoding that the value starts
+    /// with is its type, and neither decoding nor the name of the type is needed.
+    const DecodedValueType & decodeValueType(ReadBufferFromMemory & buffer)
+    {
+        const std::string_view data(buffer.position(), buffer.available());
+        for (const auto & decoded : recent_value_types)
+        {
+            if (!decoded.encoded_type.empty() && data.starts_with(decoded.encoded_type))
+            {
+                buffer.position() += decoded.encoded_type.size();
+                return decoded;
+            }
+        }
+
+        auto decoded = decodeJSONDataType(buffer, serializations_cache);
+        auto & result = recent_value_types[next_recent_value_type];
+        next_recent_value_type = (next_recent_value_type + 1) % recent_value_types.size();
+        result.encoded_type.assign(data.data(), buffer.position() - data.data());
+        result.type_info = &getTypeInfo(decoded.type, decoded.serialization, decoded.name);
+        result.serialization = std::move(decoded.serialization);
+        return result;
+    }
+
+    /// Skips a `Dynamic` value. Returns true if it is NULL.
+    bool skipDynamicValue(ReadBufferFromMemory & buffer)
+    {
+        const auto & type = decodeValueType(buffer).type_info->type;
+        if (isNothing(type))
+            return true;
+        return skipBinaryValue(type, buffer);
+    }
+
+    /// Skips a value of `type`. Returns true if it is NULL.
+    bool skipBinaryValue(const DataTypePtr & type, ReadBufferFromMemory & buffer)
+    {
+        const WhichDataType which(*type);
+        if (which.isNativeNumber() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID()
+            || which.isIPv4() || which.isIPv6() || which.isDecimal() || which.isInt128() || which.isUInt128() || which.isInt256()
+            || which.isUInt256())
+        {
+            const size_t size = type->getSizeOfValueInMemory();
+            if (size > buffer.available())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", buffer.available(), std::to_string(size));
+            buffer.position() += size;
+            return false;
+        }
+        if (which.isString())
+        {
+            readBinaryStringView(buffer);
+            return false;
+        }
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            UInt8 is_null = 0;
+            readBinary(is_null, buffer);
+            if (is_null)
+                return true;
+            skipBinaryValue(nullable_type->getNestedType(), buffer);
+            return false;
+        }
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            const size_t size = readBinaryArraySize(buffer);
+            for (size_t i = 0; i != size; ++i)
+                skipBinaryValue(array_type->getNestedType(), buffer);
+            return false;
+        }
+        if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()); object_type && isObjectWithOnlySharedData(*object_type))
+        {
+            size_t num_paths = 0;
+            readVarUInt(num_paths, buffer);
+            for (size_t i = 0; i != num_paths; ++i)
+            {
+                readBinaryStringView(buffer);
+                skipDynamicValue(buffer);
+            }
+            return false;
+        }
+        if (isDynamic(type))
+            return skipDynamicValue(buffer);
+
+        /// Other types are rare, so they are just deserialized.
+        auto & available_columns = shared_columns_cache[type->getName()];
+        auto column = available_columns.empty() ? type->createColumn() : std::move(available_columns.back());
+        if (!available_columns.empty())
+            available_columns.pop_back();
+        type->getDefaultSerialization()->deserializeBinary(*column, buffer, format_settings);
+        const bool is_null = column->isNullAt(column->size() - 1);
+        column->popBack(1);
+        available_columns.push_back(std::move(column));
+        return is_null;
     }
 
     void emitDynamic(
@@ -1437,6 +1714,8 @@ private:
     std::array<UnorderedMapWithMemoryTracking<String, SharedPathPlans, StringHashForHeterogeneousLookup, std::equal_to<>>, 3> shared_path_plans_by_prefix;
     std::array<std::map<std::pair<String, String>, SharedPathPlans>, 3> shared_path_plans_by_prefixes;
     size_t temporary_column_depth = 0;
+    std::array<DecodedValueType, 16> recent_value_types;
+    size_t next_recent_value_type = 0;
     WriteBufferFromOwnString value_buffer;
     const FormatSettings format_settings;
 };
