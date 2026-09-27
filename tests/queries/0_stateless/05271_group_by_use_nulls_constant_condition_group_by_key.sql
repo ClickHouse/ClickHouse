@@ -1,6 +1,7 @@
 -- A GROUP BY key `if`/`multiIf` with a constant condition always evaluates to one of its branches. When that
--- branch is a column, a correlated subquery reading the column must return what it returns when the column itself
--- is the key, including the NULLs of ROLLUP/CUBE/GROUPING SETS under `group_by_use_nulls`.
+-- branch is a column, the key read back by other clauses and a correlated subquery reading the column must return
+-- what they return when the column itself is the key, including the NULLs of ROLLUP/CUBE/GROUPING SETS under
+-- `group_by_use_nulls`.
 
 -- clickhouse-test randomizes these; they are pinned at their defaults to keep the query shapes below.
 SET optimize_multiif_to_if = 1, optimize_if_chain_to_multiif = 0, optimize_group_by_function_keys = 1,
@@ -113,6 +114,13 @@ GROUP BY lower(c0), k WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nu
 
 SELECT 'nested, collapsed column repeated', if(0, c0, if(0, lower(c0), c0)) AS k, count() FROM (SELECT 'x'::String) t0(c0)
 GROUP BY lower(c0), k WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nulls = 1, enable_identifier_resolve_cache = 1;
+
+-- The branch that is not taken reads a column that is not a key.
+SELECT 'other branch not a key', multiIf(0, b, a) AS k, count() FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0
+GROUP BY k WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nulls = 1;
+
+SELECT 'nested, other branch not a key', if(0, b, if(0, b, a)) AS k, count() FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0
+GROUP BY k WITH ROLLUP ORDER BY k NULLS LAST SETTINGS group_by_use_nulls = 1;
 
 -- The condition becomes constant only when the dictionary lookup, which matches no key, is optimized away.
 SELECT 'dictionary condition, rollup', (SELECT c0) FROM (SELECT 1::Bool AS c0, 1::UInt64 AS id) t0

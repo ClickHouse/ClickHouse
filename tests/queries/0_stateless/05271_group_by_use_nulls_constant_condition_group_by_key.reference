@@ -47,6 +47,10 @@ collapsed column repeated, written sub-key	\N	1
 nested, collapsed column repeated	x	1
 nested, collapsed column repeated	\N	1
 nested, collapsed column repeated	\N	1
+other branch not a key	x	1
+other branch not a key	\N	1
+nested, other branch not a key	x	1
+nested, other branch not a key	\N	1
 dictionary condition, rollup	true
 dictionary condition, rollup	\N
 nested dictionary condition, rollup	true
