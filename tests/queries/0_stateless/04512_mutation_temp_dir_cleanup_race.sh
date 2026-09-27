@@ -84,12 +84,15 @@ function wait_for_cleanup_iterations()
 # writes `is in use` at most once per 10 seconds per table, so a message about another directory can delay it.
 function wait_for_cleanup_rows()
 {
-    local deadline=$((SECONDS + 60))
-    while (( SECONDS < deadline ))
+    local deadline poll_s
+    deadline=$(mutation_wait_deadline 60)
+    while :
     do
+        poll_s=$(( deadline - SECONDS ))
+        if (( poll_s <= 0 )); then break; fi
         sleep 0.3
-        $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-        if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() $CLEANUP_ROWS") -ge 1 ]]
+        if timeout --foreground -k 1 "$poll_s" $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log" \
+            && [[ $(timeout --foreground -k 1 "$poll_s" $CLICKHOUSE_CLIENT --query "SELECT count() $CLEANUP_ROWS") -ge 1 ]]
         then
             return 0
         fi
