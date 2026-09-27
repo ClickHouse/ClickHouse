@@ -166,7 +166,6 @@ bool explicitProjectionColumnTypeDependsOn(const ASTProjectionDeclaration & decl
                 && declared_column.name == source_column)
                 return true;
             if (expression->getAliasOrColumnName() == declared_column.name
-                && expression->as<ASTIdentifier>()
                 && projectionQueryReferencesColumn(*expression, source_column))
                 return true;
         }
@@ -1913,8 +1912,8 @@ void AlterCommands::apply(
     {
         /// An unavailable projection cannot be rebuilt here. Reject changes that the stored
         /// query proves will break when it can be analyzed again: a missing referenced column,
-        /// or a new type for a directly selected column with an explicit output type. Keep
-        /// wildcard expansion and untyped outputs free to follow source schema changes.
+        /// or a new type for an expression with an explicit output type. Keep wildcard
+        /// expansion and untyped outputs free to follow source schema changes.
         auto check_projection = [&](const ASTPtr & definition_ast)
         {
             const auto & declaration = definition_ast->as<const ASTProjectionDeclaration &>();
@@ -2021,6 +2020,7 @@ void AlterCommands::apply(
     }
     for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
         new_projections.addUnavailable(definition_ast->clone());
+    new_projections.preserveDeclarationOrder(metadata_copy.projections);
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.

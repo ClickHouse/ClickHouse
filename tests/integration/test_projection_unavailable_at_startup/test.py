@@ -212,6 +212,36 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         settings=POSITIONAL,
     )
 
+    node.query("CREATE TABLE dl.t8 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t8 ADD PROJECTION pp (arr Array(UInt64) CODEC(ZSTD)) "
+        "AS (SELECT [b] AS arr, a GROUP BY 2, 1)",
+        settings=POSITIONAL,
+    )
+
+    # Keep an unavailable declaration on a replicated table, before an available one, so
+    # metadata rewrites have to serialize both in their original order.
+    node.query(
+        "CREATE TABLE dl.t9 (a UInt64, b UInt64) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/dl/t9', 'r1') ORDER BY a"
+    )
+    node.query(
+        "ALTER TABLE dl.t9 ADD PROJECTION pp_unavailable (b CODEC(ZSTD)) "
+        "AS (SELECT b, a GROUP BY 1, 2)",
+        settings={**POSITIONAL, "allow_projection_column_list_in_replicated_metadata": 1},
+    )
+    node.query(
+        "ALTER TABLE dl.t9 ADD PROJECTION qq_available (SELECT a ORDER BY a)",
+        settings=POSITIONAL,
+    )
+    node.query(
+        "CREATE TABLE dl.t9_peer (a UInt64, b UInt64, "
+        "PROJECTION pp_unavailable (b CODEC(ZSTD)) AS (SELECT b, a GROUP BY 1, 2), "
+        "PROJECTION qq_available (SELECT a ORDER BY a)) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/dl/t9', 'r2') ORDER BY a",
+        settings={**POSITIONAL, "allow_projection_column_list_in_replicated_metadata": 1},
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -228,6 +258,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t6") == "1"
     assert active_projection_parts("t6") == "1"
     assert projections("t7") == "1"
+    assert projections("t8") == "1"
+    assert projections("t9") == "2"
+    assert projections("t9_peer") == "2"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.restart_clickhouse()
@@ -241,6 +274,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t5") == "0"
     assert projections("t6") == "0"
     assert projections("t7") == "0"
+    assert projections("t8") == "0"
+    assert projections("t9") == "1"
+    assert projections("t9_peer") == "1"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -296,6 +332,11 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t6_local_copy") == "0"
     assert declarations_on_disk("t6_local_copy") == 1
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6_local_copy")
+    node.query("CREATE TABLE dl.t9_local_copy AS dl.t9 ENGINE = MergeTree ORDER BY a")
+    assert projections("t9_local_copy") == "1"
+    assert declarations_on_disk("t9_local_copy") == 2
+    t9_local_copy_create = node.query("SHOW CREATE TABLE dl.t9_local_copy")
+    assert t9_local_copy_create.index("pp_unavailable") < t9_local_copy_create.index("qq_available")
 
     # Metadata-only changes leave the source schema intact and must remain usable while a
     # projection declaration is unavailable.
@@ -329,6 +370,35 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     node.query("ALTER TABLE dl.t7 MODIFY COLUMN d UInt32")
     node.query("ALTER TABLE dl.t7 DROP COLUMN c")
     assert declarations_on_disk("t7") == 1
+
+    error = node.query_and_get_error("ALTER TABLE dl.t8 MODIFY COLUMN b UInt32")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+
+    zk_path = node.query(
+        "SELECT zookeeper_path FROM system.replicas WHERE database = 'dl' AND table = 't9'"
+    ).strip()
+    node.query("ALTER TABLE dl.t9 MODIFY COMMENT 'safe'")
+    zk_metadata = node.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '{zk_path}' AND name = 'metadata'"
+    )
+    assert "projections: pp_unavailable" in zk_metadata
+    assert zk_metadata.index("pp_unavailable") < zk_metadata.index("qq_available")
+    assert "CODEC(ZSTD(1))" in zk_metadata
+    assert declarations_on_disk("t9") == 2
+    t9_create = node.query("SHOW CREATE TABLE dl.t9")
+    assert t9_create.index("pp_unavailable") < t9_create.index("qq_available")
+    node.query("ALTER TABLE dl.t9 ADD COLUMN c UInt64 DEFAULT 0")
+    node.query("SYSTEM SYNC REPLICA dl.t9_peer")
+    assert declarations_on_disk("t9_peer") == 2
+    assert projections("t9_peer") == "1"
+    t9_peer_create = node.query("SHOW CREATE TABLE dl.t9_peer")
+    assert t9_peer_create.index("pp_unavailable") < t9_peer_create.index("qq_available")
+    node.query("ALTER TABLE dl.t9 ADD PROJECTION rr_available (SELECT b ORDER BY b)")
+    node.query("SYSTEM SYNC REPLICA dl.t9_peer")
+    assert declarations_on_disk("t9_peer") == 3
+    assert projections("t9_peer") == "2"
+    t9_peer_create = node.query("SHOW CREATE TABLE dl.t9_peer")
+    assert t9_peer_create.index("pp_unavailable") < t9_peer_create.index("qq_available") < t9_peer_create.index("rr_available")
 
     # A mutation is not a metadata `ALTER`, so it is not refused. Nothing knows whether `pp`'s
     # materialized data still matches the rows it rewrites, so that data must be left out of the new
@@ -439,6 +509,10 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert active_projection_parts("t") == "1"
     assert projections("t6") == "1"
     assert projections("t7") == "1"
+    assert projections("t8") == "1"
+    assert projections("t9") == "3"
+    assert projections("t9_peer") == "3"
+    assert projections("t9_local_copy") == "2"
     assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 

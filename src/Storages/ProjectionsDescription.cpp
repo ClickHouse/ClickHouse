@@ -49,6 +49,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -252,6 +254,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
         other.add(projection.clone());
     for (const auto & definition_ast : unavailable)
         other.addUnavailable(definition_ast->clone());
+
+    other.declaration_order = declaration_order;
 
     return other;
 }
@@ -1034,21 +1038,44 @@ Block ProjectionDescription::calculateByQuery(
 
 String ProjectionsDescription::toString() const
 {
-    if (empty())
+    if (declaration_order.empty())
         return {};
 
     ASTExpressionList list;
-    for (const auto & projection : projections)
-        list.children.push_back(projection.definition_ast);
-
+    list.children = getDefinitionsInDeclarationOrder();
     return list.formatIgnoringRedundantParentheses();
+}
+
+ASTs ProjectionsDescription::getDefinitionsInDeclarationOrder() const
+{
+    ASTs result;
+    result.reserve(declaration_order.size());
+    for (const auto & name : declaration_order)
+    {
+        if (auto it = map.find(name); it != map.end())
+        {
+            result.push_back(it->second->definition_ast->clone());
+            continue;
+        }
+
+        auto it = std::find_if(unavailable.begin(), unavailable.end(), [&](const ASTPtr & definition_ast)
+        {
+            return definition_ast->as<const ASTProjectionDeclaration &>().name == name;
+        });
+        if (it == unavailable.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} is missing from its declaration order", backQuote(name));
+        result.push_back((*it)->clone());
+    }
+
+    return result;
 }
 
 ProjectionsDescription ProjectionsDescription::parse(
     const String & str,
     const ColumnsDescription & columns,
     const KeyDescription * parent_partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const ProjectionsDescription * known_unavailable)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -1059,8 +1086,27 @@ ProjectionsDescription ProjectionsDescription::parse(
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
-        result.add(std::move(projection));
+        try
+        {
+            auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
+            result.add(std::move(projection));
+        }
+        catch (const Exception &)
+        {
+            /// A replica may still be unable to analyze a declaration that it already loaded
+            /// from stored metadata. Only that same declaration may remain unavailable here;
+            /// a newly introduced invalid projection must still fail replication.
+            const bool was_unavailable = known_unavailable && std::ranges::any_of(
+                known_unavailable->unavailable,
+                [&](const ASTPtr & old_definition)
+                {
+                    return old_definition->formatIgnoringRedundantParentheses()
+                        == projection_ast->formatIgnoringRedundantParentheses();
+                });
+            if (!was_unavailable)
+                throw;
+            result.addUnavailable(projection_ast->clone());
+        }
     }
 
     return result;
@@ -1134,6 +1180,19 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
 
     auto it = projections.insert(insert_it, std::move(projection));
     map[it->name] = it;
+
+    if (first)
+        declaration_order.insert(declaration_order.begin(), it->name);
+    else if (!after_projection.empty())
+    {
+        auto order_it = std::find(declaration_order.begin(), declaration_order.end(), after_projection);
+        if (order_it != declaration_order.end())
+            declaration_order.insert(++order_it, it->name);
+        else
+            declaration_order.push_back(it->name);
+    }
+    else
+        declaration_order.push_back(it->name);
 }
 
 void ProjectionsDescription::remove(const String & projection_name, bool if_exists)
@@ -1146,6 +1205,7 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
             if ((*unavailable_it)->as<const ASTProjectionDeclaration &>().name != projection_name)
                 continue;
             unavailable.erase(unavailable_it);
+            std::erase(declaration_order, projection_name);
             return;
         }
 
@@ -1161,11 +1221,18 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
+    std::erase(declaration_order, projection_name);
 }
 
 void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
 {
+    declaration_order.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
     unavailable.push_back(std::move(definition_ast));
+}
+
+void ProjectionsDescription::preserveDeclarationOrder(const ProjectionsDescription & source)
+{
+    declaration_order = source.declaration_order;
 }
 
 Names ProjectionsDescription::getUnavailableNames() const

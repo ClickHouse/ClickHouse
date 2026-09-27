@@ -1320,7 +1320,8 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
                 metadata_snapshot->columns,
                 metadata_snapshot->virtuals,
                 getStorageID().getNameForLogs(),
-                getContext());
+                getContext(),
+                metadata_snapshot->projections);
         };
 
         auto is_same_columns = [&](const String & zk_columns_str)
@@ -1852,7 +1853,16 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
         metadata_snapshot->add_minmax_index_for_numeric_columns,
         metadata_snapshot->add_minmax_index_for_string_columns,
         getContext());
-    bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->columns, metadata_snapshot->virtuals, getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
+    bool is_metadata_equal = old_metadata.checkEquals(
+        metadata_from_zk,
+        metadata_snapshot->columns,
+        metadata_snapshot->virtuals,
+        getStorageID().getNameForLogs(),
+        getContext(),
+        metadata_snapshot->projections,
+        /*check_index_granularity*/ true,
+        strict_check,
+        log.load());
 
     if (metadata_version)
         *metadata_version = metadata_stat.version;

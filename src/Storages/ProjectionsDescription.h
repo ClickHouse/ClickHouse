@@ -192,12 +192,14 @@ struct ProjectionsDescription : public IHints<>
 
     /// Convert description to string
     String toString() const;
+    ASTs getDefinitionsInDeclarationOrder() const;
     /// Parse description from string
     static ProjectionsDescription parse(
         const String & str,
         const ColumnsDescription & columns,
         const KeyDescription * parent_partition_key,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const ProjectionsDescription * known_unavailable = nullptr);
 
     /// Return common expression for all stored projections
     ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
@@ -234,6 +236,10 @@ struct ProjectionsDescription : public IHints<>
     Names getUnavailableNames() const;
     bool hasUnavailable() const { return !unavailable.empty(); }
 
+    /// Preserve the interleaving of analyzed and unavailable declarations after rebuilding the
+    /// analyzed descriptions for an ALTER.
+    void preserveDeclarationOrder(const ProjectionsDescription & source);
+
 private:
     /// Keep the sequence of columns and allow to lookup by name.
     using Container = std::list<ProjectionDescription>;
@@ -242,6 +248,7 @@ private:
     Container projections;
     Map map;
     ASTs unavailable;
+    Names declaration_order;
 };
 
 }

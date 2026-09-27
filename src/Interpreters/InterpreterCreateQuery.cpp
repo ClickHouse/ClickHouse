@@ -2561,6 +2561,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto metadata = *metadata_handle;
         for (const auto & definition : unavailable)
             metadata.projections.addUnavailable(definition->clone());
+        metadata.projections.preserveDeclarationOrder(properties.projections);
         storage->setInMemoryMetadata(metadata);
         /// `validateStorage` may have cached the pre-copy metadata in this query.
         if (auto metadata_cache = getContext()->getQueryMetadataCache())
@@ -2572,8 +2573,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// A fresh storage must analyze every projection it sees. Append declarations copied from
         /// an unavailable source only after construction and validation, and publish the same set
         /// in both the storage metadata and the persisted CREATE query.
-        for (const auto & definition : unavailable)
-            create.columns_list->projections->children.push_back(definition->clone());
+        create.columns_list->projections->children = metadata.projections.getDefinitionsInDeclarationOrder();
     };
 
     if (create.isTemporary())
