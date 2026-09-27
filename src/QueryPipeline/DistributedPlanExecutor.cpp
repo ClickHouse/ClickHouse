@@ -964,7 +964,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
-    if (task_max_threads < task_context->getSettingsRef()[Setting::max_threads])
+    if (task_max_threads != task_context->getSettingsRef()[Setting::max_threads])
         task_context->setSetting("max_threads", task_max_threads);
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
@@ -1052,9 +1052,11 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
-        /// A stage's tasks run in this process at the same time, so they share the query's threads.
-        const UInt64 task_max_threads = std::max<UInt64>(
-            1, context->getSettingsRef()[Setting::max_threads] / std::max<size_t>(1, stage.tasks.size()));
+        /// A stage's tasks run in this process at the same time, so they share the plan's `max_threads`.
+        const UInt64 plan_max_threads = distributed_query_plan.max_threads
+            ? distributed_query_plan.max_threads
+            : UInt64(context->getSettingsRef()[Setting::max_threads]);
+        const UInt64 task_max_threads = std::max<UInt64>(1, plan_max_threads / std::max<size_t>(1, stage.tasks.size()));
 
         for (const auto & task : stage.tasks)
         {
