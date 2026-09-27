@@ -136,10 +136,12 @@ double computeSelectivity(
     {
         return is_inner_step || query_graph.outer_join_conditions.contains(*edge);
     };
-    /// An OR is costed on its branches only where the join surely runs on them: `hash` is enabled, no side is a table
-    /// looked up by its key (a `Join` engine table joins on nothing else), the OR is the only OR of the join, the join
-    /// has no other key, and IEJoin does not take it on two inequalities.
-    const bool keyed_disjunction = query_graph.hash_join_enabled && !has_prepared_storage_side && !has_equivalence_key
+    /// An OR is costed on its branches only where the join surely runs on them: `hash` is enabled (or `auto`, if the OR is
+    /// the only condition of the join), no side is a table looked up by its key (a `Join` engine table joins on nothing
+    /// else), the OR is the only OR of the join, the join has no other key, and IEJoin does not take it on two inequalities.
+    const bool runs_on_branches = query_graph.hash_join_enabled
+        || (query_graph.auto_join_enabled && std::ranges::count_if(edges, in_join_condition) == 1);
+    const bool keyed_disjunction = runs_on_branches && !has_prepared_storage_side && !has_equivalence_key
         && std::ranges::count_if(edges, is_disjunction) == 1 && std::ranges::none_of(edges, is_key)
         && !(query_graph.ie_join_enabled && std::ranges::count_if(edges, is_inequality) >= 2);
     double selectivity = 1.0;

@@ -138,6 +138,29 @@ EXPLAIN SELECT count() FROM v0 LEFT JOIN v1 ON 1 JOIN v2 ON v2.x = v1.x OR v2.y 
 ) WHERE match(explain, '⋈|⟕|⟖') OR explain LIKE '%Type: %';
 SELECT count() FROM v0 LEFT JOIN v1 ON 1 JOIN v2 ON v2.x = v1.x OR v2.y = v1.y;
 
+-- With `auto`, a join runs on the branches of an OR only where the OR is its only condition.
+SET join_algorithm = 'auto';
+SELECT if(explain LIKE '%⋈%', replaceRegexpAll(replaceRegexpAll(explain, '^[^a-z(]+', ''), '\\[[^\\]]*\\]', ''), extract(explain, 'Type: [a-z]+')) FROM (
+EXPLAIN WITH a1 AS (SELECT c2, c1, c4 = 'a' AS c7 FROM t1 FINAL WHERE c2 IN (_CAST(['00000000-0000-0000-0000-000000000001'], 'Array(UUID)')) ORDER BY c3, c2, c1 LIMIT 0, 10000)
+SELECT a2.c2, a2.c1, count() FROM a1 AS a2 INNER JOIN t2 AS a3 ON (a3.c1 = a2.c2) AND (a3.c5 IS NULL) AND (((a2.c7 = 1) AND (a3.c3 = a2.c1)) OR ((a2.c7 = 0) AND (a3.c2 = a2.c1))) INNER JOIN t1 AS a4 FINAL ON (a4.c2 = a3.c1) AND (a4.c1 = if(a2.c7 = 1, a3.c2, a3.c3)) GROUP BY 1, 2
+) WHERE explain LIKE '%⋈%' OR explain LIKE '%Type: %';
+SELECT count(), sum(cnt), sum(cityHash64(x, y)) FROM (
+WITH a1 AS (SELECT c2, c1, c4 = 'a' AS c7 FROM t1 FINAL WHERE c2 IN (_CAST(['00000000-0000-0000-0000-000000000001'], 'Array(UUID)')) ORDER BY c3, c2, c1 LIMIT 0, 10000)
+SELECT a2.c2, a2.c1, count() FROM a1 AS a2 INNER JOIN t2 AS a3 ON (a3.c1 = a2.c2) AND (a3.c5 IS NULL) AND (((a2.c7 = 1) AND (a3.c3 = a2.c1)) OR ((a2.c7 = 0) AND (a3.c2 = a2.c1))) INNER JOIN t1 AS a4 FINAL ON (a4.c2 = a3.c1) AND (a4.c1 = if(a2.c7 = 1, a3.c2, a3.c3)) GROUP BY 1, 2
+) AS s (x, y, cnt);
+
+CREATE TABLE ga (x UInt64, y UInt64, a UInt64, v UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 8192, auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE gb (x UInt64, y UInt64, w UInt64, d UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 8192, auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE gc (a UInt64, z UInt64, c UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE gd (c UInt64, d UInt64) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8192, auto_statistics_types = 'basic, uniq_v2';
+INSERT INTO ga SELECT number * 100, number * 100 + 1, number, number FROM numbers(100);
+INSERT INTO gb SELECT number, number + 1, number, number FROM numbers(10000);
+INSERT INTO gc SELECT number, 101 * number, number FROM numbers(100);
+INSERT INTO gd SELECT intDiv(number, 100), number FROM numbers(10000);
+
+-- Joining `gb` to `ga ⋈ gc` puts the OR and `gc.z = ga.v + gb.w` into one join, which has no key.
+SELECT count() FROM ga JOIN gb ON ga.x = gb.x OR ga.y = gb.y JOIN gc ON gc.a = ga.a AND gc.z = ga.v + gb.w JOIN gd ON gd.c = gc.c AND gd.d = gb.d;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE ta;
@@ -159,3 +182,7 @@ DROP TABLE w1;
 DROP TABLE v0;
 DROP TABLE v1;
 DROP TABLE v2;
+DROP TABLE ga;
+DROP TABLE gb;
+DROP TABLE gc;
+DROP TABLE gd;
