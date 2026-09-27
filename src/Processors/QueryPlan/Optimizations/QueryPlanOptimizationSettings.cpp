@@ -9,6 +9,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -225,7 +226,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        query_plan_optimize_join_order_randomize = randomSeed();
+        /// This constructor runs once per plan construction and one query builds several plans, one per replica
+        /// among them, so the seed has to come from a value that is stable across them. 0 and 1 are sentinels.
+        if (initial_query_id_.empty())
+            query_plan_optimize_join_order_randomize = randomSeed(); /// Internal or background plan: no query to follow.
+        else
+            query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
+        if (query_plan_optimize_join_order_randomize <= 1)
+            query_plan_optimize_join_order_randomize = 2;
     }
     if (query_plan_optimize_join_order_randomize)
     {
