@@ -1,27 +1,31 @@
 DROP TABLE IF EXISTS t_projection_codec_type_change;
 
--- An untyped declaration follows the `SELECT` output type. Changing that type must re-run the
--- session-gated codec check, while a change to an unrelated column must leave the accepted codec alone.
+-- An existing untyped declaration follows the `SELECT` output type. Changing that type must
+-- resolve the codec again without requiring the settings that gated the original declaration.
 CREATE TABLE t_projection_codec_type_change
 (
     k UInt64,
-    x Float64,
+    x Float32,
     y UInt8,
     PROJECTION p (x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)
 )
 ENGINE = MergeTree ORDER BY k;
 
-ALTER TABLE t_projection_codec_type_change MODIFY COLUMN x UInt64; -- { serverError BAD_ARGUMENTS }
+SELECT 'initial', codecs FROM system.projections
+WHERE database = currentDatabase() AND table = 't_projection_codec_type_change';
 
--- Compare against the pre-`ALTER` description even if a later command rebuilds the projection first.
-ALTER TABLE t_projection_codec_type_change
-    MODIFY COLUMN x UInt64,
-    MODIFY PROJECTION p (x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)
-        WITH SETTINGS (index_granularity = 128); -- { serverError BAD_ARGUMENTS }
-
-SET allow_suspicious_codecs = 1;
+-- `Gorilla` on an integer would be suspicious for a new declaration, but the stored declaration
+-- remains valid and its inferred width must change from four bytes to eight.
 ALTER TABLE t_projection_codec_type_change MODIFY COLUMN x UInt64;
-SET allow_suspicious_codecs = 0;
+
+SELECT 'widened', codecs FROM system.projections
+WHERE database = currentDatabase() AND table = 't_projection_codec_type_change';
+
+-- Changing only the projection settings in the same `ALTER` does not introduce a new codec.
+ALTER TABLE t_projection_codec_type_change
+    MODIFY COLUMN x Float32,
+    MODIFY PROJECTION p (x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)
+        WITH SETTINGS (index_granularity = 128);
 
 ALTER TABLE t_projection_codec_type_change MODIFY COLUMN y UInt16;
 
