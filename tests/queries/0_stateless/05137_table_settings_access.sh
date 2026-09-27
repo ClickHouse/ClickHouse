@@ -25,11 +25,10 @@ for u in "${DENIED}" "${GRANTED}"; do
     $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${u}"
     $CLICKHOUSE_CLIENT -q "CREATE USER ${u} IDENTIFIED WITH no_password"
 done
-# The denied user may read the system table itself - the point is that it yields no rows for a
-# table it has no SHOW TABLES on, rather than that the query is refused outright.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${DENIED}"
+# Neither user is granted `SELECT` on the system table: like `system.tables`, it is readable by everyone, and the
+# point is that it yields no rows for a table the reader has no `SHOW TABLES` on. So `SHOW TABLES` on the table is
+# all `SHOW TABLE SETTINGS` needs, as it is all `SHOW COLUMNS` needs.
 $CLICKHOUSE_CLIENT -q "GRANT SHOW TABLES ON ${DB}.mt TO ${GRANTED}"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${GRANTED}"
 
 echo "-- without SHOW TABLES, system.table_settings yields nothing for the table"
 $CLICKHOUSE_CLIENT --user="${DENIED}" -q \

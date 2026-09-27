@@ -11,6 +11,7 @@ GRANT SELECT ON system.databases
 GRANT SELECT ON system.dictionary_layouts
 GRANT SELECT ON system.disk_types
 GRANT SELECT ON system.enabled_roles
+GRANT SELECT ON system.engine_settings
 GRANT SELECT ON system.formats
 GRANT SELECT ON system.functions
 GRANT SELECT ON system.licenses
@@ -20,6 +21,7 @@ GRANT SELECT ON system.quota_usage
 GRANT SELECT ON system.settings
 GRANT SELECT ON system.table_engines
 GRANT SELECT ON system.table_functions
+GRANT SELECT ON system.table_settings
 GRANT SELECT ON system.tables
 GRANT SELECT ON system.time_zones
 GRANT SELECT ON system.user_query_log

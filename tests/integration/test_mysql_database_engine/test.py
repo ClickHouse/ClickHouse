@@ -155,9 +155,6 @@ def test_table_settings_for_mysql_database(started_cluster):
         # only a reachable remote database has rows for the enabling path to reveal.
         clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
         clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
-        clickhouse_node.query(
-            "GRANT SELECT ON system.table_settings TO mysql_settings_denied"
-        )
 
         denied = clickhouse_node.query(
             "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database'",
