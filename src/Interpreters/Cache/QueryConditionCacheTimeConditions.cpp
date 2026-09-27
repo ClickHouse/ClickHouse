@@ -8,6 +8,7 @@
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 
 #include <base/arithmeticOverflow.h>
@@ -206,10 +207,19 @@ bool isTopKFilterFunction(const ActionsDAG::Node * node)
 /// as `and(__topKFilter(...), <predicate>)`, and the write and read sides already partition the
 /// cache key by the TopK plan parameters. Without this, a TopK read of a current-time condition
 /// would derive nothing at all and bypass the cache entirely.
+///
+/// Like `VirtualColumnUtils::isDeterministic`, this also looks into `COLUMN` nodes holding a
+/// constant-folded lambda (`ColumnFunction`): e.g. in `arrayExists(x -> rand() % 2 = 0, arr)` the
+/// non-deterministic `rand` lives in the lambda's own `ActionsDAG`, not in this one.
 bool isDeterministicSubtree(const ActionsDAG::Node * node, bool allow_top_k_filter)
 {
-    if (!node->isDeterministic() && !(allow_top_k_filter && isTopKFilterFunction(node)))
-        return false;
+    if (!(allow_top_k_filter && isTopKFilterFunction(node)))
+    {
+        if (!node->isDeterministic())
+            return false;
+        if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+            return false;
+    }
     for (const auto * child : node->children)
         if (!isDeterministicSubtree(child, allow_top_k_filter))
             return false;
