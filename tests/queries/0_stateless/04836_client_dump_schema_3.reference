@@ -85,6 +85,8 @@ replayed Remote table resolves: 1
 replayed RemoteSecure table resolves: 1
 replayed Remote reader exists: 1
 replayed RemoteSecure reader exists: 1
+--- directory dump follows a Remote proxy through another Remote proxy ---
+OK: source database ordered before the nested proxy reader
 --- directory dump orders a Remote proxy before an in-dump source table reader ---
 OK: proxy ordered before source database
 OK: replayed cycle directory dump in order

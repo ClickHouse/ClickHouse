@@ -592,6 +592,49 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 rm -rf "$REMOTE_DUMP_DIR"
 rm -f "$REMOTE_DUMP_FILE" "$REMOTE_DIR_OUTPUT" "$ERR_FILE"
 
+echo '--- directory dump follows a Remote proxy through another Remote proxy ---'
+# The reader sorts before the source, so only the full proxy chain puts the source first.
+NESTED_SOURCE_DB="${DB}_nested_z_source"
+NESTED_INNER_DB="${DB}_nested_a_inner"
+NESTED_OUTER_DB="${DB}_nested_b_outer"
+NESTED_READER_DB="${DB}_nested_c_reader"
+NESTED_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nested_remote_dir"
+NESTED_DIR_OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nested_remote_dir.out"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${NESTED_READER_DB};
+    DROP DATABASE IF EXISTS ${NESTED_OUTER_DB};
+    DROP DATABASE IF EXISTS ${NESTED_INNER_DB};
+    DROP DATABASE IF EXISTS ${NESTED_SOURCE_DB};
+    CREATE DATABASE ${NESTED_SOURCE_DB};
+    CREATE TABLE ${NESTED_SOURCE_DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE DATABASE ${NESTED_INNER_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${NESTED_SOURCE_DB}');
+    CREATE DATABASE ${NESTED_OUTER_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${NESTED_INNER_DB}');
+    CREATE DATABASE ${NESTED_READER_DB};
+    CREATE VIEW ${NESTED_READER_DB}.v AS SELECT * FROM ${NESTED_OUTER_DB}.t;
+"
+rm -rf "$NESTED_DIR"
+if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 \
+    --dump-schema="${NESTED_READER_DB},${NESTED_OUTER_DB},${NESTED_INNER_DB},${NESTED_SOURCE_DB}" \
+    --dump-schema-dir="$NESTED_DIR" > "$NESTED_DIR_OUT" 2>"$ERR_FILE"; then
+    SOURCE_LINE=$(grep -n "Dumped database ${NESTED_SOURCE_DB} schema" "$NESTED_DIR_OUT" | cut -d: -f1)
+    READER_LINE=$(grep -n "Dumped database ${NESTED_READER_DB} schema" "$NESTED_DIR_OUT" | cut -d: -f1)
+    if [ -n "$SOURCE_LINE" ] && [ -n "$READER_LINE" ] && [ "$SOURCE_LINE" -lt "$READER_LINE" ]; then
+        echo 'OK: source database ordered before the nested proxy reader'
+    else
+        echo "FAIL: nested proxy order source=$SOURCE_LINE reader=$READER_LINE"
+    fi
+else
+    echo "FAIL: nested remote directory dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${NESTED_READER_DB};
+    DROP DATABASE IF EXISTS ${NESTED_OUTER_DB};
+    DROP DATABASE IF EXISTS ${NESTED_INNER_DB};
+    DROP DATABASE IF EXISTS ${NESTED_SOURCE_DB} SYNC;
+"
+rm -rf "$NESTED_DIR"
+rm -f "$NESTED_DIR_OUT" "$ERR_FILE"
+
 echo '--- directory dump orders a Remote proxy before an in-dump source table reader ---'
 CYCLE_SRC_DB="${DB}_cycle_src"
 CYCLE_PROXY_DB="${DB}_cycle_proxy"

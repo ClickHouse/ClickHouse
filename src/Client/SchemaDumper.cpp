@@ -2227,12 +2227,18 @@ std::optional<std::vector<String>> orderDatabasesByDependencies(const std::vecto
             if (database != table.database && db_set.contains(database))
                 depends_on[table.database].insert(database);
         };
-        for (const auto & dependency : table.dependencies)
+        /// A proxy can read through another proxy, so follow the chain to the real source.
+        std::set<std::pair<String, String>> visited;
+        auto pending = table.dependencies;
+        while (!pending.empty())
         {
+            auto dependency = pending.back();
+            pending.pop_back();
+            if (!visited.insert(dependency).second)
+                continue;
             add_dependency(dependency.first);
             if (auto it = proxy_rows.find(dependency); it != proxy_rows.end())
-                for (const auto & source : it->second->dependencies)
-                    add_dependency(source.first);
+                pending.insert(pending.end(), it->second->dependencies.begin(), it->second->dependencies.end());
         }
     }
 
