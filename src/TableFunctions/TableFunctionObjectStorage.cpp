@@ -2280,6 +2280,10 @@ Merge-on-read is not implemented, so **primary-key tables cannot be read**: the 
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
 declares `primary-key` therefore throws.
 
+Deletion vectors are not applied, so **tables with `deletion-vectors.enabled` set to `true` cannot be read**: the
+result would still contain the rows that later `DELETE` and `UPDATE` statements removed. Reading such a table
+therefore throws.
+
 ## Defining a named collection {#defining-a-named-collection}
 
 Here is an example of configuring a named collection for storing the URL and credentials:
