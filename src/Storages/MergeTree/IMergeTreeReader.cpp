@@ -485,7 +485,11 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    if (containsObjectType(*column_in_part->getTypeInStorage()))
+    /// The part's cached serializations are keyed by the names of its physical columns. In Wide parts `part_columns`
+    /// collects flattened `Nested` members into a synthetic column (e.g. `n.a` becomes subcolumn `a` of `n`), which
+    /// has no entry in that cache, so only use it when the storage column exists in the part as is.
+    if (containsObjectType(*column_in_part->getTypeInStorage())
+        && data_part_info_for_read->getColumnPosition(column_in_part->getNameInStorage()))
     {
         auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
         if (serialization->supportsPooling())
