@@ -69,7 +69,7 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     /// The frame and the parent window name are not children, so the default implementation does
     /// not see them. The offsets are children and are covered by the generic walk.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 120, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
     hash_state.update(parent_window_name.size());
     hash_state.update(parent_window_name);
     /// `parent_window_name_quote` is not hashed: formatting does not preserve quote styles, and the

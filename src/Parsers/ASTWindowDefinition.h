@@ -14,8 +14,6 @@ namespace DB
 struct ASTWindowDefinition : public IAST
 {
     std::string parent_window_name;
-    /// Quoting of the parent window name as written in the query.
-    IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
 
     ASTPtr partition_by;
 
@@ -29,6 +27,8 @@ struct ASTWindowDefinition : public IAST
     WindowFrame::BoundaryType frame_end_type = WindowFrame::BoundaryType::Current;
     ASTPtr frame_end_offset;
     bool frame_end_preceding = false;
+    /// Quoting of the parent window name as written in the query. Last, so it fits in the tail padding.
+    IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
 
     ASTPtr clone() const override;
 
