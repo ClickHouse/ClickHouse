@@ -272,6 +272,18 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         held = nullptr;
         pending.clear();
 
+        /// Defensive: a killed or timed-out SELECT is normally cancelled before this runs, so its
+        /// buffered block never reaches the queue. Guard anyway, and never divert a result the SELECT
+        /// did not finish (a `break`-mode timeout ends it cleanly, unlike a KILL or `throw`).
+        if (auto process_list_elem = context->getProcessListElement())
+        {
+            process_list_elem->throwIfKilled();
+            if (!process_list_elem->checkTimeLimit())
+                return {};
+        }
+        if (isCancelled())
+            return {};
+
         auto async_query = query_ast->clone();
         auto & async_insert_query = async_query->as<ASTInsertQuery &>();
         /// `preprocessInsertQuery` rejects an empty format and a plain `INSERT ... SELECT` carries none.
