@@ -10,6 +10,7 @@ graw	10	5045
 kcross	1000	65499500
 any	11003	315495361
 Count
+1
 none	bgap	99999
 none	chead	99999
 none	eblk	10000
@@ -41,6 +42,7 @@ pfor	fseg	2048	2097152
 pfor	graw	10	5045
 pfor	kcross	1000	65499500
 pfor	any	11003	315495361
+05260_count_pfor_chead	1	0
 05260_none_aall	1	0
 05260_none_bgap	0	1
 05260_none_chead	1	0

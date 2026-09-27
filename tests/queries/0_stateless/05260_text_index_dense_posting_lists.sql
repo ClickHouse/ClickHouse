@@ -72,7 +72,11 @@ SELECT 'any', count(), sum(id) FROM tab_dense_none WHERE hasAnyTokens(s, ['eblk'
 
 SELECT 'Count';
 SET use_skip_indexes = 1;
+SET optimize_trivial_count_query = 1;
 SET query_plan_optimize_count_from_text_index = 1;
+SET serialize_query_plan = 0;
+-- Parallel replicas turn the count step off, so the plan check and the logged count below run without them.
+SELECT count() > 0 FROM (EXPLAIN SELECT 'pfor', 'chead', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['chead', 'aall']) SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%ReadFromTextIndexCount%';
 -- `aall` is in every row, so each count is the count of the other token.
 SELECT 'none', 'bgap', count() FROM tab_dense_none WHERE hasAllTokens(s, ['bgap', 'aall']);
 SELECT 'none', 'chead', count() FROM tab_dense_none WHERE hasAllTokens(s, ['chead', 'aall']);
@@ -82,7 +86,7 @@ SELECT 'none', 'graw', count() FROM tab_dense_none WHERE hasAllTokens(s, ['graw'
 SELECT 'none', 'kcross', count() FROM tab_dense_none WHERE hasAllTokens(s, ['kcross', 'aall']);
 SELECT 'none', 'any', count() FROM tab_dense_none WHERE hasAnyTokens(s, ['eblk', 'kcross', 'jone']);
 SELECT 'pfor', 'bgap', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['bgap', 'aall']);
-SELECT 'pfor', 'chead', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['chead', 'aall']);
+SELECT 'pfor', 'chead', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['chead', 'aall']) SETTINGS enable_parallel_replicas = 0, log_comment = '05260_count_pfor_chead';
 SELECT 'pfor', 'eblk', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['eblk', 'aall']);
 SELECT 'pfor', 'fseg', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['fseg', 'aall']);
 SELECT 'pfor', 'graw', count() FROM tab_dense_pfor WHERE hasAllTokens(s, ['graw', 'aall']);
@@ -120,7 +124,7 @@ WITH initial_queries AS
       AND current_database = currentDatabase()
       AND type = 'QueryFinish'
       AND is_initial_query = 1
-      AND match(log_comment, '^05260_(none|pfor)_')
+      AND match(log_comment, '^05260_(count_pfor|none|pfor)_')
 )
 SELECT
     q.log_comment,
