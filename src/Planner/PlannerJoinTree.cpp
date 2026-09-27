@@ -2551,13 +2551,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         else
                             table_name = table_node->getStorageID().getFullTableName();
 
+                        /// A policy built for this read is a filter step of the plan unless it was pushed into the read.
+                        const bool row_policy_in_plan = table_expression_data.getRowLevelFilterActions() && !row_level_filter;
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
                             /*use_parallel_replicas_=*/ false,
-                            row_policy_filter_not_pushed ? ReadFromTableStep::RowPolicyPlacement::FilterStep
-                                                         : ReadFromTableStep::RowPolicyPlacement::NotInPlan);
+                            row_policy_in_plan ? ReadFromTableStep::RowPolicyPlacement::FilterStep
+                                               : ReadFromTableStep::RowPolicyPlacement::NotInPlan);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }
