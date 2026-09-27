@@ -719,15 +719,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// into the TTL selectors forever (the shape 04501 pins). Only the flag is carried, and it
         /// is read from the source parts: merging them has already forced every accumulated
         /// group-by entry to `ttl_finished = false` (MergeTreeDataPartTTLInfo::update), so the
-        /// part's own infos no longer hold it. A rule counts as finished only when every source
-        /// part had finished it.
+        /// part's own infos no longer hold it. Merging several parts can bring rows with the same
+        /// key together, so the rule is finished only for a single source part.
         if (global_ctx->metadata_snapshot->hasAnyGroupByTTL())
         {
             TTLInfoMap preserved;
             for (const auto & [name, info] : global_ctx->new_data_part->ttl_infos.group_by_ttl)
             {
                 auto entry = info;
-                entry.ttl_finished = std::all_of(
+                entry.ttl_finished = global_ctx->future_part->parts.size() == 1 && std::all_of(
                     global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end(),
                     [&](const auto & source)
                     {

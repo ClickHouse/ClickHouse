@@ -290,3 +290,63 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by_future;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_future;"
+
+# Case 22: two parts rolled up on their own still share keys, so their blocked patched merge
+# must leave the GROUP BY rule unfinished and the next TTL merge must roll them up.
+echo "-- Case 22: a blocked patched merge of two rolled-up parts stays schedulable"
+
+for t in t_ttl_patch_group_by_src1 t_ttl_patch_group_by_src2 t_ttl_patch_group_by_two; do
+    ${CLICKHOUSE_CLIENT} -q "
+        CREATE TABLE $t
+        (
+            id UInt64,
+            event_time DateTime,
+            value UInt64
+        )
+        ENGINE = MergeTree()
+        ORDER BY id
+        TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
+        SETTINGS
+            max_number_of_merges_with_ttl_in_pool = 100,
+            merge_with_ttl_timeout = 0,
+            apply_patches_on_merge = 1,
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            min_bytes_for_wide_part = 1;
+    "
+done
+
+${CLICKHOUSE_CLIENT} -q "
+    INSERT INTO t_ttl_patch_group_by_src1 SELECT number % 10, now() - INTERVAL 2 DAY, number FROM numbers(100);
+    INSERT INTO t_ttl_patch_group_by_src2 SELECT number % 10, now() - INTERVAL 2 DAY, number FROM numbers(100);
+    OPTIMIZE TABLE t_ttl_patch_group_by_src1 FINAL;
+    OPTIMIZE TABLE t_ttl_patch_group_by_src2 FINAL;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by_two;
+    ALTER TABLE t_ttl_patch_group_by_two ATTACH PARTITION tuple() FROM t_ttl_patch_group_by_src1;
+    ALTER TABLE t_ttl_patch_group_by_two ATTACH PARTITION tuple() FROM t_ttl_patch_group_by_src2;
+
+    UPDATE t_ttl_patch_group_by_two SET event_time = now() + INTERVAL 5 DAY WHERE id < 2
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM STOP TTL MERGES t_ttl_patch_group_by_two;
+    SYSTEM START MERGES t_ttl_patch_group_by_two;
+    OPTIMIZE TABLE t_ttl_patch_group_by_two FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_two;"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by_two;"
+
+for _ in $(seq 1 120); do
+    two_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_two;")
+    [[ "$two_rows" -lt 20 ]] && break
+    sleep 1
+done
+echo "rolled up: $([[ "$two_rows" -lt 20 ]] && echo 1 || echo 0)"
+
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE t_ttl_patch_group_by_src1;
+    DROP TABLE t_ttl_patch_group_by_src2;
+    DROP TABLE t_ttl_patch_group_by_two;
+"

@@ -12,3 +12,6 @@ rolled up after the blocked patched merge: 1
 -- Case 21: a patch moving every row into the future moves the bound too
 100
 1
+-- Case 22: a blocked patched merge of two rolled-up parts stays schedulable
+20
+rolled up: 1
