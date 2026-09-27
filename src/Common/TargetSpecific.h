@@ -96,10 +96,15 @@ enum class TargetArch : UInt32
 
 /// Runtime detection.
 UInt32 getSupportedArchs();
+
+/// Constant-initialized, so a read is a plain load of a global: no guard variable on every call, and
+/// no dependency on the initialization order of other translation units. Filled in before any other
+/// static constructor runs, see `TargetSpecific.cpp`.
+extern constinit UInt32 supported_archs;
+
 inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
 {
-    static const UInt32 arches = getSupportedArchs();
-    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
+    return arch == TargetArch::Default || (supported_archs & static_cast<UInt32>(arch));
 }
 
 String toString(TargetArch arch);
