@@ -11,13 +11,19 @@
     <max_threads_for_indexes>1</max_threads_for_indexes>
   </settings>
 
+  <!--
+    Each part has ~25k unique tokens with embedded postings and six frequent tokens that sort last
+    in the dictionary. A pattern matching every token scans the whole dictionary before the six
+    frequent tokens exceed text_index_like_max_postings_to_read, so the bailout is expensive and
+    repeating it dominates the query time, while the fallback scan of the column is cheap.
+  -->
   <create_query>
     CREATE TABLE text_index_pattern_bypass_cache
     (
       part UInt8,
       id UInt64,
       message String,
-      INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 64)
+      INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
     )
     ENGINE = MergeTree
     PARTITION BY part
@@ -27,17 +33,17 @@
   <fill_query>
     INSERT INTO text_index_pattern_bypass_cache
     SELECT
-      number % 64,
+      number % 8,
       number,
       concat(
-        'p',
-        char(97 + intDiv(number, 64) % 26),
-        char(97 + intDiv(intDiv(number, 64), 26) % 26))
-    FROM numbers(64 * 676 * 7)
+        'q',
+        arrayStringConcat(arrayMap(i -> char(97 + intDiv(number, toUInt64(pow(26, i))) % 26), range(5))),
+        if(intDiv(number, 8) % 100 < 6, concat(' qzzzzzz', char(97 + intDiv(number, 8) % 100)), ''))
+    FROM numbers(200000)
   </fill_query>
 
-  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'</query>
-  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%'</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%q%'</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%Q%'</query>
 
   <drop_query>DROP TABLE text_index_pattern_bypass_cache</drop_query>
 </test>
