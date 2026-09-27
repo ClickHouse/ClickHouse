@@ -616,6 +616,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             *parent_reading_select_result,
             projection_query_info,
             reading->getTopKFilterInfo(),
+            reading->isQueryConditionCacheAllowed(),
             reading->isTopKPrewhereQueryConditionCacheAllowed(),
             context);
 
