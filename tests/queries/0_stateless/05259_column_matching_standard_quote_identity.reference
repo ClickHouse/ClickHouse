@@ -15,15 +15,13 @@ UNKNOWN_FORMAT
 --- EXCEPT targets folding to one column are ambiguous
 AMBIGUOUS_IDENTIFIER
 AMBIGUOUS_IDENTIFIER
---- a compound EXCEPT or REPLACE target with a double-quoted part is matched exactly
+--- an EXCEPT or REPLACE target naming a subcolumn matches the whole name
 k	data.name
 1	['n']
-k	data.Name
-1	['N']
 k	data.Name	data.name
 1	['R']	['n']
 AMBIGUOUS_IDENTIFIER
 --- JOIN USING through a projection alias folds
 1	a
-AMBIGUOUS_IDENTIFIER
+MULTIPLE_EXPRESSIONS_FOR_ALIAS
 UNKNOWN_IDENTIFIER

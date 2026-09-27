@@ -39,13 +39,13 @@ echo '--- EXCEPT targets folding to one column are ambiguous'
 ${CLIENT_STANDARD} --query "SELECT * EXCEPT (FirstName, firstname) FROM t_quote_identity_names" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
 ${CLIENT_STANDARD} --query "SELECT * EXCEPT (firstname, FirstName) FROM t_quote_identity_names" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
 
-echo '--- a compound EXCEPT or REPLACE target with a double-quoted part is matched exactly'
-${CLIENT_STANDARD} --query 'SELECT * EXCEPT (data."Name") FROM t_quote_identity_nested FORMAT TSVWithNames'
-${CLIENT_STANDARD} --query 'SELECT * EXCEPT ("data".name) FROM t_quote_identity_nested FORMAT TSVWithNames'
-${CLIENT_STANDARD} --query "SELECT * REPLACE (['R'] AS data.\"Name\") FROM t_quote_identity_nested FORMAT TSVWithNames"
-${CLIENT_STANDARD} --query "SELECT * EXCEPT (data.name) FROM t_quote_identity_nested" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+echo '--- an EXCEPT or REPLACE target naming a subcolumn matches the whole name'
+${CLIENT_STANDARD} --query 'SELECT * EXCEPT ("data.Name") FROM t_quote_identity_nested FORMAT TSVWithNames'
+${CLIENT_STANDARD} --query "SELECT * REPLACE (['R'] AS \"data.Name\") FROM t_quote_identity_nested FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query 'SELECT * EXCEPT (`data.name`) FROM t_quote_identity_nested' 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
 
 echo '--- JOIN USING through a projection alias folds'
+# Aliases differing only in character case are rejected already when they are registered.
 ${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query "SELECT id AS JoinKey, v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)"
-${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query "SELECT id AS JoinKey, id + 0 AS joinKEY, v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query "SELECT id AS JoinKey, id + 0 AS joinKEY, v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)" 2>&1 | grep -oF 'MULTIPLE_EXPRESSIONS_FOR_ALIAS' | uniq
 ${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query 'SELECT id AS "JoinKey", v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
