@@ -6,6 +6,8 @@ SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET explain_query_plan_default = 'legacy';
+-- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
+SET use_text_index_postings_cache = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
 -- Direct reads from text indexes require a single replica.
