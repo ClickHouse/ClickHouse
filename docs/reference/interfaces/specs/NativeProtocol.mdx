@@ -231,21 +231,23 @@ stateDiagram-v2
     HANDSHAKE --> READY: handshake ok
     READY --> READING_RESPONSE: send Query
     READING_RESPONSE --> READY: EndOfStream / Exception
-    READY --> READY: Ping / Pong
+    READY --> READY: Ping / Pong, TablesStatusRequest / TablesStatusResponse
+    READING_RESPONSE --> READING_RESPONSE: query input (Data / Scalar / QueryPlan) / Ping / Cancel
 
     HANDSHAKE --> Terminated: handshake error
+    READY --> Terminated: protocol violation / I/O error
     READING_RESPONSE --> Terminated: protocol violation / I/O error
     READY --> Terminated: close
     Terminated --> [*]
 ```
 
-The happy path runs straight down — `HANDSHAKE → READY → READING_RESPONSE → READY` — with the `Ping`/`Pong` self-loop and every failure edge funnelling into the single `Terminated` sink.
+The happy path runs straight down — `HANDSHAKE → READY → READING_RESPONSE → READY` — with the request/response self-loops in `READY`, the query-input self-loop in `READING_RESPONSE`, and every failure edge funnelling into the single `Terminated` sink.
 
 | State              | Description |
 |--------------------|-------------|
 | `HANDSHAKE`        | Initial state after the TCP connection opens. Only [handshake](#handshake-phase) messages are valid. Transitions to `READY` on success or terminates on failure. |
-| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), or close. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). A `Hello` (0), `Data` (2), `Scalar` (7), or `IgnoredPartUUIDs` (8) packet here is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. See [Protocol violations](#protocol-violations). |
-| `READING_RESPONSE` | Entered when the client sends a Query. The client must fully drain the server's response stream before returning to `READY`. The only allowed client→server packet here is Cancel (not specified on this page). |
+| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), `TablesStatusRequest` (5), or close. A `TablesStatusRequest` is answered with a `TablesStatusResponse` (9) and leaves the connection in `READY`; its body is not specified on this page. A `Cancel` (3) with no query running is ignored. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). A `Hello` (0), `Data` (2), `Scalar` (7), or `IgnoredPartUUIDs` (8) packet here is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. See [Protocol violations](#protocol-violations). |
+| `READING_RESPONSE` | Entered when the client sends a Query. The query may first need input from the client: the external-table and `input()` blocks, the [INSERT](#insert-phase) row stream, and the [QueryPlan](#queryplan) packet that follows a `Query` with `stage = QueryPlan` are all sent here as `Data` (2), `Scalar` (7), and `QueryPlan` (13) packets, each terminated as described in its phase. While the server is still reading that input the client may also send `Ping` (4); after it, while the server streams the result, only `Cancel` (3, no body) is accepted, plus — during distributed execution — the answers to the server's read-task requests (not specified on this page). `Cancel` is accepted in both parts. The client must fully drain the server's response stream before returning to `READY`. Any other packet is a protocol violation, see [Protocol violations](#protocol-violations). |
 | Terminated         | No longer usable. The client must open a new TCP connection and restart the handshake. |
 
 ### Handshake phase {#handshake-phase}
@@ -422,7 +424,7 @@ A client packet that cannot appear at the current point of the exchange is a pro
 
 | Connection state                                      | Violating client packets | Server response |
 |-------------------------------------------------------|--------------------------|-----------------|
-| `READY` (waiting for a `Query` or `Ping`)             | `Hello` (0), `Data` (2), `Scalar` (7), `IgnoredPartUUIDs` (8) | Terminates the connection. No `Exception` packet is sent, because the peer has not necessarily authenticated yet — in the [inter-server secret](#inter-server-secret) mode authentication happens only while the `Query` packet is being read. |
+| `READY` (waiting for a `Query`, `Ping`, or `TablesStatusRequest`) | `Hello` (0), `Data` (2), `Scalar` (7), `IgnoredPartUUIDs` (8) | Terminates the connection. No `Exception` packet is sent, because the peer has not necessarily authenticated yet — in the [inter-server secret](#inter-server-secret) mode authentication happens only while the `Query` packet is being read. |
 | Reading the query's input (after `Query`, before the end-of-data marker or the end of an `INSERT` row stream) | `Hello` (0), `Query` (1), `TablesStatusRequest` (5), `IgnoredPartUUIDs` (8), and a `QueryPlan` (13) that is out of place — one that does not follow a `Query` with `stage = QueryPlan`, a second one for the same query, or one arriving after the query's input has ended | Sends an [`Exception`](#exception) with code `101` (`UNEXPECTED_PACKET_FROM_CLIENT`) and terminates the connection. |
 | Any state                                             | An unknown packet-type code | Terminates the connection. |
 
