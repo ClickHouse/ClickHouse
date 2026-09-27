@@ -189,9 +189,10 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
-/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
-/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
-/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
+/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic. Mirrors
+/// the copy in `updateQueryConditionCache.cpp`: both gates must agree, otherwise QCC writes and reads
+/// diverge on TopK plans. The filter is installed after the pass that builds the DAG inspected here,
+/// so that allowance covers shapes this path no longer produces.
 ///
 /// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
 /// as query-time constants `now()` / `today()`). Without that check, queries whose filter
@@ -3207,6 +3208,49 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
     return context->getSettingsRef()[Setting::apply_prewhere_after_final] || isRowPolicyDeferredAfterFinal();
 }
 
+/// A PREWHERE read step may read the columns of later steps over the same storage column ahead of their
+/// evaluation (see `tryBuildPrewhereSteps`). The reader converts a column from the type a part stores and
+/// fills a column a part lacks from its default expression on the whole block it reads, before any step
+/// filter, and either may throw on the rows an earlier condition rejects. So read ahead only when no part
+/// needs that for a column PREWHERE reads, and no on-the-fly mutation or masking policy rewrites columns at
+/// read time. The decision is per query because the steps are built once for all parts.
+bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
+{
+    if (!query_info.prewhere_info)
+        return false;
+
+    if (mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    if (data.hasEnabledMaskingPolicies(context))
+        return false;
+
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    std::vector<NameAndTypePair> storage_columns;
+    NameSet seen_storage_columns;
+    for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if (!column || !seen_storage_columns.insert(column->getNameInStorage()).second)
+            continue;
+        storage_columns.push_back(columns.getPhysical(column->getNameInStorage()));
+    }
+
+    for (const auto & part : parts)
+    {
+        const auto & part_columns = part.data_part->getColumnsDescription();
+        for (const auto & storage_column : storage_columns)
+        {
+            const auto * part_column = part_columns.tryGet(storage_column.name);
+            if (!part_column || !part_column->type->equals(*storage_column.type))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 {
     if (!isQueryWithFinal())
@@ -3787,8 +3831,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
             /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
-            /// For a non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter`
-            /// is equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
+            /// `isDeterministicAllowingTopKFilter` is equivalent to `VirtualColumnUtils::isDeterministic`
+            /// here: the threshold filter is merged into the PREWHERE after this DAG is built, so it
+            /// cannot appear in it for either kind of read.
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
@@ -4593,14 +4638,14 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// before deduplication and return rows a newer version should have replaced.
     cloned_step->deferred_row_level_filter = deferred_row_level_filter;
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
-    /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
-    /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
-    /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
-    /// whose sorting step still shares the threshold tracker. Losing `top_k_filter_info` here would turn
-    /// the clone into an apparently plain read: it would consult and populate the query condition cache
-    /// under the unsalted condition hash even though its granule-skip decisions depend on the running
-    /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
-    /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
+    /// Carry over the TopK marker. `tryOptimizeTopK` stamps the read in the first optimization pass and
+    /// `installTopKDynamicFilter` merges `__topKFilter` into the PREWHERE in the second, so a clone taken
+    /// between the two carries only `dynamic_filter_pending` and a clone taken after it carries the
+    /// installed filter; in both states the sorting step already shares the threshold tracker. Losing
+    /// `top_k_filter_info` here would turn the clone into an apparently plain read: it would consult and
+    /// populate the query condition cache under the unsalted condition hash even though its granule-skip
+    /// decisions depend on the running TopK threshold. `condition_hash` already has the part-set salt
+    /// folded in by `setTopKColumn`, so copy the value instead of calling `setTopKColumn` again.
     cloned_step->top_k_filter_info = top_k_filter_info;
     /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
     /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can
@@ -4962,6 +5007,9 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
+
+    /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
+    reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
 
     /// `spreadMarkRanges` consumes `result.split_parts`, so remember the number of ports the plan expects
     /// before it is moved from.
@@ -5400,6 +5448,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         ProjectionIndexReaderByName readers;
 
+        /// The projection parts are not covered by `canReadPrewhereColumnsAhead`.
+        auto projection_reader_settings = reader_settings;
+        projection_reader_settings.read_ahead_prewhere_columns = false;
+
         /// Create a reader for each projection index based on its metadata and prewhere info.
         for (const auto & read_info : projection_index_read_desc.read_infos)
         {
@@ -5411,14 +5463,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                         std::make_shared<StorageSnapshot>(storage_snapshot->storage, read_info.projection->metadata),
                         read_info.prewhere_info,
                         actions_settings,
-                        reader_settings,
+                        projection_reader_settings,
                         read_info.prewhere_info->prewhere_actions.getRequiredColumnsNames(),
                         pool_settings,
                         block_size,
                         context),
                     read_info.prewhere_info,
                     actions_settings,
-                    reader_settings));
+                    projection_reader_settings));
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
