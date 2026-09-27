@@ -516,7 +516,7 @@ REGISTER_FUNCTION(ArrayCombinatorics)
     FunctionDocumentation::Examples permutations_examples = {
         {"Usage example", "SELECT arrayPermutations([1, 2, 3]);", "[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]"},
     };
-    FunctionDocumentation::IntroducedIn permutations_introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn permutations_introduced_in = {26, 10};
     FunctionDocumentation permutations_documentation
         = {permutations_description,
            permutations_syntax,
@@ -547,7 +547,7 @@ REGISTER_FUNCTION(ArrayCombinatorics)
         {"Usage example", "SELECT arrayPartialPermutations([1, 2, 3], 2);", "[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]"},
         {"`k = 0` example", "SELECT arrayPartialPermutations([1, 2, 3], 0);", "[[]]"},
     };
-    FunctionDocumentation::IntroducedIn partial_permutations_introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn partial_permutations_introduced_in = {26, 10};
     FunctionDocumentation partial_permutations_documentation
         = {partial_permutations_description,
            partial_permutations_syntax,
@@ -577,7 +577,7 @@ REGISTER_FUNCTION(ArrayCombinatorics)
         {"Usage example", "SELECT arrayCombinations([1, 2, 3], 2);", "[[1,2],[1,3],[2,3]]"},
         {"`k = 0` example", "SELECT arrayCombinations([1, 2, 3], 0);", "[[]]"},
     };
-    FunctionDocumentation::IntroducedIn combinations_introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn combinations_introduced_in = {26, 10};
     FunctionDocumentation combinations_documentation
         = {combinations_description,
            combinations_syntax,
