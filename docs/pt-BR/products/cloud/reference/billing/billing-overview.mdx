@@ -17,7 +17,7 @@ Para entender o que pode afetar sua fatura e como gerenciar seus gastos, continu
 
 <Note>
   * Os preços refletem os valores da AWS na região us-east-1.
-  * Veja [aqui](/pt-BR/products/cloud/reference/billing/network-data-transfer) as cobranças aplicáveis de transferência de dados e do ClickPipes.
+  * Veja [aqui](/pt-BR/products/cloud/reference/billing/network-data-transfer) as cobranças aplicáveis de transferência de dados.
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 O log de consultas do ClickHouse captura [principais métricas](/pt-BR/reference/system-tables/query_log) que podem ser usadas para estimar o custo de executar uma carga de trabalho no ClickHouse Cloud.
-Para obter detalhes sobre a migração de uma implantação autogerenciada para o ClickHouse Cloud, consulte a [documentação de migração](/pt-BR/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) e entre em contato com o [suporte do ClickHouse Cloud](https://console.clickhouse.cloud/support) se tiver outras dúvidas.
+Para migrar de uma implantação autogerenciada do ClickHouse para o ClickHouse Cloud, use [`remoteSecure`](/pt-BR/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) ou [`BACKUP` e `RESTORE`](/pt-BR/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). Entre em contato com o [suporte do ClickHouse Cloud](https://console.clickhouse.cloud/support) se tiver outras dúvidas.
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### Quais opções de faturamento estão disponíveis para o ClickHouse Cloud?
@@ -351,8 +351,7 @@ Uma fatura consolidada é emitida para todos os serviços de uma determinada org
   ### Se eu adicionar meu cartão de crédito e fizer o upgrade antes de meu período de teste e meus créditos expirarem, serei cobrado?
 </div>
 
-Quando um usuário passa do teste para o plano pago antes do fim do período de teste de 30 dias, mas ainda tem créditos restantes da concessão de créditos do teste,
-continuamos consumindo os créditos do teste durante o período inicial de 30 dias e, em seguida, cobramos no cartão de crédito.
+Quando um usuário adiciona um cartão de crédito durante o período de teste, continuamos consumindo os créditos do teste até que se esgotem ou expirem, o que ocorrer primeiro. Os créditos do teste expiram ao final do período de teste de 30 dias, mesmo após a adição de uma forma de pagamento. Assim que os créditos do teste se esgotarem ou expirarem, as cobranças serão feitas no cartão de crédito cadastrado. Você pode confirmar a data de expiração dos créditos do teste na página de faturamento do console do ClickHouse Cloud.
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### Como posso acompanhar meus gastos?
@@ -492,4 +491,4 @@ No entanto, combinar dois serviços em um warehouse e deixar um deles em modo oc
   ## Preços do ClickPipes
 </div>
 
-Para obter informações sobre a cobrança do ClickPipes, consulte a seção específica [&quot;Cobrança do ClickPipes&quot;](/pt-BR/products/cloud/reference/billing/clickpipes/index).
+Para obter informações sobre a cobrança do ClickPipes, consulte a seção específica [&quot;ClickPipes&quot;](/pt-BR/products/cloud/reference/billing/clickpipes/index).

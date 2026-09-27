@@ -103,10 +103,9 @@ fi
 keep_destination_inode () {
     # An existing symlink at the destination is written through, the way copying did, so that
     # an installation keeping its configs or binaries elsewhere and linking to them keeps the
-    # indirection after an upgrade. The symlink test comes before the existence test, because
-    # `-e` follows the link: a dangling symlink looks nonexistent to it, while the link still
-    # has to survive rather than be replaced by a plain file.
-    if [ -L "$1" ]; then
+    # indirection after an upgrade. A symlink with no target yet is handled separately in the
+    # loop below, because there is no inode to write through in that case.
+    if [ -L "$1" ] && [ -e "$1" ]; then
         return 0
     fi
     if [ ! -e "$1" ]; then
@@ -119,11 +118,11 @@ keep_destination_inode () {
     listing=$(ls -ld -- "$1")
     # Another hard link to the destination would keep pointing at the pre-upgrade contents
     # after a rename, while writing through updates every link.
-    if [ "$(echo "$listing" | awk '{print $2}')" -gt 1 ]; then
+    if [ "$(printf '%s\n' "$listing" | awk '{print $2}')" -gt 1 ]; then
         return 0
     fi
     # An ACL is reported by `ls` as a `+` after the permissions.
-    case "$(echo "$listing" | awk '{print $1}')" in
+    case "$(printf '%s\n' "$listing" | awk '{print $1}')" in
         *+) return 0 ;;
     esac
     if [ -z "$GETFATTR" ]; then
@@ -143,10 +142,57 @@ keep_destination_inode () {
     return 1
 }
 
+# The path a chain of symlinks finally points at. Every hop is followed, and a relative hop is
+# resolved against the directory of the link it was read from, so that a destination pointing
+# at another symlink keeps every level of the indirection instead of only the first one.
+resolve_symlink_chain () {
+    path="$1"
+    hops=0
+    while [ -L "$path" ]; do
+        hops=$((hops + 1))
+        if [ "$hops" -gt 40 ]; then
+            printf '%s\n' "Too many levels of symbolic links at $1" >&2
+            return 1
+        fi
+        target=$(readlink -- "$path")
+        case "$target" in
+            /*) path="$target" ;;
+            *) path="$(dirname -- "$path")/$target" ;;
+        esac
+    done
+    printf '%s\n' "$path"
+}
+
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
-    if [ ! -L "$filepath" ] && keep_destination_inode "$destpath"; then
+    if [ ! -L "$filepath" ] && [ -L "$destpath" ] && [ ! -e "$destpath" ]; then
+        # A symlink whose target does not exist yet has to survive the installation as well,
+        # but there is no destination inode to write through: a shell redirection would create
+        # the target with the `umask` of the installation and with no relation to the mode of
+        # the packaged file, which would install a binary non-executable. Rename the packaged
+        # file to where the link points instead, so that the link keeps its indirection and the
+        # installed file gets the mode, the ownership and the label every installed file has.
+        # The whole chain is followed: a link pointing at another link has to keep both, the
+        # way writing through the destination did, so only the final referent is created.
+        linktarget=$(resolve_symlink_chain "$destpath")
+        linkparent=$(dirname -- "$linktarget")
+        if [ ! -d "$linkparent" ]; then
+            # The directory the link points into is not created here. It would be created
+            # with the `umask` of the installation and with no defined ownership, so the
+            # installed file could end up unreachable while the installation reports
+            # success. Writing through the link failed loudly when that directory was
+            # missing, and pointing a destination at a directory that does not exist stays
+            # an error the administrator has to see and fix.
+            printf '%s\n' "Cannot install $destpath: it points at $linktarget, but the directory $linkparent does not exist" >&2
+            exit 1
+        fi
+        mv -f "$filepath" "$linktarget"
+        chown -h root:root "$linktarget"
+        if [ -n "$RESTORECON" ]; then
+            $RESTORECON "$linktarget"
+        fi
+    elif [ ! -L "$filepath" ] && keep_destination_inode "$destpath"; then
         # The destination keeps its inode, so its ownership, permissions, attributes and every
         # other hard link to it stay valid after the upgrade, as they did when copying.
         cat "$filepath" > "$destpath"

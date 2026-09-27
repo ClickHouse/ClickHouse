@@ -1,0 +1,248 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-07
+title: '데모 데이 - 2026-08-07'
+sidebarTitle: '2026-08-07'
+description: '2026-08-07 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="alert-detail-page-with-evaluation-history">
+  ## 평가 이력이 포함된 알림 세부 정보 페이지
+</div>
+
+*[@wrn14897](https://github.com/wrn14897)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/ZMdWe3-Oc7c" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+현재 알림 페이지에는 이력 표시줄과 오류 버튼이 있습니다. 하지만 이를 통해 정보를 확인하려 하면 한계가 드러납니다.
+
+오류는 알림 문서 자체에 저장되므로 페이지에는 실제 이력이 아닌 최신 상태만 표시됩니다. 알림이 발생했는지, 이전에 실패했는지, 평가 일정에 맞춰 처리되고 있는지 알 수 없습니다. 알림 성능을 개선하는 과정에서 기존 보기가 단순히 정보가 부족한 수준을 넘어 오히려 혼란을 유발한다는 사실이 드러났습니다.
+
+새 세부 정보 페이지는 모든 평가를 이벤트로 기록합니다. 타임스탬프 범위를 지정하여 이력의 원하는 구간을 확인할 수 있으며, 발생과 해제는 별도로 명확하게 표시됩니다.
+
+그룹화 정보는 테이블에 별도로 표시됩니다. 알림에서 `GROUP BY`를 사용하면 평가를 열어 어떤 그룹에서 알림이 발생했고 어떤 그룹에서는 발생하지 않았는지 정확히 확인할 수 있습니다. 결과 중 일부만 임계값을 초과할 때 이러한 구분이 중요합니다. 오류도 개별 이력 항목에 저장되므로 원래 ClickHouse 쿼리 오류를 포함해 무엇이 언제 실패했는지 확인할 수 있습니다.
+
+시간 관련 컬럼을 통해 알림이 일정에 맞춰 처리되고 있는지 확인할 수 있습니다. 쿼리 기간은 ClickHouse 쿼리 실행에 소요된 시간을 기록합니다. 알림이 매분 실행되도록 예약되어 있지만 쿼리에 3분이 걸린다면 지연은 의문스러운 현상이 아니라 불가피합니다. 웹훅 기간은 결과를 대상으로 전송하는 데 소요된 시간을 보여 줍니다.
+
+건너뛴 버킷을 통해 누적된 백로그를 확인할 수 있습니다. 값이 7이면 예약된 평가 윈도우 7개를 놓쳤고 나중에 처리되었음을 의미합니다.
+
+**관련 PR:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 알림 평가 읽기 모델 및 GET /alerts/:id/evaluations, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) AlertHistory에 알림 평가 오류 및 analytics 저장, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 평가 이력이 포함된 알림 세부 정보 페이지
+
+<div id="measuring-metric-tool-adoption-in-the-mcp-with-evals">
+  ## eval을 활용한 MCP의 메트릭 도구 사용 측정
+</div>
+
+*[@karl-power](https://github.com/karl-power)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/1_8MyDALMY8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이는 eval 프레임워크를 위한 세 번째이자 아마도 마지막 메트릭 시나리오입니다. 의도적으로 다른 두 시나리오의 중간 지점에 배치했습니다.
+
+기존 `metric-saturation` 시나리오는 에이전트가 강제되었을 때 메트릭 도구를 사용할 수 있는지 확인합니다. 새 `deploy-regression` 시나리오는 에이전트가 스스로 메트릭 도구 사용을 선택하는지 확인합니다. `checkout-api`의 단계적 rollout은 6개의 파드 중 3개까지 배포한 뒤 일시 중지됩니다. 새 build에서는 정액 프로모션 코드에 `TypeError`가 발생하여 약 7~8%의 결제가 500을 반환하지만, 이는 업데이트된 파드와 해당 코드에서만 발생합니다.
+
+이 중 어느 것도 에이전트에 레이블로 표시되지 않습니다. 가장 유력한 단서는 실패한 결제를 파드 이름별로 교차 집계한 뒤 해당 파드를 rollout 이벤트 로그와 대조하는 과정에서 얻을 수 있습니다. 의도적으로 심어 둔 메트릭은 실패가 시작되는 시점을 확인해 주지만, 파드 간 분할이나 근본적인 결함을 드러내지는 않습니다. 에이전트는 메트릭을 전혀 사용하지 않고도 시나리오를 해결할 수 있습니다. 따라서 메트릭 사용은 강제가 아닌 자발적인 선택이 됩니다.
+
+경로가 지나치게 순탄해지지 않도록 몇 가지 함정도 마련했습니다. 실패가 시작되기 몇 분 전에 관련 없는 rollout이 적용되고, 실제 오류가 발생하는 것과 같은 시점에 무해한 사용 중단 경고가 대량으로 증가합니다.
+
+시나리오를 구축하면서 MCP가 사용 가능한 메트릭 종류와 이름을 에이전트에게 더 잘 알려줄 수 있는 부분도 드러났습니다. 이에 따른 변경으로 둘 다 더 쉽게 찾을 수 있게 되었습니다.
+
+개선 폭은 크지 않으며, 비교 결과도 이를 솔직하게 보여줍니다. 변경 사항이 없어도 에이전트는 이미 높은 점수를 얻습니다. 하지만 변경 사항을 적용하면 여러 실행에서 유용한 메트릭에 훨씬 더 빨리 도달합니다. 단순히 이 환경에서 더 성능이 뛰어난 모델인 Fable에서는 그 차이가 줄어듭니다.
+
+한 결과는 반대 방향으로 나타났습니다. Opus는 몇 차례 실행에서 메트릭 관련 변경 사항 적용 후 점수가 약간 더 낮았습니다. 이를 설명하려면 더 많은 데이터가 필요합니다.
+
+처음으로 eval 프레임워크가 MCP가 메트릭을 노출하는 방식의 개선을 측정했습니다. 이제 변경 사항이 더 나아 보인다는 느낌에만 전적으로 의존할 필요가 없습니다.
+
+다음으로는 Opus 결과를 이해할 수 있을 만큼 충분한 실행을 수행한 뒤, 관련 코드를 정리할 예정입니다.
+
+**관련 PR:** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) deploy-regression 시나리오 추가(자발적인 메트릭 도구 사용 측정), [#2717](https://github.com/hyperdxio/hyperdx/pull/2717) metric-saturation 시나리오 강화, [#2694](https://github.com/hyperdxio/hyperdx/pull/2694) 메트릭 도구 사용 평가 및 보고, [#2855](https://github.com/hyperdxio/hyperdx/pull/2855) MCP를 통해 요약 메트릭 노출
+
+<div id="distributed-tables-histograms-and-faster-trace-lookups">
+  ## 분산 테이블, 히스토그램 및 더 빠른 트레이스 조회
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VQKNOb45pcs" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번에는 작은 수정 사항을 여러 개 적용했으며, 그중 상당수는 ClickHouse 팀의 피드백에서 비롯되었습니다. 가장 간단한 수정은 다른 모든 섹션에는 있는 지우기 버튼이 한 필터 섹션에만 없던 문제였습니다. 최상위 수준의 “모두 지우기”는 여전히 희망 목록에 있습니다.
+
+분산 테이블 관련 문제는 더 복잡했습니다. 일부 기본 대상 테이블은 분산 테이블에서 노출하는 모든 컬럼을 선언하지 않습니다. ClickStack은 전체 행 세부 정보를 로드할 때 `SELECT *`를 실행하는데, 이러한 구성에서는 즉시 실패합니다. 행 측면 패널에는 이미 오류가 표시되었지만 확장된 행에는 표시되지 않았고, 어느 쪽도 ClickStack이 왜 `SELECT *`를 실행하는지 설명하지 않았습니다. 이제 두 보기 모두 유용한 안내를 제공할 수 있을 만큼 충분한 맥락과 함께 오류를 표시합니다.
+
+메트릭에는 별개의 문제가 2가지 있었습니다. 첫째, 지수 히스토그램 테이블이 메트릭 소스에 전혀 저장되지 않았습니다. 최근 지수 히스토그램 지원이 추가되기 전까지는 문제가 되지 않았습니다. 기존의 불완전한 소스를 연 사용자는 스키마 추론으로 채워진 필드를 보고 변경할 사항이 없다고 판단해 저장하지 않았을 것입니다.
+
+이제 기존 소스를 열기만 해도 스키마 추론이 실행되지는 않습니다. 메트릭 소스를 생성하거나 데이터베이스를 변경할 때 실행되므로, 추론된 테이블도 저장해야 한다는 점이 명확해집니다.
+
+집계 드롭다운은 히스토그램에서 지원하지 않는 평균, 최소, 최대 및 기타 함수를 히스토그램 메트릭에 제공했습니다. 하나를 선택하면 쿼리 실행 시 또는 타일 저장 시 실패했습니다. 이제 이러한 옵션은 히스토그램 및 지수 히스토그램 메트릭에서 숨겨집니다. MCP의 `query_tile` 경로도 저장된 타일에서 이를 거부하므로, UI와 일관되게 동작하며 다른 방식으로 실패하지 않습니다.
+
+시리즈 제한 수정은 더 미묘합니다. `GROUP BY`가 여러 시리즈를 생성하는 경우 최대값 기준 상위 N개를 유지하도록 제한을 설정할 수 있습니다. 비율 모드에서는 순위 지정에 분자만 사용되었습니다. 이로 인해 실제 비율이 높은 시리즈보다 분자가 큰 시리즈가 우선되어, 분자와 분모가 모두 큰 시리즈가 실제로 더 높은 시리즈를 밀어낼 수 있었습니다. 이제 순위 지정에는 표시되는 비율을 사용합니다.
+
+검색 페이지의 기본 소스 선택도 변경되었습니다. 이전에는 메트릭이나 세션을 포함한 소스라도 구성된 첫 번째 소스를 선택했습니다. 사용자는 직접 선택하지 않은 소스 때문에 호환되지 않는 소스 오류를 볼 수 있었습니다. 이제 검색은 실제로 사용할 수 있는 첫 번째 활성화된 소스를 기본값으로 선택합니다.
+
+로그 측면 패널에서 트레이스를 선택할 때도 비용이 큰 조회가 숨겨져 있었습니다. HyperDX는 타임스탬프 파티션과 기본 키를 무시하고 스팬 및 트레이스 ID만으로 검색했습니다. 이는 대용량 배포에서 느려집니다. 이제 조회는 소스에서 추론한 날짜 범위로 제한되며, 해당 기간에 결과가 없으면 의도적으로 제한 없는 쿼리로 폴백합니다. 몇 시간 전에 시작된 스팬에 연결된 로그는 이 폴백이 중요한 예입니다.
+
+소스 이름 딥 링크는 전주에 추가되었고, 이어서 사용자가 이를 어떻게 찾아야 하는지라는 지극히 타당한 질문이 제기되었습니다. 각 페이지에서 허용하는 URL 매개변수는 이미 계약으로 취급되고 있었으므로, 이제 이를 계약으로 문서화합니다. 소스 필터는 현재 ClickHouse 전용이므로 유일하게 제외되었습니다. 별도의 문서화 작업에서 스팬 링크와 같은 소스 구성 필드를 추가하여 최근 추가된 기능과 단순히 누락되었던 몇 가지 항목을 모두 다루었습니다.
+
+**관련 PR:** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) 분산 테이블 SELECT * 오류 상태를 개선하고 확장된 행에도 적용, [#2817](https://github.com/hyperdxio/hyperdx/pull/2817) 데이터베이스 선택이 변경될 때만 메트릭 테이블을 자동 감지, [#2794](https://github.com/hyperdxio/hyperdx/pull/2794) 이미 테이블이 있는 소스의 메트릭 테이블을 자동 추론하지 않음(진행 중), [#2793](https://github.com/hyperdxio/hyperdx/pull/2793) 히스토그램 메트릭에서 지원되지 않는 집계 함수를 숨김, [#2796](https://github.com/hyperdxio/hyperdx/pull/2796) query&#95;tile에서 지원되지 않는 aggFns를 사용하는 저장된 히스토그램 타일을 거부(진행 중), [#2759](https://github.com/hyperdxio/hyperdx/pull/2759) ratio 모드에서 series-limit 순위에 ratio 값을 사용, [#2769](https://github.com/hyperdxio/hyperdx/pull/2769) 검색 페이지에서 호환되지 않는 소스 Kind가 기본값으로 선택되지 않도록 방지, [#2816](https://github.com/hyperdxio/hyperdx/pull/2816) View Trace 후 사이드 패널의 행 조회를 시간 윈도우로 제한, [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) filter Variable 구성 추가
+
+<div id="heatmap-percentiles-and-lucene-search-from-contributors">
+  ## 기여자가 추가한 히트맵 백분위수 및 Lucene 검색
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lCNozJs2Jlw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 주에는 외부 기여자로부터 약 10개의 pull request가 들어왔습니다. 그중 2개는 특별히 주목할 만합니다.
+
+첫 번째는 [@niladrix719](https://github.com/niladrix719)의 기여로, 히트맵에 마우스를 올렸을 때 표시되는 툴팁에 백분위수 정보를 추가합니다. 이제 히트맵의 다른 셀들과 특정 셀을 눈대중으로 비교하는 대신, 예를 들어 26밀리초 버킷이 표시된 Duration 중 85번째 백분위수에 해당한다는 것을 확인할 수 있습니다.
+
+두 번째는 [@shuvamk](https://github.com/shuvamk)의 여러 Lucene 검색 개선 사항입니다.
+
+이제 범위가 한쪽으로 제한되지 않은 경우에도 올바르게 작동합니다. `Duration:[* TO 500]`은 ClickHouse에 문자열 `*`을 `UInt64`로 변환하도록 요청하는 대신 `<= 500` 프레디케이트로 변환됩니다. 예상할 수 있듯이 전자의 결과는 좋지 않습니다. 이제 배타적 범위 경계에도 중괄호를 사용할 수 있습니다.
+
+이러한 버그는 오류가 아니라 잘못된 결과를 반환했기 때문에 이스케이프 관련 수정이 더욱 중요합니다. Lucene 필드 검색어는 `ILIKE` 패턴에 직접 들어가며, 여기서 밑줄은 임의의 단일 문자를, 퍼센트 기호는 임의 길이의 문자 시퀀스를 의미합니다. 따라서 `ServiceName:user_service`를 검색하면 `user-service` 및 `user.service`와 같은 값도 일치했습니다. 이제 쿼리가 ClickHouse에 도달하기 전에 이러한 메타문자가 이스케이프됩니다.
+
+별도의 수정으로 숫자 및 Boolean 검색에서 맵 첨자가 이중 이스케이프되는 문제가 해결되었습니다. 생성된 프레디케이트가 맵 lookup을 수행하지 않고 전체 표현식을 하나의 식별자로 처리하고 있었습니다.
+
+Lucene 언어 전환기의 앱 내 예시도 새 범위 형식을 포함하도록 업데이트되었습니다.
+
+**관련 PR:** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) 히트맵 호버 툴팁에 백분위수 정보 표시, [#2779](https://github.com/hyperdxio/hyperdx/pull/2779) 제한되지 않은 범위, 배타적 범위 및 비숫자 범위 경계 처리, [#2774](https://github.com/hyperdxio/hyperdx/pull/2774) 검색어의 LIKE 메타문자 이스케이프, [#2841](https://github.com/hyperdxio/hyperdx/pull/2841) 숫자 및 Bool 검색에서 Map 첨자를 한 번만 이스케이프, [#2837](https://github.com/hyperdxio/hyperdx/pull/2837) 새 Lucene 구문 예시 추가
+
+<div id="red-metrics-on-trace-search">
+  ## 트레이스 검색의 RED 메트릭
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/qbb7MJmUFf8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이는 탐색적 작업이며, 출시를 확정한 것은 아닙니다.**
+
+현재 트레이스 검색은 로그 검색과 마찬가지로 로그 레벨에 따라 색상이 구분된 단일 개수 히스토그램을 사용합니다. 이를 통해 조회 중인 트레이스 수는 알 수 있지만, 성능에 관한 정보는 거의 얻을 수 없습니다.
+
+제안된 결과 뷰에서는 이 히스토그램을 트레이스 소스용 RED 메트릭으로 대체합니다. 처리량은 스팬 수를 나타내는 막대로 표시됩니다. 오류는 선으로 표시되는 백분율 비율과 막대로 표시되는 원시 건수 간에 전환할 수 있습니다. Duration은 소스의 원시 duration 컬럼에서 평균, p95, p99를 직접 표시합니다.
+
+히트맵은 더 흥미로운 뷰입니다. 데모에서는 duration이 꾸준히 증가하는 서비스를 거의 즉시 확인할 수 있습니다. 또한 백분위수 추세만으로는 파악하기 어려운 지연 시간 분포의 형태도 보여 줍니다.
+
+비용은 아직 해결되지 않은 과제입니다. 트레이스 검색은 이미 검색마다 많은 쿼리를 실행하므로, 여기에 여러 집계를 추가하려면 더 발전시키기 전에 성능 개선 작업이 필요합니다.
+
+이 동작에 대한 피드백을 기다립니다.
+
+**관련 PR:** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) 트레이스 검색 결과 뷰에 RED 메트릭 표시(공개, 탐색적)
+
+<div id="custom-log-columns-in-the-clickhouse-grafana-plugin">
+  ## ClickHouse Grafana 플러그인의 사용자 정의 로그 컬럼
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lp4aPioDlsQ" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+몇 주 전 여러 고객이 같은 문제를 제기했습니다. Grafana 플러그인의 간결한 로그 뷰에서는 로그의 추가 컬럼과 필드를 보기 어려웠습니다.
+
+이번 변경으로 데이터 소스 구성의 로그 섹션에 Columns 설정이 추가됩니다. 개별 쿼리가 아닌 데이터 소스 수준에서 설정하므로, 매번 다시 적용하지 않아도 해당 소스를 사용하는 모든 사용자에게 선택 사항이 유지됩니다.
+
+모든 테이블 컬럼을 선택할 수 있습니다. 플러그인은 선택한 컬럼을 실제 이름으로 로그 레이블에 포함해 Grafana 전반에서 사용할 수 있도록 합니다. 이 컬럼은 왼쪽의 Fields 목록과 로그 행 세부 정보에 표시됩니다. 로그 행 세부 정보에는 리소스 속성 및 로그 속성과 나란히, 동일한 필터 포함 및 필터 제외 작업을 제공하는 새 Fields 그룹이 표시됩니다. 테이블 뷰에서는 일반 컬럼 필터처럼 작동합니다.
+
+이 모든 기능은 동일한 쿼리로 구동됩니다. 구성하지 않으면 이러한 필드는 어느 곳에도 표시되지 않으며, სწორედ 이것이 요청의 핵심 불편 사항이었습니다.
+
+이 문제는 스키마를 사용하는 방식이 서로 다른 고객 모두에게서 보고되었습니다. 일부 고객은 OpenTelemetry를 사용하면서 자체 컬럼을 추가합니다. 다른 고객은 완전히 사용자 정의한 스키마를 사용하며, 각자의 이유로 필드를 리소스 또는 로그 속성이 아닌 실제 컬럼에 저장합니다. 어느 그룹도 Grafana에서 이러한 값을 전혀 볼 수 없었습니다.
+
+데모 당시 이 변경은 아직 검토 중이었으며, 다음 주 플러그인 빌드에 포함되기를 기대하고 있었습니다. 자세한 내용은 [ClickHouse Grafana plugin 4.20 게시물](https://clickhouse.com/blog/clickhouse-grafana-plugin-4-20)에서 확인할 수 있습니다.
+
+**관련 PR:** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) 모든 로그 테이블 컬럼을 기준으로 탐색 및 필터링(데모 당시 열려 있음)
+
+<div id="capping-high-cardinality-series-at-the-source">
+  ## 원본에서 고카디널리티 시리즈 제한하기
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/AKjuQuLKEaI" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+고카디널리티 응답은 차트에 수십만 개의 행을 전달할 수 있습니다. 무언가를 렌더링하기 전에 클라이언트는 모든 행을 JSON으로 변환해야 합니다. 부하가 큰 대시보드에서는 이 변환에 쿼리 자체보다 더 많은 비용이 듭니다. 제한 없는 `GROUP BY`는 결과가 브라우저에 도달하기 전에 서버 메모리를 소진할 수도 있습니다.
+
+새 접근 방식에서는 이러한 행 대부분이 ClickHouse를 벗어나지 않도록 합니다. 이제 쿼리에 최대 행 수와 최대 그룹화 행 수 설정이 포함되며, 현재 둘 다 5,000으로 제한됩니다. 솔직히 말해 이 수치는 적절한 상한으로 추정한 값입니다. 응답에서 제한 초과가 나타나면 차트에 쿼리가 너무 많은 데이터를 반환했다는 경고가 표시됩니다.
+
+이는 렌더링을 250개의 시리즈로 제한하는 기존 프런트엔드 최적화에 추가로 적용됩니다. 약 100개의 선을 그리면서 수만 개의 시리즈를 메모리에 유지하면 브라우저 탭의 메모리 사용량이 수 GB에 이르고 마우스 오버와 이동이 느려졌습니다.
+
+두 제한은 모두 계속 적용됩니다. 이제 비정상적인 `GROUP BY`는 약 5,000개의 행을 가져오고 그중 250개를 렌더링합니다. 정말로 모든 데이터가 필요한 경우를 위해 명시적인 &quot;모두 로드&quot; 우회 수단도 제공됩니다.
+
+어느 한 제한에 반복적으로 도달하는 차트는 더 나은 SQL로 해결하는 것이 가장 좋습니다. 제한을 추가하거나 `GROUP BY`를 더 선택적으로 만드십시오.
+
+**관련 PR:** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) 모두 로드 우회 수단을 포함한 고카디널리티 시간 차트 시리즈 제한, [#2856](https://github.com/hyperdxio/hyperdx/pull/2856) 서버 측 행/카디널리티 제한으로 원본에서 raw-SQL tile 비용 제한 (open)
+
+<div id="exemplars-from-a-metric-chart-to-the-trace">
+  ## 예시(Exemplars): 메트릭 차트에서 트레이스로
+</div>
+
+*[@jordan-simonovski](https://github.com/jordan-simonovski)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/SC_Bo2hqw8c" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+예시(Exemplar)는 집계된 메트릭을 개별 이벤트, 일반적으로 트레이스에 연결합니다. 지연 시간 히스토그램에서 99번째 백분위수가 2.4초로 급증하면, 예시는 2.4초가 걸린 실제 요청 하나를 가리키고 해당 트레이스를 열 수 있습니다.
+
+애플리케이션이 활성 스팬 내에서 측정값을 기록하면 OpenTelemetry는 이를 일반 집계에 포함합니다. 예시 필터는 해당 측정값이 적격한지 판단하며, 작은 저장소는 집계된 메트릭 포인트와 함께 내보낼 소수의 예시를 보관합니다. 각 예시에는 원래 값과 타임스탬프, 트레이스 및 스팬 ID, 집계 스트림에서 제외된 모든 속성이 포함됩니다.
+
+이 작은 저장소를 사용하면 모든 원시 측정값을 내보내거나 모든 메트릭 시리즈에 `trace_id` 및 기타 고카디널리티 값을 추가하지 않고도 구체적인 맥락을 파악할 수 있습니다. 예시는 어디까지나 하나의 사례일 뿐입니다. 반드시 가장 느린 요청이나 통계적으로 대표성 있는 샘플은 아닙니다. 링크가 정상적으로 연결되는지는 exporter, 관련 backend, 참조된 트레이스가 보존되었는지 여부에도 좌우됩니다.
+
+데모에서는 전날 병합된 `query_exemplars` 프록시 endpoint를 통해 Prometheus backend를 사용합니다. 요청한 윈도우가 너무 길면 endpoint는 쿼리를 거부하는 대신 범위를 줄입니다.
+
+테스트 데이터는 스팬 메트릭을 내보내는 OpenTelemetry Collector에서 가져옵니다. collector는 스팬을 처리하면서 이를 트레이스 ID에 연결된 예시를 포함하는 메트릭으로 변환합니다. 그러면 해당 예시가 메트릭 차트에 마커로 표시됩니다. 마우스를 올리면 예시의 값과 타임스탬프가 트레이스 메타데이터와 함께 표시되며, 버튼을 통해 트레이스를 직접 열 수 있습니다. 현재까지는 잘 작동하고 성능도 상당히 빠릅니다.
+
+구성은 타일별로 적용됩니다. 차트에서 예시를 활성화한 다음 링크를 해석할 트레이스 source를 선택하십시오. 이 기능은 현재 단일 시리즈 메트릭만 지원하며, 차트별 toggle 외에도 배포 수준 플래그로 제어됩니다.
+
+테스트 과정에서 몇 가지 작은 버그가 발견되었으며, 그중 일부는 다른 사람들이 이미 독립적으로 발견한 것이었습니다. 그러나 Prometheus 경로는 사실상 준비되었습니다. 다음은 ClickHouse입니다. 이 경로는 메트릭 테이블에서 직접 예시를 쿼리하여 트레이스 데이터에서 메트릭을 생성하는 팀에도 개별 트레이스로 돌아갈 수 있는 동일한 경로를 제공합니다.
+
+**관련 PR:** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) 스팬에서 트레이스 예시가 포함된 요청 메트릭 도출(열림), [#2806](https://github.com/hyperdxio/hyperdx/pull/2806) /v1/prometheus/query&#95;exemplars 추가 및 프록시 강화, [#2807](https://github.com/hyperdxio/hyperdx/pull/2807) 가장 큰 차트 파일 2개를 디렉터리로 분할, [#2808](https://github.com/hyperdxio/hyperdx/pull/2808) 메트릭 및 PromQL 시간 차트용 예시 오버레이(열림), [#2809](https://github.com/hyperdxio/hyperdx/pull/2809) API 및 agent가 작성한 타일에서 예시 설정 허용(열림)
+
+<div id="terraform-import-helpers-and-batch-export">
+  ## Terraform 가져오기 도우미 및 일괄 내보내기
+</div>
+
+*[@jordan-simonovski](https://github.com/jordan-simonovski)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/fTJHMqBIU44" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 대시보드, 저장된 검색, 저장된 검색 알림에서 Terraform으로 내보내기 버튼을 사용할 수 있습니다. 이를 통해 팀은 가져오기 블록을 직접 작성하거나 리소스 유형 이름 및 ID 포맷을 추측하지 않고도 ClickHouse provider를 통해 기존 리소스를 Terraform 관리 대상으로 가져올 수 있습니다.
+
+데모에서 가장 많은 질문을 받은 부분은 출력 방식 자체였습니다. 이 버튼은 `import` 블록을 생성하며, 전체 리소스 정의는 Terraform이 처리합니다. 리소스 블록만 추가한다고 기존 리소스의 관리 권한이 Terraform으로 넘어가는 것은 아닙니다. 대신 새 리소스를 만들려고 하거나 기존 리소스를 덮어쓸 수 있습니다. Terraform의 최신 가져오기 워크플로는 이러한 차이를 올바르게 처리합니다.
+
+생성된 가져오기 블록을 구성에 붙여 넣은 다음, `generated.tf`와 같은 파일을 가리키도록 `-generate-config-out`을 지정하여 `terraform plan`을 실행하십시오. Terraform은 기존 리소스를 검사하고 이에 해당하는 리소스 블록을 작성합니다. 가져오기가 완료되면 리소스가 Terraform state에 포함되며, 이후 적용 시 ClickStack에서 리소스를 재생성하려 하지 않고 해당 리소스를 관리합니다.
+
+Team Settings에는 지원되는 모든 리소스를 하나의 파일로 다운로드하는 일괄 내보내기 기능도 포함되어 있습니다. 데모에서는 대시보드 70개, 알림 약 40개, 저장된 검색 55개가 이에 해당했습니다. 웹훅과 소스도 지원됩니다.
+
+시크릿은 의도적으로 V2 API에서 제외됩니다. `GET`은 UI에 이미 표시되는 정보만 반환하므로, 연결에는 호스트와 username이 포함되지만 password는 포함되지 않습니다. 생성된 구성을 사용할 때 누락된 시크릿을 제공해야 합니다.
+
+**관련 PR:** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) ClickStack 리소스용 Terraform 가져오기 도우미 추가
+
+<div id="shared-chart-components-visual-polish-and-a-drafts-proposal">
+  ## 공유 차트 component, 시각적 완성도 개선 및 drafts 제안
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev)의 데모*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+사용자 지정 대시보드 카드와 preset 카드는 시각적으로 점차 달라졌습니다. 이에 따라 처음부터 왜 같은 component를 사용하지 않았는지 의문이 제기되었습니다. 이제는 같은 component를 사용합니다. 공유 ChartCard는 대시보드 tile에 사용되는 것과 동일한 기본 타입으로 독립형 차트를 감싸므로, 수동으로 맞추지 않아도 테두리, padding, 전체 너비 header 구분선이 일관되게 유지됩니다. 두 경로를 하나의 component로 통합하는 작업은 예상보다 복잡했지만, 이제 내부적으로 동일하게 렌더링됩니다. 오른쪽에 control이 없는 카드는 일관된 높이를 유지해야 하므로 추가 작업이 남아 있습니다.
+
+이 밖에도 여러 소규모 개선이 적용되었으며, 그중 일부는 스크린샷과 데모 동영상에서 ClickStack이 더 보기 좋게 표시되도록 하는 데 중점을 두었습니다. segmented control은 높이가 0인 상자 주위의 테두리로 목록 선을 렌더링해 위아래 가장자리가 겹치면서 2px 선처럼 보였습니다. 이제 실제 1px 선으로 표시됩니다. 같은 이유로 button 색상도 조정했습니다.
+
+light mode의 open source 로고 문제도 수정되었습니다. 이전에는 로고를 포함한 모든 색상을 반전하는 CSS filter로 theme를 전환했기 때문에 light mode에서 잘못된 브랜드 색상이 표시되었습니다. 동일한 로고가 두 theme 모두에서 작동하므로, 더 이상 theme에 따라 분기할 필요가 없습니다.
+
+검색에서 행을 클릭하는 동작도 다시 정상적으로 작동합니다. 이전 동작은 의도된 것이었지만 그렇게 느껴지지는 않았습니다. 드로어가 클릭한 행 위에 열릴 수 있어 화면에서 겉보기에 변하지 않은 부분을 보게 되었습니다. 이제 드로어 영역 안을 클릭하면 내용이 업데이트되고, 밖을 클릭하면 닫힙니다.
+
+danger 상태와 함께 warning 및 성공 상태를 위한 의미론적 Alert component도 추가했습니다. 새 agent skills는 raw red나 warning text를 사용하려는 경우 Alert를 사용하도록 유도하여 Mantine palette 색상을 하드코딩하지 않도록 합니다.
+
+마지막 부분은 디자인 탐색에 관한 내용입니다. 이는 mockup이며, 피드백을 적극적으로 기다리고 있습니다.
+
+작업은 tile editor의 작은 문제에서 시작되었습니다. modal이 드로어를 열고, 드로어가 다시 다른 modal을 여는 구조에서 Escape를 한 번 누르면 한 단계 뒤로 돌아가는 대신 전체 stack이 닫혔습니다. 이후 작업은 대시보드 전반을 폭넓게 살펴보는 방향으로 확장되었습니다.
+
+이 제안은 저장된 대시보드와 임시 대시보드의 구분을 drafts로 대체합니다. 「New dashboard」를 클릭하면 본인만 볼 수 있는 비공개 draft가 생성됩니다. 준비가 되면 팀에 저장할 수 있습니다. 팀 대시보드를 drafts로 다시 옮기거나 완전히 삭제할 수도 있습니다. 이를 통해 처음부터 결정을 내리도록 강요하지 않으면서 현재 임시 대시보드가 제공하는 기능을 지원합니다. 두 가지가 아닌 하나의 개념입니다.
+
+즐겨찾기에는 카드 보기와 함께 목록 보기가 제공됩니다. 큰 카드로 구성된 페이지에서는 찾는 항목이 화면 아래로 예상보다 훨씬 밀릴 수 있기 때문입니다. Template은 단일 행으로 축소됩니다. tag filtering은 여러 tag를 지원하고, 선택한 하나의 tag만을 유일한 정리 방식으로 취급하는 대신 이름 또는 마지막 조회 시간 기준으로 정렬할 수 있습니다.
+
+tile editor는 드로어를 여는 대신 오른쪽에 설정 패널을 고정합니다. 또한 현재 settings로 이동하는 두 경로를 예측 가능한 단일 경로로 통합합니다.
+
+**관련 PR:** [#2829](https://github.com/hyperdxio/hyperdx/pull/2829) 공유 ChartCard component 추가 및 ChartBox 사용처 마이그레이션, [#2814](https://github.com/hyperdxio/hyperdx/pull/2814) Mantine theme 개선(tabs, code bg, segmented control), [#2704](https://github.com/hyperdxio/hyperdx/pull/2704) AA에 맞춘 의미론적 색상 token 및 Alert/Text variant, [#2714](https://github.com/hyperdxio/hyperdx/pull/2714) 의미론적 Alert/Text/danger variant 문서화, [#2682](https://github.com/hyperdxio/hyperdx/pull/2682) 외부 클릭 시 검색 및 session 드로어 닫기, [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) tile editor를 고정 settings panel이 있는 드로어로 이동(여전히 open 상태). drafts 및 즐겨찾기 재설계에는 PR이 없으며, 현재는 mockup 단계입니다.

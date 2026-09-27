@@ -19,6 +19,7 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
+    std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
@@ -36,10 +37,22 @@ public:
     /// The IStorage default ties this to supportsSubcolumns(); forward it so a proxy around a
     /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
+    /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
+    /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
+    /// answering false would let a `_table`/`_database` filter incorrectly prune the child.
+    bool readsFromOtherTables() const override { return getNested()->readsFromOtherTables(); }
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override { return getNested()->getMaxReadStreams(num_streams, context); }
+    /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is
+    /// the proxy itself for lazily loaded tables — forward them so support does not depend on the
+    /// database's `lazy_load_tables` setting. Both are only queried while validating an ALTER,
+    /// which materializes the nested table anyway.
+    bool supportsTTL() const override { return getNested()->supportsTTL(); }
+    bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
-    ColumnSizeByName getColumnSizes(const Names & columns) const override { return getNested()->getColumnSizes(columns); }
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
@@ -56,17 +69,6 @@ public:
     {
         const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
-    }
-
-    Pipe watch(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override
-    {
-        return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     void read(
@@ -112,9 +114,9 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override
     {
-        getNested()->alter(params, context, alter_lock_holder);
+        getNested()->alter(params, context, alter_lock_holder, ddl_guard);
         auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
         IStorage::setInMemoryMetadata(*nested_metadata);
     }

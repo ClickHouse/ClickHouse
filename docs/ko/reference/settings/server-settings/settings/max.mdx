@@ -178,7 +178,7 @@ HTTP를 통해 디렉터리 목록을 조회할 때 사용되는 HTTP 인덱스 
 <Note>
   값 `0`은 아무 제한 없이 파티션을 삭제할 수 있음을 의미합니다.
 
-  이 제한은 drop table 및 truncate table에는 적용되지 않습니다. [max&#95;table&#95;size&#95;to&#95;drop](/ko/reference/settings/session-settings#max_table_size_to_drop)를 참조하십시오.
+  이 제한은 drop table 및 truncate table에는 적용되지 않습니다. [max&#95;table&#95;size&#95;to&#95;drop](/ko/reference/settings/session-settings/max#max_table_size_to_drop)를 참조하십시오.
 </Note>
 
 **예시**
@@ -228,8 +228,8 @@ HTTP를 통해 디렉터리 목록을 조회할 때 사용되는 HTTP 인덱스 
 
 관련 항목:
 
-* [`max_temporary_data_on_disk_size_for_user`](/ko/reference/settings/session-settings#max_temporary_data_on_disk_size_for_user)
-* [`max_temporary_data_on_disk_size_for_query`](/ko/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query)
+* [`max_temporary_data_on_disk_size_for_user`](/ko/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
+* [`max_temporary_data_on_disk_size_for_query`](/ko/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
 <div id="max_unexpected_parts_loading_thread_pool_size">
   ## max_unexpected_parts_loading_thread_pool_size
@@ -252,8 +252,8 @@ HTTP를 통해 디렉터리 목록을 조회할 때 사용되는 HTTP 인덱스 
   * [`max_concurrent_queries`](/ko/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
   * [`max_concurrent_insert_queries`](/ko/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
   * [`max_concurrent_select_queries`](/ko/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/ko/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/ko/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+  * [`max_concurrent_queries_for_user`](/ko/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user)
+  * [`max_concurrent_queries_for_all_users`](/ko/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
   이 보정은 server 시작 직후 이러한 한도에 도달하는 일을 방지하기 위해 적용됩니다.
 </Note>

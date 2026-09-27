@@ -2,7 +2,7 @@
 title: Ejemplo de configuración OTel
 ---
 
-A continuación se muestra un ejemplo de esta configuración (las variables de entorno se completarán automáticamente si se copian desde la UI):
+Sustituya los marcadores de posición de endpoint y contraseña por las credenciales generadas por ClickStack:
 
 ```yaml
 receivers:
@@ -20,9 +20,9 @@ receivers:
 processors:
   batch:
   memory_limiter:
-    # 80% de la memoria máxima hasta 2G, ajustar para entornos con poca memoria
+    # 80% of maximum memory up to 2G, adjust for low memory environments
     limit_mib: 1500
-    # 25% del límite hasta 2G, ajustar para entornos con poca memoria
+    # 25% of limit up to 2G, adjust for low memory environments
     spike_limit_mib: 512
     check_interval: 5s
 connectors:
@@ -34,10 +34,6 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
-  debug:
-    verbosity: detailed
-    sampling_initial: 5
-    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

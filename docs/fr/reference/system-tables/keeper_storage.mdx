@@ -1,0 +1,60 @@
+---
+description: 'Contient une ligne par nœud de l’arbre de données stocké sur le nœud ClickHouse Keeper in-process local.'
+keywords: ['table système', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: 'reference'
+---
+
+import SystemTableCloud from '/snippets/fr/_system_table_cloud.mdx';
+
+<SystemTableCloud />
+
+<div id="description">
+  ## Description
+</div>
+
+La table n’existe que pour les déploiements ClickHouse Keeper qui utilisent le processus `clickhouse server` (et non `clickhouse keeper`). Elle contient une ligne par nœud de l’arbre de données stocké sur le nœud Keeper local, y compris les nœuds système `/keeper`.
+
+Contrairement à `system.zookeeper`, cette table n’envoie aucune requête à un cluster Keeper. Elle lit directement l’état validé du Keeper local depuis une vue cohérente sans verrou, sans affecter le traitement des requêtes. La lecture de la table ne nécessite pas de condition sur le chemin et renvoie l’arbre entier. Elle convient donc aux requêtes qui parcourent tous les nœuds, par exemple pour trouver ceux qui ont le plus d’enfants ou les données les plus volumineuses.
+
+<div id="columns">
+  ## Colonnes
+</div>
+
+* `path` ([String](/fr/reference/data-types/string)) — Chemin absolu du nœud.
+* `data` ([String](/fr/reference/data-types/string)) — Données stockées dans le nœud.
+* `czxid` ([Int64](/fr/reference/data-types/int-uint)) — ID de la transaction ayant créé le nœud.
+* `mzxid` ([Int64](/fr/reference/data-types/int-uint)) — ID de la transaction ayant modifié le nœud pour la dernière fois.
+* `ctime` ([DateTime64(3)](/fr/reference/data-types/datetime64)) — Heure de création du nœud.
+* `mtime` ([DateTime64(3)](/fr/reference/data-types/datetime64)) — Heure de la dernière modification du nœud.
+* `version` ([Int32](/fr/reference/data-types/int-uint)) — Nombre de modifications des données du nœud.
+* `cversion` ([Int32](/fr/reference/data-types/int-uint)) — Nombre de modifications des nœuds enfants.
+* `aversion` ([Int32](/fr/reference/data-types/int-uint)) — Nombre de modifications de l’ACL du nœud.
+* `ephemeral_owner` ([Int64](/fr/reference/data-types/int-uint)) — ID de la session propriétaire du nœud s’il est éphémère, `0` sinon.
+* `data_length` ([UInt32](/fr/reference/data-types/int-uint)) — Taille des données du nœud en octets.
+* `num_children` ([Int32](/fr/reference/data-types/int-uint)) — Nombre de nœuds enfants.
+* `pzxid` ([Int64](/fr/reference/data-types/int-uint)) — ID de la transaction ayant ajouté ou supprimé des nœuds enfants pour la dernière fois.
+* `seq_num` ([Int64](/fr/reference/data-types/int-uint)) — Compteur utilisé pour générer les noms des nœuds enfants séquentiels.
+* `ttl` ([Int64](/fr/reference/data-types/int-uint)) — TTL du nœud en millisecondes s’il s’agit d’un nœud TTL, `0` sinon.
+* `acl_id` ([UInt32](/fr/reference/data-types/int-uint)) — ID interne de l’ACL du nœud, `0` si le nœud n’a pas d’ACL.
+
+<div id="example">
+  ## Exemple
+</div>
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```

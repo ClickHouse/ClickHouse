@@ -35,8 +35,8 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
     const IMergeTreeDataPart * parent_part_,
-    bool part_may_exist_on_disk)
-    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_, part_may_exist_on_disk)
+    PartDirIntent intent)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_, intent)
 {
 }
 

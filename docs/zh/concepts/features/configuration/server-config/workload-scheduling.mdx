@@ -166,7 +166,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-当 ClickHouse server 使用[多个线程](/zh/reference/settings/session-settings#max_threads)执行大量并发查询，且所有 CPU 插槽都被占用时，就会进入过载状态。在过载状态下，每个释放出的 CPU 插槽都会根据调度策略重新调度到相应的工作负载。对于共享同一工作负载的查询，插槽按 round robin 方式分配。对于属于不同工作负载的查询，插槽则按照为各工作负载指定的权重、优先级和限制进行分配。
+当 ClickHouse server 使用[多个线程](/zh/reference/settings/session-settings/max-threads#max_threads)执行大量并发查询，且所有 CPU 插槽都被占用时，就会进入过载状态。在过载状态下，每个释放出的 CPU 插槽都会根据调度策略重新调度到相应的工作负载。对于共享同一工作负载的查询，插槽按 round robin 方式分配。对于属于不同工作负载的查询，插槽则按照为各工作负载指定的权重、priority和限制进行分配。
 
 当线程未被阻塞且正在执行 CPU 密集型任务时，就会消耗 CPU 时间。出于调度需要，这里区分两类线程：
 
@@ -198,18 +198,18 @@ CREATE WORKLOAD ingestion IN production
 
 此配置示例为管理和生产环境分别提供了独立的 CPU 插槽池。生产池由分析和摄取共享。此外，如果生产池过载，在有需要时，释放的 10 个 slot 中有 9 个会被重新分配给分析查询。摄取查询在过载期间只会获得其中的 1 个 slot。这可能会改善面向用户的查询延迟。分析自身有 60 个并发线程的限制，因此始终至少会保留 40 个线程用于支持摄取。在不过载时，摄取可以使用全部 100 个线程。
 
-要将某个查询排除在 CPU 调度之外，请将查询设置 [use&#95;concurrency&#95;control](/zh/reference/settings/session-settings#use_concurrency_control) 设为 0。
+要将某个查询排除在 CPU 调度之外，请将查询设置 [use&#95;concurrency&#95;control](/zh/reference/settings/session-settings/use#use_concurrency_control) 设为 0。
 
 CPU 调度目前尚不支持合并和变更。
 
 为了让工作负载获得公平的资源分配，需要在查询执行期间进行抢占和缩容。可通过 `cpu_slot_preemption` 服务器设置启用抢占。如果启用，每个线程都会定期续用其 CPU 插槽 (根据 `cpu_slot_quantum_ns` 服务器设置) 。如果 CPU 过载，这种续用可能会阻塞执行。当执行被阻塞较长时间时 (参见 `cpu_slot_preemption_timeout_ms` 服务器设置) ，查询会缩容，并且并发运行的线程数会动态减少。请注意，工作负载之间的 CPU 时间公平性可以得到保证，但在同一工作负载内部，不同查询之间的公平性在某些边缘情况下可能无法保证。
 
 <Warning>
-  Slot 调度提供了一种控制[查询并发](/zh/reference/settings/session-settings#max_threads)的方法，但除非将服务器设置 `cpu_slot_preemption` 设为 `true`，否则无法保证 CPU 时间分配的公平性；否则，只能基于竞争工作负载之间获得 CPU 插槽 分配次数的多少来实现公平。这并不意味着各方获得的 CPU 秒数相同，因为在没有抢占的情况下，CPU 插槽 可能会被无限期占用。线程会在开始时获取一个 slot，并在工作完成后释放它。
+  Slot 调度提供了一种控制[查询并发](/zh/reference/settings/session-settings/max-threads#max_threads)的方法，但除非将服务器设置 `cpu_slot_preemption` 设为 `true`，否则无法保证 CPU 时间分配的公平性；否则，只能基于竞争工作负载之间获得 CPU 插槽 分配次数的多少来实现公平。这并不意味着各方获得的 CPU 秒数相同，因为在没有抢占的情况下，CPU 插槽 可能会被无限期占用。线程会在开始时获取一个 slot，并在工作完成后释放它。
 </Warning>
 
 <Note>
-  声明 CPU 资源后，[`concurrent_threads_soft_limit_num`](/zh/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) 和 [`concurrent_threads_soft_limit_ratio_to_cores`](/zh/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores) 设置将不再生效。此时，系统会改用工作负载设置 `max_concurrent_threads` 来限制分配给特定工作负载的 CPU 数量。若要实现之前的行为，请仅创建 WORKER THREAD 资源，将工作负载 `all` 的 `max_concurrent_threads` 设置为与 `concurrent_threads_soft_limit_num` 相同的值，并使用 `workload = "all"` 查询设置。此配置等同于将 [`concurrent_threads_scheduler`](/zh/reference/settings/server-settings/settings#concurrent_threads_scheduler) 设置为 &quot;fair&#95;round&#95;robin&quot;。
+  声明 CPU 资源后，[`concurrent_threads_soft_limit_num`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) 和 [`concurrent_threads_soft_limit_ratio_to_cores`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 设置将不再生效。此时，系统会改用工作负载设置 `max_concurrent_threads` 来限制分配给特定工作负载的 CPU 数量。若要实现之前的行为，请仅创建 WORKER THREAD 资源，将工作负载 `all` 的 `max_concurrent_threads` 设置为与 `concurrent_threads_soft_limit_num` 相同的值，并使用 `workload = "all"` 查询设置。此配置等同于将 [`concurrent_threads_scheduler`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 设置为 &quot;fair&#95;round&#95;robin&quot;。
 </Note>
 
 <div id="threads_vs_cpus">
@@ -268,7 +268,7 @@ CREATE RESOURCE memory (MEMORY RESERVATION)
 CREATE WORKLOAD all SETTINGS max_memory = '2Gi'
 ```
 
-ClickHouse 会跟踪所有查询和后台活动的内存分配。已分配的字节数会沿调度层级逐级汇总到根节点。每个查询在其所属的叶子工作负载中都有一个对应的分配。如果查询的 `reserve_memory` 设置大于零，则该分配会以 pending 状态创建。处于 pending 状态的分配会在工作负载层级中预留所请求的内存量。如果没有足够的可用内存，该分配会一直保持 pending，直到释放出足够的内存，或者其他分配被逐出 (killed) 。当分配获准后，它会变为 running。处于 running 状态的分配会根据查询的内存消耗动态增大或缩小。分配的生命周期可以用下图的状态图表示：
+ClickHouse 会跟踪所有查询和后台活动的内存分配。已分配的字节数会沿调度层级逐级汇总到根节点。每个查询在其所属的叶子工作负载中都有一个对应的分配。如果查询的 `reserve_memory` 设置大于零，则该分配会以待处理 状态创建。处于待处理 状态的分配会在工作负载层级中预留所请求的内存量。如果没有足够的可用内存，该分配会一直保持待处理，直到释放出足够的内存，或者其他分配被逐出 (killed) 。当分配获准后，它会变为运行中。处于运行中 状态的分配会根据查询的内存消耗动态增大或缩小。分配的生命周期可以用下图的状态图表示：
 
 ```mermaid
 stateDiagram-v2
@@ -299,13 +299,13 @@ stateDiagram-v2
 
 每个设置了 `max_memory` 限制的工作负载都会确保其子树中已分配的总内存不超过该限制。如果待处理分配或增长中的分配会超出该限制，则会启动驱逐流程来释放内存。驱逐流程会选择一个要被终止的目标。killer 和 victim 的最近公共祖先工作负载会在以下情况下阻止驱逐：
 
-* 待处理分配不能驱逐同一工作负载中正在运行的分配。 (killer 和 victim 工作负载相同) 。
+* 待处理分配不能驱逐同一工作负载中运行中的分配。 (killer 和 victim 工作负载相同) 。
 * 优先次序较低的待处理分配绝不会终止优先次序较高的工作负载。
 * 待处理分配不能终止优先次序相同的分配。请注意，优先次序相同的运行中分配可能会根据归一化内存使用量相互驱逐。
   如果驱逐被阻止，或者未能释放足够的内存，则新分配会被阻塞，直到有足够的内存被释放。这些规则允许查询在内存压力下排队等待，并提供了一种便捷方式来避免 MEMORY&#95;LIMIT&#95;EXCEEDED 错误。
 
 <Note>
-  工作负载限制独立于其他限制内存消耗的方法，例如查询设置 [max&#95;memory&#95;usage](/zh/reference/settings/session-settings#max_memory_usage)。它们可以结合使用，以更好地控制内存消耗。还可以基于用户 (而非工作负载) 设置独立的内存限制，但这种方式灵活性较差，也不提供内存预留和待处理查询排队等功能。参见 [Memory overcommit](/zh/concepts/features/configuration/settings/memory-overcommit)
+  工作负载限制独立于其他限制内存消耗的方法，例如查询设置 [max&#95;memory&#95;usage](/zh/reference/settings/session-settings/max-memory-usage#max_memory_usage)。它们可以结合使用，以更好地控制内存消耗。还可以基于用户 (而非工作负载) 设置独立的内存限制，但这种方式灵活性较差，也不提供内存预留和待处理查询排队等功能。参见 [Memory overcommit](/zh/concepts/features/configuration/settings/memory-overcommit)
 </Note>
 
 工作负载设置 `max_waiting_queries` 用于限制该工作负载的待处理分配数量。达到限制后，server 会返回错误 `SERVER_OVERLOADED`。请注意，`max_waiting_queries` 不会被子节点工作负载继承，并且仅对叶子工作负载有意义。
@@ -345,7 +345,7 @@ CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-工作负载设置 `max_concurrent_queries` 用于限制给定工作负载可同时运行的并发查询数。它相当于查询设置 [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings#max_concurrent_queries_for_all_users) 和服务器设置 [max&#95;concurrent&#95;queries](/zh/reference/settings/server-settings/settings#max_concurrent_queries)。异步 insert 查询以及某些特定查询 (如 KILL) 不计入此限制。
+工作负载设置 `max_concurrent_queries` 用于限制给定工作负载可同时运行的并发查询数。它相当于查询设置 [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) 和服务器设置 [max&#95;concurrent&#95;queries](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)。异步 insert 查询以及某些特定查询 (如 KILL) 不计入此限制。
 
 工作负载设置 `max_queries_per_second` 和 `max_burst_queries` 通过令牌桶限流器限制该工作负载的查询数量。它保证在任意时间间隔 `T` 内，新开始执行的查询数不会超过 `max_queries_per_second * T + max_burst_queries`。
 
@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - 按照静态优先次序执行驱逐 (值越小，优先次序越高) ；高优先次序的待处理分配会驱逐低优先次序的分配；子节点应指定 `precedence` (默认为 0) 。
 * `queue` - 层级结构中的叶节点，可容纳正在运行和待处理的分配。
 
-<div id="deprecated-configuration">
-  ## 已弃用的 XML 配置
-</div>
-
-另一种指定资源使用哪些磁盘的方式，是通过 server 的 `storage_configuration`：
-
-要为特定磁盘启用 IO 调度，必须在存储配置中指定 `read_resource` 和/或 `write_resource`。这样可以告诉 ClickHouse，对于给定磁盘的每个读写请求应使用哪个资源。读取资源和写入资源可以指向同一个资源名称，这对于本地 SSD 或 HDD 很有用。多个不同的磁盘也可以指向同一个资源，这对于远程磁盘很有用：例如，如果你希望在 &quot;production&quot; 和 &quot;development&quot; 工作负载 之间公平分配网络带宽。
-
-示例：
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-请注意，服务器配置选项的优先级高于通过 SQL 定义资源。
-
 <div id="see-also">
   ## 另请参阅
 </div>
@@ -508,12 +469,12 @@ graph TD
 * [system.scheduler](/zh/reference/system-tables/scheduler)
 * [system.workloads](/zh/reference/system-tables/workloads)
 * [system.resources](/zh/reference/system-tables/resources)
-* [merge&#95;workload](/zh/reference/settings/merge-tree-settings#merge_workload) MergeTree 设置
-* [merge&#95;workload](/zh/reference/settings/server-settings/settings#merge_workload) 全局服务器设置
-* [mutation&#95;workload](/zh/reference/settings/merge-tree-settings#mutation_workload) MergeTree 设置
-* [mutation&#95;workload](/zh/reference/settings/server-settings/settings#mutation_workload) 全局服务器设置
-* [workload&#95;path](/zh/reference/settings/server-settings/settings#workload_path) 全局服务器设置
-* [workload&#95;zookeeper&#95;path](/zh/reference/settings/server-settings/settings#workload_zookeeper_path) 全局服务器设置
-* [cpu&#95;slot&#95;preemption](/zh/reference/settings/server-settings/settings#cpu_slot_preemption) 全局服务器设置
-* [cpu&#95;slot&#95;quantum&#95;ns](/zh/reference/settings/server-settings/settings#cpu_slot_quantum_ns) 全局服务器设置
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/zh/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) 全局服务器设置
+* [merge&#95;workload](/zh/reference/settings/merge-tree-settings/merge#merge_workload) MergeTree 设置
+* [merge&#95;workload](/zh/reference/settings/server-settings/settings/merge#merge_workload) 全局服务器设置
+* [mutation&#95;workload](/zh/reference/settings/merge-tree-settings/other#mutation_workload) MergeTree 设置
+* [mutation&#95;workload](/zh/reference/settings/server-settings/settings/other#mutation_workload) 全局服务器设置
+* [workload&#95;path](/zh/reference/settings/server-settings/settings/workload#workload_path) 全局服务器设置
+* [workload&#95;zookeeper&#95;path](/zh/reference/settings/server-settings/settings/workload#workload_zookeeper_path) 全局服务器设置
+* [cpu&#95;slot&#95;preemption](/zh/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) 全局服务器设置
+* [cpu&#95;slot&#95;quantum&#95;ns](/zh/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) 全局服务器设置
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/zh/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) 全局服务器设置

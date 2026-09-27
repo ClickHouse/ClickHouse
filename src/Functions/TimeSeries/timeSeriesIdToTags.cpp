@@ -40,6 +40,12 @@ public:
     /// Disable constant folding: the per-query tags collector is not populated at analysis time.
     bool isSuitableForConstantFolding() const override { return false; }
 
+    /// The collector handles dictionary-encoded identifiers itself, resolving only the dictionary
+    /// keys referenced by some row. The default implementation would run the function over the
+    /// whole dictionary, and a shared dictionary can contain identifiers whose rows were all
+    /// filtered out and which are therefore unknown to the collector.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -76,11 +82,11 @@ REGISTER_FUNCTION(TimeSeriesIdToTags)
 {
     FunctionDocumentation::Description description = R"(
 Returns tags associated with a specified identifier of a time series.
-See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
+See also function [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToTags(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
+        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         R"(
@@ -99,9 +105,9 @@ SELECT 8374283493092 AS id,
        timeSeriesIdToTags(same_id)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
