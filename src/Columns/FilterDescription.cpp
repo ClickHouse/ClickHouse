@@ -105,7 +105,7 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 
 ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
-    column = column->convertToFullIfNeeded();
+    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
@@ -129,7 +129,7 @@ ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
         IColumn::Filter & res = *column_filter;
 
         const auto size = res.size();
-        assert(size == null_map.size());
+        chassert(size == null_map.size());
         for (size_t i = 0; i < size; ++i)
         {
             auto has_val = static_cast<UInt8>(!!res[i]);

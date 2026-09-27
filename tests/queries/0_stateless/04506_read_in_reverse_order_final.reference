@@ -1,0 +1,48 @@
+level-0 duplicates
+0	0	1
+duplicates across parts
+0	0	3
+one part per row
+0	0	13
+plan
+Ok
+ASC and DESC results
+19999
+0	0	0
+9999	9999	9999
+0	0	0
+9999	19998	29997
+9999	19998	29997
+same result with and without the optimization
+1
+1
+lightweight delete
+9998	19996	29994
+version column
+2	1	3
+1	0	9
+0	1	0
+version ties across parts
+2	2	3
+1	2	9
+0	2	0
+descending sorting key
+Ok
+0	2	2
+1	2	2
+1
+is_deleted
+2	0	0	0
+0	0	0	0
+non-overlapping parts
+2000
+1999	2
+1998	2
+1
+collapsing not in reverse
+Ok
+0	0
+merge engine
+2	0
+1	1
+0	0

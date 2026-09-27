@@ -272,7 +272,6 @@ target_link_libraries(
            google-cloud-cpp::rest_internal
            nlohmann_json::nlohmann_json
            Crc32c::crc32c
-           CURL::libcurl
            Threads::Threads)
 target_link_libraries(google_cloud_cpp_storage PUBLIC OpenSSL::Crypto)
 target_include_directories(

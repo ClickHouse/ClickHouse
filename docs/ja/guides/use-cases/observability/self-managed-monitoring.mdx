@@ -1,0 +1,47 @@
+---
+slug: /use-cases/observability/oss-monitoring
+title: 'セルフマネージド環境の監視'
+sidebarTitle: 'セルフマネージド環境の監視'
+description: 'セルフマネージド環境の監視ガイド'
+doc_type: 'guide'
+keywords: ['オブザーバビリティ', '監視', 'セルフマネージド', 'メトリクス', 'システムヘルス']
+---
+
+import ObservabilityIntegrations from '/snippets/ja/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/ja/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/ja/_community_monitoring.mdx';
+
+このガイドでは、ClickHouseオープンソースを評価しているエンタープライズチーム向けに、本番環境へのデプロイにおける監視およびオブザーバビリティ機能に関する包括的な情報を提供します。エンタープライズのお客様からは、標準で利用できる監視機能、Datadog や AWS CloudWatch などのツールを含む既存のオブザーバビリティスタックとのインテグレーション、そして ClickHouse の監視機能がセルフホスト環境のデプロイと比べてどう違うのかについて、よくご質問をいただきます。
+
+<div id="prometheus">
+  ### Prometheus ベースのインテグレーションアーキテクチャ
+</div>
+
+ClickHouse は、デプロイモデルに応じて異なるエンドポイントで Prometheus 互換のメトリクスを公開しており、それぞれに異なる運用上の特性があります。
+
+**セルフマネージド/OSS ClickHouse**
+
+ClickHouse server の標準 `/metrics` エンドポイントに直接アクセスする方式です。このアプローチには、次の特徴があります。
+
+* メトリクスを完全に公開: 組み込みのフィルタリングなしで、利用可能な ClickHouse メトリクスをすべて公開
+* リアルタイムメトリクス: scrape 時にシステムテーブルから直接生成
+
+**システムへの直接アクセス**
+
+本番環境のシステムテーブルにクエリを実行するため、監視の負荷が増え、コスト削減のためにアイドル状態にすることもできなくなります
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### ClickStack のデプロイオプション
+</div>
+
+* [Helm](/ja/clickstack/deployment/helm): Kubernetes ベースのデバッグ環境に推奨されます。`values.yaml` を使用して、環境ごとの設定、リソース制限、スケーリングを行えます。
+* [Docker Compose](/ja/clickstack/deployment/docker-compose): 各コンポーネント (ClickHouse、HyperDX、OTel collector、MongoDB) を個別にデプロイします。
+* [HyperDX Only](/ja/clickstack/deployment/hyperdx-only): スタンドアロンの HyperDX コンテナー。
+
+利用可能なデプロイオプションとアーキテクチャの詳細については、[ClickStack ドキュメント](/ja/clickstack/overview) と [データインジェストガイド](/ja/clickstack/ingesting-data/overview) を参照してください。
+
+<DirectIntegrations />
+
+<CommunityMonitoring />

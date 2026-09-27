@@ -1,0 +1,20 @@
+-- { echo }
+
+-- The `values` table function evaluates its arguments column-natively (via
+-- `evaluateConstantExpressionAsColumn` + `convertColumnToType`, without materializing a `Field`).
+-- `Bool` values converted to a textual column must keep the `Bool` type ('true'/'false'), not collapse
+-- to `UInt64` ('1'/'0') - as a single value, inside a tuple (row), and inside an array column.
+SELECT * FROM values('x String', true, false);
+SELECT * FROM values('a String, b String', (true, false), (false, true));
+SELECT * FROM values('x Array(String)', [true, false]);
+SELECT * FROM values('x Nullable(String)', true, NULL, false);
+-- numeric target is value-preserving
+SELECT * FROM values('x UInt8', true, false);
+-- Non-literal `Bool`-typed constants (wrapped in CAST / Nullable / LowCardinality) also produce
+-- 'true'/'false'. This is a behavior change: previously (via `evaluateConstantExpression` +
+-- `convertFieldToType`) these non-literal constants had their `Bool` tag collapsed to `UInt64` and
+-- rendered as '1'/'0'; the column-native path keeps the `Bool` type, matching direct literals and CAST.
+SELECT * FROM values('x String', CAST(true, 'Nullable(Bool)'), CAST(false, 'Nullable(Bool)'));
+SELECT * FROM values('x String', toLowCardinality(CAST(true, 'Bool')));
+-- but a computed comparison is `UInt8`, not `Bool`, so it is unchanged ('1'/'0')
+SELECT * FROM values('x String', 1 > 0, 2 < 0);

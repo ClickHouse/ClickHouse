@@ -1,0 +1,339 @@
+---
+position: 6
+slug: /clickhouse-operator/guides/tls
+title: Защита кластера с помощью TLS
+keywords: ['kubernetes', 'tls', 'ssl', 'cert-manager', 'security', 'certificates']
+description: 'Как защитить кластер ClickHouse с помощью TLS и cert-manager, включая клиентские подключения и шифрование Keeper.'
+doc_type: 'guide'
+---
+
+В этом руководстве пошагово показано, как настроить сквозное шифрование кластера ClickHouse: выпустить
+сертификат с помощью [cert-manager](https://cert-manager.io/), включить TLS в
+кластере, подключить клиент через защищённые порты и распространить шифрование на
+трафик координации Keeper.
+
+Руководство носит практический характер. Подробное справочное описание `spec.settings.tls` по каждому полю см. в
+[Configuration → TLS/SSL configuration](/ru/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
+и в [API Reference](/ru/products/kubernetes-operator/reference/api-reference#clustertlsspec).
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Работающий кластер ClickHouse под управлением оператора (см. [Введение](/ru/products/kubernetes-operator/guides/introduction)).
+* Установленный в кластере [cert-manager](https://cert-manager.io/docs/installation/).
+* Доступ к пространству имен кластера через `kubectl`.
+
+Оператор не генерирует сертификаты самостоятельно — он использует Kubernetes
+`Secret`, который вы предоставляете. cert-manager — рекомендуемый способ создать и
+обновлять этот `Secret`, но подойдет любой инструмент, который записывает Secret в ожидаемом формате.
+
+<div id="secret-format">
+  ## В каком виде оператор ожидает сертификаты
+</div>
+
+TLS включается путём указания `spec.settings.tls.serverCertSecret` на объект Secret,
+который содержит серверную пару ключей:
+
+| Ключ Secret | Содержимое                          | Обязательно |
+| ----------- | ----------------------------------- | ----------- |
+| `tls.crt`   | PEM-кодированный сертификат сервера | Да          |
+| `tls.key`   | PEM-кодированный закрытый ключ      | Да          |
+
+Именно такую структуру cert-manager записывает для ресурса `Certificate`, поэтому
+никакого преобразования не требуется. Оператор монтирует пару ключей в каждый под по пути
+`/etc/clickhouse-server/tls/` и подключает её к конфигурации `openSSL` в ClickHouse.
+
+<Note>
+  `serverCertSecret` **обязателен**, если `tls.enabled: true`. Валидирующий
+  вебхук отклоняет кластер, в котором TLS включен без него, а также отклоняет `required: true`,
+  если не задано `enabled: true`.
+</Note>
+
+<div id="step-1-ca">
+  ## Шаг 1 — Инициализируйте CA с помощью cert-manager
+</div>
+
+Наиболее воспроизводимый вариант настройки — самоподписанный центр сертификации (CA), который затем подписывает сертификат сервера.
+Это даёт вам стабильный `ca.crt`, которому могут доверять клиенты.
+
+```yaml
+# A self-signed issuer used only to mint the CA certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-bootstrap
+  namespace: <namespace>
+spec:
+  selfSigned: {}
+---
+# The CA certificate itself
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-ca
+  namespace: <namespace>
+spec:
+  isCA: true
+  commonName: clickhouse-ca
+  secretName: clickhouse-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: Issuer
+---
+# A CA issuer that signs leaf certificates from the CA above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: clickhouse-ca-issuer
+  namespace: <namespace>
+spec:
+  ca:
+    secretName: clickhouse-ca
+```
+
+В продакшне замените самоподписанный bootstrap на реальный центр сертификации (корпоративный CA, Vault, ACME и т. д.). Меняется только Step 2 — конфигурация кластера
+остается той же.
+
+<div id="step-2-cert">
+  ## Шаг 2 — Выпустите сертификат сервера
+</div>
+
+Запросите конечный сертификат у CA. Значения `dnsNames` должны охватывать все способы,
+которыми клиенты обращаются к подам. Оператор создает один **headless** Service с именем
+`<cluster-name>-clickhouse-headless`, и каждый под реплики доступен по адресу
+`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
+Подстановочный знак для домена headless Service покрывает все реплики:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-server
+  namespace: <namespace>
+spec:
+  secretName: clickhouse-cert        # <-- the Secret the operator will read
+  duration: 8760h                    # 1 year
+  renewBefore: 720h                  # rotate 30 days early
+  issuerRef:
+    name: clickhouse-ca-issuer
+    kind: Issuer
+  dnsNames:
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+    - "localhost"
+```
+
+<Note>
+  Оператор **не** создаёт общекластерный Service (с балансировкой нагрузки). Если вам
+  нужна единая стабильная конечная точка для подключения, создайте собственный Service `ClusterIP`,
+  выбирающий поды кластера, и добавьте его DNS-имя в `dnsNames` выше.
+</Note>
+
+cert-manager создаёт Secret `clickhouse-cert` с `tls.crt`, `tls.key` и
+`ca.crt` и обновляет его до истечения срока действия. Убедитесь, что он существует:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+# ["ca.crt","tls.crt","tls.key"]
+```
+
+<div id="step-3-enable">
+  ## Шаг 3 — Включите TLS в кластере
+</div>
+
+Укажите Secret для кластера:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: <cluster-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true            # disable the insecure ports entirely
+      serverCertSecret:
+        name: clickhouse-cert
+```
+
+<div id="what-the-operator-does">
+  ### Что делает оператор
+</div>
+
+Когда `tls.enabled: true`, оператор:
+
+* **Открывает защищенные порты** на каждом поде и в headless Service: `9440`
+  (native TLS) и `8443` (HTTPS). Они добавляются наряду с уже существующими портами.
+* **Монтирует Secret** в `/etc/clickhouse-server/tls/` и генерирует
+  блок ClickHouse `openSSL` с `verificationMode: relaxed`,
+  `disableProtocols: sslv2,sslv3` и `preferServerCiphers: true`. Это
+  настройки по умолчанию — чтобы переопределить их, см. [Настройка параметров TLS](#custom-tls-settings).
+
+Если также задать `required: true`, оператор дополнительно:
+
+* **Удаляет незащищенные порты** `9000` (native) и `8123` (HTTP) — остаются только TLS-варианты, поэтому клиенты без TLS больше не смогут подключаться.
+* **Переключает liveness probe пода** на защищенный native-порт `9440`, чтобы проверка
+  работоспособности продолжала работать без plaintext listener.
+
+<Note>
+  Порты TLS `8443` и `9440` резервируются вебхуком **безусловно**,
+  даже когда TLS отключен, поэтому последующее переключение `tls.enabled` никогда не приводит к конфликту с
+  элементом `spec.additionalPorts`. См.
+  [Configuration → `additionalPorts`](/ru/products/kubernetes-operator/guides/configuration#additional-ports).
+</Note>
+
+<div id="step-4-connect">
+  ## Шаг 4 — Подключение по TLS
+</div>
+
+При `required: true` клиенты должны использовать защищённые порты и доверять CA. Обращайтесь
+к конкретному поду реплики через headless Service (или через собственный Service
+типа `Кластерный IP`, если вы его создали).
+
+**Собственный протокол** (`clickhouse-client`, порт `9440`):
+
+```bash
+clickhouse-client --secure \
+  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+  --port 9440 \
+  --ca-certificate /path/to/ca.crt \
+  --query "SELECT 1"
+```
+
+**HTTPS** (порт `8443`):
+
+```bash
+curl --cacert /path/to/ca.crt \
+  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+```
+
+Получите `ca.crt` напрямую из объекта Secret для локального тестирования:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```
+
+<div id="keeper-tls">
+  ## Шифрование трафика Keeper
+</div>
+
+Включение TLS в кластере ClickHouse **не** шифрует соединение с Keeper.
+Включите TLS для `KeeperCluster` отдельно — выпустите сертификат для сервиса Keeper
+(шаги 1–2 с `dnsNames` сервиса Keeper) и укажите его:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: <keeper-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert
+```
+
+Keeper использует защищённый клиентский порт `2281`. После включения TLS в Keeper **кластер
+ClickHouse автоматически подключается к нему по TLS** — на стороне
+ClickHouseCluster не требуется никаких дополнительных настроек. ClickHouse проверяет сертификат Keeper по системному
+хранилищу доверенных сертификатов, а также по указанному вами
+[`caBundle`](#custom-ca).
+
+<div id="custom-ca">
+  ## Собственный набор сертификатов CA
+</div>
+
+По умолчанию ClickHouse проверяет узлы, к которым он подключается (другие реплики, Keeper, HTTPS-источники словарей, S3, …), по **системному хранилищу доверенных сертификатов**. Чтобы **дополнительно** доверять
+приватному CA — самоподписанному или внутреннему CA, корневой сертификат которого отсутствует в системном хранилище, —
+укажите `caBundle`:
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      serverCertSecret:
+        name: clickhouse-cert
+      caBundle:
+        name: <ca-secret-name>
+        key: ca.crt
+```
+
+Оператор монтирует этот набор и добавляет его в хранилище доверенных сертификатов клиента
+`openSSL` (`caConfig`). Системное хранилище доверенных сертификатов продолжает использоваться — ваш собственный CA считается доверенным **в
+дополнение к** публичным корневым сертификатам, поэтому соединения с публичными конечными точками продолжают работать. Для
+самоподписанной конфигурации укажите в `caBundle` ключ `ca.crt` того же Secret, в который cert-manager
+записал сертификат (как в примере `cluster_with_ssl`).
+
+<div id="custom-tls-settings">
+  ## Настройка параметров TLS
+</div>
+
+Блок `openSSL`, который генерирует оператор, — это конфигурация по умолчанию, а не жёсткое ограничение. Он записывается
+в основную конфигурацию сервера; всё, что указано в `spec.settings.extraConfig`, добавляется в
+`config.d/99-extra-config.yaml`, который ClickHouse обрабатывает **в последнюю очередь** — поэтому он переопределяет
+сгенерированные значения.
+
+Чтобы усилить настройки по умолчанию — например, включить строгую проверку peer и повысить
+минимальную версию протокола до TLS 1.2, — задайте ключи `openSSL.server`, которые хотите изменить:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      openSSL:
+        server:
+          verificationMode: strict
+          disableProtocols: "sslv2,sslv3,tlsv1,tlsv1_1"
+```
+
+Слияние выполняется по каждому ключу: заменяются только те значения, которые вы задаёте, а сгенерированные ключи, которые вы
+не указываете (пути к сертификатам, конфигурация CA), сохраняются. Доступные параметры см. в
+[настройках сервера `openSSL`](/ru/reference/settings/server-settings/settings#openssl),
+а сведения о том, как объединяется `extraConfig`, — в разделе
+[Configuration → Встроенная дополнительная конфигурация](/ru/products/kubernetes-operator/guides/configuration#embedded-extra-configuration).
+
+<div id="troubleshoot">
+  ## Проверка и устранение неполадок
+</div>
+
+**Убедитесь, что защищённые порты доступны в headless Service:**
+
+```bash
+kubectl -n <namespace> get svc <cluster-name>-clickhouse-headless \
+  -o jsonpath='{.spec.ports[*].name}'
+# expect: ... tcp-secure http-secure   (and NO tcp/http when required: true)
+```
+
+**Убедитесь, что сертификат смонтирован в под:**
+
+```bash
+kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
+# clickhouse-server.crt  clickhouse-server.key   (plus custom-ca.crt when caBundle is set)
+```
+
+| Симптом                                                            | Вероятная причина                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Поды не запускаются / ошибка монтирования тома после включения TLS | Указанный Secret отсутствует или не содержит `tls.crt`/`tls.key` (или, если задан `caBundle`, Secret/ключ, на который он ссылается). Оператор не проверяет содержимое Secret&#39;а — отсутствие ключей проявляется как ошибка монтирования тома в поде, а не как отдельное условие status. Проверьте под командой `kubectl describe pod`. |
+| Вебхук отклоняет кластер                                           | Указано `required: true` без `enabled: true` или `enabled: true` без `serverCertSecret`.                                                                                                                                                                                                                                                  |
+| У клиента ошибка `certificate verify failed`                       | Клиент не доверяет CA. Передайте `ca.crt` из Secret или проверьте, что `dnsNames` в сертификате включают хост, к которому вы подключаетесь.                                                                                                                                                                                               |
+| Клиент без шифрования внезапно не может подключиться               | `required: true` отключил порты `9000`/`8123`. Переключите клиент на `9440`/`8443` или задайте `required: false`, чтобы небезопасные порты оставались открытыми во время миграции.                                                                                                                                                        |
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Конфигурация → Конфигурация TLS/SSL](/ru/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — справочник полей
+* [Конфигурация → `additionalPorts`](/ru/products/kubernetes-operator/guides/configuration#additional-ports) — зарезервированные порты
+* [Справочник по API → ClusterTLSSpec](/ru/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [настройки сервера `openSSL`](/ru/reference/settings/server-settings/settings#openssl) — параметры TLS, которые можно переопределить через `extraConfig`

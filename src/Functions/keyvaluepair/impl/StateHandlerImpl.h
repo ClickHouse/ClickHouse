@@ -5,6 +5,8 @@
 #include <Functions/keyvaluepair/impl/NeedleFactory.h>
 #include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 
+#include <Common/MapWithMemoryTracking.h>
+
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnString.h>
@@ -636,13 +638,13 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
      * */
     class PairWriter
     {
-        std::map<std::string_view, std::string_view> & map;
+        MapWithMemoryTracking<std::string_view, std::string_view> & map;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        explicit PairWriter(std::map<std::string_view, std::string_view> & map_)
+        explicit PairWriter(MapWithMemoryTracking<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 

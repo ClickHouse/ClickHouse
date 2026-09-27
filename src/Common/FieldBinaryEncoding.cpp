@@ -69,6 +69,7 @@ public:
     void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const CustomType & x, WriteBuffer & buf) const;
+    [[noreturn]] void operator() (const NumberLiteral & x, WriteBuffer & buf) const;
     void operator() (const bool & x, WriteBuffer & buf) const;
 };
 
@@ -239,10 +240,16 @@ void FieldVisitorEncodeBinary::operator()(const bool & x, WriteBuffer & buf) con
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with custom type is not supported");
 }
 
+[[noreturn]] void FieldVisitorEncodeBinary::operator()(const NumberLiteral &, WriteBuffer &) const
+{
+    /// NumberLiteral should be resolved to a concrete type before binary encoding.
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with NumberLiteral is not supported");
+}
+
 template <typename T>
 Field decodeBigInteger(ReadBuffer & buf)
 {
-    T value;
+    T value{};
     readBinaryLittleEndian(value, buf);
     return value;
 }
@@ -250,9 +257,9 @@ Field decodeBigInteger(ReadBuffer & buf)
 template <typename T>
 DecimalField<T> decodeDecimal(ReadBuffer & buf)
 {
-    UInt32 scale;
+    UInt32 scale = 0;
     readVarUInt(scale, buf);
-    T value;
+    T value{};
     readBinaryLittleEndian(value, buf);
     return DecimalField<T>(value, scale);
 }
@@ -268,7 +275,7 @@ T decodeValueLittleEndian(ReadBuffer & buf)
 template <typename T>
 T decodeArrayLikeField(ReadBuffer & buf)
 {
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, buf);
     T value;
     for (size_t i = 0; i != size; ++i)
@@ -284,7 +291,7 @@ void encodeField(const Field & x, WriteBuffer & buf)
 
 Field decodeField(ReadBuffer & buf)
 {
-    UInt8 type;
+    UInt8 type = 0;
     readBinary(type, buf);
     switch (FieldBinaryTypeIndex(type))
     {
@@ -296,13 +303,13 @@ Field decodeField(ReadBuffer & buf)
             return NEGATIVE_INFINITY;
         case FieldBinaryTypeIndex::Int64:
         {
-            Int64 value;
+            Int64 value = 0;
             readVarInt(value, buf);
             return value;
         }
         case FieldBinaryTypeIndex::UInt64:
         {
-            UInt64 value;
+            UInt64 value = 0;
             readVarUInt(value, buf);
             return value;
         }
@@ -338,7 +345,7 @@ Field decodeField(ReadBuffer & buf)
             return decodeValueLittleEndian<IPv6>(buf);
         case FieldBinaryTypeIndex::Bool:
         {
-            bool value;
+            bool value = false;
             readBinary(value, buf);
             return value;
         }
@@ -348,7 +355,7 @@ Field decodeField(ReadBuffer & buf)
             return decodeArrayLikeField<Tuple>(buf);
         case FieldBinaryTypeIndex::Map:
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, buf);
             Map map;
             for (size_t i = 0; i != size; ++i)
@@ -362,7 +369,7 @@ Field decodeField(ReadBuffer & buf)
         }
         case FieldBinaryTypeIndex::Object:
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, buf);
             Object value;
             for (size_t i = 0; i != size; ++i)

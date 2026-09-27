@@ -20,7 +20,7 @@ struct MaskingPolicyName;
 class ASTDropAccessEntityQuery final : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    AccessEntityType type;
+    AccessEntityType type{};
     bool if_exists = false;
     Strings names;
     String storage_name;

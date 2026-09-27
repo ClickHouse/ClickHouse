@@ -7,10 +7,11 @@
 namespace DB
 {
 
-/// Part pruner based on column statistics, currently supports MinMax and NullCount.
+/// Part pruner based on column statistics (min/max and NULL count from `Basic` statistics,
+/// plus the deprecated `MinMax` statistics).
 /// Similar to PartitionPruner but uses per-column statistics instead of partition keys.
-/// When relevant statistics are available for columns used in the filter condition,
-/// this pruner can skip entire parts where the statistics prove the condition cannot match.
+/// When usable statistics are available for columns used in the filter condition,
+/// this pruner can skip entire parts where the column ranges don't overlap with the query condition.
 class StatisticsPartPruner
 {
 public:
@@ -22,7 +23,7 @@ public:
     ///   - can_be_false: whether any rows in the part might not satisfy the condition
     BoolMask checkPartCanMatch(const Estimates & estimates);
 
-    /// Returns true if no columns with supported statistics are used in the filter, then all parts will match.
+    /// Returns true if no columns with MinMax statistics are used in the filter, then all parts will match.
     bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.
@@ -30,21 +31,16 @@ public:
 
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
-    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types);
+    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types, bool record_used_columns = true);
 
     /// Cache key_condition by column names to avoid recreating them for each part.
     std::unordered_map<Names, std::unique_ptr<KeyCondition>, NamesHash> key_condition_cache;
 
-    /// Names of `.null` subcolumns whose parent is a Nullable/LowCardinality(Nullable) column with
-    /// `NullCount` statistics. Computed once in the constructor and passed to
-    /// `ActionsDAGWithInversionPushDown` to trigger the `.null` → `!= 0` / `== 0` rewrite for
-    /// those and only those names.
-    NameSet null_subcolumns_to_normalize;
+    std::vector<std::pair<String, bool>> null_predicates;
 
     const ActionsDAGWithInversionPushDown filter_dag;
     const ContextPtr context;
     std::map<String, DataTypePtr> stats_column_name_to_type_map;
-    std::map<String, String> virtual_key_to_parent;
     NameOrderedSet used_column_names;
     bool useless = true;
 };

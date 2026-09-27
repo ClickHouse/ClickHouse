@@ -31,7 +31,7 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-class FunctionFormatRow : public IFunction
+class FunctionFormatRow final : public IFunction
 {
 public:
     FunctionFormatRow(const char * name_, bool no_newline_, String format_name_, Names arguments_column_names_, ContextPtr context_)
@@ -93,7 +93,16 @@ public:
             row_output_format->finalize();
             if (no_newline)
             {
-                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
+                /// Strip a single trailing newline, but only when this row actually emitted at least one byte.
+                /// `buffer.count()` is the absolute number of bytes written; the current row starts at the
+                /// previous row's end offset (0 for the first row). Comparing against it prevents rewinding into
+                /// the previous row when this row is empty, which would make `offsets` non-monotonic and cause a
+                /// `size_t` underflow in `ColumnString::sizeAt`. The check against `buffer.buffer().begin()`
+                /// additionally keeps the position within the current working buffer so `--buffer.position()`
+                /// never moves the cursor before it.
+                const size_t row_start = i == 0 ? 0 : offsets[i - 1];
+                if (buffer.count() > row_start && buffer.position() > buffer.buffer().begin()
+                    && buffer.position()[-1] == '\n')
                     --buffer.position();
             }
 
@@ -113,7 +122,7 @@ private:
     FormatSettings format_settings;
 };
 
-class FormatRowOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FormatRowOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)
@@ -141,7 +150,11 @@ public:
         for (const auto & argument : arguments)
             arguments_column_names.push_back(argument.name);
 
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
+        /// The format name can arrive wrapped, e.g. from `formatRow(toLowCardinality('CSV'), ...)`.
+        const auto & format_name_argument = arguments.at(0).column;
+        const auto format_name_column
+            = format_name_argument ? format_name_argument->convertToFullColumnIfLowCardinality() : nullptr;
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(format_name_column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
@@ -164,10 +177,10 @@ REGISTER_FUNCTION(FormatRow)
     FunctionDocumentation::Description formatRow_description = R"(
 Converts arbitrary expressions into a string via given format.
 
-:::note
+<Note>
 If the format contains a suffix/prefix, it will be written in each row.
 Only row-based formats are supported in this function.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax formatRow_syntax = "formatRow(format, x, y, ...)";
     FunctionDocumentation::Arguments formatRow_arguments =
@@ -186,12 +199,9 @@ FROM numbers(3)
         )",
         R"(
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"
-                         │
-│ 1,"good"
-                         │
-│ 2,"good"
-                         │
+│ 0,"good"                        ↴│
+│ 1,"good"                        ↴│
+│ 2,"good"                        ↴│
 └──────────────────────────────────┘
         )"
     },
@@ -202,19 +212,19 @@ SELECT formatRow('CustomSeparated', number, 'good')
 FROM numbers(3)
 SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
         )",
-        R"(
+        R"DOCS_MD(
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>
-0    good
-<suffix>                   │
-│ <prefix>
-1    good
-<suffix>                   │
-│ <prefix>
-2    good
-<suffix>                   │
+│ <prefix>                                    ↴│
+│↳0	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳1	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳2	good                                     ↴│
+│↳<suffix>                                     │
 └──────────────────────────────────────────────┘
-        )"
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn formatRow_introduced_in = {20, 7};

@@ -29,11 +29,11 @@ TEST(Marks, Compression)
         PODArray<MarkInCompressedFile> copy;
         copy.assign(plain); // paranoid in case next line mutates it
 
-        MarksInCompressedFile marks(copy);
+        auto marks = MarksInCompressedFile::create(copy);
         for (size_t i = 0; i < plain.size(); ++i)
-            ASSERT_EQ(marks.get(i), plain[i]);
+            ASSERT_EQ(marks->get(i), plain[i]);
 
-        EXPECT_LE((marks.approximateMemoryUsage() - sizeof(MarksInCompressedFile)) * 8, plain.size() * max_bits_per_mark);
+        EXPECT_LE((marks->approximateMemoryUsage() - sizeof(MarksInCompressedFile)) * 8, plain.size() * max_bits_per_mark);
     };
 
     {

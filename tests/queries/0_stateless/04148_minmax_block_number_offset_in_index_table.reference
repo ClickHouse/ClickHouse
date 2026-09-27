@@ -1,0 +1,9 @@
+-- partition_key_only: minmax_p per part --
+0_1_1_0	(0,0)
+1_2_2_0	(1,1)
+-- partition_key_only: minmax__block_number is not exposed --
+-- partition_key_only: minmax__block_offset is not exposed --
+-- with_block_number_offset: minmax ranges for the new 0-level part --
+0_1_1_0	(0,0)	(NULL,NULL)	(NULL,NULL)
+0_3_3_0	(0,0)	(3,3)	(0,2)
+1_2_2_0	(1,1)	(NULL,NULL)	(NULL,NULL)

@@ -11,6 +11,7 @@
 #include <roaring/roaring64map.hh>
 #include <zlib.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -61,9 +62,9 @@ namespace
         return value;
     }
 
-    /// `{N}` slice of `delete_bitmap_{N}.rbm`, or empty view if `file_name`
+    /// `{csn}` slice of `delete_bitmap_{csn}.rbm`, or empty view if `file_name`
     /// doesn't match the prefix/suffix shape.
-    std::string_view extractBlockNumberPart(std::string_view file_name)
+    std::string_view extractCSNPart(std::string_view file_name)
     {
         if (file_name.size() <= FILE_PREFIX.size() + FILE_SUFFIX.size())
             return {};
@@ -423,36 +424,121 @@ std::unique_ptr<DeleteBitmap> DeleteBitmap::deserialize(ReadBuffer & in)
     return result;
 }
 
-std::string DeleteBitmap::fileNameForBlockNumber(UInt64 block_number)
+DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
 {
-    return fmt::format("{}{}{}", FILE_PREFIX, block_number, FILE_SUFFIX);
+    DeleteBitmapInspection result;
+
+    char header[DeleteBitmap::HEADER_SIZE];
+    if (in.read(header, DeleteBitmap::HEADER_SIZE) != DeleteBitmap::HEADER_SIZE)
+        return result; /// header_read stays false — too short to be a .rbm at all
+
+    result.header_read = true;
+    const UInt32 magic = unpackUInt32LE(header + 0);
+    result.version = unpackUInt32LE(header + sizeof(UInt32));
+    result.body_size = unpackUInt32LE(header + sizeof(UInt32) * 2);
+    result.magic_ok = (magic == DeleteBitmap::MAGIC);
+
+    /// Validate magic / version / body_size before allocating, like `deserialize`,
+    /// so a bad header can't drive a multi-hundred-MB allocation just to be rejected.
+    const bool version_supported
+        = result.version == DeleteBitmap::VERSION_R32 || result.version == DeleteBitmap::VERSION_R64;
+    if (!result.magic_ok || !version_supported || result.body_size > MAX_SERIALIZED_BODY_SIZE)
+        return result;
+
+    std::unique_ptr<char[]> body;
+    size_t body_bytes = 0;
+    if (result.body_size)
+    {
+        body = std::make_unique_for_overwrite<char[]>(result.body_size);
+        body_bytes = in.read(body.get(), result.body_size);
+    }
+    result.body_read = (body_bytes == result.body_size);
+
+    char crc_buf[DeleteBitmap::CRC_SIZE] = {};
+    const bool crc_present = (in.read(crc_buf, DeleteBitmap::CRC_SIZE) == DeleteBitmap::CRC_SIZE);
+    if (crc_present)
+        result.crc_stored = unpackUInt32LE(crc_buf);
+
+    /// CRC is only meaningful when both the declared body and the trailing CRC
+    /// field were fully present.
+    if (result.body_read && crc_present)
+    {
+        result.crc_computed = computeCRC32(header, DeleteBitmap::HEADER_SIZE, body.get(), body_bytes);
+        result.crc_ok = (result.crc_stored == result.crc_computed);
+    }
+
+    /// Tolerant of bytes past the CRC by design: `deserialize` rejects them, but an
+    /// inspector reports the declared frame rather than re-imposing reader strictness.
+
+    /// Decode independently of the CRC verdict (magic/version are guaranteed by the
+    /// guard above). `readSafe` throws on a malformed body — reported via
+    /// `decoded=false` rather than propagated.
+    if (result.body_read)
+    {
+        try
+        {
+            auto collect = [&](const auto & r)
+            {
+                result.cardinality = r.cardinality();
+                if (result.cardinality)
+                {
+                    result.has_minmax = true;
+                    result.min_row = r.minimum();
+                    result.max_row = r.maximum();
+                }
+                if (collect_values)
+                    for (auto it = r.begin(); it != r.end(); ++it)
+                        result.sample.push_back(*it);
+            };
+
+            if (result.version == DeleteBitmap::VERSION_R64)
+                collect(body_bytes ? roaring::Roaring64Map::readSafe(body.get(), body_bytes) : roaring::Roaring64Map());
+            else
+                collect(body_bytes ? roaring::Roaring::readSafe(body.get(), body_bytes) : roaring::Roaring());
+
+            result.decoded = true;
+        }
+        catch (...) // NOLINT
+        {
+            /// Ok: a malformed body is reported (decoded=false + decode_error), never propagated.
+            result.decoded = false;
+            result.decode_error = getCurrentExceptionMessage(/*with_stacktrace=*/false);
+        }
+    }
+
+    return result;
+}
+
+std::string DeleteBitmap::fileNameForCSN(BitmapVersion csn)
+{
+    return fmt::format("{}{}{}", FILE_PREFIX, csn, FILE_SUFFIX);
 }
 
 bool DeleteBitmap::isDeleteBitmapFile(std::string_view file_name)
 {
-    auto number_part = extractBlockNumberPart(file_name);
-    if (number_part.empty())
+    auto csn_part = extractCSNPart(file_name);
+    if (csn_part.empty())
         return false;
     /// `tryParse<UInt64>` accepts leading `+` and ignores leading zeros, so a
-    /// noncanonical name would resolve to the same block number as the
-    /// canonical one and confuse the later read. Require digit-only, then
-    /// round-trip against `fileNameForBlockNumber` to accept only the canonical form.
-    for (char c : number_part)
+    /// noncanonical name would resolve to the same csn as the canonical one
+    /// and confuse the later read. Require digit-only, then round-trip
+    /// against `fileNameForCSN` to accept only the canonical form.
+    for (char c : csn_part)
         if (c < '0' || c > '9')
             return false;
     UInt64 parsed = 0;
-    if (!tryParse<UInt64>(parsed, number_part))
+    if (!tryParse<UInt64>(parsed, csn_part))
         return false;
-    return fileNameForBlockNumber(parsed) == file_name;
+    return fileNameForCSN(parsed) == file_name;
 }
 
-UInt64 DeleteBitmap::parseBlockNumberFromFileName(std::string_view file_name)
+BitmapVersion DeleteBitmap::parseCSNFromFileName(std::string_view file_name)
 {
     /// Caller is expected to have screened the name via `isDeleteBitmapFile`.
     /// If they didn't, `parse<UInt64>` throws on a malformed slice rather than
     /// silently returning 0.
-    auto number_part = extractBlockNumberPart(file_name);
-    return parse<UInt64>(number_part);
+    auto csn_part = extractCSNPart(file_name);
+    return parse<BitmapVersion>(csn_part);
 }
 
 }

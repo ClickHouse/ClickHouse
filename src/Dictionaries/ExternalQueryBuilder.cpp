@@ -41,6 +41,10 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , where(where_)
     , quoting_style(quoting_style_)
 {
+    // SQL-standard DBs (PostgreSQL, Cassandra, etc.) treat '\' as a literal character, so use '' escaping.
+    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes || quoting_style == IdentifierQuotingStyle::DoubleQuotesPostgreSQL)
+        format_settings.values.escape_quote_with_quote = true;
+
     if (table.empty() && query.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `query` must be non empty");
 
@@ -63,6 +67,10 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 
         case IdentifierQuotingStyle::BackticksMySQL:
             writeBackQuotedStringMySQL(s, out);
+            break;
+
+        case IdentifierQuotingStyle::DoubleQuotesPostgreSQL:
+            writeDoubleQuotedStringPostgreSQL(s, out);
             break;
     }
 }
