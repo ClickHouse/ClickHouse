@@ -2031,6 +2031,8 @@ An engine that keeps no settings of its own reports only what the table's `SETTI
 
 The value of a setting a named collection supplied is shown as `[HIDDEN]`, with `is_masked = 1`, to a reader who could not read that collection from [system.named_collections](/reference/system-tables/named_collections) - a collection is secret as a whole, not only the keys a masking rule knows. Which setting it supplied is still reported.
 
+A secret the server configuration supplied - the password of its `nats` or `rabbitmq` section, which a table that states no authentication of its own uses - is always shown as `[HIDDEN]`: it belongs to whoever runs the server, and `displaySecretsInShowAndSelect` does not reveal it.
+
 A table is shown to a user who has the `SHOW TABLES` privilege on it. The [SHOW TABLE SETTINGS](/reference/statements/show) statement reads this table for one table.
 
 .examples
