@@ -119,9 +119,9 @@ bool isRangeOffsetFrame(const WindowFrame & frame)
 }
 
 /// Null for every frame but RANGE OFFSET, which has exactly one ORDER BY key.
-RangeOffsetComparator chooseRangeOffsetComparator(const Block & header, const WindowDescription & description, const std::vector<size_t> & order_by_indices)
+RangeOffsetComparator chooseRangeOffsetComparator(const Block & header, const WindowFrame & frame, const std::vector<size_t> & order_by_indices)
 {
-    if (!isRangeOffsetFrame(description.frame))
+    if (!isRangeOffsetFrame(frame))
         return nullptr;
 
     chassert(order_by_indices.size() == 1);
@@ -210,12 +210,11 @@ WindowFrame prepareRangeOffsets(const WindowFrame & frame, const DataTypePtr & o
 WindowDescription prepareDescriptionForExecution(
     const Block & header,
     const WindowDescription & description,
-    const std::vector<size_t> & order_by_indices,
-    const std::vector<WindowFunctionDescription> & functions)
+    const WindowFrame & frame,
+    const std::vector<size_t> & order_by_indices)
 {
     WindowDescription prepared = description;
-
-    prepared.frame = applyFunctionDefaultFrame(description.frame, functions);
+    prepared.frame = frame;
 
     if (isRangeOffsetFrame(prepared.frame))
         prepared.frame = prepareRangeOffsets(prepared.frame, header.getByPosition(order_by_indices[0]).type);
@@ -230,11 +229,12 @@ WindowTransformParams WindowTransformParams::create(
     const WindowDescription & window_description,
     const std::vector<WindowFunctionDescription> & functions)
 {
-    Block header = materializeHeader(input_header);
+    auto header = materializeHeader(input_header);
+    auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
-    auto description = prepareDescriptionForExecution(header, window_description, order_by_indices, functions);
-    auto range_offset_comparator = chooseRangeOffsetComparator(header, description, order_by_indices);
+    auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, order_by_indices);
+    auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
     auto should_materialize = markColumnsToMaterialize(header, description, functions);
 
     return WindowTransformParams{
