@@ -89,3 +89,29 @@ SELECT count() FROM tab FINAL WHERE str = 'baz';    -- 1: survivor
 SELECT count() FROM tab FINAL PREWHERE str = 'bar'; -- 0: same via PREWHERE
 
 DROP TABLE tab;
+
+SELECT 'Nullable sorting key: lazy FINAL falls back to a regular FINAL read here too';
+CREATE TABLE tab
+(
+    id Nullable(UInt64),
+    version UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = array)
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+SYSTEM STOP MERGES tab;
+INSERT INTO tab VALUES (1, 1, 'aaa'), (2, 1, 'bbb');
+INSERT INTO tab VALUES (2, 2, 'bbb_updated'), (3, 1, 'ccc');
+INSERT INTO tab VALUES (10, 1, 'zzz');
+
+SELECT count() FROM tab FINAL WHERE str = 'ccc';                      -- 1: survivor
+SELECT count() FROM tab FINAL PREWHERE str = 'bbb' WHERE str = 'bbb'; -- 1: `PREWHERE` is evaluated before `FINAL`
+SELECT count() FROM tab FINAL PREWHERE str = 'zzz' WHERE str = 'zzz'; -- 1: survivor
+
+-- 1: the text index is still read directly
+SELECT countIf(explain ILIKE '%__text_index%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL PREWHERE str = 'zzz' WHERE str = 'zzz');
+
+DROP TABLE tab;
