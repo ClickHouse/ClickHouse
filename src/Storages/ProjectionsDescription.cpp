@@ -496,7 +496,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
             {
                 auto & column_declaration = child->as<ASTColumnDeclaration &>();
                 if (!column_declaration.getType())
+                {
+                    if (auto codec = column_declaration.getCodec())
+                        column_declaration.setCodec(CompressionCodecFactory::instance().normalizeCodecForUntypedColumn(codec));
                     continue;
+                }
 
                 const auto & column = projection_columns.get(
                     getProjectionStorageColumnName(column_declaration.name, result.with_parent_part_offset));

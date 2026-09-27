@@ -1319,7 +1319,8 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
 ASTPtr CompressionCodecALP::getCodecDescription() const
 {
     ASTs arguments;
-    if (variant != Variant::DEFAULT)
+    /// `AUTO` and the omitted variant use the same compression path for every supported type.
+    if (variant != Variant::DEFAULT && variant != Variant::AUTO)
     {
         String variant_str;
         switch (variant)
@@ -1522,7 +1523,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecALP>(float_width, variant);
     };
-    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder, [](size_t) { return true; });
 }
 
 CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)

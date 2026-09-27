@@ -1038,6 +1038,8 @@ void registerCodecT64(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 
-    factory.registerCompressionCodecWithType("T64", codecId(), reg_func);
+    /// The stored description contains only the variant; its type-dependent part is always
+    /// inferred from the column, even when the variant is explicitly spelled out.
+    factory.registerCompressionCodecWithType("T64", codecId(), reg_func, [](size_t) { return true; });
 }
 }

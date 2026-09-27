@@ -149,7 +149,9 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
-    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
+    /// The optional second argument pins the float width. Keep it if supplied, but normalize
+    /// the type-independent compression level when that width is omitted.
+    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder, [](size_t argument_count) { return argument_count <= 1; });
 }
 
 namespace

@@ -505,6 +505,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     };
-    factory.registerCompressionCodecWithType("Gorilla", method_code, codec_builder);
+    factory.registerCompressionCodecWithType(
+        "Gorilla", method_code, codec_builder, [](size_t argument_count) { return argument_count == 1; });
 }
 }
