@@ -2380,20 +2380,23 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
         return false;
 
     /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key:
-    /// a read of a projection is sorted by the projection's.
+    /// a read of a projection is sorted by the projection's. A read whose key is shorter than the prefix
+    /// refuses the request itself.
     auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
     {
         const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
-        auto is_sorted_by_table_key = [&](ReadFromMergeTree & read_from_merge_tree)
+        auto agrees_with_table_key = [&](ReadFromMergeTree & read_from_merge_tree)
         {
+            const auto read_metadata = read_from_merge_tree.getStorageMetadata();
+            const auto & read_key = read_metadata->getSortingKey();
             return sortingKeysSharePrefix(
-                read_from_merge_tree.getStorageMetadata()->getSortingKey(),
+                read_key,
                 table_metadata->getSortingKey(),
-                order_info_->used_prefix_of_sorting_key_size);
+                std::min(order_info_->used_prefix_of_sorting_key_size, read_key.column_names.size()));
         };
         if (child_plan.plan.isInitialized()
-            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), is_sorted_by_table_key))
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), agrees_with_table_key))
             return false;
     }
 
