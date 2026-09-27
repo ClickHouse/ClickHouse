@@ -136,6 +136,20 @@ SELECT 'collapses to another key, rollup, nulls', a, if(0, b, if(0, b, a)) AS k,
 FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY ROLLUP(a, k) ORDER BY a NULLS LAST, k NULLS LAST
 SETTINGS group_by_use_nulls = 1;
 
+-- The same with `if` chains rewritten to `multiIf`.
+SELECT 'collapses to another key, rollup, nulls, multiIf', a, if(0, b, if(0, b, a)) AS k, count()
+FROM (SELECT 'x'::String AS a, 'y'::String AS b) t0 GROUP BY ROLLUP(a, k) ORDER BY a NULLS LAST, k NULLS LAST
+SETTINGS group_by_use_nulls = 1, optimize_if_chain_to_multiif = 1;
+
+-- Also when the conditions are not constant, and when they read other keys.
+SELECT 'if chain, rollup, nulls, multiIf', if(number > 1, 'p', if(number > 0, 'q', 'r')) AS k, concat(k, 'z'), count()
+FROM numbers(3) GROUP BY k WITH ROLLUP ORDER BY k NULLS LAST
+SETTINGS group_by_use_nulls = 1, optimize_if_chain_to_multiif = 1;
+
+SELECT 'if chain of other keys, rollup, nulls, multiIf', a, b, if(a = 'x', a, if(b = 'y', b, a)) AS k, count()
+FROM (SELECT 'x' AS a, 'w' AS b) t0 GROUP BY ROLLUP(a, b, k) ORDER BY ALL
+SETTINGS group_by_use_nulls = 1, optimize_if_chain_to_multiif = 1;
+
 -- Columns of different sources are different keys, in the branch that is taken and in the ones that are not.
 SELECT 'collapses to another key, other sources, cube', if(0, s2.b, if(0, s2.b, s1.a)) AS k1, if(0, s3.b, if(0, s3.b, s1.a)) AS k2, count()
 FROM (SELECT 'x' AS a) AS s1, (SELECT 'y' AS b) AS s2, (SELECT 'y' AS b) AS s3 GROUP BY CUBE(k1, k2) ORDER BY k1, k2;

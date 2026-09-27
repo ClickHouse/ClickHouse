@@ -64,6 +64,17 @@ collapses to another key, grouping sets	x		1
 collapses to another key, rollup, nulls	x	x	1
 collapses to another key, rollup, nulls	x	\N	1
 collapses to another key, rollup, nulls	\N	\N	1
+collapses to another key, rollup, nulls, multiIf	x	x	1
+collapses to another key, rollup, nulls, multiIf	x	\N	1
+collapses to another key, rollup, nulls, multiIf	\N	\N	1
+if chain, rollup, nulls, multiIf	p	pz	1
+if chain, rollup, nulls, multiIf	q	qz	1
+if chain, rollup, nulls, multiIf	r	rz	1
+if chain, rollup, nulls, multiIf	\N	\N	3
+if chain of other keys, rollup, nulls, multiIf	x	w	x	1
+if chain of other keys, rollup, nulls, multiIf	x	w	\N	1
+if chain of other keys, rollup, nulls, multiIf	x	\N	\N	1
+if chain of other keys, rollup, nulls, multiIf	\N	\N	\N	1
 collapses to another key, other sources, cube			1
 collapses to another key, other sources, cube		x	1
 collapses to another key, other sources, cube	x		1
