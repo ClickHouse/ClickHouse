@@ -1,0 +1,6 @@
+-- without a grant, all three refuse
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- with one, both report the MergeTree baseline, and report it alike
+0
