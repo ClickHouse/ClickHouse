@@ -46,3 +46,10 @@ echo "EXISTS rewritten to IN not allowed: $(run "SELECT sum(n) FROM $URL WHERE E
 echo "IN subquery not allowed, force mode: $(run "$QUERY" "enable_parallel_replicas = 2, parallel_replicas_allow_in_with_subquery = 0")"
 # `IN` with a set of constants is not a subquery.
 echo "IN constants, not allowed: $(run "SELECT sum(n) FROM $URL WHERE n IN (1, 3)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+echo "IN an alias of constants, not allowed: $(run "WITH [1, 3] AS s SELECT sum(n) FROM $URL WHERE n IN s" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+echo "IN an alias of a scalar subquery, not allowed: $(run "WITH (SELECT [1, 3]) AS s SELECT sum(n) FROM $URL WHERE n IN s" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+# A SQL user-defined function without a subquery in its body.
+UDF="plain_udf_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "CREATE FUNCTION $UDF AS (v) -> v IN (1, 3)"
+echo "SQL UDF without a subquery, not allowed: $(run "SELECT sum(n) FROM $URL WHERE $UDF(n)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+$CLICKHOUSE_CLIENT -q "DROP FUNCTION $UDF"

@@ -8,3 +8,6 @@ IN in a SQL UDF not allowed: ReadFromURL 4
 EXISTS rewritten to IN not allowed: ReadFromURL 6
 IN subquery not allowed, force mode: SUPPORT_IS_DISABLED SUPPORT_IS_DISABLED
 IN constants, not allowed: ReadFromCluster 4
+IN an alias of constants, not allowed: ReadFromCluster 4
+IN an alias of a scalar subquery, not allowed: ReadFromURL 4
+SQL UDF without a subquery, not allowed: ReadFromCluster 4
