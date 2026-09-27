@@ -511,6 +511,61 @@ def test_checkpoint_interplay(started_cluster):
     assert len(deltars_rows(deltars_table(started_cluster, "local", path), "id")) == 100
 
 
+def test_conflict_across_checkpoint_boundary(started_cluster):
+    """A ClickHouse write whose snapshot comes from a Spark checkpoint loses to a Spark commit that
+    lands during it; the retry commits on top of the checkpoint plus the newer commit, and the next
+    Spark checkpoint folds the ClickHouse commit in so a fresh reader sees everything."""
+    node = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    path = randomize_table_name("test_checkpoint_conflict")
+    table = f"delta.`{s3_path(started_cluster, path)}`"
+    spark.sql(f"CREATE TABLE {table} (id INT) USING delta TBLPROPERTIES (delta.checkpointInterval = 2)")
+    spark.sql(f"INSERT INTO {table} SELECT id FROM range(0, 10)")
+    spark.sql(f"INSERT INTO {table} SELECT id FROM range(10, 20)")  # version 2: checkpoint
+    log_objects = [o.object_name for o in started_cluster.minio_client.list_objects(started_cluster.minio_bucket, f"{path}/_delta_log/", recursive=True)]
+    assert any(o.endswith("00000000000000000002.checkpoint.parquet") for o in log_objects), log_objects
+
+    node.query(f"CREATE TABLE {path} (id Int32) ENGINE = {delta_engine_definition(started_cluster, 's3', path)}")
+    assert node.query(f"SELECT count() FROM {path}").strip() == "20"
+    slow_query_id = f"{path}_slow_insert"
+    slow_result = []
+    slow_insert = threading.Thread(
+        target=lambda: slow_result.append(
+            node.query_and_get_answer_with_error(
+                f"INSERT INTO {path} SELECT number + 100 FROM (SELECT number FROM numbers(10) WHERE sleepEachRow(1) = 0)"
+                " SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, max_threads = 1",
+                query_id=slow_query_id,
+            )
+        )
+    )
+    slow_insert.start()
+    deadline = time.monotonic() + 60
+    while int(node.query(f"SELECT coalesce(max(read_rows), 0) FROM system.processes WHERE query_id = '{slow_query_id}'").strip()) < 1:
+        assert time.monotonic() < deadline, "the slow INSERT did not start reading rows in 60s"
+        assert slow_insert.is_alive(), slow_result
+        time.sleep(0.1)
+    spark.sql(f"INSERT INTO {table} SELECT id FROM range(20, 30)")  # version 3, during the ClickHouse write
+    slow_insert.join()
+    assert "commit conflict at version 3" in slow_result[0][1], slow_result
+    assert log_versions(started_cluster, "s3", path) == [0, 1, 2, 3]
+
+    node.query(f"INSERT INTO {path} SELECT number + 100 FROM numbers(10)")  # version 4
+    assert log_versions(started_cluster, "s3", path) == [0, 1, 2, 3, 4]
+    assert node.query(f"SELECT count(), uniqExact(id) FROM {path}").strip() == "40\t40"
+    spark.sql(f"INSERT INTO {table} SELECT id FROM range(30, 40)")  # version 5
+    spark.sql(f"INSERT INTO {table} SELECT id FROM range(40, 50)")  # version 6: checkpoint over the ClickHouse commit
+    log_objects = [o.object_name for o in started_cluster.minio_client.list_objects(started_cluster.minio_bucket, f"{path}/_delta_log/", recursive=True)]
+    assert any(o.endswith("00000000000000000006.checkpoint.parquet") for o in log_objects), log_objects
+
+    fresh = randomize_table_name("test_checkpoint_conflict_fresh")
+    node.query(f"CREATE TABLE {fresh} (id Int32) ENGINE = {delta_engine_definition(started_cluster, 's3', path)}")
+    assert node.query(f"SELECT count(), uniqExact(id), countIf(id >= 100) FROM {fresh}").strip() == "60\t60\t10"
+    assert spark.sql(f"SELECT count(*) AS c, count(DISTINCT id) AS d FROM {table}").collect()[0][:] == (60, 60)
+    assert len(deltars_rows(deltars_table(started_cluster, "s3", path), "id")) == 60
+    assert_committed_files_exist(started_cluster, path)
+    node.query(f"DROP TABLE {path}; DROP TABLE {fresh}")
+
+
 def test_write_to_table_with_unsupported_writer_feature_is_rejected(started_cluster):
     # Enabling CDF in Spark raises the writer protocol to a level whose legacy features the
     # kernel does not implement; the write must fail closed and leave the table as Spark left it.
