@@ -1227,9 +1227,9 @@ void Client::addExtraOptions(OptionsDescription & options_description)
     options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
     options_description.hosts_and_ports_description->add_options()
         ("host,h", po::value<String>()->default_value("localhost"),
-            "Server hostname. Multiple hosts can be passed via multiple arguments"
-            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
-            "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+            "Server hostname. Multiple hosts can be passed via multiple arguments. "
+            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'. "
+            "Each '--port port' will be attached to the last seen host that doesn't have a port yet, "
             "if there is no such host, the port will be attached to the next first host or to default host.")
         ("port", po::value<UInt16>(), "server ports");
 }

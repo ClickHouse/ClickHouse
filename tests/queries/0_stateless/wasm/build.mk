@@ -32,6 +32,17 @@ $(OUT_FOLDER)/%.wasm: $(OUT_FOLDER)/%.o
 		exit 1; \
 	fi
 
+# Linked with an explicit maximum for its linear memory: the module-declared half of
+# `WasmCompartment::getMaxLinearMemorySize` has no other coverage.
+$(OUT_FOLDER)/small_memory_abi.wasm: $(OUT_FOLDER)/small_memory_abi.o
+	wasm-ld-$(CLANG_VERSION) --export-all --no-entry --lto-O3 --allow-undefined --max-memory=196608 $< -o $@
+
+# Linked with zero initial pages and an explicit maximum: the splitter's
+# `getLinearMemorySize() == 0 ? getMaxLinearMemorySize() : ...` path has no other coverage. The
+# guest grows its own memory, so it needs neither a shadow stack nor static data.
+$(OUT_FOLDER)/growable_zero_page_abi.wasm: $(OUT_FOLDER)/growable_zero_page_abi.o
+	wasm-ld-$(CLANG_VERSION) --export-all --no-entry --lto-O3 --allow-undefined -z stack-size=0 --initial-memory=0 --max-memory=196608 $< -o $@
+
 $(OUT_FOLDER)/as_%.wasm: as_%.ts
 	$(ASSEMBLYSCRIPT_COMPILER) $< --runtime incremental --exportRuntime --enable simd --disableWarning 112 -o $@
 # WARNING AS112: Exchange of 'v128' values is not supported by all embeddings

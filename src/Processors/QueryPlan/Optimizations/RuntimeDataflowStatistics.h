@@ -63,8 +63,29 @@ private:
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
+/// The codecs a column's `CODEC` resolves to, for the two shapes its serialized sample can have.
+///
+/// The writer resolves a `CODEC` per substream: a type-specific codec (`ALP`, `T64`, `Delta`, ...) is
+/// applied only to a substream that carries the column type itself, and structural substreams (`Array`
+/// offsets, null map, sparse offsets, ...) keep only the generic codecs. The estimate serializes a whole
+/// column into a single buffer, so `type_specific` describes that buffer only when it holds exactly one
+/// stream of `type_specific_for`. Neither is a property of the table metadata alone: the serialization is
+/// chosen per block from the column at hand, and an unfinished `ALTER MODIFY COLUMN` leaves the part
+/// holding the old type while the metadata already reports the new one.
+struct ColumnCodecs
+{
+    /// Null when the column's `CODEC` has no resolution against a type - then only `generic` applies.
+    CompressionCodecPtr type_specific = nullptr;
+    DataTypePtr type_specific_for = nullptr;
+    CompressionCodecPtr generic = nullptr;
+};
+
 /// Only columns whose `CODEC` overrides the part's default; resolved once per read task.
-using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, CompressionCodecPtr>;
+using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, ColumnCodecs>;
+
+/// Whether `serialization` writes the column as a single stream carrying `type` itself, the only layout
+/// a type-specific codec may be applied to.
+bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type);
 
 class RuntimeDataflowStatisticsCacheUpdater
 {

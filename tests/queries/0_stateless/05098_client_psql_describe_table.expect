@@ -20,7 +20,10 @@ set history_file $CLICKHOUSE_TMP/$basename.history
 
 log_user 0
 set timeout 60
-match_max 100000
+# `match_max` without `-d` sets the buffer of the *current* spawn id, and nothing is spawned yet,
+# so without it the client below keeps expect's 2000-byte default - far less than one `\l` listing
+# of a shared server, whose oldest part expect then discards while matching.
+match_max -d 100000
 expect_after {
     -i $any_spawn_id eof     { exp_continue }
     -i $any_spawn_id timeout { exit 1 }

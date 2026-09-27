@@ -27,8 +27,14 @@ SELECT arrayShiftRight(dec_arr, s, dec_def) FROM t_array_shift_imf ORDER BY id;
 SELECT '== Nullable(Int64) ==';
 SELECT arrayShiftRight(n_arr, s, n_def) FROM t_array_shift_imf ORDER BY id;
 -- Omitting the default yields NULL for a Nullable element type, so this is the only shape whose
--- null map is filled with TRUE bits from the default; an explicit default contributes FALSE bits.
+-- null map is filled with TRUE bits from the default; a non-NULL explicit default contributes FALSE bits.
 SELECT arrayShiftRight(n_arr, s) FROM t_array_shift_imf ORDER BY id;
+SELECT '== Nullable(Int64) with NULL default ==';
+SELECT arrayShiftRight([1::Nullable(Int64), 2, 3], 2, NULL::Nullable(Int64));
+SELECT arrayShiftLeft([1::Nullable(Int64), 2, 3], 2, NULL::Nullable(Int64));
+SELECT arrayShiftRight([1::Nullable(Int64), 2, 3], NULL::Nullable(Int64), 9::Nullable(Int64));
+-- A NULL shift count is treated as zero, even when its nested value is non-zero.
+SELECT arrayShiftRight([1, 2, 3], nullIf(materialize(42), materialize(42)), 9);
 
 SELECT '== Tuple ==';
 SELECT arrayShiftRight(t_arr, s, t_def) FROM t_array_shift_imf ORDER BY id;

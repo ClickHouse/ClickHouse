@@ -286,6 +286,8 @@ enum class AccessType : uint8_t
     M(CREATE_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(ALTER_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(DROP_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(CREATE_TOKEN, "", GLOBAL, ACCESS_MANAGEMENT) /* allows to add an authentication method to your own user,
+                                                      with `CREATE TOKEN` or `ALTER USER <current user> ADD IDENTIFIED` */\
     M(CREATE_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(ALTER_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(DROP_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \

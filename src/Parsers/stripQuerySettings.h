@@ -31,4 +31,16 @@ namespace DB
 /// held only stripped settings would serialize to a trailing bare `SETTINGS` that throws on re-parse.
 void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_view> setting_names);
 
+/// Like removeSettingsFromQuery, but touches only the SETTINGS carriers of the top-level query itself:
+/// the INSERT clause, the trailing clause of the (top-level) SELECT-UNION, and the SETTINGS clause of
+/// each first-order SELECT of that union tree. It does not descend into subqueries, table expressions
+/// or table functions, so a SETTINGS clause the user wrote inside a nested subquery (for example the
+/// documented leaf-node pattern `view(SELECT ... SETTINGS max_execution_time = 10)`) is preserved.
+///
+/// Use this variant when the goal is to stop the query text from re-applying the named settings over
+/// the context shipped alongside it (InterpreterSetQuery::applySettingsFromQuery and the interpreter of
+/// the top-level SELECT only read these top-level carriers), rather than to erase the settings from the
+/// query wholesale. Empty SETTINGS nodes are pruned the same way as in removeSettingsFromQuery.
+void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::string_view> setting_names);
+
 }
