@@ -20,7 +20,7 @@ public:
 
     /// Ask for `clearEmptyParts` on the next iteration, without waiting for the period the other
     /// part cleanups share. Only the transition needs a wakeup: a request not yet consumed by
-    /// `iterate()` still has one outstanding.
+    /// `iterate` still has one outstanding.
     void requestEmptyPartsCleanup()
     {
         if (!clear_empty_parts_requested.exchange(true, std::memory_order_relaxed))
