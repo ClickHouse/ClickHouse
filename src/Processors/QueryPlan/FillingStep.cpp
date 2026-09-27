@@ -128,7 +128,7 @@ void FillingStep::serialize(Serialization & ctx) const
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
 
     /// The fill columns are derived from the sort description, so only the latter travels.
-    serializeSortDescription(sort_description, ctx.out, ctx.version);
+    serializeSortDescription(sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     UInt8 flags = 0;
     if (use_with_fill_by_sorting_prefix)
@@ -140,7 +140,7 @@ void FillingStep::serialize(Serialization & ctx) const
     if (!interpolate_description)
         return;
 
-    interpolate_description->actions.serialize(ctx.out, ctx.registry);
+    interpolate_description->actions.serialize(ctx.out, ctx.registry, ctx.input_header);
 
     /// The reader rebuilds `result_columns_order` from the DAG's outputs, which is exactly how
     /// `InterpolateDescription` built it - unless the query's aliases renamed an output. Only the analyzer
