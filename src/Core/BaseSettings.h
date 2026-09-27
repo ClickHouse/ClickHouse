@@ -37,9 +37,9 @@ class WriteBuffer;
   */
 static constexpr size_t MAX_SETTINGS_IN_A_SEQUENCE = 65536;
 
-/** The name of a setting or of a query parameter is an identifier, and it is resized to its declared
-  * size before its value arrives, so a peer declaring a gigabyte-long name would force that allocation
-  * for one pair. The bound is the same as for the strings of the `Hello` packet.
+/** The name of a setting or of a query parameter is an identifier, so a name declared longer than
+  * this is rejected before any of it is read. The bound is the same as for the strings of the `Hello`
+  * packet.
   *
   * The value of a setting or of a parameter keeps the generic string bound: it is query-sized data
   * (a parameter is substituted into the query), and the query text itself has to be read at that

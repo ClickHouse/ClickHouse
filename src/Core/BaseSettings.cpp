@@ -38,7 +38,7 @@ String BaseSettingsHelpers::readString(ReadBuffer & in)
 String BaseSettingsHelpers::readName(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in, MAX_SETTING_NAME_SIZE);
+    readStringBinaryGrowing(str, in, MAX_SETTING_NAME_SIZE);
     return str;
 }
 
