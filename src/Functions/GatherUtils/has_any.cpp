@@ -13,11 +13,10 @@ namespace
 {
 
 constexpr size_t min_needles_for_lookup = 4;
-/// Hashing a longer string costs more than the comparisons that the set saves.
+/// Hashing a longer string can cost more than the comparisons that the set saves.
 constexpr size_t max_needle_size = 256;
 
-/// A full Array(String) haystack searched for a constant Array(String): look every element up in a hash set
-/// of the needles instead of comparing it with each of them. Returns false to leave the block to the generic path.
+/// Looks every element up in a hash set of the needles. Returns false to leave the block to the generic path.
 bool hasAnyStringInConstNeedles(const GenericArraySource & first, const GenericArraySource & second, UInt8 * result, size_t size)
 {
     const auto * haystack = typeid_cast<const ColumnString *>(&first.elements);
@@ -26,8 +25,7 @@ bool hasAnyStringInConstNeedles(const GenericArraySource & first, const GenericA
         return false;
 
     const GenericArraySlice needles = second.getWhole();
-    /// The generic path settles a row with one comparison when its first element is the first needle, so building the
-    /// set pays off only over enough rows: at least 4 per needle plus 1 per 8 needle bytes.
+    /// The generic path may settle a row in one comparison, so the set must pay off over enough rows.
     size_t min_rows = 4 * needles.size;
     if (needles.size < min_needles_for_lookup || min_rows > size)
         return false;
@@ -41,7 +39,6 @@ bool hasAnyStringInConstNeedles(const GenericArraySource & first, const GenericA
     }
 
     HashSet<std::string_view> needle_set;
-    /// Equal strings have equal lengths, so an element whose length is not a needle's is skipped unhashed.
     std::bitset<max_needle_size + 1> needle_lengths;
     for (size_t i = needles.begin; i < needles.begin + needles.size; ++i)
     {
