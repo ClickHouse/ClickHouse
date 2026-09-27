@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 #include <string>
 #include <atomic>
+#include <cstdint>
 
 namespace ProfileEvents
 {
@@ -39,7 +40,9 @@ std::atomic<bool> enabled{true};
 namespace
 {
 
-bool arena_created = false;
+/// Published after `arenas.create` succeeds; -1 while the arena does not exist.
+/// Lets read-only inspection paths see the index without materializing the arena.
+std::atomic<int64_t> created_index{-1};
 
 unsigned createArena()
 {
@@ -48,7 +51,7 @@ unsigned createArena()
     int err = je_mallctl("arenas.create", &arena_index, &arena_index_size, nullptr, 0);
     if (err)
         throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocCacheArena: Failed to create jemalloc arena, error: {}", err);
-    arena_created = true;
+    created_index.store(arena_index, std::memory_order_relaxed);
     return arena_index;
 }
 
@@ -56,7 +59,7 @@ unsigned createArena()
 
 void setEnabled(bool value)
 {
-    chassert(!arena_created || value);
+    chassert(created_index.load(std::memory_order_relaxed) < 0 || value);
     enabled.store(value, std::memory_order_relaxed);
 }
 
@@ -72,6 +75,14 @@ unsigned getArenaIndex()
 
     static unsigned index = createArena();
     return index;
+}
+
+std::optional<unsigned> tryGetCreatedArenaIndex()
+{
+    int64_t index = created_index.load(std::memory_order_relaxed);
+    if (index < 0)
+        return std::nullopt;
+    return static_cast<unsigned>(index);
 }
 
 void purge()
@@ -97,6 +108,7 @@ namespace DB::JemallocCacheArena
 void setEnabled(bool) {}
 bool isEnabled() { return false; }
 unsigned getArenaIndex() { return 0; }
+std::optional<unsigned> tryGetCreatedArenaIndex() { return std::nullopt; }
 void purge() {}
 
 }

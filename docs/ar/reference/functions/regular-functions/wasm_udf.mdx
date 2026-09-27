@@ -49,8 +49,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 التنفيذات المتاحة لـ Engine:
 
-* `wasmtime` (الافتراضي، والموصى به) — يستخدم [WasmTime](https://github.com/bytecodealliance/wasmtime)
-* `wasmedge` — يستخدم [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+* `wasmtime` (الافتراضي، والوحيد حاليًا) — يستخدم [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 <div id="quick-start">
   ## البدء السريع
@@ -241,7 +240,7 @@ RETURNS return_type
 * `SHA256_HASH`: قيمة التجزئة المتوقعة للوحدة للتحقق منها (تُملأ تلقائيًا إذا أُهملت)، ويمكن استخدامها لضمان تحميل وحدة WASM الصحيحة عبر النسخ المتماثلة المختلفة.
 * `SETTINGS`: إعدادات خاصة بكل دالة
   * `serialization_format` String — التنسيق المستخدم لتسلسل كتل الوسيطات المُمرّرة إلى الوحدة وتحليل النتيجة المُعادة. يُستخدم فقط بواسطة `ABI BUFFERED_V1`. القيم المدعومة: `MsgPack` و`JSONEachRow` و`CSV` و`TSV` و`TSVRaw` و`RowBinary` و`Buffers`. القيمة الافتراضية: `MsgPack`. يجب أن تُرجع التنسيقات المعتمدة على الكتل مثل `Buffers` عمودًا واحدًا يطابق نوعه توقيع الدالة المُصرَّح به.
-  * `webassembly_udf_enable_fuel` Bool — يفعّل حصة وقود محدودة للدالة. القيمة الافتراضية: `true`. عند ضبطه على `false`، يُتجاهل إعداد الاستعلام `webassembly_udf_max_fuel` لهذه الدالة. قد يؤدي تعطيل حدود الوقود إلى تحسين الأداء عند استخدام المحرك `wasmtime`. ومع ذلك، بالنسبة إلى شيفرة الضيف غير الموثوق بها أو التي تحتوي على أخطاء، فقد يزيد ذلك من خطر استمرار التنفيذ بلا قيود.
+  * `webassembly_udf_enable_fuel` Bool — يفعّل حصة وقود محدودة للدالة. القيمة الافتراضية: `true`. عند ضبطه على `false`، يُتجاهل إعداد الاستعلام `webassembly_udf_max_fuel` لهذه الدالة. قد يؤدي تعطيل حدود الوقود إلى تحسين الأداء. ومع ذلك، بالنسبة إلى شيفرة الضيف غير الموثوق بها أو التي تحتوي على أخطاء، فقد يزيد ذلك من خطر استمرار التنفيذ بلا قيود.
 
 <div id="abis-versions">
   ## إصدارات ABI

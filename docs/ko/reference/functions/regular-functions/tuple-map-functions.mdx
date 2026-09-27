@@ -293,14 +293,14 @@ SELECT mapAdd(map(1, 1), map(1, 1))
 {1:2}
 ```
 
-**Tuple 사용**
+**튜플 사용**
 
 ```sql title=Query
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))
 ```
 
 ```response title=Response
-([1, 2], [2, 2])
+([1,2],[2,2])
 ```
 
 <div id="mapAll">
@@ -530,7 +530,7 @@ SELECT mapContainsValue(map('k1', 'v1', 'k2', 'v2'), 'v1')
   ## mapContainsValueLike
 </div>
 
-도입된 버전: v25.5.0
+도입 버전: v25.5.0
 
 맵에 지정된 패턴과 `LIKE`로 일치하는 값이 포함되어 있는지 확인합니다.
 
@@ -564,10 +564,10 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 ```
 
 ```response title=Response
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
 ```
 
 <div id="mapExists">
@@ -775,7 +775,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 ```
 
 ```response title=Response
-{1:('a', 1), 2:('b', 2), 3:('c', 3)}
+{1:('a',1),2:('b',2),3:('c',3)}
 ```
 
 <div id="mapKeys">
@@ -927,7 +927,7 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)
 ```
 
 ```response title=Response
-{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}
+{1:10,2:0,3:0,4:0,5:20,6:0}
 ```
 
 **매핑된 배열 사용**
@@ -937,7 +937,7 @@ SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 ```
 
 ```response title=Response
-([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])
+([1,2,3,4,5],[11,22,0,44,0])
 ```
 
 <div id="mapReverseSort">
@@ -1046,14 +1046,14 @@ SELECT mapSubtract(map(1, 1), map(1, 1))
 {1:0}
 ```
 
-**Tuple 맵과 함께 사용**
+**튜플 맵과 함께 사용**
 
 ```sql title=Query
 SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))
 ```
 
 ```response title=Response
-([1, 2], [-1, 0])
+([1,2],[-1,0])
 ```
 
 <div id="mapUpdate">

@@ -20,6 +20,4 @@ struct WatermarkMarker : public ChunkInfoCloneable<WatermarkMarker>
     static Chunk create(const Block & header, Field watermark_);
 };
 
-bool isMarkerChunk(const Chunk & chunk);
-
 }
