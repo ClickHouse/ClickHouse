@@ -12,7 +12,8 @@ if (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER AND CMAKE_CXX_COMPIL
     target_compile_definitions(_usearch INTERFACE USEARCH_USE_SIMSIMD)
 
     target_compile_definitions(_usearch INTERFACE USEARCH_CAN_COMPILE_FLOAT16)
-    target_compile_definitions(_usearch INTERFACE USEARCH_CAN_COMPILE_BF16)
+    # usearch only uses this to pick `SIMSIMD_NATIVE_BF16`, see contrib/SimSIMD-cmake/CMakeLists.txt for why it is off.
+    target_compile_definitions(_usearch INTERFACE USEARCH_CAN_COMPILE_BF16=0)
 endif ()
 
 add_library(ch_contrib::usearch ALIAS _usearch)

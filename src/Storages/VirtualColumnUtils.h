@@ -50,7 +50,10 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
+/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
+/// check the result.
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
@@ -62,6 +65,20 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
+
+/// Like `isDeterministic`, but treats the internal `__topKFilter` function as deterministic.
+///
+/// `__topKFilter` is the dynamic filter that `installTopKDynamicFilter` merges into the PREWHERE of
+/// the read of an `ORDER BY ... LIMIT n` query. Its non-determinism is bounded: for a fixed plan and data, the
+/// running threshold only tightens, so any row whose sort-column value lies in the final top-N
+/// passes the filter at every point during execution. Consequently a granule none of whose rows
+/// survive the filter is one that has no row that could have reached the final result, regardless
+/// of the threshold's exact trajectory through the run — such granules may be recorded in the
+/// query condition cache, provided the cache key is salted with the TopK plan parameters
+/// (`TopKFilterInfo::condition_hash`) so the entries are only reused under the same TopK plan.
+/// All query condition cache write and read sites for TopK reads must use this same gate,
+/// otherwise their keys diverge.
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
 
 /// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);

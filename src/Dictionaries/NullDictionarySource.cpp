@@ -22,7 +22,7 @@ BlockIO NullDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("NullDictionarySource"), "loadAll {}", toString());
     BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<NullSource>(sample_block));
+    io.pipeline = QueryPipeline(std::make_shared<NullSource>(std::make_shared<const Block>(sample_block->cloneEmpty())));
     return io;
 }
 

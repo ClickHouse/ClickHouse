@@ -18,11 +18,11 @@ ${CLICKHOUSE_CLIENT} --query "
 # while the nested `TimeSeriesSink` insert pipelines are still running. `timeout_overflow_mode='break'`
 # cancels the pipeline without raising an exception. Before the fix this aborted the server.
 ${CLICKHOUSE_CLIENT} --query "
-    INSERT INTO ts_cancel (metric_name, tags, time_series)
+    INSERT INTO ts_cancel (metric_name, tags, samples)
         SELECT
             'cpu' || toString(number) AS metric_name,
             map('n', toString(number)) AS tags,
-            [(toDateTime64(number, 3), toFloat64(number))] AS time_series
+            [(toDateTime64(number, 3), toFloat64(number))] AS samples
         FROM numbers(100) WHERE sleepEachRow(0.05) = 0
         SETTINGS max_execution_time = 0.3, timeout_overflow_mode = 'break', max_block_size = 1;
 " 2>&1 | grep -vF 'survived' ||:
