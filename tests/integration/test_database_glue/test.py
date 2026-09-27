@@ -1930,3 +1930,49 @@ def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_recreated_table_with_compaction_enabled(started_cluster):
+    """
+    A table dropped and recreated in Glue under the same name and location, with another schema, is read as the new
+    table, also through a database with `allow_experimental_iceberg_compaction`, which keeps its tables between queries.
+    https://github.com/ClickHouse/ClickHouse/issues/122547
+    """
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_recreated_table_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    identifier = f"{namespace}.table"
+    location = f"s3://warehouse-glue/{test_ref}"
+    compaction_db = f"{CATALOG_NAME}_compaction"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier, schema=Schema(NestedField(1, "a", DoubleType(), required=False)), location=location
+    )
+    table.append(pa.table({"a": pa.array([1.5, 2.5], type=pa.float64())}))
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_database(
+        started_cluster, node, compaction_db, additional_settings={"allow_experimental_iceberg_compaction": 1}
+    )
+
+    def check(expected):
+        for db in [CATALOG_NAME, compaction_db]:
+            assert node.query(f"SELECT * FROM {db}.`{identifier}` ORDER BY ALL") == expected, db
+
+    check("1.5\n2.5\n")
+
+    # A new snapshot of the same table.
+    table.append(pa.table({"a": pa.array([3.5], type=pa.float64())}))
+    check("1.5\n2.5\n3.5\n")
+
+    # Same name and location, another schema under the same schema-id.
+    catalog.drop_table(identifier)
+    table = catalog.create_table(
+        identifier, schema=Schema(NestedField(1, "b", StringType(), required=False)), location=location
+    )
+    table.append(pa.table({"b": pa.array(["x", "y"], type=pa.string())}))
+    check("x\ny\n")
+
+    node.query(f"DROP DATABASE {compaction_db}")

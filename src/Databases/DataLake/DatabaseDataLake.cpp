@@ -931,9 +931,18 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached_storage)
         {
-            if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
-                object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
-            return cached_storage;
+            auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get());
+            auto cached_configuration = object_storage_table ? object_storage_table->getObjectStorageConfiguration() : nullptr;
+            /// Glue and Hive report no table UUID, so a table recreated under the same name and location matches the
+            /// cached entry too; the metadata file the catalog points to tells them apart.
+            const bool same_table = catalog_uuid
+                || (cached_configuration && cached_configuration->isMetadataFileOfThisTable(explicit_metadata_location, context_));
+            if (same_table)
+            {
+                if (cached_configuration)
+                    cached_configuration->setExplicitMetadataFilePath(explicit_metadata_location);
+                return cached_storage;
+            }
         }
         evictStatefulTable(name);
     }
