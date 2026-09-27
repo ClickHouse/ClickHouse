@@ -1,16 +1,16 @@
+#include <Processors/Transforms/WindowTransform.h>
+
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <Core/SortCursor.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
+
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Processors/Transforms/WindowTransform.h>
-#include <base/arithmeticOverflow.h>
+
+#include <Core/SortCursor.h>
+
 #include <Common/Arena.h>
-#include <Common/FieldAccurateComparison.h>
 
 #include <algorithm>
 #include <limits>
@@ -46,210 +46,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
-}
-
-// Compares ORDER BY column values at given rows to find the boundaries of frame:
-// [compared] with [reference] +/- offset. Return value is -1/0/+1, like in
-// sorting predicates -- -1 means [compared] is less than [reference] +/- offset.
-template <typename ColumnType>
-static int compareValuesWithOffset(const IColumn * _compared_column,
-    size_t compared_row, const IColumn * _reference_column,
-    size_t reference_row,
-    const Field & _offset,
-    bool offset_is_preceding)
-{
-    // Casting the columns to the known type here makes it faster, probably
-    // because the getData call can be devirtualized.
-    const auto * compared_column = assert_cast<const ColumnType *>(
-        _compared_column);
-    const auto * reference_column = assert_cast<const ColumnType *>(
-        _reference_column);
-
-    using ValueType = typename ColumnType::ValueType;
-    // Note that the storage type of offset returned by get<> is different, so
-    // we need to specify the type explicitly.
-    const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
-    chassert(offset >= 0);
-
-    const auto compared_value_data = compared_column->getDataAt(compared_row);
-    chassert(compared_value_data.size() == sizeof(ValueType));
-    auto compared_value = unalignedLoad<ValueType>(
-        compared_value_data.data());
-
-    const auto reference_value_data = reference_column->getDataAt(reference_row);
-    chassert(reference_value_data.size() == sizeof(ValueType));
-    auto reference_value = unalignedLoad<ValueType>(
-        reference_value_data.data());
-
-    bool is_overflow = false;
-    if (offset_is_preceding)
-        is_overflow = common::subOverflow(reference_value, offset, reference_value);
-    else
-        is_overflow = common::addOverflow(reference_value, offset, reference_value);
-
-    if (is_overflow)
-    {
-        if (offset_is_preceding)
-        {
-            // Overflow to the negative, [compared] must be greater.
-            // We know that because offset is >= 0.
-            return 1;
-        }
-
-        // Overflow to the positive, [compared] must be less.
-        return -1;
-    }
-
-    // No overflow, compare normally.
-    return compared_value < reference_value ? -1 : compared_value == reference_value ? 0 : 1;
-}
-
-// A specialization of compareValuesWithOffset for floats.
-template <typename ColumnType>
-static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
-    size_t compared_row, const IColumn * _reference_column,
-    size_t reference_row,
-    const Field & _offset,
-    bool offset_is_preceding)
-{
-    // Casting the columns to the known type here makes it faster, probably
-    // because the getData call can be devirtualized.
-    const auto * compared_column = assert_cast<const ColumnType *>(
-        _compared_column);
-    const auto * reference_column = assert_cast<const ColumnType *>(
-        _reference_column);
-    const auto offset = _offset.safeGet<typename ColumnType::ValueType>();
-    chassert(offset >= 0);
-
-    const auto compared_value_data = compared_column->getDataAt(compared_row);
-    chassert(compared_value_data.size() == sizeof(typename ColumnType::ValueType));
-    auto compared_value = unalignedLoad<typename ColumnType::ValueType>(
-        compared_value_data.data());
-
-    const auto reference_value_data = reference_column->getDataAt(reference_row);
-    chassert(reference_value_data.size() == sizeof(typename ColumnType::ValueType));
-    auto reference_value = unalignedLoad<typename ColumnType::ValueType>(
-        reference_value_data.data());
-
-    /// Floats overflow to Inf and the comparison will work normally, so we don't have to do anything.
-    if (offset_is_preceding)
-        reference_value -= static_cast<typename ColumnType::ValueType>(offset);
-    else
-        reference_value += static_cast<typename ColumnType::ValueType>(offset);
-
-    const auto result =  compared_value < reference_value ? -1
-        : (compared_value == reference_value ? 0 : 1);
-
-    return result;
-}
-
-// Helper macros to dispatch on type of the ORDER BY column
-#define APPLY_FOR_ONE_NEST_TYPE(FUNCTION, TYPE) \
-else if (typeid_cast<const TYPE *>(nest_compared_column.get())) \
-{ \
-    /* clang-tidy you're dumb, I can't put FUNCTION in braces here. */ \
-    nest_compare_function = FUNCTION<TYPE>; /* NOLINT */ \
-}
-
-#define APPLY_FOR_NEST_TYPES(FUNCTION) \
-if (false) /* NOLINT */ \
-{ \
-    /* Do nothing, a starter condition. */ \
-} \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt8>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt16>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt32>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt64>) \
-\
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int8>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int16>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int32>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int64>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int128>) \
-\
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
-APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
-\
-else \
-{ \
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
-        "The RANGE OFFSET frame for '{}' ORDER BY nest column is not implemented", \
-        demangle(typeid(nest_compared_column).name())); \
-}
-
-// A specialization of compareValuesWithOffset for nullable.
-template <typename ColumnType>
-static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
-    size_t compared_row, const IColumn * _reference_column,
-    size_t reference_row,
-    const Field & _offset,
-    bool offset_is_preceding)
-{
-    const auto * compared_column = assert_cast<const ColumnType *>(
-        _compared_column);
-    const auto * reference_column = assert_cast<const ColumnType *>(
-        _reference_column);
-
-    if (compared_column->isNullAt(compared_row) && !reference_column->isNullAt(reference_row))
-    {
-        return -1;
-    }
-    if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
-    {
-        return 0;
-    }
-    if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
-    {
-        return 1;
-    }
-
-    ColumnPtr nest_compared_column = compared_column->getNestedColumnPtr();
-    ColumnPtr nest_reference_column = reference_column->getNestedColumnPtr();
-
-    std::function<int(
-        const IColumn * compared_column, size_t compared_row,
-        const IColumn * reference_column, size_t reference_row,
-        const Field & offset,
-        bool offset_is_preceding)> nest_compare_function;
-    APPLY_FOR_NEST_TYPES(compareValuesWithOffset)
-    return nest_compare_function(nest_compared_column.get(), compared_row,
-        nest_reference_column.get(), reference_row, _offset, offset_is_preceding);
-}
-
-// Helper macros to dispatch on type of the ORDER BY column
-#define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
-else if (typeid_cast<const TYPE *>(column)) \
-{ \
-    /* clang-tidy you're dumb, I can't put FUNCTION in braces here. */ \
-    compare_values_with_offset = FUNCTION<TYPE>; /* NOLINT */ \
-}
-
-#define APPLY_FOR_TYPES(FUNCTION) \
-if (false) /* NOLINT */ \
-{ \
-    /* Do nothing, a starter condition. */ \
-} \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt8>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt16>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt32>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt64>) \
-\
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int8>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int16>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int32>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int64>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
-\
-APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
-APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
-\
-APPLY_FOR_ONE_TYPE(FUNCTION##Nullable, ColumnNullable) \
-else \
-{ \
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
-        "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", \
-        demangle(typeid(*column).name())); \
 }
 
 WindowTransform::WindowTransform(SharedHeader input_header_,
@@ -257,23 +53,11 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         const WindowDescription & window_description_,
         const std::vector<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
+    , params(WindowTransformParams::create(*input_header_, window_description_, functions))
     , input(inputs.front())
     , output(outputs.front())
-    , input_header(*input_header_)
-    , window_description(window_description_)
 {
-    // Materialize all columns in header, because we materialize all columns
-    // in chunks and it's convenient if they match.
-    auto input_columns = input_header.getColumns();
-    for (auto & column : input_columns)
-    {
-        column = std::move(column)->convertToFullColumnIfConst();
-    }
-    input_header.setColumns(input_columns);
-
-    resolveColumnIndices(functions);
     initWorkspaces(functions);
-    setupRangeOffsetComparison();
 }
 
 void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription> & functions)
@@ -293,21 +77,12 @@ void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription
         for (const auto & argument_name : f.argument_names)
         {
             workspace.argument_column_indices.push_back(
-                input_header.getPositionByName(argument_name));
+                params.input_header.getPositionByName(argument_name));
         }
         workspace.argument_columns.assign(f.argument_names.size(), nullptr);
 
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
-
-        /// Some functions may have non-standard default frame.
-        /// Use it if it's the only function over the current window.
-        if (window_description.frame.is_default && functions.size() == 1 && workspace.window_function_impl)
-        {
-            auto custom_default_frame = workspace.window_function_impl->getDefaultFrame();
-            if (custom_default_frame)
-                window_description.frame = *custom_default_frame;
-        }
 
         if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
@@ -320,69 +95,6 @@ void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription
 
         workspaces.push_back(std::move(workspace));
     }
-}
-
-void WindowTransform::resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions)
-{
-    partition_by_indices.reserve(window_description.partition_by.size());
-    for (const auto & column : window_description.partition_by)
-    {
-        partition_by_indices.push_back(
-            input_header.getPositionByName(column.column_name));
-    }
-
-    order_by_indices.reserve(window_description.order_by.size());
-    for (const auto & column : window_description.order_by)
-    {
-        order_by_indices.push_back(
-            input_header.getPositionByName(column.column_name));
-    }
-
-    // We only need to materialize (remove Const/LowCardinality/Sparse from) the columns we actually
-    // read while computing the window functions: the PARTITION BY and ORDER BY keys and the function
-    // arguments. Everything else is passed through to the output untouched.
-    should_materialize.assign(input_header.columns(), 0);
-    for (const auto index : partition_by_indices)
-        should_materialize[index] = 1;
-
-    for (const auto index : order_by_indices)
-        should_materialize[index] = 1;
-
-    for (const auto & f : functions)
-        for (const auto & argument_name : f.argument_names)
-            should_materialize[input_header.getPositionByName(argument_name)] = 1;
-}
-
-void WindowTransform::setupRangeOffsetComparison()
-{
-    auto & frame = window_description.frame;
-    const bool begin_is_offset = frame.begin_type == WindowFrame::BoundaryType::Offset;
-    const bool end_is_offset = frame.end_type == WindowFrame::BoundaryType::Offset;
-    const bool is_range_offset_frame = frame.type == WindowFrame::FrameType::RANGE && (begin_is_offset || end_is_offset);
-    if (!is_range_offset_frame)
-        return;
-
-    // Choose a row comparison function for RANGE OFFSET frame based on the
-    // type of the ORDER BY column.
-    chassert(order_by_indices.size() == 1);
-    const auto & entry = input_header.getByPosition(order_by_indices[0]);
-    const IColumn * column = entry.column.get();
-    APPLY_FOR_TYPES(compareValuesWithOffset)
-
-    // Convert the offsets to the ORDER BY column type. We can't just check
-    // that the type matches, because e.g. the int literals are always
-    // (U)Int64, but the column might be Int8 and so on.
-    auto convert_offset = [&](Field & offset, std::string_view bound_name)
-    {
-        offset = convertFieldToTypeOrThrow(offset, *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
-        if (accurateLess(offset, Field(0)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame {} offset must be nonnegative, {} given", bound_name, offset);
-    };
-
-    if (begin_is_offset)
-        convert_offset(frame.begin_offset, "start");
-    if (end_is_offset)
-        convert_offset(frame.end_offset, "end");
 }
 
 WindowTransform::~WindowTransform()
@@ -456,7 +168,7 @@ void WindowTransform::advancePartitionEnd()
     chassert(end.block == partition_end.block + 1);
 
     // Try to advance the partition end pointer.
-    const size_t partition_by_columns = partition_by_indices.size();
+    const size_t partition_by_columns = params.partition_by_indices.size();
     if (partition_by_columns == 0)
     {
         // No PARTITION BY. All input is one partition, which will end when the
@@ -490,9 +202,9 @@ void WindowTransform::advancePartitionEnd()
         for (; i < partition_by_columns; ++i)
         {
             const auto * reference_column
-                = inputAt(prev_frame_start)[partition_by_indices[i]].get();
+                = inputAt(prev_frame_start)[params.partition_by_indices[i]].get();
             const auto * compared_column
-                = inputAt(partition_end)[partition_by_indices[i]].get();
+                = inputAt(partition_end)[params.partition_by_indices[i]].get();
 
             if (compared_column->compareAt(partition_end.row,
                     prev_frame_start.row, *reference_column,
@@ -513,7 +225,7 @@ void WindowTransform::advancePartitionEnd()
     // the contiguous run of rows equal to it. The input is sorted by PARTITION BY, so we find that
     // run's end within this block with a fast equal-range scan.
     const size_t partition_end_row = getEqualRangeEndAssumeSorted(
-        inputAt(partition_end), partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
+        inputAt(partition_end), params.partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
 
     if (partition_end_row < block_rows)
     {
@@ -618,8 +330,8 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset.safeGet<UInt64>()
-            * (window_description.frame.begin_preceding ? -1 : 1));
+        params.window_description.frame.begin_offset.safeGet<UInt64>()
+            * (params.window_description.frame.begin_preceding ? -1 : 1));
 
     frame_start = moved_row;
 
@@ -630,7 +342,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
     // We must check offset_left < 0 first because partition_start might point
     // to a block that has already been freed, making the comparison unreliable.
     if (frame_start <= partition_start
-        || (window_description.frame.begin_preceding && offset_left < 0))
+        || (params.window_description.frame.begin_preceding && offset_left < 0))
     {
         // Got to the beginning of partition and can't go further back.
         frame_start = partition_start;
@@ -655,20 +367,20 @@ void WindowTransform::advanceFrameStartRowsOffset()
 void WindowTransform::advanceFrameStartRangeOffset()
 {
     // See the comment for advanceFrameEndRangeOffset().
-    const int direction = window_description.order_by[0].direction;
-    const bool preceding = window_description.frame.begin_preceding
+    const int direction = params.window_description.order_by[0].direction;
+    const bool preceding = params.window_description.frame.begin_preceding
         == (direction > 0);
     const auto * reference_column
-        = inputAt(current_row)[order_by_indices[0]].get();
+        = inputAt(current_row)[params.order_by_indices[0]].get();
     for (; frame_start < partition_end; advanceRowNumber(frame_start))
     {
         // The first frame value is [current_row] with offset, so we advance
         // while [frames_start] < [current_row] with offset.
         const auto * compared_column
-            = inputAt(frame_start)[order_by_indices[0]].get();
-        if (compare_values_with_offset(compared_column, frame_start.row,
+            = inputAt(frame_start)[params.order_by_indices[0]].get();
+        if (params.range_offset_comparator(compared_column, frame_start.row,
             reference_column, current_row.row,
-            window_description.frame.begin_offset,
+            params.window_description.frame.begin_offset,
             preceding)
                 * direction >= 0)
         {
@@ -689,7 +401,7 @@ void WindowTransform::advanceFrameStart()
 
     const auto frame_start_before = frame_start;
 
-    switch (window_description.frame.begin_type)
+    switch (params.window_description.frame.begin_type)
     {
         case WindowFrame::BoundaryType::Unbounded:
             // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
@@ -710,7 +422,7 @@ void WindowTransform::advanceFrameStart()
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Offset:
-            switch (window_description.frame.type)
+            switch (params.window_description.frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
                     advanceFrameStartRowsOffset();
@@ -760,38 +472,7 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return true;
     }
 
-    switch (window_description.frame.type)
-    {
-        case WindowFrame::FrameType::ROWS:
-            // For a ROWS frame a row is only a peer with itself (checked above).
-            return false;
-        case WindowFrame::FrameType::RANGE:
-        case WindowFrame::FrameType::GROUPS:
-            // For RANGE and GROUPS frames, rows that compare equal on the ORDER
-            // BY key are peers.
-            break;
-    }
-
-    const size_t n = order_by_indices.size();
-    if (n == 0)
-    {
-        // No ORDER BY, so all rows are peers.
-        return true;
-    }
-
-    size_t i = 0;
-    for (; i < n; ++i)
-    {
-        const auto * column_x = inputAt(x)[order_by_indices[i]].get();
-        const auto * column_y = inputAt(y)[order_by_indices[i]].get();
-        if (column_x->compareAt(x.row, y.row, *column_y,
-                1 /* nan_direction_hint */) != 0)
-        {
-            return false;
-        }
-    }
-
-    return true;
+    return params.arePeers(inputAt(x), x.row, inputAt(y), y.row);
 }
 
 void WindowTransform::advanceFrameEndCurrentRow()
@@ -832,19 +513,19 @@ void WindowTransform::advanceFrameEndCurrentRow()
     chassert(frame_end.row < rows_end);
 
     // Advance frame_end to the end of the current row's peer group.
-    if (window_description.frame.type != WindowFrame::FrameType::ROWS)
+    if (params.window_description.frame.type != WindowFrame::FrameType::ROWS)
     {
         // RANGE/GROUPS: peers are the rows whose ORDER BY values equal current_row's (or all rows if
         // there is no ORDER BY). The input is sorted by ORDER BY within the partition, so we find the
         // peer group's end with a fast equal-range scan.
         // First check whether frame_end is still a peer of current_row -- the reference (current_row)
         // may be in a different block, so we compare against it directly.
-        const size_t order_by_columns = order_by_indices.size();
+        const size_t order_by_columns = params.order_by_indices.size();
         size_t i = 0;
         for (; i < order_by_columns; ++i)
         {
-            const auto * reference_column = inputAt(current_row)[order_by_indices[i]].get();
-            const auto * compared_column = inputAt(frame_end)[order_by_indices[i]].get();
+            const auto * reference_column = inputAt(current_row)[params.order_by_indices[i]].get();
+            const auto * compared_column = inputAt(frame_end)[params.order_by_indices[i]].get();
             if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -862,7 +543,7 @@ void WindowTransform::advanceFrameEndCurrentRow()
         // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
         // so the scan will just return the end of the block.
         const UInt64 peer_group_end_row
-            = getEqualRangeEndAssumeSorted(inputAt(frame_end), order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+            = getEqualRangeEndAssumeSorted(inputAt(frame_end), params.order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
 
         if (peer_group_end_row < rows_end)
         {
@@ -912,8 +593,8 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.end_offset.safeGet<UInt64>()
-            * (window_description.frame.end_preceding ? -1 : 1)
+        params.window_description.frame.end_offset.safeGet<UInt64>()
+            * (params.window_description.frame.end_preceding ? -1 : 1)
             + 1);
 
     if (partition_end <= moved_row)
@@ -930,7 +611,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // We must check offset_left < 0 first because partition_start might point
     // to a block that has already been freed, making the comparison unreliable.
     if (moved_row <= partition_start
-        || (window_description.frame.end_preceding && offset_left < 0))
+        || (params.window_description.frame.end_preceding && offset_left < 0))
     {
         // Clamp to the start of partition.
         frame_end = partition_start;
@@ -947,21 +628,21 @@ void WindowTransform::advanceFrameEndRangeOffset()
 {
     // PRECEDING/FOLLOWING change direction for DESC order.
     // See CD 9075-2:201?(E) 7.14 <window clause> p. 429.
-    const int direction = window_description.order_by[0].direction;
-    const bool preceding = window_description.frame.end_preceding
+    const int direction = params.window_description.order_by[0].direction;
+    const bool preceding = params.window_description.frame.end_preceding
         == (direction > 0);
     const auto * reference_column
-        = inputAt(current_row)[order_by_indices[0]].get();
+        = inputAt(current_row)[params.order_by_indices[0]].get();
     for (; frame_end < partition_end; advanceRowNumber(frame_end))
     {
         // The last frame value is current_row with offset, and we need a
         // past-the-end pointer, so we advance while
         // [frame_end] <= [current_row] with offset.
         const auto * compared_column
-            = inputAt(frame_end)[order_by_indices[0]].get();
-        if (compare_values_with_offset(compared_column, frame_end.row,
+            = inputAt(frame_end)[params.order_by_indices[0]].get();
+        if (params.range_offset_comparator(compared_column, frame_end.row,
             reference_column, current_row.row,
-            window_description.frame.end_offset,
+            params.window_description.frame.end_offset,
             preceding)
                 * direction > 0)
         {
@@ -1000,7 +681,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
         // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
         // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
         const size_t run_end = getEqualRangeEndAssumeSorted(
-            inputAt(cur), order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
+            inputAt(cur), params.order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
 
         if (run_end < end_bound)
             return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
@@ -1079,7 +760,7 @@ bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_c
 void WindowTransform::advanceFrameStartGroupsOffset()
 {
     const Int64 offset
-        = static_cast<Int64>(window_description.frame.begin_offset.safeGet<UInt64>()) * (window_description.frame.begin_preceding ? -1 : 1);
+        = static_cast<Int64>(params.window_description.frame.begin_offset.safeGet<UInt64>()) * (params.window_description.frame.begin_preceding ? -1 : 1);
 
     // The frame starts at the first row of the peer group `offset` groups away from the current one.
     const Int64 target_group = static_cast<Int64>(peer_group_number) + offset;
@@ -1102,7 +783,7 @@ void WindowTransform::advanceFrameEndGroupsOffset()
         frame_end_group_number = frame_start_group_number;
 
     const Int64 offset
-        = static_cast<Int64>(window_description.frame.end_offset.safeGet<UInt64>()) * (window_description.frame.end_preceding ? -1 : 1);
+        = static_cast<Int64>(params.window_description.frame.end_offset.safeGet<UInt64>()) * (params.window_description.frame.end_preceding ? -1 : 1);
 
     // frame_end is not inclusive, so it must reach the first row of the group after the target one.
     const Int64 target_group = static_cast<Int64>(peer_group_number) + offset + 1;
@@ -1126,7 +807,7 @@ void WindowTransform::advanceFrameEnd()
 
     const auto frame_end_before = frame_end;
 
-    switch (window_description.frame.end_type)
+    switch (params.window_description.frame.end_type)
     {
         case WindowFrame::BoundaryType::Current:
             advanceFrameEndCurrentRow();
@@ -1135,7 +816,7 @@ void WindowTransform::advanceFrameEnd()
             advanceFrameEndUnbounded();
             break;
         case WindowFrame::BoundaryType::Offset:
-            switch (window_description.frame.type)
+            switch (params.window_description.frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
                     advanceFrameEndRowsOffset();
@@ -1302,7 +983,7 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
-static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<UInt8> & columns_to_check)
+static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<bool> & columns_to_check)
 {
     chassert(left_all.size() == right_all.size());
 
@@ -1368,7 +1049,7 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto columns = chunk.detachColumns();
     block.original_input_columns = columns;
     for (size_t i = 0; i < columns.size(); ++i)
-        if (should_materialize[i])
+        if (params.should_materialize[i])
             columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullIfWrapped());
 
     block.input_columns = std::move(columns);
@@ -1384,7 +1065,7 @@ void WindowTransform::addInputBlock(Chunk chunk)
     // As a debugging aid, assert that all chunks have the same C++ type of
     // columns, that also matches the input header, because we often have to
     // work across chunks.
-    assertSameColumns(input_header.getColumns(), block.input_columns, should_materialize);
+    assertSameColumns(params.input_header.getColumns(), block.input_columns, params.should_materialize);
 }
 
 void WindowTransform::computeReadyRows()

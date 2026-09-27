@@ -31,7 +31,7 @@ struct WindowFunctionPercentRank final : public StatefulWindowFunction<PercentRa
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         auto default_window_frame = getDefaultFrame();
-        if (transform->window_description.frame != default_window_frame)
+        if (transform->params.window_description.frame != default_window_frame)
         {
             LOG_ERROR(
                 getLogger("WindowFunctionPercentRank"),

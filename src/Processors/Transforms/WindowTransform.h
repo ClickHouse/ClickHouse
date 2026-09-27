@@ -1,10 +1,14 @@
 #pragma once
 
 #include <WindowFunctions/IWindowFunction.h>
-#include <Core/Block.h>
+
 #include <Interpreters/WindowDescription.h>
+
+#include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+
+#include <Core/Block.h>
 
 #include <deque>
 #include <optional>
@@ -74,9 +78,7 @@ public:
 
     ~WindowTransform() override;
 
-    void resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions);
     void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
-    void setupRangeOffsetComparison();
 
     String getName() const override
     {
@@ -229,26 +231,14 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
+    /// Data for window transform itself.
+    const WindowTransformParams params;
+
     /// Runtime data.
     InputPort & input;
     OutputPort & output;
     std::optional<Chunk> pending_input;
     bool input_is_finished = false;
-
-    /* Data for window transform itself.
-     */
-    Block input_header;
-
-    WindowDescription window_description;
-
-    // Indices of the PARTITION BY columns in block.
-    std::vector<size_t> partition_by_indices;
-    // Indices of the ORDER BY columns in block;
-    std::vector<size_t> order_by_indices;
-
-    // Which input columns we actually read while computing the window functions: the PARTITION BY
-    // and ORDER BY keys and the function arguments.
-    std::vector<UInt8> should_materialize;
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
@@ -324,15 +314,6 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
-
-    // Comparison function for RANGE OFFSET frames. We choose the appropriate
-    // overload once, based on the type of the ORDER BY column. Choosing it for
-    // each row would be slow.
-    std::function<int(
-        const IColumn * compared_column, size_t compared_row,
-        const IColumn * reference_column, size_t reference_row,
-        const Field & offset,
-        bool offset_is_preceding)> compare_values_with_offset;
 };
 
 }
