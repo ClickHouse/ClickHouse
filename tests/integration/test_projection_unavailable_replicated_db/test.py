@@ -1,10 +1,9 @@
 """Whether a projection can be analyzed is per-replica local configuration, so the two replicas of a
 `Replicated` database can disagree about it.
 
-A `Replicated` database runs the same ALTER again on every replica. Only the initiator decides whether the
-change is allowed; refusing it again on a replica whose own configuration cannot analyze the projection
-would stop the database's DDL queue and leave the replicas with different metadata. This test pins both
-halves: the replay is not refused, and it still does not delete the declaration.
+A `Replicated` database runs the same ALTER again on every replica. A metadata-only change must
+work from either initiator and replay even where the projection cannot be analyzed, without
+deleting its declaration.
 
 Both nodes boot with `enable_positional_arguments_for_projections` in the default profile so that the
 shared DDL can be analyzed on both; taking the file away from one of them is what makes them disagree.
@@ -84,11 +83,12 @@ def test_replay_on_replica_keeps_the_declaration(started_cluster):
     assert_eq_with_retry(node2, COMMENT, "x")
     assert "PROJECTION" in node2.query("SHOW CREATE TABLE r.t")
 
-    # The mirror case: node2 is the initiator of its own ALTER, so there the refusal does apply, and
-    # nothing may reach node1.
-    error = node2.query_and_get_error("ALTER TABLE r.t MODIFY COMMENT 'y'")
-    assert "could not be analyzed" in error
-    assert node1.query(COMMENT).strip() == "x"
+    # A metadata-only ALTER is safe even when the initiator cannot analyze the projection.
+    node2.query("ALTER TABLE r.t MODIFY COMMENT 'y'")
+    assert_eq_with_retry(node1, COMMENT, "y")
+    assert node2.query(COMMENT).strip() == "y"
+    assert node1.query(PROJECTION_COUNT).strip() == "1"
+    assert "PROJECTION" in node2.query("SHOW CREATE TABLE r.t")
 
     # With the setting back, node2 analyzes the declaration the replayed ALTER left in place.
     node2.exec_in_container(["cp", POSITIONAL_XML_BACKUP, POSITIONAL_XML])
