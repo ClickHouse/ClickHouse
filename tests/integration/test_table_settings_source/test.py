@@ -177,52 +177,105 @@ def test_named_collection_values_need_access_to_that_collection(started_cluster)
     that supplied the value - otherwise a user holding only the secrets grant reads, through the settings of a
     table, a collection that table's own `SHOW CREATE` would not name.
     """
-    node_secrets.query("DROP TABLE IF EXISTS k SYNC")
-    node_secrets.query("DROP NAMED COLLECTION IF EXISTS nc_access")
-    node_secrets.query("DROP USER IF EXISTS partial_reader")
+    readers = ["partial_reader", "no_display_secrets_reader", "no_collection_secrets_reader"]
 
-    node_secrets.query(
-        "CREATE NAMED COLLECTION nc_access AS kafka_broker_list = 'secret-broker.invalid:9092', "
-        "kafka_topic_list = 'secret_topic', kafka_group_name = 'secret_group', kafka_format = 'CSV'"
-    )
-    node_secrets.query("CREATE TABLE k (a UInt64) ENGINE = Kafka(nc_access)")
+    def cleanup():
+        node_secrets.query("DROP TABLE IF EXISTS k SYNC")
+        node_secrets.query("DROP NAMED COLLECTION IF EXISTS nc_access")
+        for reader in readers:
+            node_secrets.query(f"DROP USER IF EXISTS {reader}")
 
-    def collection_values(user):
-        return node_secrets.query(
-            "SELECT name, value FROM system.table_settings "
-            "WHERE database = currentDatabase() AND table = 'k' AND source = 'named_collection' "
-            "ORDER BY name",
-            user=user,
-            settings={"format_display_secrets_in_show_and_select": 1},
+    cleanup()
+    try:
+        node_secrets.query(
+            "CREATE NAMED COLLECTION nc_access AS kafka_broker_list = 'secret-broker.invalid:9092', "
+            "kafka_topic_list = 'secret_topic', kafka_group_name = 'secret_group', kafka_format = 'CSV'"
+        )
+        node_secrets.query("CREATE TABLE k (a UInt64) ENGINE = Kafka(nc_access)")
+
+        def collection_values(user):
+            return node_secrets.query(
+                "SELECT name, value FROM system.table_settings "
+                "WHERE database = currentDatabase() AND table = 'k' AND source = 'named_collection' "
+                "ORDER BY name",
+                user=user,
+                settings={"format_display_secrets_in_show_and_select": 1},
+            )
+
+        def statement_values(user):
+            # `SHOW CHANGED TABLE SETTINGS` prints `name, value, changed, source`; the rows the collection supplied.
+            rows = node_secrets.query(
+                "SHOW CHANGED TABLE SETTINGS FROM k",
+                user=user,
+                settings={"format_display_secrets_in_show_and_select": 1},
+            )
+            return [
+                row.split("\t")[:2]
+                for row in rows.splitlines()
+                if row.split("\t")[3] == "named_collection"
+            ]
+
+        # Everything is granted, except seeing this one collection.
+        node_secrets.query("CREATE USER partial_reader IDENTIFIED WITH no_password")
+        node_secrets.query("GRANT ALL ON *.* TO partial_reader")
+        node_secrets.query("REVOKE SHOW NAMED COLLECTIONS ON nc_access FROM partial_reader")
+
+        assert (
+            node_secrets.query(
+                "SELECT count() FROM system.named_collections WHERE name = 'nc_access'",
+                user="partial_reader",
+            ).strip()
+            == "0"
+        )
+        assert collection_values("partial_reader") == (
+            "kafka_broker_list\t[HIDDEN]\n"
+            "kafka_format\t[HIDDEN]\n"
+            "kafka_group_name\t[HIDDEN]\n"
+            "kafka_topic_list\t[HIDDEN]\n"
         )
 
-    # Everything is granted, except seeing this one collection.
-    node_secrets.query("CREATE USER partial_reader IDENTIFIED WITH no_password")
-    node_secrets.query("GRANT ALL ON *.* TO partial_reader")
-    node_secrets.query("REVOKE SHOW NAMED COLLECTIONS ON nc_access FROM partial_reader")
+        # `SHOW TABLE SETTINGS` reads the same rows, so it hides them the same way.
+        assert statement_values("partial_reader") == [
+            ["kafka_broker_list", "[HIDDEN]"],
+            ["kafka_format", "[HIDDEN]"],
+            ["kafka_group_name", "[HIDDEN]"],
+            ["kafka_topic_list", "[HIDDEN]"],
+        ]
 
-    assert (
-        node_secrets.query(
-            "SELECT count() FROM system.named_collections WHERE name = 'nc_access'",
-            user="partial_reader",
-        ).strip()
-        == "0"
-    )
-    assert collection_values("partial_reader") == (
-        "kafka_broker_list\t[HIDDEN]\n"
-        "kafka_format\t[HIDDEN]\n"
-        "kafka_group_name\t[HIDDEN]\n"
-        "kafka_topic_list\t[HIDDEN]\n"
-    )
+        # Reading the collection is not enough on its own: `system.named_collections` also asks for the secrets
+        # grants, and so does this - whichever of the two a reader lacks.
+        for reader, revoked in [
+            ("no_display_secrets_reader", "displaySecretsInShowAndSelect ON *.*"),
+            ("no_collection_secrets_reader", "SHOW NAMED COLLECTIONS SECRETS ON *"),
+        ]:
+            node_secrets.query(f"CREATE USER {reader} IDENTIFIED WITH no_password")
+            node_secrets.query(f"GRANT ALL ON *.* TO {reader}")
+            node_secrets.query(f"REVOKE {revoked} FROM {reader}")
+            assert (
+                node_secrets.query(
+                    "SELECT count() FROM system.named_collections WHERE name = 'nc_access'", user=reader
+                ).strip()
+                == "1"
+            ), reader
+            assert collection_values(reader) == (
+                "kafka_broker_list\t[HIDDEN]\n"
+                "kafka_format\t[HIDDEN]\n"
+                "kafka_group_name\t[HIDDEN]\n"
+                "kafka_topic_list\t[HIDDEN]\n"
+            ), reader
 
-    # A reader that may read the collection reads its values, as it does in `system.named_collections`.
-    assert collection_values("default") == (
-        "kafka_broker_list\tsecret-broker.invalid:9092\n"
-        "kafka_format\tCSV\n"
-        "kafka_group_name\tsecret_group\n"
-        "kafka_topic_list\tsecret_topic\n"
-    )
-
-    node_secrets.query("DROP USER partial_reader")
-    node_secrets.query("DROP TABLE k SYNC")
-    node_secrets.query("DROP NAMED COLLECTION nc_access")
+        # A reader that may read the collection reads its values, as it does in `system.named_collections`.
+        assert collection_values("default") == (
+            "kafka_broker_list\tsecret-broker.invalid:9092\n"
+            "kafka_format\tCSV\n"
+            "kafka_group_name\tsecret_group\n"
+            "kafka_topic_list\tsecret_topic\n"
+        )
+        assert statement_values("default") == [
+            ["kafka_broker_list", "secret-broker.invalid:9092"],
+            ["kafka_format", "CSV"],
+            ["kafka_group_name", "secret_group"],
+            ["kafka_topic_list", "secret_topic"],
+        ]
+    finally:
+        cleanup()
