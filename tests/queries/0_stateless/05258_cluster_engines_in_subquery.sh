@@ -48,11 +48,17 @@ echo "IN subquery not allowed, force mode: $(run "$QUERY" "enable_parallel_repli
 echo "IN constants, not allowed: $(run "SELECT sum(n) FROM $URL WHERE n IN (1, 3)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 echo "IN an alias of constants, not allowed: $(run "WITH [1, 3] AS s SELECT sum(n) FROM $URL WHERE n IN s" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 echo "IN a transitive alias of constants, not allowed: $(run "WITH [1, 3] AS s1, s1 AS s2 SELECT sum(n) FROM $URL WHERE n IN s2" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+echo "IN an outer alias of constants in a subquery, not allowed: $(run "WITH [1, 3] AS s SELECT * FROM (SELECT sum(n) FROM $URL WHERE n IN s)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 echo "IN an alias of a scalar subquery, not allowed: $(run "WITH (SELECT [1, 3]) AS s SELECT sum(n) FROM $URL WHERE n IN s" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 # A SQL user-defined function without a subquery in its body.
 UDF="plain_udf_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "CREATE FUNCTION $UDF AS (v) -> v IN (1, 3)"
 echo "SQL UDF without a subquery, not allowed: $(run "SELECT sum(n) FROM $URL WHERE $UDF(n)" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+$CLICKHOUSE_CLIENT -q "DROP FUNCTION $UDF"
+# A scalar subquery in a SQL user-defined function is executed before the query is sent to the replicas.
+UDF="scalar_udf_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "CREATE FUNCTION $UDF AS () -> (SELECT 1)"
+echo "SQL UDF with a scalar subquery, not allowed: $(run "SELECT sum(n) FROM $URL WHERE $UDF() = 1" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 $CLICKHOUSE_CLIENT -q "DROP FUNCTION $UDF"
 # A SQL user-defined function with `IN` a parameter: the argument is resolved before it is bound, so it is never a set
 # built from a subquery.
