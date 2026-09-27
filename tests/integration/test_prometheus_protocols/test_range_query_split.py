@@ -131,6 +131,8 @@ def test_old_chunks_come_from_query_cache():
     assert query_range(query, start, end, step, params) == expected
     assert int(node.query("SELECT count() FROM system.query_cache")) == 5
 
+    # The chunks are found in the query cache although min_age differs.
+    params["promql_range_query_cache_min_age"] = min_age + 60
     hits = get_query_cache_hits()
     assert query_range(query, start, end, step, params) == expected
     assert get_query_cache_hits() == hits + 5

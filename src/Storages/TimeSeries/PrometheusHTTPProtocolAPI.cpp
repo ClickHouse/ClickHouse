@@ -385,7 +385,9 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         auto sql_query = converter.getSQL();
         LOG_TRACE(log, "SQL query to execute for chunk {} of {}:\n{}", i + 1, chunk_starts.size(), sql_query->formatForLogging());
 
+        /// These settings don't change the result of a chunk, so they must not be a part of its key in the query cache.
         auto query_context = makeQueryContext();
+        query_context->resetSettingsToDefaultValue({"promql_range_query_split_interval", "promql_range_query_cache_min_age"});
         if (cache_min_age > 0)
         {
             bool use_query_cache = can_cache && (evaluation_settings.end_time->value / scale_multiplier < cache_max_end_seconds);
