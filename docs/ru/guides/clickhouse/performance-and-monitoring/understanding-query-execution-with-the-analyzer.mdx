@@ -40,7 +40,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 Задача парсера — преобразовать текст запроса в AST (абстрактное синтаксическое дерево). Этот шаг можно наглядно представить с помощью `EXPLAIN AST`:
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 Результатом является абстрактное синтаксическое дерево, которое можно визуализировать, как показано ниже:
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="Вывод AST" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 У каждого узла есть соответствующие дочерние элементы, а всё дерево в целом отражает общую структуру вашего запроса. Это логическая структура, помогающая обрабатывать запрос. С точки зрения конечного пользователя (если только его не интересует выполнение запроса) она не слишком полезна; этот инструмент в основном используется разработчиками.
 
 <div id="analyzer">

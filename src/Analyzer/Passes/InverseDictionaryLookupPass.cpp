@@ -481,13 +481,19 @@ public:
                 }
 
                 /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+                const auto in_function_name = getInFunctionNameForPassCreatedNode(
+                    "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+                if (!in_function_name)
+                    return;
+
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
                 auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
 
-                auto in_function_node = std::make_shared<FunctionNode>("in");
+                auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
                 in_function_node->markAsOperator();
                 in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
-                resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+                resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
                 node = preserve_result_type(in_function_node);
                 return;
@@ -519,6 +525,12 @@ public:
         /// (in particular internal queries, which otherwise block whenever the replicated access
         /// storage is being refreshed).
         if (!isCreateTemporaryTableGranted())
+            return;
+
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto in_function_name = getInFunctionNameForPassCreatedNode(
+            "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+        if (!in_function_name)
             return;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
@@ -566,11 +578,11 @@ public:
         }
         subquery_node->resolveProjectionColumns(key_cols);
 
-        auto in_function_node = std::make_shared<FunctionNode>("in");
+        auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
         in_function_node->markAsOperator();
         QueryTreeNodePtr querytree_subquery_node = subquery_node;
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+        resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
         /// Preserve the original result type of the comparison node.
         /// For example, original "equals(...)" might have result type Nullable(UInt8),

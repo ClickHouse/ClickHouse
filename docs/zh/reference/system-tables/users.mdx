@@ -23,11 +23,12 @@ doc_type: 'reference'
 * `storage` ([String](/zh/reference/data-types/string)) — 用户存储路径。在 access&#95;control&#95;path 参数中配置。
 * `auth_type` ([Array(Enum8(&#39;no&#95;password&#39; = 0, &#39;plaintext&#95;password&#39; = 1, &#39;sha256&#95;password&#39; = 2, &#39;double&#95;sha1&#95;password&#39; = 3, &#39;ldap&#39; = 4, &#39;kerberos&#39; = 5, &#39;ssl&#95;certificate&#39; = 6, &#39;bcrypt&#95;password&#39; = 7, &#39;ssh&#95;key&#39; = 8, &#39;http&#39; = 9, &#39;jwt&#39; = 10, &#39;scram&#95;sha256&#95;password&#39; = 11, &#39;no&#95;authentication&#39; = 12))](/zh/reference/data-types/array)) — 显示身份验证类型。用户身份验证方式包括：无密码、明文密码、SHA256 编码密码、双重 SHA-1 编码密码或 bcrypt 编码密码。
 * `auth_params` ([Array(String)](/zh/reference/data-types/array)) — 与 auth&#95;type 对应的 JSON 格式身份验证参数。
-* `valid_until` ([Array(DateTime)](/zh/reference/data-types/array)) — 用户凭据的到期日期和时间。
-* `host_ip` ([Array(String)](/zh/reference/data-types/array)) — 允许连接到 ClickHouse server 的主机 IP 地址。
-* `host_names` ([Array(String)](/zh/reference/data-types/array)) — 允许连接到 ClickHouse server 的主机名。
-* `host_names_regexp` ([Array(String)](/zh/reference/data-types/array)) — 允许连接到 ClickHouse server 的主机名正则表达式。
-* `host_names_like` ([Array(String)](/zh/reference/data-types/array)) — 通过 LIKE 谓词设置的允许连接到 ClickHouse server 的主机名。
+* `valid_until` ([Array(DateTime64(0))](/zh/reference/data-types/array)) — 每种身份验证方法对应一个用户凭据的到期日期和时间。存储的值是按 服务器 或会话时区显示的绝对时间点；存储值 `0` (Unix 纪元，在 `UTC` 服务器 上显示为 `1970-01-01 00:00:00`) 是表示凭据永不过期的哨兵值。
+* `auth_grants` ([Array(String)](/zh/reference/data-types/array)) — 对于每种身份验证方法：`GRANTS` 子句中指定的访问权限限制；如果访问权限未受限制，则为空字符串。
+* `host_ip` ([Array(String)](/zh/reference/data-types/array)) — 允许连接到 ClickHouse 服务器 的主机 IP 地址。
+* `host_names` ([Array(String)](/zh/reference/data-types/array)) — 允许连接到 ClickHouse 服务器 的主机名。
+* `host_names_regexp` ([Array(String)](/zh/reference/data-types/array)) — 允许连接到 ClickHouse 服务器 的主机名正则表达式。
+* `host_names_like` ([Array(String)](/zh/reference/data-types/array)) — 通过 LIKE 谓词设置的允许连接到 ClickHouse 服务器 的主机名。
 * `default_roles_all` ([UInt8](/zh/reference/data-types/int-uint)) — 表示默认启用该用户的所有已授予角色。
 * `default_roles_list` ([Array(String)](/zh/reference/data-types/array)) — 默认启用的已授予角色列表。
 * `default_roles_except` ([Array(String)](/zh/reference/data-types/array)) — 除所列角色外，默认启用的所有已授予角色。
