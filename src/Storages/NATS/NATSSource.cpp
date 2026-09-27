@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/INATSConsumer.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -16,6 +17,16 @@ namespace Setting
 {
     extern const SettingsMilliseconds rabbitmq_max_wait_ms;
     extern const SettingsUInt64 interactive_delay;
+}
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char nats_fail_resubscribe_within_query[];
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
@@ -204,6 +215,10 @@ Chunk NATSSource::generateImpl()
 
             try
             {
+                fiu_do_on(FailPoints::nats_fail_resubscribe_within_query,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of resubscribing within a running query");
+                });
                 consumer->subscribe();
             }
             catch (...)

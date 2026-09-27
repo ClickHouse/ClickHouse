@@ -1424,6 +1424,70 @@ def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery
     _publish_and_expect("test_subject", range(0, 25), 25)
 
 
+INJECTED_RESUBSCRIBE_FAILURE_LOG_LINE = "Injected failure of resubscribing within a running query"
+
+
+def test_nats_jet_stream_streaming_recovers_after_a_failed_in_source_resubscribe(nats_cluster):
+    # When the in-source recovery of a streaming cycle fails to subscribe again, the consumer goes
+    # back to the pool unsubscribed and no longer reports that it needs a resubscribe. The storage
+    # has to subscribe it again the way it subscribes consumers for the first time, keeping it
+    # subscribed across cycles. Otherwise every following cycle finds it unsubscribed, subscribes it
+    # itself and unsubscribes it at the end, so the local queue does not survive between cycles.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    created = nats_helpers.log_line_count(instance)
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_max_block_size = 5,
+                     nats_flush_interval_ms = 60000,
+                     nats_wait_for_flush_interval = 1;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume", anchor = created)
+
+    # The long flush interval makes the reconnect land mid-cycle, where the source recovers the
+    # subscription itself (see the test above); the failpoint fails that recovery once.
+    instance.query("SYSTEM ENABLE FAILPOINT nats_fail_resubscribe_within_query")
+    try:
+        anchor = nats_helpers.log_line_count(instance)
+        for _ in range(3):
+            _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if nats_helpers.count_in_log_after(instance, INJECTED_RESUBSCRIBE_FAILURE_LOG_LINE, anchor) > 0:
+                    break
+                time.sleep(0.2)
+            else:
+                continue
+            break
+        else:
+            raise AssertionError("no streaming source attempted an in-source recovery")
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT nats_fail_resubscribe_within_query")
+
+    failed = nats_helpers.log_line_count(instance)
+
+    # More rows than one output block, so several cycles consume them.
+    _publish_and_expect("test_subject", range(0, 25), 25)
+
+    assert nats_helpers.count_in_log_after(instance, UNSUBSCRIBED_LOG_LINE, failed) == 0, (
+        "the consumer was unsubscribed between streaming cycles after the failed resubscribe")
+
+
 def _wait_for_ack_pending(expected, consumer_name = "test_consumer", time_limit_sec = 60):
     # Waits until the broker counts exactly `expected` messages as delivered and awaiting an
     # acknowledgement, which is how a message the streaming cycle is holding reads from outside.
