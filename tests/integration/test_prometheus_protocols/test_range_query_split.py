@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -46,22 +47,29 @@ def start_cluster():
         cluster.shutdown()
 
 
-def query_range(query, start, end, step, params=None, query_id=None):
+def send_query_range(query, start, end, step, params=None, query_id=None):
     # One thread makes the order of floating-point sums, and so the response bytes, deterministic.
     url_params = {"query": query, "start": start, "end": end, "step": step, "max_threads": 1}
     url_params.update(params or {})
     url = f"http://{node.ip_address}:9093/api/v1/query_range?{urllib.parse.urlencode(url_params)}"
-    response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id} if query_id else {})
+    return requests.get(url, headers={"X-ClickHouse-Query-Id": query_id} if query_id else {})
+
+
+def query_range(query, start, end, step, params=None, query_id=None):
+    response = send_query_range(query, start, end, step, params, query_id)
     assert response.status_code == 200, response.text
     return response.text
 
 
-def count_executed_queries(query_id):
+def assert_executed_queries(query_id, expected):
+    # The unsplit query writes its query_log row after sending the response, so the row can come later.
     node.query("SYSTEM FLUSH LOGS query_log")
-    return int(
-        node.query(
-            f"SELECT count() FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'",
+        f"{expected}\n",
+        retry_count=30,
+        sleep_time=1,
     )
 
 
@@ -102,7 +110,7 @@ def test_split_query_matches_unsplit(query, start, end, step, num_chunks):
     query_id = f"range-split-{uuid.uuid4()}"
     params = {"promql_range_query_split_interval": INTERVAL}
     assert query_range(query, start, end, step, params, query_id) == expected
-    assert count_executed_queries(query_id) == num_chunks
+    assert_executed_queries(query_id, num_chunks)
 
 
 def test_start_modifier_is_not_split():
@@ -112,7 +120,16 @@ def test_start_modifier_is_not_split():
     query_id = f"range-split-{uuid.uuid4()}"
     params = {"promql_range_query_split_interval": INTERVAL}
     assert query_range(query, H, H + 6 * 3600, 60, params, query_id) == expected
-    assert count_executed_queries(query_id) == 1
+    assert_executed_queries(query_id, 1)
+
+
+def test_huge_step():
+    # The chunk boundaries must not overflow: the split query fails like the unsplit one.
+    step = "106751991167d"
+    expected = send_query_range("node_load1", H, H + 6 * 3600, step)
+    params = {"promql_range_query_split_interval": INTERVAL}
+    response = send_query_range("node_load1", H, H + 6 * 3600, step, params)
+    assert response.status_code == expected.status_code == 400
 
 
 def test_old_chunks_come_from_query_cache():
@@ -121,22 +138,22 @@ def test_old_chunks_come_from_query_cache():
     start, end, step = H + 1234, H + 5 * 3600 + 777, 60
     expected = query_range(query, start, end, step)
 
-    # Six chunks; only the last one, from H + 5h + 34s to `end`, ends later than now() - min_age.
-    min_age = int(time.time()) - end + 300
+    # Six chunks; the first and the last ones don't cover a whole interval, and the fifth one ends later than now() - min_age.
+    min_age = int(time.time()) - (H + 4 * 3600 + 1800)
     params = {
         "promql_range_query_split_interval": INTERVAL,
         "promql_range_query_cache_min_age": min_age,
         "query_cache_ttl": 3600,
     }
     assert query_range(query, start, end, step, params) == expected
-    assert int(node.query("SELECT count() FROM system.query_cache")) == 5
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 3
 
     # The chunks are found in the query cache although min_age differs.
     params["promql_range_query_cache_min_age"] = min_age + 60
     hits = get_query_cache_hits()
     assert query_range(query, start, end, step, params) == expected
-    assert get_query_cache_hits() == hits + 5
-    assert int(node.query("SELECT count() FROM system.query_cache")) == 5
+    assert get_query_cache_hits() == hits + 3
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 3
 
 
 def test_negative_offset_is_not_cached():

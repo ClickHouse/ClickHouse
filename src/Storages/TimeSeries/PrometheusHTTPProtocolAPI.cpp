@@ -6,6 +6,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/Stopwatch.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
@@ -34,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -61,8 +63,10 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds promql_range_query_cache_min_age;
     extern const SettingsSeconds promql_range_query_split_interval;
+    extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
 namespace TimeSeriesSetting
@@ -89,29 +93,23 @@ Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 time_scale)
     return Decimal64{timestamp_ticks};
 }
 
-/// Returns the first step of each chunk of a range query: its start, then the first step at or after each later multiple of the interval.
-std::vector<DateTime64> getRangeQueryChunkStarts(const PrometheusQueryEvaluationSettings & settings, Int64 interval_seconds)
+/// Rounds a timestamp down to a multiple of the interval, also before 1970.
+Int128 roundDownToMultiple(Int128 value, Int128 interval)
 {
-    const Int64 start = settings.start_time->value;
-    const Int64 end = settings.end_time->value;
-    const Int64 step = settings.step->value;
-    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(settings.time_scale);
+    return value - ((value % interval) + interval) % interval;
+}
 
-    std::vector<DateTime64> chunk_starts{DateTime64{start}};
-    if (step <= 0 || interval_seconds <= 0 || interval_seconds > (end - start) / scale_multiplier)
-        return chunk_starts;
-
-    const Int64 interval = interval_seconds * scale_multiplier;
-    Int64 chunk_start = start;
-    while (true)
-    {
-        /// The next multiple of the interval, rounded up to a step.
-        const Int64 boundary = chunk_start - chunk_start % interval + interval;
-        chunk_start = start + (boundary - start + step - 1) / step * step;
-        if (chunk_start > end)
-            return chunk_starts;
-        chunk_starts.emplace_back(chunk_start);
-    }
+/// Returns the first step at or after the multiple of the interval that follows `chunk_start`, or nothing if it's after the end.
+/// Int128 keeps a huge step from overflowing.
+std::optional<Int64> getNextChunkStart(const PrometheusQueryEvaluationSettings & settings, Int128 interval, Int64 chunk_start)
+{
+    const Int128 start = settings.start_time->value;
+    const Int128 step = settings.step->value;
+    const Int128 boundary = roundDownToMultiple(chunk_start, interval) + interval;
+    const Int128 next_chunk_start = start + (boundary - start + step - 1) / step * step;
+    if (next_chunk_start > settings.end_time->value)
+        return {};
+    return static_cast<Int64>(next_chunk_start);
 }
 
 /// Returns true if the query refers to its whole evaluation range, so evaluating it in chunks would change its result.
@@ -309,11 +307,15 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
 
-        auto split_interval = getContext()->getSettingsRef()[Setting::promql_range_query_split_interval].totalSeconds();
-        auto chunk_starts = getRangeQueryChunkStarts(evaluation_settings, split_interval);
-        if (chunk_starts.size() > 1 && !usesWholeEvaluationRange(*query_tree->getRoot()))
+        /// A query shorter than the split interval is not split.
+        const auto split_interval_seconds = getContext()->getSettingsRef()[Setting::promql_range_query_split_interval].totalSeconds();
+        const Int128 split_interval = static_cast<Int128>(split_interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(time_scale);
+        const Int128 length = static_cast<Int128>(evaluation_settings.end_time->value) - evaluation_settings.start_time->value;
+        if (split_interval > 0 && split_interval <= length && evaluation_settings.step->value > 0
+            && getNextChunkStart(evaluation_settings, split_interval, evaluation_settings.start_time->value)
+            && !usesWholeEvaluationRange(*query_tree->getRoot()))
         {
-            executeRangeQueryInChunks(response, query_tree, evaluation_settings, chunk_starts, query_finish_callback);
+            executeRangeQueryInChunks(response, query_tree, evaluation_settings, split_interval, query_finish_callback);
             return;
         }
     }
@@ -363,34 +365,51 @@ ContextMutablePtr PrometheusHTTPProtocolAPI::makeQueryContext() const
 void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
     WriteBuffer & response,
     const std::shared_ptr<const PrometheusQueryTree> & query_tree,
-    PrometheusQueryEvaluationSettings evaluation_settings,
-    const std::vector<DateTime64> & chunk_starts,
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    Int128 interval,
     QueryFinishCallback query_finish_callback)
 {
+    const auto & settings = getContext()->getSettingsRef();
     const auto scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(evaluation_settings.time_scale);
-    const auto end_time = *evaluation_settings.end_time;
-    const auto step = *evaluation_settings.step;
+    const Int64 step = evaluation_settings.step->value;
 
-    const auto cache_min_age = getContext()->getSettingsRef()[Setting::promql_range_query_cache_min_age].totalSeconds();
+    const auto cache_min_age = settings[Setting::promql_range_query_cache_min_age].totalSeconds();
     const bool can_cache = !readsSamplesAfterEvaluationTime(*query_tree->getRoot());
     const Int64 cache_max_end_seconds = time(nullptr) - cache_min_age;
 
-    std::vector<Blocks> chunks(chunk_starts.size());
-    for (size_t i = 0; i != chunk_starts.size(); ++i)
-    {
-        evaluation_settings.start_time = chunk_starts[i];
-        evaluation_settings.end_time = (i + 1 < chunk_starts.size()) ? DateTime64{chunk_starts[i + 1].value - step.value} : end_time;
+    /// Each chunk is a separate query, so the time limit of the whole request is checked between them.
+    ExecutionSpeedLimits limits;
+    limits.max_execution_time = settings[Setting::max_execution_time];
+    Stopwatch watch;
 
-        PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
+    std::vector<Blocks> chunks;
+    std::optional<Int64> chunk_start = evaluation_settings.start_time->value;
+    while (chunk_start)
+    {
+        const auto next_chunk_start = getNextChunkStart(evaluation_settings, interval, *chunk_start);
+        auto chunk_settings = evaluation_settings;
+        chunk_settings.start_time = DateTime64{*chunk_start};
+        if (next_chunk_start)
+            chunk_settings.end_time = DateTime64{*next_chunk_start - step};
+
+        PrometheusQueryToSQL::Converter converter{query_tree, chunk_settings};
         auto sql_query = converter.getSQL();
-        LOG_TRACE(log, "SQL query to execute for chunk {} of {}:\n{}", i + 1, chunk_starts.size(), sql_query->formatForLogging());
+        LOG_TRACE(log, "SQL query to execute for chunk {}:\n{}", chunks.size() + 1, sql_query->formatForLogging());
 
         /// These settings don't change the result of a chunk, so they must not be a part of its key in the query cache.
         auto query_context = makeQueryContext();
         query_context->resetSettingsToDefaultValue({"promql_range_query_split_interval", "promql_range_query_cache_min_age"});
         if (cache_min_age > 0)
         {
-            bool use_query_cache = can_cache && (evaluation_settings.end_time->value / scale_multiplier < cache_max_end_seconds);
+            /// Only a chunk covering a whole interval is requested again, a chunk cut by the start or the end of the query is not.
+            auto is_first_step_of_interval = [&](Int128 timestamp)
+            {
+                return roundDownToMultiple(timestamp - step, interval) != roundDownToMultiple(timestamp, interval);
+            };
+            const Int64 chunk_end = chunk_settings.end_time->value;
+            const bool whole_interval
+                = is_first_step_of_interval(*chunk_start) && is_first_step_of_interval(static_cast<Int128>(chunk_end) + step);
+            const bool use_query_cache = can_cache && whole_interval && (chunk_end / scale_multiplier < cache_max_end_seconds);
             query_context->setSetting("use_query_cache", use_query_cache);
             if (use_query_cache)
                 query_context->setSetting("query_cache_nondeterministic_function_handling", String("save"));
@@ -401,11 +420,12 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         try
         {
             PullingAsyncPipelineExecutor executor(io.pipeline);
+            Blocks & chunk = chunks.emplace_back();
             Block block;
             while (executor.pull(block))
             {
                 if (block.rows() > 0)
-                    chunks[i].push_back(std::move(block));
+                    chunk.push_back(std::move(block));
             }
             io.pipeline.finalizeWriteInQueryResultCache();
         }
@@ -416,6 +436,10 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         }
 
         finishExecutedQuery(io, {});
+
+        if (!limits.checkTimeLimit(watch.elapsedNanoseconds(), settings[Setting::timeout_overflow_mode]))
+            break;
+        chunk_start = next_chunk_start;
     }
 
     writeQueryResponseHeader(response, PrometheusQueryResultType::RANGE_VECTOR);

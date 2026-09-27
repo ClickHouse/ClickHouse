@@ -116,12 +116,12 @@ private:
     /// Copies the request context and sets the settings required by the SQL generated from PromQL.
     ContextMutablePtr makeQueryContext() const;
 
-    /// Evaluates a range query in chunks starting at `chunk_starts`, one after another, and writes the merged result.
+    /// Evaluates a range query in chunks split at multiples of the interval, one after another, and writes the merged result.
     void executeRangeQueryInChunks(
         WriteBuffer & response,
         const std::shared_ptr<const PrometheusQueryTree> & query_tree,
-        PrometheusQueryEvaluationSettings evaluation_settings,
-        const std::vector<DateTime64> & chunk_starts,
+        const PrometheusQueryEvaluationSettings & evaluation_settings,
+        Int128 interval,
         QueryFinishCallback query_finish_callback);
 
     /// Writes the result of a prometheus query as a JSON.
