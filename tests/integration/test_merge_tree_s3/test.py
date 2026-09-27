@@ -329,6 +329,53 @@ def test_s3_read_stops_after_max_execution_time(
     assert_no_s3_requests(node, query_id)
 
 
+def test_s3_read_stops_after_local_distributed_plan_cancel(s3_cancellation_table):
+    node, table = s3_cancellation_table
+    query_id = uuid.uuid4().hex
+    s3_failpoint = "s3_read_before_get_object"
+    cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
+    query = make_s3_cancellation_query(
+        table,
+        extra_settings="allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "make_distributed_plan=1, distributed_plan_execute_locally=1, "
+        "distributed_plan_fallback_to_local_execution=0, distributed_plan_workers_num=1, "
+        "distributed_plan_default_reader_bucket_count=1, enable_parallel_replicas=0, "
+        "max_execution_time=1, timeout_overflow_mode='break'",
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {s3_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {cancel_failpoint}")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    query_future = executor.submit(
+        node.query_and_get_answer_with_error, query, query_id=query_id
+    )
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {s3_failpoint} PAUSE", timeout=60)
+        node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
+        assert node.query(
+            "SELECT is_cancelled FROM system.processes "
+            f"WHERE query_id='{query_id}'"
+        ).strip() == "0"
+
+        # `cancelReading` sets the token before entering cancel_failpoint. Let the
+        # paused reader observe it and finish the exchange before full cancellation returns.
+        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
+        answer, error = query_future.result(timeout=10)
+        assert answer == "", answer
+        # Depending on whether the final exchange closes before full fragment cancellation,
+        # the client sees a clean EOF or `QUERY_WAS_CANCELLED`. Neither path cancels `QueryStatus`.
+        if error:
+            assert "(QUERY_WAS_CANCELLED)" in error, error
+    finally:
+        for failpoint in (s3_failpoint, cancel_failpoint):
+            node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    assert_no_s3_requests(node, query_id)
+
+
 @pytest.mark.parametrize(
     "cancel_method,expected_exceptions",
     [
@@ -523,8 +570,7 @@ def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, fin
         request.process.send_signal(signal.SIGINT)
         if subquery_kind == "scalar":
             wait_until_query_is_cancelled(node, query_id)
-        else:
-            node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
+        node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
         if subquery_kind != "scalar":
             assert node.query(
                 f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'"
@@ -534,10 +580,9 @@ def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, fin
             "ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.processes "
             f"WHERE query_id='{query_id}'"
         ).strip()
-        # Let the callback return while the S3 reader is still paused, so the
-        # executor must keep polling and observe a subsequent full cancellation.
-        if subquery_kind != "scalar":
-            node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
+        # Let cancellation finish while the S3 reader is still paused. After a
+        # partial cancellation, the executor must keep polling for a full one.
+        node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
         if subquery_kind != "scalar":
             if finish == "second-cancel":
                 request.process.send_signal(signal.SIGINT)

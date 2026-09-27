@@ -159,6 +159,7 @@ void MergeTreeSource::onPartialResult() noexcept
 
 void MergeTreeSource::onCancel() noexcept
 {
+    processor->cancelReading();
     processor->cancel();
 }
 
