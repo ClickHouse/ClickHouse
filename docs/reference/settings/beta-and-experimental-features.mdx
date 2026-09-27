@@ -70,6 +70,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [parallel_replicas_custom_key](/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) | `` |
 | [parallel_replicas_custom_key_range_lower](/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key_range_lower) | `0` |
 | [parallel_replicas_custom_key_range_upper](/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key_range_upper) | `0` |
+| [parallel_replicas_for_queries_with_multiple_tables](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_queries_with_multiple_tables) | `1` |
 | [parallel_replicas_filter_pushdown](/reference/settings/session-settings/parallel-replicas#parallel_replicas_filter_pushdown) | `0` |
 | [parallel_replicas_allow_view_over_mergetree](/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_view_over_mergetree) | `0` |
 | [allow_database_iceberg](/reference/settings/session-settings/allow#allow_database_iceberg) | `0` |
@@ -82,9 +83,9 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [ai_function_max_retries](/reference/settings/session-settings/ai-function#ai_function_max_retries) | `1` |
 | [ai_function_retry_initial_delay_ms](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms) | `1000` |
 | [ai_function_throw_on_error](/reference/settings/session-settings/ai-function#ai_function_throw_on_error) | `1` |
-| [ai_function_max_input_tokens_per_query](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) | `1000000` |
-| [ai_function_max_output_tokens_per_query](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) | `500000` |
-| [ai_function_max_api_calls_per_query](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) | `1000` |
+| [ai_function_max_input_tokens_per_query](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) | `0` |
+| [ai_function_max_output_tokens_per_query](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) | `0` |
+| [ai_function_max_api_calls_per_query](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) | `0` |
 | [ai_function_throw_on_quota_exceeded](/reference/settings/session-settings/ai-function#ai_function_throw_on_quota_exceeded) | `1` |
 | [ai_function_embedding_max_batch_size](/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size) | `100` |
 | [ai_function_text_default_credentials](/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) | `` |
@@ -122,6 +123,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [reader_executor_max_tail_for_drain](/reference/settings/session-settings/reader-executor#reader_executor_max_tail_for_drain) | `1048576` |
 | [reader_executor_window_size](/reference/settings/session-settings/reader-executor#reader_executor_window_size) | `8388608` |
 | [reader_executor_block_size](/reference/settings/session-settings/reader-executor#reader_executor_block_size) | `1048576` |
+| [reader_executor_plan_look_ahead](/reference/settings/session-settings/reader-executor#reader_executor_plan_look_ahead) | `16777216` |
 | [group_by_top_k_optimization_observation_rows](/reference/settings/session-settings/group-by#group_by_top_k_optimization_observation_rows) | `65536` |
 | [query_plan_optimize_join_order_max_searched_plans](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_max_searched_plans) | `100000` |
 | [query_plan_optimize_join_order_randomize](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize) | `0` |
