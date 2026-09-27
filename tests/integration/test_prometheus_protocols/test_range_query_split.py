@@ -1,0 +1,151 @@
+import time
+import urllib.parse
+import uuid
+
+import pytest
+import requests
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/prometheus.xml"],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
+)
+
+# A multiple of the split interval, so the chunk boundaries below are known.
+H = 1699999200
+INTERVAL = 3600
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_cluster():
+    try:
+        cluster.start()
+        node.query("CREATE TABLE prometheus ENGINE = TimeSeries")
+        # Nine hours of samples every 15 seconds; host2/idle resets, host3 has node_load1 only from H + 2h to H + 3h.
+        node.query(
+            "INSERT INTO prometheus (metric_name, tags, samples)"
+            " SELECT 'node_cpu_seconds_total', map('instance', concat('host', toString(h)), 'mode', mode),"
+            f" arrayMap(i -> (toDateTime64({H - 3600} + i * 15, 3),"
+            " toFloat64(if(h = 2 AND mode = 'idle' AND i >= 1000, i - 1000, i) * (h + indexOf(['idle', 'user', 'system'], mode)) * 1.5)),"
+            " range(2160))"
+            " FROM (SELECT number + 1 AS h FROM numbers(3)) ARRAY JOIN ['idle', 'user', 'system'] AS mode"
+        )
+        node.query(
+            "INSERT INTO prometheus (metric_name, tags, samples)"
+            " SELECT 'node_load1', map('instance', concat('host', toString(h))),"
+            f" arrayMap(i -> (toDateTime64({H - 3600} + i * 15, 3), ((i * 7 + h * 13) % 50) / 10),"
+            " if(h = 3, range(720, 960), range(2160)))"
+            " FROM (SELECT number + 1 AS h FROM numbers(3))"
+        )
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def query_range(query, start, end, step, params=None, query_id=None):
+    # One thread makes the order of floating-point sums, and so the response bytes, deterministic.
+    url_params = {"query": query, "start": start, "end": end, "step": step, "max_threads": 1}
+    url_params.update(params or {})
+    url = f"http://{node.ip_address}:9093/api/v1/query_range?{urllib.parse.urlencode(url_params)}"
+    response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id} if query_id else {})
+    assert response.status_code == 200, response.text
+    return response.text
+
+
+def count_executed_queries(query_id):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    return int(
+        node.query(
+            f"SELECT count() FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+
+def get_query_cache_hits():
+    return int(node.query("SELECT sum(value) FROM system.events WHERE event = 'QueryCacheHits'"))
+
+
+QUERIES = [
+    "sum by (mode) (rate(node_cpu_seconds_total[5m]))",
+    "rate(node_cpu_seconds_total[5m])",
+    "avg_over_time(node_load1[10m])",
+    "max_over_time(rate(node_cpu_seconds_total[5m])[30m:1m])",
+    "node_load1 offset 30m",
+    "scalar(sum(node_load1))",
+]
+
+# (start, end, step, number of chunks)
+RANGES = [
+    # Aligned to the interval: the last chunk holds only `end`.
+    (H, H + 6 * 3600, 60, 7),
+    # Not aligned: the chunks start at H + 3634, H + 7234, H + 10834, H + 14434, H + 18034.
+    (H + 1234, H + 5 * 3600 + 777, 60, 6),
+    # The step doesn't divide the interval: the chunks start at H + 3754, H + 7534, H + 10894, H + 14674, H + 18034.
+    (H + 1234, H + 5 * 3600 + 777, 420, 6),
+    # The step is longer than the interval: one step per chunk.
+    (H, H + 6 * 3600, 5400, 5),
+    # Shorter than the interval, so not split.
+    (H, H + 3000, 60, 1),
+]
+
+
+@pytest.mark.parametrize("query", QUERIES)
+@pytest.mark.parametrize("start, end, step, num_chunks", RANGES)
+def test_split_query_matches_unsplit(query, start, end, step, num_chunks):
+    expected = query_range(query, start, end, step)
+    assert '"result":[]' not in expected
+
+    query_id = f"range-split-{uuid.uuid4()}"
+    params = {"promql_range_query_split_interval": INTERVAL}
+    assert query_range(query, start, end, step, params, query_id) == expected
+    assert count_executed_queries(query_id) == num_chunks
+
+
+def test_start_modifier_is_not_split():
+    query = "node_load1 @ start()"
+    expected = query_range(query, H, H + 6 * 3600, 60)
+
+    query_id = f"range-split-{uuid.uuid4()}"
+    params = {"promql_range_query_split_interval": INTERVAL}
+    assert query_range(query, H, H + 6 * 3600, 60, params, query_id) == expected
+    assert count_executed_queries(query_id) == 1
+
+
+def test_old_chunks_come_from_query_cache():
+    node.query("SYSTEM DROP QUERY CACHE")
+    query = "sum by (mode) (rate(node_cpu_seconds_total[5m]))"
+    start, end, step = H + 1234, H + 5 * 3600 + 777, 60
+    expected = query_range(query, start, end, step)
+
+    # Six chunks; only the last one, from H + 5h + 34s to `end`, ends later than now() - min_age.
+    min_age = int(time.time()) - end + 300
+    params = {
+        "promql_range_query_split_interval": INTERVAL,
+        "promql_range_query_cache_min_age": min_age,
+        "query_cache_ttl": 3600,
+    }
+    assert query_range(query, start, end, step, params) == expected
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 5
+
+    hits = get_query_cache_hits()
+    assert query_range(query, start, end, step, params) == expected
+    assert get_query_cache_hits() == hits + 5
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 5
+
+
+def test_negative_offset_is_not_cached():
+    node.query("SYSTEM DROP QUERY CACHE")
+    query = "node_load1 offset -10m"
+    expected = query_range(query, H, H + 6 * 3600, 60)
+
+    params = {
+        "promql_range_query_split_interval": INTERVAL,
+        "promql_range_query_cache_min_age": 600,
+        "query_cache_ttl": 3600,
+    }
+    assert query_range(query, H, H + 6 * 3600, 60, params) == expected
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 0
