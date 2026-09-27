@@ -140,7 +140,7 @@ The hook contains no kill logic of its own — it just calls
 | `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID |
 | test `finally` block | Any exit of the per-test code path (incl. SIGKILL to the worker) | `_gpid_file.unlink` — removes the per-worker file |
 | `run_test()` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
-| `run_tests()` `finally` (stateless job) | Any exit of the test run, per invocation | same: `clickhouse-test --cleanup` |
+| `run_tests` `finally` (stateless job) | Any exit of the test run, per invocation | same: `clickhouse-test --cleanup` |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
 
 ### Remaining limitation
