@@ -7,18 +7,18 @@ keywords: ['أمان Postgres', 'قائمة سماح عناوين IP', 'التش
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
-صُمِّم Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
+صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
 
 <div id="ip-whitelisting">
-  ## السماح لعناوين IP
+  ## قائمة سماح عناوين IP
 </div>
 
-تتحكم عوامل تصفية IP في عناوين IP المصدر المسموح لها بالاتصال بمثيل Managed Postgres لديك، مما يوفر تحكمًا في الوصول على مستوى الشبكة لحماية قاعدة بياناتك من الاتصالات غير المصرح بها.
+تتحكم عوامل تصفية IP في عناوين IP المصدر المسموح لها بالاتصال بمثيل ClickHouse Managed Postgres لديك، مما يوفر تحكمًا في الوصول على مستوى الشبكة لحماية قاعدة بياناتك من الاتصالات غير المصرح بها.
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="تهيئة قائمة الوصول إلى IP" size="md" border />
 
@@ -55,13 +55,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## التشفير
 </div>
 
-يشفّر Managed Postgres بياناتك سواء كانت مخزّنة أو منقولة، لضمان حماية شاملة للبيانات.
+يشفّر ClickHouse Managed Postgres بياناتك سواء كانت في التخزين أو منقولة، لضمان حماية شاملة للبيانات.
 
 <div id="encryption-at-rest">
-  ### التشفير عند التخزين
+  ### التشفير في التخزين
 </div>
 
-تُشفَّر جميع البيانات المخزَّنة بواسطة Managed Postgres عند التخزين للحماية من الوصول غير المصرَّح به إلى البنية التحتية الأساسية للتخزين.
+تُشفَّر جميع البيانات المخزَّنة بواسطة ClickHouse Managed Postgres في التخزين للحماية من الوصول غير المصرَّح به إلى البنية التحتية الأساسية للتخزين.
 
 <div id="nvme-encryption">
   #### تشفير تخزين NVMe
@@ -73,7 +73,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   #### تشفير التخزين الكائني (S3)
 </div>
 
-تُشفَّر أيضًا النسخ الاحتياطية وأرشيفات سجل الكتابة المسبقة (WAL) المخزنة في التخزين الكائني أثناء التخزين. ويشمل ذلك:
+تُشفَّر أيضًا النسخ الاحتياطية وأرشيفات سجل الكتابة المسبقة (WAL) المخزنة في التخزين الكائني في التخزين. ويشمل ذلك:
 
 * النسخ الاحتياطية اليومية الكاملة
 * أرشيفات WAL التزايدية
@@ -82,14 +82,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تُخزَّن جميع بيانات النسخ الاحتياطي في حاويات تخزين مخصصة ومعزولة، مع بيانات اعتماد مخصّصة لكل مثيل على حدة، مما يضمن بقاء بيانات النسخ الاحتياطي آمنة وألا تكون متاحة إلا للأنظمة المصرَّح لها.
 
 <Info>
-  التشفير أثناء التخزين مُمكَّن افتراضيًا لجميع مثيلات Managed Postgres، ولا يمكن تعطيله. لا يلزم أي إعداد إضافي.
+  التشفير في التخزين مُمكَّن افتراضيًا لجميع مثيلات ClickHouse Managed Postgres، ولا يمكن تعطيله. لا يلزم أي إعداد إضافي.
 </Info>
 
 <div id="encryption-in-transit">
   ### التشفير أثناء النقل
 </div>
 
-تُؤمَّن جميع اتصالات الشبكة بـ Managed Postgres باستخدام TLS ‏(أمن طبقة النقل) لحماية البيانات أثناء انتقالها بين تطبيقاتك وقاعدة البيانات.
+تُؤمَّن جميع اتصالات الشبكة بـ ClickHouse Managed Postgres باستخدام TLS ‏(أمن طبقة النقل) لحماية البيانات أثناء انتقالها بين تطبيقاتك وقاعدة البيانات.
 
 <div id="tls-ssl">
   #### إعدادات TLS/SSL
@@ -103,7 +103,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## Private Link
 </div>
 
-يتيح Private Link اتصالًا خاصًا بين مثيل Managed Postgres لديك وVirtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام. ويوفر ذلك طبقة إضافية من عزل الشبكة والأمان.
+يتيح Private Link اتصالًا خاصًا بين مثيل ClickHouse Managed Postgres لديك وVirtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام. ويوفر ذلك طبقة إضافية من عزل الشبكة والأمان.
 
 <Info>
   **يتطلب إعدادًا يدويًا**
@@ -115,7 +115,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### طلب إعداد Private Link
 </div>
 
-لتمكين Private Link لمثيل Managed Postgres لديك:
+لتمكين Private Link لمثيل ClickHouse Managed Postgres لديك:
 
 1. **تواصل مع ClickHouse Support** عبر إنشاء تذكرة دعم
 
@@ -126,7 +126,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
      * (اختياري) أي Regions أخرى غير Region الخاصة بمثيل Postgres تريد الاتصال منها
 
 3. **سيقوم ClickHouse Support بما يلي**:
-   * توفير endpoint لـ Private Link على جانب Managed Postgres
+   * توفير endpoint لـ Private Link على جانب ClickHouse Managed Postgres
    * تزويدك بـ connection details الخاصة بـ endpoint التي يمكنك استخدامها لإنشاء endpoint interface.
 
 4. **أكمل Setup لـ Private Link**:
@@ -137,7 +137,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الاحتفاظ بالنسخ الاحتياطية
 </div>
 
-يُنشئ Managed Postgres نسخًا احتياطية من بياناتك تلقائيًا للحماية من الحذف غير المقصود أو التلف أو غير ذلك من حالات فقدان البيانات.
+يُنشئ ClickHouse Managed Postgres نسخًا احتياطية من بياناتك تلقائيًا للحماية من الحذف غير المقصود أو التلف أو غير ذلك من حالات فقدان البيانات.
 
 <div id="retention-policy">
   ### سياسة الاحتفاظ
@@ -155,6 +155,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * **التشفير أثناء التخزين** في التخزين الكائني
 * **حاويات تخزين معزولة** لكل مثيل مع بيانات اعتماد مقيّدة النطاق
-* **التحكم في الوصول** مقتصر على مثيل Postgres المرتبط بالنسخة الاحتياطية.
+* **التحكم في الوصول** يقتصر على مثيل Postgres المرتبط بالنسخة الاحتياطية.
 
 لمزيد من التفاصيل حول استراتيجيات النسخ الاحتياطي والاستعادة إلى نقطة زمنية محددة، راجع صفحة [النسخ الاحتياطي والاستعادة](/ar/products/managed-postgres/backup-and-restore).

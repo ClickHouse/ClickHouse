@@ -32,10 +32,11 @@ Tous les paramètres du ClickPipe d&#39;origine sont conservés dans le ClickPip
 Voici quelques scénarios :
 
 1. Vous devrez peut-être apporter d’importantes modifications de schéma aux tables sources, ce qui rendrait le ClickPipe existant inutilisable et vous obligerait à le redémarrer. Il vous suffit de cliquer sur Resync une fois les modifications effectuées.
-2. Dans le cas particulier de ClickHouse, vous avez peut-être dû modifier les clés ORDER BY des tables cibles. Vous pouvez lancer un Resync pour remplir à nouveau les données dans la nouvelle table avec la bonne clé de tri.
+2. Dans le cas particulier de ClickHouse, vous avez peut-être dû mettre à jour les valeurs dans les colonnes ORDER BY des tables cibles. Vous pouvez lancer un Resync pour remplir à nouveau les données dans la nouvelle table avec la bonne clé de tri.
 
 <Note>
-  Vous pouvez effectuer plusieurs Resync, mais tenez compte de la charge sur la base de données source lors de chaque Resync.
+  Vous pouvez effectuer plusieurs Resync, mais tenez compte de la charge sur la base de données source lors de chaque Resync,
+  puisqu’un chargement initial avec des threads parallèles est effectué à chaque fois.
 </Note>
 
 <div id="guide-mysql-resync">
@@ -52,5 +53,5 @@ Voici quelques scénarios :
 5. Rendez-vous dans l’onglet **Metrics**.
 6. Au bout d’environ 5 secondes (ou après actualisation de la page), le statut du pipe devrait être **Setup** ou **Snapshot**.
 7. Le chargement initial du Resync peut être suivi dans l’onglet **Tables**, dans la section **Initial Load Stats**.
-8. Une fois le chargement initial terminé, le pipe échangera de manière atomique les tables `_resync` avec les tables d’origine. Pendant cet échange, le statut sera **Resync**.
-9. Une fois l’échange terminé, le pipe passera à l’état **Running** et effectuera le CDC s’il est activé.
+8. Une fois le chargement initial terminé, le pipe effectuera de manière atomique la permutation des tables `_resync` avec les tables d’origine. Pendant cette permutation, le statut sera **Resync**.
+9. Une fois la permutation terminée, le pipe passera à l’état **Running** et effectuera le CDC s’il est activé.

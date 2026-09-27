@@ -3,8 +3,8 @@ title: مصادقة S3 والدلو
 ---
 
 <Accordion title="أنشئ حاويات S3 ومستخدم IAM">
-  يستعرض هذا المقال أساسيات كيفية تهيئة AWS IAM user، وإنشاء S3 bucket، وتهيئة ClickHouse لاستخدامه بوصفه S3 disk.
-  يُنصح بالتنسيق مع فريق الأمان لديك لتحديد الـ permissions المطلوبة، واعتبار ما يرد هنا نقطةَ انطلاق أولية.
+  يستعرض هذا المقال الأساسيات المتعلقة بكيفية تهيئة مستخدم AWS IAM، وإنشاء S3 bucket، وتهيئة ClickHouse لاستخدام هذا الـ bucket بوصفه S3 disk.
+  يُنصح بالتنسيق مع فريق الأمان لديك لتحديد الصلاحيات المطلوبة، واعتبار هذه الإعدادات نقطةَ انطلاق.
 
   ### إنشاء مستخدم AWS IAM
 
@@ -14,91 +14,159 @@ title: مصادقة S3 والدلو
 
   2. من قائمة `Users`، اختر `Create user`
 
-  <Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-1.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+    </Frame>
+  </div>
 
-  3. أدخِل اسم المستخدم وعيِّن نوع بيانات الاعتماد إلى `Access key - Programmatic access` ثم اختر `Next: Permissions`
+  3. أدخل اسم المستخدم، ثم اضبط نوع بيانات الاعتماد على `Access key - Programmatic access`، واختر `Next: Permissions`
 
-  <Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="تحديد اسم المستخدم ونوع الوصول لمستخدم IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-2.webp" alt="تحديد اسم المستخدم ونوع الوصول لمستخدم IAM" />
+    </Frame>
+  </div>
 
   4. لا تُضِف المستخدم إلى أي مجموعة؛ اختر `Next: Tags`
 
-  <Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="تخطي إسناد المجموعة إلى مستخدم IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-3.webp" alt="تخطي إسناد المجموعة إلى مستخدم IAM" />
+    </Frame>
+  </div>
 
-  5. ما لم تكن بحاجة إلى إضافة أي وسوم، اختر `Next: Review`
+  5. إذا لم تكن بحاجة إلى إضافة أي وسوم، فاختر `Next: Review`
 
-  <Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="تخطي تعيين العلامات لمستخدم IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-4.webp" alt="تخطي إسناد الوسوم إلى مستخدم IAM" />
+    </Frame>
+  </div>
 
-  6. حدِّد `Create User`
+  6. اختر `Create User`
 
   <Note>
-    يمكن تجاهل رسالة التحذير التي تفيد بأن المستخدم ليست لديه أي أذونات؛ إذ ستُمنح له الأذونات على الـ bucket في القسم التالي
+    يمكن تجاهل رسالة التحذير التي تفيد بأن المستخدم ليس لديه أذونات؛ إذ ستُمنَح له الأذونات على الـbucket في القسم التالي
   </Note>
 
-  <Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="تحذير بشأن إنشاء IAM user من دون أي أذونات" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-5.webp" alt="إنشاء مستخدم IAM مع تحذير بعدم وجود أذونات" />
+    </Frame>
+  </div>
 
-  7. تم إنشاء المستخدم الآن؛ انقر على `show` وانسخ مفتاحَي الوصول والمفتاح السري.
+  7. تم الآن إنشاء المستخدم؛ انقر على `show` وانسخ مفتاح الوصول والمفتاح السري.
 
   <Note>
-    احفظ هذه المفاتيح في مكانٍ آخر؛ فهذه هي المرة الوحيدة التي سيكون فيها مفتاح الوصول السري متاحًا.
+    احتفِظ بالمفاتيح في مكانٍ آخر؛ فهذه هي المرة الوحيدة التي سيكون فيها مفتاح الوصول السري متاحًا.
   </Note>
 
-  <Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="عرض مفاتيح وصول مستخدم IAM ونسخها" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-6.webp" alt="عرض مفاتيح الوصول الخاصة بـ IAM user ونسخها" />
+    </Frame>
+  </div>
 
-  8. انقر على &quot;إغلاق&quot;، ثم ابحث عن المستخدم في صفحة المستخدمين.
+  8. انقر على «إغلاق»، ثم ابحث عن المستخدم في شاشة المستخدمين.
 
-  <Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="العثور على مستخدم IAM المُنشأ حديثًا ضمن قائمة المستخدمين" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-7.webp" alt="العثور على IAM user المُنشأ حديثًا في قائمة المستخدمين" />
+    </Frame>
+  </div>
 
-  9. انسخ ARN ‏(Amazon Resource Name) واحفظه لاستخدامه عند تهيئة سياسة الوصول إلى الحاوية.
+  9. انسخ ARN ‏(Amazon Resource Name) واحفظه لاستخدامه عند إعداد سياسة الوصول إلى الـ bucket.
 
-  <Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="نسخ ARN الخاص بمستخدم IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-8.webp" alt="نسخ ARN لمستخدم IAM" />
+    </Frame>
+  </div>
 
   ### إنشاء حاوية S3
 
-  1. في قسم S3 bucket، اختر `Create bucket`
+  1. ضمن قسم حاوية S3، اختر `Create bucket`
 
-  <Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="بدء عملية إنشاء حاوية S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-9.webp" alt="بدء إنشاء حاوية S3" />
+    </Frame>
+  </div>
 
-  2. أدخل اسم الـ bucket، واترك الخيارات الأخرى بالإعدادات الافتراضية
+  2. أدخل اسم الـ bucket واترك الخيارات الأخرى على الإعدادات الافتراضية
 
   <Note>
-    يجب أن يكون اسم الحاوية فريدًا على مستوى AWS، وليس فقط داخل المؤسسة، وإلا فسيظهر خطأ.
+    يجب أن يكون اسم الـ bucket فريدًا على مستوى AWS بأكملها، وليس داخل المؤسسة فقط، وإلا فستظهر رسالة خطأ.
   </Note>
 
-  3. اترك `Block all Public Access` مفعّلًا؛ إذ لا حاجة إلى الوصول العام.
+  3. اترك `Block all Public Access` مفعّلًا؛ فلا حاجة إلى إتاحة الوصول العام.
 
-  <Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="تهيئة إعدادات حاوية S3 مع حظر الوصول العام" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-a.webp" alt="ضبط إعدادات حاوية S3 مع حظر الوصول العام" />
+    </Frame>
+  </div>
 
-  4. اختر `Create Bucket` أسفل الصفحة
+  4. اختر `Create Bucket` في أسفل الصفحة
 
-  <Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="إكمال إنشاء حاوية S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-b.webp" alt="إتمام إنشاء حاوية S3" />
+    </Frame>
+  </div>
 
-  5. حدِّد الرابط، وانسخ ARN، واحفظه لاستخدامه عند تكوين سياسة الوصول إلى حاوية S3.
+  5. حدِّد الرابط، وانسخ قيمة ARN، واحفظها لاستخدامها عند تكوين سياسة الوصول إلى الـ S3 bucket.
 
-  6. بمجرد إنشاء الحاوية، اعثر على حاوية S3 الجديدة في قائمة حاويات S3 وحدِّد الرابط.
+  6. بعد إنشاء الـ S3 bucket، اعثر على الـ S3 bucket الجديد في قائمة الـ S3 bucket وحدِّد الرابط
 
-  <Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="العثور على حاوية S3 التي أُنشئت حديثًا في قائمة الحاويات" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-c.webp" alt="العثور على حاوية S3 التي أُنشئت حديثًا في قائمة الحاويات" />
+    </Frame>
+  </div>
 
-  7. اختر `Create folder`
+  7. اختر `إنشاء مجلد`
 
-  <Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="إنشاء مجلد جديد في حاوية S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-d.webp" alt="إنشاء مجلد جديد في حاوية S3" />
+    </Frame>
+  </div>
 
-  8. أدخل اسم المجلد الذي سيكون الوجهة المستهدفة لقرص S3 الخاص بـ ClickHouse، ثم اختر `Create folder`
+  8. أدخل اسم المجلد الذي سيكون الوجهة لقرص S3 في ClickHouse، ثم اختر `Create folder`
 
-  <Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="تعيين اسم المجلد لاستخدامه بواسطة قرص S3 في ClickHouse" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-e.webp" alt="تعيين اسم المجلد لاستخدام قرص S3 في ClickHouse" />
+    </Frame>
+  </div>
 
-  9. ينبغي أن يكون المجلد ظاهرًا الآن في قائمة الـ bucket
+  9. يجب أن يظهر المجلد الآن في قائمة الحاويات
 
-  <Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="عرض المجلد المُنشأ حديثًا في حاوية S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-f.webp" alt="عرض المجلد الذي تم إنشاؤه حديثًا في حاوية S3" />
+    </Frame>
+  </div>
 
   10. حدِّد مربع الاختيار الخاص بالمجلد الجديد، ثم انقر على `Copy URL` واحفظ عنوان URL المنسوخ لاستخدامه في إعدادات تخزين ClickHouse في القسم التالي.
 
-  <Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="نسخ عنوان URL لمجلد S3 لتكوين ClickHouse" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-g.webp" alt="نسخ عنوان URL لمجلد S3 لإعداد ClickHouse" />
+    </Frame>
+  </div>
 
   11. اختر علامة التبويب `Permissions`، ثم انقر على الزر `Edit` في قسم `Bucket Policy`
 
-  <Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="الوصول إلى إعدادات سياسة حاوية S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-h.webp" alt="الوصول إلى إعدادات سياسة حاوية S3" />
+    </Frame>
+  </div>
 
-  12. أضف سياسة للحاوية، كما في المثال أدناه:
+  12. أضِف سياسة للحاوية، كما في المثال أدناه:
 
   ```json
   {
@@ -133,10 +201,10 @@ title: مصادقة S3 والدلو
   ```
 
   <Note>
-    يجب أن تعملوا مع فريق الأمن لديكم لتحديد الأذونات التي ينبغي استخدامها، واعتبروا ما يلي نقطة انطلاق.
-    لمزيد من المعلومات حول السياسات والإعدادات، راجعوا وثائق AWS:
+    يجب أن تعمل مع فريق الأمن لديك لتحديد الأذونات التي ينبغي استخدامها؛ واعتبر ما يلي نقطة انطلاق.
+    لمزيد من المعلومات حول السياسات والإعدادات، راجع وثائق AWS:
     https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
   </Note>
 
-  13. احفظ إعدادات السياسة.
+  13. احفظ تكوين السياسة.
 </Accordion>

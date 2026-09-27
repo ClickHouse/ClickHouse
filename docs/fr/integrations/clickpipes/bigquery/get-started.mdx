@@ -21,9 +21,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 * Le processus de chargement initial nécessite un bucket Google Cloud Storage (GCS) fourni par l&#39;utilisateur pour le staging. Nous vous recommandons de créer un bucket dédié pour votre ClickPipe, conformément à la [documentation officielle](https://docs.cloud.google.com/storage/docs/creating-buckets). À l&#39;avenir, le bucket intermédiaire sera fourni et géré par ClickPipes.
 
 <Steps>
-  <Step>
-    ## Sélectionnez la source de données
-
+  <Step title="Sélectionnez la source de données" id="1-select-the-data-source">
     **1.** Dans ClickHouse Cloud, sélectionnez **Sources de données** dans le menu de navigation principal, puis cliquez sur **Create ClickPipe**.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Sélectionner les importations" size="lg" border />
@@ -33,9 +31,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Sélectionner la tuile BigQuery" size="lg" border />
   </Step>
 
-  <Step>
-    ## Configurez votre connexion ClickPipe
-
+  <Step title="Configurez votre connexion ClickPipe" id="2-setup-your-clickpipe-connection">
     Pour configurer un nouveau ClickPipe, vous devez fournir les informations nécessaires pour vous connecter à votre entrepôt de données BigQuery et vous y authentifier, ainsi qu’un bucket GCS de staging.
 
     **1.** Téléversez la clé `.json` du compte de service que vous avez créé pour ClickPipes. Assurez-vous que le compte de service dispose du minimum d’[autorisations](/fr/integrations/clickpipes/bigquery/overview#permissions) requis.
@@ -49,15 +45,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     **4.** Cliquez sur **Next** pour valider.
   </Step>
 
-  <Step>
-    ## Configurez votre ClickPipe
-
+  <Step title="Configurez votre ClickPipe" id="3-configure-your-clickpipe">
     Selon la taille de votre jeu de données BigQuery ou la taille totale des tables que vous souhaitez synchroniser, vous devrez peut-être ajuster les paramètres d’ingestion par défaut du ClickPipe.
   </Step>
 
-  <Step>
-    ## Configurez les tables
-
+  <Step title="Configurez les tables" id="4-configure-tables">
     **1.** Sélectionnez la base de données ClickHouse dans laquelle vous souhaitez répliquer les tables BigQuery. Vous pouvez sélectionner une base de données existante ou en créer une nouvelle.
 
     **2.** Sélectionnez les tables et, éventuellement, les colonnes que vous souhaitez répliquer. Seuls les jeux de données auxquels le compte de service fourni a accès seront répertoriés.
@@ -73,9 +65,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permissions" size="lg" border />
   </Step>
 
-  <Step>
-    ## Configurez les autorisations
-
+  <Step title="Configurez les autorisations" id="6-configure-permissions">
     Enfin, vous pouvez configurer les autorisations de l’utilisateur interne ClickPipes.
 
     **Autorisations :** ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne en utilisant un rôle personnalisé ou l’un des rôles prédéfinis :
@@ -84,9 +74,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     * `Only destination` : autorisations d’insertion sur la table de destination uniquement.
   </Step>
 
-  <Step>
-    ## Terminez la configuration
-
+  <Step title="Terminez la configuration" id="7-complete-setup">
     Cliquez sur **Create ClickPipe** pour terminer la configuration. Vous serez redirigé vers la page d’aperçu, où vous pourrez suivre la progression du chargement initial et cliquer pour afficher les détails de vos ClickPipes BigQuery.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permissions" size="lg" border />

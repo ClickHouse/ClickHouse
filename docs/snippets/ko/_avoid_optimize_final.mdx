@@ -8,7 +8,11 @@ title: Optimize Final 피하기
 
 시간이 지나면 백그라운드 프로세스가 더 작은 파트를 더 큰 파트로 머지하여 단편화를 줄이고 쿼리 성능을 향상시킵니다.
 
-<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="단순 머지" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/bestpractices/simple_merges.webp" alt="단순 머지" />
+  </Frame>
+</div>
 
 다음을 사용해 이 머지를 수동으로 트리거하고 싶을 수 있지만:
 
@@ -48,7 +52,7 @@ OPTIMIZE TABLE <table> FINAL;
   ### 안전 제한을 무시합니다
 </div>
 
-일반적으로 ClickHouse는 ~150 GB보다 큰 파트를 머지하지 않도록 합니다([max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ko/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)로 설정 가능). 하지만 `OPTIMIZE FINAL`은 **이 안전장치를 무시**하므로 다음과 같은 문제가 발생할 수 있습니다.
+일반적으로 ClickHouse는 ~150 GB보다 큰 파트를 머지하지 않도록 합니다([max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ko/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)로 설정 가능). 하지만 `OPTIMIZE FINAL`은 **이 안전장치를 무시**하므로 다음과 같은 문제가 발생할 수 있습니다.
 
 * **여러 개의 150 GB 파트**를 하나의 매우 큰 파트로 머지하려고 시도할 수 있습니다
 * 이로 인해 **머지 시간이 길어지거나**, **메모리 압박**, 심지어 **메모리 부족 오류**까지 발생할 수 있습니다

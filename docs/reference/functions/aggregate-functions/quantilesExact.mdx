@@ -10,13 +10,12 @@ doc_type: 'reference'
 
 Introduced in: v1.1.0
 
-
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
 
 This function is equivalent to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 To get exact values, all the passed values are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed.
-
+    
 
 **Syntax**
 
@@ -28,11 +27,9 @@ quantilesExact(level1, level2, ...)(expr)
 
 - `level` — Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`. [`Float*`](/reference/data-types/float)
 
-
 **Arguments**
 
 - `expr` — Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`. [`(U)Int*`](/reference/data-types/int-uint) or [`Int128`](/reference/data-types/int-uint) or [`UInt128`](/reference/data-types/int-uint) or [`Int256`](/reference/data-types/int-uint) or [`UInt256`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
-
 
 **Returned value**
 

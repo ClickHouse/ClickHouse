@@ -7,7 +7,7 @@ title: Spark 커넥터
 doc_type: '가이드'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -104,17 +104,7 @@ ClickHouse를 Spark와 통합하는 방법은 프로젝트 구성에 따라 여�
     </dependency>
     ```
 
-    SNAPSHOT 버전을 사용하려면 다음 리포지토리를 추가하십시오.
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    SNAPSHOT 버전을 사용하려면 Maven에서 Sonatype의 [SNAPSHOT 릴리스 사용 지침](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project)을 따르십시오.
   </Tab>
 
   <Tab title="Gradle">
@@ -125,13 +115,7 @@ ClickHouse를 Spark와 통합하는 방법은 프로젝트 구성에 따라 여�
     }
     ```
 
-    SNAPSHOT 버전을 사용하려면 다음 리포지토리를 추가하십시오:
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    SNAPSHOT 버전을 사용하려면 Gradle에서 Sonatype의 [SNAPSHOT 릴리스 사용 지침](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project)을 따르십시오.
   </Tab>
 
   <Tab title="SBT">
@@ -172,8 +156,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 사용 가능한 모든 릴리스 JAR 파일은
-[Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)에서 확인할 수 있으며,
-일별 빌드 SNAPSHOT JAR 파일은 모두 [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/)에서 확인할 수 있습니다.
+[Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)에서 확인할 수 있습니다.
+일별 빌드 SNAPSHOT JAR 파일은 위에서 구성한 Sonatype snapshots 리포지토리를 통해 사용할 수 있습니다.
 
 <Warning>
   커넥터가 [clickhouse-http](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client)와

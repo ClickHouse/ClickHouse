@@ -56,6 +56,19 @@ O painel oferece:
 * Explorador de armazenamento
 * Interface para execução de comandos
 
+<div id="dashboard-cluster-tab">
+  #### Aba Cluster
+</div>
+
+A aba **Cluster** exibe os membros do Raft em um grafo de topologia e uma tabela. Cada membro é mostrado com uma cor que indica seu estado de integridade:
+
+* **Verde** — ativo e sincronizado com o líder
+* **Amarelo** — ativo, mas com defasagem de mais de `stale_log_gap` entradas de log em relação ao líder
+* **Vermelho** — inacessível (nenhuma resposta Raft bem-sucedida dentro da janela de expiração do heartbeat)
+* **Cinza** — desconhecido (o estado de integridade dos pares só é visível a partir do líder; os seguidores veem seus pares como desconhecidos)
+
+A tabela também mostra a função de cada membro (líder, seguidor ou observador), a prioridade do Raft, o último índice de log, a defasagem de replicação em relação ao líder e o tempo desde a última resposta Raft bem-sucedida. Quando o nó atual não é o líder, a aba oferece um link direto para abrir o painel do líder, onde é possível visualizar o estado de integridade completo dos pares. A aba pode ser aberta diretamente em `/dashboard?tab=cluster`.
+
 <div id="readiness-probe">
   ### Sonda de prontidão
 </div>

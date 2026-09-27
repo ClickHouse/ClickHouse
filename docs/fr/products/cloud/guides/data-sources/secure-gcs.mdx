@@ -42,9 +42,7 @@ Pour suivre ce guide, vous aurez besoin de :
 </div>
 
 <Steps>
-  <Step>
-    ### Créer un compte de service Google Cloud
-
+  <Step title="Créer un compte de service Google Cloud" id="create-gcs-account">
     1. Dans Google Cloud Console, accédez à IAM &amp; Admin → Service Accounts
 
     <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
@@ -77,14 +75,12 @@ Pour suivre ce guide, vous aurez besoin de :
 
     Cliquez sur `Continue`, puis sur `Done`
 
-    Notez l&#39;adresse e-mail du compte de service :
+    Notez l’adresse e-mail du compte de service :
 
     <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
   </Step>
 
-  <Step>
-    ### Accorder au compte de service l’accès au bucket
-
+  <Step title="Accorder au compte de service l’accès au bucket" id="grant-bucket-access-to-service-account">
     Vous pouvez accorder l’accès soit au niveau du projet, soit au niveau de chaque bucket.
 
     #### Option 1 : accorder l’accès à des buckets spécifiques (recommandé)
@@ -117,9 +113,7 @@ Pour suivre ce guide, vous aurez besoin de :
     </Warning>
   </Step>
 
-  <Step>
-    ### Générer des clés HMAC pour le compte de service
-
+  <Step title="Générer des clés HMAC pour le compte de service" id="generate-hmac-keys-for-service-account">
     Accédez à `Cloud Storage` → `Settings` → `Interoperability` :
 
     <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />

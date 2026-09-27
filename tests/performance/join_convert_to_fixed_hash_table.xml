@@ -12,7 +12,7 @@
     <fill_query>INSERT INTO build_5k SELECT number FROM numbers(5000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO build_10k SELECT number FROM numbers(10000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO build_50k SELECT number FROM numbers(50000) ORDER BY rand()</fill_query>
-    <fill_query>INSERT INTO probe SELECT randUniform(4500, 9500), randUniform(9000, 19000), randUniform(45000, 95000), randUniform(500, 5500), randUniform(1000, 11000), randUniform(5000, 55000) FROM numbers(200000000)</fill_query>
+    <fill_query>INSERT INTO probe SELECT randUniform(4500, 9500), randUniform(9000, 19000), randUniform(45000, 95000), randUniform(500, 5500), randUniform(1000, 11000), randUniform(5000, 55000) FROM numbers(50000000)</fill_query>
 
     <!-- LEFT JOIN with low selectivity -->
     <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>

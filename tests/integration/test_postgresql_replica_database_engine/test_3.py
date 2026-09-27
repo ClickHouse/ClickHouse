@@ -262,6 +262,336 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
         order_by="id",
     )
 
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = 1")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "1\t30000\tupdated\n"
+    )
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET other = 'first update' WHERE id = 1")
+    cursor.execute(f"UPDATE {table} SET other = 'second update' WHERE id = 1")
+    conn.commit()
+    conn.close()
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "1\t30000\tsecond update\n"
+    )
+
+    # When the replica identity changes, PostgreSQL sends its old value in a
+    # separate key tuple. The unchanged TOAST value must be looked up with that
+    # old key and then written with the new key.
+    pg_manager.execute(f"UPDATE {table} SET id = 2, other = 'new key' WHERE id = 1")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "2\t30000\tnew key\n"
+    )
+
+
+def test_toast_in_replica_identity(started_cluster):
+    table = "test_toast_in_replica_identity"
+    other_table = "test_toast_in_replica_identity_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (bad_value text NOT NULL, id text PRIMARY KEY, other text)""",
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, other text)""",
+    )
+    # `EXTERNAL` disables compression, so the key is stored out of line and an
+    # update that leaves it alone sends it as an unchanged TOAST value. The value
+    # is still short enough to fit into the primary key index.
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN id SET STORAGE EXTERNAL")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (bad_value Decimal(10, 2), id String, other String))",
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} (bad_value, id, other) VALUES ('10.5', repeat('k', 2500), 'initial')"
+    )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # PostgreSQL sends the replica identity itself as a value, even with
+    # `STORAGE EXTERNAL`. The malformed decimal is a defaultable conversion
+    # error before the unchanged TOAST value in the new tuple; the update and a
+    # subsequent update to another replicated table must both keep advancing.
+    pg_manager.execute(f"UPDATE {table} SET bad_value = '1abc', other = 'updated'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT length(id), bad_value, other FROM test_database.{table}")
+        == "2500\t0\tupdated\n"
+    )
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}")
+        == "updated\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_toast_restore_with_defaulted_replica_identity_skips_table(started_cluster):
+    table = "test_toast_defaulted_replica_identity"
+    other_table = "test_toast_defaulted_replica_identity_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id text PRIMARY KEY, toast_value text, other text)''',
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        '''CREATE TABLE "{}" (id integer PRIMARY KEY, other text)''',
+    )
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN toast_value SET STORAGE EXTERNAL")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (id UInt8, toast_value String, other String))",
+    )
+
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('0', repeat('a', 30000), 'zero')")
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # A live row whose replica identity cannot be converted must not be committed
+    # under the default key `0`. Otherwise a later update of the real `0` row
+    # could restore this row's unchanged TOAST value from the poisoned entry.
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('not-a-number', repeat('b', 30000), 'invalid')")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(f"SELECT other FROM test_database.{other_table}") == "updated\n"
+    assert (
+        instance.query(f"SELECT id, toast_value, other FROM test_database.{table}")
+        == "0\t" + "a" * 30000 + "\tzero\n"
+    )
+
+    pg_manager.execute(f"UPDATE {table} SET other = 'must not replicate' WHERE id = '0'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'still updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(f"SELECT other FROM test_database.{other_table}") == "still updated\n"
+    assert (
+        instance.query(f"SELECT id, toast_value, other FROM test_database.{table}")
+        == "0\t" + "a" * 30000 + "\tzero\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_toast_restore_with_missing_source_row_skips_table(started_cluster):
+    table = "test_toast_missing_source_row"
+    other_table = "test_toast_missing_source_row_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id text PRIMARY KEY, toast_value text, other text)""",
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, other text)""",
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {table} ALTER COLUMN toast_value SET STORAGE EXTERNAL"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (id UInt8, toast_value String, other String))",
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} VALUES ('1', repeat('a', 30000), 'initial')"
+    )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    assert_eq_with_retry(
+        instance, f"SELECT other FROM test_database.{table}", "initial\n"
+    )
+
+    # The replica identity is a PostgreSQL `text` column mapped to `UInt8`, so the
+    # two distinct PostgreSQL keys '1' and '01' become the same key in the nested
+    # table. Deleting '01' therefore deletes the nested row that backs the row
+    # still present in PostgreSQL under the key '1', which is the out-of-sync
+    # shape this branch has to survive.
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('01', 'shadow value', 'shadow')")
+    assert_eq_with_retry(
+        instance, f"SELECT other FROM test_database.{table}", "shadow\n"
+    )
+    pg_manager.execute(f"DELETE FROM {table} WHERE id = '01'")
+    assert_eq_with_retry(instance, f"SELECT count() FROM test_database.{table}", "0\n")
+
+    # The row is gone from the nested table, so the unchanged `TOAST` value of
+    # this update cannot be restored from anywhere. Only this table may be
+    # skipped, the other replicated table has to keep advancing.
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = '1'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}") == "updated\n"
+    )
+    assert_logs_contain_with_retry(
+        instance,
+        f"Table {table} is skipped from replication because an unchanged TOAST value cannot be restored",
+    )
+    assert instance.query(f"SELECT count() FROM test_database.{table}") == "0\n"
+
+    pg_manager.drop_materialized_db()
+
+
+def test_toast_in_changed_composite_replica_identity(started_cluster):
+    table = "test_toast_in_changed_composite_replica_identity"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id integer, toast_key text, other text, PRIMARY KEY (id, toast_key))''',
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {table} ALTER COLUMN toast_key SET STORAGE EXTERNAL"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} (id, toast_key, other) "
+        "VALUES (1, repeat('k', 2500), 'initial')"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # Changing one primary-key component sends the old `K` tuple. Its toasted
+    # component is available there, even though the new tuple marks it `u`.
+    pg_manager.execute(
+        f"UPDATE {table} SET id = 2, other = 'updated' WHERE id = 1"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(
+            f"SELECT id, length(toast_key), other FROM test_database.{table}"
+        )
+        == "2\t2500\tupdated\n"
+    )
+
+    # Both updates are buffered before the transaction is flushed. The second
+    # update must find the first row using its restored TOAST key, rather than
+    # the temporary default value used while parsing the new tuple.
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET id = 3, other = 'first update' WHERE id = 2")
+    cursor.execute(f"UPDATE {table} SET id = 4, other = 'second update' WHERE id = 3")
+    conn.commit()
+    conn.close()
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(
+            f"SELECT id, length(toast_key), other FROM test_database.{table}"
+        )
+        == "4\t2500\tsecond update\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
 
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
@@ -364,7 +694,7 @@ def test_failed_load_from_snapshot(started_cluster):
     # Create a table with wrong table structure
     assert "Could not convert string to i" in instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY a
         """
     )
@@ -549,7 +879,7 @@ def test_dependent_loading(started_cluster):
 
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -871,7 +1201,7 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -950,7 +1280,7 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     instance.query("DROP TABLE IF EXISTS ct_cs2 SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE ct_cs1 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -959,7 +1289,7 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE ct_cs2 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1133,7 +1463,7 @@ def test_default_schema_preserves_legacy_identity(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1254,7 +1584,7 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
     table = "test_date_types_table_engine"
     error = instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, d Date)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1458,7 +1788,7 @@ def test_backup_table_engine(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -1481,7 +1811,7 @@ def test_backup_table_engine(started_cluster):
     instance.query(f"DROP TABLE {table} SYNC")
     error = instance.query_and_get_error(
         f"RESTORE TABLE {table} FROM {backup_name}",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "from a backup is not supported" in error, error
     assert "MaterializedPostgreSQL" in error, error
@@ -1617,7 +1947,7 @@ def test_backup_table_engine_partitions(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -1982,6 +2312,82 @@ def test_numeric_int256_validation(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS test_overflow")
 
 
+def test_detach_table_with_pending_buffer(started_cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/68032 (the server crash):
+    # when a replicated table is left queued in the consumer's `tables_to_sync` and its storage is
+    # then removed (by `DETACH TABLE ... PERMANENTLY`), the next `syncTables()` used to look the
+    # now-missing storage up in `storages` and dereference the `end()` iterator, crashing the server
+    # with SIGSEGV. It must instead drop the stale queue entry and keep replicating the other tables.
+    #
+    # To leave a table queued deterministically, a materialized view on the nested table is made to
+    # throw on every insert: `syncTables()` then fails to flush the buffered row, so the table stays
+    # in `tables_to_sync` and the consumer retries. `DETACH` removes its storage while that stale
+    # entry remains - the exact precondition for the crash.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
+    cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
+    cursor.execute("CREATE TABLE test_detach_stuck (key integer PRIMARY KEY, value integer)")
+    cursor.execute("CREATE TABLE test_detach_healthy (key integer PRIMARY KEY, value integer)")
+    cursor.execute("INSERT INTO test_detach_stuck VALUES (1, 1)")
+    cursor.execute("INSERT INTO test_detach_healthy VALUES (1, 1)")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_detach_stuck,test_detach_healthy'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    # The initial snapshot must synchronize for both tables.
+    check_tables_are_synchronized(
+        instance, "test_detach_stuck", postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance, "test_detach_healthy", postgres_database=pg_manager.get_default_database()
+    )
+
+    # A materialized view that always throws on insert. It is created without POPULATE, so it only
+    # affects rows replicated from now on (not the already-synchronized snapshot row).
+    instance.query("DROP VIEW IF EXISTS poison_mv")
+    instance.query(
+        "CREATE MATERIALIZED VIEW poison_mv ENGINE = MergeTree ORDER BY tuple() AS "
+        "SELECT throwIf(value >= 0, 'poison') AS x FROM test_database.test_detach_stuck"
+    )
+
+    # This row cannot be flushed: the MV throws inside syncTables(), so test_detach_stuck stays queued
+    # in tables_to_sync and the consumer keeps retrying it. Wait for the actual push failure (a real
+    # progress signal that the sync was attempted and failed) - not the substring "poison" alone, which
+    # would also match the logged text of the CREATE MATERIALIZED VIEW query above and fire prematurely.
+    cursor.execute("INSERT INTO test_detach_stuck VALUES (2, 2)")
+    instance.wait_for_log_line("while pushing to view default.poison_mv", timeout=60)
+
+    # Before the fix this crashed the server (SIGSEGV in MaterializedPostgreSQLConsumer::syncTables()),
+    # because DETACH removed the storage while the table was still queued in tables_to_sync.
+    instance.query("DETACH TABLE test_database.test_detach_stuck PERMANENTLY")
+
+    # Removing the table from replication unblocks the consumer, so ongoing replication of the other
+    # table must resume: a row inserted after the DETACH has to be replicated.
+    cursor.execute("INSERT INTO test_detach_healthy VALUES (2, 2)")
+    check_tables_are_synchronized(
+        instance, "test_detach_healthy", postgres_database=pg_manager.get_default_database()
+    )
+    assert 2 == int(
+        instance.query("SELECT count() FROM test_database.test_detach_healthy")
+    )
+    # The server must still be alive and must not have crashed. `check_tables_are_synchronized` above
+    # already gave the consumer time to run `syncTables()` after the DETACH (where the crash happened);
+    # a `SIGSEGV` there would make the query below fail, since nothing in the test container respawns
+    # a crashed `clickhouse-server`.
+    assert "1" == instance.query("SELECT 1").strip()
+
+    instance.query("DROP VIEW IF EXISTS poison_mv")
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
+    cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
+
+
 def test_aggregating_materialized_view(started_cluster):
     # Regression test for https://github.com/ClickHouse/ClickHouse/issues/39805:
     # creating an aggregating materialized view on top of a MaterializedPostgreSQL table
@@ -2100,7 +2506,7 @@ def test_uppercase_table_name_single_storage(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS `{table}` SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE `{table}` (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -2155,7 +2561,7 @@ def test_publication_name_case_collision_single_storage(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
         instance.query(
             f"""
-            SET allow_experimental_materialized_postgresql_table=1;
+            SET enable_materialized_postgresql_table=1;
             CREATE TABLE `{name}` (key Int32, value Int32)
             ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{name}', 'postgres', '{pg_pass}')
             ORDER BY key
@@ -2226,7 +2632,7 @@ def test_schema_aware_identity_publication_separator_collision(started_cluster):
     instance.query("DROP TABLE IF EXISTS sep_c2 SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE sep_c1 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'c', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2235,7 +2641,7 @@ def test_schema_aware_identity_publication_separator_collision(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE sep_c2 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'b_c', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2305,7 +2711,7 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     instance.query("DROP TABLE IF EXISTS hyp_underscore SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE hyp_dash (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2314,7 +2720,7 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE hyp_underscore (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2365,7 +2771,7 @@ def test_schema_aware_identity_long_database_name(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', '{long_pg_db}', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2431,7 +2837,7 @@ def test_legacy_identity_adopted_on_attach_table_engine(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2871,7 +3277,7 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
