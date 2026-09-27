@@ -19,6 +19,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/applyColumnsTransformer.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -37,8 +38,11 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -56,8 +60,13 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <functional>
 #include <ranges>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include <re2/re2.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -124,27 +133,265 @@ bool shouldValidateProjectionCodecs(const ContextPtr & context)
     return true;
 }
 
-bool projectionQueryReferencesColumn(const IAST & ast, const String & column_name)
+using ProjectionAliases = std::unordered_multimap<String, const IAST *>;
+
+/// An unavailable projection cannot be analyzed here, but its stored aliases can still be followed.
+ProjectionAliases getProjectionAliases(const ASTProjectionDeclaration & declaration)
+{
+    ProjectionAliases aliases;
+    const auto * query = declaration.query ? declaration.query->as<ASTProjectionSelectQuery>() : nullptr;
+    if (!query)
+        return aliases;
+
+    std::function<void(const IAST &)> collect = [&](const IAST & expression)
+    {
+        if (const auto alias = expression.tryGetAlias(); !alias.empty())
+            aliases.emplace(alias, &expression);
+        for (const auto & child : expression.children)
+            collect(*child);
+    };
+    collect(*query);
+    return aliases;
+}
+
+bool projectionQueryReferencesColumn(
+    const IAST & ast,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const ProjectionAliases & aliases,
+    bool expand_table_aliases,
+    std::unordered_set<String> & expanded_aliases,
+    const std::unordered_set<String> & lambda_arguments)
 {
     /// Removing a column from `SELECT *` removes that output too; it does not leave a broken
     /// identifier in the stored query. Explicitly declared outputs are checked separately.
-    if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>())
-        return false;
+    if (const auto * asterisk = ast.as<ASTAsterisk>())
+        return asterisk->transformers
+            && projectionQueryReferencesColumn(
+                *asterisk->transformers, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments);
+    if (const auto * asterisk = ast.as<ASTQualifiedAsterisk>())
+        return asterisk->transformers
+            && projectionQueryReferencesColumn(
+                *asterisk->transformers, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments);
+    if (const auto * except = ast.as<ASTColumnsExceptTransformer>())
+    {
+        /// A non-strict `EXCEPT` name can disappear; a strict one must still resolve.
+        if (!except->is_strict)
+            return false;
+    }
+    if (const auto * replace = ast.as<ASTColumnsReplaceTransformer>(); replace && replace->is_strict)
+    {
+        for (const auto & replacement : replace->children)
+            if (const auto * item = replacement->as<ASTColumnsReplaceTransformer::Replacement>();
+                item && item->name == column_name)
+                return true;
+    }
+    if (const auto * apply = ast.as<ASTColumnsApplyTransformer>())
+    {
+        return (apply->parameters
+                && projectionQueryReferencesColumn(
+                    *apply->parameters, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments))
+            || (apply->lambda
+                && projectionQueryReferencesColumn(
+                    *apply->lambda, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments));
+    }
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda"
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        auto local_arguments = lambda_arguments;
+        if (const auto * tuple = function->arguments->children.front()->as<ASTFunction>(); tuple && tuple->arguments)
+        {
+            for (const auto & argument : tuple->arguments->children)
+                if (const auto * identifier = argument->as<ASTIdentifier>())
+                    local_arguments.insert(identifier->name());
+        }
+        return projectionQueryReferencesColumn(
+            *function->arguments->children.back(), column_name, columns, aliases,
+            expand_table_aliases, expanded_aliases, local_arguments);
+    }
 
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
+        for (const auto & argument : lambda_arguments)
+            if (identifier->name() == argument || identifier->name().starts_with(argument + "."))
+                return false;
         if (identifier->name() == column_name || identifier->name().starts_with(column_name + "."))
             return true;
     }
 
+    String alias_name;
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+        alias_name = identifier->name();
+
+    if (!alias_name.empty() && expanded_aliases.insert(alias_name).second)
+    {
+        auto [begin, end] = aliases.equal_range(alias_name);
+        for (auto it = begin; it != end; ++it)
+            if (projectionQueryReferencesColumn(*it->second, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments))
+                return true;
+
+        if (expand_table_aliases && ast.as<ASTIdentifier>())
+        {
+            if (const auto * alias_column = columns.tryGet(alias_name);
+                alias_column && alias_column->default_desc.kind == ColumnDefaultKind::Alias
+                    && alias_column->default_desc.expression
+                    && projectionQueryReferencesColumn(
+                        *alias_column->default_desc.expression, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments))
+                return true;
+        }
+
+        expanded_aliases.erase(alias_name);
+    }
+
     for (const auto & child : ast.children)
-        if (projectionQueryReferencesColumn(*child, column_name))
+        if (projectionQueryReferencesColumn(*child, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments))
             return true;
 
     return false;
 }
 
-bool explicitProjectionColumnTypeDependsOn(const ASTProjectionDeclaration & declaration, const String & source_column)
+bool projectionQueryReferencesColumn(
+    const IAST & ast,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const ProjectionAliases & aliases,
+    bool expand_table_aliases);
+
+/// Expand the same matcher transformers used by query analysis to identify a typed output's source.
+bool projectionMatcherTypedOutputDependsOn(
+    const IAST & expression, const String & declared_column, const String & source_column,
+    const ColumnsDescription & columns, const ProjectionAliases & aliases)
+{
+    ASTs outputs;
+    const IAST * transformers = nullptr;
+    if (const auto * asterisk = expression.as<ASTAsterisk>())
+        transformers = asterisk->transformers.get();
+    else if (const auto * qualified_asterisk = expression.as<ASTQualifiedAsterisk>())
+        transformers = qualified_asterisk->transformers.get();
+    else if (const auto * regexp = expression.as<ASTColumnsRegexpMatcher>())
+        transformers = regexp->transformers.get();
+    else if (const auto * qualified_regexp = expression.as<ASTQualifiedColumnsRegexpMatcher>())
+        transformers = qualified_regexp->transformers.get();
+    else if (const auto * list = expression.as<ASTColumnsListMatcher>())
+        transformers = list->transformers.get();
+    else if (const auto * qualified_list = expression.as<ASTQualifiedColumnsListMatcher>())
+        transformers = qualified_list->transformers.get();
+    else
+        return false;
+
+    const String * pattern = nullptr;
+    if (const auto * regexp = expression.as<ASTColumnsRegexpMatcher>())
+        pattern = &regexp->getPattern();
+    else if (const auto * qualified_regexp = expression.as<ASTQualifiedColumnsRegexpMatcher>())
+        pattern = &qualified_regexp->getPattern();
+
+    const IAST * column_list = nullptr;
+    if (const auto * list = expression.as<ASTColumnsListMatcher>())
+        column_list = list->column_list.get();
+    else if (const auto * qualified_list = expression.as<ASTQualifiedColumnsListMatcher>())
+        column_list = qualified_list->column_list.get();
+
+    if (column_list)
+    {
+        for (const auto & child : column_list->children)
+            outputs.push_back(child->clone());
+    }
+    else
+    {
+        for (const auto & column : columns.getAll())
+            if (!pattern || re2::RE2::PartialMatch(column.name, *pattern))
+                outputs.push_back(make_intrusive<ASTIdentifier>(column.name));
+    }
+
+    if (transformers)
+        for (const auto & child : transformers->children)
+            applyColumnsTransformer(child, outputs);
+
+    for (const auto & output : outputs)
+        if (output->getAliasOrColumnName() == declared_column
+            && projectionQueryReferencesColumn(
+                *output, source_column, columns, aliases, /*expand_table_aliases=*/true))
+                return true;
+    return false;
+}
+
+bool projectionTupleElementReferencesSubcolumn(
+    const IAST & ast, const String & source_column, const String & subcolumn_name,
+    const ColumnsDescription & columns, const ColumnsDescription & new_columns,
+    const ProjectionAliases & aliases)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "tupleElement"
+        && function->arguments && function->arguments->children.size() >= 2)
+    {
+        const auto & arguments = function->arguments->children;
+        String field_name;
+        if (const auto * field = arguments[1]->as<ASTLiteral>();
+            field && projectionQueryReferencesColumn(
+                *arguments[0], source_column, columns, aliases, /*expand_table_aliases=*/true))
+        {
+            if (field->value.tryGet<String>(field_name)
+                && subcolumn_name == source_column + "." + field_name)
+                return true;
+
+            UInt64 index = 0;
+            if (field->value.tryGet<UInt64>(index))
+            {
+                const auto * new_tuple = typeid_cast<const DataTypeTuple *>(new_columns.get(source_column).type.get());
+                if (!new_tuple || index > new_tuple->getElements().size())
+                    return true;
+            }
+        }
+    }
+
+    for (const auto & child : ast.children)
+        if (projectionTupleElementReferencesSubcolumn(*child, source_column, subcolumn_name, columns, new_columns, aliases))
+            return true;
+    return false;
+}
+
+/// A dynamic regexp selection may lose columns, but it cannot become empty on recovery.
+bool projectionMatcherBecomesEmpty(
+    const IAST & ast, const String & removed_column, const ColumnsDescription & new_columns)
+{
+    const String * pattern = nullptr;
+    if (const auto * matcher = ast.as<ASTColumnsRegexpMatcher>())
+        pattern = &matcher->getPattern();
+    else if (const auto * qualified_matcher = ast.as<ASTQualifiedColumnsRegexpMatcher>())
+        pattern = &qualified_matcher->getPattern();
+
+    if (pattern && re2::RE2::PartialMatch(removed_column, *pattern))
+    {
+        const auto remaining_columns = new_columns.getAll();
+        if (std::ranges::none_of(remaining_columns, [&](const auto & column)
+            { return re2::RE2::PartialMatch(column.name, *pattern); }))
+            return true;
+    }
+
+    for (const auto & child : ast.children)
+        if (projectionMatcherBecomesEmpty(*child, removed_column, new_columns))
+            return true;
+    return false;
+}
+
+bool projectionQueryReferencesColumn(
+    const IAST & ast,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const ProjectionAliases & aliases,
+    bool expand_table_aliases)
+{
+    std::unordered_set<String> expanded_aliases;
+    std::unordered_set<String> lambda_arguments;
+    return projectionQueryReferencesColumn(
+        ast, column_name, columns, aliases, expand_table_aliases, expanded_aliases, lambda_arguments);
+}
+
+bool explicitProjectionColumnTypeDependsOn(
+    const ASTProjectionDeclaration & declaration,
+    const String & source_column,
+    const ColumnsDescription & columns,
+    const ProjectionAliases & aliases)
 {
     if (!declaration.columns)
         return false;
@@ -162,11 +409,18 @@ bool explicitProjectionColumnTypeDependsOn(const ASTProjectionDeclaration & decl
 
         for (const auto & expression : select_expressions)
         {
-            if ((expression->as<ASTAsterisk>() || expression->as<ASTQualifiedAsterisk>())
-                && declared_column.name == source_column)
+            if (projectionMatcherTypedOutputDependsOn(
+                    *expression, declared_column.name, source_column, columns, aliases))
                 return true;
             if (expression->getAliasOrColumnName() == declared_column.name
-                && projectionQueryReferencesColumn(*expression, source_column))
+                && projectionQueryReferencesColumn(
+                    *expression, source_column, columns, aliases, /*expand_table_aliases=*/true))
+                return true;
+            /// A bare `WITH` or table `ALIAS` identifier can be stored under its source name.
+            if (declared_column.name == source_column && expression->as<ASTIdentifier>()
+                && expression->tryGetAlias().empty()
+                && projectionQueryReferencesColumn(
+                    *expression, source_column, columns, aliases, /*expand_table_aliases=*/true))
                 return true;
         }
     }
@@ -1919,12 +2173,18 @@ void AlterCommands::apply(
             const auto & declaration = definition_ast->as<const ASTProjectionDeclaration &>();
             if (!declaration.query)
                 return;
+            const auto aliases = getProjectionAliases(declaration);
 
             for (const auto & old_column : metadata.columns)
             {
-                const bool explicit_type_depends_on_column = explicitProjectionColumnTypeDependsOn(declaration, old_column.name);
-                if (!projectionQueryReferencesColumn(*declaration.query, old_column.name)
-                    && !explicit_type_depends_on_column)
+                const bool explicit_type_depends_on_column = explicitProjectionColumnTypeDependsOn(
+                    declaration, old_column.name, metadata.columns, aliases);
+                const bool matcher_becomes_empty = !metadata_copy.columns.has(old_column.name)
+                    && projectionMatcherBecomesEmpty(*declaration.query, old_column.name, metadata_copy.columns);
+                if (!projectionQueryReferencesColumn(
+                        *declaration.query, old_column.name, metadata.columns, aliases,
+                        /*expand_table_aliases=*/true)
+                    && !explicit_type_depends_on_column && !matcher_becomes_empty)
                     continue;
 
                 if (!metadata_copy.columns.has(old_column.name))
@@ -1939,6 +2199,17 @@ void AlterCommands::apply(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         "Cannot change type of column {} because projection {} references it and declares an explicit column type",
                         backQuote(old_column.name), backQuote(declaration.name));
+
+                for (const auto & subcolumn : metadata.columns.getSubcolumns(old_column.name))
+                    if (!metadata_copy.columns.hasColumnOrSubcolumn(GetColumnsOptions::All, subcolumn.name)
+                        && (projectionQueryReferencesColumn(
+                                *declaration.query, subcolumn.name, metadata.columns, aliases, /*expand_table_aliases=*/true)
+                            || projectionTupleElementReferencesSubcolumn(
+                                *declaration.query, old_column.name, subcolumn.name, metadata.columns, metadata_copy.columns, aliases)))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot change column {} because projection {} references a field that would no longer exist",
+                            backQuote(old_column.name), backQuote(declaration.name));
             }
         };
 

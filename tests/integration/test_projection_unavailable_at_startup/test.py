@@ -242,6 +242,111 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         settings={**POSITIONAL, "allow_projection_column_list_in_replicated_metadata": 1},
     )
 
+    node.query("CREATE TABLE dl.t10 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t10 ADD PROJECTION pp (b UInt64 CODEC(ZSTD)) "
+        "AS (WITH b AS source_value, source_value AS x SELECT x, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t11 (a UInt64, b UInt64, x ALIAS b, c UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t11 ADD PROJECTION pp (b UInt64 CODEC(ZSTD)) "
+        "AS (SELECT x, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t12 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t12 ADD PROJECTION pp (b UInt64 CODEC(ZSTD)) "
+        "AS (SELECT COLUMNS('^b$'), a GROUP BY b, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t13 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t13 ADD PROJECTION pp "
+        "(SELECT * EXCEPT (b) REPLACE (b AS a) GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t14 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t14 ADD PROJECTION pp (b UInt64 CODEC(ZSTD)) "
+        "AS (SELECT plus(b AS x, 1) AS y, x, a GROUP BY 1, 2, 3)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t15 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t15 ADD PROJECTION pp "
+        "(SELECT * EXCEPT (b) APPLY (x -> x + b) GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t16 (a UInt64, b UInt64, x Tuple(y UInt64)) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t16 ADD PROJECTION pp "
+        "(SELECT arrayMap(x -> x.1, [tuple(b)]) AS y, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t17 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t17 ADD PROJECTION pp "
+        "(SELECT COLUMNS('^b$') GROUP BY 1)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t18 (a UInt64, t Tuple(x UInt64, y UInt64)) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t18 ADD PROJECTION pp "
+        "(SELECT a, t, t.x GROUP BY 1, 2, 3)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t19 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t19 ADD PROJECTION pp (`identity(b)` UInt64 CODEC(ZSTD)) "
+        "AS (SELECT COLUMNS('^b$') APPLY identity GROUP BY 1)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t20 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t20 ADD PROJECTION pp "
+        "(SELECT * EXCEPT STRICT (b) GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t21 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY c")
+    node.query(
+        "ALTER TABLE dl.t21 ADD PROJECTION pp "
+        "(SELECT * EXCEPT (a) REPLACE STRICT (a AS b) GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t22 (a UInt64, t Tuple(x UInt64, y UInt64)) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t22 ADD PROJECTION pp "
+        "(SELECT t, tupleElement(t, 'x') GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t23 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t23 ADD PROJECTION pp (a UInt64 CODEC(ZSTD)) "
+        "AS (SELECT a, COLUMNS('^b$') APPLY toString GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
+    node.query("CREATE TABLE dl.t24 (a UInt64, t Tuple(x UInt64, y UInt64)) ENGINE = MergeTree ORDER BY a")
+    node.query(
+        "ALTER TABLE dl.t24 ADD PROJECTION pp "
+        "(SELECT t, tupleElement(t, 2) GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -261,6 +366,21 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t8") == "1"
     assert projections("t9") == "2"
     assert projections("t9_peer") == "2"
+    assert projections("t10") == "1"
+    assert projections("t11") == "1"
+    assert projections("t12") == "1"
+    assert projections("t13") == "1"
+    assert projections("t14") == "1"
+    assert projections("t15") == "1"
+    assert projections("t16") == "1"
+    assert projections("t17") == "1"
+    assert projections("t18") == "1"
+    assert projections("t19") == "1"
+    assert projections("t20") == "1"
+    assert projections("t21") == "1"
+    assert projections("t22") == "1"
+    assert projections("t23") == "1"
+    assert projections("t24") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.restart_clickhouse()
@@ -277,6 +397,21 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t8") == "0"
     assert projections("t9") == "1"
     assert projections("t9_peer") == "1"
+    assert projections("t10") == "0"
+    assert projections("t11") == "0"
+    assert projections("t12") == "0"
+    assert projections("t13") == "0"
+    assert projections("t14") == "0"
+    assert projections("t15") == "0"
+    assert projections("t16") == "0"
+    assert projections("t17") == "0"
+    assert projections("t18") == "0"
+    assert projections("t19") == "0"
+    assert projections("t20") == "0"
+    assert projections("t21") == "0"
+    assert projections("t22") == "0"
+    assert projections("t23") == "0"
+    assert projections("t24") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -373,6 +508,54 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
 
     error = node.query_and_get_error("ALTER TABLE dl.t8 MODIFY COLUMN b UInt32")
     assert "projection `pp`" in error and "declares an explicit column type" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t10 MODIFY COLUMN b UInt32")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    node.query("ALTER TABLE dl.t10 MODIFY COLUMN c UInt32")
+    assert declarations_on_disk("t10") == 1
+
+    # A table `ALIAS` is expanded to its source name in the projection output.
+    error = node.query_and_get_error("ALTER TABLE dl.t11 MODIFY COLUMN b UInt32")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    node.query("ALTER TABLE dl.t11 MODIFY COLUMN c UInt32")
+    assert declarations_on_disk("t11") == 1
+
+    error = node.query_and_get_error("ALTER TABLE dl.t12 MODIFY COLUMN b UInt32")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t13 DROP COLUMN b")
+    assert "projection `pp`" in error and "references it" in error
+    assert declarations_on_disk("t12") == 1
+    assert declarations_on_disk("t13") == 1
+    error = node.query_and_get_error("ALTER TABLE dl.t14 MODIFY COLUMN b UInt32")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t15 DROP COLUMN b")
+    assert "projection `pp`" in error and "references it" in error
+    node.query("ALTER TABLE dl.t16 DROP COLUMN x")
+    error = node.query_and_get_error("ALTER TABLE dl.t17 DROP COLUMN b")
+    assert "projection `pp`" in error and "references it" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t18 MODIFY COLUMN t Tuple(y UInt64)")
+    assert "projection `pp`" in error and "field that would no longer exist" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t19 MODIFY COLUMN b UInt32")
+    assert "projection `pp`" in error and "declares an explicit column type" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t20 DROP COLUMN b")
+    assert "projection `pp`" in error and "references it" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t21 DROP COLUMN b")
+    assert "projection `pp`" in error and "references it" in error
+    error = node.query_and_get_error("ALTER TABLE dl.t22 MODIFY COLUMN t Tuple(y UInt64)")
+    assert "projection `pp`" in error and "field that would no longer exist" in error
+    node.query("ALTER TABLE dl.t23 MODIFY COLUMN b UInt32")
+    error = node.query_and_get_error("ALTER TABLE dl.t24 MODIFY COLUMN t Tuple(y UInt64)")
+    assert "projection `pp`" in error and "field that would no longer exist" in error
+    assert declarations_on_disk("t14") == 1
+    assert declarations_on_disk("t15") == 1
+    assert declarations_on_disk("t16") == 1
+    assert declarations_on_disk("t17") == 1
+    assert declarations_on_disk("t18") == 1
+    assert declarations_on_disk("t19") == 1
+    assert declarations_on_disk("t20") == 1
+    assert declarations_on_disk("t21") == 1
+    assert declarations_on_disk("t22") == 1
+    assert declarations_on_disk("t23") == 1
+    assert declarations_on_disk("t24") == 1
 
     zk_path = node.query(
         "SELECT zookeeper_path FROM system.replicas WHERE database = 'dl' AND table = 't9'"
@@ -513,6 +696,21 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t9") == "3"
     assert projections("t9_peer") == "3"
     assert projections("t9_local_copy") == "2"
+    assert projections("t10") == "1"
+    assert projections("t11") == "1"
+    assert projections("t12") == "1"
+    assert projections("t13") == "1"
+    assert projections("t14") == "1"
+    assert projections("t15") == "1"
+    assert projections("t16") == "1"
+    assert projections("t17") == "1"
+    assert projections("t18") == "1"
+    assert projections("t19") == "1"
+    assert projections("t20") == "1"
+    assert projections("t21") == "1"
+    assert projections("t22") == "1"
+    assert projections("t23") == "1"
+    assert projections("t24") == "1"
     assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 
