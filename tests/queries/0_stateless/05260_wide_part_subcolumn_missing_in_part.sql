@@ -6,9 +6,6 @@
 -- `size` subcolumn. Reading it anyway resolves the request to an unrelated stream of the parent and
 -- yields a column of the wrong class.
 
--- The subcolumn is requested explicitly: `length(y)` reaches the same request, but only through a
--- rewrite the old analyzer does not perform.
-
 DROP TABLE IF EXISTS t_wide;
 
 CREATE TABLE t_wide (x UInt32, y LowCardinality(String)) ENGINE = MergeTree ORDER BY x
@@ -60,8 +57,8 @@ INSERT INTO t_sizes SELECT number, repeat('z', 2000) FROM numbers(3000);
 
 -- ast_fuzzer_runs = 0: a fuzzed re-execution inherits log_comment and is logged too, so the
 -- stress-test profile would otherwise add rows measuring a different query.
-SELECT sum(y.size) FROM t_sizes SETTINGS log_comment = '05030_sizes_only', ast_fuzzer_runs = 0;
-SELECT sum(cityHash64(y)) > 0 FROM t_sizes SETTINGS log_comment = '05030_full_data', ast_fuzzer_runs = 0;
+SELECT sum(y.size) FROM t_sizes SETTINGS log_comment = '05260_sizes_only', ast_fuzzer_runs = 0;
+SELECT sum(cityHash64(y)) > 0 FROM t_sizes SETTINGS log_comment = '05260_full_data', ast_fuzzer_runs = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -69,10 +66,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     (SELECT argMax(ProfileEvents['CompressedReadBufferBytes'], event_time_microseconds)
      FROM system.query_log
-     WHERE current_database = currentDatabase() AND log_comment = '05030_sizes_only' AND type = 'QueryFinish') * 10
+     WHERE current_database = currentDatabase() AND log_comment = '05260_sizes_only' AND type = 'QueryFinish') * 10
     < (SELECT argMax(ProfileEvents['CompressedReadBufferBytes'], event_time_microseconds)
        FROM system.query_log
-       WHERE current_database = currentDatabase() AND log_comment = '05030_full_data' AND type = 'QueryFinish');
+       WHERE current_database = currentDatabase() AND log_comment = '05260_full_data' AND type = 'QueryFinish');
 
 DROP TABLE t_sizes;
 DROP TABLE t_compact;
