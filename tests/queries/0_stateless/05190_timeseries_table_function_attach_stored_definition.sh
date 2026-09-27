@@ -34,7 +34,7 @@ reattach() { $CLIENT -q "DETACH TABLE $1" && $CLIENT -q "ATTACH TABLE $1" && ech
 echo '--- (a) control: with its source intact a replayed definition still reads its row ---'
 $CLIENT -mn -q "
     CREATE TABLE ts ENGINE = TimeSeries;
-    INSERT INTO ts (metric_name, tags, time_series) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
+    INSERT INTO ts (metric_name, tags, samples) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
     CREATE TABLE sel AS timeSeriesSelector(ts, 'up', 0, 9999999999);
     CREATE TABLE pq  AS prometheusQuery(ts, 'up', 1000);
     CREATE TABLE pqr AS prometheusQueryRange(ts, 'up', 1000, 1300, 60);
@@ -46,7 +46,7 @@ $CLIENT -q "SELECT count() FROM sel"
 $CLIENT -q "SELECT count() FROM pq"
 # One row per series, so count() cannot see the step. The number of evaluation timestamps can: over
 # 1000..1300 this is 5 at step 60, 10 at step 30 and 3 at step 120.
-$CLIENT -q "SELECT sum(length(time_series)) FROM pqr"
+$CLIENT -q "SELECT sum(length(samples)) FROM pqr"
 
 echo '--- (b) after the source is dropped all three definitions still attach ---'
 $CLIENT -q "DROP TABLE ts SYNC"
@@ -57,7 +57,7 @@ reattach pqr
 echo '--- (c) and reading them reports the missing source ---'
 error_of $CLIENT -q "SELECT count() FROM sel"
 error_of $CLIENT -q "SELECT count() FROM pq"
-error_of $CLIENT -q "SELECT sum(length(time_series)) FROM pqr"
+error_of $CLIENT -q "SELECT sum(length(samples)) FROM pqr"
 
 echo '--- (d) a full definition naming a table that never existed attaches ---'
 uuid=$($CLIENT -q "SELECT generateUUIDv4()")
@@ -124,7 +124,7 @@ echo '--- (m) a stored definition binds to the database it was created in, not t
 $CLIENT -mn -q "
     CREATE DATABASE ${OTHER_DB}_replay;
     CREATE TABLE ts_qual ENGINE = TimeSeries;
-    INSERT INTO ts_qual (metric_name, tags, time_series) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
+    INSERT INTO ts_qual (metric_name, tags, samples) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
     CREATE TABLE ${OTHER_DB}_replay.ts_qual ENGINE = TimeSeries;
     CREATE TABLE sel_qual AS timeSeriesSelector(ts_qual, 'up', 0, 9999999999);
     CREATE TABLE pq_qual AS prometheusQuery(ts_qual, 'up', 1000);
@@ -158,7 +158,7 @@ $CLIENT -mn -q "
     CREATE DATABASE ${LOADER_DB};
     USE ${LOADER_DB};
     CREATE TABLE ts_load ENGINE = TimeSeries;
-    INSERT INTO ts_load (metric_name, tags, time_series) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
+    INSERT INTO ts_load (metric_name, tags, samples) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
     CREATE TABLE ts_load_gone ENGINE = TimeSeries;
     CREATE TABLE sel_load AS timeSeriesSelector(ts_load, 'up', 0, 9999999999);
     CREATE TABLE pq_load AS prometheusQuery(ts_load, 'up', 1000);
