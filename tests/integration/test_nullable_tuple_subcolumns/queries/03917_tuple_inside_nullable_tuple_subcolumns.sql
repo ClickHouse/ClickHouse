@@ -1,6 +1,6 @@
 -- Tuple-related queries from tests/queries/0_stateless/03917_tuple_inside_nullable_tuple_subcolumns.sql.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS x;
 CREATE TABLE x
