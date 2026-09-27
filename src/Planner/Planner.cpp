@@ -205,24 +205,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Whether the query reads a cluster engine (`s3Cluster`, `url` replaced by `urlCluster` for parallel replicas, a table of
-/// a data lake catalog, ...), which ships the query to the replicas.
-bool readsFromClusterEngine(const QueryNode & query_node)
-{
-    for (const auto & table_expression : extractTableExpressions(query_node.getJoinTreeNodeTyped()))
-    {
-        StoragePtr storage;
-        if (const auto * table_node = table_expression->as<TableNode>())
-            storage = table_node->getStorage();
-        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-            storage = table_function_node->getStorage();
-
-        if (dynamic_cast<const IStorageCluster *>(storage.get()))
-            return true;
-    }
-    return false;
-}
-
 /** Check that table and table function table expressions from planner context support transactions.
   *
   * There is precondition that table expression data for table expression nodes is collected in planner context.
@@ -2703,10 +2685,9 @@ void Planner::buildPlanForQueryNode()
     /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
     disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
 
-    /// The checks below apply to `MergeTree` reads unless `automatic_parallel_replicas_mode` decides for them, and to a
-    /// cluster engine read in every mode: such a read ships the query to the replicas regardless of the automatic mode.
-    const bool parallel_replicas_checks_apply = query_context->canUseTaskBasedParallelReplicas()
-        || (query_context->canUseTaskBasedParallelReplicasForClusterEngines() && readsFromClusterEngine(query_node));
+    /// Not `canUseTaskBasedParallelReplicas`: cluster engines use parallel replicas regardless of
+    /// `automatic_parallel_replicas_mode`, so the checks below apply in every mode alike.
+    const bool parallel_replicas_checks_apply = query_context->canUseTaskBasedParallelReplicasForClusterEngines();
 
     if (parallel_replicas_checks_apply)
     {
@@ -2728,8 +2709,6 @@ void Planner::buildPlanForQueryNode()
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
     /// the combination works there and the check is skipped.
-    /// Cluster engines are not replaced by their `*Cluster` variant with `additional_table_filters` (see
-    /// `canReplaceClusterEngineWithClusterVariant`), so only an explicit cluster table function can meet this check here.
     if (parallel_replicas_checks_apply
         && !query_context->getClientInfo().collaborate_with_initiator
         && !settings[Setting::serialize_query_plan]

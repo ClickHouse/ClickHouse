@@ -52,9 +52,8 @@ for serialize in 0 1; do
     done
 done
 
-# Under the automatic mode the checks of parallel replicas apply only to a read that is shipped to the replicas. With
-# `additional_table_filters` nothing is shipped, so force mode without `serialize_query_plan` does not throw there.
-# In mode 0 the checks apply to any query, as they always did.
+# The checks apply whenever parallel replicas are enabled, in every mode alike, even when nothing would be shipped:
+# with `additional_table_filters` a cluster engine is not replaced by its `*Cluster` variant.
 for mode in 0 1 2; do
     echo "additional_table_filters in force mode, mode $mode: $($CLICKHOUSE_CLIENT -q "EXPLAIN $FILTERED_QUERY SETTINGS $SETTINGS,
         enable_parallel_replicas = 2, automatic_parallel_replicas_mode = $mode, serialize_query_plan = 0,
