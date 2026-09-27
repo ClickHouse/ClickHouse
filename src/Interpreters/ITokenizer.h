@@ -62,6 +62,9 @@ public:
     /// Returns a formatted description of the tokenizer with arguments.
     virtual String getDescription() const = 0;
 
+    /// Renders a stored token for logs and `EXPLAIN`: double-quoted, with quotes, backslashes and control bytes escaped.
+    virtual String formatTokenForLogs(std::string_view token) const;
+
     virtual const char * getTokenizerName() const = 0;
     virtual const char * getTokenizerExternalName() const = 0;
 
@@ -452,11 +455,11 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 ///
 ///     token = key ‖ value ‖ trailer
 ///
-/// The trailer is `(length(key) << 1) | is_rest`, a varint with its bytes reversed so that a reader,
+/// The trailer is `(length(key) << 1) | is_duplicate`, a varint with its bytes reversed so that a reader,
 /// which knows only where the token ends, can walk backwards to its start. The key length splits the
 /// token back into key and value, so both may hold any byte, unlike a `key=value` separator.
-/// `is_rest` is 0 for a key's first occurrence in a row and 1 for repetitions; `m['key']` is the first
-/// occurrence, so its lookup matches `is_rest = 0`. It shares the varint and costs no extra byte.
+/// `is_duplicate` is 0 for a key's first occurrence in a row and 1 for repetitions; `m['key']` is the first
+/// occurrence, so its lookup matches `is_duplicate = 0`. It shares the varint and costs no extra byte.
 /// Key first orders tokens by key, then value, so a search for one key reads a single range of tokens,
 /// which may also hold longer keys with the same start.
 ///
@@ -470,9 +473,23 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     String getDescription() const override { return getName(); }
 
     /// `out` is cleared first, so a hot loop can reuse one buffer.
-    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
-    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out);
-    static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
+    static void encodeToken(std::string_view key, std::string_view value, bool is_duplicate, String & out);
+    static void encodeToken(std::string_view key, std::string_view value, bool is_duplicate, PaddedPODArray<UInt8> & out);
+    static String encodeToken(std::string_view key, std::string_view value, bool is_duplicate);
+
+    struct DecodedToken
+    {
+        std::string_view key;
+        std::string_view value;
+        /// True if key of the token is duplicate in the original Map.
+        bool is_duplicate = false;
+    };
+
+    /// The inverse of `encodeToken`. The views alias `token`. Throws if the token is not in the pair format.
+    static DecodedToken decodeToken(std::string_view token);
+
+    /// A token is a `Map` entry: {"key": "value"}, both parts quoted and escaped like the base rendering.
+    String formatTokenForLogs(std::string_view token) const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;

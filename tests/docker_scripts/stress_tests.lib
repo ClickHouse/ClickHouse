@@ -135,9 +135,8 @@ function configure()
     }
 
     if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
-        # Randomize all Keeper feature flags
-        randomize_config_boolean_value filtered_list keeper_port
-        randomize_config_boolean_value multi_read keeper_port
+        # transactions.xml is always installed here, and transactions require Keeper to advertise
+        # FILTERED_LIST, MULTI_READ, LIST_WITH_STAT_AND_DATA and CHECK_STAT (see TransactionManager).
         randomize_config_boolean_value check_not_exists keeper_port
         randomize_config_boolean_value create_if_not_exists keeper_port
         randomize_config_boolean_value remove_recursive keeper_port

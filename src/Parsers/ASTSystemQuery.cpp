@@ -662,6 +662,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
+        case Type::DISABLE_ALL_FAILPOINTS:
             break;
         case Type::SYNC_FILESYSTEM_CACHE:
         {
@@ -987,6 +988,11 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         case Type::TEST_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
             if (!table)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
             break;

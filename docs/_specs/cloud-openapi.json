@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1152576",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1173305",
       "email": "support@clickhouse.com"
     }
   },
@@ -378,7 +378,7 @@
     "/v1/organizations/{organizationId}/prometheus": {
       "get": {
         "summary": "Get organization metrics",
-        "description": "Deprecated. Use the Prometheus service discovery endpoint (/v1/organizations/{organizationId}/prometheus/discovery) instead. This endpoint is not available for new organizations; contact ClickHouse support to request access. Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
+        "description": "**Deprecated.** This endpoint is disabled on 1 January 2027. It is already disabled for new organizations.\n\nMigrate before then to the service discovery endpoint, `GET /v1/organizations/{organizationId}/prometheus/discovery`. It returns one scrape target per service in the [`http_sd`](https://prometheus.io/docs/prometheus/latest/http_sd/) format, and Prometheus picks up new and deleted services automatically. The [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) has a `prometheus.yml` example.\n\nIf you need this endpoint after 1 January 2027, contact ClickHouse support to have it enabled for your organization.\n\nReturns Prometheus metrics for the services in the organization. Only services the API key is authorized to view are included.",
         "operationId": "organizationPrometheusGet",
         "parameters": [
           {
@@ -8561,7 +8561,7 @@
       },
       "patch": {
         "summary": "Update ClickPipe",
-        "description": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce) are not applied, except schema registry credentials, which are rejected.",
+        "description": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce, tombstoneMode) are not applied, except schema registry credentials, which are rejected.",
         "operationId": "clickPipeUpdate",
         "parameters": [
           {
@@ -8687,7 +8687,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce) are not applied, except schema registry credentials, which are rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce, tombstoneMode) are not applied, except schema registry credentials, which are rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -16221,6 +16221,121 @@
       }
     },
     "/v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}": {
+      "get": {
+        "summary": "Get BYOC infrastructure details",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the full configuration of a BYOC infrastructure, including private link and load balancer state, network layout, and BYO-VPC settings read from the data plane.",
+        "operationId": "organizationByocInfrastructureGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "byocInfrastructureId",
+            "description": "ID of the requested BYOC Infrastructure",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ByocInfrastructureDetails"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
       "delete": {
         "summary": "Remove a BYOC infrastructure",
         "description": "Removes a BYOC Infrastructure from the organization",
@@ -16450,6 +16565,123 @@
         "x-mint": {
           "content": "Update configuration of the BYOC infrastructure. Returns the modified infrastructure\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}/progress": {
+      "get": {
+        "summary": "Get BYOC infrastructure provisioning progress",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the stage-by-stage provisioning progress of a BYOC infrastructure, more granular than the `state` field: overall status plus a tree of provisioning stages down to individual cloud resources.",
+        "operationId": "organizationByocInfrastructureProgressGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "byocInfrastructureId",
+            "description": "ID of the requested BYOC Infrastructure",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ByocInfrastructureProgress"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints": {
@@ -22102,14 +22334,24 @@
             "description": "State of the infrastructure",
             "type": "string",
             "enum": [
-              "infra-ready",
               "infra-provisioning",
-              "infra-terminated"
-            ]
+              "infra-terminated",
+              "infra-terminating",
+              "infra-ready",
+              "infra-degraded",
+              "infra-upgrading"
+            ],
+            "example": "infra-ready"
+          },
+          "accountId": {
+            "description": "Cloud account ID the BYOC infrastructure is bound to: AWS account ID, GCP project ID, or Azure subscription ID",
+            "type": "string",
+            "example": "123456789012"
           },
           "accountName": {
-            "description": "Name of the account",
-            "type": "string"
+            "description": "DEPRECATED. Use `accountId` instead. Cloud account ID the BYOC infrastructure is bound to",
+            "type": "string",
+            "deprecated": true
           },
           "regionId": {
             "description": "Region for which the BYOC has been configured and where it is possible to create services",
@@ -22156,6 +22398,14 @@
           }
         }
       },
+      "OrganizationCapabilities": {
+        "properties": {
+          "snapshots": {
+            "description": "Whether the organization is eligible to use service snapshots: true only when the organization has the snapshots feature enabled, is on a PPv2 tier, and has the backups entitlement — the same conditions enforced when a snapshotConfiguration is saved. Check this before configuring snapshots on a service. Snapshots apply to primary services only, so a secondary/replica service is rejected regardless of organization eligibility.",
+            "type": "boolean"
+          }
+        }
+      },
       "Organization": {
         "properties": {
           "id": {
@@ -22189,6 +22439,9 @@
           "enableCoreDumps": {
             "description": "Whether crash reports (core dumps) collection is enabled for services in the organization. When disabled at the organization level, individual services cannot enable crash reports.",
             "type": "boolean"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/OrganizationCapabilities"
           }
         }
       },
@@ -22311,6 +22564,206 @@
             "description": "Elements to remove. Executed before \"add\" part is processed.",
             "items": {
               "$ref": "#/components/schemas/OrganizationPatchPrivateEndpoint"
+            }
+          }
+        }
+      },
+      "ByocInfrastructureDetails": {
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the BYOC infrastructure",
+            "type": "string"
+          },
+          "state": {
+            "description": "State of the infrastructure",
+            "type": "string",
+            "enum": [
+              "infra-provisioning",
+              "infra-terminated",
+              "infra-terminating",
+              "infra-ready",
+              "infra-degraded",
+              "infra-upgrading"
+            ],
+            "example": "infra-ready"
+          },
+          "accountId": {
+            "description": "Cloud account ID the BYOC infrastructure is bound to: AWS account ID, GCP project ID, or Azure subscription ID",
+            "type": "string",
+            "example": "123456789012"
+          },
+          "regionId": {
+            "description": "Region the BYOC infrastructure is located in",
+            "type": "string",
+            "enum": [
+              "ap-northeast-1",
+              "ap-northeast-2",
+              "ap-south-1",
+              "ap-southeast-1",
+              "ap-southeast-2",
+              "ca-central-1",
+              "eu-central-1",
+              "eu-west-1",
+              "eu-west-2",
+              "il-central-1",
+              "us-east-1",
+              "us-east-2",
+              "us-west-2",
+              "us-east1",
+              "us-central1",
+              "europe-west2",
+              "europe-west4",
+              "asia-southeast1",
+              "asia-northeast1",
+              "eastus",
+              "eastus2",
+              "westus3",
+              "germanywestcentral",
+              "centralus"
+            ]
+          },
+          "cloudProvider": {
+            "description": "Cloud provider of the region",
+            "type": "string",
+            "enum": [
+              "gcp",
+              "aws",
+              "azure"
+            ]
+          },
+          "displayName": {
+            "description": "Human readable name for infrastructure",
+            "type": "string"
+          },
+          "enablePrivateLink": {
+            "description": "Whether private link connectivity is enabled on the infrastructure",
+            "type": "boolean"
+          },
+          "enablePrivateLoadBalancer": {
+            "description": "Whether the private load balancer is enabled on the infrastructure",
+            "type": "boolean"
+          },
+          "enablePublicLoadBalancer": {
+            "description": "Whether the public load balancer is enabled on the infrastructure",
+            "type": "boolean"
+          },
+          "vpcCidrRange": {
+            "description": "CIDR range of the ClickHouse-managed VPC. Absent for BYO-VPC infrastructures",
+            "type": "string",
+            "example": "10.0.0.0/16"
+          },
+          "vpcAvailabilityZoneList": {
+            "type": "array",
+            "description": "Availability zones the infrastructure spans",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "us-east-1a",
+              "us-east-1b",
+              "us-east-1c"
+            ]
+          },
+          "isByoVpc": {
+            "description": "True when the infrastructure runs in a customer-provided VPC (BYO-VPC) instead of a ClickHouse-managed one",
+            "type": "boolean"
+          },
+          "byoVpcId": {
+            "description": "Customer VPC ID or network name (BYO-VPC only)",
+            "type": "string",
+            "example": "vpc-0abc1234def567890"
+          },
+          "byoVpcPrivateSubnetIds": {
+            "type": "array",
+            "description": "Customer private subnet IDs or names (BYO-VPC only; exactly one entry on GCP)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "byoVpcPodCidrRangeNames": {
+            "type": "array",
+            "description": "Secondary IP range names pinned for pod IPs (GCP BYO-VPC only). Absent when all secondary ranges are used",
+            "items": {
+              "type": "string"
+            }
+          },
+          "byoVpcSharedVpcHostProjectId": {
+            "description": "Shared VPC host project owning the VPC and subnet (GCP BYO-VPC only). Absent when the VPC lives in the service project",
+            "type": "string"
+          },
+          "gcpPscSubnetId": {
+            "description": "Customer-provided Private Service Connect NAT subnet name configured for private link (GCP BYO-VPC only)",
+            "type": "string"
+          }
+        }
+      },
+      "ByocInfrastructureProgressStage": {
+        "properties": {
+          "name": {
+            "description": "Name of the provisioning stage or resource",
+            "type": "string",
+            "example": "vpc"
+          },
+          "status": {
+            "description": "Status of this stage",
+            "type": "string",
+            "enum": [
+              "not_started",
+              "pending",
+              "waiting",
+              "in_progress",
+              "ready",
+              "failed"
+            ],
+            "example": "ready"
+          },
+          "updatedAt": {
+            "description": "Timestamp the stage status last changed. ISO-8601",
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "description": "Human readable detail for the current status, e.g. an error message",
+            "type": "string"
+          },
+          "subStages": {
+            "type": "array",
+            "description": "Nested stages; leaf entries are individual cloud resources",
+            "items": {
+              "$ref": "#/components/schemas/ByocInfrastructureProgressStage"
+            }
+          }
+        }
+      },
+      "ByocInfrastructureProgress": {
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the BYOC infrastructure",
+            "type": "string"
+          },
+          "status": {
+            "description": "Overall provisioning status of the infrastructure",
+            "type": "string",
+            "enum": [
+              "not_started",
+              "pending",
+              "waiting",
+              "in_progress",
+              "ready",
+              "failed"
+            ],
+            "example": "in_progress"
+          },
+          "updatedAt": {
+            "description": "Timestamp the overall status last changed. ISO-8601",
+            "type": "string",
+            "format": "date-time"
+          },
+          "stages": {
+            "type": "array",
+            "description": "Top-level provisioning stages with their nested resources",
+            "items": {
+              "$ref": "#/components/schemas/ByocInfrastructureProgressStage"
             }
           }
         }
@@ -23046,8 +23499,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23118,6 +23572,17 @@
               "boolean",
               "null"
             ]
+          },
+          "tombstoneMode": {
+            "description": "How Kafka tombstone records are handled. Set to \"delete\" to delete the matching destination row. Requires exactly-once delivery and can only be set at pipe creation.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delete"
+            ],
+            "example": "delete"
           }
         }
       },
@@ -23152,8 +23617,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23224,6 +23690,17 @@
               "boolean",
               "null"
             ]
+          },
+          "tombstoneMode": {
+            "description": "How Kafka tombstone records are handled. Set to \"delete\" to delete the matching destination row. Requires exactly-once delivery and can only be set at pipe creation.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delete"
+            ],
+            "example": "delete"
           },
           "credentials": {
             "description": "Credentials for Kafka source. Choose one that is supported by the authentication method.",
@@ -23311,6 +23788,40 @@
           }
         }
       },
+      "ClickPipeKinesisSchemaRegistry": {
+        "properties": {
+          "type": {
+            "description": "Type of the schema registry. Kinesis ClickPipes support the AWS Glue Schema Registry, which authenticates with IAM instead of credentials.",
+            "type": "string",
+            "enum": [
+              "glue"
+            ]
+          },
+          "glueRegion": {
+            "description": "AWS region of the Glue Schema Registry.",
+            "type": "string",
+            "example": "us-east-1"
+          },
+          "glueRegistryName": {
+            "description": "Name of the Glue Schema Registry.",
+            "type": "string",
+            "example": "my-registry"
+          },
+          "glueRoleArn": {
+            "description": "IAM role to assume for Glue Schema Registry access. Defaults to the IAM identity of the Kinesis source.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "arn:aws:iam::123456789012:role/MyGlueRegistryRole"
+          }
+        },
+        "required": [
+          "type",
+          "glueRegion",
+          "glueRegistryName"
+        ]
+      },
       "ClickPipeKinesisSource": {
         "properties": {
           "format": {
@@ -23372,6 +23883,16 @@
               "null"
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
+          },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -23437,6 +23958,16 @@
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
           },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "accessKey": {
             "oneOf": [
               {
@@ -23448,7 +23979,7 @@
             ]
           },
           "protobufSchema": {
-            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format and not supported with other formats.",
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format unless a schema registry is configured, and not supported with other formats.",
             "type": "string",
             "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
             "maxLength": 1048576,
@@ -25967,7 +26498,7 @@
           },
           "sortingKey": {
             "type": "array",
-            "description": "Sorting key of the destination table. List of columns.",
+            "description": "Sorting key of the destination table. An entry that matches the name of a column declared in `columns` is used as that column. Any other entry is used as a SQL expression, for example a JSON sub-path such as `payload.workspace_id`. Entries must not contain commas, and every component must be non-Nullable.",
             "items": {
               "type": "string"
             }
@@ -26761,6 +27292,12 @@
               "scim_group_update",
               "scim_group_delete",
               "organization_saml_connection_delete",
+              "organization_update_saml_query_ownership_migration",
+              "organization_approved_domain_verify",
+              "organization_approved_domain_update",
+              "organization_approved_domain_delete",
+              "organization_approved_domain_auto_join",
+              "organization_approved_domain_auto_invite",
               "datadog_integration_create",
               "datadog_integration_delete",
               "organization_update_spend_alert",
@@ -26768,6 +27305,7 @@
               "organization_update_private_endpoints",
               "organization_update_pci_compliance",
               "organization_update_hipaa_status",
+              "organization_update_public_preview",
               "transfer_credits_in",
               "transfer_credits_out",
               "promo_code_claim",
@@ -32928,7 +33466,7 @@
           },
           "groups": {
             "type": "array",
-            "description": "A list of groups to which the user belongs. Role may be derived from group display or value.",
+            "description": "A list of groups to which the user belongs. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserGroup"
             }
@@ -32942,7 +33480,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "A list of roles for the user.",
+            "description": "A list of roles for the user. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserRole"
             }
@@ -33150,7 +33688,7 @@
           },
           "groups": {
             "type": "array",
-            "description": "A list of groups to which the user belongs. Role may be derived from group display or value.",
+            "description": "A list of groups to which the user belongs. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserGroup"
             }
@@ -33164,7 +33702,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "A list of roles for the user.",
+            "description": "A list of roles for the user. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserRole"
             }
