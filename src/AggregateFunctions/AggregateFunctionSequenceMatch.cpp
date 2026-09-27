@@ -3,9 +3,12 @@
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/length.h>
@@ -119,9 +122,7 @@ struct AggregateFunctionSequenceMatchData final
         size_t size = 0;
         readBinary(size, buf);
 
-        /// Guard against allocation bombs (mirrors windowFunnel): a crafted state
-        /// can declare a huge size and make reserve allocate gigabytes before any
-        /// event is read.
+        /// The constant is arbitrary (mirrors `windowFunnel`).
         if (size > 100'000'000)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
@@ -132,7 +133,8 @@ struct AggregateFunctionSequenceMatchData final
         conditions_met.set();
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(Timestamp) + sizeof(UInt64))));
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -161,12 +163,24 @@ public:
         , pattern(pattern_)
     {
         arg_count = arguments.size();
+
+        /// Timestamps are kept at the precision of the argument, but the durations in the `(?t...)` conditions of
+        /// the pattern are always seconds, so that the same pattern keeps its meaning when a column changes from
+        /// `DateTime` to `DateTime64` (or between two `DateTime64` scales). Remember how many ticks of the
+        /// argument one second is, to scale the durations when they are compared - see `timeConditionSatisfied`.
+        if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(arguments.front().get()))
+            time_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(date_time64_type->getScale());
+
         parsePattern();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+        typename Data::Timestamp timestamp;
+        if constexpr (is_decimal<T>)
+            timestamp = assert_cast<const ColumnDecimal<T> *>(columns[0])->getData()[row_num].value;
+        else
+            timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
         typename Data::Events events;
         for (const auto i : collections::range(1, arg_count))
@@ -214,6 +228,10 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
+        /// The number of the event for `SpecificEvent`, the duration of the condition in seconds for
+        /// the temporal conditions. The durations are kept in seconds rather than in the ticks of the
+        /// timestamp type, because at a high `DateTime64` scale the same duration does not necessarily
+        /// fit into the type - see `timeConditionSatisfied`.
         std::uint64_t extra{};
 
         PatternAction() = default;
@@ -396,8 +414,65 @@ protected:
         return active_states.back();
     }
 
+    /// Checks a `(?t...)` condition between the base event and the current one.
+    ///
+    /// The comparison is done on the distance between the two timestamps rather than on `base + duration`:
+    /// a `DateTime64` timestamp is signed and can be arbitrarily large in either direction, so both adding
+    /// the duration to the base and converting the duration - which is given in seconds - to the ticks of
+    /// the timestamp type can overflow for values the type itself accepts.
+    ///
+    /// The distance is computed in a type that holds every value of the timestamp type: `Int128` for the
+    /// types that fit into 64 bits - which includes the signed ticks of `DateTime64` - and the unsigned
+    /// timestamp type itself for the wider `UInt128` and `UInt256`, which must not be narrowed.
+    template <PatternActionType type>
+    static bool compareDistance(const auto delta, const auto bound)
+    {
+        if constexpr (type == PatternActionType::TimeLessOrEqual)
+            return delta <= bound;
+        else if constexpr (type == PatternActionType::TimeLess)
+            return delta < bound;
+        else if constexpr (type == PatternActionType::TimeGreaterOrEqual)
+            return delta >= bound;
+        else if constexpr (type == PatternActionType::TimeGreater)
+            return delta > bound;
+        else
+        {
+            static_assert(type == PatternActionType::TimeEqual);
+            return delta == bound;
+        }
+    }
+
+    template <PatternActionType type>
+    bool timeConditionSatisfied(const typename Data::Timestamp base, const typename Data::Timestamp current, const std::uint64_t duration_in_seconds) const
+    {
+        using Timestamp = typename Data::Timestamp;
+
+        if constexpr (sizeof(Timestamp) > sizeof(Int64))
+        {
+            /// `UInt128` and `UInt256` timestamps: the distance is computed in the timestamp type itself, so
+            /// that no value loses its high bits. Only `DateTime64` has a scale, so the multiplier is `1` here.
+            static_assert(is_unsigned_v<Timestamp>);
+
+            const Timestamp bound = static_cast<Timestamp>(duration_in_seconds) * static_cast<Timestamp>(time_scale_multiplier);
+
+            /// The events are ordered by the timestamp and `base` never follows `current`, but a negative
+            /// distance cannot be represented in an unsigned type, so handle it explicitly rather than wrap.
+            if (current < base)
+                return compareDistance<type>(-1, 0);
+
+            return compareDistance<type>(static_cast<Timestamp>(current - base), bound);
+        }
+        else
+        {
+            const Int128 delta = static_cast<Int128>(current) - static_cast<Int128>(base);
+            const Int128 bound = static_cast<Int128>(duration_in_seconds) * time_scale_multiplier;
+
+            return compareDistance<type>(delta, bound);
+        }
+    }
+
     template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<typename Data::Timestamp> * best_matched_events = nullptr) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -410,13 +485,13 @@ protected:
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
-        VectorWithMemoryTracking<T> current_matched_events;
+        VectorWithMemoryTracking<typename Data::Timestamp> current_matched_events;
         VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
 
+        /// Records the match only. Adding a backtrack point here would let this traversal skip ahead
+        /// and accept chains the pattern does not authorise, and that the verdict traversal rejects.
         const auto do_push_event = [&]
         {
-            back_stack.emplace(action_it, events_it, base_it);
-
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
             if (best_matched_events->size() < current_matched_events.size())
@@ -427,7 +502,7 @@ protected:
 
         const auto do_revert_event_if_needed = [&]
         {
-            if (current_matched_actions.size() > 0 && current_matched_actions.back() >= action_it)
+            while (!current_matched_actions.empty() && current_matched_actions.back() >= action_it)
             {
                 current_matched_events.pop_back();
                 current_matched_actions.pop_back();
@@ -487,7 +562,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLessOrEqual)
             {
-                if (events_it->first <= base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeLessOrEqual>(base_it->first, events_it->first, action_it->extra))
                 {
                     /// condition satisfied, move onto next action
                     back_stack.emplace(action_it, events_it, base_it);
@@ -499,7 +574,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLess)
             {
-                if (events_it->first < base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeLess>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -510,7 +585,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreaterOrEqual)
             {
-                if (events_it->first >= base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeGreaterOrEqual>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -521,7 +596,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreater)
             {
-                if (events_it->first > base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeGreater>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -532,7 +607,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeEqual)
             {
-                if (events_it->first == base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeEqual>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -549,16 +624,13 @@ protected:
                     sequence_match_max_iterations);
         }
 
-        /// if there are some actions remaining
-        if (action_it != action_end)
-        {
-            /// match multiple empty strings at end
-            while (action_it->type == PatternActionType::KleeneStar ||
-                   action_it->type == PatternActionType::TimeLessOrEqual ||
-                   action_it->type == PatternActionType::TimeLess ||
-                   (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0))
-                ++action_it;
-        }
+        /// match multiple empty strings at end
+        while (action_it != action_end
+            && (action_it->type == PatternActionType::KleeneStar
+                || action_it->type == PatternActionType::TimeLessOrEqual
+                || action_it->type == PatternActionType::TimeLess
+                || (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0)))
+            ++action_it;
 
         if (events_it == events_begin)
             ++events_it;
@@ -567,10 +639,10 @@ protected:
     }
 
     template <typename EventEntry>
-    VectorWithMemoryTracking<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
+    VectorWithMemoryTracking<typename Data::Timestamp> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
     {
 
-        VectorWithMemoryTracking<T> best_matched_events;
+        VectorWithMemoryTracking<typename Data::Timestamp> best_matched_events;
         backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
 
         return best_matched_events;
@@ -680,6 +752,9 @@ protected:
 private:
     std::string pattern;
     size_t arg_count;
+    /// Multiplier from seconds - the unit of the `(?t...)` durations in the pattern - to the ticks of the
+    /// timestamp argument. `1` for every accepted type except `DateTime64`, where it is `10 ^ scale`.
+    Int64 time_scale_multiplier = 1;
     PatternActions actions;
 
     DFAStates dfa_states;
@@ -746,19 +821,20 @@ public:
         offsets_to.push_back(offsets_to.back() + size);
         if (size)
         {
-            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            typename ColumnVectorOrDecimal<T>::Container & data_to
+                = assert_cast<ColumnVectorOrDecimal<T> &>(arr_to.getData()).getData();
 
             for (auto it : result_vec)
             {
-                data_to.push_back(it);
+                data_to.push_back(static_cast<T>(it));
             }
         }
     }
 
 private:
-    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    VectorWithMemoryTracking<typename Data::Timestamp> getEvents(ConstAggregateDataPtr __restrict place) const
     {
-        VectorWithMemoryTracking<T> res;
+        VectorWithMemoryTracking<typename Data::Timestamp> res;
         const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);
@@ -857,9 +933,13 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
         return std::make_shared<AggregateFunction<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types, params, pattern);
     if (which.isDate())
         return std::make_shared<AggregateFunction<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types, params, pattern);
+    /// `DateTime64` timestamps are stored and compared as signed ticks of the column's own scale, so events that
+    /// share a second still order by their sub-second part. The `(?t...)` durations stay in seconds.
+    if (which.isDateTime64())
+        return std::make_shared<AggregateFunction<DataTypeDateTime64::FieldType, Data<Int64>>>(argument_types, params, pattern);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of aggregate function {}, must be DateTime",
+                    "Illegal type {} of first argument of aggregate function {}, must be Date, DateTime, DateTime64 or an unsigned integer",
                     time_arg->getName(), name);
 }
 

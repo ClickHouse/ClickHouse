@@ -17,9 +17,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRICS [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRIC FAMILIES [db].table3
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
@@ -43,6 +43,9 @@ public:
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
 
+    /// Returns the schema version of this table (the `version` setting, see TimeSeriesVersion.h).
+    UInt64 getVersion() const;
+
     /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
@@ -55,11 +58,11 @@ public:
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and Metrics.
+    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and MetricFamilies.
     /// A concrete table can have no RecentSamples target (see hasTarget).
     static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
     }
 
     void readImpl(
@@ -102,7 +105,7 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -124,6 +127,9 @@ private:
         bool is_inner_table = false;
     };
 
+    /// Reads information about the target tables from the create query without creating anything.
+    static std::vector<Target> findTargets(const ASTCreateQuery & create_query);
+
     /// Initializes information about the target tables and creates the inner ones (unless this is an ATTACH query).
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,
@@ -136,13 +142,10 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
-    /// The CREATE query with normalization applied.
-    const boost::intrusive_ptr<const ASTCreateQuery> normalized_create_query;
-
     MultiVersion<TimeSeriesSettings> storage_settings;
 
-    const std::vector<Target> targets;
-    const bool has_inner_tables;
+    std::vector<Target> targets;
+    bool has_inner_tables = false;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

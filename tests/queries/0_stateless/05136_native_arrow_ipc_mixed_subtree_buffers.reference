@@ -1,0 +1,8 @@
+Arrow uncompressed: OK
+Arrow lz4: OK
+Arrow zstd: OK
+Arrow projection: OK
+ArrowStream uncompressed: OK
+ArrowStream lz4: OK
+ArrowStream zstd: OK
+ArrowStream projection: OK

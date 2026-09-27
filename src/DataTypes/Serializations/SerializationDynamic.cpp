@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -697,11 +698,15 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
     /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
     auto field_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), field);
     encodeDataType(field_type, ostr);
-    field_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
+    getDataTypesCache().getSerialization(field_type->getName(), field_type)->serializeBinary(field, ostr, settings);
 }
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The type of every nested value comes from the data, decoded here, so nothing but the size of
+    /// the input bounds the depth of the recursion.
+    checkStackSize();
+
     auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
@@ -709,7 +714,7 @@ void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, c
         return;
     }
 
-    field_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
+    getDataTypesCache().getSerialization(field_type->getName(), field_type)->deserializeBinary(field, istr, settings);
 }
 
 void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -741,7 +746,7 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(global_discr);
     const auto & variant_type_name = variant_info.variant_names[global_discr];
     encodeDataType(variant_type, ostr);
-    getDataTypesCache().getSerialization(variant_type_name)->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
+    getDataTypesCache().getSerialization(variant_type_name, variant_type)->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
 }
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -765,7 +770,7 @@ void SerializationDynamic::serializeForHashCalculation(const IColumn & column, s
         ReadBufferFromMemory value_buf(value);
         auto type = decodeDataType(value_buf);
         auto type_name = type->getName();
-        auto serialization = getDataTypesCache().getSerialization(type_name);
+        auto serialization = getDataTypesCache().getSerialization(type_name, type);
         auto tmp_column = type->createColumn();
         serialization->deserializeBinary(*tmp_column, value_buf, {});
         serializeVariantForHashCalculation(*tmp_column, serialization, type, 0, ostr);
@@ -776,7 +781,7 @@ void SerializationDynamic::serializeForHashCalculation(const IColumn & column, s
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(global_discr);
     serializeVariantForHashCalculation(
         variant_column.getVariantByGlobalDiscriminator(global_discr),
-        getDataTypesCache().getSerialization(variant_type_name),
+        getDataTypesCache().getSerialization(variant_type_name, variant_type),
         variant_type,
         variant_column.offsetAt(row_num),
         ostr);
@@ -826,6 +831,9 @@ void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr
 
 void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the comment in the Field overload: this is the same recursion on the column-building path.
+    checkStackSize();
+
     auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(variant_type))
     {
