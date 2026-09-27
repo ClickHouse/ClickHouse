@@ -23,9 +23,10 @@ which requires the newest recorded new_value of every setting to equal its defau
 The result depends only on the diff, the final files and the current version, so it is the same in CI, where the
 diff comes from the PR, and locally:
 
-    python3 -m ci.jobs.scripts.settings_history [--base blessed/master]
+    python3 -m ci.jobs.scripts.settings_history [--base <remote>/master]
 
-checks `git diff <base>` of the declaration files, uncommitted changes included, against the working tree.
+checks `git diff <base>` of the declaration files, uncommitted changes included, against the working tree. The
+default base is the `master` of the first remote that has one among `blessed`, `upstream` and `origin`.
 """
 
 import argparse
@@ -228,10 +229,20 @@ def current_version(root="."):
     )
 
 
+def default_base():
+    for remote in ("blessed", "upstream", "origin"):
+        ref = f"{remote}/master"
+        if subprocess.run(["git", "rev-parse", "--verify", "-q", ref], capture_output=True).returncode == 0:
+            return ref
+    raise SystemExit("no <remote>/master to diff against: pass --base")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Check the settings history of the working tree against a base.")
-    parser.add_argument("--base", default="blessed/master", help="Revision to diff against (default: blessed/master)")
+    parser.add_argument("--base", help="Revision to diff against (default: blessed, upstream or origin master)")
     args = parser.parse_args()
+    if args.base is None:
+        args.base = default_base()
     # Diff from the merge base, as the PR patch in CI does: a two-endpoint diff against a base that moved
     # on would report the base's own changes as reversions made here.
     merge_base = subprocess.run(
