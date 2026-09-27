@@ -21,6 +21,37 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// The quote style of every part, written only when some part is quoted. Double quotes are semantic under
+/// `standard` name matching, so the JSON form must keep them to round-trip to the same query.
+static void writePartQuotesJSON(JSONObjectWriter & w, const IdentifierName & name_parts)
+{
+    if (std::ranges::all_of(name_parts, [](const IdentifierPart & part) { return part.quote == IdentifierPartQuote::Unquoted; }))
+        return;
+
+    w.writeKey("part_quotes");
+    auto & o = w.getOut();
+    o << '[';
+    for (size_t i = 0; i < name_parts.size(); ++i)
+    {
+        if (i > 0)
+            o << ',';
+        writeJSONString(JSONObjectWriter::quoteToJSONString(name_parts[i].quote), o, w.getFormatSettings());
+    }
+    o << ']';
+}
+
+static void readPartQuotesJSON(const JSONObjectReader & r, IdentifierName & name_parts)
+{
+    auto quotes = r.readStringArray("part_quotes");
+    if (quotes.empty())
+        return;
+    if (quotes.size() != name_parts.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Identifier JSON has {} 'part_quotes' for {} name parts during AST JSON deserialization", quotes.size(), name_parts.size());
+    for (size_t i = 0; i < quotes.size(); ++i)
+        name_parts[i].quote = JSONObjectReader::quoteFromJSONString(quotes[i], "part_quotes");
+}
+
 ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
     : full_name(short_name), name_parts(std::vector<String>{short_name}), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
@@ -94,6 +125,7 @@ void ASTIdentifier::writeJSON(WriteBuffer & out) const
         }
         o << ']';
     }
+    writePartQuotesJSON(w, name_parts);
     w.writeChildren(children);
     w.writeAlias(*this);
 }
@@ -168,6 +200,7 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
             setShortName(name);
         }
     }
+    readPartQuotesJSON(r, name_parts);
     r.readAlias(*this);
 }
 
@@ -378,6 +411,7 @@ void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
             "A nested table reference with a UUID cannot be represented as AST JSON: it cannot be formatted back to SQL "
             "faithfully during AST JSON serialization");
     }
+    writePartQuotesJSON(w, name_parts);
     w.writeChildren(children);
     w.writeAlias(*this);
 }
@@ -459,6 +493,7 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
             "ASTTableIdentifier JSON must not carry a 'uuid': a nested table reference with a UUID cannot be "
             "formatted back to SQL faithfully during AST JSON deserialization");
     }
+    readPartQuotesJSON(r, name_parts);
     r.readAlias(*this);
 }
 

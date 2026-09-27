@@ -49,6 +49,7 @@ void ASTWithElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "WithElement");
     w.writeString("name", name);
+    w.writeQuote("name_quote", name_quote);
     if (is_materialized)
         w.writeBool("is_materialized", true);
     w.writeChild("subquery", subquery);
@@ -60,6 +61,7 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     name = r.getString("name");
+    name_quote = r.readQuote("name_quote");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' during AST JSON deserialization");
     is_materialized = r.getBool("is_materialized");

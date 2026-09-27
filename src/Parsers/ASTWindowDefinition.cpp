@@ -222,7 +222,10 @@ void ASTWindowDefinition::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "WindowDefinition");
     if (!parent_window_name.empty())
+    {
         w.writeString("parent_window_name", parent_window_name);
+        w.writeQuote("parent_window_name_quote", parent_window_name_quote);
+    }
     w.writeChild("partition_by", partition_by);
     w.writeChild("order_by", order_by);
     if (!frame_is_default)
@@ -275,6 +278,7 @@ void ASTWindowListElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "WindowListElement");
     w.writeString("name", name);
+    w.writeQuote("name_quote", name_quote);
     w.writeChild("definition", definition);
 }
 
@@ -299,6 +303,7 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     parent_window_name = r.getString("parent_window_name");
+    parent_window_name_quote = r.readQuote("parent_window_name_quote");
 
     /// `partition_by` and `order_by` are parser-owned `ASTExpressionList`s; the analyzer builds an
     /// expression list from `partition_by` and a sort list from `order_by` (whose children must be
@@ -403,6 +408,7 @@ void ASTWindowListElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     name = r.getString("name");
+    name_quote = r.readQuote("name_quote");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'name' for WindowListElement during AST JSON deserialization");
 

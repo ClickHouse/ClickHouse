@@ -13,7 +13,10 @@ namespace DB
 void JSONObjectWriter::writeAlias(const ASTWithAlias & node)
 {
     if (!node.alias.empty())
+    {
         writeString("alias", node.alias);
+        writeQuote("alias_quote", node.getAliasQuote());
+    }
     if (node.preferAliasToColumnName())
         writeBool("prefer_alias_to_column_name", true);
     if (node.parametrised_alias)

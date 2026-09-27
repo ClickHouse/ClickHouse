@@ -144,7 +144,10 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeChild("arguments", arguments);
     w.writeChild("parameters", parameters);
     if (!window_name.empty())
+    {
         w.writeString("window_name", window_name);
+        w.writeQuote("window_name_quote", getWindowNameQuote());
+    }
     w.writeChild("window_definition", window_definition);
     if (isOperator())
         w.writeBool("is_operator", true);
@@ -258,6 +261,7 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         children.push_back(parameters);
 
     window_name = r.getString("window_name");
+    setWindowNameQuote(r.readQuote("window_name_quote"));
 
     /// `window_definition` is parser-produced as an `ASTWindowDefinition`; `finishFormatWithWindow`
     /// prints it inside `OVER (...)` and `QueryTreeBuilder::buildWindow` does
