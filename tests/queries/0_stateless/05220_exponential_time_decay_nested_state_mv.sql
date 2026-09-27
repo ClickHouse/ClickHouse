@@ -258,7 +258,8 @@ WITH
         SELECT
             t.key,
             t.batch,
-            exponentialTimeDecayedSumState(t.exhaustion) AS exhaustion
+            exponentialTimeDecayedSumState(t.exhaustion) AS exhaustion,
+            exponentialTimeDecayedSumState(3)(t.exhaustion) AS explicit_exhaustion
         FROM exponential_time_decay_finalized_values AS t
         GROUP BY
             t.key,
@@ -267,7 +268,8 @@ WITH
 SELECT
     key,
     batch,
-    toTypeName(exhaustion)
+    toTypeName(exhaustion),
+    toTypeName(explicit_exhaustion)
 FROM states
 ORDER BY
     key,
@@ -280,7 +282,8 @@ WITH
         SELECT
             t.key,
             t.batch,
-            exponentialTimeDecayedSumState(t.exhaustion) AS exhaustion
+            exponentialTimeDecayedSumState(t.exhaustion) AS exhaustion,
+            exponentialTimeDecayedSumState(3)(t.exhaustion) AS explicit_exhaustion
         FROM exponential_time_decay_finalized_values AS t
         GROUP BY
             t.key,
@@ -290,7 +293,8 @@ WITH
     (
         SELECT
             s.key,
-            exponentialTimeDecayedSumMerge(s.exhaustion) AS exhaustion
+            exponentialTimeDecayedSumMerge(s.exhaustion) AS exhaustion,
+            exponentialTimeDecayedSumMerge(3)(s.explicit_exhaustion) AS explicit_exhaustion
         FROM states AS s
         GROUP BY s.key
     ),
@@ -304,6 +308,12 @@ WITH
     )
 SELECT
     merged.key,
+    abs(
+        exponentialTimeDecayingValueAt(merged.exhaustion, target_time)
+        - exponentialTimeDecayingValueAt(merged.explicit_exhaustion, target_time)
+    ) <= 1e-12 * greatest(
+        1.,
+        abs(exponentialTimeDecayingValueAt(merged.explicit_exhaustion, target_time))),
     abs(
         exponentialTimeDecayingValueAt(merged.exhaustion, target_time)
         - exponentialTimeDecayingValueAt(direct.exhaustion, target_time)
