@@ -4471,7 +4471,7 @@ Used in workload scheduling. Controls the order in which queries' memory reserva
 A value of `0` (the default) means the score does not influence the eviction or growth order.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
-        {"26.7", 0, 0, "New setting to control the eviction order of query memory reservations when a workload is under memory pressure."}) \
+        {"26.10", 0, 0, "New setting to control the eviction order of query memory reservations when a workload is under memory pressure."}) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
