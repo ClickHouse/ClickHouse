@@ -502,6 +502,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             &storage_snapshot->metadata->getColumns());
     }
 
+    /// With no early read steps, all columns already share one reader. There is no
+    /// legacy `String` stream to co-read across steps, nor any previous-step columns to remove.
+    const size_t num_steps = mutation_steps.size() + prewhere_actions.steps.size();
+    if (num_steps == 0)
+    {
+        result.columns = storage_snapshot->getColumnsByNames(options, column_to_read_after_prewhere);
+        return result;
+    }
+
     auto getRequiredSourceColumns = [](const PrewhereExprStep & step)
     {
         Names required_source_columns;
@@ -512,7 +521,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         return required_source_columns;
     };
 
+    result.pre_columns.reserve(num_steps);
     std::vector<Names> required_source_columns_by_step;
+    required_source_columns_by_step.reserve(num_steps);
     auto collectRequiredSourceColumns = [&](const PrewhereExprSteps & steps)
     {
         for (const auto & step : steps)
@@ -522,19 +533,13 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     collectRequiredSourceColumns(mutation_steps);
     collectRequiredSourceColumns(prewhere_actions.steps);
 
-    auto tryGetLegacyStringParent = [&](const String & name, String & parent_name)
+    auto isLegacyStringSize = [&](const String & name, const String & parent_name)
     {
-        constexpr size_t string_size_suffix_length = 5;
-        if (name.size() <= string_size_suffix_length
-            || name.compare(name.size() - string_size_suffix_length, string_size_suffix_length, ".size") != 0)
-            return false;
-
         auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
         if (!column_in_storage || !column_in_storage->isSubcolumn()
             || column_in_storage->type->getTypeId() != TypeIndex::UInt64)
             return false;
 
-        parent_name = name.substr(0, name.size() - string_size_suffix_length);
         auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
         if (!parent_column || parent_column->type->getTypeId() != TypeIndex::String)
             return false;
@@ -573,17 +578,22 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     {
         for (const auto & name : names)
         {
-            String parent_name;
-            if (legacy_string_companions.contains(name) || !tryGetLegacyStringParent(name, parent_name))
+            constexpr size_t string_size_suffix_length = 5;
+            if (name.size() <= string_size_suffix_length
+                || !name.ends_with(".size") || legacy_string_companions.contains(name))
                 continue;
 
+            const auto parent_name = name.substr(0, name.size() - string_size_suffix_length);
             auto needs_parent = [&](const Names & columns)
             {
                 return std::find(columns.begin(), columns.end(), parent_name) != columns.end();
             };
 
-            if (needs_parent(column_to_read_after_prewhere)
-                || std::any_of(required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent))
+            /// Size-only reads need no companion. Check demand before resolving part
+            /// columns and enumerating serialization streams for every read task.
+            if ((needs_parent(column_to_read_after_prewhere)
+                    || std::any_of(required_source_columns_by_step.begin(), required_source_columns_by_step.end(), needs_parent))
+                && isLegacyStringSize(name, parent_name))
             {
                 legacy_string_companions.emplace(name, parent_name);
                 legacy_string_companions.emplace(parent_name, name);
