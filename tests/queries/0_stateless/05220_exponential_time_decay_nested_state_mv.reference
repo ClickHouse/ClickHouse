@@ -1,0 +1,2 @@
+AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))
+1
