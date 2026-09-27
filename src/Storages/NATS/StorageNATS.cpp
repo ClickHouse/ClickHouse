@@ -412,27 +412,15 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
-            /// A consumer can reach this point still subscribed, because `unsubscribeConsumers`
-            /// only reaches the consumers that are in the pool at that moment: a direct `SELECT`
-            /// holds one out of the pool and hands it back subscribed whenever it found it that
-            /// way. What such a consumer buffered belongs to the window when the table was not
-            /// streaming - messages published while the materialized view was detached - and must
-            /// not be inserted into the views by the cycles that follow. Clearing the queue alone
-            /// does not guarantee that: `onMsg` keeps appending from the NATS client thread, and
-            /// `subscribe` does nothing for a consumer that is subscribed already, so the live
-            /// subscription is replaced the way `unsubscribeConsumers` would have replaced it. The
-            /// queue is finished before the drain inside `unsubscribe` delivers what the
-            /// subscription still holds, so nothing from that window can land behind the cleanup,
-            /// and a JetStream message goes back to the broker while the subscription it arrived
-            /// on is still alive, so it is redelivered at once rather than after the ACK deadline.
+            /// A direct `SELECT` that held a consumer while `unsubscribeConsumers` ran hands it back
+            /// still subscribed, with what it buffered while the table was not streaming. Replace
+            /// the subscription the way `unsubscribeConsumers` would have.
             if (consumer->isSubscribed())
             {
                 consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
                 consumer->unsubscribe();
             }
 
-            /// What an unsubscribed consumer still holds are leftovers of a subscription that is
-            /// already gone, which can only be thrown away.
             consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
@@ -462,13 +450,8 @@ void StorageNATS::resubscribeStaleConsumers()
         if (!consumer->needsResubscribe())
             continue;
 
-        /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
-        /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
-        /// reach the JetStream context and the connection, so acknowledging a message whose
-        /// subscription has been destroyed reads freed memory. Recovery therefore prefers a
-        /// consumer that holds nothing: the streaming cycles insert and acknowledge what the
-        /// broker delivered before it went stale, and a stale subscription delivers nothing more,
-        /// so the queue does drain and the reconnect this keys on is still reported once it has.
+        /// Let the streaming cycles insert what is buffered first: a stale subscription receives
+        /// nothing more, so the queue drains, and the consumer keeps reporting until then.
         if (!consumer->queueEmpty())
         {
             LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
@@ -477,11 +460,7 @@ void StorageNATS::resubscribeStaleConsumers()
 
         LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
 
-        /// The check above is only a snapshot: `onMsg` runs on the NATS client thread and appends
-        /// to the queue without `consumers_mutex`, and the drain inside `unsubscribe` delivers
-        /// whatever the subscription still has. So the messages are returned to the broker rather
-        /// than destroyed, while the subscription they arrived on is still alive, and the queue is
-        /// finished first so that nothing can be appended behind that.
+        /// `onMsg` can still have appended something, which goes back to the broker.
         consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
         consumer->unsubscribe();
 
@@ -492,9 +471,7 @@ void StorageNATS::resubscribeStaleConsumers()
         catch (...)
         {
             tryLogCurrentException(log);
-            /// A consumer left unsubscribed no longer reports that it needs to be recovered, so it
-            /// would stay silent. Hand it to `subscribeConsumers`, which only runs while the
-            /// consumers are not ready.
+            /// An unsubscribed consumer no longer reports that it needs to be recovered.
             consumers_ready.store(false);
             break;
         }
@@ -963,18 +940,10 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    /// `threadFunc` streams only while the table has ready dependent views, but the interpreter looks
-    /// them up again, and a `DROP VIEW` or `DETACH TABLE` landing in between leaves it with nowhere
-    /// to insert into: the pipeline it builds then discards whatever the sources consume (see
-    /// `InsertDependenciesBuilder::createChainWithDependencies`), and the acknowledgement below
-    /// would confirm to the broker messages that were never inserted anywhere. Such a cycle must not
-    /// consume anything. What the consumers hold goes back to the broker when the next cycle finds
-    /// the last view gone and unsubscribes them, or stays with them until the view is attached again.
-    /// This repeats the readiness check of `threadFunc`, not a check of the dependency metadata or of
-    /// the shape of the pipeline: a plain `DETACH TABLE` keeps the dependency registered while the
-    /// view is gone, and a materialized view whose target is `Null` legitimately ends in the same
-    /// discarding sink while being a view the table streams to. The check can only err towards
-    /// skipping a cycle whose pipeline would have inserted somewhere, which consumes nothing.
+    /// A `DROP VIEW` or `DETACH TABLE` after the check in `threadFunc` leaves the interpreter a
+    /// pipeline that discards what it consumes, and acknowledging that would lose the messages.
+    /// Repeat the same readiness check: the dependency metadata survives a plain `DETACH TABLE`,
+    /// and a view with a `Null` target ends in the same discarding sink legitimately.
     if (!checkDependencies(table_id))
     {
         LOG_DEBUG(log, "The last materialized view was dropped or detached while the streaming cycle was being prepared, nothing to stream to");

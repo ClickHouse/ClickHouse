@@ -2249,6 +2249,12 @@ def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_le
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
     _wait_for_ack_pending(detached)
 
+    # Another direct `SELECT` takes the same subscribed consumer and returns a row from that backlog
+    # without committing it. The query leaves the consumer subscribed, so the row it read has to go
+    # back to the broker when it ends rather than wait for the ACK deadline.
+    read = instance.query("SELECT count() FROM test.consume SETTINGS rabbitmq_max_wait_ms = 5000")
+    assert int(read) >= 1, "the direct SELECT read nothing of a backlog of {} messages".format(detached)
+
     instance.query(create_view)
     nats_helpers.wait_for_mv_attached_to_table(instance, "test.consume")
 
