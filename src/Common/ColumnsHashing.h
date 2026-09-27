@@ -19,6 +19,8 @@
 #include <Core/Defines.h>
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <vector>
 #include <Common/HashTable/Hash.h>
 
 namespace DB
@@ -78,18 +80,100 @@ private:
     Cache cache;
 };
 
+enum class LowCardinalityCacheVisitValue : uint8_t
+{
+    Empty = 0,
+    Found = 1,
+    NotFound = 2,
+};
+
+template <typename Mapped>
+struct LowCardinalityHashMethodBlockCache
+{
+    /// Keep block-local storage free of persistent-cache metadata so cheap fixed hash tables
+    /// can access these arrays directly in the aggregation hot path.
+    columns_hashing_impl::MappedCache<Mapped> mapped_cache;
+    PaddedPODArray<LowCardinalityCacheVisitValue> visit_cache;
+
+    void resetForBlock(size_t size)
+    {
+        if constexpr (!std::is_same_v<Mapped, void>)
+            mapped_cache.resize(size);
+        visit_cache.assign(size, LowCardinalityCacheVisitValue::Empty);
+    }
+};
+
+/// Cache dictionary positions resolved to mapped values in one hash table.
+/// Mapped values are valid only while the hash table owning this cache is alive.
+/// This cache can be used for aggregation mappings pointing into arenas, because hash-table
+/// growth does not invalidate them. It cannot be used when the mapped value itself is mutable.
+template <typename Mapped>
+struct LowCardinalityHashMethodCache
+{
+    using DictionaryKey = LowCardinalityDictionaryCache::DictionaryKey;
+
+    std::optional<DictionaryKey> dictionary_key;
+    columns_hashing_impl::MappedCache<Mapped> mapped_cache;
+    PaddedPODArray<LowCardinalityCacheVisitValue> visit_cache;
+
+    bool hasDictionary(const DictionaryKey & key) const
+    {
+        return dictionary_key && *dictionary_key == key;
+    }
+
+    void resetForSharedDictionary(const DictionaryKey & key, size_t size)
+    {
+        /// Mappings from the previous dictionary are unusable, and keeping their capacity can
+        /// retain buffers sized for a much larger dictionary until aggregation finishes.
+        clear();
+        if constexpr (!std::is_same_v<Mapped, void>)
+            mapped_cache.resize(size);
+        visit_cache.assign(size, LowCardinalityCacheVisitValue::Empty);
+        dictionary_key = key;
+    }
+
+    void resetForBlock(size_t size)
+    {
+        dictionary_key.reset();
+        if constexpr (!std::is_same_v<Mapped, void>)
+            mapped_cache.resize(size);
+        visit_cache.assign(size, LowCardinalityCacheVisitValue::Empty);
+    }
+
+    void clear()
+    {
+        dictionary_key.reset();
+        if constexpr (!std::is_same_v<Mapped, void>)
+        {
+            decltype(mapped_cache) empty_mapped_cache;
+            mapped_cache.swap(empty_mapped_cache);
+        }
+        decltype(visit_cache) empty_visit_cache;
+        visit_cache.swap(empty_visit_cache);
+    }
+
+    size_t allocatedBytes() const
+    {
+        size_t bytes = visit_cache.allocated_bytes();
+        if constexpr (!std::is_same_v<Mapped, void>)
+            bytes += mapped_cache.allocated_bytes();
+        return bytes;
+    }
+};
+
 /// Single low cardinality column.
-template <typename SingleColumnMethod, typename Mapped, bool use_cache>
+template <
+    typename SingleColumnMethod,
+    typename Mapped,
+    bool use_cache,
+    bool cache_mapped_values = true,
+    bool use_persistent_cache = true>
 struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
-
-    enum class VisitValue : uint8_t
-    {
-        Empty = 0,
-        Found = 1,
-        NotFound = 2,
-    };
+    using VisitValue = LowCardinalityCacheVisitValue;
+    using PositionCache = LowCardinalityHashMethodCache<Mapped>;
+    using BlockCache = std::conditional_t<use_persistent_cache, PositionCache, LowCardinalityHashMethodBlockCache<Mapped>>;
 
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using EmplaceResult = typename Base::EmplaceResult;
@@ -115,17 +199,12 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     ColumnPtr dictionary_holder;
 
     /// Cache AggregateDataPtr for current column in order to decrease the number of hash table usages.
-    columns_hashing_impl::MappedCache<Mapped> mapped_cache;
-    PaddedPODArray<VisitValue> visit_cache;
-
-    PaddedPODArray<UInt64> filled_visit_cache_indexes;
-
-    ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
-    {
-        if (visit_cache[index] == VisitValue::Empty)
-            filled_visit_cache_indexes.push_back(index);
-        visit_cache[index] = value;
-    }
+    BlockCache block_cache;
+    PositionCache * position_cache = nullptr;
+    /// Negative lookups are valid only for the current block, even when successful mappings persist.
+    std::vector<size_t> not_found_positions;
+    bool retain_found_entries = false;
+    bool clear_position_cache_after_block = false;
 
     /// If initialized column is nullable.
     bool is_nullable = false;
@@ -140,7 +219,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
+        const ColumnRawPtrs & key_columns_low_cardinality,
+        const Sizes & key_sizes,
+        const HashMethodContextPtr & context,
+        PositionCache * persistent_cache = nullptr)
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
@@ -198,26 +280,80 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
         }
 
-        if constexpr (has_mapped)
-            mapped_cache.resize(key_columns[0]->size());
-
-        visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
+        if constexpr (cache_mapped_values)
+        {
+            if constexpr (use_persistent_cache)
+            {
+                if (persistent_cache)
+                {
+                    position_cache = persistent_cache;
+                    if (is_shared_dict)
+                    {
+                        retain_found_entries = true;
+                        if (!position_cache->hasDictionary(dictionary_key))
+                            position_cache->resetForSharedDictionary(dictionary_key, dict->size());
+                    }
+                    else
+                    {
+                        /// A non-shared dictionary ends a run of reusable dictionary positions.
+                        /// Reuse the buffers for this block, but do not retain any mappings from it.
+                        position_cache->resetForBlock(dict->size());
+                        clear_position_cache_after_block = true;
+                    }
+                }
+                else
+                {
+                    position_cache = &block_cache;
+                    position_cache->resetForBlock(dict->size());
+                }
+            }
+            else
+                block_cache.resetForBlock(dict->size());
+        }
 
         size_of_index_type = column->getSizeOfIndexType();
         positions = column->getIndexesPtr().get();
     }
 
+    ~HashMethodSingleLowCardinalityColumn()
+    {
+        if constexpr (cache_mapped_values && use_persistent_cache)
+        {
+            for (size_t position : not_found_positions)
+            {
+                if (position_cache->visit_cache[position] == VisitValue::NotFound)
+                    position_cache->visit_cache[position] = VisitValue::Empty;
+            }
+
+            if (clear_position_cache_after_block)
+                position_cache->clear();
+        }
+    }
+
+    ALWAYS_INLINE auto & getPositionCache()
+    {
+        if constexpr (use_persistent_cache)
+            return *position_cache;
+        else
+            return block_cache;
+    }
+
     ALWAYS_INLINE void resetCache()
     {
         Base::resetCache();
+    }
 
-        if (filled_visit_cache_indexes.size() > visit_cache.size() / 4)
-            std::fill(visit_cache.begin(), visit_cache.end(), VisitValue::Empty);
-        else
-            for (UInt64 index : filled_visit_cache_indexes)
-                visit_cache[index] = VisitValue::Empty;
+    ALWAYS_INLINE void resetCacheAfterHashTableChange()
+    {
+        Base::resetCacheAfterHashTableChange();
 
-        filled_visit_cache_indexes.clear();
+        if constexpr (cache_mapped_values)
+        {
+            auto & cache = getPositionCache();
+            std::fill(cache.visit_cache.begin(), cache.visit_cache.end(), VisitValue::Empty);
+            if constexpr (use_persistent_cache)
+                not_found_positions.clear();
+        }
     }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -245,22 +381,33 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
-            setVisited(row, VisitValue::Found);
+            if constexpr (cache_mapped_values)
+                getPositionCache().visit_cache[row] = VisitValue::Found;
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
             if constexpr (has_mapped)
-                return EmplaceResult(data.getNullKeyData(), mapped_cache[0], !has_null_key);
+            {
+                auto & mapped = data.getNullKeyData();
+                if constexpr (cache_mapped_values)
+                    return EmplaceResult(mapped, getPositionCache().mapped_cache[0], !has_null_key);
+                else
+                    return EmplaceResult(mapped, mapped, !has_null_key);
+            }
             else
                 return EmplaceResult(!has_null_key);
         }
 
-        if (visit_cache[row] == VisitValue::Found)
+        if constexpr (cache_mapped_values)
         {
-            if constexpr (has_mapped)
-                return EmplaceResult(mapped_cache[row], mapped_cache[row], false);
-            else
-                return EmplaceResult(false);
+            auto & cache = getPositionCache();
+            if (cache.visit_cache[row] == VisitValue::Found)
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.mapped_cache[row], cache.mapped_cache[row], false);
+                else
+                    return EmplaceResult(false);
+            }
         }
 
         auto key_holder = getKeyHolder(row_, pool);
@@ -273,8 +420,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         else
             data.emplace(key_holder, it, inserted);
 
-        setVisited(row, VisitValue::Found);
-
         if constexpr (has_mapped)
         {
             auto & mapped = it->getMapped();
@@ -282,11 +427,21 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             {
                 new (&mapped) Mapped();
             }
-            mapped_cache[row] = mapped;
-            return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
+            if constexpr (cache_mapped_values)
+            {
+                auto & cache = getPositionCache();
+                cache.visit_cache[row] = VisitValue::Found;
+                cache.mapped_cache[row] = mapped;
+                return EmplaceResult(mapped, cache.mapped_cache[row], inserted, std::move(key));
+            }
+            return EmplaceResult(mapped, mapped, inserted, std::move(key));
         }
         else
+        {
+            if constexpr (cache_mapped_values)
+                getPositionCache().visit_cache[row] = VisitValue::Found;
             return EmplaceResult(inserted);
+        }
     }
 
     ALWAYS_INLINE bool isNullAt(size_t i)
@@ -310,12 +465,16 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return FindResult(data.hasNullKeyData(), 0);
         }
 
-        if (visit_cache[row] != VisitValue::Empty)
+        if constexpr (cache_mapped_values)
         {
-            if constexpr (has_mapped)
-                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found, 0);
-            else
-                return FindResult(visit_cache[row] == VisitValue::Found, 0);
+            auto & cache = getPositionCache();
+            if (cache.visit_cache[row] != VisitValue::Empty)
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&cache.mapped_cache[row], cache.visit_cache[row] == VisitValue::Found, 0);
+                else
+                    return FindResult(cache.visit_cache[row] == VisitValue::Found, 0);
+            }
         }
 
         auto key_holder = getKeyHolder(row_, pool);
@@ -327,12 +486,23 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             it = data.find(keyHolderGetKey(key_holder));
 
         bool found = it;
-        setVisited(row, found ? VisitValue::Found : VisitValue::NotFound);
-
-        if constexpr (has_mapped)
+        if constexpr (cache_mapped_values)
         {
+            auto & cache = getPositionCache();
             if (found)
-                mapped_cache[row] = it->getMapped();
+                cache.visit_cache[row] = VisitValue::Found;
+            else
+            {
+                if (retain_found_entries)
+                    not_found_positions.push_back(row);
+                cache.visit_cache[row] = VisitValue::NotFound;
+            }
+
+            if constexpr (has_mapped)
+            {
+                if (found)
+                    cache.mapped_cache[row] = it->getMapped();
+            }
         }
 
         size_t offset = 0;
@@ -341,7 +511,12 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             offset = found ? data.offsetInternal(it) : 0;
 
         if constexpr (has_mapped)
-            return FindResult(&mapped_cache[row], found, offset);
+        {
+            if constexpr (cache_mapped_values)
+                return FindResult(&getPositionCache().mapped_cache[row], found, offset);
+            else
+                return FindResult(found ? &it->getMapped() : nullptr, found, offset);
+        }
         else
             return FindResult(found, offset);
     }
