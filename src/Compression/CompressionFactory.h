@@ -13,7 +13,6 @@
 #include <memory>
 #include <optional>
 #include <source_location>
-#include <unordered_map>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -168,7 +167,7 @@ private:
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
-    std::unordered_map<String, CanCanonicalizeUntyped> untyped_canonicalizers;
+    UnorderedMapWithMemoryTracking<String, CanCanonicalizeUntyped> untyped_canonicalizers;
     /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
     UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
     CompressionCodecPtr default_codec;
