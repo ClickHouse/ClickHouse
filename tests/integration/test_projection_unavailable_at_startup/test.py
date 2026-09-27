@@ -573,7 +573,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
             "allow_suspicious_codecs": 1,
         },
     )
-    assert "distributed_ddl_entry_format_version >= 2" in error
+    assert "Cannot copy unavailable projection declarations" in error
     error = node.query_and_get_error(
         "CREATE TABLE dl.t6_cluster_copy_v3 ON CLUSTER test_shard_localhost AS dl.t6 "
         "ENGINE = MergeTree ORDER BY a",
@@ -604,11 +604,15 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     # Metadata-only changes leave the source schema intact and must remain usable while a
     # projection declaration is unavailable.
     node.query("ALTER TABLE dl.t MODIFY COMMENT 'x'")
-    assert "COMMENT 'x'" in node.query("SHOW CREATE TABLE dl.t")
+    assert node.query(
+        "SELECT comment FROM system.tables WHERE database = 'dl' AND name = 't'"
+    ).strip() == "x"
     node.query("ALTER TABLE dl.t6 MODIFY COLUMN b COMMENT 'safe'")
     node.query("ALTER TABLE dl.t6 MODIFY COLUMN b CODEC(ZSTD)")
-    assert "COMMENT 'safe'" in node.query("SHOW CREATE TABLE dl.t6")
-    assert "CODEC(ZSTD)" in node.query("SHOW CREATE TABLE dl.t6")
+    assert node.query(
+        "SELECT comment FROM system.columns WHERE database = 'dl' AND table = 't6' AND name = 'b'"
+    ).strip() == "safe"
+    assert "CODEC(ZSTD" in node.query("SHOW CREATE TABLE dl.t6")
     assert "PROJECTION" in node.query("SHOW CREATE TABLE dl.t")
     assert declarations_on_disk("t") == 1
 

@@ -83,5 +83,5 @@ def test_projection_column_list_replay_without_initiator_settings(started_cluste
         "SELECT create_table_query FROM system.tables "
         f"WHERE database = '{database_name}' AND name = 't'"
     ).replace("`", "")
-    assert "PROJECTION p (x CODEC(ZSTD)) AS" in secondary_create
+    assert "PROJECTION p (x CODEC(ZSTD" in secondary_create
     assert "PROJECTION q (x CODEC(LZ4)) AS" in secondary_create

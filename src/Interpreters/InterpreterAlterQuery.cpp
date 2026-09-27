@@ -142,8 +142,9 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
-        if ((command.type == ASTAlterCommand::ADD_PROJECTION || command.type == ASTAlterCommand::MODIFY_PROJECTION)
-            && command.projection_decl
+        /// MODIFY PROJECTION can only change WITH SETTINGS. Its codec declaration restates
+        /// already accepted metadata and is not validated with the worker's settings.
+        if (command.type == ASTAlterCommand::ADD_PROJECTION && command.projection_decl
             && hasDeclaredProjectionColumnCodec(command.projection_decl->as<const ASTProjectionDeclaration &>()))
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Projection column CODEC declarations in ON CLUSTER DDL require "

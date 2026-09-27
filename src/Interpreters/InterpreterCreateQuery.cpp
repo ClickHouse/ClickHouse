@@ -1824,7 +1824,11 @@ bool isStorageReplicated(const ASTCreateQuery & create)
 }
 
 void checkProjectionColumnListReplicationCompatibility(
-    const ASTCreateQuery & create, const ContextPtr & context, const DatabasePtr & database, bool is_fresh_definition,
+    const ASTCreateQuery & create,
+    const ContextPtr & context,
+    const DatabasePtr & database,
+    bool is_fresh_definition,
+    bool copies_source_projections,
     const ProjectionsDescription * copied_projections = nullptr)
 {
     /// Workers replay the DDL entry with their own settings when the old entry format is used.
@@ -1847,12 +1851,17 @@ void checkProjectionColumnListReplicationCompatibility(
         && (isStorageReplicated(create) || !create.cluster.empty()
             || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")));
     const bool reject_old_format_codec = !create.cluster.empty()
-        && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value == DDLLogEntry::OLDEST_VERSION;
-    if (!reject_column_list && !reject_old_format_codec)
+        && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value == DDLLogEntry::OLDEST_VERSION
+        && !copies_source_projections;
+    /// An old-format worker reads the source table itself. Its unavailable projections cannot
+    /// be copied into a distributed CREATE, even though no codec setting needs to be forwarded.
+    const bool reject_unavailable_copy = copies_source_projections && !create.cluster.empty() && !copied_projections;
+    if (!reject_column_list && !reject_old_format_codec && !reject_unavailable_copy)
         return;
 
     bool has_projection_column_list = false;
     bool has_projection_column_codec = false;
+    bool has_unavailable_source_projection = false;
     if (create.columns_list && create.columns_list->projections)
     {
         for (const auto & projection_ast : create.columns_list->projections->children)
@@ -1883,6 +1892,7 @@ void checkProjectionColumnListReplicationCompatibility(
         if ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree"))
         {
             const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
+            has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
             auto inspect_projection = [&](const ASTPtr & definition)
             {
                 if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
@@ -1919,6 +1929,12 @@ void checkProjectionColumnListReplicationCompatibility(
             "Projection column lists in replicated metadata require setting "
             "allow_projection_column_list_in_replicated_metadata = 1. "
             "Upgrade every replica before enabling it");
+
+    if (reject_unavailable_copy && has_unavailable_source_projection)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot copy unavailable projection declarations into replicated or distributed CREATE metadata. "
+            "Restore projection analysis on the source table or drop the unavailable declaration before copying it");
 
     if (reject_old_format_codec && has_projection_column_codec)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2177,6 +2193,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visitTableExpressions(*create.columns_list);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
+    const bool copies_source_projections = !create.columns_list && !create.as_table.empty();
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
     /// The definition persisted below must not depend on the session setting, because reloads and
@@ -2251,7 +2268,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// RESTORE supplies a fresh definition despite using SECONDARY_CREATE for other checks.
     /// A secondary replay or stored ATTACH must keep accepting metadata already written.
     checkProjectionColumnListReplicationCompatibility(
-        create, getContext(), database, isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup,
+        create,
+        getContext(),
+        database,
+        isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup,
+        copies_source_projections,
         &properties.projections);
 
     /// A normalized distributed CREATE sends its column list rather than the original `AS src` query.
@@ -3865,7 +3886,11 @@ BlockIO InterpreterCreateQuery::execute()
                 auto mode = getLoadingStrictnessLevel(
                     create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_restore_from_backup);
                 checkProjectionColumnListReplicationCompatibility(
-                    create, getContext(), nullptr, isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup);
+                    create,
+                    getContext(),
+                    nullptr,
+                    isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup,
+                    !create.columns_list && !create.as_table.empty());
             }
 
             /// Authorize here: this is the last point that still runs as the real user, and worker legs

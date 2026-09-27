@@ -2044,9 +2044,10 @@ ClickHouse versions before 26.10 cannot parse a projection column list. For repl
 Replicated databases, and `ON CLUSTER` DDL, the syntax is disabled by default. After upgrading
 every replica and cluster host that may load the metadata or replay the DDL, explicitly set
 `allow_projection_column_list_in_replicated_metadata = 1` to use it. A downgrade after storing
-the new syntax is not supported. An `ON CLUSTER` operation that introduces projection `CODEC`
-metadata, including full-definition `ATTACH TABLE` and `CREATE TABLE AS source`, requires
-`distributed_ddl_entry_format_version >= 2`, because version 1 omits the session settings used to validate it.
+the new syntax is not supported. An `ON CLUSTER` operation that declares a fresh projection `CODEC`,
+including full-definition `ATTACH TABLE`, requires `distributed_ddl_entry_format_version >= 2`,
+because version 1 omits the session settings used to validate it. `CREATE TABLE AS source` can copy
+already accepted projection metadata with version 1 without validating its codec again.
 
 The effective codecs of a projection's columns are exposed by the `codecs` column of
 [`system.projections`](/reference/system-tables/projections).

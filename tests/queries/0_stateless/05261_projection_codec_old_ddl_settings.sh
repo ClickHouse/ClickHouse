@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 
-# Version 1 distributed DDL omits query settings. A projection codec accepted with the initiator's
-# settings must be refused before enqueueing, rather than rejected later by a worker's defaults.
+# Version 1 distributed DDL omits query settings. Fresh projection codecs that need the
+# initiator's settings must be refused before enqueueing; existing metadata can be reused.
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -21,6 +21,8 @@ v1=(--distributed_ddl_entry_format_version=1 --distributed_ddl_task_timeout=0
 v2=(--distributed_ddl_entry_format_version=2 --distributed_ddl_task_timeout=180
     --distributed_ddl_output_mode=throw --allow_projection_column_list_in_replicated_metadata=1
     --allow_suspicious_codecs=1)
+v1_wait=(--distributed_ddl_entry_format_version=1 --distributed_ddl_task_timeout=180
+    --distributed_ddl_output_mode=throw --allow_projection_column_list_in_replicated_metadata=1)
 wait_for_worker=(--distributed_ddl_task_timeout=180 --distributed_ddl_output_mode=throw)
 
 expect_disabled_before_enqueue() {
@@ -50,16 +52,29 @@ expect_disabled_before_enqueue attach "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_attach'"
 
-# The AS source definition is copied on the worker, so the initiator must inspect it too.
+# The AS source definition is copied on the worker without validating its already accepted codec.
 ${CLICKHOUSE_CLIENT} --allow_suspicious_codecs=1 -q "
     CREATE TABLE ${source_table}
         (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
         ENGINE = MergeTree ORDER BY k"
-expect_disabled_before_enqueue copy "
+${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
-        ENGINE = MergeTree ORDER BY k"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+        ENGINE = MergeTree ORDER BY k FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
+    WHERE database = currentDatabase() AND table = 't_projection_codec_old_copy'"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, '\`', ''),
+    'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
+
+# MODIFY PROJECTION only changes settings; it restates the codec without validating it again.
+${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
+    ALTER TABLE ${copy_table} ON CLUSTER test_shard_localhost
+        MODIFY PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k)
+        WITH SETTINGS (index_granularity = 128) FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(create_table_query,
+    'WITH SETTINGS (index_granularity = 128)') > 0) FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
+${CLICKHOUSE_CLIENT} "${wait_for_worker[@]}" -q "DROP TABLE ${copy_table} ON CLUSTER test_shard_localhost FORMAT Null"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${alter_table} (k UInt64, x Float64)
     ENGINE = MergeTree ORDER BY k"
