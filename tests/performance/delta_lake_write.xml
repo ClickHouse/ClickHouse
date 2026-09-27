@@ -1,0 +1,60 @@
+<test>
+    <settings>
+        <allow_delta_lake_writes>1</allow_delta_lake_writes>
+        <allow_delta_lake_create_table>1</allow_delta_lake_create_table>
+    </settings>
+
+    <!-- Append-only DeltaLakeLocal write paths: one large commit and many small commits. -->
+
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values>
+                <value>delta_lake_write</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE DATABASE IF NOT EXISTS {database}</create_query>
+
+    <create_query>DROP TABLE IF EXISTS {database}.wr_large</create_query>
+    <create_query>
+        CREATE TABLE {database}.wr_large
+        (
+            l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
+            l_quantity Float64, l_extendedprice Float64, l_discount Float64, l_tax Float64,
+            l_returnflag String, l_linestatus String,
+            l_shipdate Date, l_commitdate Date, l_receiptdate Date,
+            l_shipinstruct String, l_shipmode String, l_comment String
+        )
+        ENGINE = DeltaLakeLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/delta_lake_write_wr_large_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')
+    </create_query>
+    <create_query>INSERT INTO {database}.wr_large SELECT * FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
+
+    <!-- insert_large: 200K rows as one block and one commit; Parquet encoding dominates. -->
+    <query>
+        INSERT INTO {database}.wr_large SELECT * FROM tpch10.lineitem LIMIT 200000
+        SETTINGS max_threads = 1, max_insert_threads = 1,
+                 min_insert_block_size_rows = 200000, min_insert_block_size_bytes = 0
+    </query>
+
+    <create_query>DROP TABLE IF EXISTS {database}.wr_small</create_query>
+    <create_query>
+        CREATE TABLE {database}.wr_small
+        (
+            l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
+            l_quantity Float64, l_extendedprice Float64, l_discount Float64, l_tax Float64,
+            l_returnflag String, l_linestatus String,
+            l_shipdate Date, l_commitdate Date, l_receiptdate Date,
+            l_shipinstruct String, l_shipmode String, l_comment String
+        )
+        ENGINE = DeltaLakeLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/delta_lake_write_wr_small_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')
+    </create_query>
+    <create_query>INSERT INTO {database}.wr_small SELECT * FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
+
+    <!-- insert_small: 1000 rows per commit; the kernel commit and the log read dominate. -->
+    <query>INSERT INTO {database}.wr_small SELECT * FROM tpch10.lineitem LIMIT 1000 SETTINGS max_threads = 1, max_insert_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS {database}.wr_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.wr_small</drop_query>
+</test>
