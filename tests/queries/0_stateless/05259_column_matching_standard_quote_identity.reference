@@ -25,3 +25,5 @@ AMBIGUOUS_IDENTIFIER
 1	a
 MULTIPLE_EXPRESSIONS_FOR_ALIAS
 UNKNOWN_IDENTIFIER
+--- an unqualified name of a temporary table takes precedence over a case sibling in the database
+temporary	0

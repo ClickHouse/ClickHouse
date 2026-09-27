@@ -34,6 +34,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & 
         database = current_database;
         /// The implicit current database is canonical already; keep it exact.
         database_quote = IdentifierPartQuote::DoubleQuoted;
+        database_is_implicit = true;
     }
 }
 
@@ -59,6 +60,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
     {
         database = current_database;
         database_quote = IdentifierPartQuote::DoubleQuoted;
+        database_is_implicit = true;
     }
 }
 
@@ -97,12 +99,13 @@ void DatabaseAndTableWithAlias::resolveCanonicalNames(ContextPtr context)
     if (!context || table.empty())
         return;
 
-    const bool implicit_database = database.empty();
+    /// The constructors fill in the current database for an unqualified name, so `database` is not empty then.
+    const bool implicit_database = database.empty() || database_is_implicit;
     /// An unqualified name may refer to a temporary table, which resolves by exact name and must not fold.
     if (implicit_database && context->tryResolveStorageID(StorageID{"", table}, Context::ResolveExternal))
         return;
 
-    String database_name = implicit_database ? context->getCurrentDatabase() : database;
+    String database_name = database.empty() ? context->getCurrentDatabase() : database;
     if (database_name.empty())
         return;
 

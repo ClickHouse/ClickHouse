@@ -31,6 +31,9 @@ struct DatabaseAndTableWithAlias
     /// Quote styles of the source identifier parts; needed to resolve canonical spellings.
     IdentifierPartQuote database_quote = IdentifierPartQuote::Unquoted;
     IdentifierPartQuote table_quote = IdentifierPartQuote::Unquoted;
+    /// `database` was not written in the query but filled in with the current database. Such a name may
+    /// refer to a temporary table, which resolves by its exact name before any database.
+    bool database_is_implicit = false;
 
     DatabaseAndTableWithAlias() = default;
     explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");

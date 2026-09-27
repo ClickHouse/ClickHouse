@@ -49,3 +49,10 @@ echo '--- JOIN USING through a projection alias folds'
 ${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query "SELECT id AS JoinKey, v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)"
 ${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query "SELECT id AS JoinKey, id + 0 AS joinKEY, v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)" 2>&1 | grep -oF 'MULTIPLE_EXPRESSIONS_FOR_ALIAS' | uniq
 ${CLIENT_STANDARD} --analyzer_compatibility_join_using_top_level_identifier=1 --query 'SELECT id AS "JoinKey", v FROM t_quote_identity_l JOIN t_quote_identity_r USING (joinkey)' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+
+echo '--- an unqualified name of a temporary table takes precedence over a case sibling in the database'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE tmp_quote_identity (v String) ENGINE = Memory; INSERT INTO tmp_quote_identity VALUES ('regular')"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "
+    CREATE TEMPORARY TABLE Tmp_Quote_Identity (v String);
+    INSERT INTO Tmp_Quote_Identity VALUES ('temporary');
+    SELECT v, dummy FROM Tmp_Quote_Identity CROSS JOIN system.one"
