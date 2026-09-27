@@ -91,8 +91,8 @@ function wait_for_cleanup_rows()
         poll_s=$(( deadline - SECONDS ))
         if (( poll_s <= 0 )); then break; fi
         sleep 0.3
-        if timeout --foreground -k 1 "$poll_s" $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log" \
-            && [[ $(timeout --foreground -k 1 "$poll_s" $CLICKHOUSE_CLIENT --query "SELECT count() $CLEANUP_ROWS") -ge 1 ]]
+        if [[ $(timeout --foreground -k 1 "$poll_s" $CLICKHOUSE_CLIENT \
+            --query "SYSTEM FLUSH LOGS text_log; SELECT count() $CLEANUP_ROWS") -ge 1 ]]
         then
             return 0
         fi
