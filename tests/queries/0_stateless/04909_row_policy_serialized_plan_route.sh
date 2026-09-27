@@ -5,8 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Counts, for the secondary queries of one initial query, how many ran a plan the initiator had
-# already built. A node logs this message only where it built a runnable plan out of a received one.
+# Counts, for the secondary queries of one initial query, how many were given a plan the initiator had
+# already built. A node logs this message only when it receives such a plan. A secondary query counts
+# however it ended: once every mark is handed out, the initiator cancels the replicas that got none.
 # Prints "<secondary queries> <of them given a plan>".
 route_of() {
     $CLICKHOUSE_CLIENT -q "
@@ -14,12 +15,13 @@ route_of() {
         (
             SELECT query_id IN (
                 SELECT query_id FROM system.text_log
-                WHERE event_date >= yesterday() AND logger_name = 'TCPHandler'
-                  AND message = 'Received query plan'
+                WHERE event_date >= yesterday() AND event_time >= now() - 600
+                  AND logger_name = 'TCPHandler' AND message = 'Received query plan'
             ) AS has_plan
             FROM system.query_log
-            WHERE type = 'QueryFinish' AND NOT is_initial_query
-              AND event_date >= yesterday() AND initial_query_id = '$1'
+            WHERE type != 'QueryStart' AND NOT is_initial_query
+              AND event_date >= yesterday() AND event_time >= now() - 600
+              AND initial_query_id = '$1'
               -- A secondary query logs current_database = 'default', not the test database.
               AND current_database IN ['default', currentDatabase()]
         )
@@ -72,17 +74,24 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO rt_pr SELECT number, number FROM numbers(2000000);
     CREATE ROW POLICY rt_pr_policy ON rt_pr FOR SELECT USING y < 1000000 TO ALL;"
 
-query_id="04909_pr_$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT --query_id="$query_id" -q "
-    SELECT max(y) FROM rt_pr
-    SETTINGS enable_analyzer = 1, serialize_query_plan = 1,
-             enable_parallel_replicas = 1, max_parallel_replicas = 3,
-             cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-             parallel_replicas_for_non_replicated_merge_tree = 1,
-             parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0,
-             parallel_replicas_mark_segment_size = 1, merge_tree_min_rows_for_concurrent_read = 1" > /dev/null
-# Two remote replicas read; the third is the initiator's own local plan.
-echo -e "parallel replicas\t$(wait_for_route "$query_id" 2 | cut -f2)"
+# The initiator's own replica may take every mark before a remote replica has been sent the query at
+# all, and that replica is then never contacted. Such a run shows fewer than two secondary queries, so
+# the query is repeated.
+for attempt in 1 2 3; do
+    query_id="04909_pr_${attempt}_$CLICKHOUSE_DATABASE"
+    $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
+        SELECT max(y) FROM rt_pr
+        SETTINGS enable_analyzer = 1, serialize_query_plan = 1,
+                 enable_parallel_replicas = 1, max_parallel_replicas = 3,
+                 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+                 parallel_replicas_for_non_replicated_merge_tree = 1,
+                 parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0,
+                 parallel_replicas_mark_segment_size = 1, merge_tree_min_rows_for_concurrent_read = 1" > /dev/null
+    route=$(wait_for_route "$query_id" 2)
+    [ "$(echo "$route" | cut -f1)" -ge 2 ] && break
+done
+# Two remote replicas; the third is the initiator's own local plan.
+echo -e "parallel replicas\t$(echo "$route" | cut -f2)"
 
 $CLICKHOUSE_CLIENT -q "
     DROP ROW POLICY rt_pr_policy ON rt_pr;
