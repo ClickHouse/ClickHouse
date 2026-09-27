@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -970,6 +971,17 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
+SerializationPtr LoadedMergeTreeDataPartInfoForReader::getSerialization(const NameAndTypePair & column) const
+{
+    if (auto serialization = data_part->tryGetSerialization(column.name))
+        return serialization;
+
+    if (column.isSubcolumn() && containsObjectType(*column.getTypeInStorage()))
+        return column.getTypeInStorage()->getSubcolumnSerialization(
+            column.getSubcolumnName(), data_part->getSerialization(column.getNameInStorage()));
+    return data_part->getSerialization(column.name);
+}
+
 bool IMergeTreeDataPart::isMovingPart() const
 {
     fs::path part_directory_path = getDataPartStorage().getRelativePath();
@@ -1464,8 +1476,17 @@ Estimates IMergeTreeDataPart::getEstimates() const
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Statistics are built from table metadata, which can name columns this part does not store:
+    /// an expired column `TTL` removes a column from the part after the statistics set is decided.
+    const auto & part_columns = getColumnsDescription();
+    Estimates stored_estimates;
+    for (const auto & [column_name, estimate] : new_estimates)
+        if (part_columns.tryGet(column_name))
+            stored_estimates.emplace(column_name, estimate);
+
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    estimates = std::move(stored_estimates);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1519,6 +1540,17 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
                 constant_granularity->fixFromRowsCount(rows_count);
 
+            /// A patch part that holds rows names the parts it patches, so an index without source
+            /// parts is not a patch that applies to nothing - it is a file that lost its content.
+            /// Failing here is what keeps the acknowledged update recoverable: an empty index reports
+            /// data version 0, so `clearUnusedPatchParts` would find the patch materialized everywhere
+            /// and delete the only copy of it. An empty index belongs to an empty part alone (the
+            /// covering parts `cloneEmpty` creates).
+            if (info.isPatch() && rows_count > 0 && patch_part_index && patch_part_index->empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Patch part {} has {} rows, but its index in {} references no source parts",
+                    name, rows_count, PatchPartIndex::FILENAME);
+
             loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
             loadPartitionAndMinMaxIndex();
 
@@ -1548,10 +1580,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
         {
-            auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
-                getDataPartStorage().getFullPath(), message);
-
             if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
@@ -1571,6 +1599,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 if (isEmpty())
                     e->addMessage("Part is empty");
             }
+
+            auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
+                getDataPartStorage().getFullPath(), message);
         }
 
         throw;
@@ -1892,11 +1924,14 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
         return;
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
@@ -2073,7 +2108,15 @@ void IMergeTreeDataPart::loadPatchPartIndex()
         return;
 
     if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+    {
         patch_part_index = PatchPartIndex::readBinary(*in);
+
+        /// The file holds nothing but this index, so bytes left over mean its content is not what was
+        /// written. One corruption shape makes this check the difference between a loud and a silent
+        /// failure: a zeroed block parses as an index of format version `V1` with no source parts at
+        /// all, and everything after those nine bytes would otherwise be ignored.
+        assertEOF(*in);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
