@@ -42,11 +42,12 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
     chassert(type != Type::EMPTY);
 
     size_t arena_growth_memory = 0;
-    if (type == Type::key_string || type == Type::key_fixed_string)
+    if (type == Type::key_string || type == Type::key_fixed_string
+        || type == Type::key_string_two_level || type == Type::key_fixed_string_two_level)
     {
         chassert(key_columns.size() == 1);
         size_t key_bytes = 0;
-        if (type == Type::key_string)
+        if (type == Type::key_string || type == Type::key_string_two_level)
         {
             const auto & offsets = assert_cast<const ColumnString &>(*key_columns.front()).getOffsets();
             key_bytes = num_rows == 0 ? 0 : offsets[num_rows - 1];
@@ -61,6 +62,16 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
         using Table = typename Method::Data;
         if constexpr (std::is_same_v<Table, FixedHashSet<UInt8>> || std::is_same_v<Table, FixedHashSet<UInt16>>)
             return 0;
+        else if constexpr (requires { Table::NUM_BUCKETS; })
+        {
+            /// A two-level table grows each sub-table independently, and any of them can receive any
+            /// number of the new keys, so the sum of the per-bucket bounds is the upper bound.
+            size_t growth_memory = arena_growth_memory;
+            for (const auto & impl : method.data.impls)
+                if (common::addOverflow(growth_memory, impl.estimateGrowthMemory(num_rows), growth_memory))
+                    return std::numeric_limits<size_t>::max();
+            return growth_memory;
+        }
         else
         {
             size_t growth_memory = 0;
@@ -110,6 +121,23 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
     #undef M
     }
     return bytes;
+}
+
+/// Only the single-level types that can be converted are reported. A two-level table's capacity is
+/// spread over 256 independently growing sub-tables, so a single number would not say anything about
+/// an upcoming rehash; `key8` / `key16` are `FixedHashSet`-s, which never grow and are never converted.
+template <typename Variant>
+size_t SetVariantsTemplate<Variant>::getBufferSizeInCells() const
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: return (NAME)->data.getBufferSizeInCells();
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            return 0;
+    }
 }
 
 template <typename Variant>
@@ -221,6 +249,59 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
     return Type::hashed;
+}
+
+template <typename Variant>
+bool SetVariantsTemplate<Variant>::isConvertibleToTwoLevel(Type type_)
+{
+    switch (type_)
+    {
+    #define M(NAME) case Type::NAME: return true;
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            return false;
+    }
+}
+
+template <typename Variant>
+bool SetVariantsTemplate<Variant>::isTwoLevel() const
+{
+    switch (type)
+    {
+        case Type::hashed_two_level:
+        case Type::key32_two_level:
+        case Type::key64_two_level:
+        case Type::key_string_two_level:
+        case Type::key_fixed_string_two_level:
+        case Type::keys32_two_level:
+        case Type::keys64_two_level:
+        case Type::keys128_two_level:
+        case Type::keys256_two_level:
+        case Type::nullable_keys128_two_level:
+        case Type::nullable_keys256_two_level:
+            return true;
+        default:
+            return false;
+    }
+}
+
+template <typename Variant>
+void SetVariantsTemplate<Variant>::convertToTwoLevel()
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            NAME##_two_level = std::make_unique<typename decltype(NAME##_two_level)::element_type>(*(NAME)); \
+            (NAME).reset(); \
+            type = Type::NAME##_two_level; \
+            break;
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Set method cannot be converted to two-level");
+    }
 }
 
 template struct SetVariantsTemplate<NonClearableSet>;

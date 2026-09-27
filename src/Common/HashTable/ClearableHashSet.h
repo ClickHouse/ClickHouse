@@ -2,6 +2,7 @@
 
 #include <type_traits>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/TwoLevelHashTable.h>
 
 
 /** A hash table that allows you to clear the table in O(1).
@@ -102,3 +103,75 @@ using ClearableHashSetWithStackMemory = ClearableHashSet<
     HashTableGrower<initial_size_degree>,
     HashTableAllocatorWithStackMemory<
         (1ULL << initial_size_degree) * sizeof(ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>)>>;
+
+/** Two-level variant of ClearableHashSet: 256 first-level buckets, each a `ClearableHashSet`.
+  * Clearing is O(number of buckets): every bucket keeps its own `ClearableHashSetState::version`,
+  * so `clear` bumps each bucket's version independently. This mirrors `TwoLevelHashSet` but with a
+  * clearable per-bucket cell and an added `clear` (the base `TwoLevelHashTable` provides none).
+  */
+template <
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+class TwoLevelClearableHashSet
+    : public TwoLevelHashTable<
+          Key,
+          ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>,
+          Hash,
+          Grower,
+          Allocator,
+          ClearableHashSet<Key, Hash, Grower, Allocator>>
+{
+public:
+    using Base = TwoLevelHashTable<
+        Key,
+        ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>,
+        Hash,
+        Grower,
+        Allocator,
+        ClearableHashSet<Key, Hash, Grower, Allocator>>;
+
+    using Base::Base;
+
+    void clear()
+    {
+        for (auto & impl : this->impls)
+            impl.clear();
+    }
+};
+
+/** Two-level variant of ClearableHashSetWithSavedHash: 256 first-level buckets, each a
+  * `ClearableHashSetWithSavedHash`. Clearing is O(number of buckets), same idiom as
+  * `TwoLevelClearableHashSet` above but with the saved-hash cell so that string-key sets
+  * can avoid recomputing hashes on rehash.
+  */
+template <
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+class TwoLevelClearableHashSetWithSavedHash
+    : public TwoLevelHashTable<
+          Key,
+          ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>,
+          Hash,
+          Grower,
+          Allocator,
+          ClearableHashSetWithSavedHash<Key, Hash, Grower, Allocator>>
+{
+public:
+    using Base = TwoLevelHashTable<
+        Key,
+        ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>,
+        Hash,
+        Grower,
+        Allocator,
+        ClearableHashSetWithSavedHash<Key, Hash, Grower, Allocator>>;
+    using Base::Base;
+    void clear()
+    {
+        for (auto & impl : this->impls)
+            impl.clear();
+    }
+};

@@ -91,6 +91,19 @@ private:
     LCOptimizationController lc_optimization_controller;
 };
 
+/// Settings of the two-level parallel build of a `DISTINCT` set (see `DistinctSetFilter::enableTwoLevelParallelBuild`).
+struct DistinctTwoLevelBuildSettings
+{
+    /// Threads of the build pool; the build is disabled when this is at most 1.
+    size_t max_threads = 1;
+    /// Minimum set size for converting the set to two-level on its next growth; 0 disables this trigger.
+    UInt64 threshold = 0;
+    /// Projected set bytes that convert the set to two-level immediately; 0 disables this trigger.
+    UInt64 threshold_bytes = 0;
+    /// Minimum number of rows of a chunk per build worker; 0 disables this minimum.
+    UInt64 parallel_build_min_rows = 0;
+};
+
 /// The comparison keys retained by a `DISTINCT` set and returned by its extractor.
 enum class DistinctKeyRepresentation
 {
@@ -113,6 +126,14 @@ public:
         const SizeLimits & set_size_limits_,
         bool skip_null_keys_ = false);
 
+    ~DistinctSetFilter();
+
+    /// Lets `filter` convert the set to a two-level one and build it in parallel by bucket, for large
+    /// chunks (see `DistinctTwoLevelBuildSettings`). Pays off only for a single-stream deduplication of the
+    /// whole input; does nothing when `settings.max_threads <= 1`. A set built this way cannot have its
+    /// keys extracted (`extractKeys`), so this must not be combined with spilling.
+    void enableTwoLevelParallelBuild(const DistinctTwoLevelBuildSettings & settings);
+
     /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
     DistinctKeyRepresentation getKeyRepresentation() const;
 
@@ -126,7 +147,8 @@ public:
     /// The number of distinct keys seen so far.
     size_t getTotalRowCount() const;
 
-    /// The memory occupied by the set and by the `LowCardinality` fast path.
+    /// The memory occupied by the set (including the per-bucket arenas of the two-level parallel build) and
+    /// by the `LowCardinality` fast path.
     size_t getTotalByteCount() const;
 
     /// Reads owning comparison-key columns from a frozen set in hash-table iteration order.
@@ -179,6 +201,18 @@ public:
 private:
     ColumnRawPtrs getKeyColumns(const Columns & columns) const;
     void initialize(const ColumnRawPtrs & key_columns);
+
+    /// Converts the set to two-level when the parallel build will be used for this chunk and the set is
+    /// large enough (see the thresholds in `DistinctTwoLevelBuildSettings`).
+    void maybeConvertToTwoLevel(const ColumnRawPtrs & key_columns, size_t num_rows);
+
+    /// State of the two-level parallel build: the thread pool, its workers and the reusable scratch. Absent
+    /// unless `enableTwoLevelParallelBuild` created a pool.
+    struct TwoLevelBuild;
+    std::unique_ptr<TwoLevelBuild> two_level_build;
+
+    template <typename Method>
+    void buildTwoLevelParallelFilter(Method & method, const ColumnRawPtrs & key_columns, IColumn::Filter & filter, size_t rows);
 
     const ColumnNumbers key_columns_pos;
     /// Types of the key columns (following `key_columns_pos`), for the key extraction.

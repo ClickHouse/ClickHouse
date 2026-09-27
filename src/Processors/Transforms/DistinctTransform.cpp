@@ -36,7 +36,8 @@ DistinctTransform::DistinctTransform(
     const Names & columns_,
     bool allow_abandoning_,
     bool skip_null_keys_,
-    const UInt64 max_bytes_before_pass_through_)
+    const UInt64 max_bytes_before_pass_through_,
+    const DistinctTwoLevelBuildSettings & two_level_build_settings_)
     : ISimpleTransform(header_, header_, true)
     , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
@@ -44,6 +45,8 @@ DistinctTransform::DistinctTransform(
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
+    else
+        distinct_set->enableTwoLevelParallelBuild(two_level_build_settings_);
 }
 
 void DistinctTransform::transform(Chunk & chunk)

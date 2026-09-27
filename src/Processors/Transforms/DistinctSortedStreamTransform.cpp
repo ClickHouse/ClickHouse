@@ -78,7 +78,15 @@ size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumnFilter & fi
             count = buildFilterForRange(*data.NAME, filter, range_begin, range_end); \
             break;
 
-        APPLY_FOR_SET_VARIANTS(M)
+        APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+        /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+        /// stays exhaustive without instantiating the case body for each of them.
+        #define M_TWO_LEVEL(NAME) case ClearableSetVariants::Type::NAME:
+        APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+        #undef M_TWO_LEVEL
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "A two-level set variant cannot appear in the sorted DISTINCT");
 #undef M
             // clang-format on
     }

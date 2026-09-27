@@ -58,6 +58,10 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// `two_level_build_settings_` enables the two-level parallel build of the set (see
+    /// `DistinctSetFilter::enableTwoLevelParallelBuild`). It only pays off for the single-stream final
+    /// deduplication, so it is ignored with `allow_abandoning_` (a preliminary deduplication runs per input
+    /// stream, so a pool per stream would just oversubscribe the CPU).
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -65,7 +69,8 @@ public:
         const Names & columns_,
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
-        UInt64 max_bytes_before_pass_through_ = 0);
+        UInt64 max_bytes_before_pass_through_ = 0,
+        const DistinctTwoLevelBuildSettings & two_level_build_settings_ = {});
 
     String getName() const override { return "DistinctTransform"; }
 

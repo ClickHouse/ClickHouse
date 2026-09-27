@@ -277,6 +277,21 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
     const bool allow_abandoning = pre_distinct && build_settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
 
+    /// The two-level parallel build spawns its own pool per `DistinctTransform`. Several streams can
+    /// stay alive here - the preliminary DISTINCT runs one per stream, and the final DISTINCT does too
+    /// when the streams are kept disjoint (`skip_stream_merging`, e.g. the by-partition final path that
+    /// `ReadFromMergeTree` enables via `allow_distinct_partitions_independently`). Divide the thread
+    /// budget across those streams so the inner pools never oversubscribe the CPU in aggregate: the
+    /// single-stream final DISTINCT gets the whole budget, and a per-stream one gets a proportional
+    /// slice (one thread once the streams already saturate `max_threads`).
+    const size_t num_streams = std::max<size_t>(1, pipeline.getNumStreams());
+    const DistinctTwoLevelBuildSettings two_level_build_settings{
+        .max_threads = std::max<size_t>(1, build_settings.max_threads / num_streams),
+        .threshold = build_settings.distinct_two_level_threshold,
+        .threshold_bytes = build_settings.distinct_two_level_threshold_bytes,
+        .parallel_build_min_rows = build_settings.distinct_two_level_parallel_build_min_rows,
+    };
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -285,7 +300,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(
                 header, settings.set_size_limits, limit_hint, columns,
-                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold);
+                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold, two_level_build_settings);
         });
 }
 
