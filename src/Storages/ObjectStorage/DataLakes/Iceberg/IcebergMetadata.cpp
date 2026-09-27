@@ -7,6 +7,7 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -243,9 +244,12 @@ bool IcebergMetadata::isMetadataFileOfThisTable(const String & path, ContextPtr 
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method);
+    /// A table recreated at the same location writes a `v<N>.metadata.json` under the same name, so a copy of such a
+    /// file cached under this table's uuid can be the previous table's.
+    const bool name_can_be_reused = isVersionNumberedCommitScheme(std::filesystem::path(metadata_file_path).filename());
     auto metadata_object = getMetadataJSONObject(
         metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method,
-        persistent_components.table_uuid);
+        name_can_be_reused ? std::optional<String>{} : persistent_components.table_uuid);
     return metadata_object->has(f_table_uuid)
         && normalizeUuid(metadata_object->getValue<String>(f_table_uuid)) == *persistent_components.table_uuid;
 }

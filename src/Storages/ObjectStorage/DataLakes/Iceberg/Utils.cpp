@@ -174,7 +174,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
 /// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
 /// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
 /// superset of the state. A uuid in the name removes both properties.
-static bool isVersionNumberedCommitScheme(const String & file_name)
+bool isVersionNumberedCommitScheme(const String & file_name)
 {
     if (!file_name.starts_with('v'))
         return false;

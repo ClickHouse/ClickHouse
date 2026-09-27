@@ -1967,12 +1967,69 @@ def test_recreated_table_with_compaction_enabled(started_cluster):
     table.append(pa.table({"a": pa.array([3.5], type=pa.float64())}))
     check("1.5\n2.5\n3.5\n")
 
+    # The compaction database keeps the table it opened, so reading an unchanged table skips the metadata file request
+    # that opening the table costs every read through the plain database.
+    def s3_get_requests(db):
+        query_id = f"{test_ref}_{db}_{uuid.uuid4().hex}"
+        node.query(f"SELECT * FROM {db}.`{identifier}` FORMAT Null", query_id=query_id)
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(node.query(
+            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ))
+
+    assert s3_get_requests(compaction_db) < s3_get_requests(CATALOG_NAME)
+
     # Same name and location, another schema under the same schema-id.
     catalog.drop_table(identifier)
     table = catalog.create_table(
         identifier, schema=Schema(NestedField(1, "b", StringType(), required=False)), location=location
     )
     table.append(pa.table({"b": pa.array(["x", "y"], type=pa.string())}))
+    check("x\ny\n")
+
+    node.query(f"DROP DATABASE {compaction_db}")
+
+
+def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
+    """
+    A table created and written by ClickHouse, dropped and recreated in Glue under the same name and location with
+    another schema, is read as the new table, also through a database with `allow_experimental_iceberg_compaction`.
+    ClickHouse names the metadata files of such a table by version only, so the new table reuses the old one's file names.
+    """
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_recreated_ch_table_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    identifier = f"{namespace}.{table_name}"
+    compaction_db = f"{CATALOG_NAME}_compaction"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_database(
+        started_cluster, node, compaction_db, additional_settings={"allow_experimental_iceberg_compaction": 1}
+    )
+
+    def check(expected):
+        for db in [CATALOG_NAME, compaction_db]:
+            assert node.query(f"SELECT * FROM {db}.`{identifier}` ORDER BY ALL") == expected, db
+
+    create_clickhouse_glue_table(started_cluster, node, namespace, table_name, "(a Float64)")
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{identifier}` VALUES (1.5), (2.5)", settings=write_settings)
+    check("1.5\n2.5\n")
+
+    # Drop, delete the files so that the location can be used again, then recreate it with another schema and write
+    # as many versions as the dropped table had.
+    drop_clickhouse_glue_table(node, namespace, table_name)
+    s3 = boto3.resource(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    s3.Bucket("warehouse-glue").objects.filter(Prefix=f"{table_name}/").delete()
+    create_clickhouse_glue_table(started_cluster, node, namespace, table_name, "(b String)")
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{identifier}` VALUES ('x'), ('y')", settings=write_settings)
     check("x\ny\n")
 
     node.query(f"DROP DATABASE {compaction_db}")

@@ -73,6 +73,9 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
+/// True for `v<N>.metadata.json`, the only metadata file name that carries no uuid.
+bool isVersionNumberedCommitScheme(const String & file_name);
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
