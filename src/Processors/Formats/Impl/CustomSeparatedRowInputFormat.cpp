@@ -312,7 +312,7 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
     }
 }
 
-bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &)
+bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &, size_t /*column_index*/)
 {
     skipSpaces();
     updateFormatSettings(is_last_file_column);
