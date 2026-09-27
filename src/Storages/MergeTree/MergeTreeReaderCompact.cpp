@@ -83,14 +83,15 @@ void MergeTreeReaderCompact::fillColumnPositions()
         if (position.has_value() && (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i)))
             position.reset();
 
-        if (position.has_value() && isSubcolumnMissingInPart(i))
+        const bool subcolumn_missing_in_part = position.has_value() && isSubcolumnMissingInPart(i);
+        if (subcolumn_missing_in_part)
             position.reset();
 
         column_positions[i] = std::move(position);
 
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
-        if (!column_positions[i])
+        if (!column_positions[i] && !subcolumn_missing_in_part)
             findPositionForMissedNested(i);
 
         if (column_positions[i] && column_to_read.isSubcolumn())

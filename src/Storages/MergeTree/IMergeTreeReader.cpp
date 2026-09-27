@@ -133,9 +133,29 @@ bool IMergeTreeReader::isSubcolumnMissingInPart(size_t pos) const
     /// column in its own right, and asking the synthesized group type about it reports every member
     /// the part lacks as a missing subcolumn, including one that is only awaiting offsets sharing.
     const auto & columns_in_part = data_part_info_for_read->getColumnsDescription();
-    auto storage_column_from_part = columns_in_part.tryGetColumn(GetColumnsOptions::AllPhysical, column_to_read.getNameInStorage());
+    const auto name_in_storage = column_to_read.getNameInStorage();
+    auto subcolumn_name = column_to_read.getSubcolumnName();
+    auto storage_column_from_part = columns_in_part.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_storage);
     if (!storage_column_from_part)
-        return false;
+    {
+        /// A request remapped onto a synthesized Nested group names the group, while the part stores the
+        /// group's members as columns. A member that the part does not have is left to the missing-column path.
+        for (auto [member_name, member_subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_to_read.name))
+        {
+            if (member_name.size() <= name_in_storage.size())
+                continue;
+
+            storage_column_from_part = columns_in_part.tryGetColumn(GetColumnsOptions::AllPhysical, String(member_name));
+            if (storage_column_from_part)
+            {
+                subcolumn_name = member_subcolumn_name;
+                break;
+            }
+        }
+
+        if (!storage_column_from_part)
+            return false;
+    }
 
     if (columns_in_part.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name))
         return false;
@@ -148,7 +168,7 @@ bool IMergeTreeReader::isSubcolumnMissingInPart(size_t pos) const
     const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
     const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
     const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part->type;
-    return !type_for_subcolumn->hasSubcolumn(column_to_read.getSubcolumnName());
+    return !type_for_subcolumn->hasSubcolumn(subcolumn_name);
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
