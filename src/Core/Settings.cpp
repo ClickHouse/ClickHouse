@@ -6868,8 +6868,8 @@ is answered as
 The rewrite is deliberately restricted to the cases where it is provably answer-preserving: aggregates
 that take no arguments (such as `count()`), MergeTree sources that read stored values with no
 expression evaluated on the way out, and branch filters built from comparisons and logical
-connectives. The conjuncts a branch does not share with its siblings must all read a single one of
-those tables; the shared ones may read any of them.
+connectives. Across all branches, the conjuncts a branch does not share with its siblings must all
+read the same one of those tables; the shared ones may read any of them.
 
 Three shapes are known to lose:
 
