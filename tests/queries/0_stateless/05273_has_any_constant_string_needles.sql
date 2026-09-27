@@ -41,4 +41,5 @@ INSERT INTO t_has_any_const_long_strings SELECT number, arrayMap(i -> [
 WITH [repeat('a', 256), concat('head0000', repeat('n', 240), 'tail0000'), 'a', repeat('q', 65)] AS ns SELECT 'needles of up to 256 bytes', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_long_strings;
 WITH [repeat('a', 257), concat('head0000', repeat('x', 1008), 'tail0000'), 'a', repeat('q', 65)] AS ns SELECT 'a needle longer than 256 bytes', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_long_strings;
 WITH ['', 'a', repeat('q', 64), repeat('q', 65)] AS ns SELECT 'long elements, short needles', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_long_strings;
+WITH [repeat('a', 256), 'a', repeat('q', 65), repeat('a', 257)] AS ns SELECT 'a needle longer than 256 bytes, last', countIf(hasAny(s, ns)), countIf(hasAny(s, ns) != hasAny(s, materialize(ns))) FROM t_has_any_const_long_strings;
 DROP TABLE t_has_any_const_long_strings;

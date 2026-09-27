@@ -29,14 +29,18 @@ bool hasAnyStringInConstNeedles(const GenericArraySource & first, const GenericA
     if (needles.size < min_needles_for_lookup)
         return false;
 
+    for (size_t i = needles.begin; i < needles.begin + needles.size; ++i)
+    {
+        if (needle_column->getDataAt(i).size() > max_needle_size)
+            return false;
+    }
+
     HashSet<std::string_view> needle_set;
     /// Equal strings have equal lengths, so an element whose length is not a needle's is skipped unhashed.
     std::bitset<max_needle_size + 1> needle_lengths;
     for (size_t i = needles.begin; i < needles.begin + needles.size; ++i)
     {
         const std::string_view needle = needle_column->getDataAt(i);
-        if (needle.size() > max_needle_size)
-            return false;
         needle_lengths[needle.size()] = true;
         needle_set.insert(needle);
     }

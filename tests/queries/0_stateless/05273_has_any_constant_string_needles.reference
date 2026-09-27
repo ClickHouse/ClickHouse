@@ -14,3 +14,4 @@ Nullable elements	1494	0
 needles of up to 256 bytes	815	0
 a needle longer than 256 bytes	990	0
 long elements, short needles	787	0
+a needle longer than 256 bytes, last	1007	0
