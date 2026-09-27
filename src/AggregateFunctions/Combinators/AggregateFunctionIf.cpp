@@ -54,19 +54,6 @@ public:
 };
 
 
-namespace
-{
-
-bool hasRowToAdd(const UInt8 * __restrict null_map, const UInt8 * __restrict condition, size_t row_begin, size_t row_end)
-{
-    for (size_t i = row_begin; i < row_end; ++i)
-        if (!null_map[i] && condition[i])
-            return true;
-    return false;
-}
-
-}
-
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
   */
@@ -197,7 +184,7 @@ public:
             const IColumn * columns_with_filter[] = {columns_param[0], filter_column};
             if constexpr (result_is_nullable)
             {
-                if (!hasRowToAdd(null_map, filter_values, row_begin, row_end))
+                if (!countBytesInFilterWithNull(assert_cast<const ColumnUInt8 &>(*filter_column).getData(), null_map, row_begin, row_end))
                     return;
                 this->setFlag(place);
             }
@@ -373,8 +360,8 @@ public:
                     nested_columns[arg] = columns[arg];
             }
 
-            const UInt8 * condition = assert_cast<const ColumnUInt8 &>(*nested_columns[number_of_arguments - 1]).getData().data();
-            if (!hasRowToAdd(null_map, condition, row_begin, row_end))
+            const auto & condition = assert_cast<const ColumnUInt8 &>(*nested_columns[number_of_arguments - 1]).getData();
+            if (!countBytesInFilterWithNull(condition, null_map, row_begin, row_end))
                 return;
 
             /// `nested_function` is the -If function, which applies the condition itself.
