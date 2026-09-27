@@ -19,9 +19,9 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -247,16 +247,20 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
 ///   re-enable what the outer query turned off, and the read below it is then made with replicas
 ///   although the outer context forbids it. The root's own clause is not a problem - it is in the
 ///   context the walk is handed.
-/// - A `View`, including one reached through an `Alias`, which forwards `read` to its target with the
-///   same context: the walk stops at the view unless `parallel_replicas_allow_view_over_mergetree`
-///   lets it unwrap one, but the body is planned by its own interpreter either way, and
-///   `getViewContext` disables replicas inside it only in the case the walk does unwrap. With the
-///   setting at its default, `SELECT sum(a) FROM view_over_mergetree` reads the view's body with
-///   replicas. An `Alias` to a `MergeTree` needs nothing here: it reports its target's `isMergeTree`,
-///   so the walk accepts it by itself.
-///   A `MaterializedView` reads its target table rather than planning a body, so it needs none of
-///   this: with `parallel_replicas_allow_materialized_views = 0` that read is not parallelized
-///   either, which is what the walk says.
+/// - A table whose own storage is not what gets read. A `View` plans its body with its own
+///   interpreter, and `getViewContext` clears `enable_parallel_replicas` for it only when
+///   `parallel_replicas_allow_view_over_mergetree` let the walk unwrap the view, so with that setting
+///   at its default `SELECT sum(a) FROM view_over_mergetree` reads the body with replicas while the
+///   walk stopped at the view. An `Alias` forwards reading to its target with the same context and is
+///   the same story one step removed, whatever that target turns out to be. A `StorageProxy`, which is
+///   how a table of a `lazy_load_tables` database is attached, hides even a plain `MergeTree`: it
+///   forwards `supportsReplication` but not `isMergeTree`, so the walk would call such a table
+///   ineligible. `StorageTableFunctionProxy`, which is how `CREATE TABLE t AS view(...)` is attached,
+///   is worse still: it answers `isView() == false` outright. A `MaterializedView` is included by the
+///   same `isView`: the walk does unwrap one to its target, but keyed on the concrete storage, so it
+///   misses a target that is itself wrapped.
+///
+/// The test is the one `validateCorrelatedSubqueries` uses for the same question, for the same reason.
 static bool walkCannotAnswerFor(const IQueryTreeNode * root)
 {
     std::vector<const IQueryTreeNode *> stack{root};
@@ -274,17 +278,12 @@ static bool walkCannotAnswerFor(const IQueryTreeNode * root)
 
         if (const auto * table_node = node->as<TableNode>())
         {
-            /// One link is enough: an `Alias` to another `Alias` is rejected when it is created. A
-            /// target that does not resolve is unknown.
-            auto storage = table_node->getStorage();
-            if (const auto * alias = typeid_cast<const StorageAlias *>(storage.get()))
-            {
-                storage = alias->tryGetTargetTable();
-                if (!storage)
-                    return true;
-            }
+            const auto & storage = table_node->getStorage();
+            const auto nested_storage = unwrapStorageProxy(storage);
+            if (!nested_storage || nested_storage != storage)
+                return true;
 
-            if (typeid_cast<const StorageView *>(storage.get()))
+            if (nested_storage->isView() || nested_storage->readsFromOtherTables())
                 return true;
         }
 
