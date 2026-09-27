@@ -9,7 +9,7 @@ SET max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_
 
 -- Each arm prints its answer with the optimization off and then on (the two lines must agree), plus a
 -- query-tree assertion, because equal answers alone cannot tell a correct rewrite from no rewrite.
--- Arms 23 to 37 are in 05218_fuse_sibling_aggregate_subqueries_2.sql: one file running every
+-- Arms 23 to 38 are in 05218_fuse_sibling_aggregate_subqueries_2.sql: one file running every
 -- arm exceeds the flaky check's 180 s per-run limit, which that job reaches by running many
 -- copies of the same test at once.
 

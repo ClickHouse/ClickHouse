@@ -86,3 +86,9 @@
 -- 37 the fused residual widens the join build side, and a grace hash join raises rather than pass grace_hash_join_max_buckets
 37	1000	1000	1000	1000	1000	1000	1000	1000
 37 fused	8
+-- 38 branches whose joins keep only some of the matching rows are not fused, ALL joins are
+38a fused	0
+38b fused	0
+38c fused	0
+38d fused	0
+38e fused	1

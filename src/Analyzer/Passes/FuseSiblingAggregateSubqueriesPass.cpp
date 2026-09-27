@@ -306,6 +306,25 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
     return true;
 }
 
+/// The fused filter lets every sibling's rows reach the joins. With ALL an extra row only adds joined rows, but ANY,
+/// SEMI, ANTI and ASOF choose among the matches and PASTE pairs rows by position, so there it can replace or remove one.
+bool joinsKeepEveryMatch(const QueryTreeNodePtr & join_tree)
+{
+    if (const auto * join_node = join_tree->as<JoinNode>())
+        return join_node->getStrictness() == JoinStrictness::All && join_node->getKind() != JoinKind::Paste
+            && joinsKeepEveryMatch(join_node->getLeftTableExpressionNode())
+            && joinsKeepEveryMatch(join_node->getRightTableExpressionNode());
+
+    if (const auto * cross_join_node = join_tree->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            if (!joinsKeepEveryMatch(table_expression))
+                return false;
+    }
+
+    return true;
+}
+
 /// A fusable branch returns exactly one row of argument-less aggregates over its FROM, with no clause
 /// that could change its cardinality or its grouping.
 bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr & context)
@@ -362,6 +381,9 @@ bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr
     for (const auto & conjunct : conjuncts)
         if (!isTotalOnEveryRow(conjunct))
             return false;
+
+    if (!joinsKeepEveryMatch(query_node->getJoinTreeNode()))
+        return false;
 
     if (!isReproducibleBranch(table_expression))
         return false;
