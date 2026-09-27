@@ -4,13 +4,17 @@
 45	45	-45	45
 2	5	3.5
 2	5	3.5
+0	0	0
+1	1	0.5
+0	0	0
+1	1	0.5
 min
 sum
+avg
+sum
+sum
 sum
 sum
 multiply
-sum
 multiply
-multiply
-plus
 plus

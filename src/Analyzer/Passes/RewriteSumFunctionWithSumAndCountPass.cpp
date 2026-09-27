@@ -7,7 +7,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
-#include <DataTypes/DecimalNativeWidthTruncation.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -77,8 +76,10 @@ public:
         if (!column_type || !isNumber(column_type))
             return;
 
-        /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, `sum(a) + 4294967296 * count(a)` would not.
-        if (operandTruncatesIntoDecimalWidth(column_type, literal_type, literal->getValue()))
+        /// `Decimal` addition computes in the native width of the decimal with an overflow check on every row:
+        /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, and `sum(a + 1200000000)` throws
+        /// `DECIMAL_OVERFLOW` for a row `999999999`. `sum(a) + 1200000000 * count(a)` does neither.
+        if (isDecimal(column_type) || isDecimal(literal_type))
             return;
 
         const auto lhs = std::make_shared<FunctionNode>("sum");
