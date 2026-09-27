@@ -310,6 +310,26 @@ bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
         && outputsAreRenamedInputs(expression->getExpression());
 }
 
+/// Does this wrapper forward its inputs in the SAME order? `outputsAreRenamedInputs` accepts a
+/// reordering too, and a reordering is not a rename: it changes which column each position holds, and a
+/// position is how the payloads above identify their columns (`writeCacheKeyColumnName`).
+static bool forwardsInputsInOrder(const IQueryPlanStep & step)
+{
+    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
+    if (!expression)
+        return false;
+
+    auto permutation = pureColumnPermutation(expression->getExpression());
+    if (!permutation)
+        return false;
+
+    for (size_t i = 0; i < permutation->size(); ++i)
+        if ((*permutation)[i] != i)
+            return false;
+
+    return true;
+}
+
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
     SipHash hash;
@@ -613,7 +633,12 @@ void calculateHashTableCacheKeys(
         ///
         /// A transforming step always has exactly one child, so the join branches above never reach
         /// this; the guard is for safety, not for a shape that occurs.
-        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1)
+        /// Only a wrapper that forwards its inputs in order is adopted. One that also reorders them keeps
+        /// a key of its own, from the permutation `calculateHashFromStep` hashed: adopting it would put a
+        /// plan that permutes same-typed columns and a plan that does not on one key, which is how two
+        /// mirror queries over different join inputs came to share a statistics entry.
+        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1
+            && forwardsInputsInOrder(*node.step))
         {
             raw_hashes[&node] = raw_hashes[node.children.front()];
             cache_keys[&node] = cache_keys[node.children.front()];
