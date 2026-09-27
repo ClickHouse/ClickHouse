@@ -169,6 +169,13 @@ struct StagedChunk
     StagedKeys keys;
     std::variant<CountPayload, AggregatePayload> payload;
 
+    /// A chunk is charged once while pending or published, and released with its last reference.
+    std::shared_ptr<std::atomic<Int64>> accounted_bytes_total;
+    size_t accounted_bytes = 0;
+
+    ~StagedChunk();
+    size_t allocatedBytes() const;
+
     bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
 
     /// Debug-only structural invariants, checked at publication.

@@ -6,6 +6,7 @@
 #include <array>
 #include <expected>
 #include <unordered_map>
+#include <unordered_set>
 
 class SipHash;
 
@@ -354,7 +355,16 @@ bool convertLogicalJoinToPhysical(
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
-void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+
+/// Find `DISTINCT` steps whose ancestors and inputs permit replacement by blocking aggregation.
+/// Global input ordering is checked separately by `applyOrder`.
+std::unordered_set<const QueryPlan::Node *> collectDistinctToAggregationCandidates(const QueryPlan::Node & root);
+
+/// Replace an unordered final `DISTINCT` with aggregation over its nonconstant keys. Stream disjointness
+/// must have been applied already: a `DISTINCT` deduplicating disjoint streams independently is left alone.
+bool tryConvertDistinctToAggregation(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 
 /// A separate tree traverse that propagates the stream-disjointness property (no two output streams
 /// carry the same key value).

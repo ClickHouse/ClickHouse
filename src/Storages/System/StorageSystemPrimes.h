@@ -42,6 +42,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    bool hasBoundedRead() const override { return limit.has_value(); }
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
     bool supportsTransactions() const override { return true; }

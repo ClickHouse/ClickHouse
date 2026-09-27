@@ -91,6 +91,7 @@ public:
     /// In that case the final DISTINCT can deduplicate every stream independently and skip merging them
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
+    bool skipsStreamMerging() const { return skip_stream_merging; }
 
     /// The step must return the rows in their input order: it runs above the `ORDER BY` sorting of its
     /// query (set by the planners), or the optimizer propagates a global order through it, which the steps

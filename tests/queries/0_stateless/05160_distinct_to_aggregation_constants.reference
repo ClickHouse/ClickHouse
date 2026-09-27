@@ -1,0 +1,12 @@
+1
+1
+[('prefix',0,NULL,0,'prefix'),('prefix',1,NULL,1,'prefix'),('prefix',2,NULL,2,'prefix')]
+[(0,[1,2],'suffix'),(1,[1,2],'suffix')]
+0
+[('prefix',0,NULL,0,'prefix'),('prefix',1,NULL,1,'prefix'),('prefix',2,NULL,2,'prefix')]
+[(0,[1,2],'suffix'),(1,[1,2],'suffix')]
+0
+10000	49995000	constant
+0
+0
+1

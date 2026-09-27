@@ -28,9 +28,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
+ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, bool is_bounded_)
     : ISourceStep(pipe_.getSharedHeader())
     , pipe(std::move(pipe_))
+    , is_bounded(is_bounded_)
 {
 }
 
@@ -47,7 +48,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     StoragePtr storage_,
     ContextPtr context_,
     const SelectQueryInfo & query_info_)
-    : ReadFromPreparedSource(std::move(pipe_))
+    : ReadFromPreparedSource(std::move(pipe_), storage_->hasBoundedRead() && !query_info_.isStream())
     , storage(std::move(storage_))
     , context(std::move(context_))
     , query_info(query_info_)
@@ -88,7 +89,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization
     auto source = std::make_shared<SourceFromSingleChunk>(ctx.output_header, std::move(chunk));
     source->addTotalRowsApprox(1);
 
-    return std::make_unique<ReadFromPreparedSource>(Pipe(source));
+    return std::make_unique<ReadFromPreparedSource>(Pipe(source), /*is_bounded=*/true);
 }
 
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);

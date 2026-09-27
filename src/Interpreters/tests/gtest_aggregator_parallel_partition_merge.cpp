@@ -53,6 +53,8 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*overflow_row_=*/false,
         /*max_rows_to_group_by_=*/0,
         OverflowMode::THROW,
+        /*max_bytes_to_group_by=*/0,
+        /*limit_errors=*/{},
         /*group_by_two_level_threshold_=*/0,
         /*group_by_two_level_threshold_bytes_=*/0,
         /*max_bytes_before_external_group_by_=*/0,

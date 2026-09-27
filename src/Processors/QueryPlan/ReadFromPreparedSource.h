@@ -15,13 +15,21 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_);
+    /// The caller supplies a known input bound; an arbitrary prepared pipe may be unbounded.
+    explicit ReadFromPreparedSource(Pipe pipe_, bool is_bounded_ = false);
+
+    bool hasBoundedRead() const { return is_bounded; }
+    bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
 
     String getName() const override { return "ReadFromPreparedSource"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 protected:
     Pipe pipe;
+
+private:
+    const bool is_bounded;
 };
 
 class ReadFromStorageStep final : public ReadFromPreparedSource

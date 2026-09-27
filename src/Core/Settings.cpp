@@ -7541,6 +7541,14 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"23.1", false, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}) \
+    DECLARE(Bool, query_plan_convert_distinct_to_aggregation, true, R"(
+Replace the final `DISTINCT` with aggregation without aggregate functions when its input has no global ordering and all its nonconstant output columns are distinct keys. This allows deduplication and merging to run in parallel.
+
+The optimization preserves `max_rows_in_distinct`, `max_bytes_in_distinct`, and the `SET_SIZE_LIMIT_EXCEEDED` exception. Aggregation does not spill to disk. The byte limit applies to the memory used by the aggregation state, which can differ from the memory used by the ordinary `DISTINCT` implementation.
+
+The optimization is not applied when input bounds or downstream limit requirements are unknown, the input is unbounded or carries totals or extremes, `DISTINCT` is below a `LIMIT`, `OFFSET`, or `LIMIT BY`, or `DISTINCT` already deduplicates partition-disjoint streams independently (see `allow_distinct_partitions_independently`). It only takes effect when `query_plan_enable_optimizations` is enabled.
+)", 0, \
+        {"26.10", false, true, "New optimization to execute unordered final `DISTINCT` through aggregation without aggregate functions."}) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.

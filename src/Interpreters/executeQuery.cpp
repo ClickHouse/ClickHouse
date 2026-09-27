@@ -3284,6 +3284,11 @@ static BlockIO executeQueryImpl(
         {
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
+            QueryPlanOptimizationSettings optimization_settings(context);
+            /// The initiator can stop the fragment through a downstream limit that is absent here.
+            /// Keep `DISTINCT` streaming so it can produce rows before consuming its entire input.
+            optimization_settings.convert_distinct_to_aggregation = false;
+
             plan.resolveStorages(context);
 
             /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
@@ -3291,7 +3296,6 @@ static BlockIO executeQueryImpl(
             /// steps captured this query context at deserialization, so it is the object the decision
             /// must write on fallback (set building reads `make_distributed_plan` live from it).
             plan.addDistributedPlanDecisionContext(context);
-            QueryPlanOptimizationSettings optimization_settings(context);
             plan.applyDistributedPlanFallbackToLocal(optimization_settings);
             plan.optimize(optimization_settings);
 
