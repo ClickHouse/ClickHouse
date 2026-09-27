@@ -313,6 +313,35 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
+    /// Returns the terms of a regex like `a|b` or `(?:a|b)` if every term is a plain literal.
+    std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
+    {
+        if (regex.starts_with('(') && regex.ends_with(')'))
+        {
+            regex = regex.substr(1, regex.size() - 2);
+            if (regex.starts_with("?:"))
+                regex.remove_prefix(2);
+        }
+
+        if (regex.find_first_of("\\.^$?*+()[]{}") != std::string_view::npos)
+            return {};
+
+        Strings terms;
+        for (size_t pos = 0;;)
+        {
+            size_t next = regex.find('|', pos);
+            terms.emplace_back(regex.substr(pos, next - pos));
+            if (next == std::string_view::npos)
+                break;
+            pos = next + 1;
+        }
+
+        /// Prometheus uses the same limit for its set matches.
+        if (terms.size() > 256)
+            return {};
+        return terms;
+    }
+
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
@@ -331,6 +360,16 @@ namespace
         String value = matcher.label_value;
         if (add_anchors)
         {
+            /// `IN` gives the same result as the regex and lets the primary key filter by it.
+            if (auto terms = tryGetLiteralAlternatives(value))
+            {
+                ASTs literals;
+                for (auto & term : *terms)
+                    literals.push_back(make_intrusive<ASTLiteral>(std::move(term)));
+                return makeASTFunction(add_not ? "notIn" : "in",
+                    tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
+            }
+
             if (!value.starts_with('^'))
                 value = '^' + value;
             if (!value.ends_with('$'))
