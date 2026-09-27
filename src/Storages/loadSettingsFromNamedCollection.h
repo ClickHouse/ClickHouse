@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Core/BaseSettings.h>
 
 namespace DB
 {
@@ -10,7 +10,8 @@ namespace DB
 /// a key the engine arguments overrode (`ENGINE = Kafka(collection, key = value)`), which holds their value, not
 /// the collection's.
 template <typename TTraits>
-void loadSettingsFromNamedCollection(SettingsWithRecordedOrigin<TTraits> & impl, const NamedCollection & collection)
+void loadSettingsFromNamedCollection(BaseSettings<TTraits> & impl, const NamedCollection & collection)
+    requires TTraits::record_origin
 {
     impl.recordNamedCollection(collection.getName());
 

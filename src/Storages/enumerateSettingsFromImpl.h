@@ -1,20 +1,21 @@
 #pragma once
 
 #include <Storages/SettingDescription.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Core/BaseSettings.h>
 #include <Storages/maskEngineSettingValue.h>
 
 namespace DB
 {
 
-/// Reads every setting of a `SettingsWithRecordedOrigin` instance into the common form both settings tables use.
+/// Reads every setting of a settings object whose traits record origins into the common form both settings tables use.
 ///
 /// The instance decides what is reported: a default-constructed one describes an engine, the one a
 /// storage holds describes a table. `origin` is the source the instance recorded, and otherwise `Other` for
 /// a changed setting: the instance cannot tell the rest apart, so a storage refines it, since only the
 /// storage knows where the rest of its values came from.
 template <typename TTraits>
-SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<TTraits> & impl)
+SettingDescriptions enumerateSettingsFromImpl(const BaseSettings<TTraits> & impl)
+    requires TTraits::record_origin
 {
     const auto & settings_to_aliases = TTraits::settingsToAliases();
 

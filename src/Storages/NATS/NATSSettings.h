@@ -61,7 +61,7 @@ struct NATSSettings
 
     /// Assigns a value the engine chose itself, over whatever a loader assigned: unlike `operator[]`, the
     /// setting no longer counts as supplied by a named collection. By the setting's typed index, so that a
-    /// misspelled name does not compile. See `SettingsWithRecordedOrigin::setAtOffset`.
+    /// misspelled name does not compile. See `BaseSettings::setAtOffset`.
     template <typename FieldType>
     void set(SettingIndex<NATSSettings, FieldType> setting, const Field & value)
     {

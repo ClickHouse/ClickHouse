@@ -5,7 +5,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
@@ -56,8 +55,8 @@ namespace ErrorCodes
     OBSOLETE_RABBITMQ_SETTINGS(M, ALIAS)    \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)   \
 
-DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RABBITMQ_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RABBITMQ_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
 
 RabbitMQSettings::RabbitMQSettings() : impl(std::make_unique<RabbitMQSettingsImpl>())
 {

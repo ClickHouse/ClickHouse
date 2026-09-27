@@ -75,7 +75,7 @@ struct KafkaSettings
     /// Assigns a value over whatever a loader assigned, recording `origin` as its source: unlike `operator[]`,
     /// the setting no longer counts as supplied by a named collection. A value the engine chose itself records
     /// none; a positional engine argument is the table's definition. By the setting's typed index, so that a
-    /// misspelled name does not compile. See `SettingsWithRecordedOrigin::setAtOffset`.
+    /// misspelled name does not compile. See `BaseSettings::setAtOffset`.
     template <typename FieldType>
     void set(SettingIndex<KafkaSettings, FieldType> setting, const Field & value, SettingOrigin origin = SettingOrigin::Default)
     {

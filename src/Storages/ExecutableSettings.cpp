@@ -1,4 +1,3 @@
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -26,8 +25,8 @@ namespace ErrorCodes
     DECLARE(ExternalCommandStderrReaction, stderr_reaction, ExternalCommandStderrReaction::NONE, "Reaction when external command outputs data to its stderr.", 0) \
     DECLARE(Bool, check_exit_code, false, "Throw exception if the command exited with non-zero status code.", 0) \
 
-DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, EXECUTABLE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, ExecutableSettings, ExecutableSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, EXECUTABLE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, ExecutableSettings, ExecutableSetting)
 
 ExecutableSettings::ExecutableSettings()
     : script_name({})

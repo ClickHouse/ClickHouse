@@ -1,4 +1,3 @@
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/loadSettingsFromNamedCollection.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
@@ -30,8 +29,8 @@ namespace ErrorCodes
     DECLARE(UInt64, min_rows_for_spawn_stream, 1000, "Min number of rows to spawn the new stream. To use 8 streams the table must hold at least 8 * `min_rows_for_spawn_stream` rows.", 0) \
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
 
-DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
 
 YTsaurusSettings::YTsaurusSettings() : impl(std::make_unique<YTsaurusSettingsImpl>())
 {

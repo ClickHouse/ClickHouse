@@ -1201,8 +1201,7 @@ namespace DB::StorageKafkaUtils
 template <typename KafkaStorage>
 SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr /* query_context */)
 {
-    /// Three things set a `Kafka` table's settings, in this order, and the settings object (a
-    /// `SettingsWithRecordedOrigin`) records each: a named collection given in the engine arguments, as
+    /// Three things set a `Kafka` table's settings, in this order, and the settings object records each: a named collection given in the engine arguments, as
     /// `loadSettingsFromNamedCollection` loads it; the table's own `SETTINGS` clause, as `loadFromQuery` applies
     /// it over the collection; and the storage's constructor, which pins a few format settings through the typed
     /// `set`, forgetting whichever of the two supplied them. Anything left as `Other` was set by the engine

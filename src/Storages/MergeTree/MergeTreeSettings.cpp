@@ -18,7 +18,6 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -2781,12 +2780,12 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MERGETREE_SETTINGS_SUPPORTED_TYPES)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MERGETREE_SETTINGS_SUPPORTED_TYPES)
 
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettingsImpl : public SettingsWithRecordedOrigin<MergeTreeSettingsTraits>
+struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, MergeTreeSettings::LoadFromQuery from);

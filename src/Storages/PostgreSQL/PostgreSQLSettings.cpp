@@ -6,7 +6,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
@@ -39,8 +38,8 @@ namespace ErrorCodes
     DECLARE(Bool, postgresql_connection_pool_auto_close_connection, false, "Close connection before returning connection to the pool.", 0) \
     DECLARE(UInt64, postgresql_connection_attempt_timeout, 2, "Connection timeout in seconds of a single attempt to connect PostgreSQL end-point. The value is passed as a `connect_timeout` parameter of the connection URL.", 0) \
 
-DECLARE_SETTINGS_TRAITS(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, PostgreSQLSettings, PostgreSQLSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, PostgreSQLSettings, PostgreSQLSetting)
 
 PostgreSQLSettings::PostgreSQLSettings() : impl(std::make_unique<PostgreSQLSettingsImpl>())
 {

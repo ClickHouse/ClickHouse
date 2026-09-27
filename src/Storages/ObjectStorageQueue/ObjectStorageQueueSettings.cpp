@@ -1,4 +1,3 @@
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <optional>
 #include <Columns/IColumn.h>
@@ -78,8 +77,8 @@ namespace ErrorCodes
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
 
 ObjectStorageQueueSettings::ObjectStorageQueueSettings() : impl(std::make_unique<ObjectStorageQueueSettingsImpl>())
 {

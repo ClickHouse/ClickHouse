@@ -1,4 +1,3 @@
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
@@ -38,8 +37,8 @@ namespace ErrorCodes
         "Map PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64` " \
         "(which cover the wider PostgreSQL value range). When disabled, the narrower `Date` and `DateTime` types are used.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)
 
 MaterializedPostgreSQLSettings::MaterializedPostgreSQLSettings() : impl(std::make_unique<MaterializedPostgreSQLSettingsImpl>())
 {

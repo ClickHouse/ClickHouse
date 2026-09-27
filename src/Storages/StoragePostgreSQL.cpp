@@ -135,7 +135,7 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr /* query_cont
     ///
     /// Except for what a named collection or the table's own `SETTINGS` clause supplied, which
     /// `loadSettingsFromNamedCollection` and `PostgreSQLSettings::loadFromQuery` record in the settings object
-    /// (a `SettingsWithRecordedOrigin`) and `setOriginByValue` leaves alone: neither the session's nor a
+    /// and `setOriginByValue` leaves alone: neither the session's nor a
     /// default, and the value cannot reveal them, since either may well state the default.
     SettingDescriptions descriptions = settings.enumerateSettings();
     setOriginByValue(descriptions);

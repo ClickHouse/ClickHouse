@@ -6,7 +6,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
@@ -74,8 +73,8 @@ namespace ErrorCodes
     OBSOLETE_KAFKA_SETTINGS(M, ALIAS)     \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KAFKA_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KAFKA_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
 
 KafkaSettings::KafkaSettings() : impl(std::make_unique<KafkaSettingsImpl>())
 {

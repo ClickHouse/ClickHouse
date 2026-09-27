@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Core/SettingIndex.h>
+#include <Core/SettingOrigin.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
+#include <Common/CompactArray.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -156,6 +158,9 @@ struct SettingsOwner;
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
   *
   * MY_SETTINGS_SUPPORTED_TYPES(MySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
+  *
+  * Traits declared with `DECLARE_SETTINGS_TRAITS_WITH_ORIGIN` instead also record where each setting came from:
+  * see `setWithOrigin`.
   */
 /// The name a custom setting is stored under. Identity, unless a settings class shares its namespace
 /// with another one: `Settings` addresses a `MergeTreeSettings` setting through a `merge_tree_`-prefixed
@@ -165,6 +170,25 @@ std::string_view resolveCustomSettingName(std::string_view name)
 {
     return name;
 }
+
+/// Where each setting of a settings object came from, for traits declared with `DECLARE_SETTINGS_TRAITS_WITH_ORIGIN`:
+/// one 4-bit `SettingOrigin` per setting in a `CompactArray`, whose size is known at compile time, so it allocates
+/// nothing - about 185 bytes for the 369 settings of `MergeTree`. Every other settings object stores
+/// `NoRecordedSettingOrigins` in its place, which takes no space.
+template <class TTraits>
+struct RecordedSettingOrigins
+{
+    static constexpr size_t num_settings = static_cast<size_t>(TTraits::SettingID_::NUM_SETTINGS);
+
+    CompactArray<size_t, 4, num_settings> origins;
+
+    /// The named collection a loader took values from. A reader may see those values only where it may read that
+    /// collection, so the name has to travel with them - `SettingOrigin::NamedCollection` alone says a collection
+    /// supplied a value, not which one, and a grant names one. Empty where none supplied any.
+    String named_collection;
+};
+
+struct NoRecordedSettingOrigins {};
 
 template <class TTraits>
 class BaseSettings : public TTraits::Data
@@ -249,22 +273,102 @@ public:
     void checkShorthandChange(const SettingChange & change) const;
     void checkShorthandChanges(const SettingsChanges & changes) const;
 
-    /// Resets all the settings to their default values. Virtual, as `set` is, so that a subclass keeping
-    /// something alongside the values - `SettingsWithRecordedOrigin` keeps where each came from - is not
-    /// bypassed by a caller holding the base, `read` among them.
-    virtual void resetToDefault();
+    /// Resets all the settings to their default values
+    void resetToDefault();
 
     /// Resets specified setting to its default value
-    virtual void resetToDefault(std::string_view name);
+    void resetToDefault(std::string_view name);
 
     /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
     /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
     /// remote server, which only receives changed settings. No-op for custom settings.
+    void markUnchanged(std::string_view name);
+
+    /// Origins - where each setting came from, for traits declared with `DECLARE_SETTINGS_TRAITS_WITH_ORIGIN`.
     ///
-    /// Virtual for the same reason `set` and `resetToDefault` are: it decides whether a setting counts
-    /// as assigned, which is what a subclass keeping something alongside the values follows -
-    /// `SettingsWithRecordedOrigin` keeps where each value came from.
-    virtual void markUnchanged(std::string_view name);
+    /// A server config section and `compatibility` assign every key they name, and so set the changed flag even
+    /// where the value equals the default; a named collection's values look like any other; the table's own
+    /// `SETTINGS` clause is applied by each engine's loader. Each of them records itself as it assigns, and the
+    /// record travels with every copy of the object - from the server's baseline into each table, from a database
+    /// into each table it makes - so a table's settings object alone says where its values came from. The `source`
+    /// column of `system.table_settings` is that record.
+    ///
+    /// Every assignment records an origin - `setWithOrigin` the one it names, `set` `Default`, meaning none - so a
+    /// setting belongs to whoever assigned it last, a reset to the default included. An assignment through
+    /// `operator[]` bypasses both and keeps the origin, which suits an engine that adjusts a value in place, such
+    /// as by expanding macros; one that replaces a value records the new origin, through `setAtOffset` or
+    /// `recordOriginAtOffset` behind the typed `set` of its public settings class.
+
+    /// Assigns `value` and records `origin` as its source; `Default` records none.
+    void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin) requires Traits::record_origin
+    {
+        storeOrigin(assign(name, value), origin);
+    }
+
+    /// `applyChanges`, recording `origin` for every setting it assigns: for a loader that applies one source whole,
+    /// such as the table's own `SETTINGS` clause.
+    void applyChangesWithOrigin(const SettingsChanges & changes, SettingOrigin origin) requires Traits::record_origin
+    {
+        for (const auto & change : changes)
+        {
+            checkShorthandChange(change);
+            setWithOrigin(change.name, change.value, origin);
+        }
+    }
+
+    /// The same for the setting whose field is at `offset` in the settings data, as a `SettingIndex` stores it: for
+    /// the typed `set` of a public settings class, which holds this behind an incomplete type and so can pass on
+    /// only the offset - for an engine that assigns a value itself, over whatever a loader assigned.
+    void setAtOffset(size_t offset, const Field & value, SettingOrigin origin = SettingOrigin::Default)
+        requires Traits::record_origin
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        const size_t index = accessor.findByOffset(offset);
+        chassert(index != static_cast<size_t>(-1));
+        accessor.setValue(*this, index, value);
+        storeOrigin(index, origin);
+    }
+
+    /// Records `origin` for the setting whose field is at `offset`, which the caller has just assigned through
+    /// `operator[]`: for the typed `set` of a public settings class, whose values need not have a `Field` form -
+    /// an atomic or an enum member of a storage, say.
+    void recordOriginAtOffset(size_t offset, SettingOrigin origin) requires Traits::record_origin
+    {
+        const size_t index = Traits::Accessor::instance().findByOffset(offset);
+        chassert(index != static_cast<size_t>(-1));
+        storeOrigin(index, origin);
+    }
+
+    /// Records `origin` for a setting already assigned, without assigning it again: for an engine that applies a
+    /// source through another path - a normalised copy of its definition, say - and records it afterwards. An
+    /// unknown name is ignored, as `resetToDefault` ignores it.
+    void recordOrigin(std::string_view name, SettingOrigin origin) requires Traits::record_origin
+    {
+        storeOrigin(indexOf(name), origin);
+    }
+
+    /// The source recorded for the setting, or `Default` when none is, or the name is not a setting - as
+    /// `isChanged` answers `false` for one rather than throwing.
+    SettingOrigin recordedOrigin(std::string_view name) const requires Traits::record_origin
+    {
+        const size_t index = indexOf(name);
+        if (index >= RecordedSettingOrigins<Traits>::num_settings)
+            return SettingOrigin::Default;
+        return static_cast<SettingOrigin>(recorded_origins.origins.get(index));
+    }
+
+    void recordNamedCollection(const String & name) requires Traits::record_origin { recorded_origins.named_collection = name; }
+    const String & recordedNamedCollection() const requires Traits::record_origin { return recorded_origins.named_collection; }
+
+    /// The declared name of the setting whose field is at `offset`, for code that holds a typed `SettingIndex` and
+    /// has to name the setting it points at - matching a row of a described vector, which is keyed by name.
+    static std::string_view nameAtOffset(size_t offset)
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        const size_t index = accessor.findByOffset(offset);
+        chassert(index != static_cast<size_t>(-1));
+        return accessor.getName(index);
+    }
 
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
@@ -426,12 +530,38 @@ private:
     const SettingFieldCustom & getCustomSetting(std::string_view name) const;
     const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
 
+    /// Assigns `value` to the setting `name`, a custom one where the traits allow those, and returns the index of the
+    /// built-in setting it assigned, or -1 for a custom one.
+    size_t assign(std::string_view name, const Field & value);
+
+    static size_t indexOf(std::string_view name) { return Traits::Accessor::instance().find(Traits::resolveName(name)); }
+
+    /// Records `origin` for the built-in setting at `index`; nothing for traits that record no origins. An index out
+    /// of range is a name `BaseSettings` does not know - a custom setting, which has no origin to record - and is
+    /// skipped, as `resetToDefault` skips it.
+    void storeOrigin(size_t index, SettingOrigin origin)
+    {
+        if constexpr (Traits::record_origin)
+            if (index < RecordedSettingOrigins<Traits>::num_settings)
+                recorded_origins.origins.set(index, static_cast<UInt8>(origin));
+    }
+
 protected:
     std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
+
+private:
+    [[no_unique_address]] std::conditional_t<Traits::record_origin, RecordedSettingOrigins<Traits>, NoRecordedSettingOrigins>
+        recorded_origins;
 };
 
 template <typename TTraits>
 void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
+{
+    storeOrigin(assign(name, value), SettingOrigin::Default);
+}
+
+template <typename TTraits>
+size_t BaseSettings<TTraits>::assign(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
@@ -441,7 +571,7 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
     if (index == static_cast<size_t>(-1))
     {
         getCustomSetting(name) = value;
-        return;
+        return index;
     }
 
     /// A value of the wrong type or out of range is reported by the setting field itself, which does not
@@ -457,6 +587,7 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
         e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
         throw;
     }
+    return index;
 }
 
 template <typename TTraits>
@@ -572,6 +703,9 @@ void BaseSettings<TTraits>::resetToDefault()
 
     if constexpr (Traits::allow_custom_settings)
         custom_settings_map.clear();
+
+    if constexpr (Traits::record_origin)
+        recorded_origins = {};
 }
 
 template <typename TTraits>
@@ -582,6 +716,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
         accessor.resetValueToDefault(*this, index);
+        storeOrigin(index, SettingOrigin::Default);
         return;
     }
 
@@ -595,7 +730,13 @@ void BaseSettings<TTraits>::markUnchanged(std::string_view name)
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    {
         accessor.setValueChanged(*this, index, false);
+        /// The setting stops counting as assigned, so it forgets its source too: enumeration reports it as the
+        /// default, and an assignment through `operator[]`, which keeps the record, would otherwise report the
+        /// source this call retired.
+        storeOrigin(index, SettingOrigin::Default);
+    }
 }
 
 template <typename TTraits>
@@ -1120,7 +1261,11 @@ void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
             (*custom_setting)->second = value;
     }
     else
+    {
+        /// An assignment with no source named, as `set` is.
         accessor->setValue(*settings, index, value);
+        settings->storeOrigin(index, SettingOrigin::Default);
+    }
 }
 
 template <typename TTraits>
@@ -1273,22 +1418,27 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 /// Generate traits for a basic settings collection (no custom settings, no paths)
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0, SUPPORTED_TYPES_MACRO)
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0, 0, SUPPORTED_TYPES_MACRO)
+
+/// Generate traits whose settings objects record where each setting came from (see `BaseSettings::setWithOrigin`)
+/// NOLINTNEXTLINE
+#define DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0, 1, SUPPORTED_TYPES_MACRO)
 
 /// Generate traits with support for custom (user-defined) settings
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 1, SUPPORTED_TYPES_MACRO)
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 1, 0, SUPPORTED_TYPES_MACRO)
 
 /// Generate traits with support for settings that have config file paths
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, SUPPORTED_TYPES_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, 0, SUPPORTED_TYPES_MACRO)
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, 0, 0, SUPPORTED_TYPES_MACRO)
 
 /// Generate traits with both custom settings and path support
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_WITH_PATH_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, SUPPORTED_TYPES_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, 1, SUPPORTED_TYPES_MACRO)
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, 1, 0, SUPPORTED_TYPES_MACRO)
 
 
 // ----------------------------------------------------------------------------
@@ -1314,12 +1464,13 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
   * - LIST_OF_SETTINGS_WITHOUT_PATH_MACRO: Macro that expands to DECLARE() calls
   * - LIST_OF_SETTINGS_WITH_PATH_MACRO: Macro for settings with config paths
   * - ALLOW_CUSTOM_SETTINGS: 0 or 1, enables user-defined settings
+  * - RECORD_ORIGIN: 0 or 1, records where each setting came from (see `BaseSettings::setWithOrigin`)
   * - SUPPORTED_TYPES_MACRO: X-macro listing all SettingField types used, e.g. M(Bool) M(UInt64)
   */
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_COMMON( \
     SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, \
-    ALLOW_CUSTOM_SETTINGS, SUPPORTED_TYPES_MACRO) \
+    ALLOW_CUSTOM_SETTINGS, RECORD_ORIGIN, SUPPORTED_TYPES_MACRO) \
     /* Constexpr typed-array layout: groups settings by SettingField type into contiguous */ \
     /* arrays (e.g. Bool_[], UInt64_[]) so that all fields of the same type are adjacent. */ \
     /* This avoids padding between differently-sized types and enables bulk memcpy for */ \
@@ -1391,13 +1542,13 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             explicit Data(DefaultInitTag); \
         }; \
         \
-        DECLARE_SETTINGS_TRAITS_BODY_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
+        DECLARE_SETTINGS_TRAITS_BODY_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS, RECORD_ORIGIN) \
     };
 
 /// Shared body for settings traits — everything after the Data definition.
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_BODY_( \
-    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
+    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS, RECORD_ORIGIN) \
         /** Accessor: Provides runtime reflection and metadata access */ \
         class Accessor \
         { \
@@ -1537,6 +1688,9 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         \
         /** Whether this traits allows custom settings */ \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
+        \
+        /** Whether settings objects of these traits record where each setting came from */ \
+        static constexpr bool record_origin = RECORD_ORIGIN; \
         \
         /** Map of aliases to actual setting names */ \
         static inline const AliasMap aliases_to_settings \

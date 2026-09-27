@@ -2628,7 +2628,7 @@ SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_con
 {
     /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
     /// applied over the compiled defaults, which `DistributedSettings::loadFromConfig` records in the settings
-    /// object (a `SettingsWithRecordedOrigin`) and the table's copy keeps - and then applies its own `SETTINGS`
+    /// object and the table's copy keeps - and then applies its own `SETTINGS`
     /// clause, which `DistributedSettings::loadFromQuery` records as the definition. The engine supports no
     /// settings `ALTER`, so nothing applies the clause again.
     auto settings = distributed_settings->enumerateSettings();

@@ -962,7 +962,7 @@ ColumnsDescription doQueryResultStructure(
 
 SettingDescriptions StorageMySQL::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The settings object (a `SettingsWithRecordedOrigin`) records what a named collection supplied, as
+    /// The settings object, whose traits record origins, records what a named collection supplied, as
     /// `loadSettingsFromNamedCollection` loads it, and then the table's own `SETTINGS` clause, as
     /// `MySQLSettings::loadFromQuery` applies it over the collection. A `MySQL` database's own clause is not
     /// recorded, so the tables it makes report those values as `other`.

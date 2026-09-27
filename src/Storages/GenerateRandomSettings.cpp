@@ -21,8 +21,8 @@ namespace ErrorCodes
     DECLARE(UInt64, max_json_depth, 3, "Maximum nesting depth of generated `JSON` objects: 1 means flat objects, objects inside arrays count as a level. Must be in [1, 32].", 0) \
     DECLARE(UInt64, max_json_keys_per_object, 8, "Maximum number of generated keys on one level of a `JSON` object; the root object gets at least half of it. 0 means only typed paths are generated. Must be at most 1000.", 0) \
 
-DECLARE_SETTINGS_TRAITS(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GENERATE_RANDOM_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GenerateRandomSettings, GenerateRandomSetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GENERATE_RANDOM_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GenerateRandomSettings, GenerateRandomSetting)
 
 GenerateRandomSettings::GenerateRandomSettings() : impl(std::make_unique<GenerateRandomSettingsImpl>())
 {

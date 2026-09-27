@@ -1,4 +1,3 @@
-#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -24,8 +23,8 @@ namespace ErrorCodes
     DECLARE(UInt64, min_bytes_to_keep, 0, "Minimum block size (in bytes) to retain in Memory table buffer.", 0) \
     DECLARE(UInt64, max_bytes_to_keep, 0, "Maximum block size (in bytes) to retain in Memory table buffer.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MEMORY_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(MemorySettingsTraits, MEMORY_SETTINGS, MemorySettings, MemorySetting)
+DECLARE_SETTINGS_TRAITS_WITH_ORIGIN(MemorySettingsTraits, MEMORY_SETTINGS, MEMORY_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MemorySettings, MemorySetting)
 
 MemorySettings::MemorySettings() : impl(std::make_unique<MemorySettingsImpl>())
 {
