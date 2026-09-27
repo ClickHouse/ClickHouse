@@ -1985,6 +1985,13 @@ def test_recreated_table_with_compaction_enabled(started_cluster):
         identifier, schema=Schema(NestedField(1, "b", StringType(), required=False)), location=location
     )
     table.append(pa.table({"b": pa.array(["x", "y"], type=pa.string())}))
+    # Keeping the dropped table cached, as a concurrent read that looked it up before the drop would, must not make
+    # the read that meets it return the dropped table; the next read replaces it.
+    node.query("SYSTEM ENABLE FAILPOINT datalake_keep_mismatched_stateful_table")
+    try:
+        check("x\ny\n")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_keep_mismatched_stateful_table")
     check("x\ny\n")
 
     node.query(f"DROP DATABASE {compaction_db}")
@@ -2016,6 +2023,20 @@ def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, namespace, table_name, "(a Float64)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{identifier}` VALUES (1.5), (2.5)", settings=write_settings)
     check("1.5\n2.5\n")
+
+    # The compaction database keeps the table it opened, so an unchanged read through it opens no storage, while each
+    # read through the plain database opens one. Request counts cannot show this: a version-named metadata file is
+    # read again on every lookup.
+    def opened_storages(db):
+        query_id = uuid.uuid4().hex
+        node.query(f"SELECT * FROM {db}.`{identifier}` FORMAT Null", query_id=query_id)
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return node.query(
+            f"SELECT length(used_storages) FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+
+    assert opened_storages(compaction_db) == "0\n"
+    assert opened_storages(CATALOG_NAME) == "1\n"
 
     # Drop, delete the files so that the location can be used again, then recreate it with another schema and write
     # as many versions as the dropped table had.

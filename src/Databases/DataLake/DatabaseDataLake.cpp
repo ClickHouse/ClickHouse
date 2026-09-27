@@ -144,6 +144,7 @@ namespace FailPoints
     extern const char datalake_try_get_table_return_nullptr[];
     extern const char datalake_try_get_table_throw[];
     extern const char datalake_get_tables_throw[];
+    extern const char datalake_keep_mismatched_stateful_table[];
 }
 
 namespace
@@ -946,7 +947,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached && is_same_table(*cached))
             return reuse_stateful_table(cached->storage);
-        evictStatefulTable(name);
+        /// A test keeps a mismatched entry, so that the insert below loses the race to a storage of another table.
+        bool keep_mismatched_entry = false;
+        fiu_do_on(FailPoints::datalake_keep_mismatched_stateful_table, { keep_mismatched_entry = true; });
+        if (!keep_mismatched_entry)
+            evictStatefulTable(name);
     }
     const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
