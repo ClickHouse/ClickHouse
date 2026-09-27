@@ -358,11 +358,11 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (&killer.allocation.queue == this)
     {
         if (&killer.allocation == &victim)
-            details = fmt::format("Evicting allocation of size {} (eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), victim.eviction_score, getWorkloadName(), formatReadableCost(killer.size));
+            details = fmt::format("Evicting reservation of size {} (eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+                formatReadableCost(victim.fair_key), victim.eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting allocation of size {} (eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
-                formatReadableCost(victim.allocated), victim.eviction_score, getWorkloadName());
+            details = fmt::format("Evicting reservation of size {} (eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
+                formatReadableCost(victim.fair_key), victim.eviction_score, getWorkloadName());
     }
 
     return &victim;
