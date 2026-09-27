@@ -9443,9 +9443,7 @@ existing one is rejected, while a double-quoted new name is allowed and later ma
         {"26.10", "sensitive", "sensitive", "New setting to resolve database and table names through an ASCII-case-folded namespace (`standard`) instead of exact matching."}) \
     DECLARE(NameMatchMode, column_and_query_name_matching, NameMatchMode::Sensitive, R"(
 Controls how column names and other query-scope names — subcolumns, aliases, CTE names, lambda
-arguments and similar — are matched during SELECT query analysis. Requires the analyzer
-(`allow_experimental_analyzer = 1`); with the old analyzer, queries fail when the mode is not
-`sensitive`.
+arguments and similar — are matched during SELECT query analysis.
 
 Possible values:
 - `sensitive` — Names must match exactly (default).
