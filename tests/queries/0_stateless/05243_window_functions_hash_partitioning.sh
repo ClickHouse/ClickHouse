@@ -18,21 +18,26 @@ INSERT INTO t SELECT number % 7, toString(number % 5), toString(number % 3), if(
 CREATE TABLE e (k Int32, x Int64) ENGINE = MergeTree ORDER BY tuple();
 "
 
+# The queries are collected into scripts and run at the end with few client invocations, because starting
+# the client is slow in sanitizer builds.
+script_off=""
+script_on=""
+
+function emit()
+{
+    script_off+="$1"$'\n'
+    script_on+="$2"$'\n'
+}
+
 function check()
 {
-    local name="$1"
-    local query="$2"
-    local off on used
-    off=$($CLICKHOUSE_CLIENT --query_plan_window_functions_hash_partitioning=0 -q "$query")
-    on=$($CLICKHOUSE_CLIENT --query_plan_window_functions_hash_partitioning=1 -q "$query")
-    used=$($CLICKHOUSE_CLIENT --query_plan_window_functions_hash_partitioning=1 \
-        -q "SELECT count() FROM (EXPLAIN actions = 1 $query) WHERE explain LIKE '%Hash partitioning: 1%'")
-    echo "=== $name: hash partitioning $used ==="
-    echo "$on"
-    if [ "$off" != "$on" ]; then
-        echo "DIFFERENT FROM THE RESULT WITH SORTING:"
-        echo "$off"
-    fi
+    emit "SELECT '=== $1 ==='; $2;" \
+        "SELECT format('=== {}: hash partitioning {} ===', '$1', count()) FROM (EXPLAIN actions = 1 $2) WHERE explain LIKE '%Hash partitioning: 1%'; $2;"
+}
+
+function section()
+{
+    emit "SELECT '--- $1 ---';" "SELECT '--- $1 ---';"
 }
 
 # Every query returns a digest over all rows, so the row order does not matter.
@@ -41,7 +46,7 @@ function digest()
     echo "SELECT count(), sum(cityHash64(*)) FROM ($1)"
 }
 
-echo "--- hash partitioning ---"
+section "hash partitioning"
 check "max, min, sum, count" "$(digest "SELECT x, max(x) OVER w, min(y) OVER w, sum(x) OVER w, count() OVER w FROM t WINDOW w AS (PARTITION BY k)")"
 check "avg over Decimal" "$(digest "SELECT x, avg(d) OVER (PARTITION BY k) FROM t")"
 check "parametric" "$(digest "SELECT x, quantileExact(0.5)(y) OVER (PARTITION BY k), groupArraySorted(3)(y) OVER (PARTITION BY k) FROM t")"
@@ -69,7 +74,7 @@ check "max_rows_to_sort" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k) FROM 
 check "max_rows_to_sort per stream with one thread" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k) FROM (SELECT * FROM t UNION ALL SELECT * FROM t) SETTINGS max_threads = 1, max_rows_to_sort = 1500")"
 check "LIMIT" "SELECT k, sum(x) OVER (PARTITION BY k) AS c FROM t WHERE x < 20 ORDER BY x LIMIT 3"
 
-echo "--- sorting ---"
+section "sorting"
 check "ORDER BY in the window" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k ORDER BY x) FROM t")"
 check "ROWS frame up to the current row" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), sum(x) OVER (PARTITION BY k ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t")"
 check "window function" "$(digest "SELECT x, row_number() OVER (PARTITION BY k), max(x) OVER (PARTITION BY k) FROM t")"
@@ -78,3 +83,11 @@ check "Float key" "$(digest "SELECT x, sum(x) OVER (PARTITION BY f) FROM t")"
 check "ORDER BY the partition key" "SELECT k, sum(x) OVER (PARTITION BY k) AS c FROM t ORDER BY k LIMIT 3"
 check "ORDER BY a prefix of the partition key" "SELECT k, sum(x) OVER (PARTITION BY k, k % 2) AS c FROM t ORDER BY k LIMIT 3"
 check "reuse of the storage ordering" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k) FROM t SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1")"
+
+off=$($CLICKHOUSE_CLIENT --query_plan_window_functions_hash_partitioning=0 -q "$script_off")
+on=$($CLICKHOUSE_CLIENT --query_plan_window_functions_hash_partitioning=1 -q "$script_on")
+echo "$on"
+if [ "$off" != "$(echo "$on" | sed -E 's/: hash partitioning [0-9]+ ===$/ ===/')" ]; then
+    echo "DIFFERENT FROM THE RESULT WITH SORTING:"
+    echo "$off"
+fi

@@ -1942,7 +1942,30 @@ void addWindowSteps(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
+    /// Hash partitioning replaces a sort, unless the sort would also serve the final ORDER BY: either the
+    /// final sort extends the window sort, or the window sort already satisfies it completely. It also
+    /// keeps the sort when `optimizeReadInOrder` may reuse the storage ordering for it, because that
+    /// decision is made later, on the sort. The distributed plan only distributes windows over a sort
+    /// (`tryPushWindowBelowSortedGather`).
+    const bool may_reuse_storage_ordering = settings[Setting::query_plan_enable_optimizations]
+        && settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        && settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order];
+    const auto can_use_hash_partitioning = [&](const WindowDescription & window_description)
+    {
+        const bool window_sort_serves_query_order = sortDescriptionIsPrefix(window_description.partition_by, query_sort_description)
+            || (!query_sort_description.empty() && sortDescriptionIsPrefix(query_sort_description, window_description.partition_by));
+        return settings[Setting::query_plan_window_functions_hash_partitioning]
+            && !settings[Setting::make_distributed_plan]
+            && !window_sort_serves_query_order
+            && !may_reuse_storage_ordering
+            && WindowStep::canUseHashPartitioning(window_description, *query_plan.getCurrentHeader());
+    };
+
+    /// Put the windows that need a sort before the windows with equal sort descriptions that could use hash
+    /// partitioning (`sortWindowDescriptions` keeps the order of equal ones), so the latter reuse that sort
+    /// instead of adding another one, and the plan does not depend on the order of the windows in the query.
     auto & window_descriptions = window_analysis_result.window_descriptions;
+    std::stable_partition(window_descriptions.begin(), window_descriptions.end(), std::not_fn(can_use_hash_partitioning));
     sortWindowDescriptions(window_descriptions);
 
     size_t window_descriptions_size = window_descriptions.size();
@@ -1969,21 +1992,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
 
-        /// Hash partitioning replaces a sort, unless the sort would also serve the final ORDER BY: either the
-        /// final sort extends the window sort, or the window sort already satisfies it completely. It also
-        /// keeps the sort when `optimizeReadInOrder` may reuse the storage ordering for it, because that
-        /// decision is made later, on the sort. The distributed plan only distributes windows over a sort
-        /// (`tryPushWindowBelowSortedGather`).
-        const bool window_sort_serves_query_order = sortDescriptionIsPrefix(window_description.partition_by, query_sort_description)
-            || (!query_sort_description.empty() && sortDescriptionIsPrefix(query_sort_description, window_description.partition_by));
-        const bool may_reuse_storage_ordering = settings[Setting::query_plan_enable_optimizations]
-            && settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
-            && settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order];
-        const bool use_hash_partitioning = need_sort && settings[Setting::query_plan_window_functions_hash_partitioning]
-            && !settings[Setting::make_distributed_plan]
-            && !window_sort_serves_query_order
-            && !may_reuse_storage_ordering
-            && WindowStep::canUseHashPartitioning(window_description, *query_plan.getCurrentHeader());
+        const bool use_hash_partitioning = need_sort && can_use_hash_partitioning(window_description);
         previous_uses_hash_partitioning = use_hash_partitioning;
 
         if (need_sort && !use_hash_partitioning)

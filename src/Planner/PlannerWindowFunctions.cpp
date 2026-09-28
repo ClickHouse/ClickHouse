@@ -171,7 +171,7 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
         return left.size() > right.size();
     };
 
-    ::sort(window_descriptions.begin(), window_descriptions.end(), window_description_comparator);
+    ::stableSort(window_descriptions.begin(), window_descriptions.end(), window_description_comparator);
 }
 
 }
