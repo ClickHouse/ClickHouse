@@ -11,6 +11,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -469,13 +470,19 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
             /// SerializationInfo, as before.
             if (column_in_part->isSubcolumn())
             {
-                if (auto direct = data_part_info_for_read->tryGetSerialization(column_in_part->name))
-                    return direct;
-
+                /// A genuine per-key Map subcolumn (`m.key_<k>` of a `with_key_columns`
+                /// Map) must resolve from the parent's part serialization so the part's
+                /// actual Map layout is used. Other subcolumns keep the upstream
+                /// SerializationInfo-derived resolution: the part's serialization map
+                /// stores subcolumn serializations derived from the whole column's
+                /// serialization, which for types like Variant carries internal state
+                /// (discriminator mappings) that differs from a SerializationInfo-derived
+                /// one and would read the wrong streams.
                 if (auto parent_serialization = data_part_info_for_read->tryGetSerialization(column_in_part->getNameInStorage()))
                 {
                     const auto & type_in_storage = column_in_part->getTypeInStorage();
-                    return type_in_storage->getSubcolumnSerialization(column_in_part->getSubcolumnName(), parent_serialization);
+                    if (typeid_cast<const DataTypeMap *>(type_in_storage.get()))
+                        return type_in_storage->getSubcolumnSerialization(column_in_part->getSubcolumnName(), parent_serialization);
                 }
 
                 if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
@@ -484,14 +491,14 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
                 return IDataType::getSerialization(*column_in_part, infos.getSettings());
             }
 
-            /// Virtual columns such as `_block_offset` are not listed in the
-            /// part's map and keep the derived serialization. The same applies to
-            /// logical columns that are not physical columns of the part (e.g. a
-            /// `Nested` name read as a whole: the part stores one column per
-            /// flattened array, so the collected `Nested` column is absent from the
-            /// map); derive those from the part's SerializationInfo, as before.
-            if (auto direct = data_part_info_for_read->tryGetSerialization(column_in_part->name))
-                return direct;
+            /// A `with_key_columns` Map's part serialization (already rewritten to the
+            /// part's effective Map version by `applyTableMapSerializationVersionForBasicInfos`)
+            /// is the authoritative one for the whole column; the SerializationInfo-derived
+            /// fallback would rebuild the plain Map serialization. Other columns keep the
+            /// upstream SerializationInfo-derived resolution.
+            if (typeid_cast<const DataTypeMap *>(column_in_part->getTypeInStorage().get()))
+                if (auto direct = data_part_info_for_read->tryGetSerialization(column_in_part->name))
+                    return direct;
 
             if (containsObjectType(*column_in_part->getTypeInStorage()))
             {

@@ -155,7 +155,6 @@ struct AnalysisTableExpressionData
                     if (column && column->isSubcolumn() && column->getNameInStorage() == column_name
                         && column->getSubcolumnName() == subcolumn_name)
                         return SubcolumnInfo{it->second, subcolumn_name, column->type};
-                    continue;
                 }
 
                 if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))

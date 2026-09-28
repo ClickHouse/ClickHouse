@@ -118,7 +118,7 @@ bool isMapKeyColumnsKeySubcolumn(const QueryTreeNodePtr & column_source, const N
         && column.getSubcolumnName().starts_with(DataTypeMap::KEY_SUBCOLUMN_PREFIX))
         return true;
 
-    return column.name.find(".key_") != String::npos;
+    return column.name.contains(".key_");
 }
 
 /// Constant key `m['k']` / `mapContainsKey(m, 'k')` → physical subcolumn `m.key_<text>`.
@@ -153,7 +153,7 @@ std::optional<NameAndTypePair> tryMakeMapKeyColumnsKeySubcolumn(
     key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
     String subcolumn_name = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buf.str();
 
-    DataTypePtr subcolumn_type = data_type_map.getValueType();
+    const DataTypePtr & subcolumn_type = data_type_map.getValueType();
     return NameAndTypePair{map_column.name, subcolumn_name, map_column.type, subcolumn_type};
 }
 

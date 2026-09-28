@@ -2307,9 +2307,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             /// Mirror the written block into the per-projection mirrors so the delayed
             /// projection parts see the same Map keys as the written part.
-            for (size_t i = 0; i < projection_main_squashes.size(); ++i)
+            for (auto & mirror : projection_main_squashes)
             {
-                auto & mirror = projection_main_squashes[i];
                 if (mirror.empty())
                     mirror.setHeader(cur_block.cloneEmpty());
                 mirror.add({cur_block.getColumns(), cur_block.rows()});

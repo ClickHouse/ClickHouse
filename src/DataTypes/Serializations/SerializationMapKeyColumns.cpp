@@ -615,7 +615,7 @@ void SerializationMapKeyColumns::serializeBinaryBulkStatePrefix(
 
     state = map_state_ptr;
     if (!declared_keys.empty())
-        addPlannedKeys(state, std::move(declared_keys));
+        addPlannedKeys(state, declared_keys);
     auto * map_state = checkAndGetState<SerializeState>(state);
 
     settings.path.push_back(Substream::MapKeys);
@@ -680,7 +680,7 @@ void SerializationMapKeyColumns::writeMapKeys(WriteBuffer & out, const std::vect
 std::vector<String> SerializationMapKeyColumns::readMapKeys(ReadBuffer & in) const
 {
     std::vector<String> keys;
-    UInt64 key_count;
+    UInt64 key_count = 0;
     readVarUInt(key_count, in);
     keys.reserve(key_count);
     /// A truncated stream surfaces as an exception from `readStrict` inside.

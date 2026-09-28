@@ -692,8 +692,9 @@ void MergeTreeDataPartWriterWide::writeColumn(
     /// defensive check (and covers direct writer use without a precomputed set).
     const ISerialization * missing_key_check_serialization = per_key ? static_cast<const ISerialization *>(per_key)
         : findNestedMapKeyColumnsSerialization(*type);
-    if (missing_key_check_serialization && it->second
-        && !typeid_cast<const SerializationMapKeyColumns *>(missing_key_check_serialization)->getMissingKeysNested(*type, column, *it->second).empty())
+    const auto * map_key_columns_serialization = typeid_cast<const SerializationMapKeyColumns *>(missing_key_check_serialization);
+    if (map_key_columns_serialization && it->second
+        && !map_key_columns_serialization->getMissingKeysNested(*type, column, *it->second).empty())
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
