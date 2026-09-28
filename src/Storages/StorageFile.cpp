@@ -2369,8 +2369,7 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    /// The row-level filter is not propagated into `info`, see `StorageFile::read`.
-    info = updateFormatPrewhereInfo(info, /*row_level_filter=*/ nullptr, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
@@ -2429,9 +2428,8 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    /// A row policy is not propagated into `info` (see `StorageFile::read`), but the source still
-    /// evaluates it in the main pass via `FormatFilterInfo`, so its input columns must not be
-    /// deferred to the lazy branch.
+    /// A row policy is not part of `info`, but the source evaluates it in the main pass via
+    /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
     NameSet names_to_keep = required_names;
     if (query_info.row_level_filter)
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
@@ -2495,15 +2493,10 @@ void StorageFile::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    /// The row-level filter (row policy) is not propagated into `read_from_format_info`, with or without PREWHERE.
-    /// `updateFormatPrewhereInfo` would remove its input columns from the format header, but `StorageFileSource`
-    /// computes `DEFAULT` expressions after the format applied the filter, and they may depend on these columns.
-    /// The source still applies the filter via `FormatFilterInfo`. It is also necessary that the output header
-    /// does not change when `optimizePrewhere` adds PREWHERE: the steps above were built for the initial header.
     if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, /*row_level_filter=*/ nullptr, query_info.prewhere_info);
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files]
         && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);

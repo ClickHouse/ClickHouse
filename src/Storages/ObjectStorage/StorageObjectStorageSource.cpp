@@ -1664,7 +1664,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.
         if (stripped_row_level_filter)
         {
-            auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
+            /// The row-level filter keeps its input columns, see the comment for `ReadFromFormatInfo::prewhere_info`.
+            auto row_level_dag = stripped_row_level_filter->actions.clone();
+            auto & row_level_outputs = row_level_dag.getOutputs();
+            for (const auto * input : row_level_dag.getInputs())
+                if (std::ranges::find(row_level_outputs, input) == row_level_outputs.end())
+                    row_level_outputs.push_back(input);
+
+            auto row_level_actions = std::make_shared<ExpressionActions>(std::move(row_level_dag));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
