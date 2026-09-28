@@ -4216,13 +4216,6 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    /// A column that `DROP COLUMN` or `CLEAR COLUMN` removes from the part has no values left to expire.
-    for (const auto & command : ctx->for_file_renames)
-    {
-        if (command.type == MutationCommand::DROP_COLUMN && ctx->new_data_part->ttl_infos.removeColumnTTL(command.column_name))
-            ctx->ttl_infos_changed = true;
-    }
-
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
@@ -4239,6 +4232,16 @@ bool MutateTask::prepare()
     if (!new_columns_substreams.empty())
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
+
+    /// A column that `DROP COLUMN` or `CLEAR COLUMN` removes from the part has no values left to expire.
+    /// `CLEAR COLUMN` may keep the column in the new part (e.g. in a compact part), and then its TTL info
+    /// stays, as `checkAllTTLCalculated` expects it for every stored column.
+    for (const auto & command : ctx->for_file_renames)
+    {
+        if (command.type == MutationCommand::DROP_COLUMN && !new_columns.contains(command.column_name)
+            && ctx->new_data_part->ttl_infos.removeColumnTTL(command.column_name))
+            ctx->ttl_infos_changed = true;
+    }
 
     /// Re-home the part-lifetime metadata assigned above (partition, ttl_infos) into the dedicated
     /// arena; `setColumns` / `setColumnsSubstreams` already self-scope. Everything below is transient
