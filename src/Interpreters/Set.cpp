@@ -213,8 +213,8 @@ bool Set::insertFromColumns(const Columns & columns)
         holder.filter = ColumnUInt8::create(rows);
 
     bool inserted = insertFromColumns(columns, holder);
-    /// The whole block goes into the hash table before the size limits are checked, so a block that
-    /// trips them under `set_overflow_mode = 'break'` is part of the set and belongs in the elements too.
+    /// The whole block is inserted into the hash table before the size limits are checked, so even when the set
+    /// reaches a limit with `set_overflow_mode = 'break'`, the rows of this block must be added to the set elements.
     if (fill_set_elements)
     {
         if (max_elements_to_fill && max_elements_to_fill < data.getTotalRowCount())
