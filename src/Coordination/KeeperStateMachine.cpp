@@ -256,6 +256,7 @@ enum class RequestPathKind
     /// `version`, `mzxid`, `pzxid`, ACL, and anything else in `Stat` except `numChildren` and
     /// `cversion`). Orphan cleanup repairs only `numChildren` and the children set of the removed
     /// root's direct parent, so such a request replays identically unless the node itself was removed.
+    /// This also covers writes that rewrite only such fields of the node (`Set`, `SetACL`).
     NodeOnly,
     /// The node itself and its direct children: whether it exists, its data, version and ACL, and the
     /// `Stat` it reports (which carries `numChildren` and `cversion`) or an explicit children listing.
@@ -399,7 +400,10 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
             /// subtree anywhere below them changes the outcome. `ListWithOptions` can be recursive
             /// depending on its options. `Check` and `CheckNotExists` compare only the node's existence,
-            /// ACL and `version`. `CheckStat` compares exactly the fields of `stat_to_check` that are not
+            /// ACL and `version`. `Set` and `SetACL` check the node's existence, ACL and `version`/`aversion`
+            /// and rewrite only the node's own data or ACL and version fields (`Set` also increments the
+            /// parent's `cversion`, which orphan cleanup never changes); neither reads the node's children or
+            /// `numChildren`, so the state they leave is the same after orphan cleanup. `CheckStat` compares exactly the fields of `stat_to_check` that are not
             /// `-1` (`checkNodeStat` in KeeperStorageImpl.cpp), so it observes the children only when it
             /// compares `numChildren` or `cversion`. Everything else in this group resolves the node
             /// itself and at most its direct children.
@@ -407,7 +411,8 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             if (request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
                 || request.getOpNum() == OpNum::Reconfig)
                 kind = RequestPathKind::Subtree;
-            else if (request.getOpNum() == OpNum::Check || request.getOpNum() == OpNum::CheckNotExists)
+            else if (request.getOpNum() == OpNum::Check || request.getOpNum() == OpNum::CheckNotExists
+                || request.getOpNum() == OpNum::Set || request.getOpNum() == OpNum::SetACL)
                 kind = RequestPathKind::NodeOnly;
             else if (request.getOpNum() == OpNum::CheckStat)
             {

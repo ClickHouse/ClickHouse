@@ -290,7 +290,8 @@ region: a removed node, anything below it, or the direct parent of a removed sub
 counts as a conflict because its set of children no longer matches the tree the log was written against,
 so even an entry that only touches it — including a create or remove of a *sibling* under it, which
 updates its repaired child counters — could replay differently. Entries that look only at the parent's
-existence, version or modification ids, such as a `Check`, a `CheckNotExists`, or a `CheckStat` that compares neither `numChildren` nor `cversion`, or
+existence, version or modification ids, such as a `Check`, a `CheckNotExists`, a `CheckStat` that compares neither `numChildren` nor `cversion`,
+a `Set` or `SetACL` that rewrites only the parent's own data or ACL, or
 the data, child and exist watches a client re-registers after a reconnect, are unaffected and do not
 block recovery; persistent watches re-registered by a client never consult the tree and never block it.
 Nodes further up the chain are not

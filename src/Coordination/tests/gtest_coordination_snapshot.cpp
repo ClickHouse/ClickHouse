@@ -3669,6 +3669,52 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCheckStatOfRepairedP
     EXPECT_EQ(conflict->subtree_root, "/a/missing");
 }
 
+/// `Set` and `SetACL` on the repaired direct parent of a removed subtree check and rewrite only the
+/// parent's own data, ACL and versions (plus the grandparent's `cversion` for `Set`), never its children
+/// or `numChildren`, so they replay identically and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsSetAndSetACLOfRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeSetEntry(*state_machine, "/a", "parent_update"));
+    auto set_acl_request = std::make_shared<Coordination::ZooKeeperSetACLRequest>();
+    set_acl_request->path = "/a";
+    set_acl_request->acls = {{.permissions = 31, .scheme = "world", .id = "anyone"}};
+    set_acl_request->version = -1;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_acl_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/a"), "parent_update");
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/missing/child"));
+}
+
 /// `AddWatch`, `CheckWatch` and `RemoveWatch` only touch the watch maps, which are not part of the
 /// snapshot and are never resolved against the tree, so replaying them after orphan cleanup ends in
 /// the same state as on an unrepaired replica -- even when they name a pruned path. They must not
