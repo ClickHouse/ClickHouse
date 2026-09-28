@@ -207,8 +207,6 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         const String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.context);
         const String remote_database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-        if (remote_database.empty() && !(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires a non-empty remote database name", engine_name);
 
         /// A mistyped cluster name must fail the DDL query right away. On internal metadata replay
         /// (e.g. server startup) the check is skipped: the cluster is resolved on every access anyway,
