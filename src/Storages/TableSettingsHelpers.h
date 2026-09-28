@@ -58,8 +58,10 @@ SettingDescriptions withOriginByValue(SettingDescriptions settings);
 
 /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
 /// enumeration masks it, and sets `origin` when given. For an engine that derives its working values after
-/// loading its settings - by macro expansion, a generated default or a server config fallback. A value whose
-/// `origin` is `Config` came from the engine's server config section, and is never shown.
+/// loading its settings - by macro expansion, a generated default or a server config fallback. `origin` `Config`
+/// here means a value from the engine's own server config section, all of whose values are the server's - `nats`,
+/// `rabbitmq` - and such a value is never shown. A config section that sets the server's baseline, as `<merge_tree>`
+/// does, is recorded by the settings object instead, and its values stay visible.
 void setEffectiveValue(
     SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin = {});
 

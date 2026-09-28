@@ -8,10 +8,10 @@ namespace DB
 /// Where a table setting's effective value came from: the `source` column of `system.table_settings`,
 /// `system.engine_settings` and `system.merge_tree_settings`.
 ///
-/// Where several sources wrote a setting, the last one is reported. The values are declared in the order engines apply
-/// them, and the column is an `Enum8` of them, so `ORDER BY source` sorts by precedence: keep that order when adding
-/// one. `Other`, the catch-all, is the exception. `S3Queue` and `AzureQueue` apply `SharedMetadata` after the
-/// definition, as `docs/reference/system-tables/table_settings.mdx` explains.
+/// Where several sources wrote a setting, the last one is reported. The order of application is the engine's: `MergeTree`
+/// applies `compatibility` before its config section, most engines apply a named collection and then the table's own
+/// clause, and `S3Queue` and `AzureQueue` apply `SharedMetadata` after the definition, as
+/// `docs/reference/system-tables/table_settings.mdx` explains. The declaration order is not a precedence.
 enum class SettingOrigin : uint8_t
 {
     /// The engine's compiled-in default. Also what `BaseSettings` stores for "nothing recorded", which is why
