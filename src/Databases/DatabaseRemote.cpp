@@ -160,6 +160,10 @@ struct LocalTraversalGuard
 
 DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 {
+    /// A stored definition can carry an empty name, which names no database of this server.
+    if (remote_database.empty())
+        return {};
+
     /// A database that refers back to itself (directly or through a chain) is handled by
     /// `LocalTraversalGuard` at the call sites, so no self-reference check is needed here.
     return DatabaseCatalog::instance().tryGetDatabase(remote_database);
@@ -168,6 +172,9 @@ DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 
 bool DatabaseRemote::tryGetLocalChainNext(String & next_database) const
 {
+    if (remote_database.empty())
+        return false;
+
     try
     {
         const ProxyClusters clusters = getProxyClusters();
@@ -1225,6 +1232,9 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             if (engine_args.size() >= 4)
                 password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
+
+        if (remote_database.empty() && !(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires a non-empty remote database name", engine_name);
 
         auto clusters = buildClusters(addresses_expr, username, password, secure, args.context);
 
