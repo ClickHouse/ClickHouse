@@ -20,7 +20,6 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
-#include <numeric>
 #include <set>
 
 namespace DB::ErrorCodes
@@ -946,18 +945,7 @@ private:
         }
 
         for (size_t child = 0; child < node->children.size(); ++child)
-        {
-            std::vector<size_t> positions;
-            if (child_required.empty())
-            {
-                positions.resize(node->children[child]->step->getOutputHeader()->columns());
-                std::iota(positions.begin(), positions.end(), 0);
-            }
-            else
-                positions = std::move(child_required[child]);
-
-            prune(node->children[child], positions);
-        }
+            prune(node->children[child], child_required.at(child));
     }
 
     bool isAddedColumn(const String & name) const { return added_names.contains(name); }
