@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Concurrent CREATE OR REPLACE of the same table in an Atomic database must succeed every time.
+# Concurrent `CREATE OR REPLACE` of the same table in an `Atomic` database must succeed every time.
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE}_db ENGINE=Atomic"
 
 # The statements are serialized on the table name and can take a second each with the database metadata on a remote disk.
