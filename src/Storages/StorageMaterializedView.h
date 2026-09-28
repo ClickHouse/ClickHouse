@@ -30,6 +30,10 @@ public:
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
+
+    /// The `ENGINE ... SETTINGS` of a materialized view belong to its inner table, which reports them; the view's own
+    /// definition states none, so it need not be read.
+    SettingDescriptions getTableSettings(ContextPtr) const override { return {}; }
     bool isRemote() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
