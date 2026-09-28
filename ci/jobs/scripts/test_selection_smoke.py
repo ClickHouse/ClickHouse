@@ -2,21 +2,30 @@
 
 import argparse
 import json
+import re
+import shlex
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from ci.jobs.scripts.coverage_selection import (
+    attach_bracket_owners,
+    build_bracket_owners_query,
+    build_bracket_spans_query,
     build_candidate_query,
     canonical_coverage_paths,
+    find_brackets,
     load_snapshots,
     protect_selection,
     rank_candidates,
     validate_snapshots,
 )
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+from ci.jobs.scripts.test_selection_config import (
+    INTEGRATION_SELECTION_CONFIG,
+    SELECTION_CONFIG,
+)
 
 FIXTURE_TIME = "2026-09-04 03:00:00"
 FIXTURE_DIFF = """--- a/src/Interpreters/Fixture.cpp
@@ -321,6 +330,195 @@ class SelectionSmoke(unittest.TestCase):
         result = protect_selection(["a", "b", "c"], [], candidates, str, config)
         self.assertEqual(result["mandatory_overflow"], 1)
         self.assertEqual(result["selected_count"], 3)
+
+    def test_selection_pattern_selects_only_its_own_test(self):
+        """A selected test's selector must select that test's file and no other.
+
+        `TestSuite.get_selected_tests` in `tests/clickhouse-test` searches each
+        positional selector as a regex against the suite file name including its
+        extension, which is what this mirrors.
+        """
+        suite = [
+            "01655_plan_optimizations.sh",
+            "01655_plan_optimizations_merge_filters.sql",
+            "00172_hits_joins.sql.j2",
+            "00029_test_zookeeper_optimize_exception.sh",
+            # The suite has dotted test names, so a name may also be the prefix
+            # of a dotted sibling rather than of an underscored one.
+            "03033_dist_settings.sql",
+            "03033_dist_settings.optimize_in.sql",
+        ]
+        selected = lambda pattern: {f for f in suite if re.search(pattern, f)}
+
+        self.assertEqual(
+            Targeting.selection_pattern("01655_plan_optimizations."),
+            r"^01655_plan_optimizations(?:\.sql\.j2|\.sql|\.sh|\.py|\.expect)$",
+        )
+        # Controls: both looser selectors this replaces select a second test.
+        self.assertIn(
+            "01655_plan_optimizations_merge_filters.sql",
+            selected("01655_plan_optimizations."),
+        )
+        self.assertIn(
+            "03033_dist_settings.optimize_in.sql", selected(r"^03033_dist_settings\.")
+        )
+
+        for test, expected in (
+            ("01655_plan_optimizations.", "01655_plan_optimizations.sh"),
+            ("00172_hits_joins.", "00172_hits_joins.sql.j2"),
+            # `clickhouse-test` reports a rendered template as `<name>.gen`.
+            ("00172_hits_joins.gen", "00172_hits_joins.sql.j2"),
+            (
+                "00029_test_zookeeper_optimize_exception",
+                "00029_test_zookeeper_optimize_exception.sh",
+            ),
+            ("03033_dist_settings.", "03033_dist_settings.sql"),
+            ("03033_dist_settings.optimize_in.", "03033_dist_settings.optimize_in.sql"),
+        ):
+            with self.subTest(test=test):
+                pattern = Targeting.selection_pattern(test)
+                self.assertEqual(selected(pattern), {expected})
+
+    def test_selection_args_survive_the_shell(self):
+        """`run_tests` hands its command line to bash, which parses the selectors."""
+        selectors = [Targeting.selection_pattern("01655_plan_optimizations.")]
+        self.assertEqual(shlex.split(Targeting.selection_args(selectors)), selectors)
+        # Control: the plain join this replaces does not survive quote removal.
+        self.assertNotEqual(shlex.split(" ".join(selectors)), selectors)
+
+    def test_brackets_pair_nearest_regions_around_uncovered_hunks(self):
+        config = INTEGRATION_SELECTION_CONFIG
+        first, second = (FIXTURE_TIME, "shard 1"), ("2026-09-03 03:00:00", "shard 1")
+
+        def span(start, end, snapshot=first, path="src/a.cpp"):
+            return {
+                "canonical_file": path,
+                "line_start": start,
+                "line_end": end,
+                "observed_at": snapshot[0],
+                "check_name": snapshot[1],
+            }
+
+        spans = [
+            span(300, 300),
+            span(344, 345, path="./src/a.cpp"),
+            span(403, 404),
+            span(500, 500),
+            # The same code 7 lines lower in an older commit: never paired with `first`.
+            span(351, 352, second),
+            span(410, 411, second),
+        ]
+        hunks = {
+            # Straight-line code between two regions.
+            "src/a.cpp": [(383, 388), (499, 501), (430, 436)],
+            "src/b.cpp": [(10, 12)],
+        }
+        brackets = find_brackets(hunks, spans, config)
+        # (499, 501) overlaps a region and is scored as usual; (430, 436) has nothing
+        # after it within the gap; `src/b.cpp` has no regions. Each snapshot pairs its
+        # own regions, and every pair keeps its own width.
+        self.assertEqual(
+            [(b["before"], b["after"], b["width"], b["snapshots"], b["hunks"]) for b in brackets],
+            [
+                (("src/a.cpp", 344, 345), ("src/a.cpp", 403, 404), 59, [first], ["src/a.cpp:383-388"]),
+                (("src/a.cpp", 351, 352), ("src/a.cpp", 410, 411), 59, [second], ["src/a.cpp:383-388"]),
+            ],
+        )
+        self.assertEqual(find_brackets(hunks, spans, replace(config, bracket_gap_lines=10)), [])
+
+        query = build_bracket_spans_query(hunks, fixture_snapshots(), config)
+        self.assertIn("file IN ('src/a.cpp', './src/a.cpp')", query)
+        self.assertIn("line_end >= 343 AND line_start <= 428", query)
+        self.assertNotIn("AS check_start_time", query)
+        query = build_bracket_owners_query(brackets, fixture_snapshots(), config)
+        self.assertIn("(line_start, line_end) IN ((344, 345), (351, 352), (403, 404), (410, 411))", query)
+        self.assertNotIn("AS check_start_time", query)
+
+        def row(start, end, snapshot, owners):
+            return {
+                "canonical_file": "src/a.cpp",
+                "line_start": start,
+                "line_end": end,
+                "observed_at": snapshot[0],
+                "check_name": snapshot[1],
+                "owners": owners,
+            }
+
+        attach_bracket_owners(
+            brackets,
+            [
+                row(344, 345, first, ["test_x/test.py", "test_y/test.py"]),
+                row(403, 404, first, ["test_y/test.py", "test_z/test.py"]),
+                row(351, 352, second, ["test_w/test.py", "test_z/test.py"]),
+                row(410, 411, second, ["test_w/test.py"]),
+                # Not a pair of `second`: its regions are ignored in that snapshot.
+                row(344, 345, second, ["test_z/test.py"]),
+            ],
+        )
+        # Only a run that reached both regions ran the code between them: `test_z` owns
+        # the right region in `first` and the left one in `second`, but not both in one.
+        self.assertEqual([b["owners"] for b in brackets], [["test_y/test.py"], ["test_w/test.py"]])
+
+    def test_bracket_is_one_piece_of_evidence(self):
+        config = INTEGRATION_SELECTION_CONFIG
+        snapshot = (FIXTURE_TIME, "shard 1")
+
+        def span(start):
+            return {
+                "canonical_file": "src/a.cpp",
+                "line_start": start,
+                "line_end": start,
+                "observed_at": snapshot[0],
+                "check_name": snapshot[1],
+            }
+
+        def owners(start, tests):
+            return {**span(start), "owners": tests}
+
+        # Two hunks between the same regions do not count twice.
+        split = find_brackets({"src/a.cpp": [(110, 112), (130, 132)]}, [span(100), span(150)], config)
+        self.assertEqual([b["hunks"] for b in split], [["src/a.cpp:110-112", "src/a.cpp:130-132"]])
+        attach_bracket_owners(split, [owners(100, ["test_a/test.py"]), owners(150, ["test_a/test.py"])])
+        whole = find_brackets({"src/a.cpp": [(110, 132)]}, [span(100), span(150)], config)
+        attach_bracket_owners(whole, [owners(100, ["test_a/test.py"]), owners(150, ["test_a/test.py"])])
+        score = lambda brackets: rank_candidates([], [], {}, fixture_snapshots(), config, brackets=brackets)[0]["score"]
+        self.assertEqual(score(split), score(whole))
+
+        # A test owning only a wide pair does not inherit the width of a narrow one.
+        narrow = find_brackets({"src/a.cpp": [(110, 112)]}, [span(100), span(120)], config)
+        wide = find_brackets({"src/a.cpp": [(110, 112)]}, [span(80), span(150)], config)
+        attach_bracket_owners(narrow, [owners(100, ["test_narrow/test.py"]), owners(120, ["test_narrow/test.py"])])
+        attach_bracket_owners(wide, [owners(80, ["test_wide/test.py"]), owners(150, ["test_wide/test.py"])])
+        scores = {c["test"]: c["score"] for c in rank_candidates([], [], {}, fixture_snapshots(), config, brackets=narrow + wide)}
+        self.assertGreater(scores["test_narrow/test.py"], scores["test_wide/test.py"])
+
+    def test_brackets_rank_after_precise_coverage(self):
+        config = INTEGRATION_SELECTION_CONFIG
+        region = fixture_region(tests=[("test_precise/test.py", 1)])
+        bracket = {
+            "file": region["file"],
+            "before": (region["file"], 20, 21),
+            "after": (region["file"], 40, 40),
+            "width": 20,
+            "snapshots": [(FIXTURE_TIME, "shard 1")],
+            "hunks": [f"{region['file']}:30-35"],
+            "owners": ["test_bracket/test.py", "test_precise/test.py"],
+        }
+        candidates = rank_candidates(
+            [region], [(region["file"], 10), (region["file"], 30)], {}, fixture_snapshots(), config, brackets=[bracket]
+        )
+        self.assertEqual([c["test"] for c in candidates], ["test_precise/test.py", "test_bracket/test.py"])
+        self.assertEqual(candidates[1]["admission_reason"], "bracketed_hunk_coverage")
+        self.assertEqual(candidates[1]["features"][0]["region"], f"{region['file']}:21-40")
+        self.assertEqual(
+            candidates[1]["features"][0]["bracket_regions"],
+            [f"{region['file']}:20-21", f"{region['file']}:40-40"],
+        )
+        # A bracket owned by too many tests is as broad as an unselective region.
+        bracket["owners"] = [f"test_{i}/test.py" for i in range(config.max_precise_region_owners + 1)]
+        self.assertEqual(
+            [c["test"] for c in rank_candidates([], [], {}, fixture_snapshots(), config, brackets=[bracket])], []
+        )
 
     def test_query_keeps_file_pruning_and_separate_hunks(self):
         query = build_candidate_query(

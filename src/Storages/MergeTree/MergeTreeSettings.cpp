@@ -571,6 +571,46 @@ there is free space, but this space is already booked by ongoing large merges,
 so other merges are unable to start, and the number of small parts grows
 with every insert.
 )", 0) \
+    DECLARE(UInt64, min_unreserved_disk_space_for_merge, 0, R"(
+Keeps the specified amount of unreserved disk space (in bytes) out of reach of
+background merges, so that they cannot starve inserts. The amount is subtracted
+from the free space, and the limit on the total size of a merge's source parts
+is derived from what remains with a safety factor on top, so the largest
+allowed merge stays well under that. The limit shrinks as the disk fills up and
+reaches zero once free space is down to this amount, at which point no
+background merge is selected at all. (0 means disabled)
+
+Unlike `keep_free_space_bytes`, the protected space stays usable by ClickHouse
+itself - it is only kept out of merge scheduling. Mutations are not limited by
+it and can still consume the protected space, and the setting has no effect on
+disks with unlimited space (such as object storage).
+
+Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
+with an explicit `PARTITION` ignore this setting. Merges that drop wholly
+expired parts are selected whenever the limit is above zero, whatever their
+size, and nothing is selected at zero. Every merge reserves at least 1 MiB, so
+a merge started with less than 1 MiB left above the protected space can take up
+to 1 MiB of it. A `ReplicatedMergeTree` replica also runs queued drops when its
+own limit is zero, if a row TTL without `WHERE` is the table's only TTL. With a
+`GROUP BY`, `WHERE` or column TTL such a drop rewrites the remaining rows:
+`ReplicatedMergeTree` postpones it by the size of its parts, but `MergeTree`
+does not and can write them into the protected space.
+
+Once the limit is zero a plain `OPTIMIZE` assigns nothing: it is a no-op, or
+throws `CANNOT_ASSIGN_OPTIMIZE` with `optimize_throw_if_noop = 1`. Use `FINAL`
+or an explicit `PARTITION` to merge into the protected space. On
+`ReplicatedMergeTree` that exemption is recorded in the replication log entry
+only when the setting is non-zero on the replica that queues it, so an
+`OPTIMIZE` queued while it was 0 still runs under the headroom.
+
+`ALTER TABLE ... MODIFY SETTING` is not replicated, so give every replica the
+same value: a replica with a larger headroom re-applies it to merges assigned
+elsewhere and can postpone them indefinitely. Keep the value at `0` until every
+replica runs a version that knows the setting - an older replica cannot parse
+the log entries written for the exempt merges and stops pulling any further
+entries for the table, including those for ordinary inserts.
+)", 0, \
+        {"26.10", 0, 0, "New setting to keep some unreserved disk space out of reach of background merges, so that they cannot starve inserts."}) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
 ReplicatedMergeTree queue.
@@ -2518,7 +2558,7 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
         {"26.4", false, false, "New setting"}) \
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
-The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
