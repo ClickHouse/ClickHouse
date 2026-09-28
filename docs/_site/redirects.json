@@ -148,6 +148,14 @@
     "source": "/integrations/connectors/data-integrations/prometheus"
   },
   {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
+    "source": "/concepts/features/connect-to-clickhouse/prometheus/index"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
+    "source": "/concepts/features/connect-to-clickhouse/protocols/http/index"
+  },
+  {
     "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
     "source": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics"
   },
@@ -4956,8 +4964,8 @@
     "source": "/integrations/glue"
   },
   {
-    "destination": "/integrations/language-clients/go/index",
-    "source": "/integrations/go"
+    "destination": "/integrations/go",
+    "source": "/integrations/language-clients/go/index"
   },
   {
     "destination": "/integrations/language-clients/go/index",
