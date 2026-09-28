@@ -158,21 +158,9 @@ SettingDescriptions describeSettingsStatedInDefinition(const StorageID & table_i
         described.value = convertFieldToString(change.value);
         described.origin = SettingOrigin::Definition;
 
-        /// Through the same helper the settings-struct path uses, and for the same reason: whether a
-        /// value is redacted must not depend on which of the two built the row. A definition can
-        /// state `url_base`, `s3_base` or `format_avro_schema_registry_url` with a credential in it,
-        /// and `SHOW CREATE TABLE` hides those - so this has to as well. Under every name the setting answers to, as
-        /// enumeration asks: a registry keys its rules by the names its engine happened to list, and the clause may
-        /// have used any of them.
-        described.masked_value = maskEngineSettingValue(described.name, change.value, described.value);
-        if (described.masked_value.empty() && change.name != described.name)
-            described.masked_value = maskEngineSettingValue(change.name, change.value, described.value);
-        for (const auto & alias : described.aliases)
-        {
-            if (!described.masked_value.empty())
-                break;
-            described.masked_value = maskEngineSettingValue(String{alias}, change.value, described.value);
-        }
+        /// As the settings-struct path masks, so that whether a value is redacted does not depend on which of the
+        /// two built the row: a definition can state `url_base` or `s3_base` with a credential in it.
+        described.masked_value = maskEngineSettingValue(described, change.value);
 
         result.push_back(std::move(described));
     }
@@ -235,7 +223,7 @@ void setEffectiveValue(
         return;
 
     it->value = value;
-    it->masked_value = value != it->default_value ? maskEngineSettingValue(it->name, Field(value), value) : String{};
+    it->masked_value = value != it->default_value ? maskEngineSettingValue(*it, Field(value)) : String{};
     if (origin)
         it->origin = *origin;
 }

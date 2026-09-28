@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/SettingsSecrets.h>
 #include <Parsers/engineSettingsToHide.h>
+#include <Storages/SettingDescription.h>
 
 namespace DB
 {
@@ -36,6 +37,18 @@ String maskEngineSettingValue(const String & setting_name, const Field & field, 
     }
 
     return {};
+}
+
+String maskEngineSettingValue(const SettingDescription & setting, const Field & field)
+{
+    String masked = maskEngineSettingValue(setting.name, field, setting.value);
+    for (const auto alias : setting.aliases)
+    {
+        if (!masked.empty())
+            break;
+        masked = maskEngineSettingValue(String{alias}, field, setting.value);
+    }
+    return masked;
 }
 
 }
