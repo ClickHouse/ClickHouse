@@ -546,6 +546,7 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
+    Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
