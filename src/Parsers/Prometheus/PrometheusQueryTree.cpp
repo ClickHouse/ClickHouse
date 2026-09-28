@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <base/hex.h>
+#include <base/arithmeticOverflow.h>
 #include <fmt/ranges.h>
 
 #include <cmath>
@@ -185,7 +186,7 @@ namespace
         if (milliseconds < 0)
             str += "-";
         /// Negated as unsigned, so the most negative duration is not undefined behaviour.
-        UInt64 rest = milliseconds < 0 ? (0 - static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
+        UInt64 rest = milliseconds < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
         for (const auto & unit : units)
         {
             if (unit.exact_only && (rest % unit.length_ms))
