@@ -7,7 +7,7 @@ SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
-SET allow_experimental_correlated_subqueries = 0;
+SET allow_correlated_subqueries = 0;
 
 SELECT 1 IN (1, 2);
 SELECT 3 IN (1, 2);

@@ -108,6 +108,12 @@ public:
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
+    void setExplicitMetadataFilePath(const String & path) override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->setExplicitMetadataFilePath(path);
+    }
+
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     StorageObjectStorageConfiguration::Path getRawPath() const override
@@ -204,6 +210,21 @@ public:
     {
         lazyInitializeIfNeeded(object_storage, context);
         getMetadata()->checkAlterIsPossible(commands);
+    }
+
+    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkAlterPartitionIsPossible(commands);
+    }
+
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override
+    {
+        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
     void alter(
