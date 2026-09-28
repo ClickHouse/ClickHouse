@@ -891,11 +891,10 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
         UInt64 time_spent = total_watch.elapsedMilliseconds();
         UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
         UInt64 wait_time_ms = std::min(max_action_wait_time_ms, time_left_total);
-        /// A retry with no time left to wait for its result would do nothing.
         if (attempt > 0 && wait_time_ms == 0)
             break;
 
-        /// A copy that is still queued is retried by clusterUpdateThread until it is accepted,
+        /// A copy that is still queued is retried by `clusterUpdateThread` until it is accepted,
         /// so a retry pushes the action again only once the queue is empty.
         bool pushed = attempt == 0;
         if (pushed)
