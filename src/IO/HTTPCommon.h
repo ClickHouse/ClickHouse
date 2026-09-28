@@ -28,9 +28,10 @@ public:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
-        const std::string & body
+        const std::string & body,
+        bool mask_body = false
     )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, mask_body))
         , http_status(http_status_)
     {}
 
@@ -47,7 +48,8 @@ private:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
-        const std::string & body);
+        const std::string & body,
+        bool mask_body);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -81,7 +83,11 @@ bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexc
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
+/// `request_has_credentials` must be set when the request carried credentials (userinfo or an
+/// `Authorization` header): an error response body can reflect them back (e.g. an auth error echoing
+/// the user name), so it is replaced with `[HIDDEN]` rather than logged.
 void assertResponseIsOk(
-    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
+    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false,
+    bool request_has_credentials = false);
 
 }

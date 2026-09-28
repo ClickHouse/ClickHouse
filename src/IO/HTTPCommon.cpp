@@ -82,11 +82,13 @@ std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
     auto & istr = session.receiveResponse(response);
-    assertResponseIsOk(request.getURI(), response, istr, allow_redirects);
+    assertResponseIsOk(request.getURI(), response, istr, allow_redirects, request.has("Authorization"));
     return &istr;
 }
 
-void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects)
+void assertResponseIsOk(
+    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects,
+    const bool request_has_credentials)
 {
     auto status = response.getStatus();
 
@@ -103,7 +105,7 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
         std::string body;
         Poco::StreamCopier::copyToString(istr, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body);
+        throw HTTPException(code, uri, status, response.getReason(), body, request_has_credentials);
     }
 }
 
@@ -112,12 +114,23 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
-    const std::string & body)
+    const std::string & body,
+    bool mask_body)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
-    std::string masked_body = body;
-    maskPresignedURLParameters(masked_body);
+
+    /// When the request carried credentials, the error body can reflect them back in any form (e.g. an
+    /// auth error echoing the user name), which no pattern masker can catch, so hide it whole. Otherwise
+    /// mask only the presigned-URL parameters a reflected request URL can carry.
+    std::string masked_body;
+    if (mask_body)
+        masked_body = "[HIDDEN]";
+    else
+    {
+        masked_body = body;
+        maskPresignedURLParameters(masked_body);
+    }
 
     return Exception(code,
         "Received error from remote server {}. "

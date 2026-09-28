@@ -286,7 +286,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     auto & resp_stream = session->receiveResponse(response);
 
-    assertResponseIsOk(maskedURI(current_uri), response, resp_stream, allow_redirects);
+    assertResponseIsOk(maskedURI(current_uri), response, resp_stream, allow_redirects, request.has("Authorization"));
 
     return ReadWriteBufferFromHTTP::CallResult(std::move(session), resp_stream);
 }
