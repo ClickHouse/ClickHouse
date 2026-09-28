@@ -492,11 +492,10 @@ void BackupImpl::writeBackupMetadata()
     else
         out = writer->writeFile(metadata_file);
 
-    /// Escaping cannot rescue a value XML has no representation for at all: there is no character
-    /// reference for a C0 control byte, and a byte sequence that is not valid UTF-8 names no code point.
-    /// Writing one still reported `BACKUP_CREATED`, and the backup turned out to be unreadable only at
-    /// restore time, so refuse it here while the backup can still be retried. The offending value is
-    /// never put in the message - `<base_backup>` holds a locator that can carry credentials.
+    /// A value XML cannot represent has no escaped form either, and writing it raw reported `BACKUP_CREATED`
+    /// over a manifest no parser reads back.
+    ///
+    /// The value is never quoted in the message: `<base_backup>` holds a locator that can carry credentials.
     auto xml_string = [](std::string_view element, const String & str)
     {
         if (auto offset = findCharacterNotWritableAsXML(str))

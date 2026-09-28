@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# The `.backup` manifest is XML, so every user-controlled string in it has to be escaped. A value that is not
-# escaped still produces a `BACKUP_CREATED`, and the damage only shows up at restore time as a SAX parse error,
-# with no way back to the data - so each of these asserts that the backup can actually be read again.
+# The `.backup` manifest is XML, so a user-controlled string in it has to be escaped - unescaped, it is only
+# found unreadable at restore time.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,16 +12,15 @@ CREATE TABLE tbl (a Int32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tbl VALUES (1), (2), (3);
 "
 
-# `SETTINGS id` is written to the manifest as `<backup_id>`. The id has to be unique across the whole server,
-# not just this database - `BackupsWorker` rejects a second backup carrying an id it has already seen, which
-# the flaky check would hit on the second run.
+# `SETTINGS id` becomes `<backup_id>`. The id has to be unique server-wide: `BackupsWorker` rejects one it
+# has already seen.
 backup_with_id="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_id')"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${backup_with_id} SETTINGS id = 'a&b<c>d\"e ${CLICKHOUSE_TEST_UNIQUE_NAME}'" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE tbl AS tbl_from_id FROM ${backup_with_id}" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SELECT 'backup_id', sum(a) FROM tbl_from_id"
 
-# The base backup's locator is written to the incremental backup's manifest as `<base_backup>`, so a `&` in the
-# base backup's path reaches the manifest of the backup that refers to it.
+# An incremental backup writes the base backup's locator to `<base_backup>`, so a `&` in the base backup's
+# path reaches its manifest.
 base_backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_base&1')"
 incremental_backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_incremental')"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${base_backup}" > /dev/null
@@ -31,17 +29,15 @@ ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${incremental_backup} SETTINGS
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE tbl AS tbl_from_incremental FROM ${incremental_backup}" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SELECT 'base_backup', sum(a) FROM tbl_from_incremental"
 
-# The check for characters XML cannot carry walks the string as UTF-8, so the rest of UTF-8 has to keep
-# working: a multi-byte id is perfectly legal XML and must still round-trip.
+# The check walks the string as UTF-8, so the rest of UTF-8 has to keep working: a multi-byte id is legal
+# XML and must still round-trip.
 backup_with_utf8="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_utf8')"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${backup_with_utf8} SETTINGS id = 'привет 🙂 ${CLICKHOUSE_TEST_UNIQUE_NAME}'" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE tbl AS tbl_from_utf8 FROM ${backup_with_utf8}" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SELECT 'utf8_id', sum(a) FROM tbl_from_utf8"
 
-# XML has no representation at all for a C0 control character - there is no escape and no character
-# reference for one - so escaping cannot help and the backup has to be refused. Writing the byte raw is
-# what reported `BACKUP_CREATED` over a manifest that no parser accepts. SQL string literals decode
-# `\0` and `\v` into those bytes, so `SETTINGS id` reaches the manifest with one.
+# XML cannot carry a C0 control at all, so escaping cannot help and the backup has to fail. A SQL literal
+# decodes `\0` and `\v` into one.
 control_nul="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_control_nul')"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${control_nul} SETTINGS id = 'a\0b ${CLICKHOUSE_TEST_UNIQUE_NAME}'" 2>&1 \
     | grep -qF 'XML cannot represent' && echo -e "control_char_nul\trejected" || echo -e "control_char_nul\tNOT rejected"
