@@ -1,0 +1,25 @@
+geoCoveredByCartesian: interior point covered
+1
+geoCoveredByCartesian: boundary point covered
+1
+geoCoveredByCartesian: boundary point not within (shows difference)
+0
+geoCoveredByCartesian: exterior point
+0
+geoCoveredByCartesian: polygon not covered by point
+0
+geoCoveredByCartesian: point in hole
+0
+geoCoveredByCartesian: const polygon, variable points
+1
+0
+geoCoveredBySpherical: interior point covered
+1
+geoCoveredBySpherical: boundary point covered
+1
+geoCoveredBySpherical: exterior point
+0
+ST_CoveredBy is alias for geoCoveredByCartesian
+1
+symmetry: geoCoveredByCartesian(A,B) == geoCoversCartesian(B,A)
+1

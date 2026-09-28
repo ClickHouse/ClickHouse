@@ -57,6 +57,7 @@ set(DBMS_FUNCTIONS
     vectorQuantization.cpp # createInternalFunctionQuantizeDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
+    s2CoveringBuilder.cpp # build{Point|LineString|...}Covering used by ProjectionIndexS2 in dbms
     FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})

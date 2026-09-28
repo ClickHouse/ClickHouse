@@ -1,0 +1,33 @@
+geoWithinCartesian: point within polygon
+1
+geoWithinCartesian: point not within polygon
+0
+geoWithinCartesian: polygon within point is always false
+0
+geoWithinCartesian: same point
+1
+geoWithinCartesian: point in hole
+0
+geoWithinCartesian: small polygon within big
+1
+geoWithinCartesian: big not within small
+0
+geoWithinCartesian: const polygon, variable points
+1
+0
+1
+0
+1
+geoWithinCartesian: const point, variable polygons
+1
+0
+geoWithinSpherical: point within polygon
+1
+geoWithinSpherical: point not within polygon
+0
+geoWithinSpherical: small polygon within big
+1
+ST_Within is alias for geoWithinCartesian
+1
+symmetry: geoWithinCartesian(A,B) == geoContainsCartesian(B,A)
+1

@@ -60,14 +60,21 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 
+#include "config.h"
+#if USE_S2_GEOMETRY
+#include <Storages/MergeTree/KeyConditionS2.h>
+#endif
+
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
+    extern const SettingsBool enable_s2_index_pruning;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsUInt64 s2_max_covering_cells;
     extern const SettingsTimezone session_timezone;
 }
 
@@ -425,7 +432,29 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.relaxed = true;
                 return true;
             }
-        }
+        },
+#if USE_S2_GEOMETRY
+        /// S2 functions are handled by tryAnalyzeS2Covering before the generic
+        /// atom_map callback path, but they must be present in atom_map so that
+        /// the gate check at the top of extractAtomFromTree does not reject them.
+        /// The callbacks below are never actually called.
+        {
+            "s2CellsIntersect",
+            [] (RPNElement &, const Field &) { return false; }
+        },
+        {
+            "__s2CoveringIntersects",
+            [] (RPNElement &, const Field &) { return false; }
+        },
+        {
+            "s2RectContains",
+            [] (RPNElement &, const Field &) { return false; }
+        },
+        {
+            "s2CapContains",
+            [] (RPNElement &, const Field &) { return false; }
+        },
+#endif
 };
 
 /// The `isNull`/`isNotNull` atoms (and the `key IS NOT DISTINCT FROM NULL` branch that reuses them)
@@ -1562,6 +1591,10 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , enable_s2_index_pruning(context->getSettingsRef()[Setting::enable_s2_index_pruning])
+    , s2_max_covering_cells(static_cast<int>(std::min<UInt64>(
+          context->getSettingsRef()[Setting::s2_max_covering_cells],
+          static_cast<UInt64>(std::numeric_limits<int>::max()))))
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -4589,6 +4622,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return false;
         }
 
+#if USE_S2_GEOMETRY
+        /// An S2 covering only proves that a granule may match, so the atom is always relaxed.
+        auto analyze_s2_covering = [&]() -> bool
+        {
+            if (!tryAnalyzeS2Covering(func, key_columns, s2_max_covering_cells, out))
+                return false;
+            out.relaxed = true;
+            return true;
+        };
+#endif
+
         auto analyze_point_in_polygon = [&, this]() -> bool
         {
             /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
@@ -4735,6 +4779,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// Case1 no holes in polygon
                 return analyze_point_in_polygon();
             }
+
+#if USE_S2_GEOMETRY
+            /// s2CellsIntersect and __s2CoveringIntersects are 2-arg functions and
+            /// must be handled before the generic func(key, const) path below, which
+            /// would succeed (since one arg is a key column and the other is a constant)
+            /// but would only call the atom_map callback without computing the S2 covering.
+            /// __s2CoveringIntersects takes Array(UInt64) as arg1, which the generic path
+            /// cannot handle.
+            if (enable_s2_index_pruning
+                && (func_name == "s2CellsIntersect" || func_name == "__s2CoveringIntersects"))
+                return analyze_s2_covering();
+#endif
 
             /// Looking for func(key, const) or func(const, key).
             size_t const_arg_pos = 0;
@@ -5050,6 +5106,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return analyze_point_in_polygon();
             }
 
+#if USE_S2_GEOMETRY
+            if (enable_s2_index_pruning)
+            {
+                if (func_name == "s2RectContains"
+                    || func_name == "s2CapContains")
+                    return analyze_s2_covering();
+            }
+#endif
+
             return false;
         }
 
@@ -5357,6 +5422,7 @@ KeyCondition::Description KeyCondition::getDescription() const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_COVERING:
             {
                 auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
                 auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
@@ -6428,7 +6494,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             {
                 rpn_stack.push(PlainRanges::makeUniverse());
             }
-            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
+            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON, FUNCTION_S2_*)
             {
                 if (!has_filter)
                     rpn_stack.push(PlainRanges::makeUniverse());
@@ -6563,6 +6629,7 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
+        case KeyCondition::RPNElement::FUNCTION_S2_COVERING:
             return true;
         case KeyCondition::RPNElement::FUNCTION_IS_NULL:
         case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
@@ -6926,6 +6993,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
             rpn_stack.emplace_back(intersects, true);
         }
+#if USE_S2_GEOMETRY
+        else if (element.function == RPNElement::FUNCTION_S2_COVERING)
+        {
+            rpn_stack.emplace_back(evalS2Covering(element, hyperrectangle));
+        }
+#endif
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
@@ -7392,6 +7465,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
             rpn_stack.emplace_back(intersects, true);
         }
+#if USE_S2_GEOMETRY
+        else if (element.function == RPNElement::FUNCTION_S2_COVERING)
+        {
+            const size_t key_column = element.key_columns.at(0);
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+            if (!is_key_col_present)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            /// `evalS2Covering` looks up the range by the key column index, so place the sparse range there.
+            Hyperrectangle key_hyperrectangle(key_column + 1, Range::createWholeUniverse());
+            key_hyperrectangle[key_column] = sparse_hyperrectangle[sparse_pos];
+            rpn_stack.emplace_back(evalS2Covering(element, key_hyperrectangle));
+        }
+#endif
         else if (element.function == RPNElement::FUNCTION_IS_NULL
               || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
@@ -7759,6 +7849,12 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
             buf << ")";
             return buf.str();
         }
+        case FUNCTION_S2_COVERING:
+#if USE_S2_GEOMETRY
+            return s2_covering_data ? s2_covering_data->function_name : "s2Covering";
+#else
+            return "s2Covering";
+#endif
         case FUNCTION_IS_NULL:
         case FUNCTION_IS_NOT_NULL:
         {
@@ -7811,6 +7907,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_COVERING:
             case RPNElement::FUNCTION_IS_NULL:
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::ALWAYS_FALSE:
@@ -7869,6 +7966,7 @@ bool KeyCondition::alwaysFalse() const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_COVERING:
             case RPNElement::FUNCTION_IS_NULL:
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_UNKNOWN:
@@ -7956,6 +8054,7 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_S2_COVERING:
             case RPNElement::FUNCTION_UNKNOWN:
             case RPNElement::ALWAYS_FALSE:
             case RPNElement::ALWAYS_TRUE:

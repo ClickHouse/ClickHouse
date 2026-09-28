@@ -59,6 +59,8 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2fractal.cc"
     "${S2_SOURCE_DIR}/s2/s2furthest_edge_query.cc"
     "${S2_SOURCE_DIR}/s2/s2hausdorff_distance_query.cc"
+    "${S2_SOURCE_DIR}/s2/internal/s2incident_edge_tracker.cc"
+    "${S2_SOURCE_DIR}/s2/internal/s2index_cell_data.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect_bounder.cc"
