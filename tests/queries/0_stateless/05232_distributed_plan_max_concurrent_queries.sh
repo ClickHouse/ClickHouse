@@ -73,8 +73,6 @@ for locally in 1 0; do
         FORMAT Null" 2>/dev/null
     CODE=$?
     [ "$CODE" -ne "202" ] && echo "Expected error code: 202 but got: $CODE" && exit 1
-    # Measured: only the dispatched arm discriminates the release on the last reader, because the
-    # in-process fragments never exit early, they stop together with the statement that owns them.
     if [[ $locally == 1 ]]; then
         echo "in-process plan: an unrelated reader is refused while the plan holds the table's only slot"
     else
