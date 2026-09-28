@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 
 @dataclass(frozen=True)
 class SelectionConfig:
-    version: str = "precise-coverage-v5"
+    version: str = "precise-coverage-v6"
     path_version: str = "repo-relative-v1-with-dotted-compatibility"
     narrow_region_max_lines: int = 40
     max_precise_region_owners: int = 150
@@ -24,6 +24,12 @@ class SelectionConfig:
     # change and can be shared by all jobs and pull requests.
     snapshot_query_cache_ttl_sec: int = 3600
     hunk_context_weight: float = 0.5
+    # A changed hunk that overlaps no coverage region is attributed to the tests that
+    # own both the nearest region before it and the nearest region after it, when both
+    # are at most this many lines away. The exported regions omit straight-line code
+    # between branches (`src/Common/CoverageRegions.cpp` keeps one region per
+    # counter), so a change there otherwise matches only its context lines. 0 disables.
+    bracket_gap_lines: int = 0
     # Rows of `checks_coverage_lines` that belong to this kind of test.
     coverage_check_name_like: str = "Stateless%per_test_coverage%"
     coverage_test_name_pattern: str = "^[0-9]{5}_"
@@ -36,8 +42,9 @@ SELECTION_CONFIG = SelectionConfig()
 # and the targeted job runs its selection once, so it takes fewer tests.
 INTEGRATION_SELECTION_CONFIG = replace(
     SELECTION_CONFIG,
-    version="precise-coverage-v5-integration",
+    version="precise-coverage-v6-integration",
     max_selected_tests_temporary=100,
+    bracket_gap_lines=40,
     min_exported_tests_per_shard=50,
     coverage_check_name_like="Integration%per_test_coverage%",
     coverage_test_name_pattern="^test_",
