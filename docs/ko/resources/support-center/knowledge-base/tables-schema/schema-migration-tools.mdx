@@ -1,147 +1,25 @@
 ---
 date: 2023-06-07
-title: "ClickHouse용 스키마 마이그레이션 도구"
-description: "ClickHouse용 스키마 마이그레이션 도구와 시간이 지나면서 변화하는 데이터베이스 스키마를 관리하는 방법을 알아봅니다."
+title: "ClickHouse용 자동 스키마 마이그레이션 도구"
+description: "ClickHouse용 자동 스키마 마이그레이션 도구와 시간이 지나면서 변화하는 데이터베이스 스키마를 관리하는 방법을 알아봅니다."
 tags: ['도구 및 유틸리티']
 keywords: ['자동 스키마 마이그레이션']
 ---
 
-<div id="what-is-schema-management">
-  ## 스키마 관리란 무엇입니까?
+<div id="automatic-schema-migration-tools-for-clickhouse">
+  ## ClickHouse용 자동 스키마 마이그레이션 도구
 </div>
 
-스키마 관리는 데이터베이스 스키마에 버전 관리 원칙을 적용하는 작업입니다. 일반적으로 테이블, 컬럼, 그리고 이들 간 관계의 변경 사항을 추적하고 자동화하는 것을 포함하며, 이를 통해 스키마 업데이트를 반복 가능하고 감사할 수 있으며 여러 환경에서 일관되게 적용할 수 있습니다. 스키마 관리는 새로운 사용 사례나 성능 최적화를 위해 데이터베이스 내 데이터 구조를 수정해야 할 때 필요해집니다.
+ClickHouse에 적합한 스키마 마이그레이션 도구는 무엇인지, 그리고 시간이 지나면서 변경될 수 있는 ClickHouse 데이터베이스 스키마를 관리하는 모범 사례는 무엇인지에 대한 질문을 자주 받습니다.
 
-<div id="why-is-it-important">
-  ### 왜 중요한가요?
-</div>
+ClickHouse에는 표준 스키마 마이그레이션 도구가 없지만, ClickHouse를 지원하는 자동 스키마 마이그레이션 도구 중 저희가 알고 있는 것들을 아래에 정리했습니다(순서는 무작위입니다).
 
-스키마 관리 도구를 사용하면 애플리케이션 배포와 함께 스키마 변경을 자동화할 수 있습니다. 새로운 애플리케이션 버전을 배포하려면 스키마 변경이 먼저 필요한 경우가 많습니다. 또한 이러한 도구는 사용자가 데이터베이스의 한 버전에서 다른 버전으로 마이그레이션하는 과정과 관련되므로 &quot;스키마 마이그레이션&quot; 또는 &quot;데이터베이스 마이그레이션&quot; 도구라고도 합니다.
-
-스키마 관리 도구가 없으면 데이터베이스 변경을 수작업으로 처리해야 하므로 오류가 발생하기 쉽고, 팀과 환경 전반에서 조율하기도 어렵습니다. 물론 언제든지 데이터베이스에 직접 DDL을 실행할 수는 있지만, 이러한 도구를 사용하면 버전 관리, 자동화된 배포, rollback 지원, 감사 추적을 구현할 수 있습니다. 특히 ClickHouse에서는 일부 DDL 변경의 비용이 크거나 되돌릴 수 없는 경우가 있으므로, 검토 단계를 포함한 구조화된 마이그레이션 프로세스가 특히 중요합니다.
-
-<div id="types-of-schema-management-approaches">
-  ### 스키마 관리 방식의 유형
-</div>
-
-스키마 관리 도구는 일반적으로 두 가지 범주로 나뉩니다.
-
-<div id="imperative">
-  #### 명령형
-</div>
-
-이러한 도구는 상태 A에서 상태 B로 변경하는 방법을 설명하는 버전 관리된 SQL 파일을 사용합니다. `CREATE TABLE`, `ALTER TABLE`, `DROP COLUMN`과 같은 명시적인 DDL 문을 파일에 작성합니다. 그러면 도구가 파일을 순서대로 실행하고 어떤 파일이 적용되었는지 추적합니다. 이 범주에서는 실행할 SQL을 정확히 직접 지정합니다.
-
-예시: Golang Migrate, Goose, Flyway.
-
-<div id="declarative">
-  #### 선언형
-</div>
-
-이러한 도구는 사용자가 먼저 원하는 상태의 스키마를 정의하는 것부터 시작합니다. 도구는 현재 데이터베이스(database)와 원하는 상태의 차이를 파악한 다음, 필요한 마이그레이션을 생성하고 적용합니다. 이 방식은 수동으로 마이그레이션을 작성하는 부담을 줄이고 스키마 드리프트를 완화합니다. 이 범주에서는 도구가 실행할 정확한 SQL을 결정합니다.
-
-예시: Atlas와 Liquibase.
-
-데이터베이스 스키마 변경보다는 데이터 자체를 변환하는 데 더 중점을 두는 세 번째 도구 범주도 있습니다.
-
-예시: dbt.
-
-이 문서에서는 데이터베이스 스키마 변경을 위한 도구만 다룹니다.
-
-팀의 운영 방식에 맞는 도구를 선택하십시오. 명령형 도구는 어떤 DDL이 실행되는지 정확히 파악할 수 있게 해 주지만, 스키마 드리프트를 식별하고 관리하는 데 꾸준한 주의가 필요합니다. 선언형 도구는 유지 관리 작업의 상당 부분을 자동화하고 스키마 드리프트를 방지하는 데 도움이 되지만, ClickHouse에 적용하기 전에 생성된 계획을 항상 검토해야 합니다. 자동으로 생성된 계획에 예상치 못한 mutation이나 비용이 큰 재작성이 숨어 있지 않은지 반드시 확인하십시오.
-
-<div id="what-to-consider-when-choosing-a-tool">
-  ## 도구 선택 시 고려할 사항
-</div>
-
-<div id="what-does-your-team-already-use">
-  ### 팀에서 이미 사용 중인 도구는 무엇입니까?
-</div>
-
-대개는 익숙한 에코시스템을 기준으로 도구를 선택하게 됩니다. 팀이 Go를 주로 사용한다면 Golang Migrate나 Goose가 자연스럽게 느껴질 수 있습니다. Java 에코시스템을 사용한다면 이미 Flyway나 Liquibase를 도입해 두었을 수도 있습니다. 인프라 팀이 Terraform과 infrastructure-as-code 패턴을 사용한다면 Atlas의 선언형 모델이 편하게 맞을 수 있습니다. 팀이 이미 잘 알고 있는 도구를 선택하는 것은 분명한 장점이 있습니다. 가장 좋은 도구는 실제로 도입되어 꾸준히 사용되는 도구입니다.
-
-<div id="what-is-your-desired-process">
-  ### 원하는 프로세스는 무엇입니까?
-</div>
-
-스키마 변경이 조직 내에서 어떤 방식으로 이루어지는지 생각해 보십시오. 다음과 같은 것이 필요한지 검토하십시오.
-
-* Goose 또는 Golang Migrate처럼 &quot;SQL을 작성하고 CI에서 실행하면 끝&quot;인 단순한 워크플로
-* Bytebase 또는 Liquibase처럼 관리형 승인 워크플로, 감사 추적, RBAC
-* Atlas처럼 스키마를 선언적으로 정의하고 도구가 차이를 판단하도록 하는 방식
-
-요구 사항과 프로세스에 맞는 도구를 선택하십시오.
-
-<div id="recommended-tools">
-  ## 권장 도구
-</div>
-
-다음은 성숙도, ClickHouse와의 호환성, 커뮤니티 채택 수준, 운영 적합성을 바탕으로 ClickHouse 사용자에게 일반적으로 권장하는 도구입니다.
-
-<div id="atlas">
-  ### Atlas
-</div>
-
-[Atlas](https://atlasgo.io/guides/clickhouse)는 선언형 접근 방식을 사용하는 스키마를 코드로 관리하는 도구입니다. 원하는 스키마 상태를 HCL 또는 SQL로 정의하면 Atlas가 현재 데이터베이스를 검사하고 차이를 계산한 뒤 migration 계획을 생성하여, 필요하면 검토 후 적용합니다.
-
-**ClickHouse에 잘 맞는 이유:** Atlas는 테이블, 뷰, materialized view, 프로젝션, 파티션, UDF를 포함해 ClickHouse를 제대로 지원합니다. Atlas는 2025년 9월 v0.37에서 클러스터 지원을 추가했습니다. HCL과 일반 SQL 스키마 정의를 모두 지원합니다.
-
-**주의할 점:** Atlas의 ClickHouse 드라이버는 Pro 플랜 또는 평가판에서만 사용할 수 있습니다. Atlas는 migration 계획을 생성하지만, 그 계획에 드는 비용까지는 파악하지 못합니다. 예를 들어 컬럼 타입 변경처럼 단순해 보이는 차이라도 수 테라바이트 규모의 테이블에서는 비용이 큰 mutation을 유발할 수 있습니다. 생성된 계획은 적용하기 전에 항상 검토하십시오.
-
-**가장 적합한 대상:** infrastructure-as-code 워크플로와 자동 드리프트 감지를 원하는 팀
-
-* **유형:** 선언형
-* **Language:** Go, 단일 바이너리로 배포
-* **License and availability:** Open Core; Atlas CLI에는 Apache 2.0 커뮤니티 에디션이 있지만 ClickHouse 지원은 Pro 플랜 또는 평가판에서만 제공됩니다
-* **클러스터 지원:** 예
-
-<div id="golang-migrate">
-  ### Golang Migrate
-</div>
-
-[Golang Migrate](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse)는 간단하면서도 널리 사용되는 마이그레이션 실행 도구입니다. 업 및 다운 단계가 포함된 버전별 SQL 파일을 작성하면, 이 도구가 이를 순서대로 적용하고 ClickHouse 데이터베이스의 `schema_migrations` 테이블에서 상태를 추적합니다.
-
-**ClickHouse에 잘 맞는 이유:** 간단하고 유연합니다. 실행하려는 ClickHouse DDL을 원하는 그대로 작성할 수 있습니다. 런타임 의존성이 없는 단일 Go 바이너리이므로 CI/CD 파이프라인이나 Docker 컨테이너에 쉽게 통합할 수 있습니다.
-
-**주의할 점:** 마이그레이션 파일에 여러 SQL 문이 들어 있는데 그중 하나가 중간에 실패하면, 데이터베이스가 일부만 적용된 상태로 남아 수동 조치가 필요할 수 있습니다. 파일당 SQL 문 1개만 두는 원칙을 따르면 이를 충분히 관리할 수 있습니다.
-
-**가장 적합한 경우:** ClickHouse 인스턴스에서 정확히 어떤 SQL이 실행되는지 완전히 제어하면서도 단순한 방식을 원하는 팀에 적합합니다.
-
-* **유형:** 명령형
-* **언어:** Go
-* **라이선스:** 오픈 소스, MIT
-* **클러스터 지원:** 예
-
-<div id="goose">
-  ### Goose
-</div>
-
-[Goose](https://github.com/pressly/goose)는 Golang Migrate와 비슷한 철학을 가진 또 다른 Go 기반 마이그레이션 실행 도구입니다. 버전이 지정된 SQL 파일이나 복잡한 로직을 위한 Go 함수를 작성하면, Goose가 이를 순차적으로 적용하고 ClickHouse의 버전 테이블에서 상태를 추적합니다.
-
-**ClickHouse에 적합한 이유:** Goose는 SQL-first 방식으로, 구성이 거의 필요 없고 CLI도 단순명료하며 CI/CD에 쉽게 통합할 수 있습니다. 또한 마이그레이션을 Go 함수로 작성할 수도 있어, 순수 SQL만으로는 표현하기 어려운 복잡한 로직도 유연하게 처리할 수 있습니다.
-
-**주의할 점:** Goose는 스키마 diffing이나 마이그레이션 자동 생성을 제공하지 않습니다.
-
-**가장 적합한 경우:** 이미 Goose를 사용하고 있는 팀이나, Golang Migrate보다 Goose의 마이그레이션 파일 규칙을 선호하는 팀에 적합합니다.
-
-* **유형:** 명령형
-* **Language:** Go, 단일 바이너리로 배포
-* **License:** 오픈 소스, MIT
-* **클러스터 지원:** 없음
-
-<div id="other-tools-in-the-ecosystem">
-  ## 에코시스템의 기타 도구
-</div>
-
-다음 도구들도 ClickHouse와 함께 사용할 수 있습니다. 스택과 워크플로에 따라 더 적합한 선택일 수 있습니다. 다만 일반적으로는 위의 도구를 권장합니다.
-
-| 도구                                                                                            | 라이선스  | 다음과 같은 경우 고려                                                           |
-| :-------------------------------------------------------------------------------------------- | :---- | :--------------------------------------------------------------------- |
-| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | 오픈 코어 | 여러 환경 전반에서 거버넌스, 승인 워크플로, 감사 추적이 필요한 대규모 조직                            |
-| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | 오픈 소스 | 이미 Flyway 또는 JVM 기반 인프라를 표준으로 사용하고 있는 팀                                |
-| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | 오픈 코어 | 여러 데이터베이스에서 Liquibase를 사용하며 일관성을 유지하려는 팀                               |
-| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations)    | 오픈 소스 | 단순한 ClickHouse 중심 실행 도구를 원하는 Node.js 또는 TypeScript 팀                   |
-| [Houseplant](https://github.com/juneHQ/houseplant)                                            | 오픈 소스 | 환경별 차이를 인식하는 ClickHouse 전용 도구를 원하는 Python 팀                            |
-| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | 오픈 소스 | 네이티브 ClickHouse 클라이언트 배포 스크립팅 또는 복잡한 배포 전반에서의 명시적 의존성 관리를 선호하는 팀       |
-| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy                                    | 오픈 소스 | 데이터베이스 액세스를 위해 이미 SQLAlchemy를 사용하고 있는 Python 팀                         |
-| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations)         | 오픈 소스 | ClickHouse 클러스터를 지원하는 단순한 파일 기반 마이그레이션 실행 도구, CLI, 라이브러리를 원하는 Python 팀 |
+* [Goose](https://github.com/pressly/goose)
+* [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)
+* [Atlas](https://atlasgo.io/guides/clickhouse?utm_source=clickhouse\&utm_term=knowledge)
+* [Bytebase](https://www.bytebase.com/)
+* [Flyway](https://documentation.red-gate.com/fd/supported-databases-and-versions-143754067.html)
+* [Liquibase](https://www.liquibase.com/)
+* `clickhouse-migrations`라는 [간단한 커뮤니티 도구](https://github.com/VVVi/clickhouse-migrations)
+* Go로 작성된 또 다른 [커뮤니티 도구](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse)
+* [Houseplant](https://houseplant.readthedocs.io)

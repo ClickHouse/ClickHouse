@@ -66,11 +66,11 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     FunctionDocumentation::Description description = R"(
-Computes the [partition ID](/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
-<Note>
+:::note
 This function is slow and should not be called for large numbers of rows.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "partitionId(column1[, column2, ...])";
     FunctionDocumentation::Arguments arguments = {

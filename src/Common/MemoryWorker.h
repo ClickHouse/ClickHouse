@@ -133,13 +133,7 @@ public:
 
     ~MemoryWorker();
 private:
-    struct MemoryUsage
-    {
-        Int64 resident = 0;
-        Int64 allocated = 0;
-    };
-
-    MemoryUsage getMemoryUsage(bool log_error);
+    uint64_t getMemoryUsage(bool log_error);
 
     void updateResidentMemoryThread();
 

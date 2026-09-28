@@ -135,11 +135,10 @@ ${CLICKHOUSE_CURL} \
     --get \
     --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) settings enable_analyzer = 1 format Null"
 
-# 3 'query' spans (initial + remote DESC TABLE + remote rewritten SELECT), 1 of
-# which descends from the input trace context (0x73): the initial query. The
-# remote queries descend from the initiator through the CLIENT span created in
-# Connection::sendQuery, not directly from the input trace context.
-check_log 3 1
+# 3 'query' spans (initial + remote DESC TABLE + remote rewritten SELECT), 2 of
+# which descend from the input trace context (0x73): the initial query and the
+# remote SELECT.
+check_log 3 2
 
 # With another trace id, check that clickhouse-client accepts traceparent, and
 # that it is passed through URL table function. We expect two query spans, one

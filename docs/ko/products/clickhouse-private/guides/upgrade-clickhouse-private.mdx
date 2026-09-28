@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "ClickHouse Private 업그레이드"
+description: "연산자와 ClickHouse 클러스터(Keeper + server)를 포함한 ClickHouse Private 구성 요소를 새 릴리스로 업그레이드합니다."
+---
+
+연산자와 ClickHouse 클러스터(Keeper + server)를 포함한 ClickHouse Private 구성 요소를 새 릴리스로 업그레이드합니다.
+
+> **모범 사례:** 업그레이드를 프로덕션에 적용하기 전에 항상 먼저 스테이징 또는 테스트 클러스터에서 수행하십시오. 표준 업그레이드 프로세스의 일부로, 프로덕션 환경을 그대로 반영하는 전용 테스트 클러스터를 사용하는 것을 강력히 권장합니다.
+
+<div id="pre-upgrade-checklist">
+  ## 업그레이드 전 점검 목록
+</div>
+
+업그레이드를 시작하기 전에 다음 사항을 확인하십시오:
+
+1. **클러스터가 정상 상태인지 확인** — 모든 server 및 Keeper 파드가 실행 중이고 준비 완료 상태인지 확인하고, `ClickhouseCluster` CR 상태에 오류가 없는지 확인합니다:
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   파드 중 crashlooping 상태인 것이 있거나 클러스터가 비정상 상태이면 진행하지 마십시오.
+
+2. **(프로덕션 환경에서는 강력히 권장) 클러스터의 전체 백업 수행** — [ClickHouse 백업 및 복원](/ko/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)를 참조하십시오. 진행하기 전에 백업이 성공적으로 완료되었는지(`system.backups`에서 `status = BACKUP_DONE`) 확인하십시오.
+
+3. **롤백할 수 있도록 이전 버전을 사용할 수 있는지 확인** — 이전 아티팩트 버전에 내부 ECR에서 계속 접근할 수 있는지 확인합니다. 필요할 때 빠르게 롤백할 수 있도록 이미지와 차트가 준비되어 있으면 충분합니다.
+
+4. **새 버전의 모든 이미지를 내부 ECR로 복사**합니다. 대상 release는 [Component Versions 참고](/ko/products/clickhouse-private/reference/component-versions)를 참조하십시오.
+
+5. **Preflight 검사를 실행**합니다. Preflight 검사는 추가 요구 사항을 검증하고 더 이상 권장되지 않는 기능 플래그를 점검합니다. 자세한 내용은 [How To: Run Preflight Checks](/ko/products/clickhouse-private/guides/run-preflight-checks) 페이지를 참조하십시오.
+
+<div id="upgrade-procedure">
+  ## 업그레이드 절차
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Operator Helm 차트 업그레이드
+
+    기존 Helm values는 모두 그대로 유지하고, 연산자 버전만 새 대상 버전으로 업데이트합니다.
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **참고:** 연산자를 업그레이드하면 관리 중인 모든 ClickHouse 클러스터가 롤링 재시작될 수 있습니다. 여러 클러스터를 운영 중이고 연산자가 다른 클러스터까지 reconcile하기 전에 먼저 하나의 클러스터에서 업그레이드를 검증하려면, 아래의 [업그레이드 중 클러스터 보호](#protecting-clusters-during-upgrade)를 참조하십시오.
+  </Step>
+
+  <Step>
+    ### 2. 업그레이드된 Operator 검증
+
+    연산자 배포가 실행 중이며 정상 상태인지 확인합니다:
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    로그에 오류가 없는지, 그리고 관리 중인 모든 클러스터가 성공적으로 reconcile되었는지 확인합니다:
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. onprem-clickhouse-cluster Helm 차트 업그레이드
+
+    각 클러스터에 대해 `onprem-clickhouse-cluster` helm 차트를 업그레이드합니다. 기존 Helm values는 모두 그대로 유지하고, ClickHouse 서버와 Keeper 이미지 버전만 새 대상 버전으로 업데이트합니다.
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    이 작업은 **Keeper 및 서버 파드의 롤링 재시작**을 유발합니다(한 번에 하나의 파드씩). 각 클러스터에 대해 반복하십시오.
+  </Step>
+
+  <Step>
+    ### 4. 업그레이드된 클러스터 검증
+
+    롤링 재시작이 완료되면 클러스터가 정상 상태인지 확인합니다:
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    모든 파드는 `Running` 상태여야 하며 `ClickhouseCluster` CR에는 오류가 없어야 합니다. 연결 상태를 추가로 검증하려면 ClickHouse 서비스에 포트 포워딩을 설정하고(관련 [tutorial](/ko/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)의 Port-forward 섹션 참조) 테스트 쿼리를 실행하십시오.
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## 업그레이드 중 클러스터 보호
+</div>
+
+단일 연산자 아래에서 여러 클러스터를 관리하고 있고, 다른 클러스터를 리컨실리에이션하도록 허용하기 전에 한 클러스터에서 먼저 연산자 업그레이드를 검증하려는 경우(예: production 전에 staging 클러스터에서 테스트), `clickhouse.com/skip-reconcile` 어노테이션을 사용해 특정 클러스터의 리컨실리에이션을 일시 중지하십시오.
+
+연산자를 업그레이드하기 전에 보호하려는 모든 클러스터에 어노테이션을 추가하십시오:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+연산자는 어노테이션이 설정된 클러스터에 대해서는 리컨실리에이션을 완전히 건너뛰며, 재시작이나 구성 변경도 전혀 적용하지 않습니다. 테스트 클러스터에서 업그레이드를 검증한 후에는 어노테이션을 제거하여 연산자가 정상적인 리컨실리에이션을 다시 수행할 수 있도록 하십시오:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+다음 내용이 있는지 로그를 확인하여 연산자가 어노테이션을 인지했는지 확인하십시오:
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## 롤백
+</div>
+
+업그레이드 후 문제가 발견되면 다음을 수행하십시오:
+
+* **연산자 롤백:** 이전 Operator Helm 차트 버전을 다시 배포합니다.
+* **클러스터 롤백:** 이전 server 및 Keeper 이미지 버전과 함께 이전 `onprem-clickhouse-cluster` Helm 차트 버전을 다시 배포합니다.
+* **데이터 복구:** 데이터 문제가 의심되면 업그레이드 전 점검 목록에서 생성한 백업으로 복원하십시오. 자세한 내용은 [ClickHouse 백업 및 복원](/ko/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)을 참조하십시오.

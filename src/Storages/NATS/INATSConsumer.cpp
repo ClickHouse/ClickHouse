@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -49,12 +48,6 @@ bool INATSConsumer::isSubscribed() const
     return !subscriptions.empty();
 }
 
-bool INATSConsumer::hasClosedSubscription() const
-{
-    return std::ranges::any_of(
-        subscriptions, [](const auto & subscription) { return !natsSubscription_IsValid(subscription.get()); });
-}
-
 void INATSConsumer::subscribe()
 {
     if (isSubscribed())
@@ -73,19 +66,11 @@ void INATSConsumer::unsubscribe(bool finish_queue)
 
     for (auto & subscription : subscriptions)
     {
-        /// The client closes a subscription itself when its fetch is terminated, so draining an
-        /// already-closed one is expected rather than a problem.
-        const bool was_closed = !natsSubscription_IsValid(subscription.get());
-
         auto status = natsSubscription_DrainTimeout(subscription.get(), DRAIN_TIMEOUT_MS);
         if (status != NATS_OK)
         {
-            if (was_closed)
-                LOG_DEBUG(log, "A subscription of consumer {} was already closed by the NATS client",
-                    static_cast<void *>(this));
-            else
-                LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
-                    static_cast<void *>(this), natsStatus_GetText(status));
+            LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
+                static_cast<void *>(this), natsStatus_GetText(status));
             continue;
         }
 

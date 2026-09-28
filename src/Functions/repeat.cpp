@@ -197,10 +197,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// `repeat` throws `TOO_LARGE_STRING_SIZE` when the number of repetitions or the size of the
-    /// resulting string exceeds the limit, and both of them depend on the data of a single row.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{

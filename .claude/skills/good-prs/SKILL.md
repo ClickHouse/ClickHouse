@@ -26,19 +26,6 @@ running). The `CH Inc sync` state is then reported as one of:
 - **NOSYNC** — there is no `CH Inc sync` check at all and everything else is green
   (typically release-branch backports).
 
-Independently of CI, a PR can also conflict with its base branch in the public
-repository, which blocks the merge whatever the checks say. That is shown in the same
-first column, as a suffix on the sync label:
-
-- **`+CONFLICT`** — GitHub reports the PR as `CONFLICTING` against its base; it needs a
-  merge (or a rebase) before it can go in. E.g. `GREEN+CONFLICT` = all checks green, but
-  the branch does not merge cleanly.
-- **`+UNKNOWN`** — GitHub had not finished computing mergeability, so the conflict state
-  is genuinely unknown rather than clean.
-
-Within one sync bucket, clean rows are listed first, then `+UNKNOWN`, then `+CONFLICT`,
-so the most actionable PRs stay at the top of each section.
-
 Already-merged or closed PRs are excluded. Each row also shows whether the PR was
 **approved by anyone at least once** (any historical `APPROVED` review event; it does
 *not* require the approval to still be current after later pushes).
@@ -62,19 +49,16 @@ bash .claude/skills/good-prs/report.sh $ARGUMENTS
 ```
 
 The script fetches PR lists with `gh pr list`, classifies each PR's checks with
-`gh pr checks`, and looks up state + approvals + `mergeable` with `gh pr view`, all
-parallelized with `xargs -P 12`. For groeneai-sized author sets (~200 open PRs) it takes roughly a minute.
+`gh pr checks`, and looks up state + approvals with `gh pr view`, all parallelized with
+`xargs -P 12`. For groeneai-sized author sets (~200 open PRs) it takes roughly a minute.
 Every `gh` call is pinned to `--repo ClickHouse/ClickHouse`, so the report is correct
 regardless of the directory the skill is run from.
 
 ## Testing
 
 `test.sh` runs `report.sh` against a stubbed `gh` (no network) and checks the
-`bucket`→label classification, the "only `CH Inc sync` is non-green" criterion, the
-`+CONFLICT` / `+UNKNOWN` merge-state suffixes and their sort order, the re-query of a
-lazily computed `UNKNOWN` mergeability, empty input, `--repo` pinning, the
-fail-loud-on-real-error behaviour, and the retry policy (a transient failure is retried
-until it succeeds, a permanent one is not retried):
+`bucket`→label classification, the "only `CH Inc sync` is non-green" criterion, empty
+input, `--repo` pinning, and the fail-loud-on-real-error behaviour:
 
 ```bash
 bash .claude/skills/good-prs/test.sh
@@ -100,28 +84,7 @@ bash .claude/skills/good-prs/test.sh
   `pending` / `skipping` / `cancel`), not by raw state strings, so unusual states such as
   `QUEUED`, `TIMED_OUT`, `CANCELLED`, or `STARTUP_FAILURE` are handled without a PR being
   silently dropped.
-- A full report makes roughly two GraphQL calls per PR — several hundred per run — so
-  hitting at least one transient GitHub failure is close to certain. Those (`HTTP 408`,
-  `429`, any `5xx`, gateway timeouts, connection resets, secondary rate limits) are
-  retried with exponential backoff, and a primary rate-limit rejection waits for the
-  hourly window to reset. `GH_RETRIES` (default 5) and `GH_RETRY_DELAY` (default 2
-  seconds) tune this.
-- The script still fails loudly: an error that will never fix itself (auth, unknown PR,
-  bad flag) aborts on the first attempt, and a transient error that outlives every retry
-  aborts too — in both cases with the original `gh` diagnostic, rather than silently
-  omitting that PR from the report.
-- A run costs a large share of the hourly GraphQL quota (5000 points), so a few
-  back-to-back runs can exhaust it. Check with
-  `gh api rate_limit --jq .resources.graphql`.
-- `mergeable` is computed lazily by GitHub: for a PR nobody has looked at recently the
-  first query only schedules the test merge and answers `UNKNOWN`. The script therefore
-  re-asks an open PR up to `GH_MERGEABLE_TRIES` times (default 3) with
-  `GH_MERGEABLE_DELAY` seconds (default 2) in between, so a conflicting PR is not shown
-  as clean merely because it was asked about first. Rows that stay `UNKNOWN` are marked
-  `+UNKNOWN` rather than assumed mergeable.
-- `mergeable` rides along on the `gh pr view` call that already fetches state and
-  reviews, so the conflict column costs no extra quota except for those re-queries.
-- A `+CONFLICT` row is still listed: the criterion for inclusion is about CI checks. If
-  the user wants only mergeable-right-now PRs, filter the rows without a `+CONFLICT`
-  (and, to be strict, without `+UNKNOWN`) suffix after running.
+- The script fails loudly: if a `gh` call cannot read a PR's data (an API, rate-limit, or
+  permission error, as opposed to a legitimately check-less PR), it aborts with the
+  original `gh` diagnostic rather than silently omitting that PR from the report.
 - The script needs `gh` authenticated and `jq` available.

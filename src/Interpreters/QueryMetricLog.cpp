@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -65,14 +64,6 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Hostname of the server executing the query."});
-    result.add({"clickhouse_version",
-                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "Version of the ClickHouse server that produced the row."});
-    result.add({"system_processor",
-                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "CPU architecture of the ClickHouse server that produced the row."});
     result.add({"event_date",
                 std::make_shared<DataTypeDate>(),
                 parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -108,8 +99,6 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[column_idx++]->insert(query_id);
     columns[column_idx++]->insert(getFQDNOrHostName());
-    columns[column_idx++]->insert(VERSION_STRING);
-    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
@@ -162,7 +151,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
     if (elem)
-        add([&](QueryMetricLogElement & element) { element = elem.value(); });
+        add(std::move(elem.value()));
 }
 
 /// We use TSA_NO_THREAD_SAFETY_ANALYSIS to prevent TSA complaining that we're modifying the query_status fields
@@ -179,7 +168,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    info.task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "QueryMetricLog", [this, &process_list, query_id] {
+    info.task = context->getSchedulePool().createTask(StorageID::createEmpty(), "QueryMetricLog", [this, &process_list, query_id] {
         collectMetric(process_list, query_id);
     });
 
@@ -235,7 +224,7 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     {
         auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, /* is_final = */ true);
         if (elem)
-            add([&](QueryMetricLogElement & element) { element = elem.value(); });
+            add(std::move(elem.value()));
     }
 
     /// The task has an `exec_mutex` locked while being executed. This same mutex is locked when

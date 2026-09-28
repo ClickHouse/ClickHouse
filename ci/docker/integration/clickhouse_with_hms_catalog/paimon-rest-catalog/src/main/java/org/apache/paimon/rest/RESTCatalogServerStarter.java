@@ -11,7 +11,6 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.options.CatalogOptions;
 import org.apache.paimon.rest.auth.*;
 import org.apache.paimon.rest.responses.ConfigResponse;
-import org.apache.paimon.schema.Schema;
 import org.apache.paimon.shade.guava30.com.google.common.collect.ImmutableMap;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.sink.BatchTableCommit;
@@ -19,7 +18,6 @@ import org.apache.paimon.table.sink.BatchWriteBuilder;
 import org.apache.paimon.table.sink.CommitMessage;
 import org.apache.paimon.table.sink.TableWriteImpl;
 import org.apache.paimon.types.DataType;
-import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.RowType;
 
 import java.util.List;
@@ -52,13 +50,6 @@ public class RESTCatalogServerStarter {
                                     path),
                             ImmutableMap.of());
             UserDefinedRESTCatalogServer server = new UserDefinedRESTCatalogServer(path, authProvider, config, "restWarehouse");
-            if (args.length > 5) {
-                if (args.length != 8 || !args[5].equals("create")) {
-                    throw new RuntimeException(
-                            "Expected optional server arguments: create <database> <table>");
-                }
-                createTable(server, args[6], args[7]);
-            }
             server.start(host, Integer.parseInt(port));
             System.out.println(server.getUrl());
         } else if (cmd_type.equals("insert")) {
@@ -80,19 +71,6 @@ public class RESTCatalogServerStarter {
             return DLFAuthProvider.buildAKToken("accessKeyId", "accessKeySecret", "", "cn-hangzhou");
         }
         throw new RuntimeException("Unknown token type");
-    }
-
-    private static void createTable(
-            UserDefinedRESTCatalogServer server, String database, String tableName)
-            throws Exception {
-        Schema schema =
-                Schema.newBuilder()
-                        .column("f_string", DataTypes.STRING())
-                        .column("f_int", DataTypes.INT())
-                        .column("f_bigint", DataTypes.BIGINT())
-                        .partitionKeys("f_string")
-                        .build();
-        server.createTable(Identifier.create(database, tableName), schema);
     }
 
     private static void insertData(String rootPath, String database, String tableName) throws Exception {

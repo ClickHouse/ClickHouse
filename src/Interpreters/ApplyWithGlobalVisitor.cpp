@@ -9,11 +9,7 @@
 namespace DB
 {
 
-void ApplyWithGlobalVisitor::visit(
-    ASTSelectQuery & select,
-    const std::map<String, ASTPtr> & exprs,
-    const ASTPtr & with_expression_list,
-    bool recursive_with)
+void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
 {
     auto with = select.with();
     if (with)
@@ -31,57 +27,46 @@ void ApplyWithGlobalVisitor::visit(
         }
     }
     else
-    {
         select.setExpression(ASTSelectQuery::Expression::WITH, with_expression_list->clone());
-        /// `recursive_with` describes the WITH list, not the SELECT that holds it, so a branch receiving a copy of
-        /// the list receives the flag too. Setting it only here keeps `recursive_with` implying `with() != nullptr`.
-        select.recursive_with = recursive_with;
-    }
 }
 
 void ApplyWithGlobalVisitor::visit(
-    ASTSelectWithUnionQuery & selects,
-    const std::map<String, ASTPtr> & exprs,
-    const ASTPtr & with_expression_list,
-    bool recursive_with)
+    ASTSelectWithUnionQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
 {
     for (auto & select : selects.list_of_selects->children)
     {
         if (ASTSelectWithUnionQuery * node_union = select->as<ASTSelectWithUnionQuery>())
         {
-            visit(*node_union, exprs, with_expression_list, recursive_with);
+            visit(*node_union, exprs, with_expression_list);
         }
         else if (ASTSelectQuery * node_select = select->as<ASTSelectQuery>())
         {
-            visit(*node_select, exprs, with_expression_list, recursive_with);
+            visit(*node_select, exprs, with_expression_list);
         }
         else if (ASTSelectIntersectExceptQuery * node_intersect_except = select->as<ASTSelectIntersectExceptQuery>())
         {
-            visit(*node_intersect_except, exprs, with_expression_list, recursive_with);
+            visit(*node_intersect_except, exprs, with_expression_list);
         }
     }
 }
 
 void ApplyWithGlobalVisitor::visit(
-    ASTSelectIntersectExceptQuery & selects,
-    const std::map<String, ASTPtr> & exprs,
-    const ASTPtr & with_expression_list,
-    bool recursive_with)
+    ASTSelectIntersectExceptQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
 {
     auto selects_list = selects.getListOfSelects();
     for (auto & select : selects_list)
     {
         if (ASTSelectWithUnionQuery * node_union = select->as<ASTSelectWithUnionQuery>())
         {
-            visit(*node_union, exprs, with_expression_list, recursive_with);
+            visit(*node_union, exprs, with_expression_list);
         }
         else if (ASTSelectQuery * node_select = select->as<ASTSelectQuery>())
         {
-            visit(*node_select, exprs, with_expression_list, recursive_with);
+            visit(*node_select, exprs, with_expression_list);
         }
         else if (ASTSelectIntersectExceptQuery * node_intersect_except = select->as<ASTSelectIntersectExceptQuery>())
         {
-            visit(*node_intersect_except, exprs, with_expression_list, recursive_with);
+            visit(*node_intersect_except, exprs, with_expression_list);
         }
     }
 }
@@ -97,7 +82,6 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
             ASTPtr with_expression_list = first_select->with();
             if (with_expression_list)
             {
-                const bool recursive_with = first_select->recursive_with;
                 std::map<String, ASTPtr> exprs;
                 for (auto & child : with_expression_list->children)
                 {
@@ -107,11 +91,11 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                 for (auto it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
                 {
                     if (auto * union_child = (*it)->as<ASTSelectWithUnionQuery>())
-                        visit(*union_child, exprs, with_expression_list, recursive_with);
+                        visit(*union_child, exprs, with_expression_list);
                     else if (auto * select_child = (*it)->as<ASTSelectQuery>())
-                        visit(*select_child, exprs, with_expression_list, recursive_with);
+                        visit(*select_child, exprs, with_expression_list);
                     else if (auto * intersect_except_child = (*it)->as<ASTSelectIntersectExceptQuery>())
-                        visit(*intersect_except_child, exprs, with_expression_list, recursive_with);
+                        visit(*intersect_except_child, exprs, with_expression_list);
                 }
             }
         }

@@ -5,7 +5,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -21,20 +20,16 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a date/time function.
-    void checkArgumentTypes(
-        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
-        if (arguments.size() > 1)
+        if (arguments.size() != 1)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects 0 or 1 arguments, but was called with {} arguments",
-                            function_name, arguments.size());
+                            "Function '{}' expects {} arguments, but was called with {} arguments",
+                            function_name, 1, arguments.size());
         }
-
-        if (arguments.empty())
-            return;
 
         const auto & argument = arguments[0];
 
@@ -122,7 +117,7 @@ bool isDateTimeFunction(std::string_view function_name)
 
 
 SQLQueryPiece applyDateTimeFunction(
-    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     const auto * impl_info = getImplInfo(function_name);
@@ -130,22 +125,15 @@ SQLQueryPiece applyDateTimeFunction(
 
     checkArgumentTypes(function_node, arguments, context);
 
-    if (arguments.empty())
-    {
-        /// A date/time function called without arguments acts as if it was called with `vector(time())`.
-        auto time_argument = fromEvaluationTime(function_node, context);
-        time_argument.type = ResultType::INSTANT_VECTOR;
-        arguments.push_back(std::move(time_argument));
-    }
-
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {
-        /// f(toDateTime64(x, 0, 'UTC'))::Float64
+        /// f(toDateTime64(x, 0, 'UTC'))::scalar_data_type
         chassert(args.size() == 1);
         ASTPtr x = std::move(args[0]);
         return timeSeriesScalarASTCast(
             (impl_info->transform_ast)(
-                makeASTFunction("toDateTime64", std::move(x), make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UTC"))));
+                makeASTFunction("toDateTime64", std::move(x), make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UTC"))),
+            context.scalar_data_type);
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));

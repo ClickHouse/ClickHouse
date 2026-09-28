@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-MySQLStreamSettings::MySQLStreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
+StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
     : max_read_mysql_row_nums(
           (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
     , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
@@ -73,21 +73,21 @@ MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
-    const MySQLStreamSettings & settings_)
+    const StreamSettings & settings_)
     : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
-    , settings{std::make_unique<MySQLStreamSettings>(settings_)}
+    , settings{std::make_unique<StreamSettings>(settings_)}
 {
     description.init(sample_block);
     initPositionMappingFromQueryResultStructure();
 }
 
 /// For descendant MySQLWithFailoverSource
-MySQLSource::MySQLSource(const Block &sample_block_, const MySQLStreamSettings & settings_)
+MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , log(getLogger("MySQLSource"))
-    , settings(std::make_unique<MySQLStreamSettings>(settings_))
+    , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);
 }
@@ -97,7 +97,7 @@ MySQLWithFailoverSource::MySQLWithFailoverSource(
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
-    const MySQLStreamSettings & settings_)
+    const StreamSettings & settings_)
     : MySQLSource(sample_block_, settings_)
     , pool(pool_)
     , query_str(query_str_)
@@ -220,34 +220,13 @@ void MySQLWithFailoverSource::onCancel() noexcept
         tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
     }
 }
-
-UInt64 parseMySQLBitValue(std::string_view value)
-{
-    /// The length comes from the MySQL wire protocol, while a `BIT` value holds at most 64 bits.
-    const size_t n = value.size();
-    if (n > sizeof(UInt64))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
-            n, sizeof(UInt64));
-
-    /// The value is transferred in the big-endian order, most significant byte first. Assembling it
-    /// by shifting keeps the result independent of the endianness of the host: writing the bytes
-    /// into the object representation instead would left-align a value shorter than 8 bytes on a
-    /// big-endian host.
-    UInt64 val = 0;
-    for (char c : value)
-        val = (val << 8) | static_cast<UInt8>(c);
-
-    return val;
-}
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
     /// MySQL returns spatial values as a 4-byte SRID prefix followed by a standard WKB payload.
     /// Parse it and insert into the target column, which is either a concrete geometric type
-    /// (`MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
+    /// (`LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
     /// type (a `Variant` over all of them). `Point` is read by the dedicated `vtPoint` path.
     void insertGeometryValue(const IDataType & data_type, IColumn & column, const mysqlxx::Value & value, UInt32 max_wkb_geometry_elements)
     {
@@ -296,13 +275,6 @@ namespace
                 concrete = serializer.finalize();
                 concrete_type_name = "MultiPolygon";
             }
-            else if constexpr (std::is_same_v<T, MultiPoint<CartesianPoint>>)
-            {
-                MultiPointSerializer<CartesianPoint> serializer;
-                serializer.add(geometry);
-                concrete = serializer.finalize();
-                concrete_type_name = "MultiPoint";
-            }
         }, object);
 
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type))
@@ -346,8 +318,25 @@ namespace
             {
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
-                    const size_t n = value.size();
-                    assert_cast<ColumnUInt64 &>(column).insertValue(parseMySQLBitValue({value.data(), n}));
+                    size_t n = value.size();
+                    /// A `BIT` column holds at most 64 bits, so a value of it never needs more than
+                    /// eight bytes. The length comes from the wire and is not otherwise validated,
+                    /// so a malicious or broken server could overflow `val` below.
+                    if (n > sizeof(UInt64))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
+                            n, sizeof(UInt64));
+                    UInt64 val = 0UL;
+                    char * to = reinterpret_cast<char *>(&val);
+                    memcpy(to, const_cast<char *>(value.data()), n);
+
+                    if constexpr (std::endian::native == std::endian::little)
+                    {
+                        char * start = to;
+                        char * end = to + n;
+                        std::reverse(start, end);
+                    }
+                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
                 else

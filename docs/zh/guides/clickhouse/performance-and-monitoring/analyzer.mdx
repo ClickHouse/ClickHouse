@@ -7,7 +7,7 @@ title: 'Analyzer'
 doc_type: 'reference'
 ---
 
-在 ClickHouse `24.3` 版本中，analyzer 默认处于启用状态。
+在 ClickHouse `24.3` 版本中，新的查询分析器默认处于启用状态。
 你可以在[此处](/zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)了解有关其工作原理的更多详情。
 
 <div id="known-incompatibilities">
@@ -66,8 +66,6 @@ FROM numbers(10)
 WHERE number > 5
 GROUP BY n
 ```
-
-作为迁移辅助，analyzer 可以对非聚合的 AND 合取项沿用旧版将 `HAVING` 重写到 `WHERE` 的方式。启用 `analyzer_compatibility_allow_non_aggregate_in_having = 1` 即可使用此行为。该设置自 ClickHouse `26.7` 起可用。对于 `WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS` 和 `GROUPING SETS`，该设置会被忽略。包含聚合、`grouping` 或非确定性函数的合取项会保留在 `HAVING` 中；如果任一合取项包含窗口函数或有状态函数 (例如 `rowNumberInBlock`) ，则整个 `HAVING` 的重写都会被禁用，这与旧版行为一致。
 
 <div id="create-view-with-invalid-query">
   ### 使用无效查询的 `CREATE VIEW`
@@ -148,7 +146,7 @@ FULL JOIN t2 USING (payload);
   #### `USING` clause 中列的类型修饰符处理
 </div>
 
-在 analyzer 中，用于确定 `USING` clause 中指定列共同超类型的规则已统一，从而带来更可预测的结果，
+在 analyzer 的新版本中，用于确定 `USING` clause 中指定列共同超类型的规则已统一，从而带来更可预测的结果，
 尤其是在处理 `LowCardinality` 和 `Nullable` 等类型修饰符时。
 
 * `LowCardinality(T)` 和 `T`：当类型为 `LowCardinality(T)` 的列与类型为 `T` 的列进行 join 时，最终得到的共同超类型将是 `T`，也就是说 `LowCardinality` 修饰符会被丢弃。
@@ -234,7 +232,7 @@ analyzer 显著改变了集群中服务器之间的通信协议。因此，无�
   ## Cloud 迁移
 </div>
 
-我们正在所有当前禁用了 analyzer 的实例上启用该功能，以支持新的功能和性能优化。此变更会实施更严格的 SQL 作用域规则，因此客户需要手动更新不符合要求的查询。
+我们正在所有当前禁用了新查询分析器的实例上启用该功能，以支持新的功能和性能优化。此变更会实施更严格的 SQL 作用域规则，因此客户需要手动更新不符合要求的查询。
 
 <div id="migration-workflow">
   ### 迁移流程
@@ -296,24 +294,6 @@ SELECT user_id, device_id FROM table GROUP BY user_id
 SELECT user_id, any(device_id) FROM table GROUP BY user_id
 -- 或
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
-```
-
-<div id="non-aggregated-columns-in-having">
-  ### HAVING 中的非聚合列
-</div>
-
-错误：`Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`。Exception code：215
-
-原因：旧版 analyzer 会静默地将 `HAVING` 中不含聚合的 `AND` 合取项移到 `WHERE`，并将其视为聚合前过滤器。analyzer 遵循标准 SQL：`HAVING` 只能引用聚合键和聚合函数。
-
-解决方案：手动将谓词从 `HAVING` 移到 `WHERE`，或启用 `analyzer_compatibility_allow_non_aggregate_in_having = 1` (自 ClickHouse `26.7` 起可用) 以恢复旧版 Rewrite，作为迁移期间的辅助措施。对于 `WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS` 和 `GROUPING SETS`，此兼容性设置会被忽略。包含聚合、`grouping` 或非确定性函数的连接条件会保留在 `HAVING` 中；如果任一连接条件包含窗口函数或 有状态函数 (例如 `rowNumberInBlock`) ，则会禁用整个 `HAVING` 的重写，这与旧版行为一致。
-
-```sql
-/* ORIGINAL QUERY */
-SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
-
-/* FIXED QUERY */
-SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
 <div id="duplicate-cte-names">

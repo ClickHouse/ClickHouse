@@ -1,7 +1,0 @@
-{
-  "group": "JavaScript",
-  "icon": "/images/integrations/logos/node_js.svg",
-  "pages": [
-    "zh/integrations/language-clients/js/index"
-  ]
-}

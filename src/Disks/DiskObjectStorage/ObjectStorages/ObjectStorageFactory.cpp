@@ -72,8 +72,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,
-    bool run_access_check,
-    bool run_local_paths_check) const
+    bool skip_access_check) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -93,7 +92,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check);
+    return it->second(name, config, config_prefix, context, skip_access_check);
 }
 
 #if USE_AWS_S3
@@ -133,8 +132,7 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
@@ -164,8 +162,7 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool /* run_access_check */,
-           bool /* run_local_paths_check */) -> ObjectStoragePtr
+           bool /* skip_access_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -188,8 +185,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -208,7 +204,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
@@ -227,8 +223,7 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -255,15 +250,11 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* run_access_check */,
-        bool run_local_paths_check) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
-
-        if (run_local_paths_check)
-            checkCustomLocalDiskPath(object_key_prefix, context);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);

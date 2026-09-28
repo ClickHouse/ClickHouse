@@ -17,7 +17,7 @@ Vector は、Kafka から読み取ったイベントを ClickHouse に送信で�
 
 ClickHouse 向け Vector の[入門ガイド](/ja/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse)では、ログのユースケースとファイルからのイベント読み取りに重点を置いています。ここでは、Kafka トピックに保持されたイベントを含む[Github sample dataset](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson)を使用します。
 
-Vector は、プッシュまたはプルのモデルでデータを取得するために[ログソース](https://vector.dev/docs/introduction/concepts/#sources)を使用します。一方、[Sinks](https://vector.dev/docs/introduction/concepts/#sinks)はイベントの宛先となります。そのため、ここでは Kafka ログソース と ClickHouse sink を使用します。なお、Kafka は Sink としてサポートされていますが、ClickHouse ログソース は利用できません。したがって、ClickHouse から Kafka にデータを転送したい場合、Vector は適していません。
+Vector は、プッシュまたはプルのモデルでデータを取得するために[ログソース](https://vector.dev/docs/about/concepts/#sources)を使用します。一方、[Sinks](https://vector.dev/docs/about/concepts/#sinks)はイベントの宛先となります。そのため、ここでは Kafka ログソース と ClickHouse sink を使用します。なお、Kafka は Sink としてサポートされていますが、ClickHouse ログソース は利用できません。したがって、ClickHouse から Kafka にデータを転送したい場合、Vector は適していません。
 
 Vector はデータの[transformation](https://vector.dev/docs/reference/configuration/transforms/)にも対応しています。これはこのガイドの対象外です。データセットに対してこの機能が必要な場合は、Vector のドキュメントを参照してください。
 

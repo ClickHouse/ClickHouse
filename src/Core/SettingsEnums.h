@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -134,7 +133,6 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
-DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -248,14 +246,6 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-enum class UniqueKeyProbeImplementation : uint8_t
-{
-    Auto = 0, /// Pick the default; currently the simple baseline.
-    Simple,   /// Single-threaded baseline probe.
-};
-
-DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
-
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -316,8 +306,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetComp
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(ArrowUnsupportedTypes, FormatSettings::ArrowUnsupportedTypes)
-
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
 enum class Dialect : uint8_t
@@ -327,8 +315,6 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
-    clickhouse_json,
-    trino,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -399,7 +385,6 @@ enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
-    EXCLUSIVE,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
@@ -458,8 +443,6 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
-DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
-
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -472,9 +455,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
-    S3_TABLES,
     ICEBERG_DELTA_SHARING,
-    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -528,7 +509,6 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
-DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
 
@@ -545,8 +525,7 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking,
-    PFor
+    Bitpacking
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
@@ -577,7 +556,6 @@ DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 enum class MergeCoordinatorDistributionAlgorithm : uint64_t
 {
     WATER_FILLING = 0,
-    SAINTE_LAGUE = 1,
 };
 
 DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)

@@ -1,4 +1,2 @@
-Rejected uuid_extension
-Rejected uuid_logical_type
-Rejected struct_names
-Rejected union_names
+--- shared dictionary id with differing field metadata is rejected ---
+different value types

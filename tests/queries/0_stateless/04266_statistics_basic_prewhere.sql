@@ -31,8 +31,7 @@ CREATE TABLE test_basic_prewhere
     range_probe Int64 STATISTICS(tdigest)
 ) ENGINE = MergeTree()
 ORDER BY id
--- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+SETTINGS auto_statistics_types = '';
 
 INSERT INTO test_basic_prewhere SELECT
     number,

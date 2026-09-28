@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -41,10 +40,9 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
                     this->result_type->getName(),
-                    getName(),
-                    getNumericVariantSupertypeHint(type.getPtr()));
+                    getName());
         };
         check_not_dynamic_or_variant(*this->result_type);
         this->result_type->forEachChild(check_not_dynamic_or_variant);
@@ -300,13 +298,9 @@ SELECT department, max(revenue) FROM sales GROUP BY department ORDER BY departme
         "Note about non-aggregate maximum",
         R"(
 -- If you need non-aggregate function to choose a maximum of two values, see greatest():
-SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
+SELECT greatest(a, b) FROM table;
         )",
         R"(
-┌─greatest(a, b)─┐
-│              2 │
-│              5 │
-└────────────────┘
         )"
     }
     };

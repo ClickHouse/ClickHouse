@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/DDLTask.h>
@@ -63,23 +62,6 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
     };
 
     return !unsupported_alter_types.contains(type);
-}
-
-
-static bool needsDefaultDatabaseForBareDictionaryOnCluster(const ASTPtr & query_ptr)
-{
-    const auto * system_query = query_ptr->as<ASTSystemQuery>();
-    if (!system_query)
-        return false;
-
-    if (system_query->type != ASTSystemQuery::Type::RELOAD_DICTIONARY
-        && system_query->type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
-        return false;
-
-    if (!system_query->table || system_query->database)
-        return false;
-
-    return true;
 }
 
 
@@ -153,8 +135,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     bool need_replace_current_database = std::any_of(
         access_to_check.begin(),
         access_to_check.end(),
-        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
-        || needsDefaultDatabaseForBareDictionaryOnCluster(query_ptr);
+        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
@@ -206,11 +187,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    /// Strip the initiator-only settings from the queued DDL query text too — the `DDLLogEntry` settings
-    /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
-    /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
-    /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);

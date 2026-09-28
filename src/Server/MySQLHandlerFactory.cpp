@@ -16,19 +16,13 @@
 namespace DB
 {
 
-MySQLHandlerFactory::MySQLHandlerFactory(
-    IServer & server_,
-    bool secure_required_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_,
-    std::optional<String> default_session_user_)
+MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool secure_required_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
 #if USE_SSL
     , keypair(KeyPair::generateRSA())
 #endif
     , secure_required(secure_required_)
-    , default_session_user(std::move(default_session_user_))
     , read_event(read_event_)
     , write_event(write_event_)
 {
@@ -75,11 +69,10 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnectionImpl(const
         ssl_enabled,
         secure_required,
         connection_id,
-        default_session_user,
         keypair
     );
 #else
-    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, secure_required, connection_id, default_session_user);
+    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, secure_required, connection_id);
 #endif
 
 }

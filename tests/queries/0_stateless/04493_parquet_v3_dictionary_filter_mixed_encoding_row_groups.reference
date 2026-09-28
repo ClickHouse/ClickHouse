@@ -1,6 +1,0 @@
-filter off: both row groups are read (20000)
-{"result":[{"count()":1}],"rows_read":20000}
-filter on: row group 1 (dictionary-encoded) is pruned even though row group 0 is PLAIN and ineligible (10000)
-{"result":[{"count()":1}],"rows_read":10000}
-results are identical regardless of the filter, across all values
-OK

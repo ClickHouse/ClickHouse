@@ -15,11 +15,11 @@ doc_type: 'reference'
 
 ClickHouse Cloud 的控制平面在不读取客户数据的前提下运行你的 BYOC 部署。将数据发送到 VPC 外的组件仅会携带运维元数据：
 
-| Component    | 什么会离开你的 VPC                                                             |
-| ------------ | ----------------------------------------------------------------------- |
-| 状态导出器        | 服务和备份状态 (健康状况、status — 运维事件，而非备份内容) 会发送到 ClickHouse Cloud 拥有的 `SQS` 队列。 |
-| 计费抓取器        | CPU 和内存指标会发送到 ClickHouse Cloud 拥有的对象存储桶。                                |
-| AlertManager | 集群健康告警会发送到 ClickHouse Cloud。                                            |
+| Component    | 什么会离开你的 VPC                                            |
+| ------------ | ------------------------------------------------------ |
+| 状态导出器        | 服务状态 (健康状况、status) 会发送到 ClickHouse Cloud 拥有的 `SQS` 队列。 |
+| 计费抓取器        | CPU 和内存指标会发送到 ClickHouse Cloud 拥有的 S3 存储桶。             |
+| AlertManager | 集群健康告警会发送到 ClickHouse Cloud。                           |
 
 查询流量、表内容和 schema 绝不会经过这些通道。日志和指标始终保留在你的 BYOC VPC 内部。
 

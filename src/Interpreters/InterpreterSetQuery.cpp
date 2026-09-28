@@ -1,7 +1,6 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
 #include <Core/Settings.h>
-#include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -27,48 +26,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
-    extern const SettingsString input_format;
-    extern const SettingsString format;
-}
-
-namespace
-{
-/// `compression` shapes the HTTP *response body*: `HTTPHandler` sets up the response buffers from it
-/// before the query runs, so by the time an in-query `SETTINGS` clause is interpreted the buffers
-/// are already fixed and the setting has no effect. Reject it with a clear message instead of
-/// silently ignoring it; it must be supplied via the HTTP URL parameter, the URL path file
-/// extension, or a user profile. (The query-construction settings `select`/`filter`/`order`/`sort`/
-/// `page` are applied by the engine on the parsed AST, so they *do* work via an in-query SETTINGS
-/// clause and are not rejected here.)
-void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
-{
-    /// Both in-query forms set the setting: `name = value` lands in `changes`, `name = DEFAULT` in
-    /// `default_settings`. A bare `compression = DEFAULT` would otherwise slip through and silently
-    /// reset the setting after the response buffers were already built, so reject both forms.
-    auto reject = [](std::string_view name)
-    {
-        if (name == "compression")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'compression' shapes the HTTP response body and is consumed before the query "
-                "is executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
-                "the `compression` HTTP URL parameter, a compressed file extension in the URL path, or "
-                "a user profile instead.");
-    };
-    for (const auto & change : set_query.changes)
-        reject(change.name);
-    for (const auto & name : set_query.default_settings)
-        reject(name);
-}
-
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -79,12 +40,6 @@ BlockIO InterpreterSetQuery::execute()
     /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
-    /// A session-wide value would also detach the `SET` that turns it back off,
-    /// which is likely to cause confusion.
-    if (changes.tryGet("run_query_in_background"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "run_query_in_background cannot be changed with SET, because it must be requested per query. "
-            "Pass it as a query setting, or set it at the user or profile level");
     /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
@@ -110,8 +65,8 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+        /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
         getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
-        rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
@@ -192,59 +147,6 @@ std::optional<String> getTableStorageName(const ASTCreateQuery & create, Context
         return {};
     return default_engine.toString();
 }
-
-/// `CREATE DATABASE` / `ATTACH DATABASE`: the query names a database and no table.
-bool isDatabaseCreateQuery(const ASTCreateQuery & create)
-{
-    return create.database && !create.table;
-}
-
-/// Resolve the engine a `CREATE DATABASE`/`ATTACH DATABASE` will get, so its SETTINGS clause can be
-/// split into engine settings and query settings. `Atomic` is the only default there is
-/// (`default_database_engine` is obsolete), matching what `InterpreterCreateQuery::createDatabase`
-/// fills in for a query without an `ENGINE` clause - keep the two in sync.
-String getDatabaseEngineName(const ASTCreateQuery & create)
-{
-    if (create.storage && create.storage->engine)
-        return create.storage->engine->name;
-    return "Atomic";
-}
-
-/// Whether the engine the created object will have accepts settings, and which ones.
-struct EngineSettingsSupport
-{
-    EngineSettingsSupport(bool supports_settings_, bool (*has_builtin_setting_fn_)(std::string_view))
-        : supports_settings(supports_settings_), has_builtin_setting_fn(has_builtin_setting_fn_)
-    {
-        /// Both factories reject an engine that supports settings without naming them.
-        chassert(!supports_settings || has_builtin_setting_fn);
-    }
-
-    bool isEngineSetting(std::string_view name) const { return supports_settings && has_builtin_setting_fn(name); }
-
-private:
-    bool supports_settings;
-    bool (*has_builtin_setting_fn)(std::string_view);
-};
-
-/// Returns nullopt when the engine cannot be resolved; the SETTINGS clause must then be left
-/// untouched, so that the interpreter can report the engine problem itself.
-std::optional<EngineSettingsSupport> getEngineSettingsSupport(const ASTCreateQuery & create, ContextMutablePtr context)
-{
-    if (isDatabaseCreateQuery(create))
-    {
-        const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(getDatabaseEngineName(create));
-        if (!features)
-            return {};
-        return EngineSettingsSupport{features->supports_settings, features->has_builtin_setting_fn};
-    }
-
-    auto storage_name = getTableStorageName(create, context);
-    if (!storage_name)
-        return {};
-    const auto & features = StorageFactory::instance().getStorageFeatures(*storage_name);
-    return EngineSettingsSupport{features.supports_settings, features.has_builtin_setting_fn};
-}
 }
 
 
@@ -261,13 +163,13 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
         if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query)
         {
-            std::optional<EngineSettingsSupport> engine_settings_support;
+            std::optional<String> storage_name;
             if (create_query->select)
                 applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
             else if (
                 !create_query->settings_ast && create_query->storage && create_query->storage->settings
                 && context_->getApplicationType() != Context::ApplicationType::CLIENT
-                && (engine_settings_support = getEngineSettingsSupport(*create_query, context_)))
+                && (storage_name = getTableStorageName(*create_query, context_)))
             {
                 /// If we parsed one set of settings we don't know if it was the engine settings or the query settings
                 /// We also want to allow users to mix them (so they don't need to declare SETTINGS engine_setting=0 SETTINGS query_setting=0
@@ -276,17 +178,15 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
                 const Settings & context_settings = context_->getSettingsRef();
                 ASTSetQuery * engine_settings = create_query->storage->settings;
+                auto const & features = StorageFactory::instance().getStorageFeatures(*storage_name);
+                chassert(!features.supports_settings || features.has_builtin_setting_fn != nullptr);
                 for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
                 {
                     String & name = it->name;
-                    if (!engine_settings_support->isEngineSetting(name) && context_settings.has(name))
+                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
                     {
-                        /// A value-less `SETTINGS name` in a `CREATE` reaches the context here
-                        /// rather than through `executeForCurrentContext`, and the constraint check
-                        /// below converts the value first, so this has to come before it.
-                        context_settings.checkShorthandChange(*it);
                         context_->checkSettingsConstraints(*it, SettingSource::QUERY);
-                        context_->applySettingChange(*it);
+                        context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);
                     }
                     else
@@ -295,28 +195,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     }
                 }
 
-                /// `SETTINGS name = DEFAULT` is parsed into `default_settings`, not `changes`; a reset of a
-                /// query setting is hoisted the same way, otherwise it would be silently dropped below.
-                for (auto it = engine_settings->default_settings.begin(); it != engine_settings->default_settings.end();)
-                {
-                    const String & name = *it;
-                    if (!engine_settings_support->isEngineSetting(name) && context_settings.has(name))
-                    {
-                        std::vector<String> names{name};
-                        context_->checkSettingsConstraintsForSettingsReset(names, SettingSource::QUERY);
-                        context_->resetSettingsToDefaultValue(names);
-                        it = engine_settings->default_settings.erase(it);
-                    }
-                    else
-                    {
-                        it++;
-                    }
-                }
-
-                /// Prune the clause only when nothing at all is left for the engine, so that a
-                /// remaining `= DEFAULT` or `param_x = ...` entry is still reported by the engine.
-                if (engine_settings->changes.empty() && engine_settings->default_settings.empty()
-                    && engine_settings->query_parameters.empty())
+                if (engine_settings->changes.empty())
                     create_query->storage->reset(create_query->storage->settings);
             }
         }
@@ -343,14 +222,6 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
-        /// Let `input_format` / `format` override the FORMAT used for `input()` schema inference too
-        /// (mirrors `getSourceFromASTInsertQuery`, which resolves the reader format the same way).
-        /// This runs after the INSERT's own `SETTINGS` clause is applied, so a
-        /// `SETTINGS input_format = ...` on the INSERT is taken into account.
-        if (const auto & s = context_->getSettingsRef(); !s[Setting::input_format].value.empty())
-            context_->setInsertFormat(s[Setting::input_format]);
-        else if (!s[Setting::format].value.empty())
-            context_->setInsertFormat(s[Setting::format]);
     }
     else if (const auto * backup_query = ast->as<ASTBackupQuery>())
     {

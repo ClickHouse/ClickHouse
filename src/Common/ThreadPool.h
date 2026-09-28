@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <mutex>
@@ -149,29 +148,16 @@ public:
     void scheduleOrThrowOnError(Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    /// The timeout is signed, because it is fed by settings such as `lock_acquire_timeout`, whose value is an
-    /// Int64 count of microseconds and can be negative. A negative timeout means "already expired", i.e. give up
-    /// immediately if there is no free thread, the same as `wait_microseconds = 0`.
-    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, Int64 wait_microseconds = 0) noexcept;
+    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    /// See trySchedule() above about the sign of `wait_microseconds`.
-    void scheduleOrThrow(Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
     /// and the exception will be cleared.
     void wait();
-
-    /// Same as 'wait', but gives up and returns false when the deadline is reached.
-    /// Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
-    [[nodiscard]] bool waitUntil(std::chrono::steady_clock::time_point deadline);
-
-    /// Stop accepting new jobs: further scheduling produces CANNOT_SCHEDULE_TASK, and the jobs that are
-    /// already queued but have not started yet are discarded instead of being run.
-    /// Jobs that are already running are neither interrupted nor waited for, call 'wait' to join them.
-    void finish();
 
     /// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
     /// You should not destroy the object while calling schedule or wait methods from other threads.
@@ -182,7 +168,7 @@ public:
 
     /// Returns true if the pool already terminated
     /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
-    [[nodiscard]] bool isFinished() const;
+    [[nodiscard]] bool finished() const;
 
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
@@ -231,7 +217,7 @@ private:
     // If negative, it means that we have more jobs than threads.
     std::atomic<int64_t> available_threads;
 
-    bool finished = false;
+    bool shutdown = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
@@ -250,7 +236,7 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -273,7 +259,6 @@ private:
     /// recently-active workers stay in the LIFO position they earned.
     void wakeUpExcessIdleThreadsNoLock();
 
-    void finishNoLock(const std::lock_guard<std::mutex> & lock);
     void finalize();
     void onDestroy();
 };

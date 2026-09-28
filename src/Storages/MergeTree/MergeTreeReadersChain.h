@@ -30,17 +30,10 @@ struct ColumnForPatch
 using ColumnsForPatch = std::vector<ColumnForPatch>;
 using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
-/// Cached for the same reason as `getMergeTreeRangeReaderLogger`: a readers chain is built for every
-/// read task, and `getLogger` would take a process-global mutex each time.
-LoggerPtr getMergeTreeReadersChainLogger();
-
 class MergeTreeReadersChain
 {
-    using DataflowCacheUpdateCallback = std::function<void(
-        const ColumnsWithTypeAndName & columns,
-        const NameSet & partially_read_columns,
-        size_t read_bytes,
-        std::optional<bool> & should_continue_sampling)>;
+    using DataflowCacheUpdateCallback
+        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
 
 public:
     MergeTreeReadersChain() = default;
@@ -69,13 +62,6 @@ private:
         const Block & previous_header,
         size_t num_read_rows) const;
 
-    /// Evaluates default expressions for columns that are absent in part.
-    void evaluateMissingDefaults(
-        MergeTreeRangeReader & range_reader,
-        const ReadResult & result,
-        const Block & previous_header,
-        Columns & columns) const;
-
     void executePrewhereActions(
         MergeTreeRangeReader & reader,
         ReadResult & result,
@@ -83,11 +69,6 @@ private:
         bool is_last_reader);
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
-
-    /// Materializes the sort-key result columns of MergeOnKey patches.
-    /// Returns the main block used for key comparisons.
-    Block executeSortingKeyExpressions(const Block & result_header, ReadResult & read_result);
-
     void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
@@ -120,7 +101,7 @@ private:
     NameSet columns_consumed_by_chain_actions;
 
     bool is_initialized = false;
-    LoggerPtr log = getMergeTreeReadersChainLogger();
+    LoggerPtr log = getLogger("MergeTreeReadersChain");
 };
 
 };

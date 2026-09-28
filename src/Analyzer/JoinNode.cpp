@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
@@ -28,7 +27,7 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     JoinStrictness strictness_,
     JoinKind kind_,
     bool is_using_join_expression_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
@@ -151,13 +150,11 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", kind: " << toString(kind);
 
-    /// Use the raw node accessors: in an unresolved tree (e.g. EXPLAIN QUERY TREE
-    /// with run_passes = 0) the children are still identifiers, not table expressions.
     buffer << '\n' << std::string(indent + 2, ' ') << "LEFT TABLE EXPRESSION\n";
-    getLeftTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getLeftTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSION\n";
-    getRightTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getRightTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getJoinExpression())
     {
@@ -186,9 +183,7 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
     auto clone = std::make_shared<JoinNode>(
-        getLeftTableExpressionNode(),
-        getRightTableExpressionNode(),
-        getJoinExpression(),
+        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;
     return clone;
@@ -229,13 +224,13 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
 
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodePtr table_expression)
-    : ITableExpressionNode(1)
+    : IQueryTreeNode(1)
 {
     children = {std::move(table_expression)};
 }
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_)
-    : ITableExpressionNode(table_expressions.size())
+    : IQueryTreeNode(table_expressions.size())
     , join_types(std::move(join_types_))
 {
     children = std::move(table_expressions);
