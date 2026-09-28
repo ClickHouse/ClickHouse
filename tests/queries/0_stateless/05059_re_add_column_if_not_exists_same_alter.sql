@@ -410,3 +410,36 @@ INSERT INTO drop_independent_dotted VALUES (2, [30], 'hello');
 ALTER TABLE drop_independent_dotted DROP COLUMN n SETTINGS mutations_sync = 2;
 SELECT 'drop independent dotted', id, `n.a` FROM drop_independent_dotted ORDER BY id;
 DROP TABLE drop_independent_dotted;
+
+-- `CLEAR COLUMN` keeps the column, so a later `COMMENT COLUMN` in the same ALTER finds it.
+DROP TABLE IF EXISTS clear_keeps_column;
+CREATE TABLE clear_keeps_column (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO clear_keeps_column VALUES (1, 10);
+ALTER TABLE clear_keeps_column (CLEAR COLUMN x), (COMMENT COLUMN x 'kept') SETTINGS mutations_sync = 2;
+SELECT 'clear keeps column', * FROM clear_keeps_column ORDER BY k;
+SELECT 'clear keeps comment', comment FROM system.columns
+    WHERE database = currentDatabase() AND table = 'clear_keeps_column' AND name = 'x';
+DROP TABLE clear_keeps_column;
+
+-- A successful `MODIFY COLUMN` advances the validate() snapshot: installing a comment
+-- and then removing it in one statement must not throw.
+DROP TABLE IF EXISTS modify_chain_snapshot;
+CREATE TABLE modify_chain_snapshot (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE modify_chain_snapshot
+    (MODIFY COLUMN x COMMENT 'c'),
+    (MODIFY COLUMN x REMOVE COMMENT);
+SELECT 'modify chain snapshot', name, comment FROM system.columns
+    WHERE database = currentDatabase() AND table = 'modify_chain_snapshot' AND name = 'x';
+
+-- A default installed earlier in the same statement is seen by a later REMOVE DEFAULT.
+ALTER TABLE modify_chain_snapshot
+    (MODIFY COLUMN x DEFAULT 7),
+    (MODIFY COLUMN x REMOVE DEFAULT);
+SELECT 'modify chain default', name, default_expression FROM system.columns
+    WHERE database = currentDatabase() AND table = 'modify_chain_snapshot' AND name = 'x';
+
+-- A type change advances the snapshot too: the codec is validated against the new type.
+ALTER TABLE modify_chain_snapshot
+    (MODIFY COLUMN x String),
+    (MODIFY COLUMN x CODEC(DoubleDelta)); -- { serverError BAD_ARGUMENTS }
+DROP TABLE modify_chain_snapshot;

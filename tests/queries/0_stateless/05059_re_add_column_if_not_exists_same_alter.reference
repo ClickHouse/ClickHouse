@@ -102,3 +102,7 @@ modify if exists nested is a noop	a	Int64
 modify if exists nested is a noop	n.x	Array(Enum8(\'a\' = 1))
 drop independent dotted	1	[10,20]
 drop independent dotted	2	[30]
+clear keeps column	1	0
+clear keeps comment	kept
+modify chain snapshot	x	
+modify chain default	x	

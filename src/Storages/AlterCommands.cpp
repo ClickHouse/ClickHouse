@@ -2368,6 +2368,50 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         backQuote(column_name));
             }
 
+            /// Mirror a successful `MODIFY` into the working snapshot, like `apply()` does,
+            /// so later commands in the same `ALTER` validate against the new shape.
+            all_columns.modify(column_name, [&](ColumnDescription & column)
+            {
+                if (command.isRemovingProperty())
+                {
+                    switch (command.to_remove)
+                    {
+                        case AlterCommand::RemoveProperty::DEFAULT:
+                        case AlterCommand::RemoveProperty::MATERIALIZED:
+                        case AlterCommand::RemoveProperty::ALIAS:
+                            column.default_desc = ColumnDefault{};
+                            break;
+                        case AlterCommand::RemoveProperty::CODEC:
+                            column.codec.reset();
+                            break;
+                        case AlterCommand::RemoveProperty::COMMENT:
+                            column.comment = String{};
+                            break;
+                        case AlterCommand::RemoveProperty::TTL:
+                            column.ttl.reset();
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                else
+                {
+                    if (command.codec)
+                        column.codec = command.codec;
+                    if (command.comment)
+                        column.comment = *command.comment;
+                    if (command.ttl)
+                        column.ttl = command.ttl;
+                    if (command.data_type)
+                        column.type = command.data_type;
+                    if (command.default_expression)
+                    {
+                        column.default_desc.kind = command.default_kind;
+                        column.default_desc.expression = command.default_expression;
+                    }
+                }
+            });
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2404,7 +2448,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
-                all_columns.remove(command.column_name);
+                /// `CLEAR COLUMN` / `DROP ... IN PARTITION` keep the column, as in `prepare()`.
+                if (!command.clear && !command.partition)
+                    all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
             {
