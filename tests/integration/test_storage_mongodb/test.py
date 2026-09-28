@@ -1520,13 +1520,14 @@ def test_handshake_metadata(started_cluster):
     assert node.query("SELECT COUNT() FROM handshake_metadata_table") == "10\n"
 
     # mongod logs the metadata received in the handshake of every new connection as a JSON line
-    # with `"msg": "client metadata"`. Other connections (e.g. from pymongo) are logged too, hence the sets.
+    # with `"msg": "client metadata"` and the handshake document under `attr.doc`.
+    # Other connections (e.g. from pymongo) are logged too, hence the sets.
     driver_names = set()
     driver_versions = set()
     for line in started_cluster.get_container_logs("mongo1").splitlines():
         if '"client metadata"' not in line:
             continue
-        driver = json.loads(line)["attr"]["client"]["driver"]
+        driver = json.loads(line)["attr"]["doc"]["driver"]
         driver_names.add(driver["name"])
         driver_versions.add(driver["version"])
 
