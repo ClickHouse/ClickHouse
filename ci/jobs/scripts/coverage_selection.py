@@ -255,15 +255,17 @@ def find_brackets(hunk_ranges, spans, config=SELECTION_CONFIG):
     A run that reached both regions ran the straight-line code between them, which the
     export does not record (it keeps one region per counter). The regions are paired
     within one snapshot, as the snapshots come from different commits whose lines can
-    shift. Returns `{"file", "hunk", "pairs"}` per hunk, where every pair holds the
-    `snapshot` and its `before` and `after` regions as `(file, line_start, line_end)`.
+    shift. Like a precise region, a pair is one piece of evidence however many hunks it
+    brackets, so the result has one record per pair: `{"file", "before", "after",
+    "width", "snapshots", "hunks"}`, with regions as `(file, line_start, line_end)` and
+    `width` the number of lines between them.
     """
     by_file = defaultdict(lambda: defaultdict(list))
     for span in spans:
         by_file[canonical_coverage_path(span["canonical_file"])][
             (span["observed_at"], span["check_name"])
         ].append((int(span["line_start"]), int(span["line_end"])))
-    brackets = []
+    brackets = {}
     for path, hunks in sorted(hunk_ranges.items()):
         path = canonical_coverage_path(path)
         snapshots = by_file.get(path, {})
@@ -272,29 +274,37 @@ def find_brackets(hunk_ranges, spans, config=SELECTION_CONFIG):
             # A hunk that overlaps a region in any snapshot is scored by that region.
             if any(end >= a and start <= b for regions in snapshots.values() for start, end in regions):
                 continue
-            pairs = []
             for snapshot, regions in sorted(snapshots.items()):
                 before = [r for r in regions if r[1] < a and a - r[1] <= config.bracket_gap_lines]
                 after = [r for r in regions if r[0] > b and r[0] - b <= config.bracket_gap_lines]
-                if before and after:
-                    pairs.append(
-                        {
-                            "snapshot": snapshot,
-                            "before": (path, *max(before, key=lambda r: (r[1], -r[0]))),
-                            "after": (path, *min(after, key=lambda r: (r[0], r[1]))),
-                        }
-                    )
-            if pairs:
-                brackets.append({"file": path, "hunk": f"{path}:{a}-{b}", "pairs": pairs})
-    return brackets
+                if not before or not after:
+                    continue
+                before = (path, *max(before, key=lambda r: (r[1], -r[0])))
+                after = (path, *min(after, key=lambda r: (r[0], r[1])))
+                bracket = brackets.setdefault(
+                    (before, after),
+                    {
+                        "file": path,
+                        "before": before,
+                        "after": after,
+                        "width": after[1] - before[2] + 1,
+                        "snapshots": [],
+                        "hunks": [],
+                    },
+                )
+                if snapshot not in bracket["snapshots"]:
+                    bracket["snapshots"].append(snapshot)
+                hunk = f"{path}:{a}-{b}"
+                if hunk not in bracket["hunks"]:
+                    bracket["hunks"].append(hunk)
+    return [brackets[key] for key in sorted(brackets)]
 
 
 def build_bracket_owners_query(brackets, snapshots, config=SELECTION_CONFIG):
     regions = defaultdict(set)
     for bracket in brackets:
-        for pair in bracket["pairs"]:
-            for path, start, end in (pair["before"], pair["after"]):
-                regions[path].add((start, end))
+        for path, start, end in (bracket["before"], bracket["after"]):
+            regions[path].add((start, end))
     if not regions:
         raise ValueError("Bracket owners query needs regions")
     conditions = []
@@ -317,8 +327,8 @@ def build_bracket_owners_query(brackets, snapshots, config=SELECTION_CONFIG):
 
 
 def attach_bracket_owners(brackets, rows):
-    """Set `owners` of every bracket to the tests that own both regions of a pair in the
-    pair's snapshot, and `width` to the narrowest gap between the regions of a pair."""
+    """Set `owners` of every bracket to the tests that own both of its regions in one
+    of the snapshots where they are paired."""
     owners = defaultdict(set)
     for row in rows:
         path = canonical_coverage_path(row["canonical_file"])
@@ -326,10 +336,9 @@ def attach_bracket_owners(brackets, rows):
         owners[(path, int(row["line_start"]), int(row["line_end"]), snapshot)].update(row["owners"])
     for bracket in brackets:
         found = set()
-        for pair in bracket["pairs"]:
-            found |= owners[(*pair["before"], pair["snapshot"])] & owners[(*pair["after"], pair["snapshot"])]
+        for snapshot in bracket["snapshots"]:
+            found |= owners[(*bracket["before"], snapshot)] & owners[(*bracket["after"], snapshot)]
         bracket["owners"] = sorted(found)
-        bracket["width"] = min(pair["after"][1] - pair["before"][2] + 1 for pair in bracket["pairs"])
     return brackets
 
 
@@ -417,19 +426,15 @@ def rank_candidates(
         width = bracket["width"]
         for test in bracket["owners"]:
             feature = {
-                "region": bracket["hunk"],
+                "region": f"{bracket['file']}:{bracket['before'][2]}-{bracket['after'][1]}",
                 "file": bracket["file"],
                 "region_width": width,
                 "region_owners": owners,
                 "exact_lines": [],
-                "hunks": [bracket["hunk"]],
-                "bracket_regions": sorted(
-                    {
-                        f"{path}:{start}-{end}"
-                        for pair in bracket["pairs"]
-                        for path, start, end in (pair["before"], pair["after"])
-                    }
-                ),
+                "hunks": bracket["hunks"],
+                "bracket_regions": [
+                    f"{path}:{start}-{end}" for path, start, end in (bracket["before"], bracket["after"])
+                ],
                 # The owners query does not count the runs per test.
                 "coverage_run_frequency": None,
             }

@@ -415,17 +415,13 @@ class SelectionSmoke(unittest.TestCase):
         }
         brackets = find_brackets(hunks, spans, config)
         # (499, 501) overlaps a region and is scored as usual; (430, 436) has nothing
-        # after it within the gap; `src/b.cpp` has no regions.
+        # after it within the gap; `src/b.cpp` has no regions. Each snapshot pairs its
+        # own regions, and every pair keeps its own width.
         self.assertEqual(
-            [(b["hunk"], [(p["snapshot"], p["before"], p["after"]) for p in b["pairs"]]) for b in brackets],
+            [(b["before"], b["after"], b["width"], b["snapshots"], b["hunks"]) for b in brackets],
             [
-                (
-                    "src/a.cpp:383-388",
-                    [
-                        (second, ("src/a.cpp", 351, 352), ("src/a.cpp", 410, 411)),
-                        (first, ("src/a.cpp", 344, 345), ("src/a.cpp", 403, 404)),
-                    ],
-                )
+                (("src/a.cpp", 344, 345), ("src/a.cpp", 403, 404), 59, [first], ["src/a.cpp:383-388"]),
+                (("src/a.cpp", 351, 352), ("src/a.cpp", 410, 411), 59, [second], ["src/a.cpp:383-388"]),
             ],
         )
         self.assertEqual(find_brackets(hunks, spans, replace(config, bracket_gap_lines=10)), [])
@@ -455,34 +451,65 @@ class SelectionSmoke(unittest.TestCase):
                 row(403, 404, first, ["test_y/test.py", "test_z/test.py"]),
                 row(351, 352, second, ["test_w/test.py", "test_z/test.py"]),
                 row(410, 411, second, ["test_w/test.py"]),
+                # Not a pair of `second`: its regions are ignored in that snapshot.
+                row(344, 345, second, ["test_z/test.py"]),
             ],
         )
         # Only a run that reached both regions ran the code between them: `test_z` owns
         # the right region in `first` and the left one in `second`, but not both in one.
-        self.assertEqual(brackets[0]["owners"], ["test_w/test.py", "test_y/test.py"])
-        self.assertEqual(brackets[0]["width"], 59)
+        self.assertEqual([b["owners"] for b in brackets], [["test_y/test.py"], ["test_w/test.py"]])
+
+    def test_bracket_is_one_piece_of_evidence(self):
+        config = INTEGRATION_SELECTION_CONFIG
+        snapshot = (FIXTURE_TIME, "shard 1")
+
+        def span(start):
+            return {
+                "canonical_file": "src/a.cpp",
+                "line_start": start,
+                "line_end": start,
+                "observed_at": snapshot[0],
+                "check_name": snapshot[1],
+            }
+
+        def owners(start, tests):
+            return {**span(start), "owners": tests}
+
+        # Two hunks between the same regions do not count twice.
+        split = find_brackets({"src/a.cpp": [(110, 112), (130, 132)]}, [span(100), span(150)], config)
+        self.assertEqual([b["hunks"] for b in split], [["src/a.cpp:110-112", "src/a.cpp:130-132"]])
+        attach_bracket_owners(split, [owners(100, ["test_a/test.py"]), owners(150, ["test_a/test.py"])])
+        whole = find_brackets({"src/a.cpp": [(110, 132)]}, [span(100), span(150)], config)
+        attach_bracket_owners(whole, [owners(100, ["test_a/test.py"]), owners(150, ["test_a/test.py"])])
+        score = lambda brackets: rank_candidates([], [], {}, fixture_snapshots(), config, brackets=brackets)[0]["score"]
+        self.assertEqual(score(split), score(whole))
+
+        # A test owning only a wide pair does not inherit the width of a narrow one.
+        narrow = find_brackets({"src/a.cpp": [(110, 112)]}, [span(100), span(120)], config)
+        wide = find_brackets({"src/a.cpp": [(110, 112)]}, [span(80), span(150)], config)
+        attach_bracket_owners(narrow, [owners(100, ["test_narrow/test.py"]), owners(120, ["test_narrow/test.py"])])
+        attach_bracket_owners(wide, [owners(80, ["test_wide/test.py"]), owners(150, ["test_wide/test.py"])])
+        scores = {c["test"]: c["score"] for c in rank_candidates([], [], {}, fixture_snapshots(), config, brackets=narrow + wide)}
+        self.assertGreater(scores["test_narrow/test.py"], scores["test_wide/test.py"])
 
     def test_brackets_rank_after_precise_coverage(self):
         config = INTEGRATION_SELECTION_CONFIG
         region = fixture_region(tests=[("test_precise/test.py", 1)])
         bracket = {
             "file": region["file"],
-            "hunk": f"{region['file']}:30-35",
-            "pairs": [
-                {
-                    "snapshot": (FIXTURE_TIME, "shard 1"),
-                    "before": (region["file"], 20, 21),
-                    "after": (region["file"], 40, 40),
-                }
-            ],
-            "owners": ["test_bracket/test.py", "test_precise/test.py"],
+            "before": (region["file"], 20, 21),
+            "after": (region["file"], 40, 40),
             "width": 20,
+            "snapshots": [(FIXTURE_TIME, "shard 1")],
+            "hunks": [f"{region['file']}:30-35"],
+            "owners": ["test_bracket/test.py", "test_precise/test.py"],
         }
         candidates = rank_candidates(
             [region], [(region["file"], 10), (region["file"], 30)], {}, fixture_snapshots(), config, brackets=[bracket]
         )
         self.assertEqual([c["test"] for c in candidates], ["test_precise/test.py", "test_bracket/test.py"])
         self.assertEqual(candidates[1]["admission_reason"], "bracketed_hunk_coverage")
+        self.assertEqual(candidates[1]["features"][0]["region"], f"{region['file']}:21-40")
         self.assertEqual(
             candidates[1]["features"][0]["bracket_regions"],
             [f"{region['file']}:20-21", f"{region['file']}:40-40"],
