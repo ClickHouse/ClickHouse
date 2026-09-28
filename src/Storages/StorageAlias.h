@@ -27,11 +27,7 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
-    bool isMergeTree() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->isMergeTree();
-    }
+    bool isMergeTree() const override;
 
     bool readsFromOtherTables() const override { return true; }
     std::vector<StoragePtr> getUnderlyingStorages() const override
