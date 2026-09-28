@@ -178,7 +178,13 @@ FROM numbers(262144);
 INSERT INTO tab_sel_idx SELECT id, message FROM tab_sel_ref;
 OPTIMIZE TABLE tab_sel_idx FINAL;
 
+-- A copy, so the phrase results of the two paths are cached under different index ids.
+CREATE TABLE tab_sel_idx_copy AS tab_sel_idx;
+INSERT INTO tab_sel_idx_copy SELECT id, message FROM tab_sel_ref;
+OPTIMIZE TABLE tab_sel_idx_copy FINAL;
+
 SELECT 'Candidates from cursors';
+SET text_index_postings_intersection_algorithm = 'leapfrog';
 SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
 SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse');
 SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
@@ -191,16 +197,38 @@ SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse ne
 SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse needle');
 SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'unicorn clickhouse');
 SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'world hello');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'world hello');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse world');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse world');
 
 SELECT 'Candidates from bitmaps';
-SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
-SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse');
-SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse world');
-SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse world');
-SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'world hello');
-SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'world hello');
-SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse world');
-SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse world');
+SET text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'world needle');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'world needle');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'clickhouse world');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'world hello');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'world hello');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse world');
+SELECT count(), sum(id) FROM tab_sel_idx_copy WHERE hasPhrase(message, 'hello clickhouse world');
 
 DROP TABLE tab_sel_ref;
 DROP TABLE tab_sel_idx;
+DROP TABLE tab_sel_idx_copy;

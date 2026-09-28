@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexPhraseSearch.h>
@@ -928,19 +929,36 @@ std::optional<PhraseTerms> resolvePhraseTerms(
     return terms;
 }
 
-/// Measured on 20M rows: the cursors win 4-9x below ~0.001 and lose up to 47% at 0.09 and above.
-constexpr double PHRASE_CURSOR_SELECTIVITY_THRESHOLD = 0.01;
+double postingsDensity(const TokenPostingsInfo & info)
+{
+    UInt64 first = 0;
+    UInt64 last = 0;
+    if (!info.ranges.empty())
+    {
+        first = info.ranges.front().begin;
+        last = info.ranges.back().end;
+    }
+    else if (!info.embedded_postings.empty())
+    {
+        first = info.embedded_postings.front();
+        last = info.embedded_postings.back();
+    }
+    else
+        return 0.0;
 
-/// The leapfrog only skips blocks when one term is rare enough to drive it; with uniformly frequent
-/// terms every posting block is decoded anyway and the bitmap intersection does it in bulk.
-bool useRankCursors(const PhraseTerms & terms)
+    return static_cast<double>(info.cardinality) / static_cast<double>(last - first + 1);
+}
+
+/// Same rule as the postings intersection: the leapfrog pays off only when the sparsest list can skip
+/// whole blocks of the densest one, otherwise every posting block is decoded anyway.
+bool useRankCursors(const PhraseTerms & terms, TextIndexPostingsIntersectionAlgorithm algorithm)
 {
     /// A single-term phrase needs no intersection: every row holding the token matches.
-    if (terms.term_to_unique.size() == 1)
+    if (terms.term_to_unique.size() == 1 || algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
         return false;
 
-    UInt64 min_cardinality = std::numeric_limits<UInt64>::max();
-    UInt64 total_cardinality = 0;
+    double min_density = std::numeric_limits<double>::max();
+    double max_density = 0.0;
     for (const auto * info : terms.unique_infos)
     {
         /// A flat list (embedded or raw) is walked by index; anything else needs the block index to seek in.
@@ -948,11 +966,15 @@ bool useRankCursors(const PhraseTerms & terms)
         if (!is_flat && !(info->header & PostingsSerialization::Flags::HasBlockIndex))
             return false;
 
-        min_cardinality = std::min<UInt64>(min_cardinality, info->cardinality);
-        total_cardinality += info->cardinality;
+        const double density = postingsDensity(*info);
+        min_density = std::min(min_density, density);
+        max_density = std::max(max_density, density);
     }
 
-    return static_cast<double>(min_cardinality) <= PHRASE_CURSOR_SELECTIVITY_THRESHOLD * static_cast<double>(total_cardinality);
+    if (algorithm == TextIndexPostingsIntersectionAlgorithm::Leapfrog)
+        return true;
+
+    return min_density * static_cast<double>(IPostingListBlockCodec::BLOCK_SIZE) < max_density;
 }
 
 /// Decodes a chunk of candidates' positions per unique token, then runs the phrase adjacency match.
@@ -1295,7 +1317,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearch(const TextSearchQu
     if (!terms)
         return {};
 
-    if (useRankCursors(*terms))
+    if (useRankCursors(*terms, intersection_algorithm))
         return phraseSearchBlockedCursors(*terms);
 
     return phraseSearchBlocked(*terms);
