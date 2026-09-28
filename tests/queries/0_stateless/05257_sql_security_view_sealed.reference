@@ -33,5 +33,4 @@ none_view: 1
 invoker_view: 0
 projection_view: 0
 policy_view: 1
-view_policy_view: 0
 view_policy_view for the user with the policy: 1

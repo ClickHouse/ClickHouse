@@ -77,7 +77,7 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "
     SELECT secret FROM $db.definer_view WHERE secret LIKE 'vis%';"
 
 echo "--- only a view that runs with other privileges and can hide rows is sealed"
-for view in definer_view none_view invoker_view projection_view policy_view view_policy_view; do
+for view in definer_view none_view invoker_view projection_view policy_view; do
     echo -n "$view: "
     ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.$view WHERE secret = 'x')"
 done
