@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -288,6 +289,10 @@ void SerializationArray::enumerateStreams(
         .withColumn(column_array ? column_array->getDataPtr() : nullptr)
         .withSerializationInfo(data.serialization_info)
         .withDeserializeState(data.deserialize_state);
+    if (auto child = SerializationMapKeyColumns::forwardNestedSeedKeysState(data.serialize_state))
+        next_data.serialize_state = std::move(child);
+    else
+        next_data.serialize_state = data.serialize_state;
 
     nested->enumerateStreams(settings, callback, next_data);
     --settings.array_level;
@@ -301,6 +306,13 @@ void SerializationArray::serializeBinaryBulkStatePrefix(
 {
     settings.path.push_back(Substream::ArrayElements);
     const auto & column_array = assert_cast<const ColumnArray &>(column);
+    if (auto child = SerializationMapKeyColumns::forwardNestedSeedKeysState(state))
+    {
+        /// The writer seeds a nested `with_key_columns` Map with the part-level key
+        /// set through a chain of per-element states; adopt it as this level's state
+        /// so the nested prefix (and the stream enumeration that follows it) sees it.
+        state = std::move(child);
+    }
     nested->serializeBinaryBulkStatePrefix(column_array.getData(), settings, state);
     settings.path.pop_back();
 }
@@ -392,6 +404,16 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
     /// marks per substreams inside the stream getter.
     else
         nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), column_array.getData().size(), 0, settings, state);
+
+    if (state && offset == 0 && nested_limit == column_array.getData().size()
+        && !column_array.getData().empty()
+        && typeid_cast<const SerializationMapKeyColumns *>(nested.get()))
+    {
+        /// A nested `with_key_columns` Map extracts the whole block's per-key columns
+        /// on first use; remember the flattened positions so later per-granule slices
+        /// (the wide writer's `column->cut`) are translated to the extracted ones.
+        SerializationMapKeyColumns::recordNestedPositions(*state, offset_values);
+    }
 
     settings.path.pop_back();
 }

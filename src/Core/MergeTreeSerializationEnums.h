@@ -56,6 +56,7 @@ enum class MergeTreeMapSerializationVersion : uint8_t
 {
     BASIC = 0,
     WITH_BUCKETS = 1,
+    WITH_KEY_COLUMNS = 2,
 };
 
 enum class MergeTreeMapBucketsStrategy : uint8_t

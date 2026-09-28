@@ -1002,6 +1002,14 @@ private:
 
     void checkConsistencyBase() const;
 
+    /// Reject Compact parts and mixed `basic` / `with_buckets` / `with_key_columns` Map layouts.
+    void checkMapKeyColumnsCompatibility() const;
+
+    /// Rewrite the `serialization_infos` of Map columns whose recorded version is `basic`
+    /// (i.e. `serialization.json` carries no Map specialization) to the table's effective
+    /// map serialization version, and rebuild `serializations` accordingly.
+    void applyTableMapSerializationVersionForBasicInfos();
+
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;
 

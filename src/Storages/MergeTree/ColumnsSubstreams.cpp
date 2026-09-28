@@ -58,6 +58,30 @@ void ColumnsSubstreams::addSubstreamsToLastColumn(const std::vector<String> & su
         addSubstreamToLastColumn(substream);
 }
 
+void ColumnsSubstreams::addSubstreamToColumn(const String & column, const String & substream)
+{
+    for (size_t i = 0; i < columns_substreams.size(); ++i)
+    {
+        if (columns_substreams[i]->column != column)
+            continue;
+
+        /// In Wide part we can write to the same stream several times, keep only the first occurrence.
+        if (columns_substreams[i]->substream_to_local_position.contains(substream))
+            return;
+
+        /// Per-column entries can be shared with other parts: rebuild this
+        /// column's entry instead of modifying it in place.
+        auto entry = std::make_shared<ColumnEntry>(*columns_substreams[i]);
+        entry->substream_to_local_position[substream] = entry->substreams.size();
+        entry->substreams.emplace_back(substream);
+        columns_substreams[i] = std::move(entry);
+        ++total_substreams;
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add substream {} to ColumnsSubstreams: column {} is not present", substream, column);
+}
+
 size_t ColumnsSubstreams::getSubstreamPosition(size_t column_position, const String & substream) const
 {
     if (column_position >= columns_substreams.size())

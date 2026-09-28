@@ -1,5 +1,9 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -40,6 +44,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
+    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace ErrorCodes
@@ -85,6 +91,37 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
+}
+
+/// The `SerializationMapKeyColumns` of a Map nested inside `type` (all nested Maps
+/// share one pooled serialization), or null when `type` holds none.
+static const ISerialization * findNestedMapKeyColumnsSerializationImpl(const IDataType & type, const SerializationInfoSettings & settings)
+{
+    if (typeid_cast<const DataTypeMap *>(&type))
+        return type.getSerialization(settings).get();
+
+    const WhichDataType which(type);
+    if (which.isArray())
+        return findNestedMapKeyColumnsSerializationImpl(*assert_cast<const DataTypeArray &>(type).getNestedType(), settings);
+    if (which.isTuple())
+    {
+        for (const auto & element : assert_cast<const DataTypeTuple &>(type).getElements())
+            if (const ISerialization * serialization = findNestedMapKeyColumnsSerializationImpl(*element, settings))
+                return serialization;
+    }
+    return nullptr;
+}
+
+const ISerialization * IMergeTreeDataPartWriter::findNestedMapKeyColumnsSerialization(const IDataType & type) const
+{
+    if ((*storage_settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return nullptr;
+
+    SerializationInfoSettings serialization_settings{};
+    serialization_settings.map_serialization_version = MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    serialization_settings.propagate_types_serialization_versions_to_nested_types
+        = (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types];
+    return findNestedMapKeyColumnsSerializationImpl(type, serialization_settings);
 }
 
 UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const

@@ -1,5 +1,6 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -49,7 +50,10 @@ void SerializationNamed::enumerateStreams(
     settings.path.back().data = data;
     settings.path.back().creator = std::make_shared<SubcolumnCreator>(name, substream_type);
 
-    nested_serialization->enumerateStreams(settings, callback, data);
+    auto next_data = data;
+    if (auto child = SerializationMapKeyColumns::forwardNestedSeedKeysState(data.serialize_state))
+        next_data.serialize_state = std::move(child);
+    nested_serialization->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();
 }
 
@@ -59,6 +63,9 @@ void SerializationNamed::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
+    /// Forward a write-side seed chain for a nested `with_key_columns` Map.
+    if (auto child = SerializationMapKeyColumns::forwardNestedSeedKeysState(state))
+        state = std::move(child);
     nested_serialization->serializeBinaryBulkStatePrefix(column, settings, state);
     settings.path.pop_back();
 }

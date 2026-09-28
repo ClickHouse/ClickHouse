@@ -228,6 +228,12 @@ public:
             return *this;
         }
 
+        SubstreamData & withSerializeState(SerializeBinaryBulkStatePtr serialize_state_)
+        {
+            serialize_state = std::move(serialize_state_);
+            return *this;
+        }
+
         SubstreamData & withLazyColumnCreator(std::function<ColumnPtr()> lazy_column_creator_)
         {
             lazy_column_creator = std::move(lazy_column_creator_);
@@ -244,6 +250,12 @@ public:
         /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
         /// to enumerate dynamic streams.
         DeserializeBinaryBulkStatePtr deserialize_state;
+
+        /// Symmetric to deserialize_state, for the write side: a serialization whose
+        /// stream set is fixed at state prefix time (e.g. `with_key_columns` Map,
+        /// where the part's key set decides which `m.values.<key>`/`m.exists.<key>`
+        /// streams exist) can enumerate its write-side streams from it.
+        SerializeBinaryBulkStatePtr serialize_state;
 
         /// When column is null, this optional creator can materialize it on demand.
         /// Used for derived subcolumns (e.g. String `.size`) whose data can be
@@ -321,6 +333,13 @@ public:
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,
+
+            /// Per-key streams of `map_serialization_version = 'with_key_columns'`:
+            /// the sorted key list (`m.keys`) and a key's presence bitmap
+            /// (`m.exists.<key>`). Both `MapKeyValue` (`m.values.<key>`) and
+            /// `MapKeyPresence` carry the raw key bytes in `name_of_substream`.
+            MapKeys,
+            MapKeyPresence,
 
             QuantizedCodes,
             ProductQuantizationCodebook,
