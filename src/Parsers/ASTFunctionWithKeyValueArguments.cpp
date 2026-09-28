@@ -66,6 +66,21 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+
+    /// A value in brackets is parser-produced as an `ASTExpressionList` of `ASTPair`, e.g. `headers(header(...))`.
+    /// `formatImpl` relies on this shape to hide secrets, so malformed `clickhouse_json` fails with `BAD_ARGUMENTS`.
+    if (second_with_brackets)
+    {
+        const auto * list = child->as<ASTExpressionList>();
+        if (!list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'second' of ASTPair in brackets must be a list of key-value pairs during AST JSON deserialization");
+        for (const auto & element : list->children)
+            if (!element || !element->as<ASTPair>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'second' of ASTPair in brackets must contain only key-value pairs during AST JSON deserialization");
+    }
+
     set(second, child);
 }
 
@@ -102,7 +117,8 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// The query is logged before the dictionary source rejects unknown keys, so a malformed
         /// definition must not leak either: inside `headers` only `header(...)` entries are kept
         /// (they hide their own values when formatted), inside `header` only `name` is kept.
-        bool hide_all = !second_with_brackets;
+        /// Anything but a list of pairs is hidden as a whole, whatever produced the AST.
+        bool hide_all = !second_with_brackets || !second->as<ASTExpressionList>();
         ASTPtr masked;
         if (!hide_all)
         {

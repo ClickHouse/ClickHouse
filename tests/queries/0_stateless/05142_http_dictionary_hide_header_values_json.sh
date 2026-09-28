@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+
+# The values of HTTP headers of an `HTTP` dictionary source must also be hidden when the query
+# is submitted as a JSON AST (`dialect = 'clickhouse_json'`), and a JSON AST whose `header` or
+# `headers` in brackets is not a list of key-value pairs (a shape the SQL parser never produces,
+# which the masking relies on) must be rejected instead of being logged with the value.
+
+CLICKHOUSE_CLIENT_JSON="${CLICKHOUSE_CLIENT} --enable_json_ast_dialect 1 --dialect clickhouse_json"
+
+function to_json()
+{
+    ${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON(\$\$$1\$\$) FORMAT TSVRaw"
+}
+
+# A valid definition submitted as a JSON AST is masked like the SQL one.
+JSON=$(to_json "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.d_05142 (id UInt64, v String) PRIMARY KEY id
+    SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name 'API-KEY' value 'SEKRIT_JSON_VALID'))))
+    LIFETIME(0) LAYOUT(FLAT())")
+${CLICKHOUSE_CLIENT_JSON} --query "$JSON"
+${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'HEADERS.*\\)\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142' SETTINGS format_display_secrets_in_show_and_select = 0"
+
+# `header` and `headers` in brackets with a literal instead of a list of pairs are rejected.
+for key in header headers
+do
+    case $key in
+        header) HEADERS="headers(header 'SEKRIT_JSON_BAD')" ;;
+        headers) HEADERS="headers 'SEKRIT_JSON_BAD'" ;;
+    esac
+    JSON=$(to_json "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.d_05142_bad (id UInt64, v String) PRIMARY KEY id
+        SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' $HEADERS))
+        LIFETIME(0) LAYOUT(FLAT())")
+    JSON=${JSON//\"first\":\"$key\",\"second_with_brackets\":false/\"first\":\"$key\",\"second_with_brackets\":true}
+    ${CLICKHOUSE_CLIENT_JSON} --query "$JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+done
+${CLICKHOUSE_CLIENT} --query "EXISTS DICTIONARY d_05142_bad"
+
+# The accepted JSON query is logged without the value.
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0, countIf(query LIKE concat('%', 'SEKRIT', '%'))
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_kind = 'Create' AND type != 'ExceptionBeforeStart' AND query LIKE '%d_05142%' AND event_date >= yesterday()"
+
+${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY d_05142"
