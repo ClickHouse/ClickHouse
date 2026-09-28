@@ -353,11 +353,13 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
-/// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
-/// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
+/// Convert an OUTER join whose null-extended rows cannot survive above it, and add an `IS NOT NULL`
+/// filter at a read for a column that cannot be NULL in the result. The proof comes from arbitrarily
+/// higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
 /// This pass is complementary to `tryConvertOuterJoinToInnerJoin`, which only sees the filter directly
 /// above but handles all filter shapes where this one matches a subset.
-void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+/// Returns whether a filter was added.
+bool convertOuterToInnerAndAddNotNullFilters(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

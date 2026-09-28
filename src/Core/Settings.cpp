@@ -7431,6 +7431,14 @@ Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filt
 Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled.
 )", 0, \
         {"26.10", false, true, "New setting to extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled."}) \
+    DECLARE(Bool, query_plan_derive_not_null_filter_at_read, true, R"(
+Add an `IS NOT NULL` filter at a table read for a column that a `JOIN` condition or a filter higher in the plan already proves cannot be NULL, so that `PREWHERE` and index analysis can use it.
+)", 0, \
+        {"26.10", false, true, "New setting that adds an IS NOT NULL filter at a table read for a column already proven not NULL higher in the plan, so PREWHERE and index analysis can use it."}) \
+    DECLARE(Double, query_plan_derive_not_null_filter_at_read_min_null_ratio, 0.6, R"(
+The smallest fraction of NULL values a column must hold, according to its statistics, for `query_plan_derive_not_null_filter_at_read` to add a filter on it. A column whose statistics carry no null count is never filtered, unless the setting is `0`, which adds the filter to every column the optimization proves not NULL and reads no statistics at all.
+)", 0, \
+        {"26.10", 0.6, 0.6, "New setting giving the smallest NULL fraction a column must have for query_plan_derive_not_null_filter_at_read to filter on it."}) \
     DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \

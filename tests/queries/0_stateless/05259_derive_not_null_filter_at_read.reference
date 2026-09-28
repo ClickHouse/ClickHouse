@@ -1,0 +1,21 @@
+-- The key of an enclosing join gets the filter.
+1
+-- No filter is added when the setting is off.
+0
+-- An INNER JOIN proves its own key not NULL.
+1
+-- A column that is not Nullable at the read gets no filter.
+0
+-- A column whose statistics report no NULL gets no filter.
+0
+-- A NULL fraction below the threshold gets no filter.
+0
+-- The same column gets one once the threshold is lowered below its NULL fraction.
+1
+-- A column without statistics gets no filter.
+0
+-- A conjunct already sitting above the read that rejects NULL makes the derived one redundant.
+0
+-- The added filter does not change the result.
+20	940	40	125
+20	940	40	125
