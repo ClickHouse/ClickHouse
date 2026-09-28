@@ -1,7 +1,91 @@
 [
   {
-    "destination": "/concepts/features/interfaces/native-clients-interfaces-index",
+    "destination": "/concepts/features/connect-to-clickhouse",
     "source": "/concepts/features/interfaces/overview"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse",
+    "source": "/concepts/features/interfaces/native-clients-interfaces-index"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
+    "source": "/concepts/features/interfaces/cli"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
+    "source": "/concepts/features/interfaces/client"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/web-terminal",
+    "source": "/concepts/features/interfaces/web-terminal"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/ai-clients/mcp",
+    "source": "/concepts/features/interfaces/mcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/adbc",
+    "source": "/concepts/features/interfaces/adbc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
+    "source": "/concepts/features/interfaces/odbc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
+    "source": "/concepts/features/interfaces/http"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http/framing-formats",
+    "source": "/concepts/features/interfaces/framing-formats"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/native-tcp",
+    "source": "/concepts/features/interfaces/tcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/grpc",
+    "source": "/concepts/features/interfaces/grpc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/arrow-flight",
+    "source": "/concepts/features/interfaces/arrowflight"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
+    "source": "/concepts/features/interfaces/mysql"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql",
+    "source": "/concepts/features/interfaces/postgresql"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/experimental/ssh",
+    "source": "/concepts/features/interfaces/ssh"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
+    "source": "/concepts/features/interfaces/documentation-search"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql",
+    "source": "/concepts/features/interfaces/web-sql"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding",
+    "source": "/concepts/features/interfaces/web-ui-color-coding"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns",
+    "source": "/concepts/features/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping",
+    "source": "/concepts/features/interfaces/web-ui-result-shaping"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console",
+    "source": "/concepts/features/interfaces/sql-console"
   },
   {
     "destination": "/integrations",

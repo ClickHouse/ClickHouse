@@ -146,4 +146,4 @@ This is often preferable to ClickHouse's native protocol as it allows traffic to
 
 However, it lacks the native protocol's deeper integration and can't perform client-side optimizations like materialized value computation or automatic conversion to Native format. While HTTP inserts can still be compressed using standard HTTP headers (e.g. `Content-Encoding: lz4`), the compression is applied to the entire payload rather than individual data blocks. This interface is often preferred in environments where protocol simplicity, load balancing, or broad format compatibility is more important than raw performance.
 
-For a more detailed description of these interfaces see [Connect to ClickHouse](/concepts/features/interfaces/native-clients-interfaces-index).
+For a more detailed description of these interfaces see [Connect to ClickHouse](/concepts/features/connect-to-clickhouse).
