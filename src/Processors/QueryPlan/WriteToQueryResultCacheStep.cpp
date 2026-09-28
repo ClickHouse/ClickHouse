@@ -30,7 +30,7 @@ void WriteToQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipel
 {
     pipeline.addSimpleTransform([&](const SharedHeader & header, Pipe::StreamType stream_type)
     {
-        QueryResultCacheWriter::ChunkType chunk_type;
+        QueryResultCacheWriter::ChunkType chunk_type = QueryResultCacheWriter::ChunkType::Result;
         switch (stream_type)
         {
             case Pipe::StreamType::Totals:

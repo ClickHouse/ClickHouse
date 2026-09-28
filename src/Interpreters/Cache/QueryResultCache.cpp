@@ -1405,12 +1405,15 @@ void QueryResultCache::loadSnapshot(const std::string & path)
         try
         {
             /// Key fields
-            UInt64 hash_low = 0, hash_high = 0;
+            UInt64 hash_low = 0;
+            UInt64 hash_high = 0;
             readBinaryLittleEndian(hash_low, buf);
             readBinaryLittleEndian(hash_high, buf);
             IASTHash ast_hash{hash_low, hash_high};
 
-            UInt8 is_subquery_u8 = 0, is_shared_u8 = 0, is_compressed_u8 = 0;
+            UInt8 is_subquery_u8 = 0;
+            UInt8 is_shared_u8 = 0;
+            UInt8 is_compressed_u8 = 0;
             readBinary(is_subquery_u8, buf);
             readBinary(is_shared_u8, buf);
             readBinary(is_compressed_u8, buf);
@@ -1431,7 +1434,8 @@ void QueryResultCache::loadSnapshot(const std::string & path)
             for (auto & role : roles)
                 readBinaryLittleEndian(role, buf);
 
-            Int64 created_ms = 0, expires_ms = 0;
+            Int64 created_ms = 0;
+            Int64 expires_ms = 0;
             readBinaryLittleEndian(created_ms, buf);
             readBinaryLittleEndian(expires_ms, buf);
 
@@ -1446,7 +1450,8 @@ void QueryResultCache::loadSnapshot(const std::string & path)
                 ++skipped_stale;
             }
 
-            String query_string, tag;
+            String query_string;
+            String tag;
             readStringBinary(query_string, buf);
             readStringBinary(tag, buf);
 
@@ -1492,7 +1497,9 @@ void QueryResultCache::loadSnapshot(const std::string & path)
             /// Eviction metadata
             UInt8 has_meta = 0;
             readBinary(has_meta, buf);
-            size_t hit_count = 0, recompute_cost = 0, size_bytes = 0;
+            size_t hit_count = 0;
+            size_t recompute_cost = 0;
+            size_t size_bytes = 0;
             if (has_meta)
             {
                 readVarUInt(hit_count, buf);
