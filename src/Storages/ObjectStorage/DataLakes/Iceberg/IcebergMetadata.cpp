@@ -512,14 +512,18 @@ bool IcebergMetadata::optimize(
         persistent_components.metadata_compression_method);
     auto metadata_object = getMetadataJSONObject(
         metadata_file_path, object_storage, persistent_components.metadata_cache, context, log, compression_method, persistent_components.table_uuid);
+    const Int64 current_snapshot_id = !metadata_object->has(f_current_snapshot_id) || metadata_object->isNull(f_current_snapshot_id)
+        ? -1
+        : metadata_object->getValue<Int64>(f_current_snapshot_id);
     /// A rewrite republishes a snapshot chain built from append history, so on a table without a
     /// current snapshot it would resurrect the rows that `SELECT` reads as gone.
-    if (!metadata_object->has(f_current_snapshot_id) || metadata_object->isNull(f_current_snapshot_id)
-        || metadata_object->getValue<Int64>(f_current_snapshot_id) < 0)
+    if (current_snapshot_id < 0)
     {
         LOG_INFO(log, "No current snapshot found, skipping compaction");
         return true;
     }
+    if (!traverseMetadataAndFindNecessarySnapshotObject(metadata_object, current_snapshot_id, persistent_components.schema_processor))
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", current_snapshot_id);
 
 #if CLICKHOUSE_CLOUD
     if (!iceberg_compaction_metadata_generator)
