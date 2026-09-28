@@ -7,12 +7,14 @@
 #endif
 
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -21,6 +23,29 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// Words that MySQL and PostgreSQL put right after `SET` and that are not ClickHouse settings:
+/// scope modifiers (`SET SESSION sql_mode = ...`, `SET GLOBAL x = 1`, `SET LOCAL x TO 1`) and
+/// special forms (`SET NAMES utf8mb4`, `SET CHARACTER SET utf8mb4`, `SET TIME ZONE 'UTC'`).
+bool isForeignSetPrefix(const ASTPtr & name)
+{
+    const auto * identifier = name ? name->as<ASTIdentifier>() : nullptr;
+    if (!identifier || identifier->compound())
+        return false;
+
+    static constexpr std::string_view prefixes[]
+        = {"SESSION", "GLOBAL", "LOCAL", "PERSIST", "PERSIST_ONLY", "NAMES", "CHARACTER", "TIME"};
+    const String & word = identifier->name();
+    for (const auto prefix : prefixes)
+        if (equalsCaseInsensitive(word, prefix))
+            return true;
+    return false;
+}
+
 }
 
 bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -33,11 +58,12 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
     /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...`,
     /// which the transpiler below can still take as foreign text. A SET that stops right after the
-    /// `SET <setting>` shorthand with more input left falls through as well: e.g. MySQL
-    /// `SET SESSION sql_mode = ...` would otherwise be taken as the shorthand `SET SESSION`
-    /// (`SESSION = true`) followed by junk. Any other SET that leaves trailing input, like
-    /// `SET max_threads = 1 garbage` or `SET ROLE NONE garbage`, stays a ClickHouse SET, so the
-    /// caller reports the ordinary syntax error at the trailing token.
+    /// `SET <word>` shorthand with more input left falls through as well when `<word>` is a foreign
+    /// prefix (see `isForeignSetPrefix`): e.g. MySQL `SET SESSION sql_mode = ...` would otherwise be
+    /// taken as the shorthand `SET SESSION` (`SESSION = true`) followed by junk. Any other SET that
+    /// leaves trailing input, like `SET max_threads = 1 garbage`, `SET max_threads garbage` or
+    /// `SET ROLE NONE garbage`, stays a ClickHouse SET, so the caller reports the ordinary syntax
+    /// error at the trailing token.
     if (isCommittedToSetQuery(pos))
     {
         const auto set_begin = pos;
@@ -59,7 +85,7 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             ASTPtr shorthand_name;
             ParserKeyword(Keyword::SET).ignore(shorthand_end, shorthand_expected);
             ParserCompoundIdentifier().parse(shorthand_end, shorthand_name, shorthand_expected);
-            if (pos != shorthand_end)
+            if (pos != shorthand_end || !isForeignSetPrefix(shorthand_name))
                 return true;
 
             pos = set_begin;

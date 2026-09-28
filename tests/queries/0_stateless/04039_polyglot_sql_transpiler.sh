@@ -71,3 +71,12 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
     -q "SET ROLE NONE garbage" 2>&1 | grep -ci 'polyglot'
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
     -q "SET ROLE NONE garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+
+# Test that a malformed ClickHouse shorthand SET stays a ClickHouse SET too: only foreign prefixes
+# like `SESSION` / `GLOBAL` fall through to the transpiler, not every `SET <setting>` prefix
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET GLOBAL max_connections = 10" 2>&1 | grep -cim1 'polyglot'
