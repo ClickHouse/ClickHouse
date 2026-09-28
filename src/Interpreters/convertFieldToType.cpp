@@ -449,6 +449,26 @@ std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_mul
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
+    /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
+    /// the target type. Unwrap a temporal source hint too, so that such a constant takes the typed `Date` / `DateTime`
+    /// / `Time` branches below instead of being reinterpreted as a raw number - otherwise
+    /// `CAST(toDate32('1970-01-02') AS Nullable(Date32))` would become one second past the epoch in a `DateTime64`.
+    if (from_type_hint && !src.isNull())
+    {
+        const IDataType * unwrapped_hint = from_type_hint;
+        while (true)
+        {
+            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
+                unwrapped_hint = nullable_hint->getNestedType().get();
+            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
+                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
+            else
+                break;
+        }
+        if (WhichDataType(*unwrapped_hint).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+            from_type_hint = unwrapped_hint;
+    }
+
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;

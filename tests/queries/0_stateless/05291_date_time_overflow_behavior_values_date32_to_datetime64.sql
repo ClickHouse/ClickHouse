@@ -34,3 +34,11 @@ SELECT * FROM values('dt DateTime64(9, \'UTC\')', toDate32('2299-12-31'), toDate
 SELECT count() FROM t_values_date32_overflow WHERE dt IN (toDate32('2299-12-31'));
 
 DROP TABLE t_values_date32_overflow;
+
+-- A non-NULL `Nullable(Date32)` constant is a plain `Date32` value: it is converted from its day number (midnight of
+-- that day), not reinterpreted as a count of seconds, and its overflow follows `date_time_overflow_behavior` too.
+SELECT 'nullable';
+SELECT * FROM values('dt DateTime64(3, \'UTC\')', CAST(toDate32('1970-01-02') AS Nullable(Date32)));
+SELECT * FROM values('dt DateTime64(9, \'UTC\')', CAST(toDate32('2299-12-31') AS Nullable(Date32)));
+SET date_time_overflow_behavior = 'throw';
+SELECT * FROM values('dt DateTime64(9, \'UTC\')', CAST(toDate32('2299-12-31') AS Nullable(Date32))); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }

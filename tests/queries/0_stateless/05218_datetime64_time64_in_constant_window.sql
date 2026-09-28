@@ -198,3 +198,20 @@ insert into t_05218_time64_in_window values ('8 values scale', toDateTime64('197
 insert into t_05218_time64_in_window select '9 select scale', toDateTime64('1970-01-02 12:34:56.789789', 6, 'UTC');
 select k, t from t_05218_time64_in_window order by k;
 drop table t_05218_time64_in_window;
+
+select 'A Nullable / LowCardinality DateTime / DateTime64 constant inserted into a Time64 column';
+-- A non-NULL constant of `Nullable(T)` / `LowCardinality(T)` is a plain `T` value: it must take the same typed
+-- projection branch, not be reinterpreted as raw seconds (`36:34:56`). `values` and the `VALUES` expression fallback
+-- (templates disabled) both go through `convertFieldToType` with the wrapped type as the source hint.
+select * from values('t Time64(3)',
+    cast(toDateTime('1970-01-02 12:34:56', 'UTC') as Nullable(DateTime('UTC'))),
+    cast(toDateTime64('1970-01-02 12:34:56.789', 3, 'UTC') as Nullable(DateTime64(3, 'UTC'))),
+    cast(toDateTime('1970-01-02 12:34:56', 'UTC') as LowCardinality(Nullable(DateTime('UTC')))))
+settings allow_suspicious_low_cardinality_types = 1;
+drop table if exists t_05218_time64_nullable_source;
+create table t_05218_time64_nullable_source (t Time64(3)) engine = Memory;
+set input_format_values_deduce_templates_of_expressions = 0;
+insert into t_05218_time64_nullable_source values (cast(toDateTime('1970-01-02 12:34:56', 'Europe/Moscow') as Nullable(DateTime('Europe/Moscow'))));
+insert into t_05218_time64_nullable_source values (cast(toDateTime64('1970-01-02 12:34:56.789', 3, 'UTC') as Nullable(DateTime64(3, 'UTC'))));
+select t from t_05218_time64_nullable_source order by t;
+drop table t_05218_time64_nullable_source;

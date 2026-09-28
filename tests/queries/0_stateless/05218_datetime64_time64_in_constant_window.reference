@@ -127,3 +127,9 @@ An in-window DateTime / DateTime64 constant inserted into a Time64 column
 7 select tz	12:34:56.789
 8 values scale	12:34:56.789
 9 select scale	12:34:56.789
+A Nullable / LowCardinality DateTime / DateTime64 constant inserted into a Time64 column
+12:34:56.000
+12:34:56.789
+12:34:56.000
+12:34:56.000
+12:34:56.789
