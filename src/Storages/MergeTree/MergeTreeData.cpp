@@ -4504,8 +4504,6 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     }
 }
 
-static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log);
-
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts, MergeTreeData::DataPartsVector * removed_parts)
 {
     if (parts.empty())
@@ -4538,18 +4536,15 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
     /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
-    writePartRemovalLog(*this, parts, log.load());
+    writePartRemovalLog(parts);
 }
 
-/// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
-/// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
-/// the exception the drop itself is reporting.
-static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log)
+void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts) const
 try
 {
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
-    auto table_id = storage.getStorageID();
-    if (auto part_log = storage.getContext()->getPartLog())
+    auto table_id = getStorageID();
+    if (auto part_log = getContext()->getPartLog())
     {
         PartLogElement part_log_elem;
 
@@ -5106,13 +5101,13 @@ void MergeTreeData::dropAllData()
                 removed_parts.push_back(part);
             }
         }
-        writePartRemovalLog(*this, removed_parts, log.load());
+        writePartRemovalLog(removed_parts);
 
         throw;
     }
 
     /// The parts of a dropped table never reach removePartsFinally(), so log their removal here.
-    writePartRemovalLog(*this, all_parts, log.load());
+    writePartRemovalLog(all_parts);
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);

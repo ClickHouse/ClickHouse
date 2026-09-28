@@ -2029,6 +2029,11 @@ protected:
         const Strings & mutation_ids,
         const std::map<String, UInt64> & projections_duration_ms);
 
+    /// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
+    /// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
+    /// the exception the drop itself is reporting.
+    void writePartRemovalLog(const DataPartsVector & parts) const;
+
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
