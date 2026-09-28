@@ -6,3 +6,6 @@
 -- row policy with a table function, applied inside INSERT ... SELECT into a table of another structure
 a	1
 a	2
+-- the same, with the subquery re-enabling the insertion table structure in its own SETTINGS
+a	1
+a	2

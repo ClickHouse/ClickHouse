@@ -47,6 +47,14 @@ INSERT INTO in_sub_fmt_dst SELECT 'a', x FROM in_sub_fmt_merge;
 SELECT y, x FROM in_sub_fmt_dst ORDER BY x;
 DROP ROW POLICY in_sub_fmt_policy_05290 ON in_sub_fmt_child;
 
+SELECT '-- the same, with the subquery re-enabling the insertion table structure in its own SETTINGS';
+TRUNCATE TABLE in_sub_fmt_dst;
+CREATE ROW POLICY OR REPLACE in_sub_fmt_policy_05290 ON in_sub_fmt_child
+    USING x IN (SELECT * FROM format(CSV, '1\n2') SETTINGS use_structure_from_insertion_table_in_table_functions = 1) TO ALL;
+INSERT INTO in_sub_fmt_dst SELECT 'a', x FROM in_sub_fmt_merge;
+SELECT y, x FROM in_sub_fmt_dst ORDER BY x;
+DROP ROW POLICY in_sub_fmt_policy_05290 ON in_sub_fmt_child;
+
 DROP TABLE in_sub_fmt_dst;
 DROP TABLE in_sub_fmt_merge;
 DROP TABLE in_sub_fmt_child;
