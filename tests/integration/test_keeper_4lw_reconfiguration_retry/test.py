@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 `rcfg` makes as many attempts per action as its `retry` field asks, stops retrying once
-`max_total_wait_time_ms` is used up, and rejects a negative `retry` before running any action.
+`max_total_wait_time_ms` is used up, does not queue an action again while its previous copy is still
+waiting to be applied, and rejects a negative `retry` before running any action.
 """
 
 import json
@@ -58,6 +59,10 @@ def attempts_logged_since(member_id, before, reported):
         time.sleep(0.5)
     time.sleep(1)
     return attempts_logged(member_id) - before
+
+
+def log_count(substring):
+    return int(node.count_in_log(substring))
 
 
 def add_unreachable_member(member_id, retry, **limits):
@@ -161,3 +166,29 @@ def test_retries_stop_at_max_total_wait_time(started_cluster):
         attempts,
     )
     assert attempts == 1, (result, elapsed, attempts)
+
+
+def test_retries_do_not_pile_up_in_the_update_queue(started_cluster):
+    # Members added by the other tests never join; their queued copies would delay this one.
+    node.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
+
+    pushed = "Processing config update (Add server 7): pushed"
+    accepted = "Processing config update (Add server 7): accepted"
+    pushed_before = log_count(pushed)
+    accepted_before = log_count(accepted)
+    result, elapsed, before = add_unreachable_member(
+        7, retry=10, max_action_wait_time_ms=1000
+    )
+    attempts = attempts_logged_since(7, before, reported=11)
+    pushes = log_count(pushed) - pushed_before
+    accepts = log_count(accepted) - accepted_before
+    info = (result, elapsed, attempts, pushes, accepts)
+
+    assert result["status"] == "error", info
+    assert "with retries count 10, attempts made 11" in result["message"], info
+    assert attempts == 11, info
+    # Each copy waits in the queue for several attempts while the previous one is joining.
+    assert 1 <= accepts <= attempts - 5, info
+    # The action is queued again once its previous copy was taken, never once per attempt.
+    assert 2 <= pushes <= accepts + 2, info
