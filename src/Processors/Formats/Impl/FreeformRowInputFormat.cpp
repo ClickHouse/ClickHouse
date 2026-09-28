@@ -962,11 +962,15 @@ void registerFreeformSchemaReader(FormatFactory & factory)
         [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<FreeformSchemaReader>(buf, settings); });
 
     /// Every escaping rule a matcher uses takes part in inference, so all of their settings affect the result.
+    /// The search bound decides whether inference succeeds at all, so it is part of the key too.
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "Freeform",
         [](const FormatSettings & settings)
         {
-            String result = fmt::format("column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+            String result = fmt::format(
+                "column_names_for_schema_inference={}, freeform_max_search_steps={}",
+                settings.column_names_for_schema_inference,
+                settings.freeform_max_search_steps);
             for (auto rule : {FormatSettings::EscapingRule::JSON, FormatSettings::EscapingRule::CSV, FormatSettings::EscapingRule::Raw,
                               FormatSettings::EscapingRule::Quoted, FormatSettings::EscapingRule::Escaped})
                 result += ", " + getAdditionalFormatInfoByEscapingRule(settings, rule);

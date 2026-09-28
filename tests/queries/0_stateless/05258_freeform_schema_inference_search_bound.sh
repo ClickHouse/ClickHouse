@@ -48,6 +48,11 @@ describe ", input_format_freeform_max_search_steps = 100000" | grep -c String
 describe ", input_format_freeform_max_search_steps = 0" | grep -c String
 describe ", compatibility = '26.9'" | grep -c String
 
+echo "A schema cached under a raised bound is not reused under the default bound"
+CACHE_SETTINGS="max_memory_usage = 150000000, schema_inference_use_cache_for_file = 1"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings $CACHE_SETTINGS, input_format_freeform_max_search_steps = 100000" 2>&1 | grep -c String
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Freeform') settings $CACHE_SETTINGS" 2>&1 | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED' | head -1
+
 echo "A wide row of tab-separated strings is refused"
 strings_row 24
 describe | grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED' | head -1
