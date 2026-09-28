@@ -570,6 +570,8 @@ has no `SHOW TABLES` privilege on, is an error rather than an empty result.
 The statement reads [system.table_settings](/reference/system-tables/table_settings), so it also needs the
 `SELECT` privilege on that table - for a temporary table of the session too - as `SHOW INDEX` needs it on
 `system.data_skipping_indices`. An `Alias` table whose target the user may not see is an error as well.
+A materialized view has no settings of its own and reports none: the `ENGINE ... SETTINGS` of its
+definition belong to its inner table, which can be named instead.
 
 The pattern of `LIKE` and `ILIKE` is matched against every name a setting answers to, including its
 aliases, and the setting is printed under its current name. `NOT LIKE` leaves out a setting when any

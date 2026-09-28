@@ -69,8 +69,9 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
         "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
         "user may not see it. To see it, the server configuration has to set `display_secrets_in_show_and_select`, "
         "the user needs the `displaySecretsInShowAndSelect` grant, and the query "
-        "`format_display_secrets_in_show_and_select`. A value taken from a `nats` or `rabbitmq` server config section, "
-        "and a secret supplied through a macro, is never shown."});
+        "`format_display_secrets_in_show_and_select`. A value a named collection supplied is shown only to a user who may "
+        "also read that collection and its secrets in `system.named_collections`, whether or not it is a secret. A value "
+        "taken from a `nats` or `rabbitmq` server config section, and a secret supplied through a macro, is never shown."});
 
     return description;
 }
