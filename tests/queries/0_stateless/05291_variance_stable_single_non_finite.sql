@@ -28,3 +28,17 @@ SELECT 'merge 1 + 3', varPopStableMerge(s) FROM (SELECT varPopStableState(x) AS 
 -- The -ForEach combinator over Nullable arrays, as PromQL stddev and stdvar use it: one position per series group.
 SELECT 'foreach', stddevPopStableForEach(v), varPopStableForEach(v) FROM (SELECT [toNullable(1.), toNullable(nan), toNullable(inf), NULL::Nullable(Float64)] AS v);
 SELECT 'foreach two rows', stddevPopStableForEach(v), varPopStableForEach(v) FROM (SELECT [toNullable(1.), toNullable(2.), toNullable(1.)] AS v UNION ALL SELECT [toNullable(3.), toNullable(nan), NULL::Nullable(Float64)]);
+
+-- A single non-finite pair: the population covariance is NaN, not 0.
+SELECT 'covar single nan', covarPopStable(x, y) FROM (SELECT arrayJoin([nan]) AS x, 1. AS y);
+SELECT 'covar single inf', covarPopStable(x, y) FROM (SELECT arrayJoin([inf]) AS x, 1. AS y);
+
+-- A single finite pair has a population covariance of 0.
+SELECT 'covar single 1', covarPopStable(x, y) FROM (SELECT arrayJoin([1.]) AS x, 1. AS y);
+
+-- A merge with an empty state keeps the population covariance at 0 when both values are equal and huge.
+SELECT 'covar merge 1e200 1e200 + empty', covarPopStableMerge(s) FROM (SELECT covarPopStableState(x, y) AS s FROM (SELECT arrayJoin([1e200, 1e200]) AS x, 1e200 AS y) UNION ALL SELECT covarPopStableState(x, y) FROM (SELECT arrayJoin([]::Array(Float64)) AS x, 0. AS y));
+SELECT 'covar merge empty + 1e200 1e200', covarPopStableMerge(s) FROM (SELECT covarPopStableState(x, y) AS s FROM (SELECT arrayJoin([]::Array(Float64)) AS x, 0. AS y) UNION ALL SELECT covarPopStableState(x, y) FROM (SELECT arrayJoin([1e200, 1e200]) AS x, 1e200 AS y));
+
+-- A merge of two finite pairs keeps a non-zero population covariance.
+SELECT 'covar merge 1 + 3', covarPopStableMerge(s) FROM (SELECT covarPopStableState(x, y) AS s FROM (SELECT 1. AS x, 1. AS y) UNION ALL SELECT covarPopStableState(x, y) FROM (SELECT 3. AS x, 3. AS y));

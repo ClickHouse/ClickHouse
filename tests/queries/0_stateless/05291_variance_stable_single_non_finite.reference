@@ -17,3 +17,9 @@ merge empty + empty	inf
 merge 1 + 3	1
 foreach	[0,nan,nan,NULL]	[0,nan,nan,NULL]
 foreach two rows	[1,nan,0]	[1,nan,0]
+covar single nan	nan
+covar single inf	nan
+covar single 1	0
+covar merge 1e200 1e200 + empty	0
+covar merge empty + 1e200 1e200	0
+covar merge 1 + 3	1
