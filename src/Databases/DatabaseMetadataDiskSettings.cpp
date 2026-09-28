@@ -78,4 +78,9 @@ void DatabaseMetadataDiskSettings::loadFromQuery(ASTStorage & storage_def, Conte
 {
     impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
 }
+
+bool DatabaseMetadataDiskSettings::hasBuiltin(std::string_view name)
+{
+    return DatabaseMetadataDiskSettingsImpl::hasBuiltin(name);
+}
 }

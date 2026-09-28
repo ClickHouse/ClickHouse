@@ -16,7 +16,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -194,11 +193,12 @@ void MultiplexedConnections::sendQuery(
         client_info.number_of_current_replica = replica_info->number_of_current_replica;
     }
 
-    /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
-    /// Make the analyzer being set, so it will be effectively applied on the remote server.
-    /// In other words, the initiator always controls whether the analyzer enabled or not for
-    /// all servers involved in the distributed query processing.
-    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+    /// The analyzer is the only query analysis this server has, but a replica in a rolling upgrade
+    /// can be older than 26.9 and have it switched off by its own profile. The setting is never
+    /// `changed` here anymore, so force it into the changed set to be sent: the initiator decides how
+    /// a query is analyzed on every server that takes part in it, and the two analyses do not speak
+    /// the same inter-server protocol.
+    modified_settings.set("allow_experimental_analyzer", true);
 
     /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
     /// servers of a distributed query must agree on it even when it comes only from server/profile

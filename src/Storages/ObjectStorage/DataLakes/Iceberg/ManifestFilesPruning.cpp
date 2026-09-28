@@ -6,6 +6,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
+#include <Core/DecimalFunctions.h>
+#include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
@@ -30,7 +33,6 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Iceberg
@@ -233,42 +235,188 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
 namespace
 {
 
-/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
-/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
-/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
-/// bits, so that the sign extension comes out of the shifts themselves.
-template <typename DecimalType>
 Field decodePartitionDecimal(const String & bytes, const IDataType & type)
 {
-    using NativeType = typename DecimalType::NativeType;
-    using UnsignedType = make_unsigned_t<NativeType>;
-
-    if (bytes.empty() || bytes.size() > sizeof(NativeType))
+    auto decoded = deserializeDecimalFromBinaryRepr(bytes, type);
+    if (!decoded.has_value())
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {}",
             bytes.size(),
-            sizeof(NativeType),
             type.getName());
-
-    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
-    for (const auto byte : bytes)
-        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
-
-    return DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), getDecimalScale(type));
+    return *decoded;
 }
 
-Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
+}
+
+namespace
 {
-    if (checkDecimal<Decimal32>(type))
-        return decodePartitionDecimal<Decimal32>(bytes, type);
-    if (checkDecimal<Decimal64>(type))
-        return decodePartitionDecimal<Decimal64>(bytes, type);
-    if (checkDecimal<Decimal128>(type))
-        return decodePartitionDecimal<Decimal128>(bytes, type);
-    if (checkDecimal<Decimal256>(type))
-        return decodePartitionDecimal<Decimal256>(bytes, type);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
+
+enum class PartitionTransformKind : uint8_t
+{
+    Day,
+    Month,
+    Year,
+    Hour,
+    NotInvertible,
+};
+
+PartitionTransformKind parsePartitionTransformKind(const String & transform_name_src)
+{
+    const String transform_name = Poco::toLower(transform_name_src);
+
+    if (transform_name == "day" || transform_name == "days" || transform_name == "date" || transform_name == "dates")
+        return PartitionTransformKind::Day;
+    if (transform_name == "month" || transform_name == "months")
+        return PartitionTransformKind::Month;
+    if (transform_name == "year" || transform_name == "years")
+        return PartitionTransformKind::Year;
+    if (transform_name == "hour" || transform_name == "hours")
+        return PartitionTransformKind::Hour;
+    return PartitionTransformKind::NotInvertible;
+}
+
+struct Interval
+{
+    Int64 first;
+    Int64 past_last;
+};
+
+std::optional<Interval> unitInterval(Int64 value)
+{
+    Int64 past_last = 0;
+    if (common::addOverflow(value, Int64{1}, past_last))
+        return {};
+    return Interval{value, past_last};
+}
+
+std::optional<Interval> refineInterval(std::optional<Interval> interval, Int64 factor)
+{
+    Int64 first = 0;
+    Int64 past_last = 0;
+    if (!interval || common::mulOverflow(interval->first, factor, first) || common::mulOverflow(interval->past_last, factor, past_last))
+        return {};
+    return Interval{first, past_last};
+}
+
+std::optional<Range> closedRange(std::optional<Interval> interval, std::optional<UInt32> decimal_scale)
+{
+    Int64 last = 0;
+    if (!interval || common::subOverflow(interval->past_last, Int64{1}, last))
+        return {};
+
+    if (decimal_scale)
+        return Range(
+            DecimalField<Decimal64>(interval->first, *decimal_scale), true, DecimalField<Decimal64>(last, *decimal_scale), true);
+    return Range(interval->first, true, last, true);
+}
+
+std::optional<Interval> dayIntervalOfMonthNum(Int64 month)
+{
+    auto months = unitInterval(month);
+    if (!months)
+        return {};
+
+    const auto & utc = DateLUT::instance("UTC");
+    const auto epoch = ExtendedDayNum(0);
+    const auto first = utc.addMonths(epoch, months->first);
+    const auto past_last = utc.addMonths(epoch, months->past_last);
+    if (utc.toMonthNumSinceEpoch(first) != months->first || utc.toMonthNumSinceEpoch(past_last) != months->past_last)
+        return {};
+
+    return Interval{Int64{first}, Int64{past_last}};
+}
+
+std::optional<Interval> dayIntervalOfYearNum(Int64 year)
+{
+    auto years = unitInterval(year);
+    if (!years)
+        return {};
+
+    const auto & utc = DateLUT::instance("UTC");
+    const auto epoch = ExtendedDayNum(0);
+    const auto first = utc.addYears(epoch, years->first);
+    const auto past_last = utc.addYears(epoch, years->past_last);
+    if (utc.toYearSinceEpoch(first) != years->first || utc.toYearSinceEpoch(past_last) != years->past_last)
+        return {};
+
+    return Interval{Int64{first}, Int64{past_last}};
+}
+
+std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
+{
+    switch (kind)
+    {
+        case PartitionTransformKind::Day:
+            return unitInterval(value);
+        case PartitionTransformKind::Month:
+            return dayIntervalOfMonthNum(value);
+        case PartitionTransformKind::Year:
+            return dayIntervalOfYearNum(value);
+        case PartitionTransformKind::Hour:
+        case PartitionTransformKind::NotInvertible:
+            return {};
+    }
+    UNREACHABLE();
+}
+
+std::optional<Interval> secondIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
+{
+    static constexpr Int64 seconds_per_hour = 3600;
+    static constexpr Int64 seconds_per_day = 86400;
+
+    switch (kind)
+    {
+        case PartitionTransformKind::Hour:
+            return refineInterval(unitInterval(value), seconds_per_hour);
+        case PartitionTransformKind::Day:
+        case PartitionTransformKind::Month:
+        case PartitionTransformKind::Year:
+            return refineInterval(dayIntervalOfPartitionValue(kind, value), seconds_per_day);
+        case PartitionTransformKind::NotInvertible:
+            return {};
+    }
+    UNREACHABLE();
+}
+
+std::optional<Int64> partitionValueAsInt64(const Field & partition_value)
+{
+    if (partition_value.getType() == Field::Types::Int64)
+        return partition_value.safeGet<Int64>();
+
+    if (partition_value.getType() == Field::Types::UInt64)
+    {
+        const UInt64 value = partition_value.safeGet<UInt64>();
+        if (value <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return static_cast<Int64>(value);
+    }
+
+    return {};
+}
+
+std::optional<Range> rangeOfPartitionValue(const String & transform_name, const Field & partition_value, const IDataType & source_type)
+{
+    const auto value = partitionValueAsInt64(partition_value);
+    if (!value)
+        return {};
+
+    const PartitionTransformKind kind = parsePartitionTransformKind(transform_name);
+    const WhichDataType which(source_type);
+
+    if (which.isDateOrDate32())
+        return closedRange(dayIntervalOfPartitionValue(kind, *value), std::nullopt);
+
+    if (which.isDateTime())
+        return closedRange(secondIntervalOfPartitionValue(kind, *value), std::nullopt);
+
+    if (which.isDateTime64())
+    {
+        const UInt32 scale = getDecimalScale(source_type);
+        return closedRange(
+            refineInterval(secondIntervalOfPartitionValue(kind, *value), DecimalUtils::scaleMultiplier<Int64>(scale)), scale);
+    }
+
+    return {};
 }
 
 }
@@ -296,7 +444,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
                     field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
                 else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-                    field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
+                    field = decodePartitionDecimal(field.safeGet<String>(), *type);
             }
 
             bool can_be_true = partition_key_condition->mayBeTrueInRange(
@@ -332,11 +480,29 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 && *info_it->second.nulls_count == 0;
         }
 
-        auto rect_it = entry_hyperrectangles.find(column_id);
-        if (rect_it == entry_hyperrectangles.end())
-            continue;
+        const DataTypes data_types{name_and_type->type};
 
-        if (has_no_nulls && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, {name_and_type->type}))
+        if (entry->common_partition_specification)
+        {
+            for (const auto & partition_field : *entry->common_partition_specification)
+            {
+                if (partition_field.source_id != column_id || partition_field.tuple_index < 0
+                    || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
+                    continue;
+
+                auto range = rangeOfPartitionValue(
+                    partition_field.transform_name,
+                    partition_value[partition_field.tuple_index],
+                    *removeNullable(name_and_type->type));
+
+                if (range && !key_condition.mayBeTrueInRange(1, &range->left, &range->right, data_types))
+                    return PruningReturnStatus::PARTITION_PRUNED;
+            }
+        }
+
+        auto rect_it = entry_hyperrectangles.find(column_id);
+        if (has_no_nulls && rect_it != entry_hyperrectangles.end()
+            && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }
