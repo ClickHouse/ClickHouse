@@ -48,3 +48,9 @@ SELECT arrayMap(x -> hex(reinterpretAsUInt64(assumeNotNull(x))), timeSeriesMaxTo
 -- The same for Float32: the NaN 0x7fc00001 beats the default NaN 0x7fc00000.
 SELECT arrayMap(x -> hex(reinterpretAsUInt32(assumeNotNull(x))), timeSeriesLastToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [reinterpretAsFloat32(toUInt32(0x7fc00001)), toFloat32(nan)]));
 SELECT arrayMap(x -> hex(reinterpretAsUInt32(assumeNotNull(x))), timeSeriesLastToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [toFloat32(nan), reinterpretAsFloat32(toUInt32(0x7fc00001))]));
+
+-- Of +0 and -0 the +0 wins in either order, so the later +0 is not counted as a change.
+SELECT timeSeriesLastToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [0., -0.]::Array(Float64));
+SELECT timeSeriesLastToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [-0., 0.]::Array(Float64));
+SELECT timeSeriesChangesToGrid(100, 100, 1, 10)([95, 95, 98]::Array(UInt32), [0., -0., 0.]::Array(Float64));
+SELECT timeSeriesChangesToGrid(100, 100, 1, 10)([95, 95, 98]::Array(UInt32), [-0., 0., 0.]::Array(Float64));
