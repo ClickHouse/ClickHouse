@@ -301,12 +301,26 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
+            auto snapshot_reader_creator = [&](const String & endpoint, const String & blob_namespace)
             {
-                connection_params.endpoint.storage_account_url = endpoint;
-                connection_params.endpoint.container_name = container_name;
+                /// The snapshot manifest records the source disk's object namespace, which for Azure is
+                /// `<container>` or `<container>/<prefix>` when the disk endpoint has a path below the
+                /// container (`AzureObjectStorage::getObjectsNamespace`), while the recorded object keys
+                /// are relative to that prefix. Split it back into a container and a blob prefix: used as
+                /// a container name, `<container>/<prefix>` gives every container-level request extra path
+                /// segments, which Azure rejects with `400 InvalidUri`.
+                auto snapshot_connection_params = connection_params;
+                /// A connection string already names the storage account; only a URL can be replaced.
+                if (!std::holds_alternative<AzureBlobStorage::ConnectionString>(snapshot_connection_params.auth_method))
+                    snapshot_connection_params.endpoint.storage_account_url = endpoint;
+                const auto slash_pos = blob_namespace.find('/');
+                snapshot_connection_params.endpoint.container_name = blob_namespace.substr(0, slash_pos);
+                snapshot_connection_params.endpoint.prefix = (slash_pos == String::npos) ? "" : blob_namespace.substr(slash_pos + 1);
+                /// The snapshot was taken from this container, so it exists; the existence check is also a
+                /// container-level request.
+                snapshot_connection_params.endpoint.container_already_exists = true;
                 return std::make_shared<BackupReaderAzureBlobStorage>(
-                    connection_params,
+                    snapshot_connection_params,
                     "",
                     params.allow_azure_native_copy,
                     params.read_settings,
