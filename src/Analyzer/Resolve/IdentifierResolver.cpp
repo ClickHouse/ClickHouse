@@ -310,8 +310,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// instead and swapping the storage after the passes (`replaceStorageInQueryTree`) types the
     /// tree by the table's current metadata, which differs from the block after a concurrent
     /// `ALTER ... MODIFY COLUMN`.
+    /// The inner query of an ordinary view referenced by the view query reads the table itself,
+    /// not the inserted block, so it must keep resolving the catalog table.
     if (auto view_source = context->getViewSource();
-        view_source && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+        view_source && !context->isViewInnerQuery()
+        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
         return std::make_shared<TableNode>(view_source, context);
 
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
