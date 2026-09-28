@@ -8,3 +8,5 @@ restored columns	id	UInt64
 restored columns	v	UInt64	v comment
 comment column	id	from alter
 comment column	v	
+same alter	id	set before
+same alter	v	set after
