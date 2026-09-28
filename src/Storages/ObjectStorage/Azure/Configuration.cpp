@@ -731,6 +731,10 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         partition_columns_in_data_file_was_set = true;
     }
 
+    /// A key-value strategy gets the same default as the named-collection form.
+    if (key_value_args.contains("partition_strategy") && !partition_columns_in_data_file_was_set)
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
+
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 

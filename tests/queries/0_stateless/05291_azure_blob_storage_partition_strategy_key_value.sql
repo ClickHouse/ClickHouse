@@ -1,13 +1,15 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: the AzureBlobStorage engine is not available in the fast test build
+-- Tag no-fasttest: needs the AzureBlobStorage engine and Azurite, which the fast test does not have
 
 -- AzureBlobStorage engine arguments may end with key-value `partition_strategy` and
 -- `partition_columns_in_data_file` arguments. The server itself writes `partition_strategy = 'none'`
 -- into the table definition when `PARTITION BY` resolves to no strategy, so such a table must attach again.
--- The SAS token in the URL keeps every statement off the network.
+-- The write arms use Azurite; the other statements use a SAS token in the URL and stay off the network.
 
 DROP TABLE IF EXISTS t_implicit;
 DROP TABLE IF EXISTS t_kv_hive;
+DROP TABLE IF EXISTS t_kv_hive_write;
+DROP TABLE IF EXISTS t_kv_hive_write_pcdf;
 DROP TABLE IF EXISTS t_kv_none;
 DROP TABLE IF EXISTS t_positional_equals;
 
@@ -28,6 +30,19 @@ SELECT name, partition_key FROM system.tables WHERE database = currentDatabase()
 DETACH TABLE t_kv_hive;
 ATTACH TABLE t_kv_hive;
 SELECT name, partition_key FROM system.tables WHERE database = currentDatabase() AND name = 't_kv_hive';
+
+-- `num_columns` of the written file: a key-value `hive` keeps the partition column out of it by default.
+CREATE TABLE t_kv_hive_write (id UInt64, v String)
+ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05291', concat(currentDatabase(), '_kv_hive'), 'Parquet', partition_strategy = 'hive')
+PARTITION BY id;
+INSERT INTO t_kv_hive_write VALUES (1, 'a');
+SELECT DISTINCT num_columns FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05291', concat(currentDatabase(), '_kv_hive/**.parquet'), 'ParquetMetadata') SETTINGS use_hive_partitioning = 0;
+
+CREATE TABLE t_kv_hive_write_pcdf (id UInt64, v String)
+ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05291', concat(currentDatabase(), '_kv_hive_pcdf'), 'Parquet', partition_strategy = 'hive', partition_columns_in_data_file = 1)
+PARTITION BY id;
+INSERT INTO t_kv_hive_write_pcdf VALUES (1, 'a');
+SELECT DISTINCT num_columns FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;', 'cont05291', concat(currentDatabase(), '_kv_hive_pcdf/**.parquet'), 'ParquetMetadata') SETTINGS use_hive_partitioning = 0;
 
 SET file_like_engine_default_partition_strategy = 'hive';
 
@@ -64,5 +79,7 @@ SELECT name, partition_key FROM system.tables WHERE database = currentDatabase()
 
 DROP TABLE t_implicit;
 DROP TABLE t_kv_hive;
+DROP TABLE t_kv_hive_write;
+DROP TABLE t_kv_hive_write_pcdf;
 DROP TABLE t_kv_none;
 DROP TABLE t_positional_equals;

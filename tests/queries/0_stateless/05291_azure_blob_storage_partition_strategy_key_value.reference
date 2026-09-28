@@ -2,6 +2,8 @@ t_implicit	1
 t_implicit	1
 t_kv_hive	id
 t_kv_hive	id
+1
+2
 t_kv_none	1
 t_kv_none	1
 id	UInt64					
