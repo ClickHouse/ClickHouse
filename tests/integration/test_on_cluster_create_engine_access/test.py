@@ -699,6 +699,45 @@ def test_merge_engine_denial_survives_the_absent_database_tolerance(started_clus
     assert_absent_everywhere(table)
 
 
+def test_alias_source_requires_show_columns_on_its_target(started_cluster):
+    # An `Alias` reports its target's columns, so a structure inferred through one also needs
+    # `SHOW COLUMNS` on the target. This user may describe the alias but not `local_target`.
+    user = make_user("u_alias_source", engines=("Merge", "Remote"))
+    alias = unique("alias_over_target")
+    for node in (node1, node2):
+        node.query(f"CREATE TABLE {DB}.{alias} ENGINE = Alias('{DB}', 'local_target')")
+    carriers = {
+        f"ENGINE = Merge('{DB}', '^{alias}$')": "access the table that",
+        f"ENGINE = Remote('127.0.0.1:9000', {DB}, {alias}, 'default')": "describe metadata exposed by",
+    }
+    try:
+        for definition, denial in carriers.items():
+            table = unique("t_alias_source")
+            local = _run(user, f"CREATE TABLE {DB}.{unique('t_alias_source_local')} {definition}")
+            for error in (create_on_cluster(user, table, definition), local):
+                assert error is not None, "the statement was accepted"
+                assert f"{denial} {DB}.{alias}" in error, error
+            assert_absent_everywhere(table)
+
+        for node in (node1, node2):
+            node.query(f"GRANT SHOW COLUMNS ON {DB}.local_target TO {user}")
+        for definition in carriers:
+            table = unique("t_alias_source")
+            assert create_on_cluster(user, table, definition) is None
+            for node in (node1, node2):
+                assert (
+                    node.query(
+                        f"SELECT name, type FROM system.columns "
+                        f"WHERE database = '{DB}' AND table = '{table}'"
+                    ).strip()
+                    == "x\tUInt64"
+                )
+                node.query(f"DROP TABLE {DB}.{table} SYNC")
+    finally:
+        for node in (node1, node2):
+            node.query(f"DROP TABLE IF EXISTS {DB}.{alias} SYNC")
+
+
 # ---------------------------------------------------------------------------
 # RemoteSecure shares the Remote branch
 # ---------------------------------------------------------------------------

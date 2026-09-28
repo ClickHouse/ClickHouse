@@ -315,6 +315,14 @@ void StorageMerge::checkSourceTablesAccess(
         else
             access->checkAccess(AccessType::SHOW_COLUMNS);
 
+        /// An `Alias` reports its target's columns, so the target needs `SHOW_COLUMNS` too.
+        if (const auto * alias = table->template as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to access the table that {} points to",
+                storage_id.getNameForLogs());
+
         ++table_num;
         return table_num >= max_tables_to_look;
     });
