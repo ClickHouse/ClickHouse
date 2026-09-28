@@ -42,6 +42,7 @@ BUILDS_FOR_TESTS = [
     j.name
     for j in JobConfigs.build_jobs
     + JobConfigs.coverage_build_jobs
+    + JobConfigs.build_llvm_coverage_pr_job
     + JobConfigs.release_build_jobs
 ]
 

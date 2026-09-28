@@ -99,7 +99,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(STYLE_AND_FAST_TESTS)
-            for job in JobConfigs.build_llvm_coverage_job
+            for job in JobConfigs.build_llvm_coverage_pr_job
         ],
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,

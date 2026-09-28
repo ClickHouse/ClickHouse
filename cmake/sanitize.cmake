@@ -157,6 +157,8 @@ option(WITH_COVERAGE "Instrumentation for code coverage with default implementat
 
 option(WITH_COVERAGE_DEPTH "Per-test coverage collection via SYSTEM SET COVERAGE TEST (requires WITH_COVERAGE)" OFF)
 
+option(WITH_COVERAGE_SINGLE_BYTE "Record only whether each region was executed, without execution counts and branch coverage, to avoid contention on the counters between threads (requires WITH_COVERAGE)" OFF)
+
 option(WITH_COVERAGE_XRAY
     "Use XRay instrumentation for exact call-depth tracking (requires WITH_COVERAGE and ENABLE_XRAY). Builds with -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1. XRay maps runtime function text addresses to LLVM profile records, solving the PIE FunctionPointer=0 limitation."
     OFF)
@@ -177,18 +179,20 @@ if (WITH_COVERAGE)
     set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping "SHELL:-mllvm -runtime-counter-relocation")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 
-    if (NOT WITH_COVERAGE_DEPTH)
-        # The regular coverage build only needs to know whether a region was executed, not how
-        # many times. With the default 64-bit counters every region entry is a read-modify-write
-        # of a counter shared by all threads, so threads running the same hot code keep stealing
-        # the cache line from each other; the relocation above adds a load of the bias to every
-        # update. This made the coverage binary 2.5 times slower than the debug build in
+    if (WITH_COVERAGE_SINGLE_BYTE)
+        if (WITH_COVERAGE_DEPTH)
+            # Per-test coverage reads the 64-bit counters in-process (`coverage.cpp`).
+            message (FATAL_ERROR "WITH_COVERAGE_SINGLE_BYTE is incompatible with WITH_COVERAGE_DEPTH")
+        endif()
+        # With the default 64-bit counters every region entry is a read-modify-write of a counter
+        # shared by all threads, so threads running the same hot code keep stealing the cache line
+        # from each other. This made the coverage binary 2.5 times slower than the debug build in
         # functional tests and 47 times slower in the parallel `INSERT` of the stateful data.
         # Single-byte counters are only ever set to zero, and with the conditional update the
         # store happens only on the first execution, so later executions merely read a shared
         # cache line. The report keeps line, region and function coverage but loses execution
         # counts and branch coverage (llvm-cov derives branch counts by subtracting counters).
-        # The per-test build keeps 64-bit counters: `coverage.cpp` reads them in-process.
+        message (STATUS "Using single-byte coverage counters (no execution counts, no branch coverage)")
         set (COVERAGE_FLAGS ${COVERAGE_FLAGS} "SHELL:-mllvm -enable-single-byte-coverage" "SHELL:-mllvm -conditional-counter-update")
     endif()
 

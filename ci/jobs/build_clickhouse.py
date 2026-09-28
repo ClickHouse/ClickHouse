@@ -64,6 +64,13 @@ PR_CACHE_WARMUP_BUILD_TYPES = set(PR_CACHE_WARMUP_TO_RELEASE)
 for _warmup_type, _release_type in PR_CACHE_WARMUP_TO_RELEASE.items():
     BUILD_TYPE_TO_CMAKE[_warmup_type] = BUILD_TYPE_TO_CMAKE[_release_type]
 
+# The PR coverage build: the master coverage build with single-byte counters, which are
+# several times faster under multithreaded load but record no execution counts and no
+# branch coverage (see `cmake/sanitize.cmake`). Master keeps the 64-bit counters.
+BUILD_TYPE_TO_CMAKE[BuildTypes.LLVM_COVERAGE_SINGLE_BYTE_BUILD] = (
+    BUILD_TYPE_TO_CMAKE[BuildTypes.LLVM_COVERAGE_BUILD] + " -DWITH_COVERAGE_SINGLE_BYTE=ON"
+)
+
 # Only the release builds are packaged: their packages are what gets published, and what
 # the `Install packages` and `Compatibility check` jobs install. The debug, sanitizer and
 # CFI builds are consumed as the plain `clickhouse` binary, which every build uploads

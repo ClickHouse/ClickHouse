@@ -375,6 +375,8 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_TSAN = "arm_tsan"
     ARM_MSAN = "arm_msan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
+    # PR variant of LLVM_COVERAGE_BUILD with single-byte counters (see `cmake/sanitize.cmake`)
+    LLVM_COVERAGE_SINGLE_BYTE_BUILD = "llvm_coverage_single_byte_build"
     PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"

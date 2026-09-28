@@ -1354,6 +1354,25 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
+    # Pull requests build the coverage binary with single-byte counters: it provides the same
+    # artifacts, but runs several times faster under multithreaded load, at the cost of
+    # execution counts and branch coverage, which the master build keeps. A separate job name
+    # keeps the two builds apart in the CI cache.
+    build_llvm_coverage_pr_job = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.LLVM_COVERAGE_SINGLE_BYTE_BUILD,
+            provides=[
+                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+                ArtifactNames.UNITTEST_LLVM_COVERAGE,
+            ],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+    )
 
     unittest_llvm_coverage_job = common_unit_test_job_config.parametrize(
         Job.ParamSet(
