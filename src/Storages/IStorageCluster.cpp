@@ -137,9 +137,13 @@ void IStorageCluster::read(
     {
         if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
         {
+            /// Replicas resolve unqualified table names against their own current database.
+            ASTPtr filter_ast = query_info.additional_filter_ast->clone();
+            AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).visitTableExpressions(*filter_ast);
+
             Tuple resolved_filter;
             resolved_filter.push_back(StorageID(ITableFunction::getDatabaseName(), table_function->name).getFullNameNotQuoted());
-            resolved_filter.push_back(query_info.additional_filter_ast->formatWithSecretsOneLine());
+            resolved_filter.push_back(filter_ast->formatWithSecretsOneLine());
 
             Map forwarded_filters;
             forwarded_filters.push_back(std::move(resolved_filter));

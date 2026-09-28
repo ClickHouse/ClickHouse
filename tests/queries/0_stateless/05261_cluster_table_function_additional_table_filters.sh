@@ -32,3 +32,7 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t WHERE n IN (SELECT number
 
 # A `url` read that `parallel_replicas_for_cluster_engines` turns into `urlCluster`.
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM url('$URL', TSV, 'n UInt64') AS t SETTINGS additional_table_filters = {'t': 'n > 1'}, enable_parallel_replicas = 1, parallel_replicas_for_cluster_engines = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3, parallel_replicas_mode = 'read_tasks', automatic_parallel_replicas_mode = 0"
+
+# The tables in a filter are those of the current database.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ids (id UInt64) ENGINE = Memory AS SELECT arrayJoin([2, 3])"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n IN (SELECT id FROM ids)'}"
