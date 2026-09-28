@@ -24,7 +24,9 @@ namespace
 /// '2024 April 4' would otherwise be silently truncated to the Unix timestamp 2024. Reject any
 /// characters left after the value. The `Time64` parser also pads a fractional part that consists of a
 /// bare '.' with zeros, so reject a value that ends with '.', like '12:00:00.'.
-void assertDateTimeFullyParsed(ReadBufferFromMemory & buf, bool skip_zero_padding)
+/// `value_begin` is the start of the argument: it cannot be taken from `buf.buffer()`, because
+/// `ReadBuffer::next` resets the working buffer to an empty one at the end of the data.
+void assertDateTimeFullyParsed(ReadBufferFromMemory & buf, const char * value_begin, bool skip_zero_padding)
 {
     const char * value_end = buf.position();
 
@@ -36,7 +38,7 @@ void assertDateTimeFullyParsed(ReadBufferFromMemory & buf, bool skip_zero_paddin
     if (!buf.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has trailing characters after the value");
 
-    if (value_end != buf.buffer().begin() && value_end[-1] == '.')
+    if (value_end != value_begin && value_end[-1] == '.')
         throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has no digits after the fractional separator");
 }
 
@@ -97,11 +99,12 @@ public:
                 const size_t next_offset = (*offsets)[i];
                 const size_t string_size = next_offset - current_offset;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, string_size);
 
                 DateTime64 value = 0;
                 readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
-                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/false);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/false);
                 vec_result[i] = value;
 
                 current_offset = next_offset;
@@ -118,11 +121,12 @@ public:
             {
                 const size_t next_offset = current_offset + fixed_string_size;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, fixed_string_size);
 
                 DateTime64 value = 0;
                 readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
-                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/true);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/true);
                 vec_result[i] = value;
 
                 current_offset = next_offset;
@@ -153,11 +157,12 @@ public:
                 const size_t next_offset = (*offsets)[i];
                 const size_t string_size = next_offset - current_offset;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, string_size);
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
-                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/false);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/false);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
@@ -174,11 +179,12 @@ public:
             {
                 const size_t next_offset = current_offset + fixed_string_size;
 
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
+                const char * value_begin = reinterpret_cast<const char *>(&(*chars)[current_offset]);
+                ReadBufferFromMemory read_buffer(value_begin, fixed_string_size);
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
-                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/true);
+                assertDateTimeFullyParsed(read_buffer, value_begin, /*skip_zero_padding=*/true);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
