@@ -348,6 +348,7 @@ void StorageSetOrJoinBase::completeMutation(UInt64 mutation_id)
     /// Once the mutation is committed, the files it replaces may already be gone, and its replacement
     /// is the only durable copy of the table. If it is neither staged nor in place, the state is broken:
     /// removing anything or clearing the marker would silently lose the data, so refuse instead.
+    /// A zero-length replacement is valid: it is what a mutation that deletes every row writes.
     const String replacement_file_name = toString(mutation_id) + file_suffix;
     if (!disk->existsFile(path + mutation_data_file_name) && !disk->existsFile(path + replacement_file_name))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
