@@ -1546,13 +1546,13 @@ Strings StorageDistributed::getDataPaths() const
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
-    /// a `Remote` database has none, so the statement would be a silent no-op reported as success,
+    /// a read-through database proxy has none, so the statement would be a silent no-op reported as success,
     /// while the user expects the remote table to be truncated; reject it like the rest of the DDL
     /// against such a database.
     if (is_remote_database_proxy)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Table {} is a read-through proxy of a `Remote` database and does not support TRUNCATE TABLE",
+            "Table {} is a read-through database proxy and does not support TRUNCATE TABLE",
             getStorageID().getNameForLogs());
 
     std::lock_guard lock(cluster_nodes_mutex);
@@ -2084,6 +2084,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 StorageID{remote_database, remote_table},
                 structure_context,
                 /* table_func_ptr = */ nullptr);
+            columns.clearColumnTTLs();
         }
 
         return std::make_shared<StorageDistributed>(
@@ -2493,7 +2494,10 @@ void registerStorageRemote(StorageFactory & factory)
                     args.getLocalContext(),
                     parsed.remote_table_function_ptr);
                 if (columns.empty())
+                {
                     columns = std::move(inferred);
+                    columns.clearColumnTTLs();
+                }
             }
             catch (const Exception & e)
             {

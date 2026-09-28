@@ -2,6 +2,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/SeccompFilter.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -230,11 +231,20 @@ DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class TextIndexPostingListApplyMode : uint8_t
 {
-    MATERIALIZE,
-    LAZY,
+    Materialize,
+    Lazy,
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
+enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
+{
+    BruteForce,
+    Leapfrog,
+    Auto,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
@@ -459,6 +469,8 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
+
+DECLARE_SETTING_ENUM(SeccompMode)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
