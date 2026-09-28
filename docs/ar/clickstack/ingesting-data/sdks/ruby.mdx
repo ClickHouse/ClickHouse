@@ -6,27 +6,15 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'التسجيل', 'التكامل', 'مراقبة التطبيقات']
 ---
 
-يدعم هذا الدليل:
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✖️ السجلات</td>
-      <td className="pe-2">✖️ ️️المقاييس</td>
-      <td className="pe-2">✅ التتبعات</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['traces']} />
 
 *لإرسال السجلات إلى ClickStack، يُرجى إرسالها عبر [OpenTelemetry Collector](/ar/clickstack/ingesting-data/collector).*
 
-<div id="getting-started">
-  ## البدء
-</div>
+## البدء {#getting-started}
 
-<div id="install-otel-packages">
-  ### تثبيت حزم OpenTelemetry
-</div>
+### تثبيت حزم OpenTelemetry {#install-otel-packages}
 
 استخدم الأمر التالي لتثبيت حزمة OpenTelemetry.
 
@@ -34,9 +22,7 @@ keywords: ['clickstack', 'sdk', 'التسجيل', 'التكامل', 'مراقب�
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-<div id="configure-otel-logger-formatter">
-  ### تهيئة OpenTelemetry + مُنسِّق logger
-</div>
+### تهيئة OpenTelemetry + مُنسِّق logger {#configure-otel-logger-formatter}
 
 بعد ذلك، ستحتاج إلى تهيئة آلية التتبّع في OpenTelemetry
 وضبط مُنسِّق رسائل السجل لـ logger الخاص بـ Rails بحيث يمكن ربط السجلات
@@ -77,26 +63,24 @@ Rails.application.configure do
 end
 ```
 
-<div id="configure-environment-variables">
-  ### تهيئة متغيرات البيئة
-</div>
+### تهيئة متغيرات البيئة {#configure-environment-variables}
 
 بعد ذلك، ستحتاج إلى تهيئة متغيرات البيئة التالية في الصدفة لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>
