@@ -219,21 +219,26 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
 
+    /// `Progress` is updated concurrently and only piecewise atomically, so the counts are taken from
+    /// one snapshot: otherwise a total number of rows published between two loads could make the
+    /// counts be in rows while the carrier of the history below is still taken to be bytes.
+    const ProgressValues progress_values = progress.getValues();
+
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
-    if (progress.total_rows_to_read || progress.total_bytes_to_read)
+    if (progress_values.total_rows_to_read || progress_values.total_bytes_to_read)
     {
         size_t current_count = 0;
         size_t max_count = 0;
-        bool count_in_rows = progress.total_rows_to_read != 0;
-        if (progress.total_rows_to_read)
+        bool count_in_rows = progress_values.total_rows_to_read != 0;
+        if (count_in_rows)
         {
-            current_count = progress.read_rows;
-            max_count = std::max(progress.read_rows, progress.total_rows_to_read);
+            current_count = progress_values.read_rows;
+            max_count = std::max(progress_values.read_rows, progress_values.total_rows_to_read);
         }
         else
         {
-            current_count = progress.read_bytes;
-            max_count = std::max(progress.read_bytes, progress.total_bytes_to_read);
+            current_count = progress_values.read_bytes;
+            max_count = std::max(progress_values.read_bytes, progress_values.total_bytes_to_read);
         }
 
         /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
