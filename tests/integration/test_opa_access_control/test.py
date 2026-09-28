@@ -280,3 +280,56 @@ def test_the_system_database_is_out_of_scope_by_default():
     set_rule("False")
 
     assert node.query("SELECT 1 FROM system.one", user="analyst").strip() == "1"
+
+
+DENY_EMAIL = "'customer_email' not in input['action']['resource'].get('columns', [])"
+
+
+def test_a_denied_column_is_refused():
+    set_rule(DENY_EMAIL)
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT customer_email FROM plain.orders", user="analyst"
+    )
+
+
+def test_the_remaining_columns_stay_readable():
+    set_rule(DENY_EMAIL)
+
+    assert (
+        node.query("SELECT id, amount FROM plain.orders ORDER BY id", user="analyst")
+        == "1\t10\n2\t20\n"
+    )
+
+
+def test_select_star_is_refused_when_any_column_is_denied():
+    """`*` expands to every column, so the check names the denied one and must fail - the same way it
+    does with a native column grant."""
+    set_rule(DENY_EMAIL)
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT * FROM plain.orders", user="analyst"
+    )
+
+
+def test_a_column_denial_is_evaluated_per_column():
+    """A trivial query reads no column data but still needs one readable column. The decision has to
+    be per column, so a policy that denies one column does not make the whole table unreadable."""
+    set_rule(DENY_EMAIL)
+
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+
+    asked = [
+        request["input"]["action"]["resource"].get("columns")
+        for request in recorded_requests()
+    ]
+    # The column list is what the policy is asked about, one column at a time on this path.
+    assert ["customer_email"] in asked
+
+
+def test_a_table_wide_denial_also_blocks_a_trivial_query():
+    set_rule("False")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT count() FROM plain.orders", user="analyst"
+    )
