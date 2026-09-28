@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
@@ -29,6 +30,14 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
     const IColumn::Filter & filter = column_filter->getData();
     const IColumn::Offsets & in_offsets = array.getOffsets();
+
+    if (filter.size() != array.getData().size())
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of filter ({}) doesn't match size of column ({})",
+            filter.size(),
+            array.getData().size());
+
     chassert(filter.size() == array.getData().size());
 
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
