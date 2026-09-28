@@ -4125,7 +4125,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     /// The cache key (table, part, condition) cannot express the rows a unique key hides, nor the value of
     /// a non-deterministic virtual column, which can change while the key stays the same.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
-        && !is_parallel_reading_from_replicas
+        /// A follower must keep every part the coordinator may assign to it.
+        && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
         /// A TopK read keys its PREWHERE entries on the whole filter too, which this probe does not carry.
         && !top_k_filter_info
         && !storage_snapshot->metadata->hasUniqueKey()
