@@ -267,6 +267,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             delete_data_writers[partition_key]->flush();
             delete_data_writers[partition_key]->finalize();
+            delete_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                delete_data_writers[partition_key]->getColumnSizesOnDisk(), getPositionDeleteFileSampleBlock());
             delete_data_write_buffers[partition_key]->finalize();
             {
                 auto delete_bytes = delete_data_write_buffers[partition_key]->count();
@@ -289,6 +291,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
+        auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
 
         Block block;
         while (executor.pull(block))
@@ -338,6 +341,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             update_data_writers[partition_key]->flush();
             update_data_writers[partition_key]->finalize();
+            update_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                update_data_writers[partition_key]->getColumnSizesOnDisk(), update_sample_block);
             update_data_write_buffers[partition_key]->finalize();
             {
                 auto update_bytes = update_data_write_buffers[partition_key]->count();
@@ -378,7 +383,7 @@ static bool writeMetadataFiles(
 
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
     Int64 parent_snapshot = -1;
-    if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
+    if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     auto sum_files = [](const DataFileWriteResultWithStats & set) -> std::tuple<Int64, Int64, Int64>
@@ -753,7 +758,7 @@ void mutate(
         current_iceberg_snapshot.metadata_file_path = metadata_path;
         current_iceberg_snapshot.metadata_version = last_version;
         current_iceberg_snapshot.schema_id = static_cast<Int32>(current_schema_id);
-        if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
+        if (metadata->has(Iceberg::f_current_snapshot_id))
         {
             Int64 snapshot_id_val = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
             if (snapshot_id_val >= 0)
