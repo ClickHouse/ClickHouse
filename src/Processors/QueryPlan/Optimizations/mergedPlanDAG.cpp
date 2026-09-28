@@ -388,8 +388,8 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
 
             bool reads_left = false;
             bool reads_right = false;
-            for (auto it = node_sources.begin(); it != node_sources.end(); ++it)
-                (*it < source_shift ? reads_left : reads_right) = true;
+            for (const auto source : node_sources)
+                (source < source_shift ? reads_left : reads_right) = true;
 
             const bool reads_left_only = reads_left && !reads_right;
             const bool reads_right_only = reads_right && !reads_left;
