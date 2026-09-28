@@ -47,8 +47,8 @@ T restoreCommonBits(T value, T common_negative, T common_positive, T sign_bit)
 template <typename T>
 void transposeBytes(T value, UInt64 * matrix, UInt32 col)
 {
-    UInt8 * matrix8 = reinterpret_cast<UInt8 *>(matrix);
-    const UInt8 * value8 = reinterpret_cast<const UInt8 *>(&value);
+    unsigned char * matrix8 = reinterpret_cast<unsigned char *>(matrix);
+    const unsigned char * value8 = reinterpret_cast<const unsigned char *>(&value);
 
     if constexpr (sizeof(T) > 4)
     {
@@ -127,7 +127,7 @@ namespace scalar
 
 inline ALWAYS_INLINE void transpose64x8(UInt64 * src_dst)
 {
-    const auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
+    const auto * src8 = reinterpret_cast<const unsigned char *>(src_dst);
     UInt64 dst[8] = {};
 
     for (UInt32 i = 0; i < 64; ++i)
@@ -250,7 +250,7 @@ ALWAYS_INLINE void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 t
     {
         if (tail == 64)
         {
-            auto * matrix8 = reinterpret_cast<UInt8 *>(matrix);
+            auto * matrix8 = reinterpret_cast<unsigned char *>(matrix);
             for (UInt32 group = 0; group < 8; ++group)
             {
                 UInt64 rows[8];
