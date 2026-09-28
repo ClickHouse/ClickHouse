@@ -86,7 +86,7 @@ SELECT '-- subqueries in expressions after aggregation are rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM t3448 HAVING count() IN (SELECT count() FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']));
 
 SELECT '-- results of queries with aggregation';
-SELECT hasAny(letters, ['a']) OR hasAny(letters, ['i']) AS r, count() FROM t3448 GROUP BY hasAny(letters, ['a']), hasAny(letters, ['i']) ORDER BY r;
+SELECT hasAny(letters, ['a']) OR hasAny(letters, ['i']) AS r, count() FROM t3448 GROUP BY hasAny(letters, ['a']), hasAny(letters, ['i']) ORDER BY ALL;
 SELECT count() FROM t3448 GROUP BY hasAny(letters, ['a']), hasAny(letters, ['i']) HAVING hasAny(letters, ['a']) OR hasAny(letters, ['i']) ORDER BY ALL;
 SELECT hasAny(letters, ['a']) OR hasAny(letters, ['i']) AS r, count() FROM t3448 GROUP BY hasAny(letters, ['a']), hasAny(letters, ['i']) WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 SELECT hasAny(letters, ['a']) OR hasAny(letters, ['i']) AS r, count() FROM t3448 GROUP BY GROUPING SETS ((hasAny(letters, ['a']), hasAny(letters, ['i'])), ()) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
