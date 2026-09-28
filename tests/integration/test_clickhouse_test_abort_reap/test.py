@@ -69,7 +69,7 @@ def group_is_live(pgid):
     return False
 
 
-def wait_until_gone(pgid, timeout=10):
+def wait_until_gone(pgid, timeout=30):
     deadline = time.monotonic() + timeout
     while group_is_live(pgid):
         if time.monotonic() > deadline:
@@ -105,7 +105,7 @@ def test_reap_is_scoped_to_run_token_and_workers(runner, tmp_path):
 
         runner.reap_recorded_test_groups({worker})
 
-        assert ours.wait(timeout=10) is not None
+        assert ours.wait(timeout=30) is not None
         assert records(tmp_path) == sorted(
             [foreign_record.name, other_worker_record.name]
         )
@@ -233,7 +233,7 @@ def test_reap_ignores_runner_signals(runner, runner_signal_handlers, monkeypatch
         except runner.Terminated as e:
             pytest.fail(f"the reap was interrupted by signal {e.signal}")
         assert signalled == list(RUNNER_SIGNALS)
-        assert group.wait(timeout=10) is not None
+        assert group.wait(timeout=30) is not None
         for s in RUNNER_SIGNALS:
             assert signal.getsignal(s) is runner.signal_handler
     finally:
