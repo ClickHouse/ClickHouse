@@ -103,7 +103,14 @@
       "group": "Data ingestion",
       "pages": [
         "integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+            {
+         "expanded": false,
+         "group": "Apache Airflow",
+         "pages": [
+          "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+          "integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
+         ]
+        },
         "integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,

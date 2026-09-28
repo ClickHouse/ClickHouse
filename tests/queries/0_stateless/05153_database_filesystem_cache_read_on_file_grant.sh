@@ -55,4 +55,13 @@ ${CLICKHOUSE_CLIENT} <<EOF
 DROP DATABASE $fs_db;
 DROP USER $user;
 EOF
-rm -rd "$dir"
+
+# The directory outlives the shell only as the target of the database, but the database's metadata
+# outlives it too, and a `Filesystem` database whose path is gone makes the server refuse to start
+# with `Path does not exist` at metadata loading. Remove the directory only once the database that
+# points at it is really gone, so a run whose `DROP` did not land -- the stress test kills the server
+# under the tests -- leaves a server that still starts.
+if [[ "$(${CLICKHOUSE_CLIENT} --query "EXISTS DATABASE $fs_db" 2>/dev/null)" == "0" ]]
+then
+    rm -rd "$dir"
+fi

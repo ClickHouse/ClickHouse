@@ -1,0 +1,16 @@
+<!-- One query per arm of DB::UTF8::isValidUTF8, plus one malformed input. 12 and 16 bytes bracket the
+     tuned cutoff simdutf_min_len_after_ascii; 1023 and 148 bytes bracket entering simdutf ahead of the
+     ASCII pre-pass; simdutf_min_len is simdutf's block size, so that arm is sampled, not bracketed.
+     materialize() keeps the argument out of constant folding; the malformed row needs its alias, because
+     the folded argument would otherwise become the result column's name and the harness client decodes
+     header strings as strict UTF-8. -->
+<test>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 8))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 1023))) FROM numbers(300000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 341))) FROM numbers(300000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 96) || repeat('\xD0\xB0', 26))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 6))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 4))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xFF' || repeat('a', 15))) AS v FROM numbers(3000000) FORMAT Null</query>
+</test>
