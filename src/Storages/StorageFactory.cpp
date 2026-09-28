@@ -44,11 +44,8 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-/// Whether the definition is replayed rather than stated by the user now. Each term marks a definition
-/// this server did not judge: `attach` outranks `secondary` in `LoadingStrictnessLevel`, Keeper recovery
-/// carries no metadata transaction, and Shared Catalog secondaries re-execute the initiator's DDL. A
-/// secondary refusing one retries its queue entry forever, and a definition already on disk that is
-/// refused takes down the load of everything stored next to it rather than only itself.
+/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
+/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 static bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
@@ -247,15 +244,8 @@ StoragePtr StorageFactory::get(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
 
-            /// A column `TTL` is the one part of a definition that an engine can be left holding without
-            /// anyone having written it there: a definition without a column list takes the source table's
-            /// columns whole, and a server that still copied the source column's `TTL` wrote it back out on
-            /// the next `ALTER`. Those definitions are on disk now, and refusing one while the metadata is
-            /// read fails the load of everything stored beside it rather than that one table - with
-            /// `async_load_databases = 0` the server does not start, leaving hand-editing the metadata file
-            /// as the only way out. Such an engine holds the `TTL` without acting on it, so a replayed
-            /// definition is loaded and the `TTL` ignored. A table `TTL` is never inherited, so it stays
-            /// refused wherever it appears.
+            /// Older servers could store a column `TTL` inherited from the source table (see #121335).
+            /// Accept it in a replayed definition, so such tables can still load; the `TTL` is ignored.
             if (!columns.getColumnTTLs().empty() && !isReplayedTableDefinition(mode, query, local_context))
                 check_feature(
                     "TTL clause",
