@@ -1,0 +1,9 @@
+-- HAVING
+0	6
+1	6
+-- projection
+20	20	21
+4	4	5
+20	20	21
+-- every reference is rewritten
+3	3	0
