@@ -45,12 +45,14 @@ public:
     /// Whether this setting's value is reported as a placeholder rather than as it is.
     bool masks(const SettingDescription & setting) const
     {
-        /// A secret the server's configuration supplied - the password of its `nats` or `rabbitmq` section, or a macro
-        /// expanded into a stated one - belongs to whoever runs the server: `SHOW CREATE TABLE` never prints it, and
+        /// What the server's configuration supplied - any value of a `nats` or `rabbitmq` section, or a macro expanded
+        /// into a stated secret - belongs to whoever runs the server: `SHOW CREATE TABLE` never prints it, and
         /// `displaySecretsInShowAndSelect` does not reach it. So it is asked first, before a collection's rule.
         /// A named collection's values are secret as a whole, as in `system.named_collections` - a broker address says
         /// where a table points as much as a password - so only a reader of that collection sees them.
-        if (setting.origin == SettingOrigin::Config || setting.from_server_configuration)
+        if (setting.from_server_configuration)
+            return true;
+        if (setting.origin == SettingOrigin::Config)
             return !setting.masked_value.empty();
         if (setting.origin == SettingOrigin::NamedCollection)
             return !may_show_named_collection || !may_show_named_collection(setting.named_collection);

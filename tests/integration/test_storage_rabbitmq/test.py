@@ -3989,7 +3989,7 @@ def test_rabbitmq_table_settings_report_effective_values(rabbitmq_cluster, db, u
     assert TSV(rows) == TSV(
         f"rabbitmq_exchange_name\t{unique}_macro\t0\tdefinition\n"
         "rabbitmq_password\t[HIDDEN]\t1\tconfig\n"
-        "rabbitmq_username\troot\t0\tconfig\n"
+        "rabbitmq_username\t[HIDDEN]\t1\tconfig\n"
     )
 
 

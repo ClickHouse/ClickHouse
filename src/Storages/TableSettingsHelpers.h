@@ -58,7 +58,8 @@ SettingDescriptions withOriginByValue(SettingDescriptions settings);
 
 /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
 /// enumeration masks it, and sets `origin` when given. For an engine that derives its working values after
-/// loading its settings - by macro expansion, a generated default or a server config fallback.
+/// loading its settings - by macro expansion, a generated default or a server config fallback. A value whose
+/// `origin` is `Config` came from the engine's server config section, and is never shown.
 void setEffectiveValue(
     SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin = {});
 

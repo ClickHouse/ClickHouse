@@ -3,10 +3,11 @@
 # Tag no-fasttest: the fast test build has no `NATS`.
 #
 # A `NATS` table that states no authentication of its own authenticates with the server's `<nats>` config
-# section, and `system.table_settings` reports that value with source `config`. It is the operator's secret, not
-# one a query stated: `SHOW CREATE TABLE` never printed it, so `displaySecretsInShowAndSelect` - which reveals the
-# secrets a query states - must not reveal it either. The table stating its own credentials is the control: the
-# same reader sees those, so the config secret is hidden by its source and not because no secret can be shown.
+# section, and `system.table_settings` reports those values with source `config`. They are the operator's, the
+# username as much as the password, not what a query stated: `SHOW CREATE TABLE` never printed them, so
+# `displaySecretsInShowAndSelect` - which reveals the secrets a query states - must not reveal them either. The table
+# stating its own credentials is the control: the same reader sees those, so the config values are hidden by their
+# source and not because nothing can be shown.
 # A macro from the server configuration expanded into a secret the table states is the server's in the same way.
 #
 # `clickhouse-local` with a config file, because the stateless test server does not enable

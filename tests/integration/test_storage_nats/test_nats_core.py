@@ -1692,7 +1692,7 @@ def test_nats_table_settings_report_effective_values(nats_cluster):
     assert TSV(rows) == TSV(
         "nats_password\t[HIDDEN]\t1\tconfig\n"
         "nats_subjects\ttest_subject_effective\t0\tdefinition\n"
-        "nats_username\tclickhouse\t0\tconfig\n"
+        "nats_username\t[HIDDEN]\t1\tconfig\n"
     )
 
     instance.query("DROP TABLE test.nats")

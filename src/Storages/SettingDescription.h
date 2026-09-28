@@ -53,8 +53,9 @@ struct SettingDescription
     /// Which named collection supplied this value, where `origin` says one did, since a grant names one. Empty where
     /// the engine recorded none, which no reader may then see.
     String named_collection;
-    /// Whether the value carries something from the server configuration - a macro expanded into a stated
-    /// `nats_password = '{nats_pw}'`, say. Such a secret is never shown: see `SettingRowWriter::masks`.
+    /// Whether the value is the server configuration's rather than the query's: taken from an engine's server config
+    /// section, or a secret with a macro expanded into it - a stated `nats_password = '{nats_pw}'`, say. Never
+    /// shown: see `SettingRowWriter::masks`.
     bool from_server_configuration = false;
 };
 

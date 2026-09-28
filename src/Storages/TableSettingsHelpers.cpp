@@ -213,6 +213,10 @@ void setEffectiveValue(
     it->masked_value = value != it->default_value ? maskEngineSettingValue(*it, Field(value)) : String{};
     if (origin)
         it->origin = *origin;
+    /// A value an engine takes from its server config section is the server's, secret or not: the username of a
+    /// `rabbitmq` section says as much about the server as its password, and `SHOW CREATE TABLE` shows neither.
+    if (origin == SettingOrigin::Config)
+        it->from_server_configuration = true;
 }
 
 void setEffectiveValueWithConfigFallback(
