@@ -3921,7 +3921,7 @@ TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
     /// The failed segment is `PARTIALLY_DOWNLOADED_NO_CONTINUATION`; releasing its last holder removes it,
     /// so the same offset gets a new segment, which caches normally once the directory can be created.
     seg.reset();
-    holder.reset();
+    holder = nullptr;
     fs::remove(key_path);
     auto next_holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
     ASSERT_EQ(next_holder->size(), 1u);
