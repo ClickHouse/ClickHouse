@@ -24,13 +24,13 @@ toYYYYMMDDhhmmss(datetime[, timezone])
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` number containing the year, month, day, hour, minute and second (YYYY * 10000000000 + MM * 100000000 + DD * 1000000 + hh * 10000 + mm * 100 + ss).", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
-        {"Convert a date and time to YYYYMMDDhhmmss format", R"(
-SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
+        {"Convert current date and time to YYYYMMDDhhmmss format", R"(
+SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
         )",
         R"(
-┌─toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')─┐
-│                                                           20230302112209 │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
+│                        20230302112209 │
+└───────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

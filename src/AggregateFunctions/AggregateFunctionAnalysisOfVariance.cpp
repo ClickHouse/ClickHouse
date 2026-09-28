@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
 
@@ -56,7 +55,7 @@ public:
         data(place).add(columns[0]->getFloat64(row_num), columns[1]->getUInt(row_num));
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -112,16 +111,15 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
 
 }
 
-void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory)
 {
         FunctionDocumentation::Description description_analysisOfVariance = R"(
 Provides a statistical test for one-way analysis of variance (ANOVA test). It is a test over several groups of normally distributed observations to find out whether all groups have the same mean or not.
 
-<Note>
+:::note
 Groups are enumerated starting from 0 and there should be at least two groups to perform a test.
 There should be at least one group with the number of observations greater than one.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax_analysisOfVariance = R"(
 analysisOfVariance(val, group_no)

@@ -3,8 +3,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Core/FormatFactorySettings.h>
-#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
@@ -23,213 +21,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace Setting
-{
-    /// There are way too many format settings to handle extern declarations manually.
-#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    extern Settings ## TYPE NAME;
-FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
-#undef DECLARE_FORMAT_EXTERN
-
-    extern const SettingsBool formatdatetime_f_prints_single_zero;
-    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
-    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
-    extern const SettingsBool formatdatetime_format_without_leading_zeros;
-    extern const SettingsBool formatdatetime_e_with_space_padding;
-    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
-    extern const SettingsBool parsedatetime_e_requires_space_padding;
-    extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
-    extern const SettingsBool least_greatest_legacy_null_behavior;
-    extern const SettingsBool h3togeo_lon_lat_result_order;
-    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
-    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
-    extern const SettingsBool count_matches_stop_at_empty_match;
-    extern const SettingsUInt64 function_visible_width_behavior;
-    extern const SettingsBool function_json_value_return_type_allow_complex;
-    extern const SettingsBool functions_h3_default_if_invalid;
-    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
-    extern const SettingsBool decimal_check_overflow;
-    extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool use_variant_default_implementation_for_comparisons;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-    extern const SettingsBool variant_throw_on_type_mismatch;
-    extern const SettingsBool dynamic_throw_on_type_mismatch;
-    extern const SettingsBool allow_simdjson;
-    extern const SettingsBool cast_string_to_variant_use_inference;
-    extern const SettingsBool cast_string_to_dynamic_use_inference;
-    extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
-    extern const SettingsBool print_pretty_type_names;
-    extern const SettingsBool implicit_select;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 function_range_max_elements_in_block;
-    extern const SettingsUInt64 highlight_max_matches_per_row;
-    extern const SettingsUInt64 regexp_max_matches_per_row;
-    extern const SettingsUInt64 extract_key_value_pairs_max_pairs_per_row;
-    extern const SettingsUInt64 max_wkb_geometry_elements;
-    extern const SettingsUInt64 function_base58_max_input_size;
-    extern const SettingsBool validate_polygons;
-    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
-    extern const SettingsBool short_circuit_function_evaluation_for_nulls;
-    extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
-    extern const SettingsTimezone session_timezone;
-}
-
-UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
-{
-    /// Registration rule: a setting belongs here when a function captures it at build time (in its constructor
-    /// or `build`), it changes the value the function returns, and nothing about it reaches
-    /// `ActionsDAG::Node::updateHash` (which sees only the function name, the result type name, the children and
-    /// the constant values). A setting that changes the result *type* is already covered by the type name in the
-    /// hash and does not need an entry.
-    SipHash hash;
-    /// `formatDateTime` / `parseDateTime`.
-    hash.update(settings[Setting::formatdatetime_f_prints_single_zero].value);
-    hash.update(settings[Setting::formatdatetime_f_prints_scale_number_of_digits].value);
-    hash.update(settings[Setting::formatdatetime_parsedatetime_m_is_month_name].value);
-    hash.update(settings[Setting::formatdatetime_format_without_leading_zeros].value);
-    hash.update(settings[Setting::formatdatetime_e_with_space_padding].value);
-    hash.update(settings[Setting::parsedatetime_parse_without_leading_zeros].value);
-    hash.update(settings[Setting::parsedatetime_e_requires_space_padding].value);
-    /// `locate` swaps its haystack and needle arguments.
-    hash.update(settings[Setting::function_locate_has_mysql_compatible_argument_order].value);
-    /// `least` / `greatest` propagate or skip NULL arguments.
-    hash.update(settings[Setting::least_greatest_legacy_null_behavior].value);
-    /// `h3ToGeo` swaps the tuple elements, `geoToH3` swaps the arguments.
-    hash.update(settings[Setting::h3togeo_lon_lat_result_order].value);
-    hash.update(static_cast<UInt64>(settings[Setting::geotoh3_argument_order].value));
-    /// `splitBy*` with `max_substrings`, `countMatches`, `visibleWidth`, `JSON_VALUE`.
-    hash.update(settings[Setting::splitby_max_substrings_includes_remaining_string].value);
-    hash.update(settings[Setting::count_matches_stop_at_empty_match].value);
-    hash.update(settings[Setting::function_visible_width_behavior].value);
-    hash.update(settings[Setting::function_json_value_return_type_allow_complex].value);
-    /// Return a default instead of throwing: a verdict written by the lenient session must not be served to a
-    /// session that is supposed to see the exception.
-    hash.update(settings[Setting::functions_h3_default_if_invalid].value);
-    hash.update(settings[Setting::cast_ipv4_ipv6_default_on_conversion_error].value);
-    /// The comparison functions freeze this state in `ComparisonParams` when they are built: it decides how a
-    /// string literal compared to a `DateTime` / `Enum` / `Decimal` column is parsed and whether an
-    /// out-of-range or invalid literal compares or throws.
-    hash.update(settings[Setting::decimal_check_overflow].value);
-    hash.update(settings[Setting::validate_enum_literals_in_operators].value);
-    hash.update(settings[Setting::use_variant_default_implementation_for_comparisons].value);
-    hash.update(static_cast<UInt64>(settings[Setting::cast_string_to_date_time_mode].value));
-    /// The `Variant` / `Dynamic` function adaptors freeze this strictness when the function is built and then
-    /// decide per alternative whether an incompatible type throws or evaluates to `NULL`. The result type is
-    /// the same either way, so a lenient session must not prime a "no marks match" verdict for a strict one,
-    /// which is supposed to see the exception.
-    hash.update(settings[Setting::variant_throw_on_type_mismatch].value);
-    hash.update(settings[Setting::dynamic_throw_on_type_mismatch].value);
-    /// The `JSON*` functions snapshot a whole `FormatSettings` in `JSONOverloadResolver`, and `JSON_VALUE` /
-    /// `JSON_QUERY` / `JSON_EXISTS` snapshot the parser choice in the `FunctionSQLJSON` constructor. Those decide
-    /// how a JSON scalar is parsed into the result type and whether a duplicated or null typed path is skipped or
-    /// throws, without changing the function name or the result type, so the DAG hash cannot tell two such
-    /// predicates apart. (`cast_string_to_date_time_mode`, which `JSONOverloadResolver` latches into
-    /// `format_settings.date_time_input_format`, is already registered above. The JSONPath parser limits
-    /// `max_parser_depth` / `max_parser_backtracks` would not be needed for this family alone: the path is a
-    /// constant, so exceeding them raises `TOO_DEEP_RECURSION` while it is parsed, before any mark is read. They
-    /// are registered below for `formatQuery`, which parses a column value per row.)
-    hash.update(settings[Setting::precise_float_parsing].value);
-    hash.update(settings[Setting::input_format_read_datetime_number_as_raw_value].value);
-    hash.update(settings[Setting::input_format_json_try_infer_numbers_from_strings].value);
-    hash.update(settings[Setting::input_format_try_infer_dates].value);
-    hash.update(settings[Setting::input_format_try_infer_datetimes].value);
-    hash.update(settings[Setting::input_format_try_infer_datetimes_only_datetime64].value);
-    hash.update(settings[Setting::schema_inference_make_columns_nullable].valueOr(2));
-    hash.update(settings[Setting::type_json_skip_duplicated_paths].value);
-    hash.update(settings[Setting::type_json_skip_null_typed_paths].value);
-    hash.update(settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object].value);
-    hash.update(settings[Setting::allow_simdjson].value);
-    /// The conversion functions (`toString`, `toDateTime`, `toDecimal*`, `toIPv4`, `CAST`, ...) snapshot a whole
-    /// `FormatSettings` and a few more settings in `FunctionConvertSettings` when they are built, and the text
-    /// serializations they call for a `String` source or target read it: `toString(d)` of a `DateTime64(1)` column
-    /// is `'2024-05-05 10:00:00.0'` or `'2024-05-05 10:00:00'` depending on
-    /// `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands`, `toString(b)` of a `Bool` column
-    /// is whatever `bool_true_representation` says, and `toString` of an `Array(DateTime)` renders the elements
-    /// as `'1714903200'` under `date_time_output_format = 'unix_timestamp'`, all with the same result type, so a
-    /// "no marks match" verdict written under one value must not be served under the other. The same goes for
-    /// whether an out-of-range or invalid value saturates, becomes a default or throws. (Settings that only
-    /// change the result type, such as `cast_keep_nullable`, are covered by the type name in the DAG hash.)
-    hash.update(static_cast<UInt64>(settings[Setting::date_time_overflow_behavior].value));
-    hash.update(static_cast<UInt64>(settings[Setting::date_time_input_format].value));
-    hash.update(static_cast<UInt64>(settings[Setting::date_time_output_format].value));
-    hash.update(settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands].value);
-    hash.update(static_cast<UInt64>(settings[Setting::interval_output_format].value));
-    hash.update(settings[Setting::bool_true_representation].value);
-    hash.update(settings[Setting::bool_false_representation].value);
-    hash.update(settings[Setting::allow_special_bool_values_inside_variant].value);
-    hash.update(settings[Setting::output_format_decimal_trailing_zeros].value);
-    hash.update(settings[Setting::output_format_always_write_decimal_point_in_float_and_decimal].value);
-    hash.update(settings[Setting::output_format_float_precision].value);
-    hash.update(settings[Setting::output_format_trim_fixed_string].value);
-    hash.update(settings[Setting::output_format_pretty_grid_charset].value);
-    hash.update(settings[Setting::output_format_values_escape_quote_with_quote].value);
-    hash.update(settings[Setting::input_format_null_as_default].value);
-    hash.update(settings[Setting::input_format_tsv_enum_as_number].value);
-    hash.update(settings[Setting::input_format_tsv_use_best_effort_in_schema_inference].value);
-    hash.update(settings[Setting::input_format_try_infer_integers].value);
-    hash.update(settings[Setting::input_format_try_infer_exponent_floats].value);
-    hash.update(settings[Setting::input_format_try_infer_variants].value);
-    hash.update(settings[Setting::input_format_ipv4_default_on_conversion_error].value);
-    hash.update(settings[Setting::input_format_ipv6_default_on_conversion_error].value);
-    hash.update(settings[Setting::check_conversion_from_numbers_to_enum].value);
-    hash.update(settings[Setting::type_json_skip_invalid_typed_paths].value);
-    hash.update(settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp].value);
-    hash.update(settings[Setting::json_type_escape_dots_in_keys].value);
-    hash.update(settings[Setting::cast_string_to_variant_use_inference].value);
-    hash.update(settings[Setting::cast_string_to_dynamic_use_inference].value);
-    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
-    /// `toTypeName` latches `print_pretty_type_names` and returns `getPrettyName()` or `getName()` of the same type,
-    /// and `formatQuery` / `formatQuerySingleLine` (and their `OrNull` variants) snapshot the parser settings when
-    /// they are built: `implicit_select` decides whether `'1 + 1'` is a query or a parse error, the parser limits
-    /// decide whether a long or deeply nested query is formatted or throws, and `print_pretty_type_names` decides
-    /// how the data types in it are rendered. The result type is `String` (or `Nullable(String)`) either way.
-    hash.update(settings[Setting::print_pretty_type_names].value);
-    hash.update(settings[Setting::implicit_select].value);
-    hash.update(settings[Setting::max_query_size].value);
-    hash.update(settings[Setting::max_parser_depth].value);
-    hash.update(settings[Setting::max_parser_backtracks].value);
-    /// Per-row limits that a function captures when it is built and that decide between a result and an
-    /// exception (`range`, `highlight`, `extractAllGroups*`, `readWKB*`, `base58Decode` and friends), or that
-    /// truncate the result (`extractKeyValuePairs` returns at most that many pairs). `validate_polygons` decides
-    /// whether `pointInPolygon` rejects an invalid polygon or computes with it. A lenient session must not prime
-    /// a "no marks match" verdict that a stricter session is then served instead of its rows or its exception.
-    hash.update(settings[Setting::function_range_max_elements_in_block].value);
-    hash.update(settings[Setting::highlight_max_matches_per_row].value);
-    hash.update(settings[Setting::regexp_max_matches_per_row].value);
-    hash.update(settings[Setting::extract_key_value_pairs_max_pairs_per_row].value);
-    hash.update(settings[Setting::max_wkb_geometry_elements].value);
-    hash.update(settings[Setting::function_base58_max_input_size].value);
-    hash.update(settings[Setting::validate_polygons].value);
-    /// Execution settings that never reach the DAG at all. `ExpressionActions` reads `short_circuit_function_evaluation`
-    /// to decide whether the branches of `if` / `multiIf` / `and` / `or` are evaluated only on the rows that need
-    /// them or on every row, so `if(flag, intDiv(42, x), 0) = 1` over rows with `flag = 0, x = 0` matches no row
-    /// under `'enable'` and throws under `'disable'`. `IExecutableFunction` snapshots the two `..._for_nulls`
-    /// settings in its constructor: with them, a function is not evaluated at all for the rows where an argument is
-    /// `NULL`; without them, it is evaluated on the values stored behind the `NULL`s and may throw on them. The
-    /// DAG and the result type are identical in both modes.
-    hash.update(static_cast<UInt64>(settings[Setting::short_circuit_function_evaluation].value));
-    hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls].value);
-    hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls_threshold].value);
-    /// `session_timezone` is not read by any function when it is built: `DateLUT::instance()` looks it up in the
-    /// query context every time a function needs the implicit time zone, which is what `toDateTime(s)`,
-    /// `parseDateTime(s, format)` and their relatives do for a `String` argument without an explicit time zone
-    /// (`KeyCondition` refuses to analyze exactly these for the same reason). The result type is the plain
-    /// `DateTime` without a time zone in its name, so the same `s` parses to a different Unix timestamp in two
-    /// sessions with an identical DAG hash.
-    hash.update(settings[Setting::session_timezone].value);
-    return hash.get64();
-}
-
-UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt)
-{
-    SipHash hash;
-    hash.update(condition_dag_hash);
-    hash.update(settings_salt);
-    return hash.get64();
-}
-
 QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
     SipHash hash;
@@ -237,15 +28,6 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     hash.update(part_name);
     hash.update(condition_hash);
     return hash.get128();
-}
-
-String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)
-{
-    /// NUL cannot occur in a file path or in a version token, so it is an unambiguous separator.
-    String part_name = path;
-    part_name.push_back('\0');
-    part_name.append(version_token);
-    return part_name;
 }
 
 size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
@@ -329,7 +111,7 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
@@ -338,8 +120,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
     if (auto entry = cache.get(key))
     {
-        if (increment_profile_events)
-            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
         std::shared_lock lock(entry->mutex);
 
@@ -354,8 +135,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     }
     else
     {
-        if (increment_profile_events)
-            ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
         LOG_TEST(
             logger,

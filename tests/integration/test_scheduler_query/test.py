@@ -7,7 +7,6 @@ import time
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
@@ -33,7 +32,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        """
+        f"""
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists main;
@@ -59,7 +58,7 @@ def assert_profile_event(node, query_id, profile_event, check) -> None:
 
 def test_create() -> None:
     node.query(
-        """
+        f"""
         create resource query (query);
         create workload all settings max_concurrent_queries=20;
         create workload admin in all settings priority=0;
@@ -75,13 +74,13 @@ def test_create() -> None:
         assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
 
         assert (
-            node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
+            node.query(f"{common_select_part} '%/admin' and type='unified' and priority=0") == "1\n"
         )
 
         assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
 
         assert (
-            node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
+            node.query(f"{common_select_part} '%/production' and type='unified' and weight=9")
             == "1\n"
         )
 
@@ -139,7 +138,7 @@ class QueryPool:
 def concurrent_queries() -> int:
     return int(
         node.query(
-            "select value from system.metrics where name='ConcurrentQueryAcquired'"
+            f"select value from system.metrics where name='ConcurrentQueryAcquired'"
         ).strip()
     )
 
@@ -171,7 +170,7 @@ def ensure_workload_concurrency(workload, limit: int) -> None:
 
 def test_max_concurrent_queries() -> None:
     node.query(
-        """
+        f"""
         create resource query (query);
         create workload all settings max_concurrent_queries=6;
         create workload admin in all settings priority=0;
@@ -208,7 +207,7 @@ def test_max_concurrent_queries() -> None:
 
 def test_max_waiting_queries_reached() -> None:
     node.query(
-        """
+        f"""
         create resource query (query);
         create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
         """
@@ -221,56 +220,5 @@ def test_max_waiting_queries_reached() -> None:
     ensure_workload_concurrency("all", 1)
     pool_all.stop()
     assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
-
-
-def test_admission_timeout_query_slot() -> None:
-    # One query slot, unlimited waiting queue: a second query must WAIT for the slot (not be
-    # rejected). With workload_admission_timeout_ms set it must fail after ~the timeout instead of
-    # waiting indefinitely, with the query-slot-specific error.
-    node.query(
-        """
-        create resource query (query);
-        create workload all settings max_concurrent_queries=1;
-        """
-    )
-
-    holder_error: list[str] = []
-
-    def hold_the_slot() -> None:
-        try:
-            node.query(
-                "select sleepEachRow(1) from numbers(30) "
-                "settings max_block_size=1, workload='all'",
-                query_id="admission_slot_holder",
-            )
-        except QueryRuntimeException as e:
-            holder_error.append(str(e))  # expected: killed at teardown
-
-    holder = threading.Thread(target=hold_the_slot)
-    holder.start()
-    try:
-        # Wait until the holder has acquired the only slot.
-        while (
-            node.query(
-                "select count() from system.processes where query_id = 'admission_slot_holder'"
-            ).strip()
-            == "0"
-        ):
-            time.sleep(0.1)
-
-        # The second query waits for the slot and must time out with QUERY_SLOT_ACQUISITION_TIMEOUT.
-        start = time.time()
-        error = node.query_and_get_error(
-            "select count(*) from numbers(100) "
-            "settings workload='all', workload_admission_timeout_ms=1000",
-            query_id="admission_slot_waiter",
-        )
-        elapsed = time.time() - start
-        assert "QUERY_SLOT_ACQUISITION_TIMEOUT" in error, error
-        assert "workload_admission_timeout_ms" in error, error
-        assert elapsed < 20, f"admission timeout took too long: {elapsed}s"
-    finally:
-        node.query("kill query where query_id = 'admission_slot_holder' sync")
-        holder.join()
 
 

@@ -5,8 +5,10 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 #include <Common/HashTable/HashTableAllocator.h>
@@ -18,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -93,11 +94,11 @@ private:
     static constexpr UInt8 max_skip_degree = UNIQUES_HASH_BITS_FOR_SKIP + 1;
 
     UInt32 m_size;          /// Number of elements
-    UInt8 size_degree{};      /// The size of the table as a power of 2
+    UInt8 size_degree;      /// The size of the table as a power of 2
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
-    HashValue * buf{};
+    HashValue * buf;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     /// For profiling.
@@ -127,6 +128,8 @@ private:
 
     /// The value is divided by 2 ^ skip_degree
     bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
+
+    HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
@@ -298,7 +301,7 @@ private:
 public:
     using value_type = Value;
 
-    UniquesHashSet() : // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
+    UniquesHashSet() :
         m_size(0),
         skip_degree(0),
         has_zero(false)
@@ -309,7 +312,7 @@ public:
 #endif
     }
 
-    UniquesHashSet(const UniquesHashSet & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
+    UniquesHashSet(const UniquesHashSet & rhs)
         : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);
@@ -341,20 +344,9 @@ public:
         free();
     }
 
-    static HashValue hash(Value key) { return static_cast<HashValue>(Hash()(key)); }
-
-    void ALWAYS_INLINE prefetch(HashValue hash_value) const
-    {
-        __builtin_prefetch(&buf[place(hash_value)]);
-    }
-
     void ALWAYS_INLINE insert(Value x)
     {
-        insertHash(hash(x));
-    }
-
-    void ALWAYS_INLINE insertHash(HashValue hash_value)
-    {
+        const HashValue hash_value = hash(x);
         if (!good(hash_value))
             return;
 
@@ -381,14 +373,14 @@ public:
                 /// We read and transform multiple values at once which allows both the compiler and the CPU to better optimize the code.
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
-                std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                std::array<HashValue, insert_many_batch_size> hash_value;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     hash_value[j] = hash(Transform(data[i + j]));
                 }
                 i += insert_many_batch_size;
 
-                std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                std::array<size_t, insert_many_batch_size> place_value_batch;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     place_value_batch[j] = place(hash_value[j]);
@@ -530,9 +522,7 @@ public:
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Cannot read UniquesHashSet: the element count is {}, which exceeds the maximum value of {}",
-                static_cast<size_t>(m_size), static_cast<size_t>(UNIQUES_HASH_MAX_SIZE));
+            throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
         free();
 

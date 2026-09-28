@@ -61,7 +61,7 @@ struct BitShiftLeftImpl
             const UInt8 * begin = pos;
 
             const size_t old_size = out_vec.size();
-            size_t length = 0;
+            size_t length;
             if (shift_left_bits)
                 length = end + shift_left_bytes - begin + 1; /// Moving to the left here will make a redundant byte to store the overflowing bits in the front
             else
@@ -79,7 +79,7 @@ struct BitShiftLeftImpl
                 if (shift_left_bits)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
-                    *out = static_cast<UInt8>(static_cast<UInt8>(*op_pointer >> (8 - shift_left_bits)) | previous);
+                    *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer) >> (8 - shift_left_bits)) | previous);
                     previous = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 }
                 else
@@ -190,26 +190,25 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
         )",
         R"(
-┌──a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
-│ 99 │ 01100011 │       140 │ 10001100       │
-└────┴──────────┴───────────┴────────────────┘
+┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
+│ 99 │ 01100011 │       140 │ 10001100                 │
+└────┴──────────┴───────────┴──────────────────────────┘
         )"},
         {"Usage example with hexadecimal encoding", R"(
--- The shifted value is binary, so it is shown with `hex`.
-SELECT 'abc' AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
+SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
         )",
         R"(
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 06162630  │
-└─────┴────────┴───────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
+│ abc │ 616263     │ &0        │ 06162630                    │
+└─────┴────────────┴───────────┴─────────────────────────────┘
         )"},
 {"Usage example with Fixed String encoding", R"(
-SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
         )",
 R"(
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 162630    │
-└─────┴────────┴───────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftLeft(toFixedString('abc', 3), 4))─┐
+│ abc │ 616263                       │ &0        │ 162630                                        │
+└─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
         )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

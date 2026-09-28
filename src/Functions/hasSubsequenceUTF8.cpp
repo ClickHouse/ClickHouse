@@ -25,7 +25,7 @@ using FunctionHasSubsequenceUTF8 = HasSubsequenceImpl<NameHasSubsequenceUTF8, Ha
 REGISTER_FUNCTION(hasSubsequenceUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [`hasSubsequence`](/reference/functions/regular-functions/string-search-functions#hasSubsequence) but assumes haystack and needle are UTF-8 encoded strings.
+Like [`hasSubsequence`](/sql-reference/functions/string-search-functions#hasSubsequence) but assumes haystack and needle are UTF-8 encoded strings.
     )";
     FunctionDocumentation::Syntax syntax = R"(
         hasSubsequenceUTF8(haystack, needle)
@@ -41,18 +41,18 @@ Like [`hasSubsequence`](/reference/functions/regular-functions/string-search-fun
         "Usage example",
         "SELECT hasSubsequenceUTF8('картошка', 'кошка');",
         R"(
-┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
-│                                       1 │
-└─────────────────────────────────────────┘
+┌─hasSubsequen⋯', 'кошка')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     },
     {
         "Non-matching subsequence",
         "SELECT hasSubsequenceUTF8('картошка', 'апельсин');",
         R"(
-┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
-│                                          0 │
-└────────────────────────────────────────────┘
+┌─hasSubsequen⋯'апельсин')─┐
+│                        0 │
+└──────────────────────────┘
         )"
     }
     };

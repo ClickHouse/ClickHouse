@@ -1,9 +1,0 @@
-<test>
-    <!-- avg over Date/Time result types converts each per-group state with an exact integer
-         division (see avgResultToValueExact), so the finalization cost is proportional to the
-         number of aggregation keys. Every query below produces one group per row to make the
-         finalization dominate. -->
-    <query>SELECT number AS k, avg(fromUnixTimestamp64Nano(1700000000000000000 + number, 'UTC')) FROM numbers_mt(20000000) GROUP BY k FORMAT Null</query>
-    <query>SELECT number AS k, avg(toDateTime(1700000000 + number % 100000000, 'UTC')) FROM numbers_mt(20000000) GROUP BY k FORMAT Null</query>
-    <query>SELECT number AS k, avg(toDate(number % 60000)) FROM numbers_mt(20000000) GROUP BY k FORMAT Null</query>
-</test>

@@ -35,9 +35,8 @@ SEMI LEFT JOIN joinbug_join using id2;
 -- type conversion
 SELECT * FROM ( SELECT toUInt32(11) AS id2 ) AS js1 SEMI LEFT JOIN joinbug_join USING (id2);
 
--- the right side of a storage join cannot be converted to a supertype of the key types,
--- but the analyzer can convert both keys to their common subtype
-SELECT * FROM ( SELECT toInt64(11) AS id2 ) AS js1 SEMI LEFT JOIN joinbug_join USING (id2) SETTINGS enable_analyzer = 1;
+-- can't convert right side in case on storage join
+SELECT * FROM ( SELECT toInt64(11) AS id2 ) AS js1 SEMI LEFT JOIN joinbug_join USING (id2); -- { serverError TYPE_MISMATCH, 386 }
 
 DROP TABLE joinbug;
 DROP TABLE joinbug_join;

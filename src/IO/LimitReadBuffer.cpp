@@ -74,19 +74,6 @@ LimitReadBuffer::~LimitReadBuffer()
         in->position() = position();
 }
 
-bool LimitReadBuffer::poll(size_t timeout_microseconds)
-{
-    if (hasPendingData())
-        return true;
-
-    in->position() = position();
-
-    if (bytes >= getEffectiveBufferSize())
-        return true;
-
-    return in->poll(timeout_microseconds);
-}
-
 size_t LimitReadBuffer::getEffectiveBufferSize() const
 {
     if (settings.read_no_less)

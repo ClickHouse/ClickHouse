@@ -10,7 +10,6 @@
                     <uri>http://proxy1</uri>
                     <uri>http://proxy2</uri>
                 </proxy>
-                <persistent_removal_log>true</persistent_removal_log>
             </s3>
             <s3_with_resolver>
                 <type>s3</type>
@@ -31,7 +30,6 @@
                         <proxy_cache_time>10</proxy_cache_time>
                     </resolver>
                 </proxy>
-                <persistent_removal_log>true</persistent_removal_log>
             </s3_with_resolver>
         </disks>
         <policies>

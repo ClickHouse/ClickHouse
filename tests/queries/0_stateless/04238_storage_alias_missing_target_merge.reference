@@ -1,9 +1,0 @@
--- an Alias whose target is a parameterized view, read through a Merge table
--- and through merge(), whose regexp admits the alias next to a readable table
--- the parameterized view itself keeps reporting the same error
--- a longer Alias chain to the parameterized view reports an unsupported read
--- an Alias to an ordinary table is still readable through a Merge table
-1
-2
-1
-2

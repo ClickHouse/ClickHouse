@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -59,6 +58,3 @@ void StorageSystemUserProcesses::fillData(MutableColumns & res_columns, ContextP
     }
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUserProcesses) }
