@@ -296,8 +296,44 @@ void collectLazyReads(const QueryPlan::Node & branch_root, std::vector<LazilyRea
 /// statistics. Only the lazy reads met on this descent qualify: a lazy read on the join side we do not
 /// descend into belongs to a different table, one that every replica reads in full rather than splits,
 /// and the cost model divides `input_bytes` by the number of replicas.
+/// The reads below `root`, without needing mutable access to the plan: a `const` node still hands out a
+/// mutable step, because `shared_ptr::get() const` returns `T *`. That is the same thing `findReadingStep`
+/// relies on, and it is what lets this run on the boundary node, which is reached as `const`.
+std::vector<ReadFromMergeTree *> collectReadingStepsBelow(const QueryPlan::Node & root)
+{
+    std::vector<ReadFromMergeTree *> reads;
+    std::vector<const QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            reads.push_back(read);
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return reads;
+}
+
+/// Does this subtree read `table`?
+bool subtreeReadsTable(const QueryPlan::Node & root, const MergeTreeData & table)
+{
+    for (const auto * read : collectReadingStepsBelow(root))
+        if (&read->getMergeTreeData() == &table)
+            return true;
+    return false;
+}
+
+/// `parallelized_table` is the table parallel replicas coordinates, which is where the descent has to end:
+/// the cost model divides the read's bytes by the replica count, and only that read is split between them.
+/// It is needed to pick a join's side, because the plan does not record which side the query wrote first.
+/// `JoinStepLogical::swapInputs` reorders the inputs and flips `Left` <-> `Right`, but leaves `Inner`
+/// alone - so a swapped `INNER` join, the common case, is indistinguishable from an unswapped one by kind,
+/// and `children[isRight(kind) ? 1 : 0]` then lands on the other relation.
 ReadFromMergeTree * findReadingStep(
-    const QueryPlan::Node & top_of_single_replica_plan, LazilyReadFromMergeTree ** lazy_reading_step = nullptr)
+    const QueryPlan::Node & top_of_single_replica_plan,
+    const MergeTreeData & parallelized_table,
+    LazilyReadFromMergeTree ** lazy_reading_step = nullptr)
 {
     if (lazy_reading_step)
         *lazy_reading_step = nullptr;
@@ -349,8 +385,22 @@ ReadFromMergeTree * findReadingStep(
             // those decomposable kinds and rejects `FULL`/`PASTE`/`CROSS`/etc., so for any other kind no
             // parallel-replicas plan is built and this function is never reached. The split below is
             // therefore safe by that invariant, not by a check here.
-            const auto kind = join_step->getJoin()->getTableJoin().kind();
-            reading_step = reading_step->children[isRight(kind) ? 1 : 0];
+            /// Descend the side that reads the parallelized table. Exactly one side may read it: the
+            /// caller established that the replicas plan coordinates a single read of it, and a table read
+            /// on both sides would leave nothing here to tell the two reads apart.
+            const bool left_reads_it = subtreeReadsTable(*reading_step->children[0], parallelized_table);
+            const bool right_reads_it = subtreeReadsTable(*reading_step->children[1], parallelized_table);
+            if (left_reads_it == right_reads_it)
+            {
+                LOG_DEBUG(
+                    getLogger("optimizeTree"),
+                    "The join on the way to the read has the parallelized table {} on {} of its sides, cannot "
+                    "tell which one is parallelized. Skipping optimization",
+                    parallelized_table.getStorageID().getNameForLogs(),
+                    left_reads_it ? "both" : "neither");
+                return nullptr;
+            }
+            reading_step = reading_step->children[left_reads_it ? 0 : 1];
             continue;
         }
 
@@ -380,24 +430,7 @@ ReadFromMergeTree * findReadingStep(
     return nullptr;
 }
 
-/// The reads below `root`, without needing mutable access to the plan: a `const` node still hands out a
-/// mutable step, because `shared_ptr::get() const` returns `T *`. That is the same thing `findReadingStep`
-/// relies on, and it is what lets this run on the boundary node, which is reached as `const`.
-std::vector<ReadFromMergeTree *> collectReadingStepsBelow(const QueryPlan::Node & root)
-{
-    std::vector<ReadFromMergeTree *> reads;
-    std::vector<const QueryPlan::Node *> stack{&root};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-            reads.push_back(read);
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-    return reads;
-}
+
 
 std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 {
@@ -827,53 +860,14 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    /// The descent is still run: it is what finds the lazy half of a read, and what refuses the plan shapes
-    /// it cannot reason about. Its answer is used only while it agrees with the coordinated read.
+    const auto & parallelized_table = coordinated_read_in_replicas_plan->getMergeTreeData();
+
+    /// Now we need to identify the reading step that should be instrumented for statistics collection
     LazilyReadFromMergeTree * lazy_reading_step = nullptr;
-    ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan, &lazy_reading_step);
+    ReadFromMergeTree * source_reading_step
+        = findReadingStep(*corresponding_node_in_single_replica_plan, parallelized_table, &lazy_reading_step);
     if (!source_reading_step)
         return;
-
-    if (&source_reading_step->getMergeTreeData() != &coordinated_read_in_replicas_plan->getMergeTreeData())
-    {
-        /// Re-aim at the coordinated table. A lazy read met on the way to a different table belongs to that
-        /// other branch, so it is dropped rather than charged to this read's statistics.
-        ReadFromMergeTree * coordinated_read_in_single_node_plan = nullptr;
-        for (auto * read : collectReadingStepsBelow(*corresponding_node_in_single_replica_plan))
-        {
-            if (&read->getMergeTreeData() != &coordinated_read_in_replicas_plan->getMergeTreeData())
-                continue;
-            if (coordinated_read_in_single_node_plan)
-            {
-                /// Several reads of the coordinated table, and nothing here says which of them the
-                /// replicas split - pricing either would be a guess.
-                LOG_DEBUG(
-                    getLogger("optimizeTree"),
-                    "The single-node plan reads the coordinated table {} more than once, cannot tell which "
-                    "read is coordinated. Skipping optimization",
-                    read->getStorageID().getNameForLogs());
-                return;
-            }
-            coordinated_read_in_single_node_plan = read;
-        }
-        if (!coordinated_read_in_single_node_plan)
-        {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
-                "The coordinated read of {} has no counterpart in the single-node plan. Skipping optimization",
-                coordinated_read_in_replicas_plan->getStorageID().getNameForLogs());
-            return;
-        }
-
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "The plan descent reaches {} but the replicas coordinate {}; collecting statistics for the "
-            "coordinated read",
-            source_reading_step->getStorageID().getNameForLogs(),
-            coordinated_read_in_single_node_plan->getStorageID().getNameForLogs());
-        source_reading_step = coordinated_read_in_single_node_plan;
-        lazy_reading_step = nullptr;
-    }
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
@@ -1018,7 +1012,10 @@ void considerEnablingParallelReplicas(
                 /// The coordinated read found above, not another descent: the descent can reach a
                 /// different table than the replicas coordinate, which is exactly why the read was
                 /// re-aimed above. Comparing two runs of the same descent could only ever agree.
-                ReadFromMergeTree * local_replica_plan_reading_step = coordinated_read_in_replicas_plan;
+                ReadFromMergeTree * local_replica_plan_reading_step
+                    = findReadingStep(*final_node_in_replica_plan, parallelized_table);
+                if (!local_replica_plan_reading_step)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
 
                 /// Transplant the single-node index analysis onto the parallel-replicas branch read to honor
                 /// parallel_replicas_index_analysis_only_on_coordinator (analyze once, reuse on the replica).
