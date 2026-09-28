@@ -207,6 +207,40 @@ def test_object_storage_namespace_in_storage_policy(start_cluster):
         node.query("SYSTEM RELOAD CONFIG")
 
 
+def test_symlinked_metadata_path_in_storage_policy(start_cluster):
+    node = cluster.instances["node1"]
+    invalid_policy_path = "/etc/clickhouse-server/config.d/duplicate_local_metadata_policy.xml"
+
+    # The symlink has to exist before the disks are created, otherwise the disk creates a real directory in its place.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "mkdir -p /var/lib/clickhouse/disks/shared_local_metadata /var/lib/clickhouse/disks/shared_local_objects"
+            " && ln -sfn shared_local_metadata /var/lib/clickhouse/disks/shared_local_metadata_link",
+        ]
+    )
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/duplicate_local_metadata_policy.xml"),
+        invalid_policy_path,
+    )
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line(
+            "storage policy `local_metadata_symlink_alias` resolve to the same storage namespace"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.storage_policies "
+                "WHERE policy_name = 'local_metadata_symlink_alias'"
+            )
+            == "0\n"
+        )
+    finally:
+        node.exec_in_container(["rm", "-f", invalid_policy_path])
+        node.query("SYSTEM RELOAD CONFIG")
+
+
 def test_merge_tree_custom_disk_setting(start_cluster):
     TABLE_NAME = "test_merge_tree_custom_disk_setting"
     node1 = cluster.instances["node1"]
