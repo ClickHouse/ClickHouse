@@ -14,5 +14,5 @@ SETTINGS allow_experimental_analyzer = 1;
 -- Nested source settings are preserved too.
 EXPLAIN TEXT (SELECT * FROM (SELECT 1 SETTINGS enable_analyzer = 0)) ONELINE;
 
--- Ordinary queries still reject conflicting subquery settings.
-SELECT * FROM (SELECT 1 SETTINGS enable_analyzer = 0); -- { serverError INCORRECT_QUERY }
+-- Ordinary queries rewrite a disabled analyzer setting to enabled and run.
+SELECT * FROM (SELECT 1 SETTINGS enable_analyzer = 0);
