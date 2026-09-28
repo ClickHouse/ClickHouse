@@ -516,6 +516,17 @@ void ClientInfo::setClientVersionFromConnectionIfUnknown()
         client_tcp_protocol_version = connection_tcp_protocol_version;
 }
 
+void ClientInfo::setInitiatorVersionIfUnset()
+{
+    if (client_version_major != 0 || client_version_minor != 0 || client_version_patch != 0)
+        return;
+
+    client_version_major = VERSION_MAJOR;
+    client_version_minor = VERSION_MINOR;
+    client_version_patch = VERSION_PATCH;
+    client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+}
+
 bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const
 {
     bool patch_equals = compare_patch ? client_version_patch == other.client_version_patch : true;

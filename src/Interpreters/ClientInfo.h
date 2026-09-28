@@ -206,6 +206,12 @@ public:
     /// already known or the connection version is not.
     void setClientVersionFromConnectionIfUnknown();
 
+    /// A query without a client-reported version (one this server initiates itself, or one from an
+    /// interface such as HTTP that does not send it) has this server as its initiator: fill in this
+    /// server's version, which its distributed sub-queries forward to the shards. `RemoteQueryExecutor`
+    /// refuses to forward a zero version. No-op when the version is already known.
+    void setInitiatorVersionIfUnset();
+
     /// Initialize parameters related to HTTP request.
     void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
 
