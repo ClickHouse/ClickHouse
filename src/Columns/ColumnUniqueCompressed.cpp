@@ -29,7 +29,7 @@ namespace
 
 const ColumnString * getAndCheckColumnString(const IColumn * column)
 {
-    const ColumnString * ptr;
+    const ColumnString * ptr = nullptr;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
     {
         ptr = typeid_cast<const ColumnString *>(&nullable_column->getNestedColumn());
@@ -107,7 +107,7 @@ ColumnUniqueFCBlockDF::DecompressedValue ColumnUniqueFCBlockDF::getDecompressedR
     }
 
     const size_t header_pos = pos - pos_in_block;
-    const std::string_view prefix = {data_column->getDataAt(header_pos).data(), common_prefix_lengths->get64(pos)};
+    const std::string_view prefix = data_column->getDataAt(header_pos).substr(0, common_prefix_lengths->get64(pos));
     const std::string_view suffix = data_column->getDataAt(pos);
     return {prefix, suffix};
 }
@@ -690,7 +690,7 @@ std::string_view ColumnUniqueFCBlockDF::serializeValueIntoArena(
 {
     const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     DecompressedValue value;
-    size_t serialization_size;
+    size_t serialization_size = 0;
 
     if (is_nullable && n == getNullValueIndex())
     {

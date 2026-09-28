@@ -97,7 +97,7 @@ namespace
         {
             const auto compression_type = context->getSettingsRef()[Setting::low_cardinality_experimental_compression];
             const auto front_coding_block_size = context->getSettingsRef()[Setting::low_cardinality_compression_fc_block_parameter];
-            ColumnUniqueCompressionType type;
+            ColumnUniqueCompressionType type = ColumnUniqueCompressionType::NONE;
             if (compression_type.value == "fcblockdf")
             {
                 type = ColumnUniqueCompressionType::FRONT_CODING_BLOCK_DF;
