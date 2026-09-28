@@ -133,6 +133,16 @@ done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
+# All five cancel queries must have run with parallel replicas: a single-node fallback passes every
+# other check in this test without ever reaching the cancel path.
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'used_parallel_replicas ', count() = 5 AND min(ProfileEvents['ParallelReplicasUsedCount']) > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query_id LIKE '${CLICKHOUSE_DATABASE}_cancel_before_announcement_$$_%'
+      AND type = 'QueryFinish' AND is_initial_query
+"
+
 # A replica cancelled while still planning must never go on to write its announcement into a socket
 # the initiator has stopped reading - which shows up as `Broken pipe` on the replica.
 $CLICKHOUSE_CLIENT -q "
