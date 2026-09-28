@@ -9,6 +9,9 @@
 # from being widened with the partitions only ZooKeeper knows. Rows another replica acknowledged in
 # that partition then survived the mutation on every replica.
 
+# The two mutations whose scope is printed pin `optimize_mutations_with_partition_pruning`: CI
+# randomizes it off, and then every partition is in scope and there is nothing left to assert.
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -87,7 +90,7 @@ INSERT INTO t_pruning_empty_r2 SELECT 2, 1000000 + number FROM numbers(30);
 "
 
 mutation_before=$(newest_mutation_id t_pruning_empty_r1)
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_pruning_empty_r1 DELETE WHERE p = 2 SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_pruning_empty_r1 DELETE WHERE p = 2 SETTINGS alter_sync = 0, optimize_mutations_with_partition_pruning = 1"
 
 echo -n 'the mutation is scoped to the partition '
 newest_mutation_scope t_pruning_empty_r1 "$mutation_before"
@@ -113,7 +116,7 @@ ALTER TABLE t_pruning_scope DELETE WHERE p = 2 SETTINGS mutations_sync = 2;
 "
 
 mutation_before=$(newest_mutation_id t_pruning_scope)
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_pruning_scope DELETE WHERE p = 1 SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_pruning_scope DELETE WHERE p = 1 SETTINGS alter_sync = 0, optimize_mutations_with_partition_pruning = 1"
 
 newest_mutation_scope t_pruning_scope "$mutation_before"
 wait_for_mutations t_pruning_scope
