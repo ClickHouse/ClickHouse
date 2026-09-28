@@ -518,7 +518,7 @@ bool IPAddress::tryParse(const std::string& addr, IPAddress& result)
 	}
 #if defined(POCO_HAVE_IPv6)
 	IPv6AddressImpl impl6(IPv6AddressImpl::parse(addr));
-	if (impl6 != IPv6AddressImpl())
+	if (impl6 != IPv6AddressImpl() || trim(addr) == "::")
 	{
 		result.newIPv6(impl6.addr(), impl6.scope());
 		return true;

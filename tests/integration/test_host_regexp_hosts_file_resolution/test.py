@@ -36,6 +36,9 @@ def started_cluster():
 
 
 def test_host_regexp_multiple_ptr_hosts_file_v4(started_cluster):
+    # The IPv4 client below reaches the dual-stack listener as an IPv4-mapped address.
+    assert ch_server.contains_in_log(r"Listening for http://\[::\]:8123")
+
     server_ip = cluster.get_instance_ip("clickhouse-server")
     client_ip = cluster.get_instance_ip("clickhouse-client")
 
