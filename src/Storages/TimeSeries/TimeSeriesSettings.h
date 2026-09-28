@@ -45,13 +45,13 @@ struct TimeSeriesSettings
     /// Returns only the settings that were explicitly changed from their defaults.
     SettingsChanges changes() const;
 
-    /// Whether a setting was explicitly changed from its default.
-    bool isChanged(std::string_view name) const;
-
     /// Applies a list of settings changes, overwriting any existing values.
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+
+    /// Whether the setting was explicitly set, even if to its default value.
+    bool isChanged(std::string_view name) const;
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

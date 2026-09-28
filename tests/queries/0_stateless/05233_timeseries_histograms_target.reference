@@ -1,5 +1,5 @@
---- a new table has version 7 and a generated histograms table ---
-7	1	1
+--- a table of the min histograms supported version has a generated histograms table ---
+8	1	1
 id	Tuple(UInt64, LowCardinality(UUID))	
 timestamp	DateTime64(3)	CODEC(Delta(8), T64, ZSTD(3))
 is_float	Bool	CODEC(ZSTD(3))
@@ -31,7 +31,7 @@ samples	1024
 0
 --- the histograms table cannot be customized yet ---
 --- a copy of a table of version 5 gets the latest version and a histograms table ---
-7	1
+1	1
 0
 --- TRUNCATE, RENAME and DROP handle the histograms table ---
 0

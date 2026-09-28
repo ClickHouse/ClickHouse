@@ -6,11 +6,12 @@ SET allow_experimental_time_series_table = 1;
 DROP TABLE IF EXISTS ts_hist;
 DROP TABLE IF EXISTS ts_hist_v5;
 DROP TABLE IF EXISTS ts_hist_copy;
+DROP TABLE IF EXISTS ts_hist_default;
 DROP TABLE IF EXISTS ts_hist_granularity;
 
-CREATE TABLE ts_hist ENGINE = TimeSeries;
+CREATE TABLE ts_hist ENGINE = TimeSeries SETTINGS version = 8;
 
-SELECT '--- a new table has version 7 and a generated histograms table ---';
+SELECT '--- a table of the min histograms supported version has a generated histograms table ---';
 SELECT extract(create_table_query, 'version = (\d+)'),
        position(create_table_query, 'HISTOGRAMS INNER COLUMNS') > 0,
        position(create_table_query, 'HISTOGRAMS INNER ENGINE') > 0
@@ -58,11 +59,16 @@ CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS ts_hist_external; -
 DROP TABLE ts_hist_external;
 
 SELECT '--- a copy of a table of version 5 gets the latest version and a histograms table ---';
+CREATE TABLE ts_hist_default ENGINE = TimeSeries;
 CREATE TABLE ts_hist_copy AS ts_hist_v5;
-SELECT extract(create_table_query, 'version = (\d+)'), position(create_table_query, 'HISTOGRAMS INNER COLUMNS') > 0
-    FROM system.tables WHERE database = currentDatabase() AND name = 'ts_hist_copy';
+SELECT extract(c.create_table_query, 'version = (\d+)') = extract(d.create_table_query, 'version = (\d+)'),
+       position(c.create_table_query, 'HISTOGRAMS INNER COLUMNS') > 0
+    FROM system.tables AS c, system.tables AS d
+    WHERE c.database = currentDatabase() AND c.name = 'ts_hist_copy'
+      AND d.database = currentDatabase() AND d.name = 'ts_hist_default';
 SELECT count() FROM timeSeriesHistograms(ts_hist_copy);
 DROP TABLE ts_hist_copy;
+DROP TABLE ts_hist_default;
 
 SELECT '--- TRUNCATE, RENAME and DROP handle the histograms table ---';
 TRUNCATE TABLE ts_hist;

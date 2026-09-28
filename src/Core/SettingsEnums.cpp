@@ -152,8 +152,13 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
-     {"lazy", TextIndexPostingListApplyMode::LAZY}})
+    {{"materialize", TextIndexPostingListApplyMode::Materialize},
+     {"lazy", TextIndexPostingListApplyMode::Lazy}})
+
+IMPLEMENT_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"bruteforce", TextIndexPostingsIntersectionAlgorithm::BruteForce},
+     {"leapfrog", TextIndexPostingsIntersectionAlgorithm::Leapfrog},
+     {"auto", TextIndexPostingsIntersectionAlgorithm::Auto}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
@@ -364,6 +369,15 @@ IMPLEMENT_SETTING_ENUM(
     {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
      {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
      {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
+    SeccompMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", SeccompMode::Disabled},
+     {"log", SeccompMode::Log},
+     {"errno", SeccompMode::Errno},
+     {"trap", SeccompMode::Trap},
+     {"kill", SeccompMode::Kill}})
 
 IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
