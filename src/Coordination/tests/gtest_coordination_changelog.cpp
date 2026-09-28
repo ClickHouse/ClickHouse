@@ -30,6 +30,7 @@ namespace FailPoints
 {
     extern const char keeper_changelog_read_plan_resolved[];
     extern const char keeper_changelog_removed_from_disk_set[];
+    extern const char keeper_changelog_preallocate_no_space[];
 }
 
 namespace ErrorCodes
@@ -344,6 +345,36 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestFlushThrottling)
     EXPECT_TRUE(changelog.flush());
 
     EXPECT_GE(watch.elapsedMilliseconds(), 100);
+}
+
+/// A failed preallocation (e.g. `ENOSPC`) fails the batch, but must leave the writer usable:
+/// the next append retries the preallocation. Previously the append completion thread
+/// finalized the writer without holding the writer lock, and the next append dereferenced
+/// the destroyed file buffer.
+TEST_P(CoordinationTestWithCompression, ChangelogTestAppendAfterPreallocationFailure)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000, .max_size = 1024 * 1024},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_preallocate_no_space);
+
+    auto entry = getLogEntry("hello world", 77);
+    changelog.append(entry);
+    EXPECT_FALSE(changelog.flush());
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        changelog.append(entry);
+        EXPECT_TRUE(changelog.flush());
+    }
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestFile)
