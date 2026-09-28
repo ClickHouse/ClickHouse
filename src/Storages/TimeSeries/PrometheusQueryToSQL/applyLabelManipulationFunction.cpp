@@ -171,6 +171,16 @@ SQLQueryPiece applyLabelManipulationFunction(
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
 
+    /// Prometheus doesn't validate the source label of `label_replace`, and a label with an empty or invalid UTF-8 name
+    /// can't exist there, so such a source label always behaves like a missing label. The tags stored in a `TimeSeries` table
+    /// can have invalid UTF-8 names, so we replace such a source label with the empty name, which can't be stored.
+    if (function_name == "label_replace")
+    {
+        auto & src_label = arguments[3].string_value;
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(src_label.data()), src_label.size()))
+            src_label.clear();
+    }
+
     chassert(arguments.size() >= 2);
     auto & first_argument = arguments[0];
     const String & dest_label = arguments[1].string_value;
