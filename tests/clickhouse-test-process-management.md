@@ -251,6 +251,11 @@ The hook contains no kill logic of its own — it just calls
 | `run_test` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
 
+The abort-path reap is pinned by `tests/integration/test_clickhouse_test_abort_reap`:
+token and worker scoping, `spawn` propagation of the token, the signal masking of
+`reap_recorded_test_groups` and `quiesce_workers_and_reap`, and stopping the workers
+before the single walk over the records.
+
 ### Remaining limitation
 
 If `runner.py` itself is killed before the post-hook executes, nothing cleans
