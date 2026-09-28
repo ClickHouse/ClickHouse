@@ -15,8 +15,6 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
-using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-class IMergeTreeDataPartInfoForReader;
 
 /// Class that represents Key or Index condition template.
 template <class Cond>
@@ -29,8 +27,6 @@ class ConditionTemplate
 
     const Cond * lookupSubstituted(const std::string & cache_key) const;
     const Cond & setSubstituted(const std::string & cache_key, Cond && cond) const;
-
-    const Cond & generateForPartition(const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const;
 
 public:
     using Factory = std::function<Cond(const ActionsDAG *, const ActionsDAG::Node *)>;
@@ -48,27 +44,23 @@ public:
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
 
-    /// The filter DAG this template was built from, i.e. the predicates that participated in index analysis.
-    const ActionsDAGWithInversionPushDown * getFilterDAG() const { return dag.get(); }
-
     /// Substitutes partition level constants into dag.
-    const Cond & generateForPart(const MergeTreeDataPartPtr & part) const;
-    const Cond & generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const;
+    const Cond & generateForPartition(const MergeTreePartition & partition) const;
 
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
 
 private:
-    const std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
-    const Factory factory;
-    const StorageMetadataPtr metadata_snapshot;
-    const ContextPtr context;
-    const bool skip_folding;
+    std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
+    Factory factory;
+    Transformers transformers;
+    StorageMetadataPtr metadata_snapshot;
+    ContextPtr context;
+    bool skip_folding;
 
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;
     mutable std::unordered_map<std::string, Cond> cache;
-    mutable Transformers transformers;
 };
 
 }

@@ -6,11 +6,15 @@ tags: ['الأمان والمصادقة', 'إدارة Cloud']
 keywords: ['RBAC', 'استعلامات']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="introduction">
   ## المقدمة
 </div>
 
-فيما يلي استعلامات شائعة تساعد على منح أذونات محددة للمستخدمين.
+فيما يلي بعض الاستعلامات الشائعة التي تساعد على منح المستخدمين أذونات محددة.
 
 <div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
   ## كيف أمنح مستخدمًا آخر نفس أذونات المستخدم الحالي؟
@@ -21,7 +25,7 @@ GRANT CURRENT GRANTS ON *.* TO another_user;
 ```
 
 <div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
-  ## كيف أمنح مستخدمًا صلاحية محددة استنادًا إلى الامتيازات الممنوحة للمستخدم الحالي؟
+  ## كيف أمنح مستخدمًا صلاحيةً محددة استنادًا إلى الامتيازات الممنوحة للمستخدم الحالي؟
 </div>
 
 في المثال أدناه، سيتمكن `another_user` من تنفيذ أوامر `SELECT` على جميع قواعد البيانات والجداول الخاصة بالمستخدم الحالي.

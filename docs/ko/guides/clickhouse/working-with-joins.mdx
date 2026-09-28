@@ -31,7 +31,7 @@ ClickHouse는 표준 SQL 조인을 완벽하게 지원하여 효율적인 데이
 
 영화와 배우 사이에는 [다대다 관계](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\))가 있습니다.
 이 다대다 관계는 `roles` 테이블을 사용해 두 개의 [일대다 관계](https://en.wikipedia.org/wiki/One-to-many_\(data_model\))로 정규화됩니다.
-`roles` 테이블의 각 행에는 `movies` 테이블과 `actors` 테이블의 `id` 컬럼 값이 들어 있습니다。
+`roles` 테이블의 각 행에는 `movies` 테이블과 `actors` 테이블의 `id` 컬럼 값이 들어 있습니다.
 
 <div id="join-types-supported-in-clickhouse">
   ## ClickHouse에서 지원하는 JOIN 유형
@@ -107,7 +107,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="외부 조인" />
 
 <Note>
-  ClickHouse는 기본값 대신 [NULL](/ko/reference/syntax#null)을 반환하도록 [구성](/ko/reference/settings/session-settings/join#join_use_nulls)할 수 있습니다(다만 [성능상의 이유](/ko/reference/data-types/nullable#storage-features)로 권장되지 않습니다).
+  ClickHouse는 기본값 대신 [NULL](/ko/reference/syntax#null)을 반환하도록 [구성](/ko/reference/settings/session-settings#join_use_nulls)할 수 있습니다(다만 [성능상의 이유](/ko/reference/data-types/nullable#storage-features)로 권장되지 않습니다).
 </Note>
 
 이 쿼리는 `genres` 테이블에 일치하는 항목이 없는 `movies` 테이블의 모든 행을 조회하여 장르가 없는 모든 영화를 찾습니다. 따라서 `movie_id` 컬럼에는 쿼리 시점에 기본값 0이 적용됩니다:
@@ -232,13 +232,13 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-구문적으로 최적화된 `CROSS JOIN` 쿼리 버전의 `INNER JOIN` 절에는 `ALL` 키워드가 포함됩니다. 이는 `INNER JOIN`으로 다시 작성되더라도 `CROSS JOIN`의 카테시안 곱 의미를 유지하기 위해 명시적으로 추가된 것입니다. `INNER JOIN`에서는 카테시안 곱을 [비활성화](/ko/reference/settings/session-settings/join#join_default_strictness)할 수 있습니다.
+구문적으로 최적화된 `CROSS JOIN` 쿼리 버전의 `INNER JOIN` 절에는 `ALL` 키워드가 포함됩니다. 이는 `INNER JOIN`으로 다시 작성되더라도 `CROSS JOIN`의 카테시안 곱 의미를 유지하기 위해 명시적으로 추가된 것입니다. `INNER JOIN`에서는 카테시안 곱을 [비활성화](/ko/reference/settings/session-settings#join_default_strictness)할 수 있습니다.
 
 ```sql
 ALL
 ```
 
-또한 앞서 언급했듯이 `RIGHT OUTER JOIN`에서는 `OUTER` 키워드를 생략할 수 있고, 선택 사항인 `ALL` 키워드를 추가할 수도 있으므로 `ALL RIGHT JOIN`이라고 작성해도 문제없이 동작합니다.
+또한 앞서 언급했듯이 `RIGHT OUTER JOIN`에서는 `OUTER` 키워드를 생략할 수 있고 선택적 `ALL` 키워드를 추가할 수도 있으므로, `ALL RIGHT JOIN`이라고 작성해도 정상적으로 동작합니다.
 
 <div id="left--right-semi-join">
   ## (LEFT / RIGHT) SEMI JOIN
@@ -457,5 +457,5 @@ final_price:        9645
   ## 요약
 </div>
 
-이 가이드는 ClickHouse가 모든 표준 SQL JOIN 유형과 분석 쿼리를 위한 특수 조인을 어떻게 지원하는지 설명합니다.
-JOIN에 관한 자세한 내용은 [JOIN](/ko/reference/statements/select/join) SQL 문 문서를 참조하십시오.
+이 가이드에서는 ClickHouse가 모든 표준 SQL JOIN 유형은 물론, 분석 쿼리를 위한 특화된 조인도 지원하는 방식을 설명합니다.
+조인에 대한 자세한 내용은 [JOIN](/ko/reference/statements/select/join) SQL 문 설명서를 참조하십시오.

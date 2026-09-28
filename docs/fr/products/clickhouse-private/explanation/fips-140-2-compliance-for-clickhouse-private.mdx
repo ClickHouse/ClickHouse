@@ -1,0 +1,96 @@
+---
+noindex: true
+title: "Conformité à la norme FIPS 140-2 pour ClickHouse Private"
+sidebarTitle: "Conformité FIPS"
+description: "Ce document explique ce que signifie la conformité à la norme FIPS 140-2 dans le contexte de ClickHouse Private et ce qui change lors d’un déploiement dans une configuration conforme à la norme FIPS."
+---
+
+Ce document explique ce que signifie la conformité à la norme FIPS 140-2 dans le contexte de ClickHouse Private et ce qui change lors d’un déploiement dans une configuration conforme à la norme FIPS.
+
+<div id="what-fips-140-2-means-for-clickhouse-private">
+  ## Ce que FIPS 140-2 signifie pour ClickHouse Private
+</div>
+
+FIPS 140-2 (Federal Information Processing Standard) est une norme fédérale américaine applicable aux modules cryptographiques. Les organisations qui opèrent dans des environnements gouvernementaux (comme AWS GovCloud) ou qui traitent des données gouvernementales sensibles sont souvent tenues de garantir que toutes les opérations cryptographiques utilisent des algorithmes et des implémentations validés selon FIPS.
+
+Lorsque ClickHouse Private est déployé en mode FIPS, toutes les opérations cryptographiques -- y compris les connexions TLS entre les composants, les connexions aux services AWS et la génération de certificats -- doivent utiliser des algorithmes et des bibliothèques conformes à la norme FIPS.
+
+<div id="what-changes-in-a-fips-deployment">
+  ## Ce qui change dans un déploiement FIPS
+</div>
+
+Un déploiement FIPS se distingue d’un déploiement ClickHouse Private standard sur plusieurs points essentiels :
+
+<div id="fips-server-images">
+  ### Images FIPS du serveur
+</div>
+
+Les images du serveur ClickHouse et de Keeper doivent utiliser les variantes spécifiques à FIPS. Elles sont identifiées par le suffixe `-fips` dans le tag de l’image (par exemple, `25.12.1.1497-fips` pour le serveur, `26.2.1.258-fips` pour Keeper). Les images FIPS sont construites avec des bibliothèques cryptographiques validées FIPS. L’image de l’operator ne dispose pas d’une variante FIPS distincte.
+
+<div id="fips-ecr-endpoints">
+  ### Points de terminaison ECR FIPS
+</div>
+
+Lors de la récupération d’images de conteneur depuis Amazon ECR, des points de terminaison ECR conformes à la norme FIPS doivent être utilisés. Ces points de terminaison se présentent sous la forme `0000000000.dkr-ecr-fips.<region>.on.aws` plutôt que du nom d’hôte ECR standard.
+
+<div id="fips-s3-endpoints">
+  ### Points de terminaison S3 FIPS
+</div>
+
+ClickHouse stocke les données dans S3 et, en mode FIPS, les points de terminaison S3 conformes à la norme FIPS doivent être configurés. AWS publie la liste des points de terminaison FIPS pour chaque service et chaque région à l’adresse [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
+
+<div id="s3-bucket-naming-restriction">
+  ### Restriction de nommage des buckets S3
+</div>
+
+En mode FIPS, le **nom du bucket S3 ne doit pas contenir de points** (`.`). Cette restriction s’explique par le fait que les points de terminaison S3 FIPS nécessitent un adressage en mode hôte virtuel (par exemple, `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`). Lorsqu’un nom de bucket contient des points, cela empêche la validation du certificat TLS pour les URL en mode hôte virtuel, car les points créent des niveaux de sous-domaine supplémentaires qui ne correspondent pas au certificat wildcard.
+
+C’est un point important à prendre en compte lors de la mise en place de votre infrastructure S3. Si vous avez des buckets existants dont le nom contient des points, ils ne peuvent pas être utilisés avec des points de terminaison S3 FIPS.
+
+<div id="certificate-requirements">
+  ## Exigences en matière de certificats
+</div>
+
+Un déploiement FIPS nécessite des certificats TLS pour assurer une communication chiffrée entre tous les composants de ClickHouse. Trois jeux de certificats doivent être générés :
+
+| Ensemble de certificats | Objectif                                                                                                     | Fichiers                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| **Serveur**             | Sécurise les connexions entrantes vers clickhouse-server                                                     | `server.crt`, `server.key` |
+| **Keeper**              | Sécurise les connexions à clickhouse-keeper                                                                  | `keeper.crt`, `keeper.key` |
+| **Client**              | Utilisé par clickhouse-server pour les connexions sortantes (par ex. vers keeper ou des dictionnaires HTTPS) | `client.crt`, `client.key` |
+
+Les trois jeux sont signés par une autorité de certification commune (`ca.crt`).
+
+<div id="fips-compliant-algorithm-requirements">
+  ### Exigences relatives aux algorithmes conformes à la norme FIPS
+</div>
+
+Lorsque la conformité FIPS est requise, tous les certificats doivent être :
+
+* **Générés à l’aide d’algorithmes conformes à la norme FIPS** -- Par exemple : RSA avec une taille de clé d’au moins 3072 bits.
+* **Créés dans un environnement où FIPS est activé** -- Les opérations cryptographiques effectuées lors de la génération des clés et de la signature doivent utiliser un module validé FIPS. Une possibilité consiste à utiliser un conteneur Red Hat UBI avec le mode FIPS activé.
+* **Signés par une autorité de certification** dont la propre clé a été générée conformément à la norme FIPS.
+
+<div id="subject-alternative-names-sans">
+  ### Noms alternatifs du sujet (SAN)
+</div>
+
+Chaque certificat doit inclure les entrées SAN appropriées afin que la validation TLS réussisse pour les communications entre composants au sein du cluster Kubernetes. Le format des SAN suit le modèle suivant :
+
+* Serveur : `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` et `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* Keeper : `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+Un jeu unique de certificats (à l&#39;exclusion du certificat d&#39;autorité de certification) doit être créé pour chaque cluster ClickHouse à provisionner.
+
+<div id="certificate-expiration">
+  ### Expiration des certificats
+</div>
+
+Les certificats ont une durée de validité définie. Vous devez mettre en place un processus de surveillance de leur date d&#39;expiration et de rotation avant leur expiration. Une durée par défaut courante est de 365 jours, mais elle doit être ajustée en fonction des exigences de sécurité de votre organisation.
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+* Pour des instructions étape par étape sur la génération de certificats conformes à la norme FIPS, consultez le guide pratique [Configurer des certificats FIPS](/fr/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse).
+* Pour comprendre le fonctionnement de la PKI et de mTLS dans ClickHouse Private — rôle des certificats, modes de vérification et mécanisme de rotation — consultez [PKI et mTLS dans ClickHouse Private](/fr/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private).

@@ -11,7 +11,7 @@ namespace DB
 /// For example, if we have type JSON and data {"a" : {"b" : {"c" : 42, "d" : "Hello"}}, "c" : [1, 2, 3]}
 /// this class will be responsible for reading combined path 'a' and will return a Dynamic column
 /// that contains the literal value at path 'a' (if present) or the sub-object at path 'a' (if not empty).
-/// This class is never used for typed paths - the typed-path check is done in `getDynamicSubcolumnInfo`.
+/// This class is never used for typed paths - the typed-path check is done in `getDynamicSubcolumnData`.
 class SerializationObjectCombinedPath final : public SimpleTextSerialization
 {
 private:
@@ -33,10 +33,6 @@ public:
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
         const DataTypePtr & sub_object_type_);
-
-    /// True when the substreams path identifies a combined `@` subcolumn of a JSON column,
-    /// i.e. the subcolumn that `json['key']` is rewritten to.
-    static bool isCombinedPathSubcolumn(const SubstreamPath & path);
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
@@ -68,7 +64,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

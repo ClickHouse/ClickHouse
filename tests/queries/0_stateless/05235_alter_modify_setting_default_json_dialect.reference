@@ -1,5 +1,0 @@
--- a change and a reset in one JSON command
-20	0
--- an engine without a reset rejects it on this path too
-1
-100

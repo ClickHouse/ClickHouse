@@ -23,7 +23,6 @@
 #    include <Common/MemoryTrackerSwitcher.h>
 #    include <Common/StackTrace.h>
 #    include <Common/StringUtils.h>
-#    include <Common/filesystemHelpers.h>
 #    include <Common/getExecutablePath.h>
 #    include <base/defines.h>
 #    include <Common/SipHash.h>
@@ -244,22 +243,14 @@ JemallocProfileSource::JemallocProfileSource(
     size_t max_block_size_,
     JemallocProfileFormat mode_,
     bool symbolize_with_inline_,
-    bool collapsed_use_count_,
-    bool remove_file_)
+    bool collapsed_use_count_)
     : ISource(header_)
     , filename(filename_)
     , max_block_size(max_block_size_)
     , mode(mode_)
     , symbolize_with_inline(symbolize_with_inline_)
     , collapsed_use_count(collapsed_use_count_)
-    , remove_file(remove_file_)
 {
-}
-
-JemallocProfileSource::~JemallocProfileSource()
-{
-    if (remove_file)
-        FS::tryDelete(filename, getLogger("JemallocProfileSource"));
 }
 
 Chunk JemallocProfileSource::generate()
@@ -647,9 +638,7 @@ void pullProfileLines(
         std::make_shared<const Block>(std::move(header)),
         DEFAULT_BLOCK_SIZE,
         format,
-        symbolize_with_inline,
-        /* collapsed_use_count= */ false,
-        /* remove_file= */ false);
+        symbolize_with_inline);
 
     QueryPipeline pipeline(std::move(source));
     PullingPipelineExecutor executor(pipeline);

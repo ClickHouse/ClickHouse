@@ -12,7 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 import { Image } from "/snippets/ja/components/Image.jsx";
-import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -32,7 +32,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
 <Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Lightdash ダッシュボードの例" border />
 
 <Steps>
-  <Step title="接続情報を準備する" id="connection-data-required">
+  <Step>
+    ### 接続情報を準備する
+
     Lightdash と ClickHouse の接続を設定するには、次の情報が必要です。
 
     * **Host:** ClickHouse データベースが稼働しているアドレス
@@ -50,7 +52,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     ***
   </Step>
 
-  <Step title="ClickHouse 用の dbt プロファイルを設定する" id="configuring-your-dbt-profile-for-clickhouse">
+  <Step>
+    ### ClickHouse 用の dbt プロファイルを設定する
+
     Lightdash では、接続は既存の **dbt プロジェクト** に基づいて設定されます。
     ClickHouse に接続するには、ローカルの `~/.dbt/profiles.yml` ファイルに有効な ClickHouse のターゲット設定が含まれていることを確認してください。
 
@@ -61,7 +65,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     <br />
   </Step>
 
-  <Step title="ClickHouse に接続された Lightdash プロジェクトを作成する" id="creating-a-lightdash-project-connected-to-clickhouse">
+  <Step>
+    ### ClickHouse に接続された Lightdash プロジェクトを作成する
+
     dbt プロファイルを ClickHouse 用に設定したら、**dbt プロジェクト** も Lightdash に接続する必要があります。
 
     この手順はすべてのデータウェアハウスで共通しているため、ここでは詳しく説明しません。dbt プロジェクトのインポートについては、Lightdash の公式ガイドを参照してください。
@@ -73,7 +79,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     ***
   </Step>
 
-  <Step title="Lightdash で ClickHouse データを探索する" id="exploring-your-clickhouse-data-in-lightdash">
+  <Step>
+    ### Lightdash で ClickHouse データを探索する
+
     接続すると、Lightdash は dbt モデルを自動的に同期し、次の項目を利用できるようになります。
 
     * YAML で定義された **次元** と **メジャー**
@@ -85,7 +93,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     ***
   </Step>
 
-  <Step title="Lightdash でメトリクスと次元を定義する" id="defining-metrics-and-dimensions-in-lightdash">
+  <Step>
+    ### Lightdash でメトリクスと次元を定義する
+
     Lightdash では、すべての**メトリクス**と**次元**を dbt モデルの `.yml` ファイル内で直接定義します。これにより、ビジネスロジックをバージョン管理でき、一貫性を保ちながら、内容の透明性も高められます。
 
     <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt=".yml ファイルでメトリクスが定義されている例" border />
@@ -102,7 +112,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     ***
   </Step>
 
-  <Step title="テーブルからデータをクエリする" id="querying-your-data-from-tables">
+  <Step>
+    ### テーブルからデータをクエリする
+
     dbt プロジェクトを Lightdash に接続して同期すると、**テーブル** (または「explores」) から直接データを探索できるようになります。
     各テーブルは dbt のモデルを表し、YAML で定義したメトリクスと次元が含まれます。
 
@@ -124,7 +136,9 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     ***
   </Step>
 
-  <Step title="ダッシュボードを作成する" id="building-dashboards">
+  <Step>
+    ### ダッシュボードを作成する
+
     データを探索して可視化を保存したら、それらを **ダッシュボード** にまとめてチームと共有できます。
 
     Lightdash のダッシュボードは高度にインタラクティブで、フィルターを適用したり、タブを追加したり、リアルタイムの ClickHouse クエリに基づくチャートを表示したりできます。
@@ -146,8 +160,10 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     ***
   </Step>
 
-  <Step title="Ask AI: dbt を活用したセルフサービス型分析" id="ask-ai">
-    **AI Agents** in Lightdash により、データ探索を真にセルフサービスで行えるようになります。
+  <Step>
+    ### Ask AI: dbt を活用したセルフサービス型分析
+
+    Lightdash の**AI Agents**により、データ探索を真にセルフサービスで行えるようになります。
     クエリを書く代わりに、*「月次売上の成長率は？」* のように自然な言葉で質問するだけで、AI Agent が適切な可視化を自動生成し、dbt で定義されたメトリクスやモデルを参照して、正確性と一貫性を確保します。
 
     dbt で利用しているのと同じセマンティックレイヤーを基盤としているため、あらゆる回答はガバナンスが保たれ、説明可能で、高速です。これらはすべて ClickHouse によって支えられています。

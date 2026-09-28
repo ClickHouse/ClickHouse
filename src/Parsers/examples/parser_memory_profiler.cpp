@@ -309,15 +309,6 @@ try
     std::string profile_before_path;
     std::string profile_after_path;
 
-    /// The measured window must hold only allocations of this parse. Lazy one-time initialization
-    /// reachable from parseQuery is charged to the first parse in the process, so parse once here
-    /// first. The same text is used, and it may throw exactly as the measured parse would.
-    {
-        ParserQuery warmup_parser(query.data() + query.size());
-        [[maybe_unused]] ASTPtr warmup_ast
-            = parseQuery(warmup_parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
-    }
-
     if (enable_profiling)
     {
         if (!isProfilingCompiled())

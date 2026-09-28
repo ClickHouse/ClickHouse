@@ -253,6 +253,6 @@ ClickPipes for Pub/Sub 提供**至少一次**投递保障。只有在对应的�
   ## 身份验证
 </div>
 
-ClickPipes for Pub/Sub 使用服务账号 JSON 密钥向 GCP 进行身份验证。创建管道时，您需要上传该密钥文件；ClickPipes 会在静态存储时对其加密，并在运行时使用它来消费消息并管理托管订阅的生命周期。
+ClickPipes for Pub/Sub 使用服务账号 JSON 密钥向 GCP 进行身份验证。创建管道时，您需要上传该密钥文件；ClickPipes 会对其进行静态加密，并在运行时使用它来消费消息以及管理托管订阅的生命周期。
 
 有关所需 IAM 权限的完整列表以及推荐的自定义角色定义，请参阅 [Pub/Sub IAM 权限指南](/zh/integrations/clickpipes/pubsub/auth)。

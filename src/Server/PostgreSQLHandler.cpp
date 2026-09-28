@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -25,16 +24,12 @@
 #include <Common/ErrnoException.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
-#include <Common/SettingSource.h>
-#include <Common/SettingsChanges.h>
-#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ParserCopyQuery.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -42,7 +37,6 @@
 #include <Parsers/ParserQuery.h>
 #include <fmt/format.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -73,14 +67,8 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_session_user;
-}
-
 namespace ErrorCodes
 {
-    extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_READ_ALL_DATA;
@@ -93,72 +81,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// A `ReadBuffer` over the `COPY_DATA` messages of one `COPY ... FROM STDIN`.
-///
-/// The data of a `COPY` is a single stream, which the client is free to split into `COPY_DATA`
-/// messages at any byte - in the middle of a row as well - and whose header, when `HEADER` was asked
-/// for, stands at the beginning of that whole stream and nowhere else. Reading one message at a time
-/// would therefore cut rows in half and take the first row of every message for a header, so the
-/// input format is handed one buffer that spans the stream instead.
-class ReadBufferFromCopyData : public ReadBuffer
-{
-public:
-    explicit ReadBufferFromCopyData(PostgreSQLProtocol::Messaging::MessageTransport & message_transport_)
-        : ReadBuffer(nullptr, 0)
-        , message_transport(message_transport_)
-    {
-    }
-
-private:
-    bool nextImpl() override
-    {
-        /// `CopyDone` ends the stream, and nothing of this `COPY` is read after it.
-        if (is_done)
-            return false;
-
-        while (true)
-        {
-            /// The client waits for what has been written for this statement so far before it sends
-            /// the rest of the data, so everything buffered has to go out before we block on reading.
-            message_transport.flush();
-
-            const PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport.receiveMessageType();
-
-            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
-            {
-                message = message_transport.receive<PostgreSQLProtocol::Messaging::CopyInData>();
-
-                /// A `COPY_DATA` message is allowed to carry no data at all, and an empty working
-                /// buffer would be read as the end of the stream.
-                if (message->query.empty())
-                    continue;
-
-                BufferBase::set(message->query.data(), message->query.size(), 0);
-                return true;
-            }
-
-            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
-            {
-                message_transport.receive<PostgreSQLProtocol::Messaging::CopyDone>();
-                is_done = true;
-                return false;
-            }
-
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Received incorrect message type - expected {} or {}, got {}",
-                PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA,
-                PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION,
-                message_type);
-        }
-    }
-
-    PostgreSQLProtocol::Messaging::MessageTransport & message_transport;
-    /// The message the working buffer points into, kept alive for as long as it is read.
-    std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> message;
-    bool is_done = false;
-};
 
 UInt32 generateRandomUInt32()
 {
@@ -438,8 +360,6 @@ PostgreSQLHandler::PostgreSQLHandler(
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
             else if (token == "tlsv1_2")
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
-            else if (token == "tlsv1_3")
-                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
         }
 
         extended_verification = config.getBool(prefix + Poco::Net::SSLManager::CFG_EXTENDED_VERIFICATION, false);
@@ -605,28 +525,7 @@ bool PostgreSQLHandler::startup()
     }
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
-
-    /// An empty user name means the default session user: the `default_session_user`
-    /// server setting, possibly overridden for this listener in the `protocols` section.
-    /// If the resolved name is empty too (explicitly configured to prohibit connections
-    /// without a user name), authentication fails on the empty user name below.
-    if (start_up_msg->user.empty())
-        start_up_msg->user = default_session_user
-            ? *default_session_user
-            : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
-
     const auto & user_name = start_up_msg->user;
-    if (user_name.empty())
-    {
-        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from PostgreSQL startup message");
-        session->onAuthenticationFailure(user_name, socket().peerAddress(), exception);
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
-            true);
-        return false;
-    }
-
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
     try
@@ -634,15 +533,7 @@ bool PostgreSQLHandler::startup()
         session->makeSessionContext();
         session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
-        {
-            /// `database` is a real setting, so enforce its constraints on the startup-message
-            /// database too, consistently with `USE`, `SET database = ...` and the HTTP
-            /// `?database=...` parameter.
-            SettingsChanges database_change;
-            database_change.setSetting("database", start_up_msg->database);
-            session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
-        }
     }
     catch (const Exception & exc)
     {
@@ -666,16 +557,8 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 {
     bool was_secure_connection = false;
     bool was_encryption_req = true;
-    auto receive_first_message_header = [&]
-    {
-        readBinaryBigEndian(payload_size, *in);
-        if (payload_size < 8)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong PostgreSQL initial message length {}, it must be at least 8", payload_size);
-        readBinaryBigEndian(info, *in);
-    };
-
-    receive_first_message_header();
+    readBinaryBigEndian(payload_size, *in);
+    readBinaryBigEndian(info, *in);
 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
@@ -697,7 +580,10 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
             was_encryption_req = false;
     }
     if (was_encryption_req)
-        receive_first_message_header();
+    {
+        readBinaryBigEndian(payload_size, *in);
+        readBinaryBigEndian(info, *in);
+    }
 
     if (secure_required && !was_secure_connection)
     {
@@ -803,9 +689,9 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
-        if (payload_size < 9 || payload_size > max_startup_message_size)
+        if (payload_size < 8 || payload_size > max_startup_message_size)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                "Startup message declares a size of {} bytes, while it must be between 9 and {} bytes",
+                "Startup message declares a size of {} bytes, while it must be between 8 and {} bytes",
                 payload_size, max_startup_message_size);
 
         message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);
@@ -824,23 +710,15 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 }
 
 /// PostgreSQL clients qualify catalog tables and functions with the `pg_catalog`
-/// schema, e.g. `pg_catalog.pg_class` or `pg_catalog.pg_table_is_visible(c.oid)`
-/// (psql does so for the `\d` command). ClickHouse has no `pg_catalog` database:
-/// the catalog tables are emulated with per-session temporary views
-/// (see `initializeSystemTables`) and the functions are registered globally.
+/// schema, e.g. `pg_catalog.pg_class` or `pg_catalog.pg_table_is_visible(c.oid)`.
+/// ClickHouse has no `pg_catalog` database: the catalog tables are emulated with
+/// per-session temporary views and the functions are registered globally.
 /// Removing the qualifier at the token level maps such queries onto them.
 /// String literals are left intact - only a `pg_catalog` identifier that is not
 /// itself qualified and is followed by a dot and another identifier is removed.
-/// PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG` names
-/// the same schema and is matched case-insensitively; a quoted identifier keeps its
-/// case in PostgreSQL, so only the exact `"pg_catalog"` spelling is matched there.
 static String removePgCatalogQualifier(const String & query)
 {
-    static constexpr std::string_view pg_catalog = "pg_catalog";
-
-    /// A fast path for the common case of a query that does not mention the schema at all.
-    if (std::search(query.begin(), query.end(), pg_catalog.begin(), pg_catalog.end(),
-            [](char a, char b) { return equalsCaseInsensitive(a, b); }) == query.end())
+    if (query.find("pg_catalog") == String::npos)
         return query;
 
     std::vector<Token> tokens;
@@ -851,7 +729,7 @@ static String removePgCatalogQualifier(const String & query)
     auto is_pg_catalog = [](const Token & token)
     {
         std::string_view text(token.begin, token.size());
-        return (token.type == TokenType::BareWord && equalsCaseInsensitive(text, pg_catalog))
+        return (token.type == TokenType::BareWord && text == "pg_catalog")
             || (token.type == TokenType::QuotedIdentifier && text == "\"pg_catalog\"");
     };
 
@@ -892,32 +770,6 @@ static String removePgCatalogQualifier(const String & query)
     return result;
 }
 
-namespace
-{
-
-/// The option list of a `COPY` command is accepted only when it asks for the shape the PostgreSQL
-/// protocol transfers anyway - see `checkDataShapeOptions` in the parser. That check compares the
-/// requested values against the defaults of the formats, so the format settings of the session must
-/// not be able to move them: a session that did `SET format_csv_delimiter = ';'` would otherwise get
-/// its `COPY ... WITH (FORMAT csv, DELIMITER ',')` accepted and then served with `;`, which is the
-/// silent shape mismatch the option list is there to prevent.
-void pinCopyFormatSettings(const ContextMutablePtr & query_context)
-{
-    query_context->setSetting("format_csv_delimiter", String(","));
-    query_context->setSetting("format_csv_null_representation", String("\\N"));
-    query_context->setSetting("format_tsv_null_representation", String("\\N"));
-    query_context->setSetting("format_csv_allow_single_quotes", false);
-    query_context->setSetting("format_csv_allow_double_quotes", true);
-    query_context->setSetting("input_format_csv_allow_whitespace_or_tab_as_delimiter", false);
-
-    /// The rows of a `COPY` are separated by a single line feed on the wire.
-    query_context->setSetting("input_format_tsv_crlf_end_of_line", false);
-    query_context->setSetting("output_format_tsv_crlf_end_of_line", false);
-    query_context->setSetting("output_format_csv_crlf_end_of_line", false);
-}
-
-}
-
 bool PostgreSQLHandler::processCopyQuery(const String & query)
 {
     ParserCopyQuery parser_copy;
@@ -927,15 +779,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         copy_query_parsed = parseQuery(parser_copy, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
-        /// `BAD_ARGUMENTS` is raised by `ParserCopyQuery` only once it has recognized a `COPY`
-        /// command and got as far as its options, so it says "this `COPY` asks for something this
-        /// protocol cannot serve" rather than "this was not a `COPY` command at all". Handing such a
-        /// query to the generic SQL parser would replace the targeted message with a plain syntax
-        /// error, so let it reach the client.
-        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
-            throw;
         copy_query_parsed.reset();
     }
 
@@ -953,8 +798,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         assignStatementQueryId(query_context);
         QueryScope query_scope = QueryScope::create(query_context);
 
-        pinCopyFormatSettings(query_context);
-
         String columns_to_insert;
         if (!copy_query->column_names.empty())
         {
@@ -970,59 +813,70 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        const String format = getFormatName(*copy_query);
-
-        /// `COPY ... FROM` data carries the column names only when `HEADER` was asked for, which the
-        /// format name above already accounts for. Header auto-detection would otherwise take a first
-        /// data row that happens to look like the column names for a header and drop it.
-        query_context->setSetting("input_format_tsv_detect_header", false);
-        query_context->setSetting("input_format_csv_detect_header", false);
-
-        /// The `HEADER` of a PostgreSQL `COPY ... FROM` says that the first line of the data is the
-        /// column names, and says nothing else: the fields are still bound to the columns of the
-        /// command by position, and the names on that line are not looked at. The ClickHouse
-        /// `*WithNames` formats that read the line would otherwise match the fields to columns by
-        /// those names and default the columns no name was given for, so a header naming the same
-        /// columns in another order would load them the other way round.
-        query_context->setSetting("input_format_with_names_use_header", false);
+        String format;
+        switch (copy_query->format)
+        {
+        case ASTCopyQuery::Formats::TSV:
+            format = "TSV";
+            break;
+        case ASTCopyQuery::Formats::CSV:
+            format = "CSV";
+            break;
+        case ASTCopyQuery::Formats::Binary:
+            format = "RowBinary";
+            break;
+        }
 
         const Settings & settings = query_context->getSettingsRef();
 
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
-
-        /// One buffer over the whole stream, and so one input format for it: a header belongs to the
-        /// stream rather than to a message of it, and a row may be split across two messages.
-        ReadBufferFromCopyData buf(*message_transport);
-        auto format_ptr = FormatFactory::instance().getInput(
-            format,
-            buf,
-            io.pipeline.getHeader(),
-            query_context,
-            settings[Setting::max_insert_block_size],
-            std::nullopt,
-            /// The data is read from the connection this thread owns, so it is parsed on this thread
-            /// as well: a parsing pool thread would be blocked on the socket for as long as the
-            /// client takes to send the rest of the `COPY`, which it is free to do at any pace.
-            FormatParserSharedResources::singleThreaded(settings),
-            nullptr,
-            false,
-            CompressionMethod::None,
-            false,
-            settings[Setting::max_insert_block_size_bytes],
-            settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
-
         executor->start();
         while (true)
         {
-            /// An empty chunk means the end of the stream, which is the `CopyDone` message.
-            auto chunk = format_ptr->generate();
-            if (chunk.empty())
-                break;
+            message_transport->flush();
+            PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
+            {
+                std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> data_query =
+                    message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
-            executor->push(std::move(chunk));
+                ReadBufferFromString buf(data_query->query);
+                auto format_ptr = FormatFactory::instance().getInput(
+                    format,
+                    buf,
+                    io.pipeline.getHeader(),
+                    query_context,
+                    settings[Setting::max_insert_block_size],
+                    std::nullopt,
+                    nullptr,
+                    nullptr,
+                    false,
+                    CompressionMethod::None,
+                    false,
+                    settings[Setting::max_insert_block_size_bytes],
+                    settings[Setting::min_insert_block_size_rows],
+                    settings[Setting::min_insert_block_size_bytes]);
+                while (true)
+                {
+                    auto chunk = format_ptr->generate();
+                    if (chunk.empty())
+                        break;
+
+                    executor->push(std::move(chunk));
+                }
+            }
+            else if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
+            {
+                message_transport->receive<PostgreSQLProtocol::Messaging::CopyDone>();
+                executor->finish();
+                break;
+            }
+            else
+            {
+                executor->cancel();
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Received incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
+            }
         }
-        executor->finish();
 
         auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
@@ -1041,8 +895,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         QueryScope query_scope = QueryScope::create(query_context);
 
-        pinCopyFormatSettings(query_context);
-
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
         {
@@ -1059,7 +911,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
         VectorWithMemoryTracking<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
-        auto format_ptr = FormatFactory::instance().getOutputFormat(getFormatName(*copy_query), output_buffer, io.pipeline.getHeader(), query_context);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
         while (executor->pull(block))
@@ -1080,9 +932,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
 void PostgreSQLHandler::processQuery()
 {
-    /// Output position before the currently executing statement. If a statement
-    /// fails when nothing has been sent for it yet, the session can be kept alive.
-    size_t out_bytes_before_statement = out->count();
     try
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
@@ -1112,18 +961,16 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        String query_text = removePgCatalogQualifier(query->query);
-
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
 
-        if (processPrepareStatement(query_text))
+        if (processPrepareStatement(query->query))
             return;
 
-        if (processDeallocate(query_text))
+        if (processDeallocate(query->query))
             return;
 
-        if (processCopyQuery(query_text))
+        if (processCopyQuery(query->query))
             return;
 
         auto query_context = session->makeQueryContext();
@@ -1135,11 +982,11 @@ void PostgreSQLHandler::processQuery()
             should_init_system_tables = false;
         }
 
-        if (processExecute(query_text, query_context))
+        if (processExecute(query->query, query_context))
             return;
 
         auto parse_res = splitMultipartQuery(
-            query_text,
+            query->query,
             queries,
             settings[Setting::max_query_size],
             settings[Setting::max_parser_depth],
@@ -1158,28 +1005,18 @@ void PostgreSQLHandler::processQuery()
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
 
-            out_bytes_before_statement = out->count();
             UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
         }
 
     }
     catch (const Exception & e)
     {
-        bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        /// A failed query does not terminate the session in PostgreSQL: the server
-        /// sends `ErrorResponse` and returns to the `ReadyForQuery` state. This is
-        /// only safe while nothing has been sent for the failed statement -
-        /// otherwise the output stream may be cut in the middle of a message and
-        /// continuing would desynchronize the protocol framing, so in that case
-        /// tear the connection down.
-        if (nothing_sent_for_failed_statement)
-            return;
         throw;
     }
 }
@@ -1262,7 +1099,7 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
 
-    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
 
     return true;
 }
@@ -1356,10 +1193,6 @@ void PostgreSQLHandler::processDescribeQuery()
 
 void PostgreSQLHandler::processExecuteQuery()
 {
-    /// Output position before the statement, mirroring `processQuery`: keeping
-    /// the session alive after a failure is only safe while nothing has been
-    /// sent for the failed statement.
-    size_t out_bytes_before_statement = out->count();
     try
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
@@ -1389,26 +1222,16 @@ void PostgreSQLHandler::processExecuteQuery()
 
         UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
     }
     catch (const Exception & e)
     {
-        bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        /// Recovering to `Sync` is only safe while nothing has been sent for the
-        /// failed statement - otherwise the output stream may be cut in the
-        /// middle of a message and continuing would desynchronize the protocol
-        /// framing, so in that case tear the connection down (as `processQuery`
-        /// does for the simple-query protocol).
-        if (nothing_sent_for_failed_statement)
-        {
-            ignore_until_sync = true;
-            return;
-        }
-        throw;
+        /// Keep the connection alive and discard messages through `Sync`.
+        ignore_until_sync = true;
     }
 }
 
@@ -1557,34 +1380,8 @@ SELECT * FROM VALUES(
     (1114, 11, 'timestamp', 0, 0, 'b', 253, 0, 0, 'D')
 ))");
 
-    /// Fixed rows are the namespaces PostgreSQL clients expect to always exist
-    /// (their well-known oids are hardcoded in some drivers, e.g. 11 for `pg_catalog`).
-    /// The rest of the namespaces are the real databases. An oid identifies an object,
-    /// and PostgreSQL clients are allowed to remember one and use it in a later query, so
-    /// it is a pure function of the name of the object: a hash of the name - qualified
-    /// with the database for a relation - and nothing else. Whatever else is currently
-    /// visible - and therefore any unrelated DDL or grant change - cannot renumber an
-    /// object that a client already saw.
-    /// The oids are also expected to be unique, because clients join `pg_class` to
-    /// `pg_namespace` on them. A mapping into a bounded space cannot guarantee both
-    /// properties at once, and PostgreSQL gets uniqueness only because it assigns oids
-    /// from a persistent counter, which a stateless emulation of the catalog has no
-    /// analog of. Stability is the more important of the two - a renumbering is a wrong
-    /// answer to a client that cached an oid, while a hash collision merely lists one of
-    /// two objects under a wrong schema - so the hash is spread over the whole available
-    /// range instead of being corrected: two visible names share an oid only if their
-    /// hashes collide, which takes tens of thousands of databases or tables in a single
-    /// catalog to become likely at all.
-    /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for the
-    /// system, so synthesized oids cannot collide with the well-known ones; namespaces
-    /// take the even oids and the tables of `pg_class` the odd ones, so the two
-    /// enumerations cannot collide with each other either. The modulo keeps the result
-    /// below 2^32, the width of an oid.
-    /// `SQL SECURITY INVOKER` makes the view run with the privileges of the session
-    /// user. `system.databases` is implicitly SELECTable by every user and hides
-    /// the databases the user has no `SHOW` privilege for, so the view exposes
-    /// exactly the metadata already visible to that user - definer rights would
-    /// bypass this filtering and leak the existence of unrelated databases.
+    /// Fixed rows are the namespaces PostgreSQL clients expect to always exist.
+    /// The rest are real databases visible to the session user.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, nspname String',
@@ -1595,22 +1392,11 @@ SELECT * FROM VALUES(
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
-SELECT
-    toUInt32(16384 + 2 * (sipHash64(name) % 2000000000)) AS oid,
-    name AS nspname
+SELECT toUInt32(16384 + sipHash64(name) % 4294900000) AS oid, name AS nspname
 FROM system.databases)");
 
-    /// Fixed rows (oid, relkind) are preserved for driver compatibility; they belong
-    /// to the `pg_catalog` namespace, which clients such as psql filter out.
-    /// The rest are the tables of the current database - the analog of the PostgreSQL
-    /// search path - which makes commands like `\d` in psql list the actual tables.
-    /// `relam` is the access method: 2 (`heap`) for tables and 0 for views, as in PostgreSQL.
-    /// The oid of a relation is a hash of its qualified name - the database and the table
-    /// name - and not of the table name alone: a session can switch the current database
-    /// with `USE`, and two same-named tables in two databases are different objects that
-    /// must not share an oid.
-    /// `SQL SECURITY INVOKER` for the same reason as `pg_namespace` above:
-    /// `system.tables` hides the tables the session user cannot `SHOW`.
+    /// Fixed rows preserve the catalog shape expected by PostgreSQL clients.
+    /// Tables from the current database make the `pg_class` view useful to clients such as psql.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, relname String, relnamespace UInt32, relowner UInt32, relam UInt32, relkind String',
@@ -1625,23 +1411,14 @@ SELECT * FROM VALUES(
 )
 UNION ALL
 SELECT
-    toUInt32(16385 + 2 * (sipHash64(database, name) % 2000000000)) AS oid,
+    toUInt32(16384 + sipHash64(database, name) % 4294900000) AS oid,
     name AS relname,
-    toUInt32(16384 + 2 * (sipHash64(currentDatabase()) % 2000000000)) AS relnamespace,
+    toUInt32(16384 + sipHash64(database) % 4294900000) AS relnamespace,
     toUInt32(10) AS relowner,
     toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
     multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind
 FROM system.tables
 WHERE database = currentDatabase() AND NOT is_temporary)");
-
-    /// Table access methods. Newer psql versions join `pg_am` in the query behind
-    /// the `\d` command. ClickHouse table engines have no PostgreSQL equivalent,
-    /// so everything is presented as the default `heap` access method.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_am AS
-SELECT * FROM VALUES(
-    'oid UInt32, amname String, amtype String',
-    (2, 'heap', 't')
-))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
 SELECT * FROM VALUES(

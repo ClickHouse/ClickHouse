@@ -45,10 +45,8 @@ SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(12), 'A
        round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7)) / arraySum(x -> x * x, CAST(range(768), 'Array(Float32)')) - 1), 4);
 
 -- Exact Kronecker coordinates (rounded): catches a wrong H_m sign convention, D order, or
--- scalar/NEON or scalar/AVX2 divergence that would still preserve length and norm.
+-- scalar/NEON divergence that would still preserve length and norm.
 SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(12), 'Array(Float32)')));
-SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(20), 'Array(Float32)')));
-SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(40), 'Array(Float32)')));
 
 -- output_dims still truncates a Kronecker transform (it must not exceed the input dimension).
 SELECT length(randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7, 500));
@@ -59,7 +57,3 @@ SELECT randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 0, 800); -- {
 SELECT randomHadamardTransform([]::Array(Float32), 0, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT randomHadamardTransform([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT randomHadamardTransform([1, 2]::Array(Float32), materialize(1)); -- { serverError ILLEGAL_COLUMN }
-
--- AVX2 Test for Dimensions of the form 2^k
-SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(64), 'Array(Float32)'), 42));
-SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(256), 'Array(Float32)'), 42));

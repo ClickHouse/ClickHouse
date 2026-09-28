@@ -1,0 +1,162 @@
+---
+noindex: true
+title: "Установка ClickHouse Private API"
+sidebarTitle: "Установка API управления"
+description: "В этом руководстве описывается установка ClickHouse Private API — дополнительного автономного компонента для выполнения типовых операций управления"
+---
+
+В этом руководстве описывается установка ClickHouse Private API — дополнительного автономного компонента для выполнения типовых операций управления, таких как создание резервных копий и вертикальное масштабирование.
+
+***
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Перед началом убедитесь, что у вас есть:
+
+* Установленный ClickHouse Operator (см. [tutorials/deploy-aws.md](/ru/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), этап 8)
+* Развернут как минимум один кластер ClickHouse (см. [tutorials/deploy-aws.md](/ru/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), этап 9)
+* Доступ к приватному репозиторию ECR ClickHouse
+* Целевые репозитории ECR, созданные в вашем аккаунте AWS:
+* `airgap-management`
+* `helm/airgap-management`
+
+***
+
+<Steps>
+  <Step>
+    ## Шаг 1: Копирование образов контейнеров
+
+    Используйте skopeo, чтобы скопировать образ Private API и Helm-чарт в ваш ECR.
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # войдите в наш ECR
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # войдите в целевой репозиторий AWS
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # скопируйте каждый образ в целевой ECR, обязательно указав флаг --all
+    skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+    ```
+
+    Замените `1.165.1` и `1.165.1` на теги версии, предоставленные ClickHouse.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Шаг 2: Установка через Helm
+
+    Private API устанавливается в выделенном пространстве имен.
+
+    ```text
+    # при необходимости обновите ECR_HOST
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # используйте версию Helm-чарта API
+    API_HELM_VERSION=1.165.1
+
+    # задайте тег образа API
+    API_IMAGE_TAG=1.165.1
+
+    helm install clickhouse-private-api \
+       oci://$ECR_HOST/helm/airgap-management \
+       --version=$API_HELM_VERSION \
+       --create-namespace \
+       -n clickhouse-private-api \
+       --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+       --set-json="image.tag=\"$API_IMAGE_TAG\""
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Шаг 3: Настройка аутентификации
+
+    По умолчанию базовая аутентификация отключена. Для сред продакшн включите ее, задав значения Helm:
+
+    * `api.basicAuth.enabled=true`
+    * `api.basicAuth.username` -- выбранное вами имя пользователя
+    * `api.basicAuth.password` -- надежный пароль
+
+    Имя пользователя и пароль следует хранить в защищенном месте и регулярно менять в соответствии с политиками безопасности вашей организации.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Шаг 4: Проверка установки
+
+    ### Проверка пода
+
+    ```bash
+    kubectl get pods -n clickhouse-private-api
+    ```
+
+    Ожидаемый вывод:
+
+    ```text
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+    ```
+
+    ### Проброс порта и проверка
+
+    ```bash
+    kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+    ```
+
+    Проверьте конечную точку состояния:
+
+    ```bash
+    curl http://localhost:8080/readiness
+    ```
+
+    Если аутентификация включена:
+
+    ```bash
+    curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="configuration-options">
+  ## Параметры конфигурации
+</div>
+
+Следующие основные параметры конфигурации доступны через значения Helm:
+
+| Значение Helm                | Описание                                               | По умолчанию |
+| ---------------------------- | ------------------------------------------------------ | ------------ |
+| `image.repository`           | ECR-репозиторий образа Private API                     | --           |
+| `image.tag`                  | Тег образа для развертывания                           | --           |
+| `api.port`                   | Порт, на котором API прослушивает соединения           | `8080`       |
+| `api.basicAuth.enabled`      | Включить HTTP базовую аутентификацию                   | `false`      |
+| `api.basicAuth.username`     | Имя пользователя для базовой аутентификации            | `admin`      |
+| `api.basicAuth.password`     | Пароль для базовой аутентификации                      | `changeme`   |
+| `serviceAccount.enabled`     | Создать сервисный аккаунт для API                      | `true`       |
+| `serviceAccount.annotations` | Аннотации для сервисного аккаунта (например, для IRSA) | `{}`         |
+
+Полный список параметров конфигурации см. в файле значений Helm-чарта.
+
+***
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+* **[Управление резервными копиями через API](/ru/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — Создание, просмотр, планирование и восстановление резервных копий
+* **[Масштабирование кластера](/ru/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — Вертикальное масштабирование CPU и памяти
+* **[Сброс паролей](/ru/products/clickhouse-private/guides/reset-user-passwords)** — Сброс пароля встроенного пользователя `default` в ClickHouse

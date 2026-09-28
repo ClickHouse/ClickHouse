@@ -1,0 +1,74 @@
+---
+title: 'معاينة خاصة في Azure'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure (معاينة خاصة)'
+keywords: ['BYOC', 'سحابة', 'bring your own cloud', 'azure']
+description: 'إعداد ClickHouse BYOC على Azure باستخدام وحدة Terraform والمصادقة عبر المستأجرين'
+doc_type: 'مرجع'
+---
+
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  BYOC على Azure متاح حاليًا في **معاينة خاصة**. للمشاركة، [تواصل مع فريق ClickHouse](https://clickhouse.com/cloud/bring-your-own-cloud).
+</Note>
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يتيح لك BYOC على Azure تشغيل ClickHouse ضمن اشتراك Azure الخاص بك. وتستخدم عملية تهيئة وحدة Terraform تُعدّ المصادقة عبر المستأجرين المطلوبة لكي تتمكن أداة التزويد في ClickHouse Cloud من إنشاء موارد Azure وإدارتها داخل المستأجر والاشتراك الخاصين بك.
+
+أما الجوانب الأخرى لعملية النشر—مثل [المعمارية](/ar/products/bring-your-own-cloud/overview/architecture) و[أمن الشبكة](/ar/products/bring-your-own-cloud/reference/network-security) و[الميزات](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features) و[الاتصال](/ar/products/bring-your-own-cloud/configuration/connect)—فتتشابه إلى حد كبير مع عروض BYOC على AWS وGCP؛ راجع تلك الصفحات لمزيد من التفاصيل.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* **اشتراك** Azure و**مستأجر** تريد استضافة عملية نشر BYOC فيهما
+* **معرّف الاشتراك** و**معرّف المستأجر** لمشاركتهما مع فريق ClickHouse
+
+<div id="onboarding">
+  ## التهيئة
+</div>
+
+<Steps>
+  <Step>
+    ### 1. طبّق وحدة Terraform
+
+    لبدء تهيئة BYOC على Azure، طبّق [وحدة Terraform الخاصة بـ Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) التي توفّرها ClickHouse ضمن **المستأجر والاشتراك المستهدفين** لديك.
+
+    ارجع إلى وثائق الوحدة لمعرفة المتغيرات المطلوبة وخطوات التطبيق. بعد تطبيقها، تكون الوحدة قد أعدّت الهوية والأذونات اللازمة في بيئة Azure لديك.
+  </Step>
+
+  <Step>
+    ### 2. قدّم المعرّفات إلى ClickHouse
+
+    شارِك المعلومات التالية مع فريق ClickHouse:
+
+    * **معرّف الاشتراك المستهدف** — اشتراك Azure الذي ستُنشأ فيه موارد BYOC
+    * **معرّف المستأجر المستهدف** — مستأجر Azure AD ‏(Entra) الذي يملك ذلك الاشتراك
+    * **المنطقة** — مناطق Azure التي تريد نشر خدمات ClickHouse فيها
+    * **نطاق CIDR للشبكة الافتراضية VNet** — نطاق عناوين IP الذي تريد استخدامه لشبكة BYOC الافتراضية
+
+    سيستخدم فريق ClickHouse هذه المعلومات لإنشاء البنية التحتية لـ BYOC وإكمال التهيئة
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### كيف تعمل المصادقة عبر المستأجرين
+</div>
+
+باتباع [إرشادات Azure بشأن المصادقة عبر المستأجرين](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)، تقوم وحدة Terraform بما يلي:
+
+1. **تُنشئ تطبيقًا متعدد المستأجرين** بصفته **Enterprise Application** ‏(service principal) في المستأجر المستهدف
+2. **تمنح هذا التطبيق الأذونات المطلوبة** ضمن نطاق الاشتراك المستهدف
+
+يتيح ذلك لطبقة التحكم في ClickHouse Cloud إنشاء موارد Azure وإدارتها (مثل مجموعات الموارد وAKS والتخزين والشبكات) داخل اشتراكك، من دون تخزين بيانات اعتماد Azure الخاصة بك في ClickHouse.
+
+لمزيد من التفاصيل حول التطبيقات متعددة المستأجرين والسيناريوهات العابرة للمستأجرين في Azure، راجع:
+
+* [التطبيقات أحادية المستأجر ومتعددة المستأجرين في Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [تفويض الوصول عبر المستأجرين (مثال Azure SignalR)](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

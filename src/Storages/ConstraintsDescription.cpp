@@ -1,6 +1,5 @@
 #include <Storages/ConstraintsDescription.h>
 
-#include <Common/quoteString.h>
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
@@ -15,7 +14,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <Core/Defines.h>
 
@@ -31,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 String ConstraintsDescription::toString() const
@@ -87,23 +84,10 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
     return res;
 }
 
-ASTs ConstraintsDescription::filterConstraintsForOptimization() const
-{
-    ASTs res;
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
-    {
-        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
-            continue;
-        res.push_back(constraint);
-    }
-    return res;
-}
-
 std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildConstraintData() const
 {
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
-    for (const auto & constraint : filterConstraintsForOptimization())
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
@@ -117,7 +101,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
 std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
 {
     std::vector<CNFQueryAtomicFormula> constraint_data;
-    for (const auto & constraint : filterConstraintsForOptimization())
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
              .pullNotOutFunctions();
@@ -185,18 +169,6 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
     return res;
 }
 
-void ConstraintsDescription::checkExpressionsPreserveRowCount() const
-{
-    for (const auto & constraint : constraints)
-    {
-        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
-                backQuote(declaration.name));
-    }
-}
-
 const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
 {
     return *graph;
@@ -229,14 +201,14 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomsById(const Co
     return result;
 }
 
-ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const
+ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
 {
     QueryTreeData data;
     std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;
 
     QueryAnalysisPass pass(table_node);
 
-    for (const auto & constraint : filterConstraintsForOptimization())
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".

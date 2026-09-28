@@ -10,13 +10,18 @@ on:
         description: Git reference (branch or commit SHA) from which to create the release
         required: true
         default: ''
-      skip-repo:
-        description: Skip repo updates (package export/test); for recovery/rerun
+      type:
+        description: Release type - new for a new release branch, patch for a patch release
+        type: choice
+        options: ['patch', 'new']
+        default: patch
+      only-repo:
+        description: Run only repo updates including docker (repo-recovery, tests)
         required: false
         type: boolean
         default: false
-      skip-docker:
-        description: Skip docker image builds; for recovery/rerun
+      only-docker:
+        description: Run only docker builds (repo-recovery, tests)
         required: false
         type: boolean
         default: false
@@ -36,13 +41,18 @@ on:
         required: true
         type: string
         default: ''
-      skip-repo:
-        description: Skip repo updates (package export/test); for recovery/rerun
+      type:
+        description: Release type - new for a new release branch, patch for a patch release
+        required: true
+        type: string
+        default: patch
+      only-repo:
+        description: Run only repo updates including docker (repo-recovery, tests)
         required: false
         type: boolean
         default: false
-      skip-docker:
-        description: Skip docker image builds; for recovery/rerun
+      only-docker:
+        description: Run only docker builds (repo-recovery, tests)
         required: false
         type: boolean
         default: false
@@ -82,12 +92,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
           export ROBOT_CLICKHOUSE_COMMIT_TOKEN=$(cat<<'EOF'
           ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
           EOF

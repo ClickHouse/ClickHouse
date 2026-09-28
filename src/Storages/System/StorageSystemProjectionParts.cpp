@@ -1,6 +1,4 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -30,7 +28,6 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"active",                                      std::make_shared<DataTypeUInt8>(),  "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(), "The number of rows."},
-        {"files",                                       std::make_shared<DataTypeUInt64>(), "The number of files in the data part."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(), "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(), "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -74,7 +71,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule."},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule."},
 
-        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns). `UNKNOWN` means this codec could not be recovered exactly from the part metadata."},
+        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns)."},
 
         {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
         {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
@@ -96,21 +93,13 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 }
 
 void StorageSystemProjectionParts::processNextStorage(
-    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPartState;
     MergeTreeData::DataPartStateVector all_parts_state;
-    QueryStatusPtr query_status = context->getProcessListElement();
-
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
-
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
-
-        slowDownSystemPartsEnumeration(info.table);
-
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
         chassert(parent_part);
@@ -140,8 +129,6 @@ void StorageSystemProjectionParts::processNextStorage(
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->rows_count);
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->checksums.files.size());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
@@ -275,10 +262,8 @@ void StorageSystemProjectionParts::processNextStorage(
 
         if (columns_mask[src_index++])
         {
-            if (part->default_codec_is_approximate)
-                columns[res_index++]->insert("UNKNOWN");
-            else if (part->default_codec)
-                columns[res_index++]->insert(part->default_codec->getCodecDescription()->formatForLogging());
+            if (part->default_codec)
+                columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
             else
                 columns[res_index++]->insertDefault();
         }

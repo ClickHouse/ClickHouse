@@ -247,7 +247,7 @@ return rows.Err()
   ## الإدراج غير المتزامن
 </div>
 
-تدعم عمليات الإدراج غير المتزامنة عبر الطريقة Async. ويتيح ذلك للمستخدم تحديد ما إذا كان ينبغي للعميل انتظار الخادم حتى يُكمل عملية الإدراج، أو أن يستجيب بمجرد استلام البيانات. وهذا يتحكم فعليًا في المعلَمة [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings/wait-for#wait_for_async_insert).
+تدعم عمليات الإدراج غير المتزامنة عبر الطريقة Async. ويتيح ذلك للمستخدم تحديد ما إذا كان ينبغي للعميل انتظار الخادم حتى يُكمل عملية الإدراج، أو أن يستجيب بمجرد استلام البيانات. وهذا يتحكم فعليًا في المعلَمة [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings#wait_for_async_insert).
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

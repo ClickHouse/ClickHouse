@@ -17,7 +17,7 @@ Pour comprendre ce qui peut avoir un impact sur votre facture et découvrir comm
 
 <Note>
   * Les prix correspondent à la tarification AWS us-east-1.
-  * Consultez [ici](/fr/products/cloud/reference/billing/network-data-transfer) les frais applicables de transfert de données.
+  * Consultez [ici](/fr/products/cloud/reference/billing/network-data-transfer) les frais applicables de transfert de données et de ClickPipes.
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 Le journal des requêtes de ClickHouse capture des [métriques clés](/fr/reference/system-tables/query_log) qui peuvent être utilisées pour estimer le coût d’exécution d’une charge de travail dans ClickHouse Cloud.
-Pour migrer de ClickHouse autogéré vers ClickHouse Cloud, utilisez soit [`remoteSecure`](/fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud), soit [`BACKUP` et `RESTORE`](/fr/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). Contactez le [support ClickHouse Cloud](https://console.clickhouse.cloud/support) si vous avez d’autres questions.
+Pour en savoir plus sur la migration d’un déploiement autogéré vers ClickHouse Cloud, veuillez consulter la [documentation de migration](/fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) et contacter le [support ClickHouse Cloud](https://console.clickhouse.cloud/support) si vous avez d’autres questions.
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### Quelles options de facturation sont disponibles pour ClickHouse Cloud ?
@@ -351,7 +351,8 @@ Une facture consolidée est établie pour tous les services d’une organisation
   ### Si j’ajoute ma carte de crédit et passe à une offre payante avant la fin de ma période d’essai et l’expiration de mes crédits, serai-je facturé ?
 </div>
 
-Lorsqu’un utilisateur ajoute une carte de crédit pendant sa période d’essai, nous continuons d’utiliser les crédits d’essai jusqu’à leur épuisement ou leur expiration, selon la première éventualité. Les crédits d’essai expirent à la fin de la période d’essai de 30 jours, même après l’ajout d’un mode de paiement. Une fois les crédits d’essai épuisés ou expirés, les frais sont facturés sur la carte de crédit enregistrée. Vous pouvez consulter la date d’expiration de vos crédits d’essai sur la page Billing de la console ClickHouse Cloud.
+Lorsqu’un utilisateur passe de l’essai à une offre payante avant la fin de la période d’essai de 30 jours, alors qu’il lui reste encore des crédits d’essai,
+nous continuons d’utiliser ces crédits pendant la période d’essai initiale de 30 jours, puis nous débitons la carte de crédit.
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### Comment puis-je suivre mes dépenses ?
@@ -491,4 +492,4 @@ Cependant, combiner deux services dans un warehouse et en mettre un en veille vo
   ## Tarification de ClickPipes
 </div>
 
-Pour en savoir plus sur la facturation de ClickPipes, veuillez consulter la section dédiée [« ClickPipes »](/fr/products/cloud/reference/billing/clickpipes/index).
+Pour en savoir plus sur la facturation de ClickPipes, veuillez consulter la section dédiée [« Facturation de ClickPipes »](/fr/products/cloud/reference/billing/clickpipes/index).

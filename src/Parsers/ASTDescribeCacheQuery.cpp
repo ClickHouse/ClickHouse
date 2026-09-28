@@ -10,7 +10,6 @@ String ASTDescribeCacheQuery::getID(char) const { return "DescribeCacheQuery"; }
 ASTPtr ASTDescribeCacheQuery::clone() const
 {
     auto res = make_intrusive<ASTDescribeCacheQuery>(*this);
-    res->children.clear();
     cloneOutputOptions(*res);
     return res;
 }

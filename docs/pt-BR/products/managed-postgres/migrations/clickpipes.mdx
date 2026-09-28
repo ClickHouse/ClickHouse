@@ -7,7 +7,7 @@ keywords: ['postgres', 'postgresql', 'replicação lógica', 'migração', 'clic
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
@@ -59,7 +59,7 @@ Clique em **Iniciar importação**.
 
 Preencha os detalhes da conexão com seu banco de dados PostgreSQL de origem: host, porta, nome de usuário, senha e nome do banco de dados. Ative **TLS** se a origem exigir.
 
-Se você precisar de uma conexão privada com seu banco de dados de origem, poderá optar por **tunelamento SSH** e fornecer os detalhes de SSH necessários. Isso permite que a migração se conecte com segurança a bancos de dados que não estão acessíveis publicamente.
+Se você precisar de uma conexão privada com seu banco de dados de origem, poderá optar por **tunelamento SSH** e fornecer os detalhes necessários de SSH. Isso permite que a migração se conecte com segurança a bancos de dados que não estão acessíveis publicamente.
 
 Escolha um método de ingestão:
 
@@ -69,45 +69,13 @@ Escolha um método de ingestão:
 
 <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Etapa 1: formulário de conexão com o banco de dados de origem com opções de método de ingestão" size="lg" border />
 
-Clique em **Próximo**.
-
-<div id="automated-schema-migration">
-  ## Migração automatizada de esquema
-</div>
-
-<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Etapa 2: migração automatizada de esquema com seletor de banco de dados de destino" size="lg" border />
-
-Ao escolher essa opção, o ClickPipe extrairá automaticamente o esquema do seu banco de dados de origem e o aplicará ao serviço Managed Postgres durante a [fase de Setup](/pt-BR/integrations/clickpipes/postgres/lifecycle#setup) do ClickPipe, após sua criação.
-
-Esse recurso pressupõe um **banco de dados de destino vazio**, pois extrai todos os objetos do banco de dados de origem, independentemente das tabelas que você selecionar posteriormente no assistente. Se já houver dados no banco de dados de destino ou se você quiser uma configuração mais personalizada, deverá optar pelo modo [**Manual**](#manual-schema-migration).
-
-Selecione o banco de dados de destino no menu suspenso ou clique em **Criar um novo banco de dados** para provisionar um.
-
-<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Caixa de diálogo para criar um novo banco de dados Postgres" size="lg" border />
-
-<div id="monitoring">
-  ### Monitoramento
-</div>
-
-Você pode acompanhar o andamento da migração de esquema na visualização de detalhes do ClickPipes. Os **Logs** indicarão o status da migração de esquema, e quaisquer erros encontrados também serão exibidos ali.
-
-Este modo tem as seguintes limitações:
-
-* Pipes que usam tunelamento SSH não podem usar a migração automatizada de esquema. O esquema deve ser [exportado e importado manualmente](#manual-schema-migration).
-
-<div id="manual-schema-migration">
-  ## Migração manual de esquema
-</div>
-
-Caso você já tenha dados no banco de dados de destino ou queira uma configuração mais personalizada, em vez do ambiente limpo exigido pelo modo automatizado, selecione o modo **Manual**.
-
-<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Passo 2: Migração manual de esquema com o comando de exportação pg_dump" size="lg" border />
+Clique em **próximo**.
 
 <div id="step-2-export-schema">
-  ### Exporte o esquema do seu banco de dados
+  ## Etapa 2: Exporte o esquema do seu banco de dados
 </div>
 
-O assistente exibe um comando `pg_dump` preenchido previamente com os detalhes da conexão de origem. Execute-o em um terminal:
+O assistente exibe um comando `pg_dump` já preenchido com os detalhes da conexão de origem. Execute-o em um terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Etapa 2: comando pg_dump para exportação do esquema" size="lg" border />
 
@@ -124,13 +92,13 @@ Isso cria `pg.sql` no diretório atual.
 
 <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Saída do terminal após executar pg_dump" size="lg" border />
 
-Clique em **Próximo**.
+Clique em **próximo**.
 
 <div id="step-3-import-schema">
-  ### Importe o esquema para seu serviço Managed Postgres
+  ## Etapa 3: Importe o esquema para o seu serviço Managed Postgres
 </div>
 
-Selecione o banco de dados de destino na lista suspensa ou clique em **Criar um novo banco de dados** para provisionar um.
+Selecione o banco de dados de destino na lista suspensa ou clique em **Criar um novo banco de dados** para provisionar outro.
 
 O assistente exibe um comando `psql` para aplicar o dump do esquema ao seu serviço Managed Postgres. Execute-o em um terminal:
 
@@ -145,7 +113,7 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Saída do terminal após executar a importação do esquema com psql" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Saída do terminal após executar a importação do esquema com o psql" size="lg" border />
 
 Clique em **Próximo**.
 
@@ -187,7 +155,7 @@ Após criar a migração, ela aparecerá listada em **Fontes de dados** com o st
 
 <Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de fontes de dados mostrando uma migração em execução" size="lg" border />
 
-Clique na migração para abrir a tela de detalhes. A aba **Tabelas** mostra o progresso da carga inicial de cada tabela, incluindo linhas processadas, partições e o tempo médio por partição. A aba **Métricas** mostra a defasagem da replicação e a taxa de transferência quando o CDC começar.
+Clique na migração para abrir a tela de detalhes. A aba **Tabelas** mostra o progresso da carga inicial de cada tabela, incluindo linhas processadas, partições e o tempo médio por partição. A aba **Métricas** mostra o atraso da replicação e a taxa de transferência quando o CDC começar.
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Tela de detalhes da migração mostrando estatísticas da carga inicial por tabela" size="lg" border />
 
@@ -260,4 +228,4 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 * [Guia de início rápido do Managed Postgres](/pt-BR/products/managed-postgres/quickstart)
 * [Detalhes de conexão do Managed Postgres](/pt-BR/products/managed-postgres/connection)
-* [FAQ do ClickPipes Postgres](/pt-BR/integrations/clickpipes/postgres/faq)
+* [FAQ do Postgres no ClickPipes](/pt-BR/integrations/clickpipes/postgres/faq)

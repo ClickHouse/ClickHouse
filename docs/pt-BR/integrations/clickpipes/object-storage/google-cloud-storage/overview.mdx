@@ -44,7 +44,7 @@ Quando a ingestão contínua está ativada, o ClickPipes ingere continuamente da
 
 O GCS ClickPipe parte do pressuposto de que os arquivos são adicionados a um bucket em ordem lexicográfica e depende dessa ordem implícita para fazer a ingestão dos arquivos sequencialmente. Isso significa que qualquer novo arquivo **deve** ser lexicograficamente maior que o último arquivo ingerido. Por exemplo, arquivos chamados `file1`, `file2` e `file3` serão ingeridos em sequência, mas, se um novo `file 0` for adicionado ao bucket, ele será **ignorado**, porque o nome do arquivo não é lexicograficamente maior que o do último arquivo ingerido.
 
-Nesse modo, o GCS ClickPipe faz a carga inicial de **todos os arquivos** no caminho especificado e, em seguida, verifica periodicamente se há novos arquivos em um intervalo configurável (por padrão, 30 segundos). Para iniciar a ingestão contínua após um arquivo específico, configure **Start after**. O ClickPipes ignorará arquivos que forem lexicograficamente menores ou iguais ao valor configurado e continuará a ingerir arquivos mais novos a partir desse ponto.
+Nesse modo, o GCS ClickPipe faz a carga inicial de **todos os arquivos** no caminho especificado e, em seguida, verifica periodicamente se há novos arquivos em um intervalo configurável (por padrão, 30 segundos). **Não é possível** iniciar a ingestão a partir de um arquivo específico ou de um ponto específico no tempo — o ClickPipes sempre carregará todos os arquivos no caminho especificado.
 
 <div id="continuous-ingestion-any-order">
   #### Qualquer ordem
@@ -60,7 +60,7 @@ Nesse modo, o GCS ClickPipe faz a carga inicial de **todos os arquivos** no cami
   O modo não ordenado **não** é compatível com buckets públicos. Ele exige autenticação com **Service Account** e uma assinatura do [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) conectada ao bucket.
 </Note>
 
-Nesse modo, o GCS ClickPipe faz uma carga inicial de **todos os arquivos** no caminho selecionado e, em seguida, monitora notificações `OBJECT_FINALIZE` via a assinatura do Pub/Sub que correspondam ao caminho especificado. Qualquer mensagem referente a um arquivo já visto, a um arquivo que não corresponda ao caminho ou a um evento de outro tipo será **ignorada**. Para fazer a ingestão apenas dos arquivos entregues por meio da assinatura, habilite **Ignorar carga inicial**. Quando habilitado, o ClickPipes ignora a varredura inicial dos arquivos existentes no caminho selecionado e processa apenas os arquivos entregues por meio da assinatura do Pub/Sub.
+Nesse modo, o GCS ClickPipe faz um carregamento inicial de **todos os arquivos** no caminho selecionado e, em seguida, monitora notificações `OBJECT_FINALIZE` via a assinatura do Pub/Sub que correspondam ao caminho especificado. Qualquer mensagem referente a um arquivo já visto, a um arquivo que não corresponda ao caminho ou a um evento de outro tipo será **ignorada**. **Não é possível** iniciar a ingestão a partir de um arquivo específico ou de um ponto específico no tempo — o ClickPipes sempre carregará todos os arquivos no caminho selecionado.
 
 <div id="file-pattern-matching">
   ### Correspondência de padrões de arquivos
@@ -167,7 +167,7 @@ Siga [este guia](/pt-BR/integrations/connectors/data-sources/gcs#create-a-servic
 
 Os ClickPipes do GCS usam dois caminhos de rede distintos para a descoberta de metadados e a ingestão de dados: o serviço ClickPipes e o serviço ClickHouse Cloud, respectivamente. Se você quiser configurar uma camada adicional de segurança de rede (por exemplo, por motivos de compliance), o acesso de rede **deve ser configurado para ambos os caminhos**.
 
-* Para **controle de acesso baseado em IP**, as [regras de filtragem de IP](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) do seu GCS bucket devem permitir os IPs estáticos da região do serviço ClickPipes listados [aqui](/pt-BR/integrations/clickpipes/networking/static-ips), bem como os [IPs estáticos](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api) do serviço ClickHouse Cloud. Para obter os IPs estáticos da sua região do ClickHouse Cloud, abra um terminal e execute:
+* Para **controle de acesso baseado em IP**, as [regras de filtragem de IP](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) do seu GCS bucket devem permitir os IPs estáticos da região do serviço ClickPipes listados [aqui](/pt-BR/integrations/clickpipes/home#list-of-static-ips), bem como os [IPs estáticos](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api) do serviço ClickHouse Cloud. Para obter os IPs estáticos da sua região do ClickHouse Cloud, abra um terminal e execute:
 
   ```bash
   # Substitua <your-region> pela sua região do ClickHouse Cloud
@@ -180,20 +180,18 @@ Os ClickPipes do GCS usam dois caminhos de rede distintos para a descoberta de m
 
 O ClickPipes vem com configurações padrão adequadas para a maioria dos casos de uso. Se o seu caso de uso exigir um ajuste mais fino, você poderá ajustar as seguintes configurações:
 
-| Configuração                         | Valor padrão | Descrição                                                                                                                                                             |
-| ------------------------------------ | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB         | Número de bytes a processar em um único lote de inserção.                                                                                                             |
-| `Max file count`                     | 100          | Número máximo de arquivos a processar em um único lote de inserção.                                                                                                   |
-| `Max threads`                        | auto(3)      | [Número máximo de threads simultâneas](/pt-BR/reference/settings/session-settings/max-threads#max_threads) para o processamento de arquivos.                          |
-| `Max insert threads`                 | 1            | [Número máximo de threads de inserção simultâneas](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads) para o processamento de arquivos.        |
-| `Min insert block size bytes`        | 1GB          | [Tamanho mínimo, em bytes, do bloco](/pt-BR/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que pode ser inserido em uma tabela.          |
-| `Max download threads`               | 4            | [Número máximo de threads de download simultâneas](/pt-BR/reference/settings/session-settings/max-download#max_download_threads).                                     |
-| `Object storage polling interval`    | 30s          | Configura o tempo máximo de espera antes de inserir dados no cluster do ClickHouse.                                                                                   |
-| `Start after`                        | None         | Para ingestão contínua ordenada, ignora arquivos lexicograficamente menores ou iguais ao nome de arquivo ou caminho configurado.                                      |
-| `Skip initial load`                  | false        | Para ingestão contínua não ordenada, ignora a varredura inicial de arquivos existentes e processa apenas notificações de objetos da assinatura Pub/Sub configurada.   |
-| `Parallel distributed insert select` | 2            | [Configuração de insert select distribuído em paralelo](/pt-BR/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                      |
-| `Parallel view processing`           | false        | Se deve habilitar o envio para visões anexadas [em paralelo em vez de sequencialmente](/pt-BR/reference/settings/session-settings/parallel#parallel_view_processing). |
-| `Use cluster function`               | true         | Se os arquivos devem ser processados em paralelo em vários nós.                                                                                                       |
+| Configuração                         | Valor padrão | Descrição                                                                                                                                             |
+| ------------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB         | Número de bytes a processar em um único lote de inserção.                                                                                             |
+| `Max file count`                     | 100          | Número máximo de arquivos a processar em um único lote de inserção.                                                                                   |
+| `Max threads`                        | auto(3)      | [Número máximo de threads simultâneas](/pt-BR/reference/settings/session-settings#max_threads) para o processamento de arquivos.                            |
+| `Max insert threads`                 | 1            | [Número máximo de threads de inserção simultâneas](/pt-BR/reference/settings/session-settings#max_insert_threads) para o processamento de arquivos.         |
+| `Min insert block size bytes`        | 1GB          | [Tamanho mínimo, em bytes, do bloco](/pt-BR/reference/settings/session-settings#min_insert_block_size_bytes) que pode ser inserido em uma tabela.           |
+| `Max download threads`               | 4            | [Número máximo de threads de download simultâneas](/pt-BR/reference/settings/session-settings#max_download_threads).                                        |
+| `Object storage polling interval`    | 30s          | Configura o tempo máximo de espera antes de inserir dados no cluster do ClickHouse.                                                                   |
+| `Parallel distributed insert select` | 2            | [Configuração de insert select distribuído em paralelo](/pt-BR/reference/settings/session-settings#parallel_distributed_insert_select).                     |
+| `Parallel view processing`           | false        | Se deve habilitar o envio para views anexadas [em paralelo em vez de sequencialmente](/pt-BR/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true         | Se os arquivos devem ser processados em paralelo em vários nós.                                                                                       |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configurações avançadas do ClickPipes" size="lg" border />
 

@@ -1,6 +1,0 @@
--- wrong number of arguments
--- first argument must be an instant vector
--- bounds must be scalars
--- valid calls still work
-[('host','h1')]	1970-01-01 00:01:50.000	2
-[('host','h1')]	1970-01-01 00:01:50.000	3

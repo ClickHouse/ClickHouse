@@ -9,8 +9,6 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <optional>
-
 
 namespace DB
 {
@@ -51,26 +49,11 @@ private:
 
         struct Buffer : private boost::noncopyable
         {
-            struct UnchangedToastValue
-            {
-                size_t row_idx;
-                size_t column_idx;
-                size_t key_source_row_idx;
-            };
-
             Block sample_block;
             MutableColumns columns;
             ASTExpressionList columns_ast;
-            Int32 relation_id;
-            std::vector<size_t> key_column_indices;
-            std::unordered_set<size_t> rows_with_defaulted_key_values;
-            std::vector<UnchangedToastValue> unchanged_toast_values;
 
-            explicit Buffer(
-                ColumnsWithTypeAndName && columns_,
-                Int32 relation_id_,
-                std::vector<size_t> key_column_indices_,
-                const ExternalResultDescription & table_description_);
+            explicit Buffer(ColumnsWithTypeAndName && columns_, const ExternalResultDescription & table_description_);
 
             void assertInsertIsPossible(size_t col_idx) const;
         };
@@ -126,9 +109,7 @@ private:
     bool isSyncAllowed(Int32 relation_id, const String & relation_name);
 
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
-    /// Returns true if a source-value conversion failure was replaced with the column default.
-    bool insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
-    void preserveUnchangedToastValues(StorageData & storage_data, StorageData::Buffer & buffer);
+    void insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
 
     enum class PostgreSQLQuery : uint8_t
     {
@@ -137,14 +118,7 @@ private:
         DELETE
     };
 
-    size_t readTupleData(
-        StorageData & storage_data,
-        const char * message,
-        size_t & pos,
-        size_t size,
-        PostgreSQLQuery type,
-        bool old_value = false,
-        std::optional<size_t> key_source_row_idx = {});
+    void readTupleData(StorageData & storage_data, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
 
     template<typename T>
     static T unhexN(const char * message, size_t pos, size_t n);
@@ -154,10 +128,7 @@ private:
     static Int16 readInt16(const char * message, size_t & pos, size_t size);
     static Int8 readInt8(const char * message, size_t & pos, size_t size);
 
-    void markTableAsSkipped(
-        Int32 relation_id,
-        const String & relation_name,
-        const String & skip_reason = "because its structure has changes");
+    void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
     /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)

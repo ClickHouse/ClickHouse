@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -33,15 +33,17 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 Выделенному пользователю требуются привилегии `SELECT` для таблиц, которые вы хотите запрашивать, а также для таблиц `system` (для определения схемы).
 
 ```sql
--- Example: Grant read access to a specific database
+-- Пример: предоставление доступа на чтение к конкретной базе данных
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- Grant access to system metadata
+-- Предоставление доступа к системным метаданным
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step title="Соберите сведения о подключении" id="step-1-gather-connection-details">
+  <Step>
+    ## Соберите сведения о подключении
+
     Чтобы подключиться к ClickHouse по HTTP(S), вам понадобятся следующие сведения:
 
     | **Parameter**     | **Description**                                                                                |
@@ -57,7 +59,9 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Расположение кнопки Connect в консоли ClickHouse Cloud" border />
   </Step>
 
-  <Step title="Настройте сетевой доступ" id="step-2-configure-network-access">
+  <Step>
+    ## Настройте сетевой доступ
+
     Поскольку Holistics — облачное приложение, его серверы должны иметь доступ к вашей базе данных. У вас есть два варианта:
 
     1. **Прямое подключение (рекомендуется):** Добавьте IP-адреса Holistics в список разрешённых в вашем межсетевом экране или в ClickHouse Cloud IP Access List. Список IP-адресов можно найти в руководстве [IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
@@ -67,10 +71,12 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **Обратный SSH-туннель:** Если ваша база данных находится в частной сети (VPC) и не может быть доступна публично, используйте [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
 
-  <Step title="Добавьте источник данных в Holistics" id="step-3-add-data-source-in-holistics">
-    1. В Holistics перейдите в **Settings → источник данных**.
+  <Step>
+    ## Добавьте источник данных в Holistics
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Переход к источнику данных в настройках Holistics" border />
+    1. В Holistics перейдите в **Settings → Data Sources**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Переход к Data Sources в настройках Holistics" border />
 
     2. Нажмите **New Data Source** и выберите **ClickHouse**.
 

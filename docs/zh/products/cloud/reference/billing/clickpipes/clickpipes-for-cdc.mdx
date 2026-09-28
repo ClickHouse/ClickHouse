@@ -1,144 +1,124 @@
 ---
-sidebarTitle: '变更数据捕获 (CDC)'
+sidebarTitle: 'PostgreSQL CDC（变更数据捕获）'
 slug: /cloud/reference/billing/clickpipes/postgres-cdc
-title: 'CDC（变更数据捕获） 的 ClickPipes'
-description: 'CDC（变更数据捕获） ClickPipes 的计费概览'
+title: 'PostgreSQL CDC（变更数据捕获） 的 ClickPipes'
+description: 'PostgreSQL CDC（变更数据捕获） ClickPipes 的计费概览'
 doc_type: 'reference'
 keywords: ['计费', 'clickpipes', 'cdc 定价', '成本', '定价']
 ---
 
-本节介绍 ClickPipes 中 CDC (变更数据捕获) 连接器的定价模式。
+本节介绍 ClickPipes 中 Postgres CDC（变更数据捕获） 连接器的定价模式。设计这一模式时，我们的目标是在保持价格极具竞争力的同时，坚持我们的核心愿景：
 
-<div id="cdc-oltp">
-  ## OLTP CDC
-</div>
+> 让客户能够以无缝且经济实惠的方式将数据从 Postgres 迁移到 ClickHouse，用于
+> 实时分析。
 
-| 连接器              | 功能生命周期      | 计费状态                                                                                                  |
-| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
-| **Postgres CDC** | 正式发布 (GA)   | 按所列[定价维度](#pricing-dimensions-oltp)计费。                                                                |
-| **MySQL CDC**    | Public Beta | Public Beta 期间**免费**。该连接器于 **2026 年 9 月 1 日**晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。 |
-| **MongoDB CDC**  | Public Beta | Public Beta 期间**免费**。该连接器晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。                     |
-
-<div id="pricing-dimensions-oltp">
-  ### 定价维度
-</div>
-
-OLTP CDC 连接器的定价基于两个维度：[数据量](#data-volume-oltp)和[计算](#compute-oltp)。
-
-<div id="data-volume-oltp">
-  #### 数据量
-</div>
-
-从数据库复制 stream 读取并摄取到 ClickHouse 的原始未压缩字节数。定价取决于摄取阶段：
-
-* **初始加载 / 重新同步**：在此阶段，connector 会捕获并摄取所选复制表的一致性快照。首次创建 ClickPipe、向现有 ClickPipe 添加新表，或发生不可恢复的 error 而需重新摄取一致性快照时，都会执行此操作。
-
-* **持续复制 (CDC)**：在此阶段，connector 会捕获所选复制表的持续变更，例如插入、更新和删除。当初始加载阶段完成且 ClickPipe 转换为 `Running` 状态时，会进入此阶段。
-
-| 阶段              | 费用         |
-| --------------- | ---------- |
-| **初始加载 / 重新同步** | $0.10 / GB |
-| **持续复制 (CDC)**  | $0.20 / GB |
-
-<div id="compute-oltp">
-  #### 计算资源
-</div>
-
-为 CDC ClickPipes **按服务**预配的计算单元，**由**同一服务中的所有 CDC ClickPipes 共享。默认预配的计算单元取决于您的 organization 所属的层级。
-
-| 层级                        | 计算单元 (CU)                   | 费用         |
-| ------------------------- | --------------------------- | ---------- |
-| **基础版层级**                 | 0.5 CU (1 vCPU，4GB RAM) /服务 | $0.10 / 小时 |
-| **Scale 或 Enterprise 层级** | 1 CU (2 vCPU，8 GB RAM) /服务  | $0.20 / 小时 |
-
-由于计算资源由服务内的 CDC ClickPipes 共享，随着 CDC ClickPipes 使用量的增加，此定价项的每服务费用保持**不变**。您可以通过[扩缩容 CDC ClickPipes 服务](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeCdcScalingUpdate)预配额外的计算单元，价格将按比例线性增长。
-
-<div id="example-oltp">
-  ### 示例
-</div>
+与外部 ETL 工具以及其他数据库平台中的类似功能相比，该连接器的**成本效益高出 5 倍以上**。
 
 <Note>
-  本示例结合多个 connector，说明 CDC ClickPipes 的共享 compute 定价模式。请注意，[MySQL CDC 在 Public Beta 期间免费](#cdc-oltp)。
+  自 **2025 年 9 月 1 日**起，所有使用 Postgres CDC（变更数据捕获） ClickPipes 的客户 (包括现有客户和新客户) 均已开始在月度账单中按量计费。
 </Note>
 
-假设某个 **Scale** 层级的服务具有以下配置：
 
-* 1 个 **Postgres CDC** ClickPipe，复制 8 张表，初始加载量为 200 GB，每月 CDC 变更量为 100 GB。
-* 1 个 **MySQL CDC ClickPipe**，复制 5 张表，初始加载量为 100 GB，每月 CDC 变更量为 50 GB。
 
-<div id="cost-breakdown-oltp">
-  #### 每月费用明细
+## Pricing dimensions {#pricing-dimensions}
+
+There are two main dimensions to pricing:
+
+1. **摄取数据**：从 Postgres 传入并摄取到 ClickHouse 的原始未压缩字节数。
+2. **计算**：每个服务所配置的计算单元用于管理多个 Postgres CDC ClickPipes，与 ClickHouse Cloud 服务使用的计算单元相互独立。这部分额外的计算资源专门用于 Postgres CDC ClickPipes。计算费用按服务级别计费，而非按单个管道计费。每个计算单元包含 2 个 vCPU 和 8 GB RAM。
+
+### Ingested data {#ingested-data}
+
+The Postgres CDC connector operates in two main phases:
+
+- **Initial load / 重新同步**: This captures a full snapshot of Postgres tables
+  and occurs when a pipe is first created or re-synced.
+- **Continuous Replication (CDC)**: Ongoing replication of changes—such as inserts,
+  updates, deletes, and schema changes—from Postgres to ClickHouse.
+
+In most use cases, continuous replication accounts for over 90% of a ClickPipe
+life cycle. Because initial loads involve transferring a large volume of data all
+at once, we offer a lower rate for that phase.
+
+| Phase                            | Cost         |
+|----------------------------------|--------------|
+| **Initial load / 重新同步**        | $0.10 per GB |
+| **Continuous Replication (CDC)** | $0.20 per GB |
+
+### Compute {#compute}
+
+This dimension covers the compute units provisioned per service just for Postgres
+ClickPipes. Compute is shared across all Postgres pipes within a service. **It
+is provisioned when the first Postgres pipe is created and deallocated when no
+Postgres CDC pipes remain**. The amount of compute provisioned depends on your
+organization's tier:
+
+| Tier                         | Cost                                          |
+|------------------------------|-----------------------------------------------|
+| **Basic Tier**               | 0.5 compute unit per service — $0.10 per hour |
+| **Scale or Enterprise Tier** | 1 compute unit per service — $0.20 per hour   |
+
+### Example {#example}
+
+Let's say your service is in Scale tier and has the following setup:
+
+- 2 Postgres ClickPipes running continuous replication
+- Each pipe ingests 500 GB of data changes (CDC) per month
+- When the first pipe is kicked off, the service provisions **1 compute unit under the Scale Tier** for Postgres CDC
+
+#### Monthly cost breakdown {#cost-breakdown}
+
+**Ingested Data (CDC)**:
+
+$$ 2 \text{ pipes} \times 500 \text{ GB} = 1,000 \text{ GB per month} $$
+
+$$ 1,000 \text{ GB} \times \$0.20/\text{GB} = \$200 $$
+
+**Compute**:
+
+$$1 \text{ compute unit} \times \$0.20/\text{hr} \times 730 \text{ hours (approximate month)} = \$146$$
+
+<Note>
+Compute is shared across both pipes
+</Note>
+
+**Total Monthly Cost**:
+
+$$\$200 \text{ (ingest)} + \$146 \text{ (compute)} = \$346$$
+
+<div id="faq-postgres-cdc-clickpipe">
+  ## Postgres CDC（变更数据捕获） ClickPipes 常见问题
 </div>
 
-##### 首月 {#cost-breakdown-first-month-oltp}
-
-**初始加载**（一次性，按较低费率计费）：
-
-$$(200 + 100) \text{ GB} \times \$0.10/\text{GB} = \$30$$
-
-**持续复制（CDC）**：
-
-$$(100 + 50) \text{ GB} \times \$0.20/\text{GB} = \$30$$
-
-**计算**（由两个 ClickPipes 共享，按服务计费）：
-
-$$1 \text{ 个计算单元} \times \$0.20/\text{小时} \times 730 \text{ 小时} = \$146$$
-
-**首月总计**：
-
-$$\$30 \text{ （初始加载）} + \$30 \text{ （CDC）} + \$146 \text{ （计算）} = \$206$$
-
-##### 后续月份 {#cost-breakdown-following-months-oltp}
-
-$$\$30 \text{ (CDC)} + \$146 \text{ (compute)} = \$176 \text{ per month}$$
-
-对于 CDC（变更数据捕获）ClickPipes，无论 connector 类型如何，compute 都是同一 service 内**所有 CDC（变更数据捕获）ClickPipes 共享的固定成本**。在本示例中，新增一个 MySQL ClickPipe 只产生了 **ingested data** 的费用，并未带来额外的 compute 费用——也就是说，账单只随摄取的数据量增长，而与运行的 ClickPipes 数量无关。
-
-为避免性能 bottleneck 并高效复用 service 内已 provisioned 的 compute，我们建议通过单个 ClickPipe 复制同一 upstream database instance 中的所有表；除非确有充分理由，否则不必将 workload split 到多个 ClickPipes 或进行 scale up。
-
-<div id="cdc-dwh">
-  ## 数据仓库 CDC
-</div>
-
-数据仓库 CDC 连接器的定价仍在制定中。
-
-| 连接器              | 功能生命周期 | 计费状态          |
-| ---------------- | ------ | ------------- |
-| **BigQuery CDC** | 私有预览   | 私有预览期间**免费**。 |
-
-<div id="faq-cdc">
-  ## CDC ClickPipes 常见问题
-</div>
-
-<Accordion title="可以将 ClickHouse Cloud credits 用于 CDC ClickPipes 吗？">
-  可以。ClickPipes 的定价纳入统一的 ClickHouse Cloud 定价体系。您拥有的任何
-  平台 credits 都会自动用于抵扣 ClickPipes 用量。
+<Accordion title="计费中的摄取数据是按压缩后大小还是未压缩大小计算的？">
+  摄取数据按来自 Postgres 的&#95;未压缩数据&#95;计算——无论是初始加载期间，还是 CDC（变更数据捕获） (通过 replication slot) 期间都是如此。Postgres 默认不会在传输过程中压缩数据，而 ClickPipe 处理的是原始、未压缩的字节数据。
 </Accordion>
 
-<Accordion title="在当前每月 ClickHouse Cloud 支出中，CDC ClickPipes 预计会增加多少额外成本？">
-  成本影响因用例、数据量和组织层级而异。大多数客户的支出相较于基准 ClickHouse Cloud 月度支出会增加 **5–25%**，但支出较低的服务增幅可能更高。需要注意的是，CDC ClickPipes 的成本扩展效率很高：同一服务中的所有 CDC ClickPipes 共享 compute，因此新增 ClickPipes 仅会根据摄取的数据量带来少量额外成本。
-
-  对于在 `Billing Status` 下标记为 **free** 的 CDC ClickPipes connector，您可以根据 ClickPipes UI 提供的数据量指标 (**Metrics** &gt; **CDC bytes** 和 **Initial load bytes**) 以及 ClickHouse Cloud 的 [Prometheus 兼容端点](/integrations/clickpipes/monitoring)估算未来成本。
+<Accordion title="Postgres CDC（变更数据捕获） 的费用何时会开始出现在我的账单中？">
+  自 **2025 年 9 月 1 日**起，Postgres CDC（变更数据捕获） ClickPipes 的费用已开始出现在所有客户 (包括现有客户和新客户) 的月度账单中。
 </Accordion>
 
-<Accordion title="可以在 ClickHouse Cloud 账单中的何处查看 CDC ClickPipes 成本？">
-  CDC ClickPipes 成本会作为 ClickHouse Cloud 账单中的独立项目列出，`Entity Type` 为 `clickpipe`，并按定价维度细分 (`ClickPipe Data Transfer ($)`、`ClickPipe Compute ($)`、`ClickPipe Initial Load and Resyncs ($)`) 。
-
-  为便于账单协调，您可以在 ClickPipes UI 中监控实时数据量指标 (**Metrics** &gt; **CDC bytes** 和 **Initial load bytes**) ，或使用 ClickHouse Cloud 的 [Prometheus 兼容端点](/integrations/clickpipes/monitoring)将这些指标接入现有监控栈。
+<Accordion title="如果我暂停我的管道，是否还会被收费？">
+  当管道处于暂停状态时，不会产生数据摄取费用，因为此时不会传输任何数据。不过，计算资源费用仍然适用——根据您组织的层级，为 0.5 或 1 个计算单元。这是固定的服务级成本，适用于该服务中的所有管道。
 </Accordion>
 
-<Accordion title="CDC ClickPipes 会阻止我的 ClickHouse Cloud 服务进入空闲状态吗？">
-  不会，但由于 CDC 持续运行，服务可能会在配置的同步间隔被唤醒。如果有数据需要摄取，CDC ClickPipes 会在配置的同步间隔唤醒服务；否则，服务仍可正常进入空闲状态。如果某次同步时没有数据需要摄取，CDC ClickPipes **不会**唤醒服务。
+<Accordion title="我该如何估算费用？">
+  ClickPipes 的概览页面会提供初始加载/重新同步以及 CDC（变更数据捕获） 数据量的指标。您可以结合这些指标和 ClickPipes 定价来估算 Postgres CDC（变更数据捕获） 的成本。
 </Accordion>
 
-<Accordion title="暂停 CDC ClickPipe 后，我还会被收费吗？">
-  会。您仍需为服务内所有 CDC ClickPipes 共享的已预配 **compute** 资源付费。管道暂停期间不会产生数据量费用，因为不会摄取数据。
-
-  <Note>
-    不建议长时间暂停 CDC ClickPipe，因为复制日志过期可能导致其进入无法恢复的状态，并且/或者影响上游数据源的健康状况。
-  </Note>
+<Accordion title="我可以对服务中为 Postgres CDC（变更数据捕获） 分配的计算资源进行扩缩容吗？">
+  默认情况下，用户无法自行配置计算资源扩缩容。已预配的资源经过优化，可满足大多数客户工作负载的需求。如果您的使用场景需要更多或更少的计算资源，请提交支持工单，以便我们评估您的请求。
 </Accordion>
 
-<Accordion title="可以对服务中为 CDC ClickPipes 分配的 compute 进行扩缩容吗？">
-  默认为 CDC ClickPipes 预配的 compute 资源已针对大多数 workload 进行了优化，通常无需扩缩容。如果发现资源利用率存在瓶颈，可以[扩缩容 CDC ClickPipes 服务](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeCdcScalingUpdate)。compute 成本会随预配的 compute unit 线性增长。
+<Accordion title="定价粒度是什么？">
+  * **计算资源**：按小时计费。不足 1 小时按整小时向上取整计费。
+  * **摄取数据**：按未压缩数据的每千兆字节 (GB) 计量并计费。
+</Accordion>
+
+<Accordion title="我可以将我的 ClickHouse Cloud credits 用于通过 ClickPipes 使用的 Postgres CDC（变更数据捕获） 吗？">
+  可以。ClickPipes 定价是统一 ClickHouse Cloud 定价的一部分。您拥有的任何平台 credits 也都会自动适用于 ClickPipes 用量。
+</Accordion>
+
+<Accordion title="对于现有的每月 ClickHouse Cloud 支出，我应预期 Postgres CDC（变更数据捕获） ClickPipes 会增加多少额外成本？">
+  成本会因您的使用场景、数据量和组织层级而异。也就是说，大多数现有客户在试用结束后，相对于其现有的每月 ClickHouse Cloud 支出，增幅通常在 **0–15%** 之间。实际成本可能因工作负载而异——某些工作负载数据量大但处理需求较低，而另一些则数据量较小但需要更多处理。
 </Accordion>

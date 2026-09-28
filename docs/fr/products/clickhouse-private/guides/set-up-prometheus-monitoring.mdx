@@ -1,0 +1,225 @@
+---
+noindex: true
+title: "Configurer la supervision Prometheus"
+sidebarTitle: "Configurer la supervision Prometheus"
+description: "Configurer Prometheus pour collecter les métriques de ClickHouse et les visualiser à l’aide de tableaux de bord Grafana préconfigurés avec kube-prometheus-stack et le mixin Grafana ClickHouse"
+---
+
+Configurez Prometheus pour collecter les métriques de ClickHouse et les visualiser à l’aide de tableaux de bord Grafana préconfigurés avec kube-prometheus-stack et le mixin Grafana ClickHouse.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un déploiement ClickHouse Private opérationnel
+* [Helm](https://helm.sh/) disponible sur votre poste de travail
+* Un accès `kubectl` au cluster cible
+* Le chart Helm kube-prometheus-stack et ses images de conteneur disponibles dans votre registre privé (voir [Préparation des images pour Airgap](#prepare-images-for-airgap) ci-dessous)
+
+<div id="steps">
+  ## Étapes
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Installer kube-prometheus-stack
+
+    Ajoutez le dépôt Helm de la communauté Prometheus à votre client Helm local, puis téléchargez le chart :
+
+    ```bash
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+    helm pull prometheus-community/kube-prometheus-stack --version <version>
+    ```
+
+    Ensuite, installez-le à partir de votre dépôt Helm :
+
+    ```bash
+    helm install kube-prometheus-stack \
+      oci://<your-registry>/helm-charts/kube-prometheus-stack \
+      --version <version> \
+      --namespace monitoring \
+      --create-namespace \
+      --values kube-prometheus-stack-values.yaml
+    ```
+
+    > **Remarque :** kube-prometheus-stack inclut Prometheus, Alertmanager, Grafana et le Prometheus Operator. Consultez la [documentation du chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) pour obtenir la liste complète des images à mettre en miroir dans votre registre privé.
+  </Step>
+
+  <Step>
+    ### 2. Activer les PodMonitors dans le ClickHouse Operator
+
+    Le package Helm du ClickHouse Operator comprend des définitions PodMonitor pour ClickHouse Server et Keeper. Activez-les dans les valeurs Helm de votre opérateur :
+
+    ```yaml
+    metrics:
+      enabled: true
+      podmonitor:
+        enabled: true
+        scrape:
+          clickhouseServer: true
+          clickhouseKeeper: true
+    ```
+
+    Appliquez les values en mettant à niveau la version de l&#39;operator :
+
+    ```bash
+    helm upgrade clickhouse-operator \
+      oci://<your-registry>/helm-charts/clickhouse-operator \
+      --version <version> \
+      --namespace clickhouse-operator-system \
+      --values operator-values.yaml
+    ```
+
+    Cela crée deux ressources PodMonitor :
+
+    | PodMonitor                  | Cibles                                                            | Port                | Métriques                                                                       |
+    | --------------------------- | ----------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------- |
+    | `clickhouse-server-metrics` | pods portant le label `app.kubernetes.io/name: clickhouse-server` | `prometheus` (8001) | Métriques du serveur, labels de version extraits du tag de l’image de conteneur |
+    | `clickhouse-keeper-metrics` | pods portant le label `app.kubernetes.io/name: clickhouse-keeper` | `prometheus` (8001) | Métriques de Keeper                                                             |
+
+    Les deux PodMonitors portent le label `release: kube-prometheus-stack`, ce qui correspond au `podMonitorSelector` par défaut d’une instance Prometheus kube-prometheus-stack.
+
+    > **Note :** Si votre instance Prometheus utilise un autre nom de release, mettez à jour le sélecteur de labels du PodMonitor en conséquence, soit en surchargeant les templates du chart operator, soit en configurant `prometheus.prometheusSpec.podMonitorSelector` dans les values de kube-prometheus-stack.
+  </Step>
+
+  <Step>
+    ### 3. Activer le handler de métriques personnalisées (facultatif)
+
+    Le serveur ClickHouse expose des métriques `ClickHouse_CustomMetric_*` supplémentaires via un handler HTTP dédié sur le port 3123. Cet endpoint nécessite une authentification. Pour activer le scraping :
+
+    ```yaml
+    metrics:
+      enabled: true
+      podmonitor:
+        enabled: true
+        scrape:
+          clickhouseServer: true
+          clickhouseServerCustomHandler: true
+          clickhouseKeeper: true
+        basicAuth:
+          username: prometheus-internal
+          password: "<password>"
+    ```
+
+    L’opérateur stocke les informations d’identification dans un secret Kubernetes et l’utilise dans la configuration `basicAuth` du PodMonitor.
+
+    Pour la liste complète des métriques personnalisées et de leurs seuils d’alerte recommandés, consultez la [référence des métriques et des alertes](/fr/products/clickhouse-private/reference/metrics-and-alerts-reference).
+  </Step>
+
+  <Step>
+    ### 4. Vérifiez les cibles Prometheus
+
+    Après le déploiement, assurez-vous que Prometheus détecte et interroge les cibles ClickHouse :
+
+    ```bash
+    kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+    ```
+
+    Ouvrez `http://localhost:9090/targets` dans un navigateur. Recherchez les groupes de cibles nommés `podMonitor/clickhouse-operator-system/clickhouse-server-metrics` et `podMonitor/clickhouse-operator-system/clickhouse-keeper-metrics`. Toutes les cibles doivent afficher l’**État** `UP`.
+
+    Exécutez une requête de test pour vérifier que les métriques sont bien collectées :
+
+    ```text
+    up{job="clickhouse-server-metrics"}
+    ```
+  </Step>
+
+  <Step>
+    ### 5. Importer les tableaux de bord du mixin Grafana ClickHouse
+
+    Le [mixin Grafana ClickHouse](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) fournit des tableaux de bord prêts à l’emploi pour les métriques du serveur ClickHouse et de Keeper. Dans un environnement Airgap, importez manuellement les fichiers JSON des tableaux de bord.
+
+    #### Télécharger les tableaux de bord
+
+    Téléchargez les fichiers JSON des tableaux de bord du mixin depuis la [page d’intégration Grafana](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) ou exportez-les depuis une instance Grafana existante.
+
+    #### Importer via l’UI Grafana
+
+    1. Ouvrez Grafana (fourni avec kube-prometheus-stack) :
+
+       ```bash
+       kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+       ```
+
+    2. Connectez-vous à `http://localhost:3000` (identifiants par défaut : `admin` / `prom-operator`).
+
+    3. Accédez à **Dashboards &gt; Import**.
+
+    4. Importez chaque fichier JSON de tableau de bord ou collez son contenu.
+
+    5. Sélectionnez votre source de données Prometheus lorsque vous y êtes invité.
+
+    #### Importer via ConfigMap
+
+    Pour gérer les tableaux de bord comme du code, créez une ConfigMap dans l’espace de noms monitoring avec le label sidecar Grafana :
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: clickhouse-grafana-dashboards
+      namespace: monitoring
+      labels:
+        grafana_dashboard: "1"
+    data:
+      clickhouse-overview.json: |
+        { ... dashboard JSON ... }
+    ```
+
+    Le sidecar Grafana détecte automatiquement les ConfigMaps portant le label `grafana_dashboard: "1"` et charge les tableaux de bord.
+  </Step>
+
+  <Step>
+    ### 6. Configurer les règles d’alerte (facultatif)
+
+    Importez dans Prometheus les règles d’alerte ClickHouse recommandées en créant une ressource `PrometheusRule`. Consultez [Configurer les alertes](/fr/products/clickhouse-private/guides/configure-alerting-for-clickhouse) et la [Référence des métriques et des alertes](/fr/products/clickhouse-private/reference/metrics-and-alerts-reference) pour obtenir l’ensemble complet des définitions d’alerte.
+
+    Exemple :
+
+    ```yaml
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: clickhouse-alerts
+      namespace: monitoring
+      labels:
+        release: kube-prometheus-stack
+    spec:
+      groups:
+        - name: clickhouse-server
+          rules:
+            - alert: ClickhouseOperatorNotReconciling
+              expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+              for: 120m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Operator has not reconciled {{ $labels.app }} in 2 hours"
+            - alert: ClickHouseDataLoss
+              expr: ClickHouse_CustomMetric_LostPartCount > 0
+              labels:
+                severity: critical
+              annotations:
+                summary: "Lost parts detected on {{ $labels.instance }}"
+    ```
+  </Step>
+</Steps>
+
+<div id="prepare-images-for-airgap">
+  ## Préparer les images pour Airgap
+</div>
+
+Le kube-prometheus-stack nécessite les images de conteneurs suivantes. Répliquez-les dans votre registre privé avant l&#39;installation :
+
+| Composant           | Image                                                   |
+| ------------------- | ------------------------------------------------------- |
+| Prometheus          | `quay.io/prometheus/prometheus`                         |
+| Alertmanager        | `quay.io/prometheus/alertmanager`                       |
+| Grafana             | `docker.io/grafana/grafana`                             |
+| Sidecar Grafana     | `quay.io/kiwigrid/k8s-sidecar`                          |
+| Prometheus Operator | `quay.io/prometheus-operator/prometheus-operator`       |
+| kube-state-metrics  | `registry.k8s.io/kube-state-metrics/kube-state-metrics` |
+| node-exporter       | `quay.io/prometheus/node-exporter`                      |
+
+> **Remarque :** Les tags d&#39;image exacts dépendent de la version du chart kube-prometheus-stack que vous déployez. Exécutez `helm template` sur le chart téléchargé afin d&#39;extraire les références d&#39;image exactes correspondant à votre version.

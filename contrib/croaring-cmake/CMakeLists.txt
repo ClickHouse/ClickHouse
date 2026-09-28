@@ -32,6 +32,13 @@ if (OS_FREEBSD)
     target_compile_definitions(_roaring PRIVATE bswap64=__bswap64)
 endif()
 
+# clang-21 MemorySanitizer checks the value instead of the shadow of the index operand of AVX-512
+# `vpermi2var`/`vpermt2var` intrinsics (https://github.com/llvm/llvm-project/pull/148785, fixed in clang-22),
+# which produces false positives in croaring's AVX-512 kernels (e.g. `avx512_emit_unique16`).
+if (SANITIZE STREQUAL "memory")
+    target_compile_definitions(_roaring PUBLIC CROARING_COMPILER_SUPPORTS_AVX512=0)
+endif()
+
 target_include_directories(_roaring PRIVATE "${LIBRARY_DIR}/include/roaring")
 target_include_directories(_roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
 target_include_directories(_roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/cpp")

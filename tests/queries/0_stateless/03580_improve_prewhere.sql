@@ -20,9 +20,7 @@ CREATE TABLE test_improve_prewhere (
     value UInt32 STATISTICS(TDigest),
     date Date STATISTICS(CountMin),
 ) ENGINE = MergeTree()
-ORDER BY primary_key
--- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+ORDER BY primary_key;
 
 INSERT INTO test_improve_prewhere
 SELECT

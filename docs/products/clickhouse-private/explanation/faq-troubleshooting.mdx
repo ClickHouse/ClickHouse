@@ -1,0 +1,101 @@
+---
+noindex: true
+title: "FAQ / Troubleshooting"
+sidebarTitle: "FAQ"
+description: "If this error shows up in the ClickHouse operator logs it means it isn't able to complete reconciliation of the ClickHouse Cluster because the operator"
+---
+
+## zone details couldn't be found for any PV?
+
+If this error shows up in the ClickHouse operator logs it means it isn't able to complete reconciliation of the ClickHouse Cluster because the operator expects topology aware node affinities to be automatically populated on the PersistentVolumes. Specifically, the operator looks for node affinities based on the `topology.kubernetes.io/zone` label. Normally this is handled by topology-aware volume provisioners (e.g. when using the AWS EBS volume provisioner).
+
+However, for certain cloud providers (e.g. IBM) or on-premise environments this won't be automatically populated or non-standard labels will be used. To ensure the operator can still continue operations it is recommended to add the node affinities on the storage class, like for example:
+
+``` yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+This will ensure storage volumes are created with the correct node affinities. For example:
+
+``` yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+If non-standard labels are used to handle the topology the operator exposes an `additionalZoneLabelRegexes` property. For example, if you are using the helm chart to install the operator, you can set the `operator.additionalZoneLabelRegexes` helm value to `directpv.*zone` to match the above PersistentVolume.
+
+## What does the loadBalancerType field on the ClickHouseCluster CRD do?
+
+The `loadBalancerType` doesn't actually add load balancer annotations to the Service of the ClickHouse cluster. Currently, the ClickHouse operator doesn't support creating a load balancer for the ClickHouse cluster. This field only serves a purpose in ClickHouse Cloud where it is used to help create users for the Cloud SQL Console.
+
+## Do I have to use a NVMe attached instance? What purpose does the NVMe disk serve?
+
+The NVMe disk is used by the ClickHouse operator to mount a cache volume in the ClickHouse server pods. This cache volume is used as a cache for data coming from S3 (or equivalent object storages). The operator automatically sets up the disks in the ClickHouse server configuration:
+
+``` yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+Note that if using the SharedMergeTree ClickHouse doesn't actually store data locally. There is no purpose other than optimising the performance of queries executing against the SharedMergeTree.
+
+It is possible to use other storage devices, such as e.g. AWS EBS when using EC2 instances. This changes a few steps in the onboarding guide:
+
+- You need to make sure the disks are attached to the instances used to schedule the ClickHouse server Kubernetes pods
+- The launch template should be altered to reflect the changes in disk architecture. It is still possible to create a RAID disk & to format the disk as ext4 or xfs but obviously the devices should be listed with another tool (e.g. lsblk).
+- If the disks aren't mounted at `/nvme/disk` like in the example launch template, the `hostPathBaseDirectory` in the ClickHouseCluster helm chart should be set to the actual mount point.
+
+Note that depending on the choices made, you can impact the performance of queries.
+
+## Can I deploy multiple ClickHouseClusters in the same namespace?
+
+No. The operator assumes exactly one `ClickHouseCluster` per namespace. Deploying multiple instances in the same namespace will cause reconciliation conflicts. The `onprem-clickhouse-cluster` Helm chart enforces this by default via a `ResourceQuota` that limits the namespace to a single `ClickHouseCluster` resource. If you need multiple clusters, deploy each in its own namespace.
+
+## I use S3-compatible storage, but region information isn't required (or causes issues)
+
+The operator by default enforces region information in the S3 connection. This is the preferred behavior for cloud object storage, but if you are using on-premise object storage (e.g., MinIO), region information can cause issues.
+
+The operator can disable region enforcement on a per-cluster basis by setting `spec.isOnPremiseInstance` to `true` on the `ClickHouseCluster` custom resource. When set, the operator makes region information optional in the S3 connection -- if no region is passed, the region field is removed from the configuration entirely.

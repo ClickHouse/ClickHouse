@@ -1,0 +1,162 @@
+---
+noindex: true
+title: "ClickHouse Private API 설치"
+sidebarTitle: "관리 API 설치"
+description: "이 튜토리얼에서는 백업 및 수직 스케일링과 같은 일반적인 관리 작업을 지원하는 선택적 독립 실행형 구성 요소인 ClickHouse Private API를 설치하는 방법을 안내합니다"
+---
+
+이 튜토리얼에서는 백업 및 수직 스케일링과 같은 일반적인 관리 작업을 지원하는 선택적 독립 실행형 구성 요소인 ClickHouse Private API를 설치하는 방법을 안내합니다.
+
+***
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+시작하기 전에 다음 사항을 확인하십시오.
+
+* ClickHouse Operator가 설치되어 있어야 합니다([tutorials/deploy-aws.md](/ko/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), 단계 8 참조)
+* 최소 1개의 ClickHouse 클러스터가 배포되어 있어야 합니다([tutorials/deploy-aws.md](/ko/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), 단계 9 참조)
+* ClickHouse 비공개 ECR 리포지토리에 액세스할 수 있어야 합니다
+* 대상 ECR 리포지토리가 AWS 계정에 생성되어 있어야 합니다:
+* `airgap-management`
+* `helm/airgap-management`
+
+***
+
+<Steps>
+  <Step>
+    ## 단계 1: 컨테이너 이미지 복사
+
+    `skopeo`를 사용하여 Private API 이미지와 Helm 차트를 ECR로 복사합니다.
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # 소스 ECR에 로그인
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # 대상 AWS 리포지토리에 로그인
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # 각 이미지를 대상 ECR로 복사합니다. 반드시 --all 플래그를 포함하십시오
+    skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+    ```
+
+    `1.165.1`과 `1.165.1`을 ClickHouse에서 제공한 버전 태그로 바꾸십시오.
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 2: Helm으로 설치
+
+    Private API는 전용 네임스페이스에 설치됩니다.
+
+    ```text
+    # 필요에 따라 ECR_HOST를 업데이트
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # API의 Helm 차트 버전을 사용해야 합니다
+    API_HELM_VERSION=1.165.1
+
+    # API 이미지 태그 설정
+    API_IMAGE_TAG=1.165.1
+
+    helm install clickhouse-private-api \
+       oci://$ECR_HOST/helm/airgap-management \
+       --version=$API_HELM_VERSION \
+       --create-namespace \
+       -n clickhouse-private-api \
+       --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+       --set-json="image.tag=\"$API_IMAGE_TAG\""
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 3: 인증 구성
+
+    기본적으로 기본 인증은 비활성화되어 있습니다. 운영 환경에서는 Helm 값을 설정하여 활성화하십시오.
+
+    * `api.basicAuth.enabled=true`
+    * `api.basicAuth.username` -- 사용할 사용자 이름
+    * `api.basicAuth.password` -- 안전한 비밀번호
+
+    사용자 이름과 비밀번호는 안전하게 저장하고 조직의 보안 정책에 따라 정기적으로 교체해야 합니다.
+
+    ***
+  </Step>
+
+  <Step>
+    ## 단계 4: 설치 확인
+
+    ### 파드 확인
+
+    ```bash
+    kubectl get pods -n clickhouse-private-api
+    ```
+
+    예상 출력:
+
+    ```text
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+    ```
+
+    ### 포트 포워딩 및 테스트
+
+    ```bash
+    kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+    ```
+
+    상태 확인 endpoint를 테스트합니다.
+
+    ```bash
+    curl http://localhost:8080/readiness
+    ```
+
+    인증이 활성화된 경우:
+
+    ```bash
+    curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="configuration-options">
+  ## 구성 옵션
+</div>
+
+다음 주요 구성 옵션을 Helm values를 통해 사용할 수 있습니다:
+
+| Helm Value                   | Description                | Default    |
+| ---------------------------- | -------------------------- | ---------- |
+| `image.repository`           | Private API 이미지용 ECR 리포지토리 | --         |
+| `image.tag`                  | 배포할 이미지 태그                 | --         |
+| `api.port`                   | API가 수신 대기하는 포트            | `8080`     |
+| `api.basicAuth.enabled`      | HTTP 기본 인증 활성화             | `false`    |
+| `api.basicAuth.username`     | 기본 인증용 사용자 이름              | `admin`    |
+| `api.basicAuth.password`     | 기본 인증용 비밀번호                | `changeme` |
+| `serviceAccount.enabled`     | API용 서비스 계정 생성             | `true`     |
+| `serviceAccount.annotations` | 서비스 계정용 어노테이션(예: IRSA용)    | `{}`       |
+
+구성 옵션의 전체 목록은 Helm 차트의 values 파일을 참조하십시오.
+
+***
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* **[API를 통한 백업 관리](/ko/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — 백업 생성, 조회, 일정 설정 및 복원
+* **[클러스터 확장](/ko/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — CPU와 메모리를 수직 확장
+* **[비밀번호 재설정](/ko/products/clickhouse-private/guides/reset-user-passwords)** — ClickHouse `default` 사용자의 비밀번호 재설정

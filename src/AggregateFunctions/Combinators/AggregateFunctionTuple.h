@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnTuple.h>
-#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -11,16 +10,6 @@
 namespace DB
 {
 struct Settings;
-
-namespace ErrorCodes
-{
-extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
-namespace FailPoints
-{
-extern const char aggregate_function_state_transfer_throw_after_child[];
-}
 
 /** Adaptor for aggregate functions.
   * Adding -Tuple suffix to aggregate function
@@ -89,14 +78,6 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override;
-    void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override;
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -149,7 +130,6 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override;
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override;
-    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override;
 
     bool allocatesMemoryInArena() const override;
     bool isState() const override;
@@ -157,74 +137,29 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
-
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
     void mergeStateFromDifferentVariant(
         AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override;
 
 private:
-    /// `transferred` counts the elements whose transfer returned, so a caller that catches can undo those.
-    template <bool for_merge>
-    void transferElements(AggregateDataPtr __restrict place, ColumnTuple & tuple_to, size_t & transferred, Arena * arena) const
-    {
-        for (; transferred < nested_functions.size(); ++transferred)
-        {
-            if constexpr (!for_merge)
-            {
-                /// Only past the first element, whose transfer returned, is there a completed child to undo.
-                if (unlikely(transferred > 0))
-                {
-                    fiu_do_on(FailPoints::aggregate_function_state_transfer_throw_after_child,
-                    {
-                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionTuple::insertResultInto");
-                    });
-                }
-            }
-
-            if constexpr (for_merge)
-                nested_functions[transferred]->insertMergeResultInto(
-                    place + state_offsets[transferred], tuple_to.getColumn(transferred), arena);
-            else
-                nested_functions[transferred]->insertResultInto(
-                    place + state_offsets[transferred], tuple_to.getColumn(transferred), arena);
-        }
-    }
-
     template <bool for_merge>
     void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & tuple_to = assert_cast<ColumnTuple &>(to);
-        size_t transferred = 0;
-
-        if constexpr (!for_merge)
+        for (size_t i = 0; i < nested_functions.size(); ++i)
         {
-            /// An element that is not a state aliases nothing and need not be atomic.
-            if (isState())
-            {
-                try
-                {
-                    transferElements<false>(place, tuple_to, transferred, arena);
-                }
-                catch (...)
-                {
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
-                    throw;
-                }
-
-                return;
-            }
+            if constexpr (for_merge)
+                nested_functions[i]->insertMergeResultInto(place + state_offsets[i], tuple_to.getColumn(i), arena);
+            else
+                nested_functions[i]->insertResultInto(place + state_offsets[i], tuple_to.getColumn(i), arena);
         }
-
-        transferElements<for_merge>(place, tuple_to, transferred, arena);
     }
 
     /// Shared implementation of the batch add overrides. Hoists the per-element column pointers, so
     /// no per-row unwrapping work remains in the row loop.
     /// `get_place` returns the aggregation state for a row, or nullptr when the row has none.
-    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
+    template <bool has_null_map, typename GetPlace>
     void addBatchImpl(
         size_t row_begin,
         size_t row_end,

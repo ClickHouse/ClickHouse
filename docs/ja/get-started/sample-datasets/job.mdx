@@ -1,10 +1,10 @@
 ---
-title: "Join Order Benchmark (JOB)"
-description: "Join Order Benchmark (JOB) のデータセットとクエリ。"
-sidebarTitle: "JOB"
-slug: "/getting-started/example-datasets/job"
-doc_type: "guide"
-keywords: ["サンプルデータセット", "job", "join order benchmark", "ベンチマーク", "性能テスト", "クエリオプティマイザ", "join ordering"]
+description: 'Join Order Benchmark (JOB) のデータセットとクエリ。'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['サンプルデータセット', 'job', 'join order benchmark', 'ベンチマーク', '性能テスト', 'クエリオプティマイザ', 'join ordering']
 ---
 
 Join Order Benchmark (JOB) は、実世界の強い相関を持つデータセット (IMDb のスナップショット) に対する 113 個の分析クエリによって、クエリオプティマイザを厳しく試すベンチマークです。登場以来、JOB ベンチマークは、カーディナリティ推定や JOIN 順序最適化を含む、リレーショナルデータベースのクエリオプティマイザの性能を評価するための事実上の標準となっています。一様で独立したデータを前提とする合成ベンチマークとは異なり、JOB では偏りや相関のある実データを使用するため、JOIN 順序付けとカーディナリティ推定にとって難度の高いテストになります。
@@ -24,7 +24,7 @@ Join Order Benchmark (JOB) は、実世界の強い相関を持つデータセ�
 
 JOB データセットは、21 個のテーブルで構成される IMDb のスナップショットです。テーブル定義は、ClickHouse リポジトリ内の [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) で確認できます。
 
-各テーブルは、主キーのカラム `id` でソートされた [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンを使用しており、すべてのテーブルで `id integer NOT NULL PRIMARY KEY` を宣言している元の PostgreSQL スキーマを反映しています。NULL 許容の PostgreSQL カラムは、`Nullable(...)` 型に対応します。
+各テーブルは、主キーのカラム `id` でソートされた [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) エンジンを使用しており、すべてのテーブルで `id integer NOT NULL PRIMARY KEY` を宣言している元の PostgreSQL スキーマを反映しています。NULL 許容の PostgreSQL カラムは、`Nullable(...)` 型に対応します。
 
 テーブルを作成します:
 
@@ -38,9 +38,12 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## データの読み込み
 </div>
 
-データは、JOB で使用される元の IMDb スナップショットに由来し、テーブルごとに 1 つの CSV ファイル (`aka_name.csv`、`title.csv`、...) として配布されています。これらの CSV は、`ESCAPE '\'` を伴う PostgreSQL の `COPY` セマンティクスを使用しています。つまり、バックスラッシュは引用符で囲まれたフィールド内でのみ引用符文字をエスケープし、引用符の外では文字どおりの文字として扱われます。ClickHouse は RFC 4180 準拠の CSV (二重引用符を使用し、バックスラッシュによるエスケープはなし) を想定しているため、まずファイルを再エンコードする必要があります。
+データは、JOB で使用される元の IMDb スナップショットに由来し、テーブルごとに 1 つの CSV ファイル (`aka_name.csv`、`title.csv`、...) として配布されています。
+これらの CSV は、`ESCAPE '\'` を伴う PostgreSQL の `COPY` セマンティクスを使用しています。つまり、バックスラッシュは引用符で囲まれたフィールド内でのみ引用符文字をエスケープし、引用符の外では文字どおりの文字として扱われます。
+ClickHouse は RFC 4180 準拠の CSV (二重引用符を使用し、バックスラッシュによるエスケープはなし) を想定しているため、まずファイルを再エンコードする必要があります。
 
-[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) は、この再エンコードを行います。これは元の CSV を stdin から読み込み、標準的な CSV を stdout に書き出します。その際、埋め込まれた引用符は二重化され、引用符で囲まれていない空フィールドはそのまま保持されます (ClickHouse では、これらは `Nullable` カラムでは `NULL` にマッピングされます) 。
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) は、この再エンコードを行います。
+これは元の CSV を stdin から読み込み、標準的な CSV を stdout に書き出します。その際、埋め込まれた引用符は二重化され、引用符で囲まれていない空フィールドはそのまま保持されます (ClickHouse では、これらは `Nullable` カラムでは `NULL` にマッピングされます) 。
 
 元の CSV からテーブルを構築するには:
 
@@ -61,34 +64,35 @@ for table in aka_name aka_title cast_info char_name comp_cast_type company_name 
 done
 ```
 
-テーブルへのデータ投入が完了したら、後でより高速に再インポートできるよう、たとえば Parquet 形式でエクスポートできます。`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+テーブルへのデータ投入が完了したら、後でより高速に再インポートできるよう、たとえば Parquet 形式でエクスポートできます。
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
 
 各テーブルの詳細なサイズ:
 
-| Table                  | サイズ (行数)       | 圧縮サイズ (ClickHouse) |
-| ---------------------- | -------------- | ------------------ |
-| aka&#95;name           | 901,343        | 31.86 MiB          |
-| aka&#95;title          | 361,472        | 14.32 MiB          |
-| cast&#95;info          | 36,244,344     | 296.25 MiB         |
-| char&#95;name          | 3,140,339      | 107.95 MiB         |
-| comp&#95;cast&#95;type | 4              | 132.00 B           |
-| company&#95;name       | 234,997        | 8.38 MiB           |
-| company&#95;type       | 4              | 162.00 B           |
-| complete&#95;cast      | 135,086        | 748.80 KiB         |
-| info&#95;type          | 113            | 1.25 KiB           |
-| keyword                | 134,170        | 1.88 MiB           |
-| kind&#95;type          | 7              | 177.00 B           |
-| link&#95;type          | 18             | 284.00 B           |
-| movie&#95;companies    | 2,609,129      | 21.20 MiB          |
-| movie&#95;info         | 14,835,720     | 300.46 MiB         |
-| movie&#95;info&#95;idx | 1,380,035      | 8.01 MiB           |
-| movie&#95;keyword      | 4,523,930      | 21.06 MiB          |
-| movie&#95;link         | 29,997         | 178.21 KiB         |
-| name                   | 4,167,491      | 131.16 MiB         |
-| person&#95;info        | 2,963,664      | 154.12 MiB         |
-| role&#95;type          | 12             | 246.00 B           |
-| title                  | 2,528,312      | 78.04 MiB          |
-| **合計**                 | **74,190,187** | **1.15 GiB**       |
+| Table                  | サイズ (行数)       | 圧縮サイズ (ClickHouse)  |
+| ---------------------- | -------------- | ------------------- |
+| aka&#95;name           | 901,343        | 31.86 MiB           |
+| aka&#95;title          | 361,472        | 14.32 MiB           |
+| cast&#95;info          | 36,244,344     | 296.25 MiB          |
+| char&#95;name          | 3,140,339      | 107.95 MiB          |
+| comp&#95;cast&#95;type | 4              | 132.00 B            |
+| company&#95;name       | 234,997        | 8.38 MiB            |
+| company&#95;type       | 4              | 162.00 B            |
+| complete&#95;cast      | 135,086        | 748.80 KiB          |
+| info&#95;type          | 113            | 1.25 KiB            |
+| keyword                | 134,170        | 1.88 MiB            |
+| kind&#95;type          | 7              | 177.00 B            |
+| link&#95;type          | 18             | 284.00 B            |
+| movie&#95;companies    | 2,609,129      | 21.20 MiB           |
+| movie&#95;info         | 14,835,720     | 300.46 MiB          |
+| movie&#95;info&#95;idx | 1,380,035      | 8.01 MiB            |
+| movie&#95;keyword      | 4,523,930      | 21.06 MiB           |
+| movie&#95;link         | 29,997         | 178.21 KiB          |
+| name                   | 4,167,491      | 131.16 MiB          |
+| person&#95;info        | 2,963,664      | 154.12 MiB          |
+| role&#95;type          | 12             | 246.00 B            |
+| title                  | 2,528,312      | 78.04 MiB           |
+| **合計**                 | **74,190,187** | **1.15 GiB**        |
 
 (ClickHouse での圧縮サイズは `system.tables.total_bytes` から取得したもので、上記のテーブル定義に基づいています。)
 
@@ -96,7 +100,9 @@ done
   ## クエリ
 </div>
 
-113 個の JOB クエリは、ClickHouse リポジトリの[こちら](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)にあります。実行時に使用する設定は [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json) にあります。既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) を参照してください。
+113 個の JOB クエリは、ClickHouse リポジトリの[こちら](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)にあります。
+実行時に使用する設定は [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json) にあります。
+既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) を参照してください。
 
 これらのクエリはテーブル名を直接参照するため、`job` データベースに対して実行してください (たとえば、`clickhouse client --database job` を使用します) 。
 
@@ -122,9 +128,3 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
-
-<div id="performance-benchmark">
-  ## パフォーマンスベンチマーク
-</div>
-
-ClickHouse は、リリースされたすべてのバージョンにおける JOB クエリのパフォーマンスを追跡しています。[ClickHouse versions benchmark](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) ページでは、113 件の JOB クエリすべての実行時間を確認し、パフォーマンスが時間の経過とともにどのように変化してきたかを確認できます。

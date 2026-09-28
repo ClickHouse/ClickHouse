@@ -1,0 +1,564 @@
+---
+noindex: true
+title: "Guide de dépannage"
+sidebarTitle: "Dépannage"
+description: "Ce guide regroupe les problèmes courants, leurs symptômes, leurs causes probables et les étapes de résolution pour les déploiements ClickHouse Private."
+---
+
+Ce guide regroupe les problèmes courants, leurs symptômes, leurs causes probables et les étapes de résolution pour les déploiements ClickHouse Private. Chaque entrée est structurée en trois parties : symptôme, cause et résolution.
+
+***
+
+<div id="operator-issues">
+  ## Problèmes liés à l’opérateur
+</div>
+
+<div id="cr-changes-not-being-applied">
+  ### Les modifications du CR ne sont pas prises en compte
+</div>
+
+**Symptôme :** Les modifications apportées au CR ClickHouseCluster ne sont pas réconciliées ni appliquées au cluster pendant une longue période.
+
+**Cause :** L’une des trois raisons courantes suivantes :
+
+1. L’opérateur lui-même redémarre en boucle.
+2. Les pods ClickHouse (Keeper ou serveur) redémarrent en boucle, ce qui bloque la réconciliation.
+3. Une annotation `clickhouse.com/skip-reconcile` est présente sur le CR, ce qui indique à l’opérateur d’ignorer complètement la réconciliation.
+
+**Résolution :**
+
+1. Vérifiez les logs de l’opérateur pour repérer des crashes ou des erreurs :
+
+   ```bash
+   kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+   ```
+
+2. Vérifiez si les pods Keeper et serveur redémarrent en boucle :
+
+   ```bash
+   kubectl get pods -n <namespace>
+   kubectl logs <pod-name> -n <namespace>
+   ```
+
+3. Vérifiez la présence de l’annotation skip-reconcile sur le CR :
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o yaml | grep skip-reconcile
+   ```
+
+   Si elle est présente et n’est plus nécessaire, supprimez-la :
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+***
+
+<div id="how-to-drop-a-server-replica">
+  ### Comment supprimer une réplique de serveur
+</div>
+
+**Symptôme :** Vous devez supprimer une réplique précise du cluster sans effectuer de mise à l’échelle vers le bas (c’est-à-dire sans réduire le nombre de répliques souhaité).
+
+**Cause :** Une réplique est défaillante, bloquée ou doit être supprimée manuellement pour une autre raison.
+
+**Résolution :**
+
+1. **Ajoutez l’annotation skip-reconcile** pour empêcher l’opérateur d’intervenir :
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile=remove-replica
+   ```
+
+   Vérifiez que l’opérateur l’a bien prise en compte en recherchant dans les logs :
+
+   ```text
+   Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation"
+   ```
+
+2. **Supprimez la réplique de la ReplicaStateMap.** Commencez par inspecter la map actuelle :
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+   ```
+
+   Modifiez ensuite la sous-ressource de statut afin de supprimer l’entrée correspondant à la réplique cible :
+
+   ```ini
+   EDITOR=vim kubectl edit clickhousecluster <cluster-name> -n <namespace> --subresource=status
+   ```
+
+3. **Supprimez le StatefulSet** de la réplique :
+
+   ```bash
+   kubectl delete sts <replica-statefulset-name> -n <namespace>
+   ```
+
+   Attendez que le pod se termine après la suppression du StatefulSet.
+
+4. **Supprimez l’annotation skip-reconcile :**
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+   L’opérateur lancera une nouvelle réplique et supprimera de ClickHouse la réplique retirée.
+
+5. **Vérifiez** en vous connectant au cluster ClickHouse et en confirmant que l’ancienne réplique a bien été supprimée. Si des baux détenus par la réplique n’ont pas encore expiré, l’opérateur réessaiera la suppression. Le nettoyage devrait être terminé dans les 5 minutes.
+
+***
+
+<div id="server-pod-hanging-on-termination">
+  ### Pod serveur bloqué lors de la terminaison
+</div>
+
+**Symptôme :** Les pods serveur restent à l’état `Terminating` pendant une durée prolongée :
+
+```text
+NAME                            READY   STATUS        RESTARTS   AGE
+c-navy-wl-64-server-gbwmanx-0   1/2     Terminating   0          3m25s
+c-navy-wl-64-server-pxb9mde-0   1/2     Terminating   0          3m25s
+```
+
+**Cause :** Avant d’être arrêtés, les pods serveur exécutent un hook PreStop qui draine les connexions et attend la fin des requêtes en cours. Si des requêtes de longue durée ou des connexions sont encore actives, le pod restera en phase de terminaison.
+
+**Résolution :**
+
+1. Vérifiez le journal du hook PreStop pour savoir ce qu’il attend :
+
+   ```bash
+   kubectl exec <pod-name> -- cat /var/log/clickhouse-server/prestop.log
+   ```
+
+2. Vérifiez les logs du serveur pour repérer les messages indiquant la réception d’un signal et l’état du processus d’arrêt.
+
+***
+
+<div id="multiple-clickhouseclusters-in-the-same-namespace">
+  ### Plusieurs ClickHouseClusters dans le même espace de noms
+</div>
+
+**Symptôme :** comportement de réconciliation inattendu, ressources modifiées ou supprimées de manière inattendue, ou opérateur qui alterne entre différents états du cluster.
+
+**Cause :** plusieurs ressources personnalisées `ClickHouseCluster` existent dans le même espace de noms. L’opérateur suppose qu’il n’y a qu’un seul `ClickHouseCluster` par espace de noms et ne peut pas assurer correctement la réconciliation lorsque plusieurs instances partagent un même espace de noms.
+
+**Résolution :**
+
+1. Vérifiez combien de ressources `ClickHouseCluster` existent dans l’espace de noms :
+
+   ```bash
+   kubectl get clickhouseclusters -n <namespace>
+   ```
+
+2. S’il en existe plusieurs, déplacez les clusters supplémentaires dans leurs propres espaces de noms. Chaque `ClickHouseCluster` doit être la seule instance de son espace de noms.
+
+3. Le chart Helm `onprem-clickhouse-cluster` crée par défaut un `ResourceQuota` qui évite cette situation. Vérifiez que le quota est bien en place :
+
+   ```bash
+   kubectl get resourcequota -n <namespace>
+   ```
+
+   Si le quota est absent, assurez-vous que `resourceQuota.enabled` est défini sur `true` (valeur par défaut) dans vos valeurs Helm.
+
+***
+
+<div id="cr-not-in-healthy-running-state">
+  ### Le CR n&#39;est pas dans un état `Running` sain
+</div>
+
+**Symptôme :** Le CR ClickHouseCluster affiche un état autre que `Running`, ou des pods redémarrent.
+
+**Cause :** Divers problèmes peuvent empêcher le cluster d&#39;atteindre un état sain — pods en boucle de redémarrage, contraintes de ressources, erreurs de configuration ou échecs d&#39;ordonnancement.
+
+**Résolution :**
+
+1. Vérifiez l&#39;état du cluster dans tous les espaces de noms :
+
+   ```bash
+   kubectl get clickhouseclusters -A
+   ```
+
+2. Décrivez le pod concerné pour obtenir son état détaillé et les événements associés :
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   ```
+
+3. Consultez les logs du conteneur précédemment arrêté :
+
+   ```bash
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+4. Vérifiez les événements de l&#39;espace de noms pour repérer d&#39;éventuels problèmes d&#39;ordonnancement ou de ressources :
+
+   ```bash
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="clickhouse-server-issues">
+  ## Problèmes du serveur ClickHouse
+</div>
+
+<div id="crashlooping-server-pods">
+  ### Pods du serveur en boucle de redémarrage
+</div>
+
+**Symptôme :** les pods du serveur ClickHouse sont dans un état `CrashLoopBackOff`.
+
+**Cause :** le processus du serveur ClickHouse plante au démarrage ou peu après. Cela peut être dû à des erreurs de configuration, à des données corrompues, à une pression mémoire ou à des arrêts pour dépassement de mémoire (OOM) déclenchés par Kubernetes.
+
+**Résolution :**
+
+1. Vérifiez les logs du pod du serveur ClickHouse pour identifier la cause du crash :
+
+   ```bash
+   kubectl logs <pod-name> -n <namespace>
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+2. Si le crash est dû à une pression mémoire ou à un arrêt déclenché par Kubernetes, vérifiez les événements Kubernetes :
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="data-losscorruption-clickhousebrokenpartdetectedonselect">
+  ### Perte/corruption de données (ClickHouseBrokenPartDetectedOnSelect)
+</div>
+
+**Symptôme :** L’alerte `ClickHouseBrokenPartDetectedOnSelect` se déclenche, ou les requêtes SELECT échouent avec des erreurs `POTENTIALLY_BROKEN_DATA_PART`.
+
+**Cause :** La lecture d’une part SMT a échoué avec une erreur non récupérable. L’exception `POTENTIALLY_BROKEN_DATA_PART` est levée lorsqu’une part est détectée comme corrompue lors d’une opération SELECT.
+
+**Résolution :**
+
+1. **Examinez les logs** pour l’exception `POTENTIALLY_BROKEN_DATA_PART`. Si vous ne la trouvez pas dans les logs, vérifiez également `system.errors`.
+
+2. **Identifiez quelles parts de données sont perdues.** Interrogez `system.replicas` pour trouver les tables affectées :
+
+   ```sql
+   SELECT
+       database,
+       table,
+       lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+3. **Trouvez les logs liés aux parts perdues.** Vérifiez `/var/log/clickhouse-server/` sur le pod (utilisez `zgrep` pour les logs archivés), ou interrogez `system.text_log` :
+
+   ```sql
+   SELECT
+       hostName(),
+       event_time,
+       logger_name,
+       message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+   Ajoutez un prédicat sur l’intervalle `event_time` pour accélérer la requête.
+
+4. **Comprenez l’historique des parts perdues.** Choisissez un nom de part perdue et recherchez tous les logs associés :
+
+   ```sql
+   SELECT
+       event_time,
+       message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%' AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+   Concentrez-vous sur les messages de log *avant* `Part * is lost forever`. Les messages après ce point ne sont pas pertinents (toute part « found » est en réalité un remplacement vide).
+
+5. **Vérifiez l’absence de faux positifs :**
+
+6. Vérifiez si la table a un TTL et si la part perdue aurait dû être supprimée de toute façon.
+
+7. Vérifiez dans `system.query_log` les requêtes TRUNCATE ou DROP PARTITION qui auraient dû supprimer les parts perdues.
+
+8. **Investigation supplémentaire :**
+
+9. Si la part a été detached comme corrompue, déterminez pourquoi elle l’était.
+
+10. Si vous voyez `The specified key does not exist`, recherchez dans tous les logs le nom du blob pour savoir quand et pourquoi il a été supprimé. Vérifiez également les messages de log concernant les verrous zero-copy.
+
+11. Contactez le support ClickHouse avec vos conclusions.
+
+***
+
+<div id="table-replicas-read-only-clickhousetablereplicasreadonly">
+  ### Répliques de tables en lecture seule (ClickHouseTableReplicasReadOnly)
+</div>
+
+**Symptôme :** L’alerte `ClickHouseTableReplicasReadOnly` se déclenche, ou les écritures vers les tables échouent parce qu’elles sont en mode lecture seule.
+
+**Cause :** Une table est en mode lecture seule depuis au moins une heure. Cela exclut les tables des bases de données `*_broken_replicated_tables` et `*_broken_tables`. Cela peut être dû à une opération `DROP` qui s’est mal déroulée, ou à un problème de connectivité avec Keeper.
+
+**Résolution :**
+
+1. **Vérifiez s’il reste des tables en lecture seule** dans le cluster :
+
+   ```sql
+   SELECT
+     dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+     database,
+     table,
+     hostname()
+   FROM clusterAllReplicas(default, system.replicas)
+   WHERE is_readonly = 1
+   ```
+
+2. **Cherchez la cause.** La présence de tables en lecture seule indique généralement que `StorageSharedMergeTree::shutdown` a été exécuté, mais que l’objet de stockage a été maintenu en vie. Recherchez dans les logs texte en utilisant le nom de la table comme nom du logger.
+
+3. **Essayez de redémarrer la réplique** pour chaque table affectée :
+
+   ```sql
+   SYSTEM RESTART REPLICA <database>.<table>
+   ```
+
+   Vous pouvez obtenir les noms des tables à partir de la requête de l’étape 1. Parfois, le problème est mineur et un redémarrage suffit à le résoudre.
+
+4. Si le problème persiste, vérifiez les logs de Keeper pour détecter d’éventuels problèmes de connectivité ou de coordination.
+
+***
+
+<div id="replica-already-exists-clickhousereplicaalreadyexists">
+  ### La réplique existe déjà (ClickHouseReplicaAlreadyExists)
+</div>
+
+**Symptôme :** L’alerte `ClickHouseReplicaAlreadyExists` se déclenche, ou la création de la réplique échoue avec une erreur `REPLICA_ALREADY_EXISTS`.
+
+**Cause :** Une table répliquée (SMT ou RMT) n’a pas pu être créée, car une réplique existante est déjà associée au chemin ZooKeeper. Il est peu probable que cela soit dû à une erreur de l’utilisateur (la réutilisation explicite d’UUID est désormais interdite via `database_replicated_allow_explicit_uuid`). Il s’agit probablement d’un bug dans la base de données Replicated ou dans Shared Catalog.
+
+**Résolution :**
+
+Contactez ClickHouse Support. Il s’agit probablement d’un bug qui nécessite une analyse par l’équipe d’ingénierie.
+
+***
+
+<div id="cannot-write-to-file-descriptor-clickhousecannotwritetofiledescriptor">
+  ### Impossible d’écrire dans le descripteur de fichier (ClickHouseCannotWriteToFileDescriptor)
+</div>
+
+**Symptôme :** L’alerte `ClickHouseCannotWriteToFileDescriptor` se déclenche, ou des erreurs telles que `CANNOT_WRITE_TO_FILE_DESCRIPTOR` ou `no space left on device` apparaissent dans les logs.
+
+**Cause :** Le disque de cache est plein. L’exception est levée lorsqu’il n’y a pas assez d’espace pour une nouvelle entrée de cache ou pour le traitement de données externes (par exemple, l’agrégation externe ou les jointures externes). Cela peut être dû à une mauvaise configuration où le disque a été créé avec moins d’espace que celui demandé dans la configuration du CR.
+
+**Résolution :**
+
+1. **Vérifiez d’abord le problème connu lié à `partial_merge`.** Il existe un bug connu dans le suivi de l’utilisation du disque de cache lorsque le paramètre de requête `join_algorithm = 'partial_merge'` est spécifié. Vérifiez si ce paramètre est utilisé.
+
+2. **Connectez-vous au pod :**
+
+   ```bash
+   kubectl exec -n <namespace> -it <pod> -- /bin/bash
+   ```
+
+3. **Vérifiez la taille réelle du disque :**
+
+   ```text
+   df -h
+   ```
+
+4. **Vérifiez la taille requise du disque de cache** dans ClickHouse :
+
+   ```sql
+   SELECT path, max_size FROM system.filesystem_cache_settings
+   ```
+
+   Notez que plusieurs caches (par exemple, `s3diskWithCache`, `diskPlainRewritableForSystemTablesWithCache`) peuvent partager le même chemin (`/mnt/clickhouse-cache/sharedS3DiskCache`).
+
+5. **Comparez la taille réelle à la taille requise :**
+
+6. Si la taille réelle du disque est inférieure à la taille requise, le problème vient d’une mauvaise configuration. Contactez l’équipe Data Plane Operator.
+
+7. Si la taille du disque est suffisante, il s’agit probablement d’un bug dans le suivi de l’utilisation du disque de cache. Effectuez l’investigation via `system.filesystem_cache`.
+
+***
+
+<div id="storage-and-infrastructure-issues">
+  ## Problèmes liés au stockage et à l’infrastructure
+</div>
+
+<div id="zone-details-could-not-be-found-for-any-pv">
+  ### Impossible de trouver les détails de zone pour quelque PV que ce soit
+</div>
+
+**Symptôme :** Les logs du ClickHouse Operator affichent l’erreur `zone details couldn't be found for any PV`, et la réconciliation ne peut pas aboutir.
+
+**Cause :** Le ClickHouse Operator s’attend à ce que les affinités de nœud tenant compte de la topologie soient automatiquement renseignées sur les PersistentVolumes à l’aide du label `topology.kubernetes.io/zone`. Normalement, cela est géré par des provisionneurs de volumes tenant compte de la topologie (par exemple, AWS EBS). Cependant, chez certains fournisseurs cloud (par exemple, IBM) ou dans des environnements sur site, ce label n’est pas renseigné automatiquement, ou des labels non standard sont utilisés.
+
+**Résolution :**
+
+1. **Ajoutez `allowedTopologies` à votre StorageClass** pour garantir que les volumes sont créés avec les bonnes affinités de nœud :
+
+   ```yaml
+   apiVersion: storage.k8s.io/v1
+   kind: StorageClass
+   metadata:
+     name: local-nvme-sc
+   allowVolumeExpansion: true
+   parameters:
+     path: /nvme/disk
+   provisioner: rancher.io/local-path
+   reclaimPolicy: Delete
+   volumeBindingMode: WaitForFirstConsumer
+   allowedTopologies:
+     - matchLabelExpressions:
+         - key: topology.kubernetes.io/zone
+           values:
+             - <your_cluster_name>-keeper
+             - <your_host_1>
+             - <your_host_2>
+             - <your_host_3>
+         - key: directpv.min.io/zone
+           values:
+             - default
+   ```
+
+2. **Si des labels non standard sont utilisés** pour la topologie, configurez la propriété `additionalZoneLabelRegexes` du ClickHouse Operator. Par exemple, si vous utilisez le chart Helm, définissez la valeur Helm `operator.additionalZoneLabelRegexes` sur une expression régulière correspondant à vos labels (par exemple, `directpv.*zone`).
+
+***
+
+<div id="nvme-disk-questions">
+  ### Questions sur les disques NVMe
+</div>
+
+**Symptôme :** Incertitude quant à la nécessité d’utiliser des instances avec un disque NVMe attaché, ou questions sur l’utilisation d’un autre stockage pour le disque de cache.
+
+**Cause :** Le disque NVMe sert de volume de cache pour les données provenant de S3 (ou d’un stockage objet équivalent). L’opérateur le monte dans les pods du serveur ClickHouse et le configure comme disque de cache S3 :
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+Avec SharedMergeTree, ClickHouse ne stocke pas les données localement. Le cache existe uniquement pour optimiser les performances des requêtes.
+
+**Solution :**
+
+Il est possible d’utiliser d’autres périphériques de stockage (par ex. AWS EBS) à la place de NVMe. Dans ce cas, ajustez les éléments suivants :
+
+1. Assurez-vous que les disques sont attachés aux instances utilisées pour les pods Kubernetes du serveur ClickHouse.
+2. Modifiez le modèle de lancement pour tenir compte des changements d’architecture des disques. Vous pouvez toujours créer un disque RAID et le formater en ext4 ou xfs, mais utilisez les outils appropriés (par ex. `lsblk`) pour répertorier les périphériques.
+3. Si les disques ne sont pas montés sur `/nvme/disk`, définissez `hostPathBaseDirectory` dans le chart Helm ClickHouseCluster sur le point de montage réel.
+
+Notez que d’autres choix de stockage peuvent avoir un impact sur les performances des requêtes.
+
+***
+
+<div id="configuration-issues">
+  ## Problèmes de configuration
+</div>
+
+<div id="loadbalancertype-field-behavior">
+  ### Comportement du champ `loadBalancerType`
+</div>
+
+**Symptôme :** Définir le champ `loadBalancerType` dans la CRD ClickHouseCluster ne crée pas d’annotations de load balancer sur le Service.
+
+**Cause :** Le champ `loadBalancerType` n’ajoute pas d’annotations de load balancer au Service du cluster ClickHouse. Le ClickHouse Operator ne prend pas en charge la création d’un load balancer pour le cluster ClickHouse. Ce champ n’est utile que dans ClickHouse Cloud, où il sert à faciliter la création d’utilisateurs pour la Cloud SQL Console.
+
+**Résolution :**
+
+Aucune action n’est nécessaire, sauf si vous utilisez ClickHouse Cloud. Si vous avez besoin d’un load balancer pour votre cluster ClickHouse, configurez-le séparément à l’aide des annotations et configurations standard des Services Kubernetes, en dehors de la CRD ClickHouseCluster.
+
+***
+
+<div id="diagnostic-commands-quick-reference">
+  ## Aide-mémoire des commandes de diagnostic
+</div>
+
+<div id="cluster-status">
+  ### État du cluster
+</div>
+
+```bash
+kubectl get clickhouseclusters -A
+```
+
+<div id="operator-logs">
+  ### Logs de l’opérateur
+</div>
+
+```bash
+kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+```
+
+<div id="pod-events-and-details">
+  ### Événements et détails du pod
+</div>
+
+```bash
+kubectl describe pod <pod-name> -n <namespace>
+kubectl get events -n <namespace>
+```
+
+<div id="previous-container-logs-after-a-crash">
+  ### Logs du conteneur précédent (après un plantage)
+</div>
+
+```bash
+kubectl logs -p <pod-name> -n <namespace>
+```
+
+<div id="replica-state-map">
+  ### Aperçu de l’état des répliques
+</div>
+
+```bash
+kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+```
+
+<div id="replication-queue-size-per-table-sql">
+  ### Taille de la file d’attente de réplication par table (SQL)
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```
+
+Autre possibilité avec `system.replicas` :
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table-sql">
+  ### Entrée la plus ancienne de la file d’attente de réplication par table (SQL)
+</div>
+
+Déclenchez une alerte si l’entrée la plus ancienne date de plus d’un jour.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```

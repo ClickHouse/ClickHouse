@@ -1,0 +1,325 @@
+---
+noindex: true
+title: "نشر ClickHouse مع الامتثال لمعيار FIPS (Government)"
+sidebarTitle: "النشر للجهات الحكومية (FIPS)"
+description: "يغطي هذا الدليل نشر ClickHouse Private مع الامتثال لمعيار FIPS 140-2 على AWS."
+---
+
+يغطي هذا الدليل نشر ClickHouse Private مع الامتثال لمعيار FIPS 140-2 على AWS. وهو يستند إلى إعداد AWS القياسي كطبقة إضافية -- يجب أولاً إكمال إعداد موارد AWS، ثم اتباع هذه الخطوات الخاصة بـ FIPS لموارد Kubernetes.
+
+***
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+قبل البدء في هذا البرنامج التعليمي، يجب أن تكون قد أكملت ما يلي في [tutorials/deploy-aws.md](/ar/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks):
+
+* **المرحلة 1:** IAM role للوصول إلى ECR
+* **المرحلة 2:** نسخ صور الحاويات إلى ECR الخاص بك (باستخدام وسوم إصدار FIPS -- راجع أدناه)
+* **المرحلة 3:** إنشاء VPC
+* **المرحلة 4:** إنشاء عنقود EKS
+* **المرحلة 5:** إنشاء مجموعات العقد
+* **المرحلة 6:** إنشاء حاوية S3 وIAM roles
+
+<div id="fips-version-tags">
+  ### وسوم إصدارات FIPS
+</div>
+
+استخدم وسوم الصور الخاصة بـ FIPS التالية عند نسخ الحِزم البرمجية:
+
+| الحِزمة البرمجية               | الوسم               |
+| ------------------------------ | ------------------- |
+| clickhouse-server              | `25.12.1.1497-fips` |
+| clickhouse-keeper              | `26.2.1.258-fips`   |
+| clickhouse-operator            | `main-1.18587.1`    |
+| helm/clickhouse-operator-helm  | `1.18587.1`         |
+| helm/onprem-clickhouse-cluster | `1.1.311`           |
+
+<div id="s3-bucket-naming-restriction">
+  ### قيد تسمية حاوية S3
+</div>
+
+**لا يمكن أن يحتوي اسم حاوية S3 على أي نقاط (`.`)** عند استخدام FIPS. تتطلب نقاط نهاية S3 الخاصة بـ FIPS عنونة بنمط المضيف الافتراضي، وهذا لا يعمل إذا كان اسم الحاوية يحتوي على نقاط.
+
+***
+
+<Steps>
+  <Step>
+    ## المرحلة 1: إنشاء شهادات FIPS
+
+    يتطلب الامتثال لمعيار FIPS شهادات TLS مُنشأة باستخدام خوارزميات معتمدة من FIPS وفي بيئة مُمكّنة لـ FIPS. تحتاج إلى ثلاث مجموعات من الشهادات:
+
+    | الشهادة | المفتاح الخاص | المفتاح العام | SAN مطلوب                                                                                                                                       |
+    | ------- | ------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+    | الخادم  | `server.key`  | `server.crt`  | `*.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.cluster.local`, `c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.cluster.local` |
+    | العميل  | `client.key`  | `client.crt`  | (لا يوجد)                                                                                                                                       |
+    | Keeper  | `keeper.key`  | `keeper.crt`  | `*.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.cluster.local`                                                                      |
+
+    ستحتاج أيضًا إلى شهادة CA (`ca.crt` و `ca.key`)، سواء كانت موقَّعة ذاتيًا أو صادرة عن السلطة المصدِّقة في مؤسستك.
+
+    **المتطلبات:** - الحد الأدنى لحجم مفتاح RSA هو 3072 بت - خوارزمية توقيع SHA-256 أو أحدث - الإنشاء في بيئة مُمكّنة لـ FIPS - يجب إنشاء مجموعة فريدة من الشهادات (باستثناء CA) لكل عنقود ClickHouse
+
+    للاطلاع على الإجراء الكامل لإنشاء الشهادات باستخدام حاوية Red Hat UBI8 مع سياسة التشفير FIPS، راجع [how-to/configure-fips-certificates.md](/ar/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse).
+
+    ***
+  </Step>
+
+  <Step>
+    ## المرحلة 2: تثبيت المتطلبات الأساسية لـ Kubernetes
+
+    ### تثبيت VolumeSnapshot CRDs
+
+    ```bash
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+    ```
+
+    ### تثبيت StorageClass (اختياري)
+
+    فقط إذا لم يكن لديك StorageClass مخصّص أو قائم بالفعل:
+
+    ```ini
+    ECR_HOST=0000000000.dkr-ecr-fips.us-west-2.on.aws
+    CHART_VERSION=1.1.311
+
+    helm install clickhouse-prerequisites \
+        oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+        --version=$CHART_VERSION \
+        -n default \
+        --set-json="storageClass.create=true" \
+        --set-json="createCluster=false" \
+        --set-json="serviceAccount.create=false"
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## المرحلة 3: تثبيت المشغِّل
+
+    لاحظ صيغة نقطة نهاية FIPS الخاصة بـ ECR: `0000000000.dkr-ecr-fips.us-west-2.on.aws` (وليست نقطة النهاية القياسية `.amazonaws.com`).
+
+    ```text
+    # update ECR_HOST as needed
+    ECR_HOST=0000000000.dkr-ecr-fips.us-west-2.on.aws
+
+    # should use the version of the operator's helm chart, not of the operator itself (eg 1.18587.1, not main-1.18587.1)
+    OPERATOR_VERSION=1.18587.1
+
+    # set AZs as determined by VPC subnets
+    AZ_LIST='["us-west-2a","us-west-2b","us-west-2c"]'
+
+    helm install clickhouse-operator \
+       oci://$ECR_HOST/helm/clickhouse-operator-helm \
+       --version=$OPERATOR_VERSION \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set-json="image.repository=\"$ECR_HOST/clickhouse-operator\"" \
+       --set-json='cilium.enabled=false' \
+       --set-json='idleScalerEnabled=false' \
+       --set-json='webhooks.enabled=false' \
+       --set-json='operator.debug=true' \
+       --set-json='operator.metricsScraper.enabled=false' \
+       --set-json="operator.availabilityZones=$AZ_LIST" \
+       --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+       --set-json='operator.featureFlags.serverCMEKEnabled=true'
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## المرحلة 4: إنشاء أسرار الشهادات
+
+    يجب تثبيت الأسرار في مساحة الاسم نفسها في Kubernetes التي سيعمل فيها عنقود ClickHouse. إذا كان اسم العنقود هو `default-xx-01`، فستكون مساحة الاسم هي `ns-default-xx-01`.
+
+    تأكد من وجود مساحة الاسم، ثم أنشئ الأسرار. **لا تغيّر أسماء الأسرار أو أسماء المفاتيح.**
+
+    ```ini
+    CERT_DIR=.
+    CLUSTER_NAME=default-xx-01
+
+    # server
+    kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-server-cert-secret \
+      --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+      --from-file=server.crt="$CERT_DIR/server/server.crt" \
+      --from-file=server.key="$CERT_DIR/server/server.key" \
+      --from-file=client.crt="$CERT_DIR/client/client.crt" \
+      --from-file=client.key="$CERT_DIR/client/client.key"
+
+    # keeper
+    kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-keeper-cert-secret \
+      --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+      --from-file=keeper.crt="$CERT_DIR/keeper/keeper.crt" \
+      --from-file=keeper.key="$CERT_DIR/keeper/keeper.key"
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## المرحلة 5: نشر مجموعة ClickHouse
+
+    استخدم إصدار FIPS الصحيح من نقاط النهاية الخاصة بـ ECR وS3. يمكن الاطلاع على نقاط نهاية FIPS على [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
+
+    ```text expandable
+    # this will be the `default` user's password
+    PASSWORD='My super secret p@$$w0rd'
+    HASHED_PASSWORD=`echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64`
+
+    # update values below as needed,
+    # the ecr host should be the one in your account
+    # the s3 bucket should be the one created earlier
+    CLUSTER_NAME=default-xx-01
+    ECR_HOST=0000000000.dkr-ecr-fips.us-west-2.on.aws
+    SA_IAM_ROLE_ARN=arn:aws:iam::0000000000:role/CH-S3-${CLUSTER_NAME}-uw2-00-Role
+
+    S3_BUCKET_REGION=us-gov-west-1
+    S3_BUCKET_URL=https://my-clickhouse-data.us-gov-west-1.amazonaws.com
+    S3_BUCKET_NAME=my-clickhouse-data
+
+    # s3 key prefix can use any UUID value, but must be unique for all clusters storing data in the bucket specified above
+    S3_KEY_PREFIX=ch-s3-$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+    # these should match the clickhouseGroup label value added to the node group
+    SERVER_NG_GROUP=server-arm64
+    KEEPER_NG_GROUP=keeper-arm64
+
+    # these values should change depending on selected instance sizes
+    # be sure to take daemon set requirements into account when setting CPU and MEMORY values
+    SERVER_CPU=64
+    SERVER_MEMORY=256Gi
+    KEEPER_CPU=4
+    KEEPER_MEMORY=16Gi
+
+    # Update the `verificationMode` field to control how TLS certificates are verified.
+    # Defaults to `none`. See Context.h in the ClickHouse source code for more details.
+    SERVER_VERIFICATION_MODE=none
+    KEEPER_VERIFICATION_MODE=none
+
+    # Currently, usage of `strict` is not recommended and you might encounter issues with the Operator.
+    # If you require mTLS cert auth, use `relaxed` (Teleport integration requires it)
+    # SERVER_VERIFICATION_MODE=relaxed
+    # KEEPER_VERIFICATION_MODE=relaxed
+
+    CHART_VERSION=1.1.311
+
+    # As a general rule, set cache size to 80-90% of the available SSD cache disk size.
+    # For example for type m6id.2xlarge with 1x474 NVMe it should be set to 379Gi (~80%)
+    CACHE_DISK_SIZE_GI=379Gi
+
+    helm install $CLUSTER_NAME \
+        oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+        --version=$CHART_VERSION \
+        -n ns-$CLUSTER_NAME \
+        --create-namespace \
+        --set-json="account.hashedPassword=\"$HASHED_PASSWORD\"" \
+        --set-json="server.image.repository=\"$ECR_HOST/clickhouse-server\"" \
+        --set-json="server.storage.s3.endpoint=\"$S3_BUCKET_URL\"" \
+        --set-json="server.storage.s3.region=\"$S3_BUCKET_REGION\"" \
+        --set-json="server.storage.s3.bucketName=\"$S3_BUCKET_NAME\"" \
+        --set-json="server.storage.s3.keyPrefix=\"$S3_KEY_PREFIX\"" \
+        --set-json='server.arm64=true' \
+        --set-json="server.image.tag=\"25.12.1.1497-fips\"" \
+        --set-json="server.podPolicy.nodeSelector.clickhouseGroup=\"$SERVER_NG_GROUP\"" \
+        --set-json="server.openSSL.enabled=true" \
+        --set-json="server.openSSL.required=true" \
+        --set-json="server.openSSL.verificationMode=$SERVER_VERIFICATION_MODE" \
+        --set-json="keeper.image.repository=\"$ECR_HOST/clickhouse-keeper\"" \
+        --set-json='keeper.arm64=true' \
+        --set-json="keeper.image.tag=\"26.2.1.258-fips\"" \
+        --set-json="keeper.podPolicy.nodeSelector.clickhouseGroup=\"$KEEPER_NG_GROUP\"" \
+        --set-json="keeper.openSSL.enabled=true" \
+        --set-json="keeper.openSSL.required=true" \
+        --set-json="keeper.openSSL.verificationMode=$KEEPER_VERIFICATION_MODE" \
+        --set-json="serviceAccount.annotations={\"eks.amazonaws.com/role-arn\":\"$SA_IAM_ROLE_ARN\"}" \
+        --set-json='server.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        --set-json='keeper.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        --set-json="server.ssdCacheConfiguration.cacheDiskSize=\"$CACHE_DISK_SIZE_GI\"" \
+        --set-json="server.podPolicy.resources.limits.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.limits.memory=\"$SERVER_MEMORY\"" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\"" \
+        --set-json="keeper.podPolicy.resources.limits.cpu=\"$KEEPER_CPU\"" \
+        --set-json="keeper.podPolicy.resources.limits.memory=\"$KEEPER_MEMORY\"" \
+        --set-json="keeper.podPolicy.resources.requests.cpu=\"$KEEPER_CPU\"" \
+        --set-json="keeper.podPolicy.resources.requests.memory=\"$KEEPER_MEMORY\""
+    ```
+
+    **الفروق الرئيسية عن النشر القياسي على AWS:**
+
+    | الإعداد                   | قياسي                                        | FIPS                                       |
+    | ------------------------- | -------------------------------------------- | ------------------------------------------ |
+    | نقطة نهاية ECR            | `0000000000.dkr.ecr.us-west-2.amazonaws.com` | `0000000000.dkr-ecr-fips.us-west-2.on.aws` |
+    | وسم صورة الخادم           | `25.12.1.1497`                               | `25.12.1.1497-fips`                        |
+    | نقطة نهاية S3             | (الافتراضي)                                  | عنوان URL محدد صراحةً لنقطة نهاية FIPS     |
+    | `server.openSSL.enabled`  | غير معيّن                                    | `true`                                     |
+    | `server.openSSL.required` | غير مضبوط                                    | `true`                                     |
+    | `keeper.openSSL.enabled`  | غير مضبوط                                    | `true`                                     |
+    | `keeper.openSSL.required` | غير مضبوط                                    | `true`                                     |
+    | إعدادات cache             | `bytesPerGiRAM`                              | `cacheDiskSize` (حجم محدد صراحةً)          |
+
+    ***
+  </Step>
+
+  <Step>
+    ## المرحلة 6: التحقق من التثبيت
+
+    ### إعادة توجيه المنفذ إلى منفذ TLS
+
+    مع تفعيل وضع FIPS، يستخدم ClickHouse بروتوكول TLS على المنفذ **9440** بدلًا من المنفذ القياسي 9000.
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-01-server-any 9440:9440 -n ns-default-xx-01
+    ```
+
+    ### إنشاء إعدادات العميل
+
+    أنشئ ملف `client-config.xml` لإبلاغ عميل ClickHouse بمكان شهادة CA. حدّث المسار إلى ملف `ca.crt` الخاص بك:
+
+    ```xml
+    <config>
+        <openSSL>
+            <client>
+                <caConfig>/path/to/certs/ca.crt</caConfig>
+            </client>
+        </openSSL>
+    </config>
+    ```
+
+    ### الاتصال وتشغيل استعلام
+
+    ```bash
+    clickhouse client --host localhost --port 9440 --password $PASSWORD --secure --config=client-config.xml
+    ```
+
+    نفّذ استعلامًا تجريبيًا:
+
+    ```bash
+    clickhouse-cloud :) select 1;
+    ```
+
+    الناتج المتوقع:
+
+    ```sql
+    SELECT 1
+    Query id: 825591bf-a8e5-4995-ac9f-afb864854ba2
+       ┌─1─┐
+    1. │ 1  │
+       └───┘
+    1 row in set. Elapsed: 0.001 sec.
+    ```
+
+    **مهم:** سيرفض المنفذ 9000 (native غير مشفّر) والمنفذ 8123 (HTTP غير مشفّر) الاتصالات عندما تكون `openSSL.required=true`. استخدم المنفذ 9440 (native عبر TLS) أو المنفذ 8443 (HTTPS) بدلًا من ذلك.
+
+    ***
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* **تكامل Teleport** (اختياري): للوصول الآمن إلى قاعدة البيانات عبر Teleport Enterprise، راجع [دمج Teleport مع ClickHouse Private](/ar/products/clickhouse-private/guides/integrate-teleport-with-clickhouse-private). يتطلب ذلك تعيين `SERVER_VERIFICATION_MODE=relaxed` و `KEEPER_VERIFICATION_MODE=relaxed`.
