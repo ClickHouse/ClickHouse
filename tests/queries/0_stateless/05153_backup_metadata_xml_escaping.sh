@@ -31,8 +31,28 @@ ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${incremental_backup} SETTINGS
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE tbl AS tbl_from_incremental FROM ${incremental_backup}" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SELECT 'base_backup', sum(a) FROM tbl_from_incremental"
 
+# The check for characters XML cannot carry walks the string as UTF-8, so the rest of UTF-8 has to keep
+# working: a multi-byte id is perfectly legal XML and must still round-trip.
+backup_with_utf8="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_utf8')"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${backup_with_utf8} SETTINGS id = 'привет 🙂 ${CLICKHOUSE_TEST_UNIQUE_NAME}'" > /dev/null
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE tbl AS tbl_from_utf8 FROM ${backup_with_utf8}" > /dev/null
+${CLICKHOUSE_CLIENT} --query "SELECT 'utf8_id', sum(a) FROM tbl_from_utf8"
+
+# XML has no representation at all for a C0 control character - there is no escape and no character
+# reference for one - so escaping cannot help and the backup has to be refused. Writing the byte raw is
+# what reported `BACKUP_CREATED` over a manifest that no parser accepts. SQL string literals decode
+# `\0` and `\v` into those bytes, so `SETTINGS id` reaches the manifest with one.
+control_nul="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_control_nul')"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${control_nul} SETTINGS id = 'a\0b ${CLICKHOUSE_TEST_UNIQUE_NAME}'" 2>&1 \
+    | grep -qF 'XML cannot represent' && echo -e "control_char_nul\trejected" || echo -e "control_char_nul\tNOT rejected"
+
+control_vtab="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_control_vtab')"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${control_vtab} SETTINGS id = 'a\vb ${CLICKHOUSE_TEST_UNIQUE_NAME}'" 2>&1 \
+    | grep -qF 'XML cannot represent' && echo -e "control_char_vtab\trejected" || echo -e "control_char_vtab\tNOT rejected"
+
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE tbl;
 DROP TABLE tbl_from_id;
 DROP TABLE tbl_from_incremental;
+DROP TABLE tbl_from_utf8;
 "

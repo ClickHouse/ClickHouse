@@ -491,7 +491,22 @@ void BackupImpl::writeBackupMetadata()
     else
         out = writer->writeFile(metadata_file);
 
-    auto xml_string = [](const String & str) { return std::string_view(str.data(), str.size()); };
+    /// Escaping cannot rescue a value XML has no representation for at all: there is no character
+    /// reference for a C0 control byte, and a byte sequence that is not valid UTF-8 names no code point.
+    /// Writing one still reported `BACKUP_CREATED`, and the backup turned out to be unreadable only at
+    /// restore time, so refuse it here while the backup can still be retried. The offending value is
+    /// never put in the message - `<base_backup>` holds a locator that can carry credentials.
+    auto xml_string = [](std::string_view element, const String & str)
+    {
+        if (auto offset = findCharacterNotWritableAsXML(str))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write the backup metadata: the value of <{}> has a character at byte offset {} that "
+                "XML cannot represent. The value is not shown because it may carry credentials",
+                element,
+                *offset);
+        return std::string_view(str.data(), str.size());
+    };
 
     *out << "<config>";
     *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
@@ -506,7 +521,7 @@ void BackupImpl::writeBackupMetadata()
          << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
     if (!backup_id.empty())
-        *out << "<backup_id>" << xml << xml_string(backup_id) << "</backup_id>";
+        *out << "<backup_id>" << xml << xml_string("backup_id", backup_id) << "</backup_id>";
     if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
@@ -546,7 +561,7 @@ void BackupImpl::writeBackupMetadata()
 
             /// Named rather than written inline so that the `std::string_view` does not point into a temporary.
             const String base_backup_text = base_backup_info_for_metadata.toString();
-            *out << "<base_backup>" << xml << xml_string(base_backup_text) << "</base_backup>";
+            *out << "<base_backup>" << xml << xml_string("base_backup", base_backup_text) << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
             if (base_backup_can_use_this_backup_credentials)
                 *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
@@ -556,8 +571,8 @@ void BackupImpl::writeBackupMetadata()
 
     if (params.is_lightweight_snapshot)
     {
-        *out << "<original_endpoint>" << xml << xml_string(original_endpoint) << "</original_endpoint>";
-        *out << "<original_namespace>" << xml << xml_string(original_namespace) << "</original_namespace>";
+        *out << "<original_endpoint>" << xml << xml_string("original_endpoint", original_endpoint) << "</original_endpoint>";
+        *out << "<original_namespace>" << xml << xml_string("original_namespace", original_namespace) << "</original_namespace>";
     }
 
     num_files = num_all_file_infos;
@@ -570,12 +585,12 @@ void BackupImpl::writeBackupMetadata()
     {
         *out << "<file>";
 
-        *out << "<name>" << xml << xml_string(info.file_name) << "</name>";
+        *out << "<name>" << xml << xml_string("name", info.file_name) << "</name>";
         *out << "<size>" << info.size << "</size>";
 
         if (!info.object_key.empty())
         {
-            *out << "<object_key>" << xml << xml_string(info.object_key) << "</object_key>";
+            *out << "<object_key>" << xml << xml_string("object_key", info.object_key) << "</object_key>";
             if (original_endpoint.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
         }
@@ -593,7 +608,7 @@ void BackupImpl::writeBackupMetadata()
                 }
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
-                *out << "<data_file>" << xml << xml_string(info.data_file_name) << "</data_file>";
+                *out << "<data_file>" << xml << xml_string("data_file", info.data_file_name) << "</data_file>";
             if (info.encrypted_by_disk)
                 *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }

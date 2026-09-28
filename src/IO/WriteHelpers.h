@@ -5,6 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <bit>
+#include <optional>
 
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
@@ -768,6 +769,16 @@ inline void writeXMLStringForTextElementOrAttributeValue(std::string_view s, Wri
 {
     writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
 }
+
+/// Escaping is not enough to make an arbitrary string writable as XML. XML 1.0 forbids the C0 control
+/// characters other than tab, line feed and carriage return, the surrogate halves and `U+FFFE`/`U+FFFF`
+/// outright - the code points, not just their literal spelling - so no character reference can carry one,
+/// and a byte sequence that is not valid UTF-8 names no code point at all. Such a value can only be
+/// refused. A carriage return is not reported: it is a legal XML character, and end-of-line normalization
+/// rewriting it to a line feed on read changes the value but still leaves the document readable.
+/// Returns the byte offset of the first character `writeXMLStringForTextElementOrAttributeValue`
+/// would emit unreadably, or nothing if the whole string can be written.
+std::optional<size_t> findCharacterNotWritableAsXML(std::string_view s);
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
 inline void writeXMLStringForTextElement(const char * begin, const char * end, WriteBuffer & buf)
