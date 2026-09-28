@@ -112,7 +112,7 @@ public:
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
     /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
-    virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/ = false) { return {}; }
+    virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);

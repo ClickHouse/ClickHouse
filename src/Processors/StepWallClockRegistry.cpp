@@ -36,7 +36,7 @@ void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan)
 
         for (const auto * child : cur->children)
             stack.push_back(child);
-        for (const auto * child_plan : cur->step->getChildPlans())
+        for (const auto * child_plan : cur->step->getChildPlans(/*for_explain=*/ false))
             stack.push_back(child_plan->getRootNode());
     }
 }
