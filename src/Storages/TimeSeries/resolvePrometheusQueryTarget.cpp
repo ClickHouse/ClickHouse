@@ -195,19 +195,16 @@ namespace
         /// A secondary query of the request it serves, as the wire already sends it: a shard can then name that
         /// request, and the kind pins the per-probe id ask() sets out of the initial one.
         probe_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        /// The initial user is left unset: an interserver secret authenticates a secondary query as the user it
+        /// names, while the probe asks each replica on this server's own rights.
         probe_context->setInitialQueryId(context->getInitialQueryId());
         if (const auto & initial_address = context->getClientInfo().initial_address)
             probe_context->setInitialAddress(*initial_address);
-        /// The initial user is left unset: an interserver secret authenticates a secondary query as the user it
-        /// names, while the probe asks each replica on this server's own rights.
-        probe_context->setCurrentQueryId("");
         /// An unreachable replica then answers nothing rather than failing the probe; a missing table is still
         /// an exception, which the caller of a shard cannot be left to discover for itself.
         probe_context->setSetting("skip_unavailable_shards", true);
         probe_context->setSetting("skip_unavailable_shards_mode", String("unavailable"));
-        /// The type must come back as the column declares it, and only the table's own columns.
-        probe_context->setSetting("describe_include_subcolumns", false);
-        probe_context->setSetting("describe_include_virtual_columns", false);
+        /// The type must come back as the column declares it.
         probe_context->setSetting("print_pretty_type_names", false);
 
         Strings wrong_engine_replicas;
