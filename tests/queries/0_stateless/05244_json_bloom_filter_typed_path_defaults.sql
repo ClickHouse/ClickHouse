@@ -24,7 +24,7 @@ SELECT 's = c', groupArray(id) FROM json_bf_typed_defaults WHERE j.s = 'c' SETTI
 SELECT 'n = 7', groupArray(id) FROM json_bf_typed_defaults WHERE j.n = 7 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'n = 9', groupArray(id) FROM json_bf_typed_defaults WHERE j.n = 9 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'ns = v', groupArray(id) FROM json_bf_typed_defaults WHERE j.ns = 'v' SETTINGS force_data_skipping_indices = 'idx';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM json_bf_typed_defaults WHERE j.s = 'c') WHERE explain LIKE '%Granules:%';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM json_bf_typed_defaults WHERE j.s = 'c') WHERE explain LIKE '%Granules:%' SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
 -- A default value is not indexed, so the index is not used for it, and the rows where the path is absent are found.
 SELECT 's = empty', groupArray(id) FROM json_bf_typed_defaults WHERE j.s = '';

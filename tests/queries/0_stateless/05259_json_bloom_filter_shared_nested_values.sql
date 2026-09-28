@@ -40,7 +40,7 @@ SELECT groupArray(id) FROM json_bf_shared_nested WHERE has(j.arr[].deep[].w, ['d
 SELECT groupArray(id) FROM json_bf_shared_nested WHERE j.other = 42 SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM json_bf_shared_nested WHERE j.obj.inner.z = 20)
-WHERE explain LIKE '%Granules%' ORDER BY explain LIMIT 1;
+WHERE explain LIKE '%Granules%' ORDER BY explain LIMIT 1 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
 SYSTEM START MERGES json_bf_shared_nested;
 OPTIMIZE TABLE json_bf_shared_nested FINAL;
@@ -55,6 +55,6 @@ SELECT groupArray(id) FROM json_bf_shared_nested WHERE has(j.arr[].deep[].w, ['d
 SELECT groupArray(id) FROM json_bf_shared_nested WHERE j.other = 42 SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM json_bf_shared_nested WHERE j.obj.inner.z = 20)
-WHERE explain LIKE '%Granules%' ORDER BY explain LIMIT 1;
+WHERE explain LIKE '%Granules%' ORDER BY explain LIMIT 1 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
 DROP TABLE json_bf_shared_nested;
