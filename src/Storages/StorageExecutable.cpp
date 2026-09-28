@@ -97,6 +97,28 @@ namespace
             inputs[i] = Pipe(std::move(source));
         }
     }
+
+    /// What `ExecutablePool` takes for `max_command_execution_time` where its definition does not state it: 10 seconds,
+    /// capped by `max_execution_time` of `server_settings`, the global context's, which creates the table.
+    void setPoolCommandExecutionTime(ExecutableSettings & executable_settings, const Settings & server_settings)
+    {
+        size_t max_command_execution_time = 10;
+
+        size_t max_execution_time_seconds = static_cast<size_t>(server_settings[Setting::max_execution_time].totalSeconds());
+        if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
+            max_command_execution_time = max_execution_time_seconds;
+
+        executable_settings[ExecutableSetting::max_command_execution_time] = max_command_execution_time;
+    }
+
+    /// For `system.engine_settings`: what an `ExecutablePool` table created now would take, judged by value as its
+    /// table rows are.
+    SettingDescriptions enumeratePoolEngineSettings(ContextPtr context)
+    {
+        ExecutableSettings executable_settings;
+        setPoolCommandExecutionTime(executable_settings, context->getGlobalContext()->getSettingsRef());
+        return withOriginByValue(executable_settings.enumerateSettings());
+    }
 }
 
 StorageExecutable::StorageExecutable(
@@ -274,15 +296,7 @@ void registerStorageExecutable(StorageFactory & factory)
         settings.is_executable_pool = is_executable_pool;
 
         if (is_executable_pool)
-        {
-            size_t max_command_execution_time = 10;
-
-            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
-            if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
-                max_command_execution_time = max_execution_time_seconds;
-
-            settings[ExecutableSetting::max_command_execution_time] = max_command_execution_time;
-        }
+            setPoolCommandExecutionTime(settings, args.getContext()->getSettingsRef());
 
         if (args.storage_def->settings)
             settings.loadFromQuery(*args.storage_def);
@@ -522,10 +536,13 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
         .syntax = "ENGINE = Executable(script_name, format[, input_query...])",
         .related = {"ExecutablePool"}});
 
+    auto pool_features = storage_features;
+    pool_features.enumerate_engine_settings_fn = enumeratePoolEngineSettings;
+
     factory.registerStorage("ExecutablePool", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, true /*is_executable_pool*/);
-    }, storage_features,
+    }, pool_features,
     Documentation{
         .description = R"DOCS_MD(
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `user_scripts` directory and can read data from any source.

@@ -1,4 +1,6 @@
 -- filled in: changed only where the value is not the default
 max_command_execution_time	1	1
+-- the engine row says what a table created now takes
+1	1	1
 -- stated
 max_command_execution_time	5	1	definition
