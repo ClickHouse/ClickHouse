@@ -7478,7 +7478,7 @@ This is an expert-level setting which should only be used for debugging by devel
 </Note>
 )", 0, \
         {"26.9", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."}) \
-    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+    DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
 Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
@@ -7486,6 +7486,7 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
 )", 0, \
+        {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
@@ -9332,11 +9333,6 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 )", 0, \
         {"25.8", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}) \
-    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
-Use local pipeline during distributed INSERT SELECT with parallel replicas
-)", 0, \
-        {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
-        {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", 0, \
@@ -10891,6 +10887,10 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
+        {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
+        {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
+        {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1, \
         {"26.6", 1, 1, "Obsolete setting, the database engine in Cloud no longer depends on it."}, \
         {"24.10", 1, 1, "A setting for ClickHouse Cloud"}) \
