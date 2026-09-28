@@ -268,7 +268,7 @@ void SerializationMapWithKeyColumns::markKeysCopiedFromTemplate(SerializeBinaryB
         map_state->copied_from_template.insert(key);
 }
 
-const std::vector<Field> SerializationMapWithKeyColumns::getRegisteredKeys(const SerializeBinaryBulkState & state) const
+std::vector<Field> SerializationMapWithKeyColumns::getRegisteredKeys(const SerializeBinaryBulkState & state) const
 {
     const auto & map_state = typeid_cast<const SerializeBinaryBulkStateMapWithKeyColumns &>(state);
     std::vector<Field> keys;

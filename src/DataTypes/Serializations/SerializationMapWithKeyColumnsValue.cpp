@@ -179,9 +179,9 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkStatePrefix(
     }
     settings.path.pop_back();
 
-    for (size_t i = 0; i < manifest.keys.size(); ++i)
+    for (const auto & entry : manifest.keys)
     {
-        if (manifest.keys[i].key != key)
+        if (entry.key != key)
             continue;
 
         value_state->key_in_manifest = true;

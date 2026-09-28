@@ -175,7 +175,7 @@ public:
     /// Register `keys` in `state`, opening their per-key value/exists streams lazily.
     void addKeys(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const;
     void markKeysCopiedFromTemplate(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const;
-    const std::vector<Field> getRegisteredKeys(const SerializeBinaryBulkState & state) const;
+    std::vector<Field> getRegisteredKeys(const SerializeBinaryBulkState & state) const;
     size_t getRegisteredKeyCount(const SerializeBinaryBulkState & state) const;
 
     /// Initialize newly registered key streams (value + exists prefixes) before the writer

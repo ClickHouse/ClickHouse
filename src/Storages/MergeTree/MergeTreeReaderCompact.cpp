@@ -22,7 +22,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int INCORRECT_DATA;
 }
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(

@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 #include <city.h>
 
 constexpr size_t DBMS_DEFAULT_HASHING_BLOCK_SIZE = 2048ULL;
@@ -10,6 +11,11 @@ constexpr size_t DBMS_DEFAULT_HASHING_BLOCK_SIZE = 2048ULL;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 template <typename Buffer>
 class IHashingBuffer : public BufferWithOwnMemory<Buffer>
