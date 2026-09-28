@@ -37,6 +37,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -10111,6 +10112,18 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
             readDateTimeText(parsed, parsed_in);
             spells_parsed_value = spelled == parsed;
         }
+
+        if (which.isDateTime64())
+        {
+            /// `DateTime64` text parsing keeps `scale` fractional digits and ignores the rest, so on a `DateTime64(3)` key
+            /// `'2024-02-19 00:00:00.5009'` would be read as `.500`.
+            const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*nested_type).getScale();
+            const size_t dot = literal.find('.');
+            if (dot != String::npos)
+                for (size_t pos = dot + 1 + scale; is_digit_at(pos); ++pos)
+                    if (literal[pos] != '0')
+                        spells_parsed_value = false;
+        }
     }
 
     if (!spells_parsed_value)
@@ -10119,6 +10132,35 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
                         literal, type->getName(), parsed_text.str());
 
     return converted;
+}
+
+/// A conversion such as `CAST('2024-02-30', 'Date')` or `toDate('2024-02-30')` in a partition value is folded to
+/// `2024-03-01` before `convertPartitionFieldToType` sees it, so its string argument is checked the same way.
+static void checkDateTimeConversionsInPartitionValue(const ASTPtr & ast, ContextPtr context)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.empty())
+        return;
+
+    if (function->name == "tuple")
+    {
+        for (const auto & child : function->arguments->children)
+            checkDateTimeConversionsInPartitionValue(child, context);
+        return;
+    }
+
+    static const std::unordered_set<std::string_view> date_time_conversions
+        = {"toDate", "toDate32", "toDateTime", "toDateTime32", "toDateTime64"};
+    if (!isFunctionCast(function) && !date_time_conversions.contains(function->name))
+        return;
+
+    const auto * argument = function->arguments->children[0]->as<ASTLiteral>();
+    if (!argument || argument->value.getType() != Field::Types::String)
+        return;
+
+    const DataTypePtr type = evaluateConstantExpression(ast, context).second;
+    if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
+        convertPartitionFieldToType(argument->value, type);
 }
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
@@ -10219,6 +10261,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
                         partition_ast_fields_count, fields_count);
+
+    checkDateTimeConversionsInPartitionValue(partition_value_ast, local_context);
 
     Row partition_row(fields_count);
     if (fields_count == 0)

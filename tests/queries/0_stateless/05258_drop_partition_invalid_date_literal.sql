@@ -71,9 +71,12 @@ ALTER TABLE t_datetime64 DROP PARTITION '2024-02-30 00:00:00'; -- { serverError 
 ALTER TABLE t_datetime64 DROP PARTITION '2024-02-29 25:00:00'; -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_datetime64 DROP PARTITION '2024-13-01 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_datetime64 DROP PARTITION '0000-00-00 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
+-- Fractional digits beyond the scale used to be ignored: `.7891` named `.789`.
+ALTER TABLE t_datetime64 DROP PARTITION '2024-03-01 12:34:56.7891'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_datetime64 DROP PARTITION '1709296496.7891'; -- { serverError INVALID_PARTITION_VALUE }
 SELECT 'datetime64, nothing dropped', groupArray(x) FROM (SELECT x FROM t_datetime64 ORDER BY x);
 ALTER TABLE t_datetime64 DROP PARTITION '2024-03-01 00:00:00';
-ALTER TABLE t_datetime64 DROP PARTITION '2024-03-01 12:34:56.789';
+ALTER TABLE t_datetime64 DROP PARTITION '2024-03-01 12:34:56.78900';
 ALTER TABLE t_datetime64 DROP PARTITION '1970-01-01';
 SELECT 'datetime64, valid literals', groupArray(x) FROM (SELECT x FROM t_datetime64 ORDER BY x);
 DROP TABLE t_datetime64;
@@ -133,7 +136,28 @@ DROP TABLE IF EXISTS t_tuple;
 CREATE TABLE t_tuple (d Date, k UInt8, x UInt8) ENGINE = MergeTree PARTITION BY (d, k) ORDER BY x;
 INSERT INTO t_tuple VALUES ('2024-03-01', 1, 1), ('2024-02-29', 1, 2);
 ALTER TABLE t_tuple DROP PARTITION ('2024-02-30', 1); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_tuple DROP PARTITION (toDate('2024-02-30'), 1); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_tuple DROP PARTITION (CAST('2024-02-30', 'Date'), 1); -- { serverError INVALID_PARTITION_VALUE }
 SELECT 'tuple, nothing dropped', groupArray(x) FROM (SELECT x FROM t_tuple ORDER BY x);
 ALTER TABLE t_tuple DROP PARTITION ('2024-02-29', 1);
 SELECT 'tuple, valid literal', groupArray(x) FROM (SELECT x FROM t_tuple ORDER BY x);
 DROP TABLE t_tuple;
+
+-- The string argument of a conversion is checked too: it used to be folded into another value first.
+DROP TABLE IF EXISTS t_conversion;
+DROP TABLE IF EXISTS t_conversion_datetime64;
+CREATE TABLE t_conversion (d Date, x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+CREATE TABLE t_conversion_datetime64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_conversion VALUES ('2024-03-01', 1);
+INSERT INTO t_conversion_datetime64 VALUES ('2024-03-01 00:00:00', 1);
+ALTER TABLE t_conversion DROP PARTITION CAST('2024-02-30', 'Date'); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_conversion DROP PARTITION CAST('2024-02-30' AS Date); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-30')); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-02-29 24:00:00', 3, 'UTC')); -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_conversion_datetime64 DROP PARTITION CAST('2024-03-01 00:00:00.0001', 'DateTime64(3, \'UTC\')'); -- { serverError INVALID_PARTITION_VALUE }
+SELECT 'conversion, nothing dropped', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
+ALTER TABLE t_conversion DROP PARTITION CAST('2024-03-01', 'Date');
+ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-03-01 00:00:00', 3, 'UTC'));
+SELECT 'conversion, valid literals', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
+DROP TABLE t_conversion;
+DROP TABLE t_conversion_datetime64;
