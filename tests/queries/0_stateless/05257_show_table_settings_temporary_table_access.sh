@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# The one path into `SHOW TABLE SETTINGS` that checks no privilege: a temporary table.
+# The one path into `SHOW TABLE SETTINGS` that checks no `SHOW TABLES`: a temporary table.
 #
 # It needs none - a session's temporary tables are its own, and `system.table_settings` enumerates
-# them from the session as `system.tables` does - but that makes this the branch where a mistake
-# would not be refused, so it is pinned from both sides: that a user with no grant at all reads its
-# own temporary table, and that a temporary table of the same name does not become a way to read a
+# them from the session as `system.tables` does. Only the `SELECT` grant on `system.table_settings`,
+# which every table needs (`05263`), is asked. That makes this the branch where a mistake would not be
+# refused, so it is pinned from both sides: that a user with no grant on any table reads its own
+# temporary table, and that a temporary table of the same name does not become a way to read a
 # permanent one the user may not see.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1837,72 +1837,73 @@ def test_table_settings_for_datalake_catalog(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    visible = "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
-    settings = node.query(
-        f"SELECT name FROM system.table_settings "
-        f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}' {visible}"
-    )
-    assert "iceberg_format_version" in settings
-
-    ## Hidden from the table by default, but the statement names the database and enables it for itself.
-    assert (
-        node.query(
-            f"SELECT count() FROM system.table_settings "
-            f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}'"
-        ).strip()
-        == "0"
-    )
-    assert "iceberg_format_version" in node.query(
-        f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}`"
-    )
-
-    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
     try:
-        ## The error names the table and the setting that would let the query skip it, as a plain listing does.
-        for query in (
-            f"SELECT count() FROM system.table_settings WHERE database = '{CATALOG_NAME}' "
-            f"{visible}, database_datalake_require_metadata_access = 1",
-            f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
-            f"SETTINGS database_datalake_require_metadata_access = 1",
-        ):
-            error = node.query_and_get_error(query)
-            assert "Injected metadata resolution failure" in error, query
-            assert "database_datalake_require_metadata_access" in error, query
+        visible = "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        settings = node.query(
+            f"SELECT name FROM system.table_settings "
+            f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}' {visible}"
+        )
+        assert "iceberg_format_version" in settings
 
-        ## With the requirement off, the tables are skipped, as the plain iterator skips them - for one table and
-        ## for the whole database, where every table's metadata fails.
-        for condition in (f"AND table = '{full_name}'", ""):
-            assert (
-                node.query(
-                    f"SELECT count() FROM system.table_settings "
-                    f"WHERE database = '{CATALOG_NAME}' {condition} "
-                    f"{visible}, database_datalake_require_metadata_access = 0"
-                ).strip()
-                == "0"
-            ), condition
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
-
-    ## A table the catalog lists but no longer resolves is skipped without an error: looking it up again finds nothing.
-    ## `SHOW TABLE SETTINGS` names that one table, so it reports it missing, as `SHOW CREATE TABLE` does.
-    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
-    try:
+        ## Hidden from the table by default, but the statement names the database and enables it for itself.
         assert (
             node.query(
                 f"SELECT count() FROM system.table_settings "
-                f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}' "
-                f"{visible}, database_datalake_require_metadata_access = 1"
+                f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}'"
             ).strip()
             == "0"
         )
-        assert "UNKNOWN_TABLE" in node.query_and_get_error(
-            f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
-            f"SETTINGS database_datalake_require_metadata_access = 1"
+        assert "iceberg_format_version" in node.query(
+            f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}`"
         )
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_return_nullptr")
 
-    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+        node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+        try:
+            ## The error names the table and the setting that would let the query skip it, as a plain listing does.
+            for query in (
+                f"SELECT count() FROM system.table_settings WHERE database = '{CATALOG_NAME}' "
+                f"{visible}, database_datalake_require_metadata_access = 1",
+                f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
+                f"SETTINGS database_datalake_require_metadata_access = 1",
+            ):
+                error = node.query_and_get_error(query)
+                assert "Injected metadata resolution failure" in error, query
+                assert "database_datalake_require_metadata_access" in error, query
+
+            ## With the requirement off, the tables are skipped, as the plain iterator skips them - for one table and
+            ## for the whole database, where every table's metadata fails.
+            for condition in (f"AND table = '{full_name}'", ""):
+                assert (
+                    node.query(
+                        f"SELECT count() FROM system.table_settings "
+                        f"WHERE database = '{CATALOG_NAME}' {condition} "
+                        f"{visible}, database_datalake_require_metadata_access = 0"
+                    ).strip()
+                    == "0"
+                ), condition
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+        ## A table the catalog lists but no longer resolves is skipped without an error: looking it up again finds nothing.
+        ## `SHOW TABLE SETTINGS` names that one table, so it reports it missing, as `SHOW CREATE TABLE` does.
+        node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
+        try:
+            assert (
+                node.query(
+                    f"SELECT count() FROM system.table_settings "
+                    f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}' "
+                    f"{visible}, database_datalake_require_metadata_access = 1"
+                ).strip()
+                == "0"
+            )
+            assert "UNKNOWN_TABLE" in node.query_and_get_error(
+                f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
+                f"SETTINGS database_datalake_require_metadata_access = 1"
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_return_nullptr")
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
 def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):

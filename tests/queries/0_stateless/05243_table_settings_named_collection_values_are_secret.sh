@@ -4,9 +4,9 @@
 #
 # What a named collection holds is secret as a whole: `system.named_collections` hides every key of it without
 # `SHOW NAMED COLLECTIONS SECRETS`, and `SHOW CREATE TABLE` prints the collection's name rather than what it
-# holds. `system.table_settings` needs only `SHOW TABLES` on the table, so it must not be the surface that
-# hands a collection's contents to a user the other two refuse - a broker address says as much about where a
-# table points as a password does.
+# holds. `system.table_settings` needs a `SELECT` grant on it and `SHOW TABLES` on the table - neither of which
+# says anything about the collection - so it must not be the surface that hands a collection's contents to a user
+# the other two refuse. A broker address says as much about where a table points as a password does.
 #
 # A shell test because a named collection is server-wide, so its name has to carry this test's database, and
 # because the reader has to be a user of its own.
