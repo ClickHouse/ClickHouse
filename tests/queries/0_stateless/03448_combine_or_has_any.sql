@@ -123,6 +123,35 @@ SELECT sum(hasAny(v, [CAST('a', 'Variant(UInt8, String)')]) OR hasAny(v, [CAST(1
 SELECT n, hasAny(v, [CAST('a', 'Variant(UInt8, String)')]) OR hasAny(v, [CAST(1, 'Variant(UInt8, String)')]) FROM remote('127.0.0.{1,2}', view(SELECT number AS n, [CAST(toUInt8(number), 'Variant(UInt8, String)')] AS v FROM numbers(4))) ORDER BY ALL;
 SELECT sum(hasAny(j, ['{"a":2}'::JSON]) OR hasAny(j, ['{"a":1}'::JSON, '{"a":2}'::JSON])) FROM remote('127.0.0.{1,2}', view(SELECT [('{"a":' || toString(number) || '}')::JSON] AS j FROM numbers(4)));
 
+SELECT '-- server constants in the needles of a distributed query are calculated on each remote server';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([toString(dummy)], [hostName()]) OR hasAny([toString(dummy)], [hostName() || 'x']);
+SELECT count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([hostName() || toString(dummy)], [hostName() || '0']) OR hasAny([hostName() || toString(dummy)], [hostName() || 'x']);
+SELECT shardNum() AS s, count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([toUInt64(dummy + 1)], [toUInt64(shardNum())]) OR hasAny([toUInt64(dummy + 1)], [shardNum() + 5]) GROUP BY s ORDER BY s;
+SELECT sum(hasAny([toUInt64(dummy + 2)], [toUInt64(shardNum())]) OR hasAny([toUInt64(dummy + 2)], [shardNum() + 5])) FROM remote('127.0.0.{1,2}', system.one);
+
+SELECT '-- a chain of deterministic needles and a server constant merges only the deterministic ones';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([toUInt64(dummy + 1)], [toUInt64(2)]) OR hasAny([toUInt64(dummy + 1)], [toUInt64(3)]) OR hasAny([toUInt64(dummy + 1)], [toUInt64(shardNum())]);
+SELECT shardNum() AS s, count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([toUInt64(dummy + 1)], [toUInt64(2)]) OR hasAny([toUInt64(dummy + 1)], [toUInt64(3)]) OR hasAny([toUInt64(dummy + 1)], [toUInt64(shardNum())]) GROUP BY s ORDER BY s;
+
+SELECT '-- a server constant in the haystack is calculated on each remote server too';
+SELECT shardNum() AS s, count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([toUInt64(dummy + shardNum())], [toUInt64(1)]) OR hasAny([toUInt64(dummy + shardNum())], [toUInt64(7)]) GROUP BY s ORDER BY s;
+
+SELECT '-- a server constant in the needles of a view subquery is calculated on each remote server';
+SELECT sum(flag) FROM remote('127.0.0.{1,2}', view(SELECT hasAny([toUInt64(number + 1)], [toUInt64(shardNum())]) OR hasAny([toUInt64(number + 1)], [toUInt64(shardNum() + 5)]) AS flag FROM numbers(4)));
+
+SELECT '-- a Distributed table query calculates the server constants on each shard too';
+DROP TABLE IF EXISTS t3448_dist;
+CREATE TABLE t3448_dist AS system.one ENGINE = Distributed(test_cluster_two_shards, system, one);
+SELECT shardNum() AS s, count() FROM t3448_dist WHERE hasAny([toUInt64(dummy + 1)], [toUInt64(shardNum())]) OR hasAny([toUInt64(dummy + 1)], [shardNum() + 5]) GROUP BY s ORDER BY s;
+DROP TABLE t3448_dist;
+
+SELECT '-- in a local query a server constant folds to a constant and the calls are merged';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM t3448 WHERE hasAny(numbers, [toInt128(shardNum())]) OR hasAny(numbers, [toInt128(0)]);
+SELECT count() FROM t3448 WHERE hasAny(numbers, [toInt128(shardNum())]) OR hasAny(numbers, [toInt128(0)]);
+
+SELECT '-- with the setting off the results are the same';
+SELECT shardNum() AS s, count() FROM remote('127.0.0.{1,2}', system.one) WHERE hasAny([toUInt64(dummy + 1)], [toUInt64(shardNum())]) OR hasAny([toUInt64(dummy + 1)], [shardNum() + 5]) GROUP BY s ORDER BY s SETTINGS optimize_or_has_any_chain = 0;
+
 SELECT '-- the setting is taken from the scope of each subquery';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM (SELECT id, letters FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 1) WHERE hasAny(letters, ['u']) OR hasAny(letters, ['z']) SETTINGS optimize_or_has_any_chain = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM (SELECT id, letters FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 0) WHERE hasAny(letters, ['u']) OR hasAny(letters, ['z']) SETTINGS optimize_or_has_any_chain = 1;

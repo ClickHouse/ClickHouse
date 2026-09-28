@@ -135,6 +135,25 @@ SELECT or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), eq
 3	0
 3	0
 4
+-- server constants in the needles of a distributed query are calculated on each remote server
+SELECT count() AS `count()`\nFROM remote(\'127.0.0.{1,2}\', system.one) AS __table1\nWHERE or(hasAny(array(toString(__table1.dummy)), array(hostName())), hasAny(array(toString(__table1.dummy)), array(concat(hostName(), \'x\'))))
+2
+1	1
+1
+-- a chain of deterministic needles and a server constant merges only the deterministic ones
+SELECT count() AS `count()`\nFROM remote(\'127.0.0.{1,2}\', system.one) AS __table1\nWHERE or(hasAny(array(toUInt64(plus(__table1.dummy, 1))), _CAST([2, 3], \'Array(UInt64)\')), hasAny(array(toUInt64(plus(__table1.dummy, 1))), array(toUInt64(shardNum()))))
+1	1
+-- a server constant in the haystack is calculated on each remote server too
+1	1
+-- a server constant in the needles of a view subquery is calculated on each remote server
+2
+-- a Distributed table query calculates the server constants on each shard too
+1	1
+-- in a local query a server constant folds to a constant and the calls are merged
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE hasAny(__table1.numbers, _CAST([\'0\'], \'Array(Int128)\'))
+0
+-- with the setting off the results are the same
+1	1
 -- the setting is taken from the scope of each subquery
 SELECT __table1.id AS id\nFROM\n(\n    SELECT\n        __table2.id AS id,\n        __table2.letters AS letters\n    FROM default.t3448 AS __table2\n    WHERE hasAny(__table2.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n) AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'u\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'z\'], \'Array(String)\')))\nSETTINGS optimize_or_has_any_chain = 0
 SELECT __table1.id AS id\nFROM\n(\n    SELECT\n        __table2.id AS id,\n        __table2.letters AS letters\n    FROM default.t3448 AS __table2\n    WHERE or(hasAny(__table2.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table2.letters, _CAST([\'i\'], \'Array(String)\')))\n    SETTINGS optimize_or_has_any_chain = 0\n) AS __table1\nWHERE hasAny(__table1.letters, _CAST([\'u\', \'z\'], \'Array(String)\'))\nSETTINGS optimize_or_has_any_chain = 1
