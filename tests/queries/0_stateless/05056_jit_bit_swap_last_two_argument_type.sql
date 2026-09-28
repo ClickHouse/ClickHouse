@@ -12,6 +12,11 @@ SELECT __bitSwapLastTwo(toFloat64(c0)) FROM t_bit_swap_last_two
 SELECT __bitSwapLastTwo(toFloat64(c0)) FROM t_bit_swap_last_two
     SETTINGS compile_expressions = 0; -- { serverError BAD_ARGUMENTS }
 
+-- An integral argument is lowered differently (`trunc`, not `fptoui`), so it is a separate case.
+-- `bitNot` is the compilable child here, as `toFloat64` is above.
+SELECT __bitSwapLastTwo(bitNot(toUInt16(c0))) FROM t_bit_swap_last_two
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError BAD_ARGUMENTS }
+
 -- `UInt8` is the accepted argument type: the compiled and the interpreted path agree.
 SELECT (SELECT groupArray(__bitSwapLastTwo(bitNot(c0))) FROM t_bit_swap_last_two
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)

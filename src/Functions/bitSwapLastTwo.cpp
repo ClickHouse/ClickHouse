@@ -7,7 +7,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -40,8 +39,6 @@ static constexpr bool compilable = std::is_same_v<A, ResultType>;
 
 static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
-    if (!arg->getType()->isIntegerTy())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "__bitSwapLastTwo expected an integral type");
     return b.CreateOr(
             b.CreateShl(b.CreateAnd(arg, 1), 1),
             b.CreateAnd(b.CreateLShr(arg, 1), 1)
