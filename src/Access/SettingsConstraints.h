@@ -107,6 +107,10 @@ public:
     /// Checks whether `change` violates these and clamps the `change` if so.
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
+    /// `compatibility` gives a setting only a value that these constraints and `allow_feature_tier` accept,
+    /// and leaves any other setting as it is. `restrictsCompatibility` tells whether any value can be refused.
+    bool restrictsCompatibility() const;
+    bool allowsValueFromCompatibility(std::string_view setting_name, const Field & value) const;
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
     friend bool operator !=(const SettingsConstraints & left, const SettingsConstraints & right) { return !(left == right); }

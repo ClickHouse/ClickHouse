@@ -696,6 +696,27 @@ std::optional<PreformattedMessage> getFeatureTierRestriction(
     return {};
 }
 
+bool SettingsConstraints::restrictsCompatibility() const
+{
+    return !constraints.empty() || (access_control && isAnyFeatureTierRestricted(*access_control));
+}
+
+bool SettingsConstraints::allowsValueFromCompatibility(std::string_view setting_name, const Field & value) const
+{
+    /// Not `getChecker`: readonly mode restricts what a query sets, not the values `compatibility` derives.
+    if (access_control && getFeatureTierRestriction(*access_control, setting_name, settingGetTier(setting_name)))
+        return false;
+
+    auto it = constraints.find(setting_name);
+    if (it == constraints.end())
+        return true;
+
+    /// A value clamped into range is still not the value `compatibility` asked for.
+    SettingChange change(setting_name, value);
+    return Checker(it->second, Settings::resolveName).check(change, value, CLAMP_ON_VIOLATION, SettingSource::PROFILE)
+        && change.value == value;
+}
+
 /// Callers reach this only for a setting a query really changes, so a value the server itself set is
 /// never refused.
 std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(std::string_view setting_name, SettingsTierType tier) const

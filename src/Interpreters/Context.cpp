@@ -491,6 +491,28 @@ namespace ErrorCodes
     extern const int UNKNOWN_READ_METHOD;
 }
 
+namespace
+{
+constexpr std::string_view COMPATIBILITY_SETTING_NAME = "compatibility";
+
+/// The `MergeTree` settings `compatibility` gives, except those of a tier `allow_feature_tier` disables.
+MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibility, const AccessControl & access_control)
+{
+    MergeTreeSettings from_compatibility;
+    from_compatibility.applyCompatibilitySetting(compatibility);
+    if (!isAnyFeatureTierRestricted(access_control))
+        return from_compatibility;
+
+    MergeTreeSettings result;
+    for (const auto & change : from_compatibility.changes())
+    {
+        if (!getFeatureTierRestriction(access_control, change.name, result.getTier(change.name)))
+            result.set(change.name, change.value);
+    }
+    return result;
+}
+}
+
 /// Per-query deviations from the server-level distributed cache switches. The background and buffer
 /// contexts are built once at startup, so a value coming from their profile would pin them for the
 /// lifetime of the server - which is exactly what makes the switch unobservable for merges,
@@ -2568,9 +2590,28 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    applySettingsChangesWithLock(profiles_info.settings, lock);
+    /// Installed first, so that a `compatibility` the profile sets is restricted by the constraints of the profile.
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+    applySettingsChangesWithLock(profiles_info.settings, lock);
+    /// The new constraints decide anew what a `compatibility` set before may change.
+    if (!profiles_info.settings.tryGet(COMPATIBILITY_SETTING_NAME) && !(*settings)[Setting::compatibility].value.empty())
+    {
+        settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
+        restrictSettingsChangedByCompatibilityWithLock(lock);
+    }
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+}
+
+void Context::restrictSettingsChangedByCompatibilityWithLock(const std::lock_guard<ContextSharedMutex> &)
+{
+    if (!settings->hasSettingsChangedByCompatibility())
+        return;
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
+    const auto & constraints = constraints_and_profiles->constraints;
+    if (!constraints.restrictsCompatibility())
+        return;
+    settings->resetSettingsChangedByCompatibility(
+        [&](std::string_view name, const Field & value) { return constraints.allowsValueFromCompatibility(name, value); });
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -3592,6 +3633,8 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         return;
     }
     settings->set(name, value);
+    if (name == COMPATIBILITY_SETTING_NAME)
+        restrictSettingsChangedByCompatibilityWithLock(lock);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
     contextSanityClampSettingsWithLock(*this, *settings, lock);
@@ -3605,6 +3648,8 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         return;
     }
     settings->set(name, value);
+    if (name == COMPATIBILITY_SETTING_NAME)
+        restrictSettingsChangedByCompatibilityWithLock(lock);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
 }
@@ -7758,11 +7803,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        MergeTreeSettings mt_settings;
-
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], *shared->access_control);
 
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
@@ -7778,11 +7821,9 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     if (!shared->replicated_merge_tree_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        MergeTreeSettings mt_settings;
-
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], *shared->access_control);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);

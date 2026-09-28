@@ -1,10 +1,8 @@
 <clickhouse>
     <profiles>
         <default>
-            <!-- To verify it works with compatibility values too (as long as they don't change tiers)
-                allow_experimental_reverse_key was introduced as experimental and added to compatibility,
-                but it's disabled in all cases. It has since been made obsolete, which does not affect this test.
-            -->
+            <!-- To verify it works with compatibility values too: `compatibility` leaves the settings of a
+                disabled tier as they are. -->
             <compatibility>24.10</compatibility>
 
             <enable_funnel_functions>0</enable_funnel_functions>

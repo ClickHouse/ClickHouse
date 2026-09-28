@@ -1462,8 +1462,9 @@ What is rejected is a change of the value in effect, not a statement that mentio
 on a user, a role or a settings profile is rejected when it moves such a setting for some user, even when it
 names no setting: granting or revoking a role that carries one, assigning a settings profile, dropping a role
 or a profile, or dropping an override by omission. Restating a value the entity itself already holds changes
-nothing and is allowed. Settings that the server itself puts in effect, through the configuration file or
-`compatibility`, are never rejected.
+nothing and is allowed. Settings that the server itself puts in effect through the configuration file are
+never rejected. The `compatibility` setting leaves a setting of a disabled tier at its current value instead
+of applying the default of the previous version.
 
 <Note>
 A value of `0` means that all settings can be changed.

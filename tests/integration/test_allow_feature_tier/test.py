@@ -114,6 +114,11 @@ MERGE_TREE_SETTING_WITH_A_FORBIDDEN_DEFAULT = (
 )
 MERGE_TREE_FORBIDDEN_DEFAULT_MIN = 16384
 
+# `compatibility` older than 25.1 sets this EXPERIMENTAL setting to 1, and one older than 23.7 sets this
+# PRODUCTION setting to 0.
+COMPATIBILITY_EXPERIMENTAL_SETTING = "allow_experimental_kusto_dialect"
+COMPATIBILITY_PRODUCTION_SETTING = "function_sleep_max_microseconds_per_block"
+
 EXPERIMENTAL_BLOCKED = "Changes to EXPERIMENTAL settings are disabled"
 BETA_BLOCKED = "Changes to BETA settings are disabled"
 PRIVATE_PREVIEW_BLOCKED = "Changes to PRIVATE PREVIEW settings are disabled"
@@ -1958,3 +1963,30 @@ def test_replicas_cannot_commit_two_halves_of_restricted_change(start_cluster):
         drop_entities(
             permissive_replica, users=[user], roles=[role], profiles=[profile]
         )
+
+
+def test_compatibility_skips_settings_of_a_disabled_tier(start_cluster):
+    users = ["tier_compatibility_user"]
+    assert "0" == get_current_tier_value(instance)
+    drop_entities(instance, users=users)
+    query = (
+        f"SELECT getSetting('{COMPATIBILITY_EXPERIMENTAL_SETTING}'), "
+        f"getSetting('{COMPATIBILITY_PRODUCTION_SETTING}')"
+    )
+    old_compatibility = " SETTINGS compatibility = '23.6'"
+    assert instance.query(query + old_compatibility) == "1\t0\n"
+
+    try:
+        with feature_tier(instance, "1"):
+            # The EXPERIMENTAL setting keeps its value, while the PRODUCTION one still follows `compatibility`.
+            assert instance.query(query + old_compatibility) == "0\t0\n"
+
+            # A user that carries `compatibility` changes no setting of a disabled tier, so it can be created.
+            instance.query(
+                f"CREATE USER {users[0]} IDENTIFIED WITH no_password SETTINGS compatibility = '23.6'"
+            )
+            assert instance.query(query, user=users[0]) == "0\t0\n"
+
+        assert instance.query(query, user=users[0]) == "1\t0\n"
+    finally:
+        drop_entities(instance, users=users)
