@@ -333,6 +333,15 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with parameters requires a function name during AST JSON deserialization");
 
+    /// A `parameters` child is an expression, and neither an expression list nor a select query is one.
+    if (parameters)
+    {
+        for (const auto & child : parameters->children)
+            if (child->as<ASTExpressionList>() || isBareSelectQuery(child.get()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'parameters' cannot have an expression list or select query child during AST JSON deserialization");
+    }
+
     /// `applyColumnsApplyTransformer` substitutes the current column for `lambda_arg` inside the lambda body,
     /// so a lambda without its argument name would be meaningless, and the argument name
     /// must not appear without a lambda.
@@ -396,6 +405,12 @@ void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Objec
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTColumnsReplaceTransformer::Replacement JSON must have exactly one child (the expression), got {}",
             children.size());
+
+    /// That child is the replacement expression, and neither an expression list nor a select query is one.
+    if (children[0]->as<ASTExpressionList>() || isBareSelectQuery(children[0].get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTColumnsReplaceTransformer::Replacement cannot have an expression list or select query child "
+            "during AST JSON deserialization");
 }
 
 void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)

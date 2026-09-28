@@ -31,6 +31,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
+#include <Core/SettingsFields.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 
@@ -224,7 +225,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
-    extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_replicated_fetches_network_bandwidth;
@@ -237,6 +237,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 min_relative_delay_to_measure;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 parts_to_delay_insert;
     extern const MergeTreeSettingsBool remote_fs_zero_copy_path_compatible_mode;
     extern const MergeTreeSettingsString remote_fs_zero_copy_zookeeper_path;
@@ -462,12 +463,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
-    /// Reject user-initiated `CREATE`/`ATTACH` queries with `table_readonly = 1` for
-    /// `ReplicatedMergeTree`, while still allowing `FORCE_ATTACH`/`FORCE_RESTORE` (server startup,
-    /// restore from backup) to load tables whose metadata may carry the setting from before this check.
-    if (mode <= LoadingStrictnessLevel::ATTACH && (*getSettings())[MergeTreeSetting::table_readonly])
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
-
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
     {
@@ -4612,6 +4607,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     deduplicate,
                     deduplicate_by_columns,
                     cleanup,
+                    /*bypass_min_unreserved_space=*/false,
                     nullptr,
                     merge_predicate->getVersion(),
                     future_merged_part->merge_type);
@@ -4763,6 +4759,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     bool deduplicate,
     const Names & deduplicate_by_columns,
     bool cleanup,
+    bool bypass_min_unreserved_space,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
     int32_t log_version,
     MergeType merge_type)
@@ -4803,6 +4800,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
     entry.cleanup = cleanup;
+    entry.bypass_min_unreserved_space = bypass_min_unreserved_space;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -6425,6 +6423,12 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRows(ContextPtr query_context) const
 {
+    chassert(query_context);
+
+    /// Transactions are not supported for ReplicatedMergeTree.
+    if (unlikely(query_context->getCurrentTransaction()))
+        return {};
+
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::totalRows");
     const auto & settings = query_context->getSettingsRef();
     UInt64 res = 0;
@@ -6434,6 +6438,12 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(ContextPtr query_con
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
+    chassert(local_context);
+
+    /// Transactions are not supported for ReplicatedMergeTree.
+    if (unlikely(local_context->getCurrentTransaction()))
+        return {};
+
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef()[Setting::select_sequential_consistency]);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
@@ -6564,7 +6574,6 @@ bool StorageReplicatedMergeTree::optimize(
     };
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
-    const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
@@ -6597,7 +6606,18 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 if (partition_id.empty())
                 {
-                    UInt64 max_source_parts_bytes_for_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+                    /// Same limit the queue re-derives in shouldExecuteLogEntry: seeding the selector
+                    /// from the raw setting would enqueue an entry that is then postponed forever.
+                    UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
+
+                    /// Zero means that no merge can be executed right now (same check as in StorageMergeTree):
+                    /// selecting parts anyway would enqueue an entry that the queue postpones forever.
+                    if (max_source_parts_bytes_for_merge == 0)
+                        return std::unexpected(SelectMergeFailure{
+                            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                            .explanation = PreformattedMessage::create("Current value of max_source_parts_bytes is zero"),
+                        });
+
                     UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
 
                     return merger_mutator.selectPartsToMerge(
@@ -6670,6 +6690,15 @@ bool StorageReplicatedMergeTree::optimize(
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
+            /// A non-empty partition_id means the parts came from selectAllPartsToMergeWithinPartition,
+            /// i.e. this is an OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION entry: those bypass
+            /// min_unreserved_disk_space_for_merge when selecting parts, so the queue must not re-apply
+            /// the headroom, or the entry is postponed forever (see #80006). The empty-partition
+            /// (plain OPTIMIZE) path selected parts under the headroom-respecting limit instead.
+            /// With the setting disabled there is no headroom to bypass, and the bit stays off the
+            /// wire so mixed-version rolling upgrades keep parsing OPTIMIZE entries.
+            const bool bypass_min_unreserved_space = !partition_id.empty()
+                && (*getSettings())[MergeTreeSetting::min_unreserved_disk_space_for_merge] > 0;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper,
                 select_merge_result.value()->parts,
@@ -6680,6 +6709,7 @@ bool StorageReplicatedMergeTree::optimize(
                 deduplicate,
                 deduplicate_by_columns,
                 cleanup,
+                bypass_min_unreserved_space,
                 &merge_entry,
                 merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);
@@ -6999,17 +7029,36 @@ void StorageReplicatedMergeTree::alter(
 
     removeImplicitStatistics(future_metadata.columns);
     auto old_settings = getSettings();
-    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(
+        future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
-    /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
-    /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
-    /// bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+    /** Reject turning `table_readonly` on in any incoming `ALTER`, not only in a pure settings alter:
+      * a mixed `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
+      * bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+      * Turning it off is what the setting's documentation promises can always be done, and it is the
+      * way out for a table whose metadata carries it - refusing that left such a table stuck.
+      * A reset (`RESET SETTING table_readonly`, or its `MODIFY SETTING table_readonly = DEFAULT` spelling)
+      * falls back to the server default, which the `merge_tree` / `replicated_merge_tree` config sections
+      * can set, so it is judged by the value it resets to.
+      */
     for (const auto & command : commands)
     {
-        if (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+        bool turns_readonly_on = false;
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            const Field * readonly_setting = command.settings_changes.tryGet("table_readonly");
+            turns_readonly_on = readonly_setting && SettingFieldBool{*readonly_setting}.value;
+        }
+        else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("table_readonly"))
+        {
+            turns_readonly_on = (*settings_defaults)[MergeTreeSetting::table_readonly];
+        }
+
+        if (turns_readonly_on)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
     }
 

@@ -191,13 +191,11 @@ DataFileEntriesStream::DataFileEntriesStream(
     size_t queue_size_,
     size_t decode_concurrency_,
     IcebergDataSnapshotPtr data_snapshot_,
-    std::function<void()> prepare_,
     CreateManifestIterator create_manifest_iterator_,
     SkipManifest skip_manifest_)
     : chunk_size(queue_size_)
     , decode_concurrency(decode_concurrency_)
     , data_snapshot(std::move(data_snapshot_))
-    , prepare(std::move(prepare_))
     , create_manifest_iterator(std::move(create_manifest_iterator_))
     , skip_manifest(std::move(skip_manifest_))
     , queue(queue_size_)
@@ -258,9 +256,6 @@ void DataFileEntriesStream::run()
 {
     if (!data_snapshot)
         return;
-
-    if (prepare)
-        prepare();
 
     auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIcebergManifestDecodeThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 
@@ -362,25 +357,26 @@ IcebergIterator::IcebergIterator(
         && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning]
         && local_context->getSettingsRef()[Setting::use_iceberg_manifest_list_partition_pruning];
 
+    /// The filter sets are shared with the reader of this table, which prepares them on its own
+    /// thread, so they must be ready before any manifest reading thread exists.
+    if (data_snapshot && manifest_filter_dag)
+        VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+
+    /// The key conditions of the pruner are built over the filter DAG, so they need its ordered sets
+    /// to be ready.
+    if (manifest_list_pruning_enabled)
+        manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
+            *persistent_components.schema_processor,
+            table_state_snapshot->schema_id,
+            data_snapshot->schema_id_on_snapshot_commit,
+            data_snapshot->partition_specs,
+            manifest_filter_dag.get(),
+            local_context);
+
     data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
         local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         data_snapshot,
-        [this, manifest_list_pruning_enabled]
-        {
-            if (manifest_filter_dag)
-                VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
-            /// The key conditions of the pruner are built over the filter DAG, so they need its
-            /// ordered sets to be ready.
-            if (manifest_list_pruning_enabled)
-                manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
-                    *persistent_components.schema_processor,
-                    table_state_snapshot->schema_id,
-                    data_snapshot->schema_id_on_snapshot_commit,
-                    data_snapshot->partition_specs,
-                    manifest_filter_dag.get(),
-                    local_context);
-        },
         [this](const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag)
         { return createManifestIterator(manifest_list_entry, stop_flag); },
         [this](const ManifestFileCacheKey & manifest_list_entry)
