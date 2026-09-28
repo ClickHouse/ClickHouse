@@ -1579,12 +1579,8 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
 UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
     UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes, bool distributed_index_analysis)
 {
-    /// An empty effective skip-index set cannot have contributed an exclusion, so there is no
-    /// profile-dependent verdict to keep apart from the row-level one and the bare hash is already a
-    /// sound key for these ranges. Under distributed_index_analysis this does not hold: each replica
-    /// runs index analysis on its own metadata, and the coordinator stores the ranges it gets back
-    /// under the coordinator's index set, so an empty set here is no evidence that no skip index
-    /// produced them.
+    /// Without an effective skip index no exclusion depends on the index profile, so the bare key is
+    /// sound. Not under distributed_index_analysis: replicas may prune with skip indexes this set lacks.
     if (indexes.skip_indexes.empty() && !distributed_index_analysis)
         return condition_hash;
 
@@ -1740,8 +1736,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
     /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
     /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
-    /// skip-index poisoning of issue #108519. With no effective skip index the two keys are one, so
-    /// only one of them exists to be read. TopK reads (which only get here when
+    /// skip-index poisoning of issue #108519. TopK reads (which only get here when
     /// `use_query_condition_cache_for_top_k` is on, see the gate above) consult TopK-salted keys
     /// and also the `topk_reuse_predicate_only_hash` so plain `SELECT ... WHERE` entries can be
     /// reused; TopK-salted entries are not read otherwise.
@@ -1792,8 +1787,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// consults them. See getSkipIndexProfiledConditionHash and issue #108519.
         UInt64 profiled_condition_hash
             = getSkipIndexProfiledConditionHash(condition_hash, indexes, settings[Setting::distributed_index_analysis]);
-        /// read() returns the marks by value, so probing an identical key twice would copy an
-        /// O(marks) bitmap only to AND it with itself.
         const bool probe_profiled_condition_hash = profiled_condition_hash != condition_hash;
         const bool also_probe_topk_reuse_predicate_only_hash = has_topk_reuse_predicate_only_hash;
         const UInt64 topk_reuse_predicate_only_profiled_hash = also_probe_topk_reuse_predicate_only_hash
