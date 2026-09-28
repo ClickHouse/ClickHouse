@@ -294,6 +294,15 @@ public:
     /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const;
 
+    /// Undoes one insertResultInto(place, to): removes from `to` exactly the rows that call appended, in
+    /// the reverse of the order it appended them, and leaves every state still owned by `place` alive.
+    /// Callers invoke it from a `catch` block while an exception is in flight, so it must not allocate
+    /// and must not throw. Every insertResultInto appends exactly one top-level row, hence the default.
+    virtual void rollbackInsertResult(ConstAggregateDataPtr __restrict /*place*/, IColumn & to) const noexcept
+    {
+        to.popBack(1);
+    }
+
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(

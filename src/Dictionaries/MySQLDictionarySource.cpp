@@ -48,6 +48,7 @@ static const size_t default_num_tries_on_connection_loss = 3;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -66,6 +67,29 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "mysql_rw_timeout", "rw_timeout"};
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory);
+#if USE_MYSQL
+/// `enable_local_infile` sets `MYSQL_OPT_LOCAL_INFILE`, which lets the MySQL endpoint ask the client
+/// for the contents of a file of its choosing, read with the server's own privileges: the option is
+/// off by default because it is insecure (`mysqlxx/Connection.h`). The source configuration of a
+/// dictionary created with a DDL query comes from the query itself, so it may not reach it.
+/// `fallback_prefix` is the parent prefix a `<replica>` inherits the value from, resolved in the same
+/// order as `Pool::Pool`, so what is checked is the value the connection will actually use.
+static void checkNoLocalInfile(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & prefix,
+    const std::string & fallback_prefix = {})
+{
+    const bool inherited
+        = !fallback_prefix.empty() && config.getBool(fallback_prefix + ".enable_local_infile", false);
+
+    if (config.getBool(prefix + ".enable_local_infile", inherited))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`enable_local_infile` cannot be enabled in a dictionary created with a DDL query. "
+            "It is only accepted in a dictionary defined in a server configuration file");
+}
+#endif
+
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -168,6 +192,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         if (replica_key.starts_with("replica"))
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
+                            checkNoLocalInfile(config, replica_prefix, settings_config_prefix);
                             global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port", 3306)));
@@ -176,6 +201,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 }
                 else
                 {
+                    checkNoLocalInfile(config, settings_config_prefix);
                     global_context->getRemoteHostFilter().checkHostAndPort(
                         config.getString(settings_config_prefix + ".host"),
                         toString(config.getInt(settings_config_prefix + ".port", 3306)));

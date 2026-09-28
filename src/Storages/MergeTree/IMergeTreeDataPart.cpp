@@ -1374,6 +1374,16 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         loadDefaultCompressionCodec();
         loadSourcePartsSet();
+
+        /// A patch part that holds rows names the parts it patches, so an index without source
+        /// parts is not a patch that applies to nothing - it is a file that lost its content.
+        /// Failing here is what keeps the acknowledged update recoverable: an empty index reports
+        /// data version 0, so `clearUnusedPatchParts` would find the patch materialized everywhere
+        /// and delete the only copy of it. An empty index belongs to an empty part alone.
+        if (info.isPatch() && rows_count > 0 && source_parts_set.empty())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Patch part {} has {} rows, but its index in {} references no source parts",
+                name, rows_count, SourcePartsSetForPatch::FILENAME);
     }
     catch (...)
     {
@@ -1695,7 +1705,16 @@ void IMergeTreeDataPart::loadSourcePartsSet()
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
+    {
         source_parts_set.readBinary(*in);
+
+        /// The file holds nothing but this index, so bytes left over mean its content is
+        /// not what was written. One corruption shape makes this check the difference
+        /// between a loud and a silent failure: a zeroed block parses as an index of
+        /// version 0 with no source parts at all, and everything after those nine bytes
+        /// would otherwise be ignored.
+        assertEOF(*in);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
 }
