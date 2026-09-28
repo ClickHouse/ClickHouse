@@ -3271,10 +3271,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     /// A prepared storage replaces the right-side plan, and with it the `FilterStep`s applying the
     /// table's row policy and `additional_table_filters`, so such a table is joined as a stream.
     /// A `Join` table is a prebuilt hash table read as is, so it cannot be filtered at all.
-    const auto * right_table_expression_data = planner_context->getTableExpressionDataOrNull(join_node.getRightTableExpressionNode());
+    const auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpressionNode());
     bool right_table_has_row_policy = !right_join_tree_query_plan.used_row_policies.empty();
-    bool right_table_has_filters = right_table_has_row_policy
-        || (right_table_expression_data && right_table_expression_data->hasAdditionalFilter());
+    bool right_table_has_filters = right_table_has_row_policy || right_table_expression_data.hasAdditionalFilter();
 
     PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
     if (prepared_join.storage_join && right_table_has_row_policy)
