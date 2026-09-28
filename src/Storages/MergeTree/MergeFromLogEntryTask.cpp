@@ -247,7 +247,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, *metadata_snapshot, true);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
