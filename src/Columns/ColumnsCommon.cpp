@@ -392,6 +392,35 @@ namespace
         }
     };
 
+    /// Kept rows longer than average (`s != ''` drops only empty rows) make the row-proportional estimate regrow the result.
+    std::optional<size_t> estimateLongerKeptElements(const IColumn::Offsets & offsets, const IColumn::Filter & filt, size_t kept_rows)
+    {
+        const size_t probe_end = offsets.size() / 1024 * 64;
+        size_t probe_kept_rows = 0;
+        size_t probe_kept_elems = 0;
+        for (size_t i = 0; i < probe_end; i += 64)
+        {
+            const UInt64 mask = bytes64MaskToBits64Mask(&filt[i]);
+            probe_kept_rows += std::popcount(mask);
+            /// Reads only what the copy below reads (kept chunks and kept rows), so sparse filters stay cheap.
+            if (mask == 0xffffffffffffffff)
+                probe_kept_elems += offsets[i + 63] - offsets[i - 1];
+            else
+                for (UInt64 bits = mask; bits; bits &= bits - 1)
+                    probe_kept_elems += offsets[i + std::countr_zero(bits)] - offsets[i + std::countr_zero(bits) - 1];
+        }
+        if (!probe_kept_elems)
+            return {};
+        const double ratio = static_cast<double>(probe_kept_elems) * static_cast<double>(probe_end)
+            / (static_cast<double>(probe_kept_rows) * static_cast<double>(offsets[probe_end - 1]));
+        /// Up to 65/64 (uniform lengths) keep the estimate; above, 1.25 absorbs the probe's error, and the cap is exact for `s != ''`.
+        if (ratio <= 65.0 / 64)
+            return {};
+        const double total = static_cast<double>(offsets.back());
+        const double estimate = static_cast<double>(kept_rows) * total / static_cast<double>(offsets.size());
+        return static_cast<size_t>(std::ceil(std::min(estimate * ratio * 1.25, total)));
+    }
+
     template <typename T, typename ResultOffsetsBuilder>
     void filterArraysImplGeneric(
         const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
@@ -410,6 +439,8 @@ namespace
 
             if (result_size_hint < 0)
                 res_elems.reserve_exact(src_elems.size());
+            else if (const auto kept_elems = estimateLongerKeptElements(src_offsets, filt, result_size_hint))
+                res_elems.reserve_exact(*kept_elems);
             else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)    /// Avoid overflow.
                 res_elems.reserve_exact((result_size_hint * src_elems.size() + size - 1) / size);
         }
