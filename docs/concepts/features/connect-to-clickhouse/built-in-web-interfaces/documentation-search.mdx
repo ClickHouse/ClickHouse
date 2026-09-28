@@ -17,7 +17,7 @@ The page queries the [`system.documentation`](/reference/system-tables/documenta
 Type in the search box and the matches appear in a type-color-coded list; selecting a match renders its documentation. Rendering includes:
 
 - a pencil link next to the entity's title that opens its source file on GitHub, taken from the `source` column of `system.documentation`;
-- ClickHouse SQL syntax highlighting of code blocks, using the same embedded lexer (`Lexer.wasm`) as the [`/play`](/concepts/features/interfaces/http) UI;
+- ClickHouse SQL syntax highlighting of code blocks, using the same embedded lexer (`Lexer.wasm`) as the [`/play`](/concepts/features/connect-to-clickhouse/protocols/http) UI;
 - TeX math via [KaTeX](https://katex.org/) (for example, the formula on the `corr` page);
 - `:::note`/`:::tip`/… admonitions, heading anchors with shareable links, and a hover "Copy" button on code blocks;
 - relative links resolved to another documented entity in-app when it exists, otherwise to `https://clickhouse.com/docs`; "Related" and "Alias of" references become in-app links.

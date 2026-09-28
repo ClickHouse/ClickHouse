@@ -112,7 +112,7 @@ We expect small differences in insert performance with the native protocol, whic
 Existing clients use either of these protocols (in some cases both e.g. the Go client).
 The native protocol does allow query progress to be easily tracked.
 
-See [HTTP Interface](/concepts/features/interfaces/http) for further details.
+See [HTTP Interface](/concepts/features/connect-to-clickhouse/protocols/http) for further details.
 
 ## Basic example {#basic-example}
 
@@ -165,7 +165,7 @@ If you need help inserting large datasets or encounter any errors when importing
 - `clickhouse-server` is running
 - You have access to a terminal with `wget`, `zcat` and `curl`
 
-In this example you'll see how to insert a CSV file into ClickHouse from the command line using clickhouse-client in batch mode. For more information and examples of inserting data via command line using clickhouse-client in batch mode, see ["Batch mode"](/concepts/features/interfaces/client#batch-mode).
+In this example you'll see how to insert a CSV file into ClickHouse from the command line using clickhouse-client in batch mode. For more information and examples of inserting data via command line using clickhouse-client in batch mode, see ["Batch mode"](/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode).
 
 We'll be using the [Hacker News dataset](/get-started/sample-datasets/hacker-news) for this example, which contains 28 million rows of Hacker News data.
 

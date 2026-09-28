@@ -18,7 +18,7 @@ import WideTableWrapper from "/snippets/components/WideTableWrapper/WideTableWra
 
 <View title="v0.8+">
 
-Java client library to communicate with a DB server through its protocols. The current implementation only supports the [HTTP interface](/concepts/features/interfaces/http).
+Java client library to communicate with a DB server through its protocols. The current implementation only supports the [HTTP interface](/concepts/features/connect-to-clickhouse/protocols/http).
 The library provides its own API to send requests to a server. The library also provides tools to work with different binary data formats (RowBinary* & Native*).
 
 ## Setup {#setup}
@@ -228,7 +228,7 @@ Configuration is defined during client creation. See `com.clickhouse.client.api.
 | Method | Arguments | Description | Default | Key |
 |--------|-----------|-------------|---------|-----|
 | `serverSetting(String name, String value)` | `name` - setting name<br/>`value` - setting value | Sets what settings to pass to server along with each query. Individual operation settings may override it. [List of settings](/concepts/features/configuration/settings/settings-query-level) | `none` | `none` |
-| `serverSetting(String name, Collection values)` | `name` - setting name<br/>`values` - setting values | Sets what settings to pass to server with multiple values, for example [roles](/concepts/features/interfaces/http#setting-role-with-query-parameters) | `none` | `none` |
+| `serverSetting(String name, Collection values)` | `name` - setting name<br/>`values` - setting values | Sets what settings to pass to server with multiple values, for example [roles](/concepts/features/connect-to-clickhouse/protocols/http/index#setting-role-with-query-parameters) | `none` | `none` |
 | `setOption("custom_settings_prefix", value)` | `value` - prefix string | Sets the prefix for custom settings passed to the server. Should be aligned with the server configuration. See [ClickHouse Docs](/concepts/features/configuration/settings/settings-query-level#custom_settings). | `custom_` | `custom_settings_prefix` |
 
 </Tab>
@@ -1161,7 +1161,7 @@ for (GenericRecord record : records) {
 
 <View title="v0.7.x">
 
-Java client library to communicate with a DB server through its protocols. Current implementation supports only [HTTP interface](/concepts/features/interfaces/http). The library provides own API to send requests to a server.
+Java client library to communicate with a DB server through its protocols. Current implementation supports only [HTTP interface](/concepts/features/connect-to-clickhouse/protocols/http). The library provides own API to send requests to a server.
 
 <Warning>
 **Deprecation**

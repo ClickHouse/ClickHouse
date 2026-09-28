@@ -7,7 +7,7 @@ doc_type: 'reference'
 sidebar: false
 ---
 
-The built-in Web SQL UI (`play.html`, served at the [`/play`](/concepts/features/interfaces/http) path of any ClickHouse HTTP port) can sort a result by its columns, filter it by their values, and page through it — all without editing the query.
+The built-in Web SQL UI (`play.html`, served at the [`/play`](/concepts/features/connect-to-clickhouse/protocols/http) path of any ClickHouse HTTP port) can sort a result by its columns, filter it by their values, and page through it — all without editing the query.
 
 None of this happens in the browser. Each change re-runs the query with the corresponding query-construction setting, which the server materializes by wrapping the query as a derived table with an outer `ORDER BY`, `WHERE` and `LIMIT`. The result on screen is therefore the sorted, filtered, paged result of the whole query, not a rearrangement of the rows the page happened to hold.
 
@@ -86,7 +86,7 @@ Shaping is offered only for the statements those settings shape, i.e. `SELECT` a
 
 A shape applies to the result of a single statement, so it is not offered for a "Run all" multi-statement run, whose statements are separate queries with separate columns.
 
-It is not offered for a result of at most one row on its first page either: any order of a single row is the same order, and a filter on it can only keep it or drop it, so the controls could do nothing but re-run the query for the same rows — and an empty result has not even a row to drop. It is the same reason the [color coding](/concepts/features/interfaces/web-ui-color-coding) toggles are hidden there: with no more than one row there is nothing to compare.
+It is not offered for a result of at most one row on its first page either: any order of a single row is the same order, and a filter on it can only keep it or drop it, so the controls could do nothing but re-run the query for the same rows — and an empty result has not even a row to drop. It is the same reason the [color coding](/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) toggles are hidden there: with no more than one row there is nothing to compare.
 
 Two single-row results keep their controls, because there the controls are the only way back:
 
@@ -107,7 +107,7 @@ The shape is remembered in the page URL (`sort_columns`, `filters`, `page` and `
 
 A restored result keeps its shape bound to the context that produced it, as described above: the snapshot records the database, the connection and the parameter values its rows were produced with, so re-running the statement after changing any of those drops the shape rather than applying it to a different result.
 
-Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the shape is kept per query tab, so sorting or filtering a result in one tab does not re-run another tab's result.
+Like the [color coding modes](/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) and the [pinned columns](/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns), the shape is kept per query tab, so sorting or filtering a result in one tab does not re-run another tab's result.
 
 ## Limitations {#limitations}
 

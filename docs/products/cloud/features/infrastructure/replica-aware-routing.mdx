@@ -12,7 +12,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanF
 <BetaBadge/>
 <EnterprisePlanFeatureBadge feature="Replica-aware routing"/>
 
-Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
+Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/connect-to-clickhouse/protocols/http/index#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
 
 It's best-effort and doesn't guarantee isolation. The proxy maps each routing value to one replica. The mapping remains stable while the number of replicas remains unchanged; scaling the service can map the value to a different replica.
 
@@ -42,7 +42,7 @@ The toggles are rolling out across Enterprise tier plans. If they aren't on your
 
 ## HTTP-based routing {#http-based-routing}
 
-To pin a workload to a replica, send an `X-ClickHouse-Replica-Tag` header on the [HTTPS interface](/concepts/features/interfaces/http). The proxy uses consistent hashing on the header value, so requests sharing it go to the same replica while the number of replicas remains unchanged. A different value hashes independently and may land on the same or a different replica, but you don't choose *which* replica a value maps to.
+To pin a workload to a replica, send an `X-ClickHouse-Replica-Tag` header on the [HTTPS interface](/concepts/features/connect-to-clickhouse/protocols/http). The proxy uses consistent hashing on the header value, so requests sharing it go to the same replica while the number of replicas remains unchanged. A different value hashes independently and may land on the same or a different replica, but you don't choose *which* replica a value maps to.
 
 Use your existing service hostname. No special sticky hostnames or DNS changes are required. The header value can be any string you choose, such as an application name, user ID, or workload label. Requests without the header keep normal load balancing.
 
@@ -64,7 +64,7 @@ For clickhouse-go (v2), set `Protocol: clickhouse.HTTP` and pass the header with
 
 ## Native-protocol routing {#native-protocol-routing}
 
-Over the [native protocol](/interfaces/tcp), pass the routing value as a TLS server name of the form `<routing-value>.sticky.<host>`. Connect to your regular service hostname as usual. [ClickHouse Client](/interfaces/client) takes the routing value through `--tls-sni-override`:
+Over the [native protocol](/concepts/features/connect-to-clickhouse/protocols/native-tcp), pass the routing value as a TLS server name of the form `<routing-value>.sticky.<host>`. Connect to your regular service hostname as usual. [ClickHouse Client](/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) takes the routing value through `--tls-sni-override`:
 
 ```bash
 clickhouse client \
@@ -118,7 +118,7 @@ clickhouse client \
   --query 'SELECT count() FROM events'
 ```
 
-For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/reference/settings/session-settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
+For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/reference/settings/session-settings/other#select_sequential_consistency) to `1` on ClickHouse Cloud.
 
 ## Check which replica you hit {#check-which-replica}
 
