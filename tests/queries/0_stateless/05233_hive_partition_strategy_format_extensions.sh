@@ -232,7 +232,9 @@ PARTITION BY key;
 " 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
 
 # The check is for new definitions only: metadata that already exists (`ATTACH`, server startup)
-# must still load, and the misspelled codec surfaces when the table is read.
+# must still load, and the misspelled codec surfaces when the table is read. Read real columns, not
+# `count()`: the earlier reads cached the per-file row counts, and `count()` is answered from that cache
+# without opening (and so without decompressing) the files.
 echo 'invalid compression method on ATTACH:'
 attach_db="${CLICKHOUSE_DATABASE}_attach"
 attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
@@ -242,5 +244,5 @@ ATTACH TABLE $attach_db.bad_codec UUID '$attach_uuid' (id UInt64, key UInt64)
 ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'not_a_codec', partition_strategy = 'hive')
 PARTITION BY key;
 "
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+$CLICKHOUSE_CLIENT -q "SELECT id, key FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $attach_db"
