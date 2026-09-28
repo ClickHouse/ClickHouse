@@ -30,10 +30,9 @@ WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday(
       WHERE type = 'QueryFinish' AND is_initial_query = 1 AND event_date >= yesterday()
         AND current_database = currentDatabase() AND log_comment = 'pr_worker_access_probe');
 
--- Columns are not asserted: the step carries the storage read list after plan optimizations, not the
--- planner's column set, so it is deliberately not reported.
-SELECT 'and the database';
-SELECT countIf(NOT has(databases, currentDatabase())) = 0
+-- The columns are the read step's own list, which is what this node was asked to read.
+SELECT 'and the database, and the columns it read';
+SELECT countIf(NOT has(databases, currentDatabase())) = 0 AND countIf(NOT has(columns, currentDatabase() || '.t_pr_worker_access.a')) = 0
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
   AND initial_query_id IN (

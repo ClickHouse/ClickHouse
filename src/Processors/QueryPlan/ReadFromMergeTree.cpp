@@ -7083,24 +7083,19 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 
     /// A read that arrives as a shipped plan never goes through the planner, which is what records the
     /// access info a locally planned read reports (`PlannerJoinTree.cpp`). Without this, the worker's
-    /// `system.query_log` row names no database or table, so its work cannot be attributed to what it
-    /// read. Only the receiver deserializes, so the initiator's own read is not counted twice, and the
-    /// id comes from the resolved storage rather than from the names the plan carried, as the planner
-    /// does. Recorded after the `MergeTree` check, so a read about to be rejected is not reported.
+    /// `system.query_log` row names nothing it read, so its work cannot be attributed. Only the receiver
+    /// deserializes, so the initiator's own read is not counted twice, and the id comes from the
+    /// resolved storage rather than from the names the plan carried, as the planner does. Recorded
+    /// after the `MergeTree` check, so a read about to be rejected is not reported.
     ///
-    /// The columns are deliberately left out. The planner records the query's own column set
-    /// (`table_expression_data.getColumnNames()`), while all this step has is the list it was
-    /// serialized with - `getAllColumnNames`, the storage read list after the plan optimizations, which
-    /// a rewrite can change: `replaceVectorColumnWithDistanceColumn` swaps the vector column for
-    /// `_distance`, and `useVectorSearchWithQuantizedCodes` appends helper subcolumns. Reporting those
-    /// would make `system.query_log.columns` mean one thing for a local read and another for a shipped
-    /// one; reporting none keeps it honest until the planner's set is carried across.
+    /// The columns are the ones this step reads. What the node was handed is a plan, and a plan states
+    /// its access in the read step, so that list - not the column set of the query that produced the
+    /// plan - is what this node actually read. It can differ from the initiator's, and for a read
+    /// rewritten before shipping (`replaceVectorColumnWithDistanceColumn`,
+    /// `useVectorSearchWithQuantizedCodes`) it should: the replica really did read `_distance` or the
+    /// quantized subcolumns.
     if (ctx.context->hasQueryContext())
-    {
-        const auto resolved_id = storage_ptr->getStorageID();
-        ctx.context->getQueryContext()->addQueryAccessInfo(
-            backQuoteIfNeed(resolved_id.getDatabaseName()), resolved_id.getFullTableName(), /*column_names=*/ {});
-    }
+        ctx.context->getQueryContext()->addQueryAccessInfo(storage_ptr->getStorageID(), column_names);
 
     MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
