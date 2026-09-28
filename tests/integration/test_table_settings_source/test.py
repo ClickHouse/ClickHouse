@@ -319,3 +319,45 @@ def test_macro_in_a_named_collection_secret_is_never_shown(started_cluster):
         )
     finally:
         cleanup()
+
+
+def test_a_macro_removed_since_does_not_hide_the_table(started_cluster):
+    """`NATS` expands the server's macros in its URL once, when the table is built, and keeps working if one is
+    removed from the config later. Reading its settings then must not expand them again: that throws, so the table's
+    rows would silently disappear, and the message - with the stated URL, credentials and all - would reach a reader
+    who asked for the server's logs.
+    """
+    macro_file = "/etc/clickhouse-server/config.d/removable_macro.xml"
+
+    def cleanup():
+        node_secrets.query("DROP TABLE IF EXISTS n_removed_macro SYNC")
+        node_secrets.exec_in_container(["rm", "-f", macro_file])
+        node_secrets.query("SYSTEM RELOAD CONFIG")
+
+    cleanup()
+    try:
+        node_secrets.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo '<clickhouse><macros><removable_host>127.0.0.1</removable_host></macros></clickhouse>' > {macro_file}",
+            ]
+        )
+        node_secrets.query("SYSTEM RELOAD CONFIG")
+        node_secrets.query(
+            "CREATE TABLE n_removed_macro (a UInt64) ENGINE = NATS SETTINGS "
+            "nats_url = 'nats://u:stated_pw@{removable_host}:1', nats_subjects = 's', nats_format = 'CSV'"
+        )
+
+        node_secrets.exec_in_container(["rm", "-f", macro_file])
+        node_secrets.query("SYSTEM RELOAD CONFIG")
+        assert node_secrets.query("SELECT count() FROM system.macros WHERE macro = 'removable_host'").strip() == "0"
+
+        answer, logs = node_secrets.query_and_get_answer_with_error(
+            "SHOW TABLE SETTINGS FROM n_removed_macro LIKE 'nats_url'",
+            settings={"send_logs_level": "error", "format_display_secrets_in_show_and_select": 1},
+        )
+        assert answer == "nats_url\t[HIDDEN]\t1\tdefinition\n"
+        assert "stated_pw" not in logs
+    finally:
+        cleanup()

@@ -1725,12 +1725,14 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */
     setEffectiveValueWithConfigFallback(settings, *nats_settings, NATSSetting::nats_credential_file, configuration.credential_file);
 
     /// What the server's macros supplied is the server's: the factory records the credentials it expanded in place,
-    /// and the constructor expands the URL and the server list, whose settings still hold what was stated.
+    /// and the constructor expands the URL and the server list, whose settings still hold what was stated. Compared
+    /// with what the constructor built rather than expanded again: a macro removed from the config since would throw,
+    /// with the stated value, credentials and all, in the message.
     NameSet expanded_from_macros = nats_settings->expanded_from_macros;
-    const auto macros = getContext()->getMacros();
-    for (const auto setting : {NATSSetting::nats_url, NATSSetting::nats_server_list})
-        if (const auto & stated = (*nats_settings)[setting].value; macros->expand(stated) != stated)
-            expanded_from_macros.emplace(NATSSettings::nameAtOffset(setting.offset));
+    if (configuration.url != (*nats_settings)[NATSSetting::nats_url].value)
+        expanded_from_macros.emplace(NATSSettings::nameAtOffset(NATSSetting::nats_url.offset));
+    if (configuration.servers != parseList((*nats_settings)[NATSSetting::nats_server_list].value, ','))
+        expanded_from_macros.emplace(NATSSettings::nameAtOffset(NATSSetting::nats_server_list.offset));
     markSecretsFromServerConfiguration(settings, expanded_from_macros);
     return settings;
 }
