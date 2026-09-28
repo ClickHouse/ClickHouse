@@ -1,3 +1,5 @@
+import math
+import re
 import textwrap
 from pathlib import Path
 
@@ -11,6 +13,36 @@ def test_parse_duration():
     assert loader.parse_duration("1m30s") == 90.0
     assert loader.parse_duration("15s") == 15.0
     assert loader.parse_duration("1ms") == 0.001
+
+
+def test_parse_duration_ns_is_exact():
+    assert loader.parse_duration_ns("0") == 0
+    assert loader.parse_duration_ns("1ms") == 1_000_000
+    assert loader.parse_duration_ns("10s53ms") == 10_053_000_000
+    assert loader.parse_duration_ns("1.5") == 1_500_000_000
+    assert loader.parse_duration_ns("5m") == 300_000_000_000
+
+
+def test_load_interval_multiplies_into_exact_millisecond_timestamps(tmp_path: Path):
+    """``load 1ms`` with 4001 samples must produce 4001 distinct milliseconds.
+
+    A binary float interval (0.001) truncated to nanoseconds by the server
+    collapses distinct samples onto one millisecond; the sum over a
+    window of N samples then falls short of N.
+    """
+    path = tmp_path / "dense.test"
+    path.write_text("load 1ms\n  metric 1+0x4000\n\neval instant at 4s metric\n  {} 1\n")
+    (scenario,) = loader.parse_test_file(path)
+    (block,) = scenario.loads
+    assert block.interval_ns == 1_000_000
+    values = loader.series_insert_values(block.interval_ns, block.series[0])
+    assert values is not None
+    nanos = [int(ns) for ns in re.findall(r"fromUnixTimestamp64Nano\((\d+)\)", values)]
+    assert len(nanos) == 4001
+    millis = [ns // 1_000_000 for ns in nanos]
+    assert millis == list(range(4001))
+    for window_ms in (1000, 2000, 3000):
+        assert sum(1 for ms in millis if 4000 - window_ms < ms <= 4000) == window_ms
 
 
 def test_expand_arithmetic_samples():
@@ -287,6 +319,29 @@ def test_compare_range_timestamps():
     assert status == "failed"
 
 
+def test_parse_sql_result_scalar_two_columns():
+    rows = loader.parse_sql_result(
+        "1970-01-01 00:00:00.000\t1\n"
+        "1970-01-01 00:00:01.000\t1.234e-05\n"
+        "1970-01-01 00:00:02.000\tNaN\n"
+        "1970-01-01 00:00:03.000\t+Inf\n"
+        "1970-01-01 00:00:04.000\t-Inf\n"
+    )
+    assert [row["metric"] for row in rows] == [{}, {}, {}, {}, {}]
+    assert [row["timestamp"] for row in rows] == [
+        "1970-01-01 00:00:00.000",
+        "1970-01-01 00:00:01.000",
+        "1970-01-01 00:00:02.000",
+        "1970-01-01 00:00:03.000",
+        "1970-01-01 00:00:04.000",
+    ]
+    assert rows[0]["value"] == 1
+    assert rows[1]["value"] == 1.234e-05
+    assert math.isnan(rows[2]["value"])
+    assert rows[3]["value"] == math.inf
+    assert rows[4]["value"] == -math.inf
+
+
 def test_compare_scalar_requires_unlabeled_row():
     case = loader.EvalCase(
         eval_id="t:5",
@@ -298,13 +353,35 @@ def test_compare_scalar_requires_unlabeled_row():
         expected_scalar=1.0,
         has_scalar=True,
     )
-    status, _ = loader.compare_eval(case, "[]\t1970-01-01 00:00:00.000\t1\n", None)
+    status, _ = loader.compare_eval(case, "1970-01-01 00:00:00.000\t1\n", None)
     assert status == "passed"
+    status, _ = loader.compare_eval(case, "[]\t1970-01-01 00:00:00.000\t1\n", None)
+    assert status == "failed"
     status, reason = loader.compare_eval(
         case, "[('__name__','m')]\t1970-01-01 00:00:00.000\t1\n", None
     )
     assert status == "failed"
     assert "labels" in reason
+    status, _ = loader.compare_eval(case, "[('__name__','m')]\t1\n", None)
+    assert status == "failed"
+    status, _ = loader.compare_eval(case, "1970-01-01 00:00:00.000\tnot-a-number\n", None)
+    assert status == "failed"
+    status, _ = loader.compare_eval(case, "garbage\t1\n", None)
+    assert status == "failed"
+
+
+def test_compare_vector_rejects_scalar_shaped_sql():
+    cases = {
+        case.eval_id: case
+        for scenario in loader.parse_test_file(loader.TESTDATA_DIR / "functions.test")
+        for case in scenario.evals
+    }
+    for eval_id in ("functions.test:597", "functions.test:2147"):
+        assert cases[eval_id].has_scalar is False
+        status, _ = loader.compare_eval(
+            cases[eval_id], "1970-01-01 00:00:00.000\t1\n", None
+        )
+        assert status == "failed"
 
 
 def test_compare_expect_fail(tmp_path: Path):
@@ -359,13 +436,14 @@ def test_insert_sql_skips_native_histogram():
         'http_requests_histogram{path="/foo"} {{schema:0 sum:1 count:1}}x2'
     )
     assert spec.native_histogram
-    assert loader.series_insert_sql("t", 300, spec) is None
+    interval_ns = loader.parse_duration_ns("5m")
+    assert loader.series_insert_sql("t", interval_ns, spec) is None
     spec2 = loader.parse_series_line('http_requests{path="/foo"} 1 2 3')
-    sql = loader.series_insert_sql("t", 300, spec2)
+    sql = loader.series_insert_sql("t", interval_ns, spec2)
     assert sql is not None
-    assert "toDateTime64(0, 9)" in sql
-    assert "toDateTime64(600, 9)" in sql
-    assert loader.series_insert_values(300, spec2) in sql
+    assert "fromUnixTimestamp64Nano(0)" in sql
+    assert "fromUnixTimestamp64Nano(600000000000)" in sql
+    assert loader.series_insert_values(interval_ns, spec2) in sql
 
 
 def test_compliance_record_schema_version_2():
