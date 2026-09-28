@@ -10,8 +10,10 @@ DROP TABLE IF EXISTS t_int8;
 DROP TABLE IF EXISTS t_int32;
 DROP TABLE IF EXISTS t_nullable_bool;
 DROP TABLE IF EXISTS t_nullable_int8;
+DROP TABLE IF EXISTS t_nullable_int32;
 DROP TABLE IF EXISTS t_nullable_uint8;
-DROP TABLE IF EXISTS t_array;
+DROP TABLE IF EXISTS t_array_uint8;
+DROP TABLE IF EXISTS t_array_int32;
 
 -- One row per INSERT, so each INSERT is exactly one part.
 
@@ -47,6 +49,13 @@ INSERT INTO t_nullable_int8 VALUES (NULL);
 INSERT INTO t_nullable_int8 VALUES (0);
 INSERT INTO t_nullable_int8 VALUES (-1);
 
+CREATE TABLE t_nullable_int32 (x Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple()
+TTL toDateTime('2100-01-01 00:00:00', 'UTC') DELETE WHERE x;
+SYSTEM STOP MERGES t_nullable_int32;
+INSERT INTO t_nullable_int32 VALUES (NULL);
+INSERT INTO t_nullable_int32 VALUES (0);
+INSERT INTO t_nullable_int32 VALUES (256);
+
 CREATE TABLE t_nullable_uint8 (x Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple()
 TTL toDateTime('2100-01-01 00:00:00', 'UTC') DELETE WHERE x;
 SYSTEM STOP MERGES t_nullable_uint8;
@@ -59,15 +68,20 @@ FROM system.parts
 WHERE database = currentDatabase() AND active
 ORDER BY table, name;
 
-CREATE TABLE t_array (a Array(UInt8)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t_array_uint8 (a Array(UInt8)) ENGINE = MergeTree ORDER BY tuple()
 TTL toDateTime('2100-01-01 00:00:00', 'UTC') DELETE WHERE a;
+INSERT INTO t_array_uint8 VALUES ([1]); -- { serverError NOT_IMPLEMENTED }
 
-INSERT INTO t_array VALUES ([1]); -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE t_array_int32 (a Array(Int32)) ENGINE = MergeTree ORDER BY tuple()
+TTL toDateTime('2100-01-01 00:00:00', 'UTC') DELETE WHERE a;
+INSERT INTO t_array_int32 VALUES ([256]); -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t_bool;
 DROP TABLE t_int8;
 DROP TABLE t_int32;
 DROP TABLE t_nullable_bool;
 DROP TABLE t_nullable_int8;
+DROP TABLE t_nullable_int32;
 DROP TABLE t_nullable_uint8;
-DROP TABLE t_array;
+DROP TABLE t_array_uint8;
+DROP TABLE t_array_int32;
