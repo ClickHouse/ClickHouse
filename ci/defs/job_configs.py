@@ -1,11 +1,7 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.functional_test_selection import (
-    rollout_targeted_jobs,
-    targeted_variants,
-    targeted_matrix,
-)
+from ci.defs.functional_test_selection import targeted_variants
 from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
 
 from ci.defs.defs import (
@@ -186,11 +182,9 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
-            # `find_tests.py` selects which tests this job runs, and
-            # `Result.complete_job` in `result.py` builds the summary the job
-            # publishes. Both are runner inputs, so the digest must cover them.
+            # `find_tests.py` selects which tests this job runs, so the digest
+            # must cover it.
             "./ci/jobs/scripts/find_tests.py",
-            "./ci/praktika/result.py",
             # The selector modules decide which tests a targeted job runs.
             "./ci/jobs/scripts/coverage_selection.py",
             "./ci/jobs/scripts/test_selection_config.py",
@@ -263,6 +257,13 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
+            "./ci/jobs/scripts/integration_coverage_export.py",
+            # The selector modules decide which tests a targeted job runs.
+            "./ci/jobs/scripts/find_tests.py",
+            "./ci/jobs/scripts/coverage_selection.py",
+            "./ci/jobs/scripts/test_selection_config.py",
+            "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./ci/jobs/promql_compliance_job.py",
@@ -1391,6 +1392,26 @@ class JobConfigs:
         )
     )
 
+    # Per-module coverage for test selection: each server records its coverage under
+    # the name of the test module, exported into the CIDB tables of the stateless
+    # per-test coverage (see `ci/jobs/scripts/integration_coverage_export.py`).
+    integration_test_per_test_coverage_jobs = (
+        common_integration_test_job_config.parametrize(
+            *[
+                Job.ParamSet(
+                    parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_test_coverage, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.AMD_MEDIUM,
+                    requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
+                )
+                for total_batches in (LLVM_IT_NUM_BATCHES,)
+                for batch in range(1, total_batches + 1)
+            ],
+        )
+    )
+    # Each night must collect afresh even when the build is cached.
+    for job in integration_test_per_test_coverage_jobs:
+        job.digest_config = None
+
     # Jobs that run only the tests normally disabled under LLVM coverage.
     # They use a regular binary (no coverage instrumentation) since these
     # tests are too slow or problematic under coverage.
@@ -1412,12 +1433,13 @@ class JobConfigs:
         )
     )
 
-    integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, targeted",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        )
+    # PR replacement for the full integration runs: one job per configuration runs once
+    # the changed test modules, the modules covering the changed lines (per-module
+    # coverage from `integration_test_per_test_coverage_jobs`) and the tests that failed
+    # in the PR before.
+    integration_test_targeted_pr_jobs = targeted_variants(
+        integration_test_jobs_required + integration_test_jobs_non_required,
+        allow_failure=False,
     )
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
@@ -2201,19 +2223,6 @@ class JobConfigs:
             sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan", "msan")
         )
     ] + stateless_tests_sanitizer_pr_jobs
-    stateless_tests_targeted_matrix, stateless_targeted_exemptions = targeted_matrix(
-        [
-            job
-            for job in functional_tests_pr_jobs
-            if "targeted" not in job.parameter.split(", ")
-        ]
-    )
-    # Preserve the original ARM ASan configuration as an additional environment.
-    stateless_tests_targeted_matrix += stateless_tests_targeted_pr_jobs
-    stateless_tests_targeted_pr_jobs = rollout_targeted_jobs(
-        stateless_tests_targeted_pr_jobs,
-        stateless_tests_targeted_matrix,
-    )
 
     # Randomized executions must remain independent even when the build is cached.
     for job in functional_tests_jobs_coverage:
