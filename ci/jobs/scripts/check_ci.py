@@ -100,11 +100,11 @@ class CreateIssue:
         print(f"- Body:\n{body}")
         print("-" * 100)
         body = (
-            "_Important: This issue was automatically generated and is used by CI for matching failures. "
-            "DO NOT modify the body content. DO NOT remove labels._\n\n"
+            "_Important: This issue was automatically generated and will be closed as trash. "
+            "Do not create trash. Please take a look at this issue, provide the analysis, and remove this line._\n\n"
         ) + body
 
-        if not UserPrompt.confirm("Proceed with issue creation?"):
+        if not UserPrompt.confirm("Proceed with issue creation (highly not recommended)?"):
             return ""
 
         return Issue.create_from(
