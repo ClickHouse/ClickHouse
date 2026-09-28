@@ -6,6 +6,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -88,12 +89,23 @@ public:
     using ResultWriter = AggregateFunctionTimeSeriesResultWriter<ResultType>;
 
     using Bucket = typename Traits::Bucket;
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType, /* compacting = */ true>;
 
-    struct State
+    /// Traits with `flat_samples` keep all samples of a state in one sorted buffer instead of a map of buckets.
+    static constexpr bool flat_samples = requires { requires Traits::flat_samples; };
+
+    struct BucketsState
     {
         /// Maps bucket index to the set of all timestamps and values
         TimeSeriesBucketsMap<Bucket> buckets;
     };
+
+    struct FlatSamplesState
+    {
+        Samples samples;
+    };
+
+    using State = std::conditional_t<flat_samples, FlatSamplesState, BucketsState>;
 
     /// Types of timestamps and intervals with the scale of the grid: grid points, bucket bounds, windows, cut-offs
     /// and sample timestamps converted to the scale of the grid.
@@ -314,13 +326,20 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto & buckets = data(place)->buckets;
-        const auto & rhs_buckets = data(rhs)->buckets;
-        buckets.reserve(rhs_buckets.size());
-        for (const auto & rhs_bucket : rhs_buckets)
+        if constexpr (flat_samples)
         {
-            auto & bucket = buckets[rhs_bucket.getKey()];
-            bucket.merge(rhs_bucket.getMapped());
+            data(place)->samples.merge(data(rhs)->samples);
+        }
+        else
+        {
+            auto & buckets = data(place)->buckets;
+            const auto & rhs_buckets = data(rhs)->buckets;
+            buckets.reserve(rhs_buckets.size());
+            for (const auto & rhs_bucket : rhs_buckets)
+            {
+                auto & bucket = buckets[rhs_bucket.getKey()];
+                bucket.merge(rhs_bucket.getMapped());
+            }
         }
     }
 
@@ -329,12 +348,19 @@ public:
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
         writeBinaryLittleEndian(bucket_count, buf);
 
-        writeBinaryLittleEndian(data(place)->buckets.size(), buf);
-
-        for (const auto & entry : data(place)->buckets)
+        if constexpr (flat_samples)
         {
-            writeBinaryLittleEndian(entry.getKey(), buf);
-            entry.getMapped().serialize(buf);
+            data(place)->samples.serialize(buf);
+        }
+        else
+        {
+            writeBinaryLittleEndian(data(place)->buckets.size(), buf);
+
+            for (const auto & entry : data(place)->buckets)
+            {
+                writeBinaryLittleEndian(entry.getKey(), buf);
+                entry.getMapped().serialize(buf);
+            }
         }
     }
 
@@ -352,30 +378,46 @@ public:
         if (size != bucket_count)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different bucket count");
 
-        size_t buckets_size = 0;
-        readBinaryLittleEndian(buckets_size, buf);
-
-        if (buckets_size > bucket_count)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
-
-        /// `bucket_count` is derived from the function parameters and a huge window makes it enormous, so the
-        /// number of buckets is only reserved up to a bound and the map grows while the buckets are read. That way
-        /// a corrupted count fails with an end-of-buffer error instead of allocating memory for the claimed number.
-        data(place)->buckets.reserve(std::min(buckets_size, MAX_BUCKETS_TO_RESERVE));
-
-        for (size_t i = 0; i < buckets_size; ++i)
+        if constexpr (flat_samples)
         {
-            size_t bucket_index = 0;
-            readBinaryLittleEndian(bucket_index, buf);
+            data(place)->samples.deserialize(buf);
+            data(place)->samples.withSortedSamples([this](std::span<const typename Samples::Sample> samples)
+            {
+                forEachSampleRun(samples, [](size_t bucket_index, std::span<const typename Samples::Sample> run)
+                {
+                    if (bucket_index == NO_BUCKET)
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Cannot deserialize data: timestamp {} is outside every bucket", static_cast<Int64>(run.front().first));
+                });
+            });
+        }
+        else
+        {
+            size_t buckets_size = 0;
+            readBinaryLittleEndian(buckets_size, buf);
 
-            if (bucket_index >= bucket_count)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with index {} greater than bucket count {}", bucket_index, bucket_count);
+            if (buckets_size > bucket_count)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
 
-            auto & bucket = data(place)->buckets[bucket_index];
-            bucket.deserialize(buf);
+            /// `bucket_count` is derived from the function parameters and a huge window makes it enormous, so the
+            /// number of buckets is only reserved up to a bound and the map grows while the buckets are read. That way
+            /// a corrupted count fails with an end-of-buffer error instead of allocating memory for the claimed number.
+            data(place)->buckets.reserve(std::min(buckets_size, MAX_BUCKETS_TO_RESERVE));
 
-            /// Validate that each deserialized sample falls into this bucket's timestamp range.
-            bucket.checkTimestampsInRange(bucketTimeRange(bucket_index));
+            for (size_t i = 0; i < buckets_size; ++i)
+            {
+                size_t bucket_index = 0;
+                readBinaryLittleEndian(bucket_index, buf);
+
+                if (bucket_index >= bucket_count)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with index {} greater than bucket count {}", bucket_index, bucket_count);
+
+                auto & bucket = data(place)->buckets[bucket_index];
+                bucket.deserialize(buf);
+
+                /// Validate that each deserialized sample falls into this bucket's timestamp range.
+                bucket.checkTimestampsInRange(bucketTimeRange(bucket_index));
+            }
         }
     }
 
@@ -424,7 +466,7 @@ protected:
     /// `Summary` where needed), buckets leaving are dropped by `removeBefore`, and `getResult` reads off the window's
     /// value. The aggregator keeps only the window's worth of data, so there is no materialization of all buckets and
     /// no global sort in the dense case.
-    void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const
+    void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const requires (!flat_samples)
     {
         writer.addRow();
 
@@ -473,6 +515,58 @@ protected:
                 removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
+        }
+    }
+
+    /// Walks the sorted samples of a flat state once and passes each bucket's run of them to the sliding aggregator.
+    void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const requires (flat_samples)
+    {
+        writer.addRow();
+
+        if (!grid_size)
+            return;
+
+        data(place)->samples.withSortedSamples([&](std::span<const typename Samples::Sample> samples)
+        {
+            /// Each populated bucket holds at least one sample, so this bounds their number.
+            auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(std::min(samples.size(), bucket_count)));
+
+            /// Stores the results of the grid points whose windows end before bucket `bucket_index`.
+            size_t grid_index = 0;
+            auto store_results_before = [&](size_t bucket_index)
+            {
+                for (; grid_index < grid_size && bucketRangeInWindow(grid_index).second <= bucket_index; ++grid_index)
+                {
+                    removeOutOfWindow(aggregator, grid_index);
+                    writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
+                }
+            };
+
+            forEachSampleRun(samples, [&](size_t bucket_index, std::span<const typename Samples::Sample> run)
+            {
+                if (bucket_index == NO_BUCKET)
+                    return;
+                store_results_before(bucket_index);
+                aggregator.add(run, bucketEnd(bucket_index));
+            });
+            store_results_before(NO_BUCKET);
+        });
+    }
+
+    /// Calls `f(bucket_index, run)` for each run of sorted samples in one bucket, or in one range of rejected timestamps (`NO_BUCKET`).
+    template <typename F>
+    void forEachSampleRun(std::span<const typename Samples::Sample> samples, F && f) const
+    {
+        size_t pos = 0;
+        while (pos < samples.size())
+        {
+            const SampleClass sample_class = classifySample(samples[pos].first);
+            const Int64 run_end_time = static_cast<Int64>(sample_class.time_range.end_time);
+            size_t run_end = pos + 1;
+            while (run_end < samples.size() && static_cast<Int64>(samples[run_end].first) <= run_end_time)
+                ++run_end;
+            f(sample_class.bucket_index, samples.subspan(pos, run_end - pos));
+            pos = run_end;
         }
     }
 
@@ -1112,8 +1206,10 @@ private:
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
-        auto & bucket = data(place)->buckets[bucket_index];
-        bucket.add(timestamp, value);
+        if constexpr (flat_samples)
+            data(place)->samples.add(timestamp, value);
+        else
+            data(place)->buckets[bucket_index].add(timestamp, value);
     }
 
     static constexpr ALWAYS_INLINE Int64 toInt64(GridScaleTimestampType timestamp)
@@ -1222,7 +1318,12 @@ private:
             /// against an infinite loop.
             const size_t count = std::max<size_t>(run, static_cast<size_t>(1));
             if (sample_class.bucket_index != NO_BUCKET)
-                state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, count);
+            {
+                if constexpr (flat_samples)
+                    state->samples.addMany(timestamps + i, values + i, count);
+                else
+                    state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, count);
+            }
             i += count;
         }
     })
