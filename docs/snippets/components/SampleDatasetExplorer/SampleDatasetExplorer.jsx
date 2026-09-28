@@ -275,7 +275,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {selected.datasets.map((ds) => (
-              <a key={ds.href} href={withBase(ds.href)} className="sde-tile">
+              <a key={ds.href} href={ds.href} className="sde-tile">
                 <span className="sde-tile-media">
                   {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">

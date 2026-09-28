@@ -6,17 +6,29 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node_server = cluster.add_instance(
-    "node_server", main_configs=["config.d/memory_overrides.yaml"]
+    "node_server",
+    main_configs=[
+        "config.d/memory_overrides.yaml",
+        "config.d/no_memory_tracker_correction.yaml",
+    ],
 )
 node_user = cluster.add_instance(
     "node_user", user_configs=["users.d/memory_overrides.yaml"]
 )
 
 
+sanitizer_build = {}
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
+        # A server whose RSS is over max_server_memory_usage rejects even the connection
+        # handshake, and the tests below drive the nodes to that limit on purpose.
+        sanitizer_build["thread"] = node_server.is_built_with_thread_sanitizer()
+        sanitizer_build["memory"] = node_server.is_built_with_memory_sanitizer()
+        sanitizer_build["address"] = node_server.is_built_with_address_sanitizer()
         yield cluster
     finally:
         cluster.shutdown()
@@ -30,9 +42,9 @@ def start_cluster():
     ],
 )
 def test_max_bytes_ratio_before_external_group_by(node):
-    if node.is_built_with_thread_sanitizer():
+    if sanitizer_build["thread"]:
         pytest.skip("TSan build is skipped due to memory overhead")
-    if node.is_built_with_memory_sanitizer():
+    if sanitizer_build["memory"]:
         pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
 
     # Peak memory usage: 15-16GiB
@@ -63,7 +75,7 @@ def test_max_bytes_ratio_before_external_group_by(node):
     ],
 )
 def test_max_bytes_ratio_before_external_sort(node):
-    if node.is_built_with_thread_sanitizer():
+    if sanitizer_build["thread"]:
         pytest.skip("TSan build is skipped due to memory overhead")
 
     # Peak memory usage: 12GiB (each column in ORDER BY eats ~2GiB)
@@ -86,5 +98,54 @@ def test_max_bytes_ratio_before_external_sort(node):
 
     settings["max_bytes_before_external_sort"] = 0
     settings["max_bytes_ratio_before_external_sort"] = 0
+    with pytest.raises(QueryRuntimeException):
+        node.query(query, settings=settings)
+
+
+@pytest.mark.parametrize(
+    "node,limit_follows_rss,query",
+    [
+        # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
+        pytest.param(
+            node_server,
+            True,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null",
+            id="server",
+        ),
+        # Peak memory usage: ~5.7GiB (7M unique 800-byte strings) against a 4GiB user limit. The final merge
+        # holds a block of every spilled run at once, so `max_block_size` is pinned to its default.
+        pytest.param(
+            node_user,
+            False,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 100) AS k FROM numbers(10000000, 7000000)) "
+            "SETTINGS max_memory_usage_for_user = '4Gi', max_block_size = 65409 FORMAT Null",
+            id="user",
+        ),
+    ],
+)
+def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss, query):
+    if sanitizer_build["thread"]:
+        pytest.skip("TSan build is skipped due to memory overhead")
+    if sanitizer_build["memory"]:
+        pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
+    if limit_follows_rss and sanitizer_build["address"]:
+        # `max_server_memory_usage` is enforced against RSS, and an Address Sanitizer build's RSS
+        # carries redzones and quarantined chunks that the memory tracker never sees: the query
+        # below was rejected at `current RSS: 3.95 GiB` while its tracked total was 2.65 GiB.
+        # The final `DISTINCT` merge legitimately needs about twice the spill threshold, so the
+        # remaining 1.3 GiB of headroom is what this build's overhead consumes. The limit cannot
+        # be raised to compensate, because the unspilled peak has to stay above it and still fit
+        # into the harness's 600 second per-query cap. The user-limit parameter is unaffected:
+        # `max_memory_usage_for_user` counts tracked bytes rather than RSS.
+        pytest.skip("Address Sanitizer RSS overhead leaves no headroom under max_server_memory_usage")
+
+    settings = {
+        "max_memory_usage": "0",
+        "max_bytes_before_external_distinct": 0,
+        "max_bytes_ratio_before_external_distinct": 0.3,
+    }
+    node.query(query, settings=settings)
+
+    settings["max_bytes_ratio_before_external_distinct"] = 0
     with pytest.raises(QueryRuntimeException):
         node.query(query, settings=settings)

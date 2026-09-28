@@ -273,8 +273,29 @@ struct RegrMoments
         count += rhs.count;
     }
 
-    void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
-    void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
+    void write(WriteBuffer & buf) const
+    {
+        writeBinaryLittleEndian(count, buf);
+        writeBinaryLittleEndian(x0, buf);
+        writeBinaryLittleEndian(y0, buf);
+        writeBinaryLittleEndian(sx, buf);
+        writeBinaryLittleEndian(sy, buf);
+        writeBinaryLittleEndian(sxx, buf);
+        writeBinaryLittleEndian(syy, buf);
+        writeBinaryLittleEndian(sxy, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readBinaryLittleEndian(count, buf);
+        readBinaryLittleEndian(x0, buf);
+        readBinaryLittleEndian(y0, buf);
+        readBinaryLittleEndian(sx, buf);
+        readBinaryLittleEndian(sy, buf);
+        readBinaryLittleEndian(sxx, buf);
+        readBinaryLittleEndian(syy, buf);
+        readBinaryLittleEndian(sxy, buf);
+    }
 };
 
 /// Computes the regression aggregates of a finished state.
@@ -808,6 +829,18 @@ correlation coefficient. Returns `nan` when `x` is constant, and `1` when `y` is
 │             1 │
 └───────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
+
+    /// The SQL standard spelling is the name; these are the same functions under the naming the rest
+    /// of ClickHouse uses. The capital letters are the variables, as in S_xx and avg(x).
+    factory.registerAlias("regrCount", "regr_count", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrAvgX", "regr_avgx", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrAvgY", "regr_avgy", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSXX", "regr_sxx", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSYY", "regr_syy", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSXY", "regr_sxy", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSlope", "regr_slope", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrIntercept", "regr_intercept", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrR2", "regr_r2", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }
