@@ -23,10 +23,8 @@
     {
       "group": "Native protocol",
       "pages": [
-        "ko/resources/develop-contribute/native-protocol/basics",
-        "ko/resources/develop-contribute/native-protocol/client",
-        "ko/resources/develop-contribute/native-protocol/server",
-        "ko/resources/develop-contribute/native-protocol/columns",
+        "ko/resources/develop-contribute/native-protocol/protocol",
+        "ko/resources/develop-contribute/native-protocol/format",
         "ko/resources/develop-contribute/native-protocol/hash"
       ]
     },

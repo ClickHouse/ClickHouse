@@ -5796,11 +5796,11 @@
     "source": "/interfaces/schema-inference"
   },
   {
-    "destination": "/reference/interfaces/specs/NativeFormat",
+    "destination": "/resources/develop-contribute/native-protocol/format",
     "source": "/interfaces/specs/NativeFormat"
   },
   {
-    "destination": "/reference/interfaces/specs/NativeProtocol",
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
     "source": "/interfaces/specs/NativeProtocol"
   },
   {
@@ -10644,11 +10644,11 @@
     "source": "/jp/interfaces/schema-inference"
   },
   {
-    "destination": "/ja/reference/interfaces/specs/NativeFormat",
+    "destination": "/ja/resources/develop-contribute/native-protocol/format",
     "source": "/jp/interfaces/specs/NativeFormat"
   },
   {
-    "destination": "/ja/reference/interfaces/specs/NativeProtocol",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
     "source": "/jp/interfaces/specs/NativeProtocol"
   },
   {
@@ -11288,19 +11288,19 @@
     "source": "/jp/migrations/snowflake-translation-reference"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/basics",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
     "source": "/jp/native-protocol"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/basics",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
     "source": "/jp/native-protocol/basics"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/client",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol#client-to-server",
     "source": "/jp/native-protocol/client"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/columns",
+    "destination": "/ja/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/jp/native-protocol/columns"
   },
   {
@@ -11312,7 +11312,7 @@
     "source": "/jp/native-protocol/hash"
   },
   {
-    "destination": "/ja/resources/develop-contribute/native-protocol/server",
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol#server-to-client",
     "source": "/jp/native-protocol/server"
   },
   {
@@ -21404,11 +21404,11 @@
     "source": "/ko/interfaces/schema-inference"
   },
   {
-    "destination": "/ko/reference/interfaces/specs/NativeFormat",
+    "destination": "/ko/resources/develop-contribute/native-protocol/format",
     "source": "/ko/interfaces/specs/NativeFormat"
   },
   {
-    "destination": "/ko/reference/interfaces/specs/NativeProtocol",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
     "source": "/ko/interfaces/specs/NativeProtocol"
   },
   {
@@ -22048,19 +22048,19 @@
     "source": "/ko/migrations/snowflake-translation-reference"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/basics",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
     "source": "/ko/native-protocol"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/basics",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
     "source": "/ko/native-protocol/basics"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/client",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol#client-to-server",
     "source": "/ko/native-protocol/client"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/columns",
+    "destination": "/ko/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/ko/native-protocol/columns"
   },
   {
@@ -22072,7 +22072,7 @@
     "source": "/ko/native-protocol/hash"
   },
   {
-    "destination": "/ko/resources/develop-contribute/native-protocol/server",
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol#server-to-client",
     "source": "/ko/native-protocol/server"
   },
   {
@@ -27168,19 +27168,19 @@
     "source": "/migrations/snowflake-translation-reference"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/basics",
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
     "source": "/native-protocol"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/basics",
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
     "source": "/native-protocol/basics"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/client",
+    "destination": "/resources/develop-contribute/native-protocol/protocol#client-to-server",
     "source": "/native-protocol/client"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/columns",
+    "destination": "/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/native-protocol/columns"
   },
   {
@@ -27192,7 +27192,7 @@
     "source": "/native-protocol/hash"
   },
   {
-    "destination": "/resources/develop-contribute/native-protocol/server",
+    "destination": "/resources/develop-contribute/native-protocol/protocol#server-to-client",
     "source": "/native-protocol/server"
   },
   {
@@ -33520,11 +33520,11 @@
     "source": "/ru/interfaces/schema-inference"
   },
   {
-    "destination": "/ru/reference/interfaces/specs/NativeFormat",
+    "destination": "/ru/resources/develop-contribute/native-protocol/format",
     "source": "/ru/interfaces/specs/NativeFormat"
   },
   {
-    "destination": "/ru/reference/interfaces/specs/NativeProtocol",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
     "source": "/ru/interfaces/specs/NativeProtocol"
   },
   {
@@ -34164,19 +34164,19 @@
     "source": "/ru/migrations/snowflake-translation-reference"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/basics",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
     "source": "/ru/native-protocol"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/basics",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
     "source": "/ru/native-protocol/basics"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/client",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol#client-to-server",
     "source": "/ru/native-protocol/client"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/columns",
+    "destination": "/ru/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/ru/native-protocol/columns"
   },
   {
@@ -34188,7 +34188,7 @@
     "source": "/ru/native-protocol/hash"
   },
   {
-    "destination": "/ru/resources/develop-contribute/native-protocol/server",
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol#server-to-client",
     "source": "/ru/native-protocol/server"
   },
   {
@@ -47092,11 +47092,11 @@
     "source": "/zh/interfaces/schema-inference"
   },
   {
-    "destination": "/zh/reference/interfaces/specs/NativeFormat",
+    "destination": "/zh/resources/develop-contribute/native-protocol/format",
     "source": "/zh/interfaces/specs/NativeFormat"
   },
   {
-    "destination": "/zh/reference/interfaces/specs/NativeProtocol",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
     "source": "/zh/interfaces/specs/NativeProtocol"
   },
   {
@@ -47736,19 +47736,19 @@
     "source": "/zh/migrations/snowflake-translation-reference"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/basics",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
     "source": "/zh/native-protocol"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/basics",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
     "source": "/zh/native-protocol/basics"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/client",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol#client-to-server",
     "source": "/zh/native-protocol/client"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/columns",
+    "destination": "/zh/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/zh/native-protocol/columns"
   },
   {
@@ -47760,7 +47760,7 @@
     "source": "/zh/native-protocol/hash"
   },
   {
-    "destination": "/zh/resources/develop-contribute/native-protocol/server",
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol#server-to-client",
     "source": "/zh/native-protocol/server"
   },
   {
@@ -55026,5 +55026,221 @@
   {
     "destination": "/zh/reference/settings/session-settings",
     "source": "/zh/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
+    "source": "/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/resources/develop-contribute/native-protocol/format",
+    "source": "/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/ar/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ar/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/ar/resources/develop-contribute/native-protocol/format",
+    "source": "/ar/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/es/resources/develop-contribute/native-protocol/protocol",
+    "source": "/es/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/es/resources/develop-contribute/native-protocol/format",
+    "source": "/es/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/fr/resources/develop-contribute/native-protocol/protocol",
+    "source": "/fr/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/fr/resources/develop-contribute/native-protocol/format",
+    "source": "/fr/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ja/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/ja/resources/develop-contribute/native-protocol/format",
+    "source": "/ja/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ko/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/ko/resources/develop-contribute/native-protocol/format",
+    "source": "/ko/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol",
+    "source": "/pt-BR/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/format",
+    "source": "/pt-BR/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ru/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/ru/resources/develop-contribute/native-protocol/format",
+    "source": "/ru/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
+    "source": "/zh/reference/interfaces/specs/NativeProtocol"
+  },
+  {
+    "destination": "/zh/resources/develop-contribute/native-protocol/format",
+    "source": "/zh/reference/interfaces/specs/NativeFormat"
+  },
+  {
+    "destination": "/resources/develop-contribute/native-protocol/protocol",
+    "source": "/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/ar/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ar/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/ar/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/ar/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/ar/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/ar/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/ar/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/ar/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/es/resources/develop-contribute/native-protocol/protocol",
+    "source": "/es/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/es/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/es/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/es/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/es/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/es/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/es/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/fr/resources/develop-contribute/native-protocol/protocol",
+    "source": "/fr/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/fr/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/fr/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/fr/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/fr/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/fr/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/fr/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ja/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/ja/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/ja/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/ja/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/ja/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/ja/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ko/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/ko/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/ko/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/ko/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/ko/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/ko/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol",
+    "source": "/pt-BR/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/pt-BR/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/pt-BR/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/pt-BR/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/pt-BR/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol",
+    "source": "/ru/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/ru/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/ru/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/ru/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/ru/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/ru/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol",
+    "source": "/zh/resources/develop-contribute/native-protocol/basics"
+  },
+  {
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol#client-to-server",
+    "source": "/zh/resources/develop-contribute/native-protocol/client"
+  },
+  {
+    "destination": "/zh/resources/develop-contribute/native-protocol/protocol#server-to-client",
+    "source": "/zh/resources/develop-contribute/native-protocol/server"
+  },
+  {
+    "destination": "/zh/resources/develop-contribute/native-protocol/format#data-types",
+    "source": "/zh/resources/develop-contribute/native-protocol/columns"
   }
 ]
