@@ -730,10 +730,13 @@ bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     {
         std::lock_guard lock{access_entities_mutex};
-        /// Validate against the entity as it is read here: `exists` alone would let a drop through
-        /// unchecked if the definition could not be read.
-        if (auto old_entity = isAnyFeatureTierRestricted(*this) ? tryRead(id) : nullptr)
+        if (isAnyFeatureTierRestricted(*this))
         {
+            /// An entity this instance cannot read, as a replicated one its cache has not caught up with yet,
+            /// is not removed unchecked.
+            auto old_entity = read(id, throw_if_not_exists);
+            if (!old_entity)
+                return false;
             checkFeatureTierForPendingAccessEntities(
                 *this, PendingAccessEntities{{id, nullptr}}, PendingAccessEntities{{id, old_entity}});
             FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
@@ -840,10 +843,10 @@ void AccessControl::checkFeatureTierForMoveUnlocked(
     auto source = getStorageByName(source_storage_name);
     for (const auto & id : ids)
     {
-        /// Read from the storage the move reads from: an entity this instance cannot read there is one
-        /// the move itself will fail on.
-        auto entity = source->tryRead(id);
-        if (!entity || entity->getType() != AccessEntityType::USER)
+        /// Read from the storage the move reads from. An entity this instance cannot read there is refused
+        /// here rather than moved unchecked if a replicated cache catches up before the move reads it.
+        auto entity = source->read(id);
+        if (entity->getType() != AccessEntityType::USER)
             continue;
 
         /// A move rewrites no entity, but a login resolves to the first storage holding its name, so
