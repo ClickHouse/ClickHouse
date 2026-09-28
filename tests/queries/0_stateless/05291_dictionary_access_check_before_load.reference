@@ -30,6 +30,17 @@ NOT_LOADED
 SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
 ACCESS_DENIED
 NOT_LOADED
+--- no grants, naiveBayesClassifier
+NOT_LOADED
+SELECT naiveBayesClassifier('nb', 'good')
+ACCESS_DENIED
+NOT_LOADED
+SELECT naiveBayesClassifierWithProb('nb', 'good')
+ACCESS_DENIED
+NOT_LOADED
+SELECT naiveBayesClassifierWithAllProbs('nb', 'good')
+ACCESS_DENIED
+NOT_LOADED
 --- SELECT is enough for the dictionary table function, but not for dictGet
 SELECT dictGet('d', 'value', toUInt64(1))
 ACCESS_DENIED
@@ -56,4 +67,8 @@ LOADED
 NOT_LOADED
 SELECT * FROM dictionary('d')
 1	a
+LOADED
+--- dictGet, naiveBayesClassifier
+SELECT naiveBayesClassifier('nb', 'good')
+0
 LOADED

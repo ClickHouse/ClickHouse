@@ -18,13 +18,20 @@ ${CLICKHOUSE_CLIENT} -m --query "
     SOURCE(CLICKHOUSE(TABLE 'src' DB '${CLICKHOUSE_DATABASE}'))
     LAYOUT(FLAT())
     LIFETIME(0);
+    CREATE TABLE nb_src (class_id UInt32, ngram String, count UInt64) ENGINE = Memory;
+    INSERT INTO nb_src VALUES (0, 'good', 10), (1, 'bad', 10);
+    CREATE DICTIONARY nb (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'nb_src' DB '${CLICKHOUSE_DATABASE}'))
+    LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+    LIFETIME(0);
     CREATE USER ${username} NOT IDENTIFIED;
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${username};
 "
 
 function status()
 {
-    ${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd'"
+    ${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = '${1:-d}'"
 }
 
 function unload()
@@ -64,6 +71,15 @@ do
     status
 done
 
+echo "--- no grants, naiveBayesClassifier"
+status nb
+as_user "SELECT naiveBayesClassifier('nb', 'good')"
+status nb
+as_user "SELECT naiveBayesClassifierWithProb('nb', 'good')"
+status nb
+as_user "SELECT naiveBayesClassifierWithAllProbs('nb', 'good')"
+status nb
+
 echo "--- SELECT is enough for the dictionary table function, but not for dictGet"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.d TO ${username}"
 as_user "SELECT dictGet('d', 'value', toUInt64(1))"
@@ -89,5 +105,10 @@ status
 unload
 as_user "SELECT * FROM dictionary('d')"
 status
+
+echo "--- dictGet, naiveBayesClassifier"
+${CLICKHOUSE_CLIENT} --query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.nb TO ${username}"
+as_user "SELECT naiveBayesClassifier('nb', 'good')"
+status nb
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${username}"
