@@ -1237,7 +1237,7 @@ void AlterCommand::apply(
 
         /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
         /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
-        /// a part already has, so existing parts pick the new settings up only when they are merged.
+        /// a part already has, so existing data picks up the new settings only when its parts are merged.
         metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)

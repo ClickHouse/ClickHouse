@@ -2997,7 +2997,7 @@ The projection query itself (or, for a projection index, the index expression an
 
 The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
 [`MATERIALIZE PROJECTION`](#materialize-projection) does not apply the new settings to existing parts either: it builds the projection only in the parts where it is missing or broken and leaves the projection parts that already exist unchanged.
-To rebuild existing parts with the new settings, merge them, for example with [`OPTIMIZE TABLE ... FINAL`](/reference/statements/optimize), or drop the projection and add it again with [`DROP PROJECTION`](#drop-projection), [`ADD PROJECTION`](#add-projection) and [`MATERIALIZE PROJECTION`](#materialize-projection).
+To rebuild existing parts with the new settings, run [`CLEAR PROJECTION`](#clear-projection) followed by [`MATERIALIZE PROJECTION`](#materialize-projection), or merge the parts, for example with [`OPTIMIZE TABLE ... FINAL`](/reference/statements/optimize).
 
 Example:
 
@@ -3021,8 +3021,8 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 
 ### MATERIALIZE PROJECTION {#materialize-projection}
 
-Use the statement below to build the projection `name` in partition `partition_name` in the parts where it is missing or broken.
-Parts that already have the projection are left unchanged, even if the projection settings were changed with [`MODIFY PROJECTION`](#modify-projection) after they were written.
+Use the statement below to build the projection `name` in the parts where it is missing or broken, optionally only in partition `partition_name`.
+Parts that already have the projection are left unchanged, even if the projection settings were changed with [`MODIFY PROJECTION`](#modify-projection) after they were written; to rebuild them, run [`CLEAR PROJECTION`](#clear-projection) first.
 This is implemented as a [mutation](/reference/statements/alter/index#mutations).
 
 ```sql
