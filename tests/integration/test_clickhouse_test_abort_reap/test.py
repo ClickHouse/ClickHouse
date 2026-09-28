@@ -1,12 +1,12 @@
 """Abort-path reaping of test process groups in `tests/clickhouse-test`.
 
 No cluster: these load the runner as a module and drive the functions that reap the
-process groups of tests a stopped run leaves behind. The contracts pinned here are the
-ones whose regression brings back a hung `clickhouse-test | ts | tee` pipeline and an
-empty report (`files: []`):
+process groups of tests a stopped run leaves behind. The contracts pinned here:
 
 - a reap only touches the records of its own invocation (`_CLICKHOUSE_TEST_RUN_TOKEN`)
   and of the workers it names;
+- `--cleanup`, which names no workers, reaps every record whatever its invocation or
+  name shape;
 - a `spawn` worker inherits the invocation token, so its records are in the reap scope;
 - the reap cannot be interrupted by the signals the runner turns into `Terminated`;
 - `quiesce_workers_and_reap` stops the workers before walking the records.
@@ -115,6 +115,32 @@ def test_reap_is_scoped_to_run_token_and_workers(runner, tmp_path):
         assert other_worker.poll() is None
     finally:
         for proc in (ours, foreign_run, other_worker):
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+
+
+def test_cleanup_reaps_every_record(runner, tmp_path):
+    older_runner = start_group()
+    killed_run = start_group()
+    try:
+        worker = os.getpid()
+        # What `--cleanup` finds in a reused `ci/tmp`: a record named before the token
+        # was added, and one of an invocation that was killed.
+        (tmp_path / f"{runner._GROUP_PID_NAME}.{worker}").write_text(
+            f"{older_runner.pid}\n"
+        )
+        (
+            tmp_path / f"{runner._GROUP_PID_NAME}.1-deadbeef.{worker}.{killed_run.pid}"
+        ).write_text(f"{killed_run.pid}\n")
+
+        runner.cleanup_test_groups()
+
+        assert older_runner.wait(timeout=30) is not None
+        assert killed_run.wait(timeout=30) is not None
+        assert records(tmp_path) == []
+    finally:
+        for proc in (older_runner, killed_run):
             if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
