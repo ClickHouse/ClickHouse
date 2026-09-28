@@ -160,6 +160,23 @@ bool usesExternalTableFunction(const std::string & sql_original)
     return false;
 }
 
+/// Functions that materialize an array/string of a caller-supplied size. With a huge constant they are
+/// constant-folded at plan time (`tryFoldFunctionToConstant`), which ignores `max_execution_time` and
+/// `max_memory_usage`, so a single call runs for minutes and trips the per-input timeout
+/// (`arrayWithConstant(96142475, [])` took 123 s). `range`/`timeSeriesRange` are bounded by
+/// `function_range_max_elements_in_block` in the args; these have no such setting, so skip them.
+bool usesUnboundedGenerator(const std::string & sql_original)
+{
+    std::string sql = sql_original;
+    for (char & c : sql)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    static const char * generators[] = {"arraywithconstant", "arrayresize", "replicate("};
+    for (const char * fn : generators)
+        if (sql.find(fn) != std::string::npos)
+            return true;
+    return false;
+}
+
 Verdict classify(const DB::IAST & ast)
 {
     using namespace DB;
@@ -884,7 +901,7 @@ DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
 
     auto & stats = DB::JSONASTFuzzer::pipelineStats();
     const Verdict verdict = classify(*ast);
-    if (verdict == Verdict::SKIP || overridesResourceLimits(input.sql) || usesExternalTableFunction(input.sql))
+    if (verdict == Verdict::SKIP || overridesResourceLimits(input.sql) || usesExternalTableFunction(input.sql) || usesUnboundedGenerator(input.sql))
     {
         ++stats.execution_skipped;
         return;
