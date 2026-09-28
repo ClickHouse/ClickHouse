@@ -2271,9 +2271,14 @@ SETTINGS data_lake_delete_data_on_drop = 1
 :::note
 Whether data files are actually deleted depends on the catalog itself.
 The `purgeRequested` flag is sent to the catalog, but the catalog may choose to ignore it.
-For the Glue catalog, `DROP TABLE` only removes the catalog entry and does not delete the underlying data
-files, so `DROP TABLE` with `data_lake_delete_data_on_drop = 1` is rejected instead of silently leaving the
-data behind.
+
+Some catalogs support only one of the two modes:
+
+- Glue: `DROP TABLE` only removes the catalog entry and never deletes the underlying data files.
+  `DROP TABLE` with `data_lake_delete_data_on_drop = 1` is rejected instead of silently leaving the data behind.
+- S3 Tables (`catalog_type = 's3tables'`): a table cannot be dropped without deleting its data.
+  `DROP TABLE` without `data_lake_delete_data_on_drop = 1` is rejected. With the setting enabled, both
+  the table and its data are permanently deleted.
 :::
 
 ## Examples {#examples}
