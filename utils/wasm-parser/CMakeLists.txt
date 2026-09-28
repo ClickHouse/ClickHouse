@@ -282,6 +282,17 @@ list (TRANSFORM EXPORTS PREPEND "-Wl,--export=")
 # `-mexec-model=reactor` because the module is a library, not a program: it is initialized once and
 # then called into. Note that `-mllvm -wasm-enable-sjlj` is deliberately absent here - the LTO unit
 # must contain no `setjmp`, and leaving the flag off turns a stray one into a link error.
+#
+# The stack is 8 MiB rather than wasm-ld's default of 64 KiB. `checkStackSize` reads its real
+# bounds (wasi-libc takes them from `__stack_low` and `__stack_high`) and, as on the server, refuses
+# to use more than half of it, so 64 KiB turned the AST of a three-level subquery into "Stack size
+# too large". Below that check the parser itself has only its depth limit, and 50 nested
+# parentheses overflowed the stack, which traps and leaves the instance unusable. At
+# `MAX_PARSER_DEPTH`, the deepest tree `ch_parse` still reports costs 2.7 MB of stack, nearly all of
+# it in the JSON round trip. So everything the depth limits accept fits in the half the check
+# allows, and the check remains a backstop rather than the limit a query reaches first. The stack
+# adds nothing to the module, only to the initial size of its memory, and pages that the stack
+# never reaches cost address space rather than memory.
 target_link_options (parser PRIVATE
     -Oz
     -flto
@@ -290,6 +301,7 @@ target_link_options (parser PRIVATE
     -mexec-model=reactor
     -Wl,--no-entry
     -Wl,--strip-all
+    -Wl,-z,stack-size=8388608
     ${EXPORTS}
 )
 

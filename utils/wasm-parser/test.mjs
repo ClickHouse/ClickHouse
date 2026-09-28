@@ -157,6 +157,22 @@ function parsed(sql) {
     check('ch_parse reports an empty query', !r.ok && /Empty query/.test(r.doc?.error?.message ?? ''));
 }
 
+{
+    /// The parser has no stack check of its own below `MAX_PARSER_DEPTH`, so the stack must hold
+    /// whatever that depth admits. With a 64 KiB stack, 50 nested parentheses overflowed it, which
+    /// traps and leaves the instance unusable. Past the depth, the answer is an error.
+    const nest = n => `SELECT ${'('.repeat(n)}1${')'.repeat(n)}`;
+    check('ch_parse accepts 190 nested parentheses', parsed(nest(190)).ok);
+    const tooDeep = parsed(nest(100000));
+    check('ch_parse rejects 100000 nested parentheses by depth',
+        !tooDeep.ok && /Maximum parse depth/.test(tooDeep.doc?.error?.message ?? ''));
+    const subqueries = n => `SELECT * FROM ${'(SELECT * FROM '.repeat(n)}t${')'.repeat(n)}`;
+    check('ch_parse accepts 90 nested subqueries', parsed(subqueries(90)).ok);
+    check('ch_parse rejects 10000 nested subqueries by depth',
+        /Maximum parse depth/.test(parsed(subqueries(10000)).doc?.error?.message ?? ''));
+    check('ch_parse works after the deep queries', parsed('SELECT 1 + 2').ok);
+}
+
 if (hasAstJson) {
     /// A query can parse and still have no JSON representation; "ast" is then null with a reason.
     const r = parsed("INSERT INTO t (a,b) VALUES (1,'x')");
@@ -176,6 +192,9 @@ if (hasAstJson) {
     check('ch_format_json rejects an unknown node type', !unknown.ok && /Nonsense/.test(unknown.out));
     const array = call('[1, 2, 3]', (ptr, len) => ch_format_json(ptr, len, 1));
     check('ch_format_json rejects a non-object document', !array.ok);
+    const nested = call(`{"type":"Function","children":${'['.repeat(100000)}${']'.repeat(100000)}}`,
+        (ptr, len) => ch_format_json(ptr, len, 1));
+    check('ch_format_json rejects deeply nested JSON', !nested.ok && nested.out.length > 0);
     check('ch_parse works after ch_format_json errors', parsed('SELECT 1 + 2').ok);
 
     /// Multi-line formatting through the JSON path matches the direct path.
@@ -200,6 +219,32 @@ if (hasAstJson) {
     const structuredBack = call(JSON.stringify(structuredParsed.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
     check('ch_format_json round-trips structured literals',
         structuredBack.ok && structuredBack.out === format(structured, 1).out);
+
+    /// Subqueries a few levels deep. Their AST JSON used to come back null, with "Stack size too
+    /// large", while the module had wasm-ld's default 64 KiB stack - see `-z stack-size` in
+    /// CMakeLists.txt.
+    for (const sql of [
+        'SELECT * FROM (SELECT * FROM (SELECT number FROM numbers(10)))',
+        "SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE country = 'PT')",
+        'select * from t where x in (select y from u)',
+        'with top as (select user_id, sum(amount) as total from orders group by user_id) select user_id from top',
+    ]) {
+        const r = parsed(sql);
+        check(`subquery has an ast: ${sql.slice(0, 50)}`, r.ok && !!r.doc?.ast);
+        const back = call(JSON.stringify(r.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
+        check(`...and ch_format_json round-trips it`, back.ok && back.out === format(sql, 1).out);
+    }
+
+    /// The stack is sized for the depth limits rather than the other way round: a tree close to
+    /// `MAX_PARSER_DEPTH` still has its JSON, and the first limit a deeper one reaches is the depth.
+    const nearLimit = `SELECT ${Array(450).fill('1').join(' + ')}`;
+    const nearLimitParsed = parsed(nearLimit);
+    check('a tree close to the depth limit has an ast', nearLimitParsed.ok && !!nearLimitParsed.doc?.ast);
+    const nearLimitBack = call(JSON.stringify(nearLimitParsed.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
+    check('...and ch_format_json reads it back', nearLimitBack.ok);
+    const pastLimit = parsed(`SELECT ${Array(600).fill('1').join(' + ')}`);
+    check('past the depth limit the error is the depth', !pastLimit.ok
+        && /too deep/.test(pastLimit.doc?.error?.message ?? ''));
 
     /// Past those limits the "ast" is null with a reason - never JSON this module cannot read back.
     /// The first query is over the element budget; the second one fits in the input limit while its
