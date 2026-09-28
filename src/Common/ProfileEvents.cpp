@@ -1184,6 +1184,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperWatchTriggeredNodeDeleted, "Number of watch triggers by `DELETE` operation", ValueType::Number) \
     M(KeeperWatchTriggeredNodeDataChanged, "Number of watch triggers by change operations", ValueType::Number) \
     M(KeeperWatchTriggeredNodeChildrenChanged, "Number of watch triggers by children change operations", ValueType::Number) \
+    M(KeeperRejectedCommittedLogRollback, "Number of times Keeper refused a request that would have rolled back already-committed log entries", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
