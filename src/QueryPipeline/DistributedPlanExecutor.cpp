@@ -1454,6 +1454,7 @@ protected:
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
             {
                 std::lock_guard g(lock);
+                cancel_started = true;
                 for (auto & [stage_name, started_tasks] : stage_tasks)
                 {
                     for (auto & [task_name, task_info] : started_tasks)
@@ -1570,9 +1571,13 @@ protected:
         /// Forward one batch of worker log lines from a status reply to the initiator's `send_logs_level`
         /// stream, checking it against the per-task cursor. The batch starts at `begin_offset`; a gap
         /// before it is lines lost in transit (a retried status poll re-drained an already-emptied
-        /// queue). Polls for one task are sequential, so a batch starting before the cursor is not
-        /// expected; if it happens the rows are still forwarded and the cursor is left alone.
-        /// Worker-side drops (`dropped_total`, buffer full) are reported as they grow.
+        /// queue). A batch starting before the cursor is not expected; if it happens the rows are still
+        /// forwarded and the cursor is left alone. Worker-side drops (`dropped_total`, buffer full) are
+        /// reported as they grow.
+        /// Important: polls for one task are sequential until `cancel` starts; from then on a teardown poll
+        /// from `waitForTaskTerminal` can overlap a normal one, and their replies can be handled in either
+        /// order. So once cancellation has started the rows are still forwarded, but neither losses nor
+        /// worker-side drops are reported.
         void handleWorkerLogs(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status)
         {
             if (!initiator_logs_queue || !task_status.logs)
@@ -1581,10 +1586,17 @@ protected:
             auto & logs = *task_status.logs;
             const UInt64 num_rows = logs.rows.rows();
 
+            if (num_rows != 0)
+                initiator_logs_queue->pushBlock(std::move(logs.rows));
+
             UInt64 lost_in_transit = 0;
             UInt64 newly_dropped = 0;
             {
                 std::lock_guard g(lock);
+
+                if (cancel_started)
+                    return;
+
                 auto & cursor = worker_log_cursors[task.task_id];
 
                 if (logs.begin_offset >= cursor.expected_offset)
@@ -1604,9 +1616,6 @@ protected:
                 pushInitiatorLogLine(task.task_id, fmt::format(
                     "{} worker log line(s) from {} were lost in transit (status poll retry)",
                     lost_in_transit, task.endpoint_uri));
-
-            if (num_rows != 0)
-                initiator_logs_queue->pushBlock(std::move(logs.rows));
 
             if (newly_dropped != 0)
                 pushInitiatorLogLine(task.task_id, fmt::format(
@@ -1836,6 +1845,8 @@ protected:
             UInt64 dropped_reported = 0;
         };
         UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
+        /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
+        bool cancel_started TSA_GUARDED_BY(lock) = false;
         std::atomic<Int64> in_flight_request_count = 0;
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
