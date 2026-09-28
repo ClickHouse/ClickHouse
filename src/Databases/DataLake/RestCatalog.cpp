@@ -1857,7 +1857,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         wb->ignoreAll();
 }
 
-void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
+bool RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const auto state_snapshot = state.get();
 
@@ -1868,7 +1868,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     try
     {
         sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
-        return;
+        return false;
     }
     catch (const DB::HTTPException & e)
     {
@@ -1900,7 +1900,17 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
         /// Lost the race to a concurrent creator.
         if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
             throw;
+        return false;
     }
+    return true;
+}
+
+void RestCatalog::dropNamespace(const std::string & namespace_name) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+    sendRequest(*state_snapshot, endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_DELETE, /* ignore_result */ true);
 }
 
 std::optional<std::string> RestCatalog::getNamespaceLocation(const std::string & namespace_name) const
@@ -1941,12 +1951,6 @@ std::optional<std::string> RestCatalog::getDefaultTableLocation(
     const std::string & table_name) const
 {
     auto namespace_location = getNamespaceLocation(namespace_name);
-    if (!namespace_location)
-    {
-        createNamespaceIfNotExists(namespace_name, /* location */ "");
-        namespace_location = getNamespaceLocation(namespace_name);
-    }
-
     if (!namespace_location)
         return std::nullopt;
 

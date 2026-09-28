@@ -75,7 +75,9 @@ public:
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    bool createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+
+    void dropNamespace(const std::string & namespace_name) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 

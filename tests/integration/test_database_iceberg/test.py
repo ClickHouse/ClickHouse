@@ -1435,6 +1435,27 @@ def test_create_without_engine_arguments_storage_mismatch(started_cluster):
             },
         )
     assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
+    assert (root_namespace,) not in load_catalog_impl(started_cluster).list_namespaces()
+
+
+def test_create_without_engine_arguments_existing_namespace(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_existing_namespace_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(QueryRuntimeException) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergLocal",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+    assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
+    assert (root_namespace,) in catalog.list_namespaces()
 
 
 def test_create_without_engine_arguments_outside_catalog(started_cluster):

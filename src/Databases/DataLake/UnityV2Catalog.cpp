@@ -416,9 +416,10 @@ void UnityV2Catalog::createTable(
     }
 }
 
-void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
+bool UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
 {
     checkNamespaceExists(namespace_name);
+    return false;
 }
 
 bool UnityV2Catalog::updateMetadata(

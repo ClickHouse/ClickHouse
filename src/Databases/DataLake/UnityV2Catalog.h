@@ -46,7 +46,7 @@ public:
         Poco::JSON::Object::Ptr metadata_content) const override;
 
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    bool createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
     void getTableMetadata(
         const std::string & namespace_name,

@@ -429,9 +429,14 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+bool ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
+}
+
+void ICatalog::dropNamespace(const std::string & /*namespace_name*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropNamespace is not implemented");
 }
 
 bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const

@@ -868,7 +868,7 @@ void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageCon
     }
 }
 
-DataLake::TableMetadata DatabaseDataLake::getNewTableMetadata(
+std::optional<DataLake::TableMetadata> DatabaseDataLake::tryGetNewTableMetadata(
     const DatabaseDataLakeSettings & settings,
     const DataLake::ICatalog & catalog,
     const String & name) const
@@ -877,11 +877,7 @@ DataLake::TableMetadata DatabaseDataLake::getNewTableMetadata(
 
     auto location = catalog.getDefaultTableLocation(namespace_name, table_name);
     if (!location)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog of database {} cannot tell where table {} has to be created. "
-            "Specify the location in the table engine arguments explicitly",
-            backQuoteIfNeed(getDatabaseName()), name);
+        return std::nullopt;
 
     LOG_DEBUG(log, "Location assigned by the catalog for new table {}: {}", name, *location);
 
@@ -892,15 +888,43 @@ DataLake::TableMetadata DatabaseDataLake::getNewTableMetadata(
     return table_metadata;
 }
 
+Exception DatabaseDataLake::cannotTellNewTableLocation(const String & name) const
+{
+    return Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Catalog of database {} cannot tell where table {} has to be created. "
+        "Specify the location in the table engine arguments explicitly",
+        backQuoteIfNeed(getDatabaseName()), name);
+}
+
 String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto catalog = getCatalog();
-    const auto table_metadata = getNewTableMetadata(settings, *catalog, name);
-    const auto table_format = catalog->getTableFormat(table_metadata);
-    const auto storage_type = table_metadata.getStorageType();
+
+    auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+    const auto catalog_storage_type = catalog->getStorageType();
+    if (!table_metadata && !catalog_storage_type && catalog->createNamespaceIfNotExists(DataLake::parseTableName(name).first, /* location */ ""))
+        table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+
+    DataLake::DataLakeTableFormat table_format;
+    DatabaseDataLakeStorageType storage_type;
+    if (table_metadata)
+    {
+        table_format = catalog->getTableFormat(*table_metadata);
+        storage_type = table_metadata->getStorageType();
+    }
+    else if (catalog_storage_type)
+    {
+        table_format = catalog->getTableFormat(DataLake::TableMetadata());
+        storage_type = *catalog_storage_type;
+    }
+    else
+    {
+        throw cannotTellNewTableLocation(name);
+    }
 
     if (table_format == DataLake::DataLakeTableFormat::ICEBERG)
     {
@@ -936,9 +960,9 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "Cannot choose a table engine for table {} in database {}: its catalog creates {} tables in {} ({}). "
+        "Cannot choose a table engine for table {} in database {}: its catalog creates {} tables in {}. "
         "Specify the table engine explicitly",
-        name, backQuoteIfNeed(getDatabaseName()), table_format, storage_type, table_metadata.getLocation());
+        name, backQuoteIfNeed(getDatabaseName()), table_format, storage_type);
 }
 
 ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
@@ -947,18 +971,44 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto catalog = getCatalog();
-    const auto table_metadata = getNewTableMetadata(settings, *catalog, name);
+    const auto namespace_name = DataLake::parseTableName(name).first;
+    const auto engine_type = toDataLakeStorageType(engine_storage_type);
 
-    const auto location_storage_type = table_metadata.getStorageType();
-    if (toDataLakeStorageType(engine_storage_type) != location_storage_type)
-        throw Exception(
+    auto storage_mismatch = [&](DatabaseDataLakeStorageType catalog_type)
+    {
+        return Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Catalog of database {} places table {} in {} ({}), while its table engine writes to {}. "
+            "Catalog of database {} places table {} in {}, while its table engine writes to {}. "
             "Use the table engine variant for {}",
-            backQuoteIfNeed(getDatabaseName()), name, location_storage_type, table_metadata.getLocation(),
-            toDataLakeStorageType(engine_storage_type), location_storage_type);
+            backQuoteIfNeed(getDatabaseName()), name, catalog_type, engine_type, catalog_type);
+    };
 
-    return buildTableEngineArgs(settings, *catalog, table_metadata, /* lightweight */false).args;
+    auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+    bool namespace_created = false;
+    if (!table_metadata)
+    {
+        if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
+            throw storage_mismatch(*catalog_storage_type);
+
+        namespace_created = catalog->createNamespaceIfNotExists(namespace_name, /* location */ "");
+        if (namespace_created)
+            table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+    }
+
+    if (!table_metadata || table_metadata->getStorageType() != engine_type)
+    {
+        if (namespace_created)
+        {
+            LOG_DEBUG(log, "Dropping namespace {} created for table {} that cannot be created", namespace_name, name);
+            catalog->dropNamespace(namespace_name);
+        }
+
+        if (!table_metadata)
+            throw cannotTellNewTableLocation(name);
+        throw storage_mismatch(table_metadata->getStorageType());
+    }
+
+    return buildTableEngineArgs(settings, *catalog, *table_metadata, /* lightweight */false).args;
 }
 
 bool DatabaseDataLake::empty() const

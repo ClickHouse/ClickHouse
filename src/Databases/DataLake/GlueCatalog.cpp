@@ -13,6 +13,7 @@
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
 #include <aws/glue/model/DeleteTableRequest.h>
+#include <aws/glue/model/DeleteDatabaseRequest.h>
 #include <aws/glue/model/CreateDatabaseRequest.h>
 #include <aws/glue/model/UpdateTableRequest.h>
 #include <aws/glue/model/TableInput.h>
@@ -628,7 +629,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
+bool GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
@@ -643,6 +644,20 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
             "Exception calling CreateDatabase for namespace {}: {}",
             namespace_name, outcome.GetError().GetMessage());
     }
+    return outcome.IsSuccess();
+}
+
+void GlueCatalog::dropNamespace(const std::string & namespace_name) const
+{
+    Aws::Glue::Model::DeleteDatabaseRequest request;
+    request.SetName(namespace_name);
+
+    auto outcome = glue_client->DeleteDatabase(request);
+    if (!outcome.IsSuccess())
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling DeleteDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
 }
 
 std::optional<std::string> GlueCatalog::getDefaultTableLocation(
