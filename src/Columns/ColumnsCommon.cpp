@@ -11,6 +11,10 @@
 namespace DB
 {
 
+/// clang 21 reports `-Wpsabi` for the 64-byte vectors passed by value to `isNonZero` and `sumCounters`, although both are
+/// internal and always inlined, so no ABI is involved. clang 22 does not; remove this once it is the minimum version.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpsabi"
 namespace
 {
     /// One counter per byte of a 64-byte block, so the loops below keep four accumulators in
@@ -117,6 +121,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 
     return count;
 }
+#pragma clang diagnostic pop
 
 VectorWithMemoryTracking<size_t> countColumnsSizeInSelector(size_t num_columns, const IColumn::Selector & selector)
 {
