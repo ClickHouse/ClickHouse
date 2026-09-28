@@ -132,6 +132,7 @@
               "group": "Monitoring",
               "pages": [
                 "guides/oss/deployment-and-scaling/monitoring/monitoring",
+                "guides/oss/deployment-and-scaling/monitoring/prometheus-metrics",
                 "guides/oss/deployment-and-scaling/monitoring/opentelemetry"
               ]
             },

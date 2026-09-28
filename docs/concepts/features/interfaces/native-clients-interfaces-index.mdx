@@ -1,13 +1,15 @@
 ---
-description: 'Native clients and interfaces for ClickHouse'
-keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers']
+description: 'Choose a client, driver, protocol, or built-in interface for connecting to ClickHouse'
+keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers', 'protocols']
 slug: /interfaces/natives-clients-and-interfaces
-title: 'Native Clients and Interfaces'
+title: 'Connect to ClickHouse'
 doc_type: 'landing-page'
 mode: wide
 ---
 
-ClickHouse provides a number of different native clients and interfaces that allow you to connect to ClickHouse.
+Choose the interface that best fits how you use ClickHouse. For application development, start with an official language client or driver. For interactive work, use a native or web-based tool. For direct integrations, use a network protocol. Before connecting, configure [network ports](/concepts/features/security/network-ports), [access rights](/concepts/features/security/access-rights), and [TLS](/concepts/features/security/tls/configuring-tls) as needed.
+
+## Native tools {#native-tools}
 
 <CardGroup cols={2}>
   <Card title="clickhousectl" icon="terminal" href="/concepts/features/interfaces/cli">
@@ -16,25 +18,69 @@ ClickHouse provides a number of different native clients and interfaces that all
   <Card title="ClickHouse Client" icon="keyboard" href="/concepts/features/interfaces/client">
     Native command-line client supporting command-line options and configuration files.
   </Card>
-  <Card title="Model Context Protocol (MCP)" icon="/images/mcp.svg" href="/concepts/features/interfaces/mcp">
-    Connect AI assistants to ClickHouse through a standardized interface.
-  </Card>
-  <Card title="Drivers and Interfaces" icon="plug" href="/concepts/features/interfaces/overview">
-    Network interfaces, drivers, and tools for connecting to ClickHouse.
-  </Card>
-  <Card title="C++ Client Library" icon="code" href="/integrations/language-clients/cpp">
-    The ClickHouse C++ client library.
-  </Card>
-  <Card title="Schema Inference" icon="wand-magic-sparkles" href="/concepts/features/interfaces/schema-inference">
-    Automatic schema inference from input data.
-  </Card>
   <Card title="Web Terminal" icon="globe" href="/concepts/features/interfaces/web-terminal">
     An in-browser `clickhouse-client` session over WebSocket.
   </Card>
+</CardGroup>
+
+## AI clients {#ai-clients}
+
+<CardGroup cols={2}>
+  <Card title="Model Context Protocol (MCP)" icon="/images/mcp.svg" href="/concepts/features/interfaces/mcp">
+    Connect AI assistants to ClickHouse through a standardized interface.
+  </Card>
+</CardGroup>
+
+## Drivers and language clients {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="ADBC driver" icon="database" href="/concepts/features/interfaces/adbc">
+    Connect ADBC-compatible applications to ClickHouse.
+  </Card>
+  <Card title="ODBC driver" icon="database" href="/concepts/features/interfaces/odbc">
+    Connect ODBC-compatible applications to ClickHouse.
+  </Card>
+  <Card title="Language clients" icon="code" href="/integrations/language-clients">
+    Browse official ClickHouse clients for your programming language.
+  </Card>
+</CardGroup>
+
+## Protocols {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="HTTP interface" icon="globe" href="/concepts/features/interfaces/http">
+    Use ClickHouse over HTTP from any platform or language.
+  </Card>
+  <Card title="Native TCP interface" icon="network-wired" href="/concepts/features/interfaces/tcp">
+    Use the native protocol for ClickHouse-aware clients and inter-server communication.
+  </Card>
+  <Card title="gRPC interface" icon="arrows-left-right" href="/concepts/features/interfaces/grpc">
+    Use ClickHouse's gRPC interface.
+  </Card>
+  <Card title="Arrow Flight interface" icon="arrow-right-arrow-left" href="/concepts/features/interfaces/arrowflight">
+    Connect Flight SQL clients using Apache Arrow.
+  </Card>
+  <Card title="MySQL interface" icon="database" href="/concepts/features/interfaces/mysql">
+    Connect MySQL-compatible clients.
+  </Card>
+  <Card title="PostgreSQL interface" icon="database" href="/concepts/features/interfaces/postgresql">
+    Connect PostgreSQL-compatible clients.
+  </Card>
+  <Card title="SSH interface" icon="terminal" href="/concepts/features/interfaces/ssh">
+    Connect with an SSH client to an experimental server interface.
+  </Card>
+</CardGroup>
+
+## Built-in web interfaces {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
   <Card title="Web SQL UI (Play)" icon="browser" href="/concepts/features/interfaces/web-sql">
     The built-in in-browser SQL interface served by ClickHouse at `/play`.
   </Card>
-  <Card title="Third-Party Interfaces" icon="puzzle-piece" href="/concepts/features/interfaces/third-party/index">
-    Third-party tools, libraries and integrations.
+  <Card title="SQL Console" icon="browser" href="/concepts/features/interfaces/sql-console">
+    An embedded web interface for running queries and exploring data.
+  </Card>
+  <Card title="Documentation Search" icon="book-open" href="/concepts/features/interfaces/documentation-search">
+    Search the reference documentation embedded in a running ClickHouse server.
   </Card>
 </CardGroup>

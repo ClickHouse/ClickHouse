@@ -1,5 +1,25 @@
 [
   {
+    "destination": "/concepts/features/interfaces/native-clients-interfaces-index",
+    "source": "/concepts/features/interfaces/overview"
+  },
+  {
+    "destination": "/integrations",
+    "source": "/concepts/features/interfaces/third-party"
+  },
+  {
+    "destination": "/concepts/features/operations/insert/schema-inference",
+    "source": "/concepts/features/interfaces/schema-inference"
+  },
+  {
+    "destination": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics",
+    "source": "/concepts/features/interfaces/prometheus-metrics"
+  },
+  {
+    "destination": "/integrations/connectors/data-integrations/prometheus",
+    "source": "/concepts/features/interfaces/prometheus"
+  },
+  {
     "destination": "/ar/integrations/language-clients/java/jdbc",
     "source": "/ar/concepts/features/interfaces/jdbc"
   },
