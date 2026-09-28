@@ -231,7 +231,7 @@
               "group": "Drivers and language clients",
               "pages": [
                 "concepts/features/connect-to-clickhouse/drivers/adbc",
-                "concepts/features/connect-to-clickhouse/drivers/odbc"
+                { "$ref": "features/connect-to-clickhouse/drivers/odbc/navigation.json" }
               ]
             },
             {
