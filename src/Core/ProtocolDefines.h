@@ -183,6 +183,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
+/// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
+/// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
+/// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
 /// First global query-plan version that writes version 1 of `Aggregating`, which adds a second flags
 /// byte whose bit 1 is `group_by_keys_semantically_constant` and whose bit 2 is
 /// `gradual_resize_enabled`. Not gated by throwing: an older peer gets the step at version 0, without
