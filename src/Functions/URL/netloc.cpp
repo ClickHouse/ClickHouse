@@ -167,9 +167,9 @@ Extracts network locality (`username:password@host:port`) from a URL.
 SELECT netloc('http://paul@www.example.com:80/');
         )",
         R"(
-┌─netloc('http⋯e.com:80/')─┐
-│ paul@www.example.com:80  │
-└──────────────────────────┘
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
         )"
     }
     };

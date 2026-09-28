@@ -5,9 +5,11 @@
 
 #if USE_ARROWFLIGHT
 #include <Common/Logger.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -40,6 +42,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
+    extern const SettingsUInt64 arrow_flight_request_timeout_sec;
 }
 
 StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id)
@@ -71,6 +74,11 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
             configuration.password = checkAndGetLiteralArgument<String>(args[3], "password");
         }
     }
+
+    /// Enforce <remote_url_allow_hosts> before any connection is established.
+    context_->getGlobalContext()->getRemoteHostFilter().checkHostAndPort(
+        configuration.host, std::to_string(configuration.port));
+
     return configuration;
 }
 
@@ -88,8 +96,6 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
     configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
     configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
     configuration.dataset_name = named_collection.getOrDefault<String>("dataset", "");
-
-    configuration.dataset_name = named_collection.get<String>("dataset");
 
     configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
     bool is_username_set = named_collection.has("username") || named_collection.has("user");
@@ -152,8 +158,9 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     const String & dataset_name_,
     ContextPtr context_)
 {
-    auto client = connection_->getClient();
-    auto options = connection_->getOptions();
+    UInt64 timeout_sec = context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec];
+    auto client = connection_->getClient(timeout_sec);
+    auto options = connection_->getCallOptions(timeout_sec);
 
     arrow::flight::FlightDescriptor descriptor;
     if (context_->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
@@ -165,7 +172,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     {
         descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     }
-    auto status = client->GetSchema(*options, descriptor);
+    auto status = client->GetSchema(options, descriptor);
     if (!status.ok())
     {
         throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", status.status().ToString());
@@ -178,7 +185,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     }
     auto schema = std::move(schema_result).ValueOrDie();
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", getFormatSettings(context_));
     return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
@@ -218,6 +225,7 @@ public:
         , connection(connection_)
         , dataset_name(dataset_name_)
         , context(context_)
+        , request_timeout_sec(context_ ? context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec] : 0)
     {
     }
 
@@ -225,8 +233,8 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        auto client = connection->getClient();
-        auto options = connection->getOptions();
+        auto client = connection->getClient(request_timeout_sec);
+        auto options = connection->getCallOptions(request_timeout_sec);
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
@@ -241,8 +249,17 @@ public:
             descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
         }
 
+        /// Mirrors `ArrowFlight::arrowConversionSettings`, including which schema settings it does not read
+        /// from the context; see the note there.
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
+        /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than
+        /// silently push it to the remote server as opaque bytes.
+        if (context)
+        {
+            arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef());
+            arrow_settings.format_settings = getFormatSettings(context);
+        }
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;
@@ -275,7 +292,7 @@ public:
 
             if (first_batch)
             {
-                auto write_result = client->DoPut(*options, descriptor, batch->schema());
+                auto write_result = client->DoPut(options, descriptor, batch->schema());
                 if (!write_result.ok())
                 {
                     throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "DoPut failed: {}", write_result.status().ToString());
@@ -314,6 +331,7 @@ private:
     std::shared_ptr<ArrowFlightConnection> connection;
     String dataset_name;
     ContextPtr context;
+    UInt64 request_timeout_sec;
 };
 
 SinkToStoragePtr
@@ -338,11 +356,107 @@ void registerStorageArrowFlight(StorageFactory & factory)
                 config.dataset_name,
                 args.columns,
                 args.constraints,
-                args.getContext());
+                args.getLocalContext());
         },
         {
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::ARROW_FLIGHT,
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+The ArrowFlight table engine enables ClickHouse to read from and write to remote datasets via the [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) protocol.
+This integration allows ClickHouse to interact with external Flight-enabled servers in a columnar Arrow format with high performance.
+
+## Creating a Table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**Engine Parameters**
+
+- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used. [String](/reference/data-types/string).
+- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting). [String](/reference/data-types/string).
+- `username` — Username for basic HTTP authentication. [String](/reference/data-types/string).
+- `password` — Password for basic HTTP authentication. [String](/reference/data-types/string).
+
+If `username` and `password` are omitted, authentication is not used (this works only if the Arrow Flight server allows unauthenticated access).
+
+The column list is optional — if omitted, the schema is inferred from the remote Arrow Flight server via `GetSchema`.
+
+## Named Collections {#named-collections}
+
+The engine supports [named collections](/concepts/features/configuration/server-config/named-collections) for storing connection parameters:
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+Named collection parameters:
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `host` or `hostname` | No | `""` | Server hostname. |
+| `port` | Yes | — | Server port. |
+| `dataset` | No | `""` | Dataset name or descriptor. |
+| `use_basic_authentication` | No | `true` | Enable basic authentication. |
+| `user` or `username` | If auth enabled | — | Username for authentication. |
+| `password` | No | `""` | Password for authentication. |
+| `enable_ssl` | No | `false` | Enable TLS encryption. |
+| `ssl_ca` | No | `""` | Path to the CA certificate file for TLS verification. |
+| `ssl_override_hostname` | No | `""` | Override the hostname checked during TLS verification. |
+
+## Settings {#settings}
+
+- `arrow_flight_request_descriptor_type` — Controls how the dataset name is sent to the Flight server. Possible values: `path` (default, sends as a PATH descriptor) or `command` (sends as a CMD descriptor with `SELECT * FROM <dataset>`). Use `command` for Flight servers that expect SQL commands (e.g., Dremio).
+- `arrow_flight_request_timeout_sec` — Timeout in seconds for a single Arrow Flight request, default `300`. It bounds the whole request: for a `SELECT` that is the entire result stream, not just the wait for the first record batch. `0` means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
+
+## Usage Example {#usage-example}
+
+Reading data from a remote Arrow Flight server:
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+Inserting data into a remote Arrow Flight server:
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+## Notes {#notes}
+
+- If columns are specified in the `CREATE TABLE` statement, they must match the schema returned by the Flight server.
+- If columns are omitted, the schema is inferred automatically from the remote server.
+- Both reading (`SELECT`) and writing (`INSERT`) are supported.
+- The `arrow_flight_request_descriptor_type` setting controls whether the dataset name is sent as a PATH descriptor or as a CMD descriptor wrapping a `SELECT *` query.
+
+## See Also {#see-also}
+
+- [arrowFlight table function](/reference/functions/table-functions/arrowflight)
+- [Arrow Flight Interface](/concepts/features/interfaces/arrowflight)
+- [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+- [Arrow format integration in ClickHouse](/reference/formats/Arrow/Arrow)
+)DOCS_MD",
+            .syntax = "ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password'])",
         });
 }
 

@@ -1,6 +1,7 @@
 -- Verify that the optimized trivial count path produces correct argument types
 -- in the AggregateFunction type. Previously, it used storage column types instead
 -- of the aggregate function's actual argument types.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_trivial_count_types;
 CREATE TABLE test_trivial_count_types (v0 UInt32, v1 UInt64) ENGINE = MergeTree ORDER BY v0;

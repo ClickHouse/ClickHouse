@@ -6,8 +6,11 @@
 #if USE_WASMTIME
 
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <ranges>
 #include <span>
+#include <string>
 #include <variant>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -30,10 +33,42 @@ namespace DB::ErrorCodes
     extern const int WASM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::WebAssembly
 {
+
+namespace
+{
+
+/// The single linear memory every ABI in the runtime reads and writes. A module may export more
+/// than one memory; only this one takes part in a call.
+constexpr std::string_view MEMORY_EXPORT_NAME = "memory";
+
+void setStoreFuel(wasmtime::Store::Context ctx, const WasmModule::Config & cfg, std::string_view phase)
+{
+    if (!cfg.usesFuelAccounting())
+        return;
+
+    /// `wasmtime::Context::set_fuel` returns an error when the engine was created
+    /// with `consume_fuel(false)`. The early return above keeps us off that path.
+    const auto fuel = cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max();
+    auto result = ctx.set_fuel(fuel);
+    if (!result)
+        throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for {}: {}", phase, result.err().message());
+}
+
+wasmtime::Module compileModuleWithEngine(wasmtime::Engine & engine, std::string_view module_bytes, std::string_view phase)
+{
+    std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(module_bytes.data())), module_bytes.size());
+    auto result = wasmtime::Module::compile(engine, bytes);
+    if (!result)
+        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code ({}): {}", phase, result.err().message());
+    return std::move(result.ok());
+}
+
+}
 
 template <WasmValKind val_kind>
 auto wasmtimeToNative(const wasmtime::Val & val)
@@ -52,18 +87,20 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         static_assert(false, "Unsupported WasmValKind");
 }
 
-wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
+static wasmtime::ValType toWasmTimeValType(WasmValKind value)
 {
-    #define M(T) \
-        if (value == WasmValKind::T) \
-            return wasmtime::ValKind::T;
-
-    APPLY_FOR_WASM_TYPES(M)
-    #undef M
+    switch (value)
+    {
+        case WasmValKind::I32: return wasmtime::ValType::i32();
+        case WasmValKind::I64: return wasmtime::ValType::i64();
+        case WasmValKind::F32: return wasmtime::ValType::f32();
+        case WasmValKind::F64: return wasmtime::ValType::f64();
+        case WasmValKind::V128: return wasmtime::ValType::v128();
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
+static WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 {
     #define M(T) \
         if (wasmtime::ValKind::T == val_type) \
@@ -74,7 +111,17 @@ WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
+static WasmValKind fromWasmTimeValType(wasmtime::ValType::Ref ref)
+{
+    if (ref == wasmtime::ValType::i32()) return WasmValKind::I32;
+    if (ref == wasmtime::ValType::i64()) return WasmValKind::I64;
+    if (ref == wasmtime::ValType::f32()) return WasmValKind::F32;
+    if (ref == wasmtime::ValType::f64()) return WasmValKind::F64;
+    if (ref == wasmtime::ValType::v128()) return WasmValKind::V128;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
+}
+
+static WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
     #define M(T) \
     { \
@@ -90,7 +137,7 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::Val toWasmTimeValue(WasmVal val)
+static wasmtime::Val toWasmTimeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -105,21 +152,21 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
+static wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
 {
     auto argument_types = host_function_decl.getArgumentTypes();
     std::vector<wasmtime::ValType> param_types;
     param_types.reserve(argument_types.size());
     for (auto & argument_type : argument_types)
     {
-        param_types.emplace_back(toWasmTimeValKind(argument_type));
+        param_types.emplace_back(toWasmTimeValType(argument_type));
     }
 
     std::vector<wasmtime::ValType> result_type;
     result_type.reserve(1);
     if (auto return_type = host_function_decl.getReturnType())
     {
-        result_type.emplace_back(toWasmTimeValKind(return_type.value()));
+        result_type.emplace_back(toWasmTimeValType(return_type.value()));
     }
 
     return wasmtime::FuncType::from_iters(param_types, result_type);
@@ -127,19 +174,32 @@ wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_funct
 
 struct WasmTimeRuntime::Impl
 {
-    static wasmtime::Config getConfig()
+    static wasmtime::Config getConfig(bool consume_fuel)
     {
         wasmtime::Config config;
-        config.consume_fuel(true);
+        config.consume_fuel(consume_fuel);
+        /// Epoch interruption stays enabled even without fuel consumption because `max_execution_time`,
+        /// `KILL QUERY`, and shutdown cancellation must still interrupt `(start)` and exported calls.
+        /// Wasmtime epoch checks happen at safepoints, not as a per-instruction tax.
         config.epoch_interruption(true);
         config.signals_based_traps(false);
         config.wasm_exceptions(true);
+#if !defined(NDEBUG)
+        /// The Cranelift optimizer is prohibitively slow in debug builds and can
+        /// hit debug-only traps while simplifying even small modules.
+        config.cranelift_opt_level(wasmtime::OptLevel::None);
+#endif
         return config;
     }
 
-    explicit Impl() : engine(getConfig()) {}
+    explicit Impl()
+        : engine_with_fuel(getConfig(true))
+        , engine_without_fuel(getConfig(false))
+    {
+    }
 
-    wasmtime::Engine engine;
+    wasmtime::Engine engine_with_fuel;
+    wasmtime::Engine engine_without_fuel;
 };
 
 WasmTimeRuntime::WasmTimeRuntime()
@@ -163,7 +223,7 @@ struct WasmTimeStoreData
     std::shared_ptr<std::atomic_bool> stop_requested;
 };
 
-wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
+static wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
     wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta)
 {
     epoch_deadline_delta += 1;
@@ -206,13 +266,75 @@ public:
         return memory_span.subspan(ptr, size);
     }
 
+    std::optional<size_t> getLinearMemorySize() const override
+    {
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, MEMORY_EXPORT_NAME);
+        if (!mem_result || !std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+            return {};
+        return std::get<wasmtime::Memory>(mem_result.value()).data(store_ref).size();
+    }
+
+    std::optional<size_t> getInitialLinearMemorySize() const override
+    {
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, MEMORY_EXPORT_NAME);
+        if (!mem_result || !std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+            return {};
+        auto memory_type = std::get<wasmtime::Memory>(mem_result.value()).type(store_ref.context());
+        return static_cast<size_t>(memory_type->min()) * WASM_PAGE_SIZE;
+    }
+
+    std::optional<size_t> getMaxLinearMemorySize() const override
+    {
+        /// `store.limiter(cfg.memory_limit, ...)` is only an upper cap. A module may declare
+        /// a smaller maximum for its own memory, and then that is the real ceiling, so report
+        /// whichever binds first. Reporting the configured limit alone would let a caller size
+        /// work against memory the guest can never allocate.
+        /// A module declaring `memory N 0` bounds itself at zero bytes and can never allocate.
+        /// That is a ceiling like any other, not the absence of one, so it must not collapse into
+        /// the unbounded case below - the caller would then size work against memory the guest
+        /// cannot hold at all.
+        std::optional<size_t> module_max;
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, MEMORY_EXPORT_NAME);
+        if (mem_result && std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+        {
+            auto memory_type = std::get<wasmtime::Memory>(mem_result.value()).type(store_ref.context());
+            auto declared_max_pages = memory_type->max();
+            if (declared_max_pages.has_value())
+                module_max = static_cast<size_t>(*declared_max_pages) * WASM_PAGE_SIZE;
+        }
+
+        /// Wasmtime grows memory in whole pages, and the limiter refuses a growth that would
+        /// cross the configured cap, so a cap that is not a multiple of the page size can never
+        /// be reached: with `memory_limit = 100000` the guest holds one page and the growth to
+        /// two is refused, making the real ceiling 65536. Report what is reachable, or a caller
+        /// would treat sizes in the unreachable remainder as ones the guest might still hold.
+        /// A cap below one page is rejected by the functions that need guest memory before they
+        /// reach a compartment, so the floor is never zero for a configured cap they observe.
+        ///
+        /// `memory_limit` is a byte count the query can set to anything a `UInt64` holds, well
+        /// past what a `wasm32` guest can address, so cap it at the address space too: a ceiling
+        /// of 10 GiB would otherwise make a 5 GiB row look like one that might still fit, and it
+        /// would fail late in `allocateInWasmMemory` instead of being reported as a row no batch
+        /// size can accommodate.
+        size_t host_max = static_cast<size_t>(std::min<uint64_t>(cfg.memory_limit, WASM_MAX_LINEAR_MEMORY_SIZE) / WASM_PAGE_SIZE) * WASM_PAGE_SIZE;
+        if (host_max && module_max)
+            return std::min(host_max, *module_max);
+        if (host_max)
+            return host_max;
+        if (module_max)
+            return module_max;
+        /// Neither a host cap nor a module-declared maximum, but growth is still not unbounded:
+        /// a `wasm32` memory cannot exceed its address space, and that is a ceiling like any
+        /// other rather than the absence of one.
+        return static_cast<size_t>(WASM_MAX_LINEAR_MEMORY_SIZE);
+    }
+
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
     {
-        {
-            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
-            if (!result)
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
-        }
+        setStoreFuel(store.context(), cfg, "function call");
 
         auto get_function_result = instance.get(store, function_name);
         if (!get_function_result.has_value())
@@ -269,7 +391,7 @@ public:
 
     wasmtime::Memory getMemory()
     {
-        auto memory_result = instance.get(store, "memory");
+        auto memory_result = instance.get(store, MEMORY_EXPORT_NAME);
         if (!memory_result || !std::holds_alternative<wasmtime::Memory>(memory_result.value()))
         {
             throw Exception(ErrorCodes::WASM_ERROR, "cannot get memory from wasm instance");
@@ -351,7 +473,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
+static WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -359,14 +481,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
     std::optional<WasmValKind> return_type;
     if (function_info.results().size() == 1)
     {
-        return_type = fromWasmTimeValKind(function_info.results().begin()->kind());
+        return_type = fromWasmTimeValType(*function_info.results().begin());
     }
 
     std::vector<WasmValKind> argument_types;
     argument_types.reserve(function_info.params().size());
     for (auto function_argument : function_info.params())
     {
-        argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
+        argument_types.emplace_back(fromWasmTimeValType(function_argument));
     }
 
     return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);
@@ -375,9 +497,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
 class WasmTimeModule : public WasmModule
 {
 public:
-    explicit WasmTimeModule(std::string_view module_name_, wasmtime::Engine engine_, wasmtime::Module && module_)
+    explicit WasmTimeModule(
+        std::string_view module_name_,
+        wasmtime::Engine engine_,
+        wasmtime::Module && module_,
+        FuelMode fuel_mode_)
         : engine(std::move(engine_))
         , module(std::move(module_))
+        , fuel_mode(fuel_mode_)
         , module_name(module_name_)
     {
         all_exports_list = module.exports();
@@ -401,15 +528,22 @@ public:
 
     std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const override
     {
+        if (cfg.fuel_mode != fuel_mode)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "WebAssembly module fuel mode does not match instantiation config");
+
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
-            store.limiter(cfg.memory_limit, -1, -1, -1, -1);
-
         {
-            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
-            if (!result)
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
+            /// The limiter refuses any growth that would cross the cap, and memory grows in whole
+            /// 64 KiB pages, so a cap below one page lets the guest hold no memory at all. That is
+            /// only a problem for a caller that has to place data in guest memory, and this runs
+            /// before the ABI is known - a function passing its arguments as WebAssembly values
+            /// never touches the memory and stays callable. The sub-page cap is therefore rejected
+            /// by the surfaces that need guest memory, not here.
+            store.limiter(cfg.memory_limit, -1, -1, -1, -1);
         }
+
+        setStoreFuel(store.context(), cfg, "wasm module instantiation");
 
         /// The module's `(start)` function runs as part of `Linker::instantiate` below, so we set up
         /// epoch interruption *before* instantiate. The long-lived `WasmTimeCompartment` does not
@@ -499,6 +633,7 @@ public:
 private:
     mutable wasmtime::Engine engine;
     wasmtime::Module module;
+    FuelMode fuel_mode;
 
     wasmtime::ExportType::List all_exports_list;
     std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_exports_map;
@@ -512,17 +647,16 @@ private:
     LoggerPtr log = getLogger("WasmTimeModule");
 };
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(
+    std::string_view module_name,
+    std::string_view wasm_code,
+    FuelMode fuel_mode) const
 {
-    std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
-    auto compilation_result = wasmtime::Module::compile(impl->engine, bytes);
-    if (!compilation_result)
-    {
-        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", compilation_result.err().message());
-    }
-    auto module = compilation_result.ok();
+    auto & engine = fuel_mode == FuelMode::Enabled ? impl->engine_with_fuel : impl->engine_without_fuel;
+    const char * phase_label = fuel_mode == FuelMode::Enabled ? "fuel" : "no-fuel";
+    auto module = compileModuleWithEngine(engine, wasm_code, phase_label);
 
-    return std::make_unique<WasmTimeModule>(module_name, impl->engine, std::move(module));
+    return std::make_unique<WasmTimeModule>(module_name, engine, std::move(module), fuel_mode);
 };
 
 WasmTimeRuntime::~WasmTimeRuntime() = default;
@@ -546,7 +680,10 @@ struct WasmTimeRuntime::Impl
 
 WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(
+    std::string_view /* module_name */,
+    std::string_view /* wasm_code */,
+    FuelMode /*fuel_mode*/) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
 }

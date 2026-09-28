@@ -20,6 +20,7 @@ target_compile_options (_poco_foundation_pcre
         -Wno-unreachable-code-break
         -Wno-unused-macros
         -Wno-implicit-int-conversion
+        -Wno-disabled-macro-expansion
 )
 
 # Foundation

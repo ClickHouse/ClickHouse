@@ -1,8 +1,8 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Common/CurrentThread.h>
+#include <Functions/TypeMismatchStrictness.h>
+#include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,18 +17,21 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsBool dynamic_throw_on_type_mismatch;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_CONVERT_TYPE;
     extern const int NO_COMMON_TYPE;
+}
+
+/// Expand a function result back to pre-filter size. The nested function may return an input column
+/// unchanged (e.g. concat of one String arg), so `column` can alias a subcolumn of the source
+/// Dynamic's backing ColumnVariant; mutate() clones it when shared, unlike assumeMutable() which
+/// would expand the shared subcolumn in place and leave the source ColumnVariant malformed.
+static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UInt8> & filter)
+{
+    auto mutable_column = IColumn::mutate(std::move(column));
+    mutable_column->expand(filter, false);
+    return mutable_column;
 }
 
 ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
@@ -36,12 +39,8 @@ ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
     size_t dynamic_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , dynamic_argument_index(dynamic_argument_index_)
+    , throw_on_type_mismatch(shouldThrowOnDynamicTypeMismatch())
 {
-    if (CurrentThread::isInitialized())
-    {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::dynamic_throw_on_type_mismatch];
-    }
 }
 
 ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
@@ -78,8 +77,34 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            if (!isTypeMismatchError(e.code()))
+                throw;
+            return nullptr;
+        }
+    };
+
+    /// Helper: execute function, respecting throw_on_type_mismatch.
+    /// Some functions (e.g. comparisons) pass build() but throw during execute()
+    /// because executeGeneric calls getLeastSupertype which can throw NO_COMMON_TYPE.
+    /// Returns nullptr if execution fails with a type-related error and throwing is disabled.
+    auto try_execute = [&](const FunctionBasePtr & func_base, const ColumnsWithTypeAndName & args,
+                           const DataTypePtr & res_type, size_t rows, bool is_dry_run) -> ColumnPtr
+    {
+        if (throw_on_type_mismatch)
+            return func_base->execute(args, res_type, rows, is_dry_run);
+
+        try
+        {
+            return func_base->execute(args, res_type, rows, is_dry_run);
+        }
+        catch (const Exception & e)
+        {
+            /// Only suppress NO_COMMON_TYPE, which is what getLeastSupertype throws when the
+            /// alternative type is incompatible with the other argument (e.g. comparison functions
+            /// calling executeGeneric). All other errors (including ILLEGAL_TYPE_OF_ARGUMENT) are
+            /// value-dependent and must propagate — for example, geoToS2 throws ILLEGAL_TYPE_OF_ARGUMENT
+            /// for NaN coordinates after build() has already succeeded for a Float64 alternative.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
             return nullptr;
         }
@@ -123,7 +148,14 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             return res;
         }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, dynamic_column.size(), dry_run);
+        auto nested_result = try_execute(func_base, new_arguments, nested_result_type, dynamic_column.size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -140,16 +172,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-            {
-                try
-                {
-                    return castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), removeNullable(result_type)->getName(), removeNullable(nested_result_type)->getName(), e.message());
-                }
-            }
+                return castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName());
 
             return makeNullableSafe(nested_result);
         }
@@ -214,7 +237,15 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             return res;
         }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)->convertToFullColumnIfConst();
+        auto nested_result = try_execute(func_base, new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -230,7 +261,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         if (!isDynamic(result_type))
         {
             /// Expand filtered result. If it's already Nullable, it will be filled with NULLs.
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// If result wasn't Nullable, create null-mask from filter and make it Nullable.
             if (!nested_result_type->isNullable() && nested_result_type->canBeInsideNullable())
             {
@@ -244,16 +275,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!result_type->equals(*nested_result_type))
-            {
-                try
-                {
-                    return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
-                }
-            }
+                return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
 
             return nested_result;
         }
@@ -270,7 +292,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         /// and cast to the result Dynamic type (it can have different max_types parameter).
         if (isDynamic(nested_result_type))
         {
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
         }
 
@@ -451,7 +473,14 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             continue;
         }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)->convertToFullColumnIfConst();
+        auto nested_result = try_execute(func_base, variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results.emplace_back();
+            continue;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
         if (nested_result_type->onlyNull())
@@ -465,20 +494,9 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-            {
-                try
-                {
-                    variants_results.push_back(castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
-                }
-            }
+                variants_results.push_back(castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName()));
             else
-            {
                 variants_results.push_back(makeNullableSafe(nested_result));
-            }
         }
         /// Otherwise cast this result to the resulting Dynamic type.
         else
@@ -514,7 +532,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeDryRunImpl(const ColumnsWithT
 FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_) : function_overload_resolver(function_overload_resolver_), arguments(arguments_)
 {
     /// For resulting Dynamic type use the maximum max_dynamic_types from all Dynamic arguments.
-    size_t result_max_dynamic_type;
+    size_t result_max_dynamic_type = 0;
     bool first = true;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -533,7 +551,7 @@ FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFu
         }
     }
 
-    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic())
+    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic(arguments))
         return_type = makeNullableSafe(type);
     else
         return_type = std::make_shared<DataTypeDynamic>(result_max_dynamic_type);

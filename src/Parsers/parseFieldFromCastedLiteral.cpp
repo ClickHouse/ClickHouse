@@ -52,7 +52,7 @@ Field convertFieldTo(const Field & src, UInt32 scale)
         && src.safeGet<DecimalField<DecimalT>>().getScale() == scale)
         return src;
 
-    DecimalT decimal;
+    DecimalT decimal{};
     if (src.getType() == Field::Types::String)
     {
         ReadBufferFromString buf(src.safeGet<String>());

@@ -34,6 +34,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// Resolved against the executing node's own binary, like `buildId`.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -118,7 +122,7 @@ protected:
     ResultT implCached(uintptr_t addr) const
     {
         typename Cache::Map::LookupResult it;
-        bool inserted;
+        bool inserted = false;
         std::lock_guard lock(cache.mutex);
         cache.map.emplace(addr, it, inserted);
         if (inserted)

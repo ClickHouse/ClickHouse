@@ -1,0 +1,12 @@
+arrayJoin in projection, with ORDER BY: correct rows
+1	0
+3	0
+5	0
+7	0
+9	0
+arrayJoin in projection, no ORDER BY: correct row count
+5
+no Top-K in EXPLAIN, with ORDER BY
+0
+no Top-K in EXPLAIN, no ORDER BY
+0

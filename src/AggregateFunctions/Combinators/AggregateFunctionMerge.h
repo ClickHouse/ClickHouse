@@ -89,7 +89,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -102,7 +102,7 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
@@ -117,6 +117,16 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
@@ -125,6 +135,23 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
+    }
+
+    /// `isState` is propagated from the nested function, so for chains like
+    /// `sumStateMerge` (`Merge` wrapping a `State`-returning nested function)
+    /// callers — e.g. `runningAccumulate` — pick the `insertMergeResultInto`
+    /// path. Without this override they'd hit the base implementation in
+    /// `IAggregateFunction::insertMergeResultInto`, which throws
+    /// `NOT_IMPLEMENTED` whenever `isState` is true. Delegate to the nested
+    /// function so the right materialization path is chosen.
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_func->insertMergeResultInto(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override

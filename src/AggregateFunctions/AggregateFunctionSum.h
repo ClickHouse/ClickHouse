@@ -92,7 +92,7 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -145,18 +145,12 @@ struct AggregateFunctionSumData
             addManyImpl_x86_64_v4(ptr, start, end);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            addManyImpl_x86_64_v3(ptr, start, end);
-            return;
-        }
 #endif
 
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -250,12 +244,6 @@ struct AggregateFunctionSumData
             addManyConditionalInternalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            addManyConditionalInternalImpl_x86_64_v3<Value, add_if_zero>(ptr, condition_map, start, end);
-            return;
-        }
 #endif
 
         addManyConditionalInternalImpl<Value, add_if_zero>(ptr, condition_map, start, end);
@@ -278,9 +266,13 @@ struct AggregateFunctionSumData
         Impl::add(sum, rhs.sum);
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(AccumulateResult);
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinaryLittleEndian(sum, buf);
+        writeBinaryLittleEndian(sum, out);
     }
 
     void read(ReadBuffer & buf)
@@ -367,6 +359,7 @@ struct AggregateFunctionSumKahanData
         T partial_compensations[unroll_count]{};
 
         ptr += start;
+        condition_map += start;
         size_t count = end - start;
 
         const auto * end_ptr = ptr + count;
@@ -421,10 +414,14 @@ struct AggregateFunctionSumKahanData
         mergeImpl(sum, compensation, rhs.sum, rhs.compensation);
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(T) * 2;
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinary(sum, buf);
-        writeBinary(compensation, buf);
+        writeBinary(sum, out);
+        writeBinary(compensation, out);
     }
 
     void read(ReadBuffer & buf)
@@ -454,6 +451,7 @@ public:
     static constexpr bool DateTime64Supported = false;
 
     using ColVecType = ColumnVectorOrDecimal<T>;
+    using ResultType = TResult;
 
     String getName() const override
     {
@@ -471,6 +469,12 @@ public:
 
     AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(getDecimalScale(data_type)))
+    {}
+
+    /// For result types that are backed by `TResult` but are not `TResult` itself, such as the
+    /// `Interval` data types, which are backed by `Int64`.
+    AggregateFunctionSum(const DataTypes & argument_types_, const DataTypePtr & result_type_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, result_type_)
     {}
 
     static DataTypePtr createResultType(UInt32 scale_)
@@ -527,11 +531,12 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            auto final_flags = std::make_unique<UInt8[]>(row_end);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            this->data(place).addManyConditional(column.getData().data(), final_flags.get(), row_begin, row_end);
+            this->data(place).addManyConditional(column.getData().data() + row_begin, final_flags.get(), 0, span);
         }
         else
         {
@@ -567,7 +572,7 @@ public:
                 add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -575,6 +580,17 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return Data::serialized_size_bound;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).write(dst);
+        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override

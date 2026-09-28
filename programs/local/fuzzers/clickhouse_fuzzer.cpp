@@ -1,6 +1,7 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
 #include <base/defines.h>
+#include <base/sanitizer_options.h>
 
 #include <Client/ClientBase.h>
 #include <Common/EnvironmentChecks.h>
@@ -17,50 +18,13 @@
 #include <ctime>
 #include <pthread.h>
 #include <sanitizer/common_interface_defs.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <new>
 #include <string_view>
 
-#ifdef SANITIZER
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" {
-#ifdef ADDRESS_SANITIZER
-const char * __asan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1";
-}
-const char * __lsan_default_options()
-{
-    return "max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef MEMORY_SANITIZER
-const char * __msan_default_options()
-{
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef THREAD_SANITIZER
-const char * __tsan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-const char * __ubsan_default_options()
-{
-    return "print_stacktrace=1 max_allocation_size_mb=32768";
-}
-#endif
-}
-#pragma clang diagnostic pop
-#endif
+#include "config.h"
 
 int mainEntryClickHouseLocal(int argc, char ** argv);
 
@@ -71,30 +35,24 @@ using MainFunc = int (*)(int, char**);
 
 }
 
-/// Prevent messages from JeMalloc in the release build.
-/// Some of these messages are non-actionable for the users, such as:
-/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
-#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*je_malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
-#elif USE_JEMALLOC
-#include <unordered_set>
-/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
+/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
+/// or messages that do not mean anything to the user.
+#if USE_JEMALLOC
 extern "C" void (*je_malloc_message)(void *, const char * s);
-__attribute__((constructor(0))) void init_je_malloc_message()
+static __attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
-        using namespace std::literals;
-        static const std::unordered_set<std::string_view> ignore_messages{
-            "<jemalloc>: background thread creation failed (11)\n"sv};
+        /// NOTE: You cannot have any allocations here
 
         std::string_view message_view{str};
-        if (ignore_messages.contains(message_view))
+        if (message_view == "<jemalloc>: background thread creation failed (11)\n")
+            return;
+        if (message_view == "<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.\n")
             return;
 
 #    if defined(SYS_write)
-        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
+        syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
 #    else
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
@@ -105,7 +63,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-__attribute__((constructor(202))) void init_ssl()
+static __attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -117,7 +75,7 @@ __attribute__((constructor(202))) void init_ssl()
 /// class C { C() { assert(inside_main); } };
 bool inside_main = false;
 
-int clickhouseMain(int argc_, char ** argv_)
+static int clickhouseMain(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
@@ -146,7 +104,7 @@ int clickhouseMain(int argc_, char ** argv_)
     return exit_code;
 }
 
-bool isMerge(int argc, const char * const * argv)
+static bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -174,18 +132,43 @@ String query;
 std::optional<std::thread> runner;
 pthread_t runner_thread_id{};
 struct sigaction original_sigalrm_action{};
+struct sigaction original_sigusr1_action{};
 
 String clickhouse{"clickhouse"};
 std::vector<char *> clickhouse_args{clickhouse.data()};
 
+extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
 /// Signal-safe stderr print helper.
-void signalSafeWrite(const char * msg)
+static void signalSafeWrite(const char * msg)
 {
     (void)write(STDERR_FILENO, msg, __builtin_strlen(msg));
 }
 
 /// Flag set by the SIGUSR1 handler on the runner thread after printing its stack.
-std::atomic<bool> runner_stack_printed{false};
+static std::atomic<bool> runner_stack_printed{false};
+
+/// Forward a signal to the handler that was installed before ours.
+static void forwardToOriginalHandler(const struct sigaction & original, int sig, siginfo_t * info, void * ctx)
+{
+    /// `glibc` defines `sa_sigaction`/`sa_handler` as recursive macros expanding
+    /// to `__sigaction_handler.sa_sigaction`/`__sigaction_handler.sa_handler`,
+    /// which trips `-Wdisabled-macro-expansion` on aarch64.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+    if (original.sa_flags & SA_SIGINFO)
+    {
+        if (original.sa_sigaction)
+            original.sa_sigaction(sig, info, ctx);
+    }
+    else if (original.sa_handler != SIG_IGN
+          && original.sa_handler != SIG_DFL)
+    {
+        original.sa_handler(sig);
+    }
+#pragma clang diagnostic pop
+}
 
 /// Monotonic-clock seconds at the start of the current `LLVMFuzzerTestOneInput`
 /// call. libfuzzer arms `setitimer(ITIMER_REAL)` with an interval of
@@ -207,17 +190,32 @@ std::atomic<int64_t> unit_timeout_sec{1200};
 /// earlier periodic alarm consumed it.
 std::atomic<bool> dump_started{false};
 
-/// SIGUSR1 handler installed on the runner thread — prints its own stack trace.
-void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
+/// SIGUSR1 reaches this process from two senders which mean opposite things:
+///
+///  * `fuzzerSigalrmHandler` below `pthread_kill`s the runner thread so that it
+///    prints the stack of the query that is stuck. A thread-directed signal is
+///    reported as `SI_TKILL`, and only this one is ours.
+///  * the CI harness (`tests/fuzz/runner.py`) `kill`s the whole process to ask
+///    libfuzzer to stop a corpus merge which ran out of its time budget. That is
+///    a process-directed signal, reported as `SI_USER`, and it has to reach
+///    libfuzzer's own graceful-exit handler: a merge ignores `-max_total_time`
+///    and SIGUSR1 is the only way to interrupt it. Swallowing it costs the whole
+///    run — the harness `SIGKILL`s the merge and throws away the hour it spent.
+static void fuzzerSigusr1Handler(int sig, siginfo_t * info, void * ctx)
 {
-    signalSafeWrite("[fuzzer] SIGUSR1 handler entered on runner thread\n");
-    signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
-    __sanitizer_print_stack_trace();
-    signalSafeWrite("=== End runner thread stack trace ===\n\n");
-    runner_stack_printed.store(true, std::memory_order_release);
+    if (info && info->si_code == SI_TKILL)
+    {
+        signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
+        __sanitizer_print_stack_trace();
+        signalSafeWrite("=== End runner thread stack trace ===\n\n");
+        runner_stack_printed.store(true, std::memory_order_release);
+        return;
+    }
+
+    forwardToOriginalHandler(original_sigusr1_action, sig, info, ctx);
 }
 
-inline void signal_safe_sleep_ms(int ms)
+static inline void signal_safe_sleep_ms(int ms)
 {
      (void)poll(nullptr, 0, ms);
 }
@@ -236,7 +234,7 @@ inline void signal_safe_sleep_ms(int ms)
 /// own timeout condition (`elapsed >= UnitTimeoutSec`). We also forward to
 /// libfuzzer's handler *without* permanently restoring it, so the wrapper
 /// continues to intercept later periodic alarms.
-void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
+static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
 {
     struct timespec ts;
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -290,16 +288,7 @@ void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     /// Forward to libfuzzer's original SIGALRM handler. If this is a real
     /// timeout it will print the main-thread stack and `_Exit`; otherwise it
     /// returns and the wrapper stays installed for the next periodic alarm.
-    if (original_sigalrm_action.sa_flags & SA_SIGINFO)
-    {
-        if (original_sigalrm_action.sa_sigaction)
-            original_sigalrm_action.sa_sigaction(sig, info, ctx);
-    }
-    else if (original_sigalrm_action.sa_handler != SIG_IGN
-          && original_sigalrm_action.sa_handler != SIG_DFL)
-    {
-        original_sigalrm_action.sa_handler(sig);
-    }
+    forwardToOriginalHandler(original_sigalrm_action, sig, info, ctx);
 }
 
 extern "C"
@@ -373,16 +362,32 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         dump_started.store(false, std::memory_order_release);
     }
 
-    /// Install our SIGALRM forwarder on the first call, after libfuzzer
-    /// has already set up its own handler (which we save as original).
-    static bool handler_installed = false;
-    if (!handler_installed)
+    /// Install our SIGALRM and SIGUSR1 forwarders on the first call, after
+    /// libfuzzer has already set up its own handlers (which we save as the
+    /// originals). It has to be done here and not in `LLVMFuzzerInitialize`:
+    /// libfuzzer calls `SetSignalHandler` *after* `LLVMFuzzerInitialize`, and
+    /// its `SetSigaction` silently keeps an already installed handler instead of
+    /// replacing it, so a handler installed earlier disables libfuzzer's own
+    /// handling of that signal for good.
+    static bool handlers_installed = false;
+    if (!handlers_installed)
     {
-        struct sigaction sa = {};
-        sa.sa_sigaction = fuzzerSigalrmHandler;
-        sa.sa_flags = SA_SIGINFO;
-        sigaction(SIGALRM, &sa, &original_sigalrm_action);
-        handler_installed = true;
+        /// `glibc` defines `sa_sigaction` as a recursive macro
+        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
+        /// which trips `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+        struct sigaction alrm = {};
+        alrm.sa_sigaction = fuzzerSigalrmHandler;
+        alrm.sa_flags = SA_SIGINFO;
+        sigaction(SIGALRM, &alrm, &original_sigalrm_action);
+
+        struct sigaction usr1 = {};
+        usr1.sa_sigaction = fuzzerSigusr1Handler;
+        usr1.sa_flags = SA_SIGINFO;
+        sigaction(SIGUSR1, &usr1, &original_sigusr1_action);
+#pragma clang diagnostic pop
+        handlers_installed = true;
     }
 
     {
@@ -410,22 +415,13 @@ void DB::ClientBase::runLibFuzzer()
     /// Block SIGALRM on the runner thread so libfuzzer's periodic timer
     /// signal is only delivered to the libfuzzer main thread. Without this,
     /// SIGALRM can land on the runner — it then runs `fuzzerSigalrmHandler`
-    /// and `pthread_kill`'s SIGUSR1 to itself, causing the slow runner-stack
-    /// dump to run concurrently with the main thread's dump and corrupting
-    /// the signal-handler state via two competing `sigaction` calls.
+    /// and `pthread_kill`'s SIGUSR1 to itself, so the slow runner-stack dump
+    /// runs concurrently with the one the main thread is already doing.
     {
         sigset_t set;
         sigemptyset(&set);
         sigaddset(&set, SIGALRM);
         (void)pthread_sigmask(SIG_BLOCK, &set, nullptr);
-    }
-
-    /// Install SIGUSR1 handler on the runner thread for stack trace dumping.
-    {
-        struct sigaction sa = {};
-        sa.sa_sigaction = runnerStackTraceHandler;
-        sa.sa_flags = SA_SIGINFO;
-        (void)sigaction(SIGUSR1, &sa, nullptr);
     }
 
     {

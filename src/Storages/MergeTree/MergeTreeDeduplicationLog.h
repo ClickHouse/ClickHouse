@@ -19,7 +19,7 @@ struct MergeTreeDeduplicationLogNameDescription
     std::string path;
 
     /// How many entries we have in log
-    size_t entries_count;
+    size_t entries_count{};
 };
 
 /// Simple string-key HashTable with fixed size based on STL containers.
@@ -200,6 +200,14 @@ private:
 
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
+
+    /// The same after writing records, when a failure must not be reported as a failure of the operation
+    void rotateAndDropIfNeededAfterWrite();
+
+    /// Make sure `current_writer` can accept records, opening or replacing it if it cannot.
+    /// The writer is opened lazily on the first written record: finalizing an appending writer
+    /// that has written nothing leaves a phantom blob in the log file's metadata on object storages.
+    void prepareToWrite();
 
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);

@@ -22,7 +22,7 @@ template <typename T>
 requires std::is_same_v<T, UInt128> || std::is_same_v<T, Int128> || std::is_same_v<T, UInt256> || std::is_same_v<T, Int256>
 T byteSwap(T x)
 {
-    T dest;
+    T dest{};
     reverseMemcpy(&dest, &x, sizeof(T));
     return dest;
 }

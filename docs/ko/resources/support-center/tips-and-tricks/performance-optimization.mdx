@@ -1,0 +1,153 @@
+---
+slug: /community-wisdom/performance-optimization
+sidebarTitle: '성능 최적화'
+doc_type: 'guide'
+keywords: [
+  '성능 최적화',
+  '쿼리 성능',
+  '데이터베이스 튜닝',
+  '느린 쿼리',
+  '메모리 최적화',
+  '카디널리티 분석',
+  '인덱싱 전략',
+  '집계 최적화',
+  '샘플링 기법',
+  '데이터베이스 성능',
+  '쿼리 분석',
+  '성능 문제 해결'
+]
+title: '배운 점 - 성능 최적화'
+description: '성능 최적화 전략의 실제 사례'
+---
+
+*이 가이드는 커뮤니티 밋업에서 얻은 인사이트를 모아 놓은 모음집의 일부입니다. 더 많은 실제 해결 방법과 인사이트는 [특정 문제별로 찾아보기](/ko/resources/support-center/tips-and-tricks/community-wisdom)에서 확인할 수 있습니다.*
+*materialized view 관련 문제를 겪고 있다면 [materialized view](/ko/resources/support-center/tips-and-tricks/materialized-views) 커뮤니티 인사이트 가이드를 확인해 보십시오.*
+*쿼리가 느려 더 많은 예시가 필요하다면 [쿼리 최적화](/ko/guides/clickhouse/performance-and-monitoring/query-optimization) 가이드도 참고하십시오.*
+
+<div id="cardinality-ordering">
+  ## 카디널리티 순으로 정렬(낮은 것부터 높은 것까지)
+</div>
+
+ClickHouse의 프라이머리 인덱스는 카디널리티가 낮은 컬럼이 앞에 올 때 가장 잘 작동하며, 이렇게 하면 큰 데이터 청크를 효율적으로 건너뛸 수 있습니다. 카디널리티가 높은 컬럼을 키의 뒤쪽에 배치하면 해당 청크 내에서 더 세밀하게 정렬할 수 있습니다. 고유값이 적은 컬럼(예: status, category, country)부터 시작하고, 고유값이 많은 컬럼(예: user&#95;id, timestamp, session&#95;id)으로 끝내십시오.
+
+카디널리티와 프라이머리 인덱스에 대한 자세한 내용은 다음 문서를 참조하십시오:
+
+* [프라이머리 키 선택](/ko/concepts/best-practices/choosing-a-primary-key)
+* [프라이머리 인덱스](/ko/concepts/core-concepts/primary-indexes)
+
+<div id="time-granularity">
+  ## 시간 세분화 수준은 중요합니다
+</div>
+
+ORDER BY 절에 `timestamp`를 사용할 때는 카디널리티와 정밀도 사이의 절충 관계를 고려해야 합니다. 마이크로초 정밀도의 `timestamp`는 매우 높은 카디널리티를 형성하므로(거의 각 행마다 고유한 값이 1개씩 존재) ClickHouse의 희소 프라이머리 인덱스 효율이 떨어집니다. 반면 반올림된 `timestamp`는 카디널리티가 더 낮아 인덱스 스키핑이 더 효과적으로 동작하지만, 시간 기반 쿼리의 정밀도는 낮아집니다.
+
+```sql runnable editable
+-- 챌린지: toStartOfMinute 또는 toStartOfWeek 같은 다양한 시간 함수를 사용해 보세요
+-- 실험: 직접 보유한 timestamp 데이터로 카디널리티 차이를 비교해 보세요
+SELECT 
+    'Microsecond precision' as granularity,
+    uniq(created_at) as unique_values,
+    'Creates massive cardinality - bad for sort key' as impact
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL
+SELECT 
+    'Hour precision',
+    uniq(toStartOfHour(created_at)),
+    'Much better for sort key - enables skip indexing'
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL  
+SELECT 
+    'Day precision',
+    uniq(toStartOfDay(created_at)),
+    'Best for reporting queries'
+FROM github.github_events
+WHERE created_at >= '2024-01-01';
+```
+
+<div id="focus-on-individual-queries-not-averages">
+  ## 평균이 아닌 개별 쿼리에 집중하십시오
+</div>
+
+ClickHouse 성능을 디버깅할 때는 평균 쿼리 시간이나 전체 시스템 메트릭에 의존하지 마십시오. 대신 특정 쿼리가 왜 느린지 파악해야 합니다. 시스템의 평균 성능은 좋더라도, 개별 쿼리는 메모리 부족, 비효율적인 필터링, 또는 높은 카디널리티 연산 때문에 느려질 수 있습니다.
+
+ClickHouse의 CTO인 Alexey는 다음과 같이 말합니다: *&quot;올바른 접근 방식은 이 특정 쿼리가 왜 5초 만에 처리되었는지 스스로에게 묻는 것입니다... 중앙값이나 다른 쿼리들이 빠르게 처리되는지는 중요하지 않습니다. 내가 신경 쓰는 것은 내 쿼리뿐입니다&quot;*
+
+쿼리가 느릴 때는 평균만 보지 마십시오. &quot;왜 바로 이 특정 쿼리가 느렸는가?&quot;라고 자문하고, 실제 리소스 사용 패턴을 살펴보십시오.
+
+<div id="memory-and-row-scanning">
+  ## 메모리와 행 스캔
+</div>
+
+Sentry는 400만 명이 넘는 개발자로부터 매일 수십억 건의 이벤트를 처리하는 개발자 중심의 오류 추적 플랫폼입니다. 이들이 얻은 핵심 통찰은 *&quot;이 상황에서 메모리를 좌우하는 것은 그룹화 키의 카디널리티입니다&quot;*라는 점입니다. 즉, 카디널리티가 높은 집계는 행 스캔이 아니라 메모리 고갈로 인해 성능을 저하시킵니다.
+
+쿼리가 실패하면 메모리 문제인지(그룹이 너무 많음), 스캔 문제인지(행이 너무 많음) 먼저 판단하십시오.
+
+`GROUP BY user_id, error_message, url_path`와 같은 쿼리는 세 값의 고유한 조합마다 별도의 메모리 상태를 생성합니다. 사용자 수, 오류 유형, URL 경로가 늘어나면 메모리에 동시에 유지해야 하는 집계 상태가 쉽게 수백만 개까지 늘어날 수 있습니다.
+
+극단적인 경우 Sentry는 결정적 샘플링을 사용합니다. 10% 샘플링은 대부분의 집계에서 약 5% 수준의 정확도를 유지하면서 메모리 사용량을 90% 줄여 줍니다:
+
+```sql
+WHERE cityHash64(user_id) % 10 = 0  -- 항상 동일한 10%의 사용자만 선택
+```
+
+이렇게 하면 모든 쿼리에서 동일한 사용자가 나타나므로 시간 범위 전반에서 일관된 결과를 얻을 수 있습니다. 핵심은 `cityHash64()`가 동일한 입력에 대해 항상 같은 hash 값을 생성한다는 점입니다. 따라서 `user_id = 12345`는 언제나 동일한 값으로 hash되며, 그 결과 해당 사용자는 10% 샘플(sample)에 항상 포함되거나 전혀 포함되지 않습니다. 즉, 쿼리마다 나타났다 사라지는 현상이 발생하지 않습니다.
+
+<div id="bit-mask-optimization">
+  ## Sentry의 비트 마스크 최적화
+</div>
+
+카디널리티가 높은 컬럼(예: URL)으로 집계할 경우, 고유 값마다 메모리에 별도의 집계 상태가 생성되어 메모리가 고갈될 수 있습니다. Sentry의 해결책은 실제 URL 문자열로 그룹화하는 대신, 비트 마스크로 압축되는 불리언 표현식으로 그룹화하는 것입니다.
+
+이 상황이 해당된다면 자체 테이블에서 다음 쿼리를 시도해 볼 수 있습니다:
+
+```sql
+-- 메모리 효율적인 집계 패턴: 각 조건 = 그룹당 정수 하나
+-- 핵심 원리: sumIf()는 데이터 볼륨에 관계없이 메모리 사용량을 일정 범위로 제한
+-- 그룹당 메모리: N개의 정수 (N * 8 바이트), N = 조건 수
+
+SELECT 
+    your_grouping_column,
+    
+    -- 각 sumIf는 그룹당 정확히 하나의 정수 카운터를 생성
+    -- 각 조건에 일치하는 행 수와 무관하게 메모리 사용량은 일정하게 유지
+    sumIf(1, your_condition_1) as condition_1_count,
+    sumIf(1, your_condition_2) as condition_2_count,
+    sumIf(1, your_text_column LIKE '%pattern%') as pattern_matches,
+    sumIf(1, your_numeric_column > threshold_value) as above_threshold,
+    
+    -- 복잡한 다중 조건 집계도 동일하게 일정한 메모리만 사용
+    sumIf(1, your_condition_1 AND your_text_column LIKE '%pattern%') as complex_condition_count,
+    
+    -- 참고용 표준 집계
+    count() as total_rows,
+    avg(your_numeric_column) as average_value,
+    max(your_timestamp_column) as latest_timestamp
+    
+FROM your_schema.your_table
+WHERE your_timestamp_column >= 'start_date' 
+  AND your_timestamp_column < 'end_date'
+GROUP BY your_grouping_column
+HAVING condition_1_count > minimum_threshold 
+   OR condition_2_count > another_threshold
+ORDER BY (condition_1_count + condition_2_count + pattern_matches) DESC
+LIMIT 20
+```
+
+메모리에 모든 고유 문자열을 저장하는 대신, 해당 문자열에 관한 질의의 결과를 정수로 저장합니다. 따라서 데이터의 다양성과 무관하게 집계 상태는 작고 제한된 크기로 유지됩니다.
+
+Sentry의 엔지니어링 팀은 다음과 같이 설명합니다. &quot;이러한 고비용 쿼리는 10배 이상 빨라졌고 메모리 사용량은 100배 감소했습니다(더 중요한 점은, 메모리 사용량에 상한이 생겼다는 것입니다). 이제 가장 큰 고객도 리플레이를 검색할 때 더 이상 오류를 겪지 않으며, 메모리 부족 없이 어떤 규모의 고객이든 지원할 수 있게 되었습니다.&quot;
+
+<div id="video-sources">
+  ## 영상 자료
+</div>
+
+* [Lost in the Haystack - 높은 카디널리티 집계 최적화](https://www.youtube.com/watch?v=paK84-EUJCA) - Sentry의 프로덕션 경험을 바탕으로 한 메모리 최적화 교훈
+* [ClickHouse 성능 분석](https://www.youtube.com/watch?v=lxKbvmcLngo) - Alexey Milovidov가 설명하는 디버깅 방법론
+* [ClickHouse Meetup: 쿼리 최적화 기법](https://www.youtube.com/watch?v=JBomQk4Icjo) - 커뮤니티의 최적화 전략
+
+**다음 읽을거리**:
+
+* [쿼리 최적화 가이드](/ko/guides/clickhouse/performance-and-monitoring/query-optimization)
+* [materialized view 커뮤니티 인사이트](/ko/resources/support-center/tips-and-tricks/materialized-views)

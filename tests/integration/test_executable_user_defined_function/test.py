@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import uuid
 
 import pytest
@@ -296,6 +295,72 @@ def test_executable_function_parameter_python(started_cluster):
         == "Parameter 2 key 1\n"
     )
 
+    # Placeholders with invalid parameter names must not be registered as
+    # command parameters, so each of these functions takes zero parameters and
+    # passing one fails the parameter-count check with a specific error.
+    for function_name in (
+        "test_function_invalid_parameter_name_python",  # name with a space: {test parameter:UInt64}
+        "test_function_invalid_empty_parameter_name_python",  # empty name: {:UInt64}
+        "test_function_invalid_blank_parameter_name_python",  # blank name: { :UInt64}
+    ):
+        assert (
+            "number of parameters does not match. Expected 0. Actual 1"
+            in node.query_and_get_error(
+                f"SELECT {function_name}(2)(toUInt64(1))"
+            )
+        )
+
+
+def test_executable_function_determinism_in_distributed_predicate_push_down(
+    started_cluster,
+):
+    skip_test_msan(node)
+
+    # `ReadFromRemote` pushes a predicate over a column of a distributed subquery into the `HAVING`
+    # of the query sent to the shard, unless `hasNonRewritableFunction` finds a non-deterministic
+    # function in the shard's `SELECT` list. `ExpressionInfoVisitor` reads the `deterministic` flag
+    # of an executable UDF from its configuration: a parametric UDF must not be instantiated there
+    # (an empty parameter list raises `BAD_ARGUMENTS`), and a UDF declared deterministic must still
+    # be pushed down.
+    node.query("DROP TABLE IF EXISTS test_table_distributed_predicate")
+    node.query(
+        "CREATE TABLE test_table_distributed_predicate (k UInt64) ENGINE = MergeTree ORDER BY k"
+    )
+    node.query(
+        "INSERT INTO test_table_distributed_predicate SELECT number FROM numbers(4)"
+    )
+
+    settings = {
+        "serialize_query_plan": 0,
+        "allow_push_predicate_ast_for_distributed_subqueries": 1,
+    }
+    cases = {
+        "test_function_parameter_python(2)(k)": False,
+        "test_function_bash_nondeterministic(k)": False,
+        "test_function_bash_deterministic(k)": True,
+    }
+    for expression, pushed_down in cases.items():
+        log_comment = "distributed_predicate_" + expression.split("(")[0]
+        assert (
+            node.query(
+                f"SELECT count() FROM (SELECT {expression} AS v"
+                " FROM remote('127.0.0.2', default, test_table_distributed_predicate))"
+                " WHERE v != ''",
+                settings={**settings, "log_comment": log_comment},
+            )
+            == "4\n"
+        )
+        node.query("SYSTEM FLUSH LOGS query_log")
+        shard_query = node.query(
+            "SELECT query FROM system.query_log WHERE type = 'QueryFinish'"
+            f" AND is_initial_query = 0 AND log_comment = '{log_comment}'"
+            " AND query LIKE '%test_table_distributed_predicate%'"
+        )
+        assert expression.split("(")[0] in shard_query
+        assert ("HAVING" in shard_query) == pushed_down, shard_query
+
+    node.query("DROP TABLE test_table_distributed_predicate")
+
 
 def test_executable_function_always_error_python(started_cluster):
     skip_test_msan(node)
@@ -393,6 +458,45 @@ def test_executable_function_query_cache(started_cluster):
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
 
     node.query("SYSTEM CLEAR QUERY CACHE");
+
+def test_executable_function_deterministic_declaration_deduplicates(started_cluster):
+    '''A function declared deterministic is entitled to run once per distinct value of a
+    LowCardinality argument instead of once per row.'''
+    skip_test_msan(node)
+
+    node.query("DROP TABLE IF EXISTS low_cardinality_argument")
+    node.query(
+        "CREATE TABLE low_cardinality_argument (v LowCardinality(UInt64)) ENGINE = MergeTree ORDER BY tuple()",
+        settings={"allow_suspicious_low_cardinality_types": 1},
+    )
+    node.query("INSERT INTO low_cardinality_argument SELECT number % 2 FROM numbers(100)")
+
+    def run(function_name):
+        query_id = uuid.uuid4().hex
+        # `sum` over the result keeps the call from being pruned as an unused column.
+        result = node.query(
+            f"SELECT sum(length({function_name}(v))) FROM low_cardinality_argument",
+            query_id=query_id,
+        )
+        node.query("SYSTEM FLUSH LOGS")
+        input_bytes = node.query(
+            f"""SELECT ProfileEvents['ExecutableUserDefinedFunctionInputBytes']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type = 'QueryFinish'"""
+        )
+        return result.strip(), int(input_bytes.strip())
+
+    deterministic_result, deterministic_bytes = run("test_function_bash_deterministic")
+    nondeterministic_result, nondeterministic_bytes = run("test_function_bash_nondeterministic")
+
+    # The table holds 100 rows over 2 distinct values, and the argument is one line per row on
+    # the child's stdin, so the declaration decides how much reaches the child.
+    assert nondeterministic_bytes >= 100
+    assert deterministic_bytes * 10 < nondeterministic_bytes
+    # Deduplicating must not change the answer for a function that is deterministic in fact.
+    assert deterministic_result == nondeterministic_result
+
+    node.query("DROP TABLE low_cardinality_argument")
 
 def test_executable_function_python_exception_in_query_log(started_cluster):
     '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction is configured as throw'''

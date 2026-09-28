@@ -157,12 +157,13 @@ public:
 private:
     std::string path; // just for error messages
     std::optional<MMapReadBufferFromFile> in;
-    size_t elf_size;
-    const char * mapped;
-    const ElfHeader * header;
-    const ElfSectionHeader * section_headers;
-    const ElfProgramHeader * program_headers;
+    size_t elf_size{};
+    const char * mapped{};
+    const ElfHeader * header{};
+    const ElfSectionHeader * section_headers{};
+    const ElfProgramHeader * program_headers{};
     const char * section_names = nullptr;
+    size_t section_names_size = 0; // bytes available starting at `section_names`, for bounds checking
 
     void init(const char * data, size_t size, const std::string & path_);
 };

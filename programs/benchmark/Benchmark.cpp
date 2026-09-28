@@ -12,6 +12,8 @@
 #include <Common/Config/parseConnectionCredentials.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+#include <Common/scope_guard_safe.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Client/ClientBaseHelpers.h>
@@ -350,7 +352,7 @@ private:
         UInt64 start_ns;
         UInt64 end_ns = std::numeric_limits<UInt64>::max();
         MultiStats stats;
-        size_t threads;
+        size_t threads = 0;
 
         // NOTE: We keep reference to the next interval for --precise mode
         std::shared_ptr<IntervalStats> next;
@@ -892,10 +894,18 @@ public:
 }
 
 
+int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
     bool print_stacktrace = false;
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {

@@ -1,5 +1,6 @@
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ErrnoException.h>
+#include <Common/saturatedWaitDuration.h>
 
 #if USE_NURAFT
 
@@ -33,6 +34,8 @@
 #    include <Compression/CompressionFactory.h>
 
 #    include <boost/algorithm/string/trim.hpp>
+
+#    include <sys/socket.h>
 
 
 #    ifdef POCO_HAVE_FD_EPOLL
@@ -217,7 +220,7 @@ struct SocketInterruptablePollWrapper
         result.has_requests = socket_ready;
         if (fd_ready)
         {
-            UInt8 dummy;
+            UInt8 dummy = 0;
             readIntBinary(dummy, response_in);
             result.responses_count = 1;
             auto available = response_in.available();
@@ -250,8 +253,14 @@ KeeperTCPHandler::KeeperTCPHandler(
     , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , keeper_context(keeper_dispatcher->getKeeperContext())
-    , min_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
-    , max_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
+    /// Poco::Timespan counts microseconds, so the ms value is multiplied by 1000. Saturate that
+    /// product: this value is the session TTL and is reported to the client, so its magnitude is
+    /// preserved up to the full Poco::Timespan::TimeDiff (Int64) range rather than clamped to a
+    /// wait bound. The wait itself is bounded inside KeeperDispatcher::getSessionID.
+    , min_session_timeout(saturatedMicrosecondsFromMilliseconds(
+          config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS)))
+    , max_session_timeout(saturatedMicrosecondsFromMilliseconds(
+          config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS)))
     , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
@@ -259,6 +268,19 @@ KeeperTCPHandler::KeeperTCPHandler(
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
     KeeperTCPHandler::registerConnection(this);
+
+    /// A handler accepted while the listener is stopping can register after the shutdown sweep.
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+    {
+        try
+        {
+            socket().shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to close late Keeper connection during TCP drain");
+        }
+    }
 }
 
 void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
@@ -297,9 +319,9 @@ void KeeperTCPHandler::run()
 
 Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool & use_compression)
 {
-    int32_t protocol_version;
-    int64_t last_zxid_seen;
-    int32_t timeout_ms;
+    int32_t protocol_version = 0;
+    int64_t last_zxid_seen = 0;
+    int32_t timeout_ms = 0;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
@@ -377,7 +399,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
     }
 
-    int8_t readonly;
+    int8_t readonly = 0;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
 
@@ -398,15 +420,18 @@ void KeeperTCPHandler::runImpl()
     compressed_in.reset();
     compressed_out.reset();
 
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        return;
+
     bool use_compression = false;
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data. peer address = {}  address = {}", socket().peerAddress().toString(), socket().address().toString());
+        LOG_INFO(log, "Client has not sent any data. peer address = {} address = {}", socket().peerAddress().toString(), socket().address().toString());
         return;
     }
 
-    int32_t header;
+    int32_t header = 0;
     try
     {
         Coordination::read(header, *in);
@@ -444,6 +469,9 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        return;
+
     if (keeper_dispatcher->isServerActive())
     {
         try
@@ -458,6 +486,14 @@ void KeeperTCPHandler::runImpl()
             sendHandshake(/* has_leader */ false, use_compression);
             return;
 
+        }
+
+        if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        {
+            keeper_dispatcher->registerSession(
+                session_id,
+                [](const Coordination::ZooKeeperResponsePtr &, Coordination::ZooKeeperRequestPtr) { return false; });
+            return;
         }
 
         sendHandshake(/* has_leader */ true, use_compression);
@@ -495,6 +531,9 @@ void KeeperTCPHandler::runImpl()
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        return;
+
     Stopwatch logging_stopwatch;
     auto operation_max_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
@@ -514,7 +553,9 @@ void KeeperTCPHandler::runImpl()
 
         /// If the session is closed by shutdown, don't report it to keeper_dispatcher.
         /// It has separate logic to send Close requests for remaining sessions on shutdown.
-        if (!keeper_dispatcher->isShuttingDown())
+        if (!closing_for_shutdown.load(std::memory_order_acquire)
+            && !keeper_dispatcher->isTCPConnectionDrainStarted()
+            && !keeper_dispatcher->isShuttingDown())
         {
             try
             {
@@ -541,9 +582,9 @@ void KeeperTCPHandler::runImpl()
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
 
-            if (keeper_dispatcher->isShuttingDown())
+            if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
             {
-                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
+                LOG_DEBUG(log, "Keeper TCP drain started, closing session #{}", session_id);
                 break;
             }
 
@@ -701,7 +742,15 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer &
 
     try
     {
-        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        String res;
+        if (!keeper_dispatcher->tryBeginFourLetterCommand())
+            return false;
+
+        {
+            SCOPE_EXIT({ keeper_dispatcher->finishFourLetterCommand(); });
+
+            res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        }
         out->write(res.data(), res.size());
         out->next();
     }
@@ -766,22 +815,22 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         return *limited_buffer_holder;
     };
     auto & read_buffer = get_read_buffer_with_limit();
-    int32_t length;
+    int32_t length = 0;
     Coordination::read(length, read_buffer);
     if (length < 0 || (max_request_size > 0 && static_cast<uint32_t>(length) > max_request_size))
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Request size {} is too big request (limit: {})", length, max_request_size);
 
-    int64_t xid;
+    int64_t xid = 0;
     if (use_xid_64)
         Coordination::read(xid, read_buffer);
     else
     {
-        int32_t read_xid;
+        int32_t read_xid = 0;
         Coordination::read(read_xid, read_buffer);
         xid = read_xid;
     }
 
-    Coordination::OpNum opnum;
+    Coordination::OpNum opnum = {};
     Coordination::read(opnum, read_buffer);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
@@ -805,7 +854,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     if (expect_opentelemetry_tracing_context)
     {
-        uint8_t has_tracing_context;
+        uint8_t has_tracing_context = 0;
         Coordination::read(has_tracing_context, read_buffer);
 
         if (has_tracing_context)
@@ -972,6 +1021,28 @@ void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
 {
     std::lock_guard lock(conns_mutex);
     connections.erase(conn);
+}
+
+/// A TLS socket serialises every SSL-level operation, StreamSocket::shutdown() included, on a mutex that
+/// the handler thread holds for the whole of a blocking read, so the SSL path cannot interrupt that read.
+/// Shutting the descriptor down needs no lock, at the cost of closing TLS abortively: no close_notify.
+static void shutdownSocketDescriptor(const Poco::Net::StreamSocket & socket)
+{
+    const auto fd = socket.impl()->sockfd();
+    if (fd == POCO_INVALID_SOCKET)
+        return;
+
+    [[maybe_unused]] const int rc = ::shutdown(fd, SHUT_RDWR);
+}
+
+void KeeperTCPHandler::closeAllConnections()
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        conn->closing_for_shutdown.store(true, std::memory_order_release);
+        shutdownSocketDescriptor(conn->socket());
+    }
 }
 
 void KeeperTCPHandler::dumpConnections(WriteBufferFromOwnString & buf, bool brief)

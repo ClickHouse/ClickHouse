@@ -221,7 +221,7 @@ private:
         Memory<> segment;
         size_t actual_memory_size{0};
         Statistics statistics;
-        size_t rows_num;
+        size_t rows_num{};
     };
 
     Poco::Event collector_finished{};
