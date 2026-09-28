@@ -4,7 +4,8 @@
 -- max(1, limit / <tasks in the stage>) threads, and the single `main` task keeps the whole limit. Each query
 -- reports, per task, the pipeline executor threads it ran on (none when it runs single-threaded), and whether
 -- the thread pool of a parallel hash join followed the share (one thread, which builds and then clears). So does
--- the pool of the aggregator that merges grouping sets in one task.
+-- the pool of the aggregator that merges grouping sets in one task. No task runs on more than 6 threads: with a
+-- higher limit, the executor can start fewer threads than the limit when the first ones find no work.
 
 DROP TABLE IF EXISTS t_share_threads;
 CREATE TABLE t_share_threads (k UInt64, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY k
@@ -50,8 +51,8 @@ SETTINGS make_distributed_plan = 0, max_threads = 16, log_comment = '05266_scope
 SELECT (
     SELECT count() FROM (SELECT k % 1000 AS g, count() FROM t_share_threads GROUP BY g)
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_force_shuffle_aggregation = 1,
-        distributed_plan_default_reader_bucket_count = 8, distributed_plan_default_shuffle_join_bucket_count = 4,
-        max_threads = 8
+        distributed_plan_default_reader_bucket_count = 6, distributed_plan_default_shuffle_join_bucket_count = 3,
+        max_threads = 6
 ) FORMAT Null
 SETTINGS make_distributed_plan = 0, max_threads = 2, log_comment = '05266_scoped_higher';
 
@@ -78,7 +79,7 @@ SETTINGS make_distributed_plan = 0, max_threads = 8, log_comment = '05266_merge_
 -- 8 reading tasks per side and 8 joining tasks get one thread each.
 SELECT count() FROM t_share_threads AS a INNER JOIN t_share_threads AS b ON a.k = b.k FORMAT Null
 SETTINGS enable_cascades_optimizer = 0, join_algorithm = 'parallel_hash', distributed_plan_default_reader_bucket_count = 8,
-    distributed_plan_default_shuffle_join_bucket_count = 8, max_threads = 8, log_comment = '05266_parallel_hash';
+    distributed_plan_default_shuffle_join_bucket_count = 8, max_threads = 6, log_comment = '05266_parallel_hash';
 
 -- A synchronous remote read raises the plan's limit to `max_distributed_connections`; the tasks share `max_threads`.
 SELECT k % 1000 AS g, count() FROM remote('127.0.0.1', currentDatabase(), t_share_threads) GROUP BY g FORMAT Null
