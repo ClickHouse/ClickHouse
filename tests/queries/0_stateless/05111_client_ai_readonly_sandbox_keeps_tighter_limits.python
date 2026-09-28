@@ -48,7 +48,10 @@ QUERY = "SELECT getSetting('max_execution_time')"
 # The autonomous query runs under the limit the sandbox installed, so with a sub-second one it may
 # legitimately not finish: the server then reports the maximum it exceeded, which names the same
 # sub-second value. Either outcome proves the point and neither is possible had the sandbox
-# widened the limit to the 30-second cap, so both are accepted and reported alike.
+# widened the limit to the 30-second cap, so both are accepted and reported alike. Before the query
+# the tool asks the server whether it knows the isolation settings, and that question is an
+# internal query of the session too: on a loaded machine it can be the one that runs out of the
+# half second, and its failure names the same maximum.
 CASES = [
     ("subsecond", "0.5", "0.5", "maximum: 500.000 ms"),
     ("under_the_cap", "10", "10", None),

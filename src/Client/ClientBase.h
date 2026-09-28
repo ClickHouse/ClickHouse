@@ -208,8 +208,9 @@ protected:
     /// agent, and it needs the dialect question in every build.
 
     /// The effective value of a setting of this session as the server reports it, or `nullopt`
-    /// when the server does not know the setting at all, could not be asked, or answered
-    /// something unexpected. Asked once per setting name and cached.
+    /// when the server does not know the setting at all, answered something unexpected, or there
+    /// is no server to ask yet. Asked once per setting name and cached. A question that fails to
+    /// be asked throws, and the failure is not cached.
     ///
     /// The client context is not the answer: a user with `apply_settings_from_server = 0` asked
     /// for the settings of the server not to reach the client, so it keeps its own defaults while

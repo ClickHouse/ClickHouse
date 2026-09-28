@@ -4472,7 +4472,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     ///
     /// Whether the pin is needed is decided by `internalQueriesRequireDialectPin`, which asks the
     /// server when the client cannot see its effective settings (`apply_settings_from_server = 0`)
-    /// instead of trusting the local value, and fails closed when it gets no answer.
+    /// instead of trusting the local value, and fails when the question fails.
     std::optional<Field> dialect_to_restore;
     if (internalQueriesRequireDialectPin())
     {
@@ -5115,13 +5115,16 @@ std::optional<String> ClientBase::serverEffectiveSettingValue(const String & nam
         server_effective_setting_values[name] = value;
         return value;
     }
-    catch (...)
+    catch (Exception & e)
     {
         /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
-        /// execution-time limit of the session, a cancelled query - so the failure is not cached as
-        /// an answer. Swallowing it is Ok: the callers treat the missing answer as the unsafe one,
-        /// so a question that could not be asked relaxes nothing.
-        return {};
+        /// execution-time limit of the session, a cancelled query - so the failure is neither cached
+        /// nor turned into an answer. It propagates, and the tool that asked fails with it: read as
+        /// "the server does not know the setting", a timeout of the probe under a sub-second
+        /// `max_execution_time` of the session came back to the model as a claim that the server
+        /// predates the setting, which sent it looking for the wrong fix.
+        e.addMessage("While asking the server for the effective value of the setting `{}`", name);
+        throw;
     }
 }
 
@@ -5138,8 +5141,8 @@ bool ClientBase::sessionMayDisplaySecrets()
     if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
         return true;
 
-    /// A server that does not know the setting has no masking to speak of, and one that could not
-    /// be asked has not answered that it does - both count as "it may".
+    /// A server that does not know the setting has no masking to speak of, and without a server
+    /// there is no answer that it does - both count as "it may". A question that fails throws.
     const std::optional<String> value = serverEffectiveSettingValue("format_display_secrets_in_show_and_select");
     if (!value.has_value())
         return true;
@@ -5169,7 +5172,22 @@ bool ClientBase::internalQueriesRequireDialectPin()
     if (settings[Setting::apply_settings_from_server])
         return false;
 
-    const std::optional<String> value = serverEffectiveSettingValue("dialect");
+    std::optional<String> value;
+    try
+    {
+        value = serverEffectiveSettingValue("dialect");
+    }
+    catch (Exception & e)
+    {
+        /// The question is ClickHouse SQL, and under `readonly = 1` it travels without the pin, so
+        /// a session that parses another dialect fails it with a syntax error of that dialect. That
+        /// error is what the user gets, and it says nothing about how to get out of it.
+        if (settings[Setting::readonly] == 1)
+            e.addMessage(
+                "The internal queries are ClickHouse SQL and `readonly = 1` does not allow pinning the `dialect` setting "
+                "for them. If the session uses another SQL dialect, run `SET dialect = 'clickhouse'` first");
+        throw;
+    }
     return !value.has_value() || *value != "clickhouse";
 }
 
@@ -5195,7 +5213,7 @@ Block ClientBase::fetchInternalQueryResult(
     /// `internalQueriesRequireDialectPin`. The question is itself an internal query, and it is the
     /// one query that must not ask it: there is no answer yet, and under `readonly = 1` it would be
     /// refused here instead of being sent. It is ClickHouse SQL, so a session that really parses
-    /// another dialect fails it, and the unanswered question then refuses everything else.
+    /// another dialect fails it, and the failure of the question then fails the query that asked.
     const bool session_is_readonly = client_context->getSettingsRef()[Setting::readonly] == 1;
     if (session_is_readonly && !server_setting_probe_in_progress && internalQueriesRequireDialectPin())
         throw Exception(
