@@ -1,12 +1,13 @@
-#include <Columns/MaskOperations.h>
-#include <Columns/ColumnFunction.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnNothing.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/MaskOperations.h>
 #include <DataTypes/IDataType.h>
 #include <Common/Stopwatch.h>
+#include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
 
 #include <algorithm>
@@ -83,7 +84,7 @@ INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
-template <bool inverted, typename Container>
+template <bool inverted, bool compact, typename Container>
 static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
@@ -91,9 +92,13 @@ static size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if (data.size() != mask.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
+    if constexpr (!compact)
+    {
+        if (data.size() != mask.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
+    }
 
+    size_t data_index = 0;
     size_t ones_count = 0;
     size_t mask_size = mask.size();
 
@@ -103,15 +108,25 @@ static size_t extractMaskNumericImpl(
         if (!mask[i])
             continue;
 
+        /// A compact result contains only the rows selected by the incoming mask.
+        /// Keep `NULL` state in the original row positions while consuming selected values in order.
+        size_t index = i;
+        if constexpr (compact)
+        {
+            if (data_index == data.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The selected column has fewer rows than the mask");
+            index = data_index++;
+        }
+
         UInt8 value = 0;
-        if (null_bytemap && (*null_bytemap)[i])
+        if (null_bytemap && (*null_bytemap)[index])
         {
             value = null_value;
             if (nulls)
                 (*nulls)[i] = 1;
         }
         else
-            value = static_cast<bool>(data[i]);
+            value = static_cast<bool>(data[index]);
 
         if constexpr (inverted)
             value = !value;
@@ -122,10 +137,16 @@ static size_t extractMaskNumericImpl(
         mask[i] = value;
     }
 
+    if constexpr (compact)
+    {
+        if (data_index != data.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The selected column has more rows than the mask");
+    }
+
     return ones_count;
 }
 
-template <bool inverted, typename NumericType>
+template <bool inverted, bool compact, typename NumericType>
 static bool extractMaskNumeric(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
@@ -140,7 +161,7 @@ static bool extractMaskNumeric(
 
     const auto & data = numeric_column->getData();
     size_t ones_count = 0;
-    ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
+    ones_count = extractMaskNumericImpl<inverted, compact>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
@@ -177,7 +198,7 @@ static MaskInfo extractMaskFromConstOrNull(
     return {.has_ones = ones_count > 0, .has_zeros = ones_count != mask.size()};
 }
 
-template <bool inverted>
+template <bool inverted, bool compact = false>
 static MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & col,
@@ -194,22 +215,22 @@ static MaskInfo extractMaskImpl(
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column))
     {
         const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
-        return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
+        return extractMaskImpl<inverted, compact>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
     MaskInfo mask_info{};
 
-    if (!(extractMaskNumeric<inverted, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt64>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int8>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, BFloat16>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
+    if (!(extractMaskNumeric<inverted, compact, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, UInt32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, UInt64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int8>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, BFloat16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column {} to mask.", column->getName());
 
     return mask_info;
@@ -304,6 +325,63 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         column = column_function->reduce(/* dry_run = */ false, profile);
 
     chassert(column.column->size() == original_size);
+}
+
+template <bool inverted>
+static MaskInfo maskedExecuteAndUpdateMaskImpl(
+    const ColumnWithTypeAndName & column,
+    PaddedPODArray<UInt8> & mask,
+    const MaskInfo & mask_info,
+    PaddedPODArray<UInt8> * nulls,
+    UInt8 null_value,
+    FunctionExecutionProfile * profile)
+{
+    if (!mask_info.has_ones)
+        return mask_info;
+
+    const auto * column_function = checkAndGetShortCircuitArgument(column.column);
+    if (!column_function)
+        return extractMaskImpl<inverted>(mask, column.column, null_value, nullptr, nulls);
+
+    if (!mask_info.has_zeros)
+    {
+        auto result = column_function->reduce(/* dry_run = */ false, profile);
+        return extractMaskImpl<inverted>(mask, result.column, null_value, nullptr, nulls);
+    }
+
+    /// Unlike `if`/`multiIf`, `and`/`or` only need to update the mask. Consume the selected
+    /// result directly instead of expanding it to the full block and reading it again.
+    /// Only this path accepts compact columns; the public `extractMask` functions keep
+    /// requiring full-sized columns.
+    if (profile)
+    {
+        /// Filtering is the only extra work of the lazy execution here: the mask is updated
+        /// from the argument's result in either case, so it is not counted as an overhead.
+        Stopwatch watch;
+        auto filtered = column_function->filter(mask, -1);
+        auto result = assert_cast<const ColumnFunction &>(*filtered).reduce(/* dry_run = */ false, profile);
+        auto total_elapsed = watch.elapsed();
+        profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed + profile->lazy_executed_additional_elapsed;
+        profile->execution_elapsed = total_elapsed;
+        return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
+    }
+
+    auto filtered = column_function->filter(mask, -1);
+    auto result = assert_cast<const ColumnFunction &>(*filtered).reduce();
+    return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
+}
+
+MaskInfo maskedExecuteAndUpdateMask(
+    const ColumnWithTypeAndName & column,
+    PaddedPODArray<UInt8> & mask,
+    const MaskInfo & mask_info,
+    bool inverted,
+    PaddedPODArray<UInt8> * nulls,
+    UInt8 null_value,
+    FunctionExecutionProfile * profile)
+{
+    return inverted ? maskedExecuteAndUpdateMaskImpl<true>(column, mask, mask_info, nulls, null_value, profile)
+                    : maskedExecuteAndUpdateMaskImpl<false>(column, mask, mask_info, nulls, null_value, profile);
 }
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty, FunctionExecutionProfile * profile)

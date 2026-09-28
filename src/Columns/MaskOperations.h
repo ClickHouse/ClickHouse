@@ -27,7 +27,7 @@ struct MaskInfo
 /// The next functions are used to extract UInt8 mask from a column,
 /// filtered by some condition (mask). We will use value from a column
 /// only when value in condition is 1. Column should satisfy the
-/// condition: sum(mask) = column.size() or mask.size() = column.size().
+/// condition: mask.size() = column.size().
 /// You can set flag 'inverted' to use inverted values
 /// from a column. You can also determine value that will be used when
 /// column value is Null (argument null_value).
@@ -67,6 +67,18 @@ void maskedExecute(
     ColumnWithTypeAndName & column,
     const PaddedPODArray<UInt8> & mask,
     const MaskInfo & mask_info = {true, true},
+    FunctionExecutionProfile * profile = nullptr);
+
+/// Evaluate a logical argument only on active rows and merge its result into the mask.
+/// Both mask and nulls retain their original row positions. Compact intermediate results
+/// are consumed here and never passed to callers expecting full-sized columns.
+MaskInfo maskedExecuteAndUpdateMask(
+    const ColumnWithTypeAndName & column,
+    PaddedPODArray<UInt8> & mask,
+    const MaskInfo & mask_info,
+    bool inverted,
+    PaddedPODArray<UInt8> * nulls,
+    UInt8 null_value,
     FunctionExecutionProfile * profile = nullptr);
 
 /// If given column is lazy executed argument, reduce it. If empty is true,
