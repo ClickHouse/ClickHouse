@@ -50,6 +50,11 @@ public:
     const std::string & getSessionId() const { return session_id; }
     std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
+    /// True when the request carries `x-clickhouse-session-close: 1`. The session must then stay
+    /// acquired until `CallCompleted` runs `Session::closeSession`, so handlers that want to hand the
+    /// session back to the pool early must skip the early release for these requests.
+    bool isSessionCloseRequested() const { return session_close; }
+
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
 

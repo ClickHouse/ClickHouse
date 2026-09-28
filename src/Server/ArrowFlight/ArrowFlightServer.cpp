@@ -1162,6 +1162,20 @@ arrow::Status ArrowFlightServer::DoPut(
         const auto & auth = AuthMiddleware::get(context);
         auto session = auth.getSession();
 
+        /// `writer->WriteMetadata` puts the app metadata on the wire while this handler is still running, and
+        /// `AuthMiddleware::CallCompleted` -- the only other place that releases the session -- runs just after the
+        /// handler returns. Every other Flight RPC writes its response only after the handler returns, so a client
+        /// that reacts to a successful response by sending the next request on the same session would race with the
+        /// release and can hit `SESSION_IS_LOCKED` on `DoPut` alone. Release before writing to close that window;
+        /// `Session::releaseSessionID` is idempotent, so the `CallCompleted` release becomes a no-op. A request that
+        /// carries `x-clickhouse-session-close` must keep the session acquired until `CallCompleted` runs
+        /// `Session::closeSession`, which would be skipped once the session has been handed back.
+        auto release_session_before_response = [&]
+        {
+            if (!auth.isSessionCloseRequested())
+                session->releaseSessionID();
+        };
+
         /// DoPut with CommandPreparedStatementQuery is parameter binding only (no execution).
         if (request.type == arrow::flight::FlightDescriptor::CMD)
         {
@@ -1211,6 +1225,7 @@ arrow::Status ArrowFlightServer::DoPut(
                 /// Return DoPutPreparedStatementResult with the same handle.
                 arrow::flight::protocol::sql::DoPutPreparedStatementResult result;
                 result.set_prepared_statement_handle(handle);
+                release_session_before_response();
                 ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(result.SerializeAsString())));
 
                 LOG_INFO(log, "DoPut: parameter binding succeeded for prepared statement {}", handle);
@@ -1287,6 +1302,7 @@ arrow::Status ArrowFlightServer::DoPut(
             else
                 update_result.set_record_count(0);
 
+            release_session_before_response();
             ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
         }
 

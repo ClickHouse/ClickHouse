@@ -221,6 +221,10 @@ def test_datetime64_int64_ingest_is_whole_seconds():
 
     The contract holds regardless of the target's time zone and is the same on the Flight
     `DoPut` path as through the generic `FORMAT Arrow` input.
+
+    The `DoPut` block deliberately omits `writer.close()`, so the follow-up query on the same
+    session also covers the guarantee that `DoPut` releases the session before its result reaches
+    the client. Adding `writer.close()` would turn the block into a barrier and drop that coverage.
     """
     client = get_client("datetime64_int64_whole_seconds")
     result = client.set_session_options({"session_timezone": "UTC"})
