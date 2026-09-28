@@ -57,7 +57,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -127,18 +126,11 @@ ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, 
 
 /// The metadata endpoints read the Tags and Metrics target tables of a TimeSeries table directly:
 /// a Distributed table has none, and the table's own row policy and filters would never be applied.
-void checkMetadataEndpointTarget(const IStorage & storage, std::string_view endpoint, const ContextPtr & context)
+void checkMetadataEndpointTarget(const ConstStoragePtr & storage, std::string_view endpoint, const ContextPtr & context)
 {
-    const auto storage_id = storage.getStorageID();
-    if (resolvePrometheusQueryTarget(storage))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "The Prometheus {} endpoint is not supported over a Distributed table: table {} is a Distributed table, "
-            "and merging the results of this endpoint across the shards is not implemented",
-            endpoint, storage_id.getNameForLogs());
-
-    checkNoBypassedReadRestriction(
-        storage_id, context, fmt::format("The Prometheus {} endpoint", endpoint), "the endpoint reads the inner tables directly");
+    storagePtrToTimeSeries(storage);
+    const auto operation = fmt::format("The Prometheus {} endpoint", endpoint);
+    checkNoBypassedReadRestriction(storage->getStorageID(), context, operation, "the endpoint reads the inner tables directly");
 }
 
 /// Decodes a label name from the /api/v1/label/<name>/values URL path. Prometheus escapes label names
@@ -567,11 +559,10 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & end_param)
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    /// Every caller rejects a Distributed target first, so the target is a TimeSeries table here.
-    const auto & time_series_table = typeid_cast<const StorageTimeSeries &>(*time_series_storage);
+    const auto time_series_table = storagePtrToTimeSeries(time_series_storage);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(outer_samples_version);
     auto table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
-    auto tags_table = time_series_table.getTargetTable(ViewTarget::Tags, getContext());
+    auto tags_table = time_series_table->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
     auto table_id_type = tags_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
     const UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
@@ -587,7 +578,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
 
     /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
-    auto time_series_settings = time_series_table.getStorageSettings();
+    auto time_series_settings = time_series_table->getStorageSettings();
     if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
         || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
     {
@@ -640,7 +631,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    checkMetadataEndpointTarget(*time_series_storage, "/api/v1/series", getContext());
+    checkMetadataEndpointTarget(time_series_storage, "/api/v1/series", getContext());
 
     /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
     if (match_params.empty())
@@ -738,7 +729,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     Int64 limit_per_metric,
     QueryFinishCallback query_finish_callback)
 {
-    checkMetadataEndpointTarget(*time_series_storage, "/api/v1/metadata", getContext());
+    checkMetadataEndpointTarget(time_series_storage, "/api/v1/metadata", getContext());
 
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
@@ -899,7 +890,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    checkMetadataEndpointTarget(*time_series_storage, "/api/v1/labels", getContext());
+    checkMetadataEndpointTarget(time_series_storage, "/api/v1/labels", getContext());
 
     /// SELECT arraySort(groupUniqArrayArray(tupleElement(timeSeriesIdToTags(series_id), 1))) AS labels FROM (<series_ids_query>)
     /// timeSeriesIdToTags returns the tags registered by the inner query (including `__name__`), so the label names
@@ -926,7 +917,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    checkMetadataEndpointTarget(*time_series_storage, "/api/v1/label/<name>/values", getContext());
+    checkMetadataEndpointTarget(time_series_storage, "/api/v1/label/<name>/values", getContext());
 
     /// Prometheus escapes label names that are not legacy names in the URL path,
     /// so decode the parameter before comparing it with the stored tag names.

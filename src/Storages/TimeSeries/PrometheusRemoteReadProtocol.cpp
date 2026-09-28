@@ -5,7 +5,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -22,7 +21,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <optional>
@@ -34,7 +32,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -208,24 +205,12 @@ namespace
             }
         }
     }
-
-    /// Each shard restarts timeSeriesIdToGroup()'s node-local counter, merging unrelated series.
-    ConstStoragePtr checkTargetIsNotDistributed(ConstStoragePtr storage)
-    {
-        if (typeid_cast<const StorageDistributed *>(storage.get()))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The prometheus remote read protocol is not supported over a Distributed table: table {} is a Distributed table",
-                storage->getStorageID().getNameForLogs());
-        return storage;
-    }
 }
 
 
-/// The caller checks SELECT on the table before constructing this.
 PrometheusRemoteReadProtocol::PrometheusRemoteReadProtocol(ConstStoragePtr time_series_storage_, const ContextPtr & context_)
     : WithContext{context_}
-    , time_series_storage(storagePtrToTimeSeries(checkTargetIsNotDistributed(std::move(time_series_storage_))))
+    , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusRemoteReadProtocol"))
 {
 }

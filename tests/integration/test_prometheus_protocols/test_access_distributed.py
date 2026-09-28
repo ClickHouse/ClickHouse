@@ -197,12 +197,12 @@ def test_access_denied_precedes_the_engine_error():
 def test_remote_read_needs_the_select_grant():
     read_request = convert_read_request_to_protobuf("^m$", 0, EVALUATION_TIME)
 
-    # The privileged caller gets as far as the endpoint's own refusal of a Distributed target.
+    # The privileged caller gets as far as the engine refusal of a Distributed target.
     allowed = get_response_to_remote_read(
         node.ip_address, 9093, f"{DIST}/read", read_request
     )
     assert allowed.headers["X-ClickHouse-Exception-Code"] == error_code(
-        node, "NOT_IMPLEMENTED"
+        node, "UNEXPECTED_TABLE_ENGINE"
     )
 
     # The restricted caller is stopped before that, so the refusal never reaches it.
@@ -216,8 +216,8 @@ def test_remote_read_needs_the_select_grant():
         node, "ACCESS_DENIED"
     )
     assert denied.status_code == requests.codes.forbidden, denied.text
-    assert "NOT_IMPLEMENTED" not in denied.text
-    assert "Distributed" not in denied.text
+    assert "UNEXPECTED_TABLE_ENGINE" not in denied.text
+    assert "TimeSeries" not in denied.text
 
 
 @pytest.mark.parametrize(
@@ -225,16 +225,16 @@ def test_remote_read_needs_the_select_grant():
 )
 def test_metadata_endpoints_need_the_select_grant(path):
     url = f"http://{node.ip_address}:9093{DIST}/{path}"
-    # The privileged caller is told the endpoint cannot merge the shards...
+    # The privileged caller is told the table is not a TimeSeries table...
     allowed = extract_error_from_http_api_response(requests.get(url))
-    assert "is not supported over a Distributed table" in allowed, allowed
+    assert "is not TimeSeries" in allowed, allowed
 
     # ...while the restricted one learns only that it has no grant.
     denied = extract_error_from_http_api_response(
         requests.get(url, params=as_user(NO_SELECT_USER))
     )
     assert "Not enough privileges" in denied, denied
-    assert "Distributed" not in denied, denied
+    assert "TimeSeries" not in denied, denied
 
 
 def test_a_stored_selector_table_needs_the_select_grant_on_its_source():

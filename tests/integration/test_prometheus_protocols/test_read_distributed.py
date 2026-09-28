@@ -252,17 +252,6 @@ def assert_refused(response, *fragments):
         assert fragment in body["error"], body["error"]
 
 
-def assert_distributed_refused(path, endpoint):
-    """The endpoint refuses the Distributed target: an error naming that endpoint, not a 500
-    and not an answer."""
-    response = requests.get(f"http://{node.ip_address}:9093{path}")
-    assert_refused(
-        response,
-        f"The Prometheus {endpoint} endpoint is not supported over a Distributed table",
-    )
-    assert response.json()["errorType"] == "bad_data", response.text
-
-
 @pytest.mark.parametrize(
     "params",
     [
@@ -353,28 +342,19 @@ def test_range_query_matches_the_local_table():
     }
 
 
-def test_series_endpoint_refuses_a_distributed_target():
-    assert len(get_answer(f"{LOCAL}/series?match[]=m")) == 4
-    assert_distributed_refused(f"{DIST}/series?match[]=m", "/api/v1/series")
-
-
-def test_labels_endpoint_refuses_a_distributed_target():
-    assert get_answer(f"{LOCAL}/labels") == ["__name__", "host", "job"]
-    assert_distributed_refused(f"{DIST}/labels", "/api/v1/labels")
-
-
-def test_label_values_endpoint_refuses_a_distributed_target():
-    assert get_answer(f"{LOCAL}/label/host/values") == ["h1", "h2", "h3", "h4", "h5"]
-    assert_distributed_refused(
-        f"{DIST}/label/host/values", "/api/v1/label/<name>/values"
+@pytest.mark.parametrize("endpoint, endpoint_name, params", METADATA_ENDPOINTS)
+def test_metadata_endpoints_refuse_a_distributed_target(
+    endpoint, endpoint_name, params
+):
+    """They read the inner tables of a TimeSeries table, so a Distributed target is refused as on master."""
+    assert metadata_response(endpoint, params).status_code == 200
+    response = requests.get(
+        f"http://{node.ip_address}:9093{DIST}/{endpoint}", params=params
     )
-
-
-def test_metadata_endpoint_refuses_a_distributed_target():
-    assert get_answer(f"{LOCAL}/metadata") == {
-        "m": [{"type": "counter", "help": METADATA_HELP, "unit": ""}]
-    }
-    assert_distributed_refused(f"{DIST}/metadata", "/api/v1/metadata")
+    assert_refused(
+        response, "This operation can be executed on a TimeSeries table only"
+    )
+    assert response.json()["errorType"] == "bad_data", response.text
 
 
 def test_remote_read_refuses_a_distributed_target():
@@ -396,10 +376,9 @@ def test_remote_read_refuses_a_distributed_target():
     )
     # Remote read reports the error code itself, so this pins the code and not its wording.
     assert response.headers["X-ClickHouse-Exception-Code"] == error_code(
-        node, "NOT_IMPLEMENTED"
+        node, "UNEXPECTED_TABLE_ENGINE"
     )
-    assert response.status_code == requests.codes.not_implemented, response.text
-    assert "NOT_IMPLEMENTED" in response.text
+    assert response.status_code == requests.codes.internal_server_error, response.text
 
 
 def test_the_query_endpoints_refuse_a_wrapper_of_another_time_series_type():
@@ -408,11 +387,11 @@ def test_the_query_endpoints_refuse_a_wrapper_of_another_time_series_type():
     response = requests.get(
         f"http://{node.ip_address}:9093/coarse/api/v1/query?query=m&time={EVALUATION_TIME}"
     )
-    assert response.status_code == 400, response.text
-    body = response.json()
-    assert body["status"] == "error", body
-    assert "Array(Tuple(DateTime64(0), Float64))" in body["error"], body["error"]
-    assert "Array(Tuple(DateTime64(3), Float64))" in body["error"], body["error"]
+    assert_refused(
+        response,
+        "Array(Tuple(DateTime64(0), Float64))",
+        "Array(Tuple(DateTime64(3), Float64))",
+    )
 
 
 def test_the_row_policies_are_in_force():
