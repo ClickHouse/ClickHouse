@@ -23,10 +23,8 @@
     {
       "group": "Native protocol",
       "pages": [
-        "ar/resources/develop-contribute/native-protocol/basics",
-        "ar/resources/develop-contribute/native-protocol/client",
-        "ar/resources/develop-contribute/native-protocol/server",
-        "ar/resources/develop-contribute/native-protocol/columns",
+        "ar/resources/develop-contribute/native-protocol/protocol",
+        "ar/resources/develop-contribute/native-protocol/format",
         "ar/resources/develop-contribute/native-protocol/hash"
       ]
     },

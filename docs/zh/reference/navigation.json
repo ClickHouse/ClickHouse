@@ -967,8 +967,8 @@
       "expanded": false,
       "group": "Interfaces",
       "pages": [
-        "zh/reference/interfaces/specs/NativeProtocol",
-        "zh/reference/interfaces/specs/NativeFormat"
+        "zh/resources/develop-contribute/native-protocol/protocol",
+        "zh/resources/develop-contribute/native-protocol/format"
       ]
     },
     {

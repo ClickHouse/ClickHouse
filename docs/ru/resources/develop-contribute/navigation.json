@@ -23,10 +23,8 @@
     {
       "group": "Native protocol",
       "pages": [
-        "ru/resources/develop-contribute/native-protocol/basics",
-        "ru/resources/develop-contribute/native-protocol/client",
-        "ru/resources/develop-contribute/native-protocol/server",
-        "ru/resources/develop-contribute/native-protocol/columns",
+        "ru/resources/develop-contribute/native-protocol/protocol",
+        "ru/resources/develop-contribute/native-protocol/format",
         "ru/resources/develop-contribute/native-protocol/hash"
       ]
     },
