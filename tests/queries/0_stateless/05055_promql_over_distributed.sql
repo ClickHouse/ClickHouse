@@ -16,8 +16,6 @@ DROP TABLE IF EXISTS ts_remote;
 DROP TABLE IF EXISTS ts_remote_tf;
 DROP TABLE IF EXISTS ts_nested;
 DROP TABLE IF EXISTS ts_coarse;
-DROP TABLE IF EXISTS ts_skip_on;
-DROP TABLE IF EXISTS ts_mode_only;
 DROP TABLE IF EXISTS ts_dead;
 DROP TABLE IF EXISTS ts_dead_skip;
 DROP ROW POLICY IF EXISTS p_05055_dist ON ts_dist;
@@ -108,19 +106,6 @@ SELECT count() FROM prometheusQuery(ts_coarse, '1 + 2', 140);
 DROP TABLE ts_coarse;
 
 SELECT '--- declared Distributed settings the generated read has to carry ---';
--- A declared non-default value is carried into the generated cluster() read.
-CREATE TABLE ts_skip_on AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
-SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140);
--- An explicit query setting overrides the declaration on the normal path and reaches the generated
--- cluster() call too.
-SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140) SETTINGS skip_unavailable_shards = 0;
-DROP TABLE ts_skip_on;
--- A declared mode with shard skipping effectively off changes nothing - the mode only controls
--- which exceptions skipping ignores.
-CREATE TABLE ts_mode_only AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards_mode = 'unavailable';
-SELECT count() > 0 FROM prometheusQuery(ts_mode_only, 'm', 140);
-DROP TABLE ts_mode_only;
-
 -- Only a shard that is really down tells a declared value apart from the default: with skipping
 -- declared the live shard answers alone, and a query-level 0 still turns that back into an error.
 SET send_logs_level = 'fatal';

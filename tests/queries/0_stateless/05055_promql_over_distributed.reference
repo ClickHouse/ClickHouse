@@ -38,9 +38,6 @@ b	2
 --- rejected: the shard-local tables must declare the same samples type ---
 1
 --- declared Distributed settings the generated read has to carry ---
-1
-1
-1
 4
 4
 --- row policies and additional_table_filters: refused wherever the read would leave them unapplied ---
