@@ -1213,15 +1213,15 @@ void MergeTreeData::checkProperties(
 
         for (const String & col : used_columns)
         {
-            if (!added_columns.contains(col) || deleted_columns.contains(col))
+            /// A subcolumn (for example, an element of a Tuple) is as new as its storage column, and has its default expression.
+            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
+            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+
+            if (!added_columns.contains(name_in_storage) || deleted_columns.contains(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Existing column {} is used in the expression that was added to the sorting key. "
                                 "You can add expressions that use only the newly added columns",
-                                backQuoteIfNeed(col));
-
-            /// A subcolumn (for example, an element of a Tuple) has the default expression of its storage column.
-            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
-            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+                                backQuoteIfNeed(name_in_storage));
 
             if (const auto column_default = new_metadata.columns.getDefault(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -6444,6 +6444,27 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 "ALTER TABLE ... DROP PROJECTION",
                 getStorageID().getNameForLogs(),
                 fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
+        }
+    }
+
+    /// A renamed column keeps its rows, and renaming a column of the old sorting key is refused above, so the new
+    /// sorting key can use a renamed column only in an added expression. `checkProperties` sees it as a new column.
+    if (!is_secondary_replay)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::RENAME_COLUMN || !old_columns.has(command.column_name))
+                continue;
+
+            for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
+            {
+                const auto column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                if (column && column->getNameInStorage() == command.rename_to)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Existing column {} (renamed to {}) is used in the expression that was added to the sorting key. "
+                        "You can add expressions that use only the newly added columns",
+                        backQuoteIfNeed(command.column_name), backQuoteIfNeed(command.rename_to));
+            }
         }
     }
 
