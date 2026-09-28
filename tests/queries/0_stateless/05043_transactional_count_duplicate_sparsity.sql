@@ -52,7 +52,9 @@ SELECT 'the sparsity filter rewrite must engage';
 SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') > 0
     FROM (EXPLAIN SELECT count() FROM transactional_count_duplicate_sparsity WHERE s = 0);
 SELECT 'a plain read must be planned across the replicas';
-SELECT countIf(explain LIKE '%ReadFromRemoteParallelReplicas%') > 0
+-- Matching on the common part of the step name covers both implementations: the query-based one
+-- plans `ReadFromRemoteParallelReplicas`, the plan-based one `ReadFromParallelReplicas`.
+SELECT countIf(explain LIKE '%ParallelReplicas%') > 0
     FROM (EXPLAIN SELECT count() FROM transactional_count_duplicate_sparsity WHERE NOT ignore(*));
 
 SELECT 'baseline outside a transaction, defaults of `s` out of 160000 rows';
