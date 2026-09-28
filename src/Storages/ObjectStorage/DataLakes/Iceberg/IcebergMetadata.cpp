@@ -486,10 +486,19 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
+    ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
+
+    if (getMetadataLookupSettings()[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE does not support the iceberg_metadata_file_path setting");
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "OPTIMIZE does not support iceberg_snapshot_id or iceberg_timestamp_ms settings");
 
 #if CLICKHOUSE_CLOUD
     if (!compaction_enabled)
