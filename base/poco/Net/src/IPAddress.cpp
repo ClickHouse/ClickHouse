@@ -38,6 +38,19 @@ using Poco::Net::Impl::IPv6AddressImpl;
 #endif
 
 
+namespace
+{
+#if defined(POCO_HAVE_IPv6)
+	/// `IPv6AddressImpl::parse` returns the all-zero address both on failure and for a valid all-zero literal.
+	bool isIPv6Literal(const std::string& addr)
+	{
+		struct in6_addr ia;
+		return inet_pton(AF_INET6, addr.c_str(), &ia) == 1;
+	}
+#endif
+}
+
+
 namespace Poco {
 namespace Net {
 
@@ -104,7 +117,7 @@ IPAddress::IPAddress(const std::string& addr)
 	}
 
 	IPv6AddressImpl addr6(IPv6AddressImpl::parse(addr));
-	if (addr6 != IPv6AddressImpl())
+	if (addr6 != IPv6AddressImpl() || isIPv6Literal(addr))
 	{
 		newIPv6(addr6.addr(), addr6.scope());
 		return;
@@ -518,7 +531,7 @@ bool IPAddress::tryParse(const std::string& addr, IPAddress& result)
 	}
 #if defined(POCO_HAVE_IPv6)
 	IPv6AddressImpl impl6(IPv6AddressImpl::parse(addr));
-	if (impl6 != IPv6AddressImpl() || trim(addr) == "::")
+	if (impl6 != IPv6AddressImpl() || isIPv6Literal(addr))
 	{
 		result.newIPv6(impl6.addr(), impl6.scope());
 		return true;
