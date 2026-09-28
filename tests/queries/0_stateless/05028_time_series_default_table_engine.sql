@@ -33,9 +33,9 @@ WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
 
 DROP TABLE ts_default_engine;
 
-SELECT '-- version 7, default_table_engine = MergeTree generates bucketed samples engines';
+SELECT '-- version 8, default_table_engine = MergeTree generates bucketed samples engines';
 
-CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 7;
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 8;
 
 SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
 WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
@@ -61,9 +61,9 @@ WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
 
 DROP TABLE ts_default_engine SYNC;
 
-SELECT '-- version 7, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines';
+SELECT '-- version 8, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines';
 
-CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 7;
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 8;
 
 SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
 WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;

@@ -37,7 +37,7 @@ def create_owner(name):
     node.query(
         f"""
         CREATE TABLE test.{name}_owner ENGINE = TimeSeries
-        SETTINGS version = 7, recent_samples_ttl_seconds = 0
+        SETTINGS version = 8, recent_samples_ttl_seconds = 0
         SAMPLES test.{name}_samples
         """
     )

@@ -10,7 +10,7 @@ SET serialize_query_plan = 0;
 DROP TABLE IF EXISTS promql_native_rate_stale_markers;
 
 CREATE TABLE promql_native_rate_stale_markers ENGINE = TimeSeries
-SETTINGS version = 7, recent_samples_ttl_seconds = 0;
+SETTINGS version = 8, recent_samples_ttl_seconds = 0;
 
 INSERT INTO promql_native_rate_stale_markers (metric_name, tags, samples)
 SELECT 'reads', map('instance', 'stale'),

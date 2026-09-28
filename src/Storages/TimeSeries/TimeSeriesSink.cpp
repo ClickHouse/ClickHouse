@@ -572,57 +572,16 @@ namespace
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} of timestamps in the time_series column", ts_timestamps.getName());
     }
 
-    /// Builds a block for the "metrics" table from the columns `metric_family`, `type`, `unit`, `help` of the input block,
-    /// skipping the rows with an empty metric family. Returns nothing if there are no rows to insert.
-    std::optional<Block> makeMetricsBlock(const Block & block, UInt64 time_series_version)
+    /// Returns the total number of samples in the outer column with samples across all rows.
+    size_t getTotalSamples(const ColumnArray::Offsets & ts_offsets)
     {
-        const auto & metric_family_col = block.getByName(TimeSeriesColumnNames::MetricFamily);
-        const auto & type_col = block.getByName(TimeSeriesColumnNames::Type);
-        const auto & unit_col = block.getByName(TimeSeriesColumnNames::Unit);
-        const auto & help_col = block.getByName(TimeSeriesColumnNames::Help);
-
-        auto out_metric_family_column = metric_family_col.type->createColumn();
-        auto out_type_column = type_col.type->createColumn();
-        auto out_unit_column = unit_col.type->createColumn();
-        auto out_help_column = help_col.type->createColumn();
-
-        for (size_t i = 0; i < block.rows(); ++i)
-        {
-            if (metric_family_col.column->getDataAt(i).empty())
-            {
-                if (!type_col.column->getDataAt(i).empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty type without a metric family");
-                if (!unit_col.column->getDataAt(i).empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty unit without a metric family");
-                if (!help_col.column->getDataAt(i).empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty help without a metric family");
-                continue;
-            }
-
-            out_metric_family_column->insertFrom(*metric_family_col.column, i);
-            out_type_column->insertFrom(*type_col.column, i);
-            out_unit_column->insertFrom(*unit_col.column, i);
-            out_help_column->insertFrom(*help_col.column, i);
-        }
-
-        if (out_metric_family_column->empty())
-            return {};
-
-        Block metrics_block;
-        metrics_block.insert(ColumnWithTypeAndName{
-            std::move(out_metric_family_column),
-            metric_family_col.type,
-            TimeSeriesColumnNames::getInnerMetricFamily(time_series_version)});
-        metrics_block.insert(ColumnWithTypeAndName{std::move(out_type_column), type_col.type, TimeSeriesColumnNames::Type});
-        metrics_block.insert(ColumnWithTypeAndName{std::move(out_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
-        metrics_block.insert(ColumnWithTypeAndName{std::move(out_help_column), help_col.type, TimeSeriesColumnNames::Help});
-        return metrics_block;
+        return ts_offsets.empty() ? 0 : ts_offsets.back();
     }
 
     /// Fills `filter` with 1 for rows that have either a non-empty metric name or at least one tag.
     /// Returns the number of such rows.
     /// The function returns 0 and leaves `filter` empty if there are no such rows.
-    size_t buildNonEmptyTagsFilter(
+    size_t findRowsWithMetricNameOrTags(
         const IColumn & metric_name_column,
         const ColumnArray::Offsets & tags_offsets,
         PaddedPODArray<UInt8> & filter)
@@ -663,12 +622,41 @@ namespace
         return count;
     }
 
-    /// Returns the total number of samples in the outer column with samples across all rows.
-    size_t getTotalSamples(const ColumnArray::Offsets & ts_offsets)
+    /// Marks the rows with a non-empty `metric_family` in `filter` and returns the number of such rows.
+    /// The other rows must have empty `type`, `unit` and `help` too.
+    /// The function returns 0 and leaves `filter` empty if there are no such rows.
+    size_t findRowsWithMetricFamily(
+        const IColumn & metric_family_column,
+        const IColumn & type_column,
+        const IColumn & unit_column,
+        const IColumn & help_column,
+        IColumn::Filter & filter)
     {
-        return ts_offsets.empty() ? 0 : ts_offsets.back();
-    }
+        filter.clear();
+        size_t count = 0;
+        size_t num_rows = metric_family_column.size();
 
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            if (!metric_family_column.getDataAt(i).empty())
+            {
+                if (filter.empty())
+                    filter.resize_fill(num_rows);
+                filter[i] = true;
+                ++count;
+                continue;
+            }
+
+            if (!type_column.getDataAt(i).empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty type without a metric family");
+            if (!unit_column.getDataAt(i).empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty unit without a metric family");
+            if (!help_column.getDataAt(i).empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Got non-empty help without a metric family");
+        }
+
+        return count;
+    }
 }
 
 
@@ -972,6 +960,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     }
 
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
+    tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
@@ -1036,7 +1025,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     size_t total_samples = getTotalSamples(ts_offsets);
 
     PaddedPODArray<UInt8> filter;
-    size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
+    size_t num_time_series = findRowsWithMetricNameOrTags(*metric_name_col.column, tags_offsets, filter);
 
     if (!num_time_series)
     {
@@ -1062,11 +1051,15 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     if (tags_block.has(TimeSeriesColumnNames::AllTags))
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
-    /// Step 3. Push the tags block.
+    /// Step 3. Push the tags block without the time series already written to the "tags" table.
+    if (tags_deduplication_cache)
+        tags_block = tags_deduplication_cache->filterOutWrittenRows(
+            tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
     /// Tags are pushed first so that if the samples insert fails,
     /// we don't end up with sample rows referencing IDs that were never written to the tags table.
-    tags_pipeline->push(std::move(tags_block));
+    if (tags_block.rows())
+        tags_pipeline->push(std::move(tags_block));
 
     /// Step 4. Assemble and push the samples blocks.
     if (total_samples)
@@ -1119,26 +1112,74 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
         header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
 
     metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header);
+    metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
 }
 
 
 void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 {
-    if (auto metrics_block = makeMetricsBlock(block, time_series_storage.getVersion()))
-        metric_families_pipeline->push(std::move(*metrics_block));
+    /// Step 1. Extract columns from the input block.
+    const auto & metric_family_col = block.getByName(TimeSeriesColumnNames::MetricFamily);
+    const auto & type_col = block.getByName(TimeSeriesColumnNames::Type);
+    const auto & unit_col = block.getByName(TimeSeriesColumnNames::Unit);
+    const auto & help_col = block.getByName(TimeSeriesColumnNames::Help);
+
+    /// Step 2. Mark the rows with a metric family.
+    IColumn::Filter filter;
+    size_t num_rows_with_metric_family = findRowsWithMetricFamily(*metric_family_col.column, *type_col.column, *unit_col.column, *help_col.column, filter);
+    if (!num_rows_with_metric_family)
+        return;
+
+    /// Step 3. Assemble the block without the other rows and without the metric families already written, and push it to the "metric families" table.
+    Block metric_families_block;
+    const char * inner_metric_family_column_name
+        = TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion());
+    metric_families_block.insert(ColumnWithTypeAndName{metric_family_col.column, metric_family_col.type, inner_metric_family_column_name});
+    metric_families_block.insert(ColumnWithTypeAndName{type_col.column, type_col.type, TimeSeriesColumnNames::Type});
+    metric_families_block.insert(ColumnWithTypeAndName{unit_col.column, unit_col.type, TimeSeriesColumnNames::Unit});
+    metric_families_block.insert(ColumnWithTypeAndName{help_col.column, help_col.type, TimeSeriesColumnNames::Help});
+
+    if (metric_families_deduplication_cache)
+    {
+        metric_families_block = metric_families_deduplication_cache->filterOutWrittenRows(
+            metric_families_block,
+            /* key_column_index = */ metric_families_block.getPositionByName(inner_metric_family_column_name),
+            pending_metric_families,
+            std::move(filter));
+    }
+    else if (num_rows_with_metric_family != metric_families_block.rows())
+    {
+        for (auto & column : metric_families_block)
+            column.column = column.column->filter(filter, num_rows_with_metric_family);
+    }
+
+    if (!metric_families_block.rows())
+        return;
+
+    metric_families_pipeline->push(std::move(metric_families_block));
 }
 
 
 void TimeSeriesSink::onFinish()
 {
     if (tags_pipeline)
+    {
         tags_pipeline->executor->finish();
+        /// The pending rows are in the table for sure now.
+        if (tags_deduplication_cache && !pending_tags.empty())
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
+    }
     if (samples_pipeline)
         samples_pipeline->executor->finish();
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
     if (metric_families_pipeline)
+    {
         metric_families_pipeline->executor->finish();
+        /// The pending rows are in the table for sure now.
+        if (metric_families_deduplication_cache && !pending_metric_families.empty())
+            metric_families_deduplication_cache->markRowsAsWritten(std::move(pending_metric_families));
+    }
 }
 
 }

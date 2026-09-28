@@ -1,4 +1,4 @@
--- The codec settings must not be persisted in a table definition readable by pre-v7 servers.
+-- The codec settings must not be persisted in a table definition readable by pre-v8 servers.
 SET allow_experimental_time_series_table = 1;
 
 CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 6, samples_compression_codec = 'ZSTD(3)'; -- { serverError INVALID_SETTING_VALUE }

@@ -8,7 +8,7 @@ metricfamilies	ReplacingMergeTree
 recentsamples	MergeTree
 samples	MergeTree
 tags	AggregatingMergeTree
--- version 7, default_table_engine = MergeTree generates bucketed samples engines
+-- version 8, default_table_engine = MergeTree generates bucketed samples engines
 metricfamilies	ReplacingMergeTree
 recentsamples	AggregatingMergeTree
 samples	AggregatingMergeTree
@@ -23,7 +23,7 @@ metricfamilies	ReplicatedReplacingMergeTree
 recentsamples	ReplicatedMergeTree
 samples	ReplicatedMergeTree
 tags	ReplicatedAggregatingMergeTree
--- version 7, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines
+-- version 8, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines
 metricfamilies	ReplicatedReplacingMergeTree
 recentsamples	ReplicatedAggregatingMergeTree
 samples	ReplicatedAggregatingMergeTree

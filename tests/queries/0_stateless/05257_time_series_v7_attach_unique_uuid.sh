@@ -43,12 +43,12 @@ $CLICKHOUSE_CLIENT -q "
 
 expect_error BAD_TYPE_OF_FIELD "
     ATTACH TABLE ts_05257_attach_bad UUID '$attach_raw_uuid'
-    ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
+    ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 0
     SAMPLES ts_05257_external_raw
 "
 expect_error BAD_TYPE_OF_FIELD "
     ATTACH TABLE ts_05257_attach_inner_bad UUID '$attach_inner_uuid'
-    ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
+    ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 0
     SAMPLES INNER COLUMNS (samples Array(Tuple(DateTime64(3), Float64)))
     SAMPLES INNER ENGINE = AggregatingMergeTree
 "
@@ -73,7 +73,7 @@ expect_error INVALID_SETTING_VALUE "
 # alongside its INNER UUID.
 expect_error INVALID_SETTING_VALUE "
     ATTACH TABLE ts_05257_attached_unsafe_inner UUID '$attach_spoofed_uuid'
-    ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
+    ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 0
     SAMPLES INNER UUID '$replacing_uuid'
     SAMPLES INNER ENGINE = AggregatingMergeTree
 "
