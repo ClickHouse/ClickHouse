@@ -1,0 +1,10 @@
+drop_col	0	0
+drop_col	1	2
+rename	0	0
+rename	1	0
+ok_u32	7
+ok_u64	123456789012
+ok_date	2020-01-02
+ok_dt64	2020-01-02 03:04:05.123456
+modify	0
+modify	1
