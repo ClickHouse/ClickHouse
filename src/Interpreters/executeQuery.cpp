@@ -78,8 +78,9 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/SessionQueryIdsHistory.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -156,6 +157,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
+    extern const Event ASTFuzzerSkippedCollaborativeWorker;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -248,7 +250,7 @@ namespace Setting
     extern const SettingsBool enable_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsString format;
@@ -281,7 +283,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int FAULT_INJECTED;
@@ -512,6 +513,17 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("max_parallel_prefetch_tasks", async_read_counters->max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
+
+    if (auto query_execution_counters = context_ptr->getQueryExecutionCounters())
+    {
+        auto counters = query_execution_counters->getSnapshot();
+        element.used_number_of_joins = counters.number_of_joins;
+        element.used_join_algorithms = std::move(counters.join_algorithms);
+        element.used_join_kinds = std::move(counters.join_kinds);
+        element.used_join_strictness = std::move(counters.join_strictness);
+        element.spilled_to_disk = std::move(counters.spilled_to_disk);
+    }
+
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
@@ -1129,19 +1141,13 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void normalizeAnalyzerSettings(ASTPtr ast)
 {
-    if (ast->as<ASTSetQuery>())
-        return;
-
-    bool top_level = context_value;
-
     auto field_to_bool = [](const Field & f) -> bool
     {
         if (f.getType() == Field::Types::String)
             return stringToBool(f.safeGet<String>());
-        else
-            return f.safeGet<bool>();
+        return f.safeGet<bool>();
     };
 
     std::vector<ASTPtr> nodes_to_process{ ast };
@@ -1152,16 +1158,10 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            for (auto & change : set_query->changes)
             {
-                if (top_level != field_to_bool(*value))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
-            }
-
-            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
-            {
-                if (top_level != field_to_bool(*value))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
+                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !field_to_bool(change.value))
+                    change.value = Field(true);
             }
         }
 
@@ -2296,30 +2296,13 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext());
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
-    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9: the
-    /// analyzer is mandatory and the old query analysis is no longer supported. A change that would
-    /// disable it is refused where the settings constraints are consulted, but a settings profile from
-    /// the server configuration is applied without them, and so is a setting given to
-    /// `clickhouse-local` on the command line, so a value from before the deprecation can still reach
-    /// a query. Ignore it here, the way the value of an obsolete setting is ignored, rather than
-    /// quietly analyzing the query the retired way; `system.warnings` reports the changed obsolete
-    /// setting, pointing at the configuration that still carries it.
-    ///
-    /// A query that another server sent to this one keeps the value it was sent with: a few internal
-    /// code paths still turn the analyzer off for a whole query on the initiator (`EXPLAIN AST`, a
-    /// view read by the old interpreter, a materialized view over a `Distributed` table), and the
-    /// servers of a cluster have to agree on how one query is analyzed.
-    ///
-    /// Such a query is identified by the query kind, which the initiator sends, so a client that
-    /// declares its own query to be a secondary one (`clickhouse-client --query_kind secondary_query`)
-    /// keeps the value as well. There is nothing more trustworthy to key this on - a secondary query
-    /// is exactly a query another server says it is sending - and forcing the analyzer on instead
-    /// would make an initiator that turned it off disagree with its own replicas about the result.
-    /// `clickhouse-local` is not a server another one can send a query to, so the declaration carries
-    /// no meaning there and does not keep the old query analysis alive.
-    const bool sent_by_another_server = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.interface != ClientInfo::Interface::LOCAL;
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer] && !sent_by_another_server)
+    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9 and the old
+    /// query analysis is gone, so nothing reads the value anymore. A change that would disable it is
+    /// rewritten to `1` where the settings constraints are consulted, but a settings profile from the server
+    /// configuration is applied without them, so is a setting given to `clickhouse-local` on the command
+    /// line, and so is a secondary query another server sent. Normalize it here, so that `getSetting`,
+    /// `system.query_log` and a query this server sends on report the analysis that actually ran.
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
         context->setSetting("allow_experimental_analyzer", true);
 
     const Settings & settings = context->getSettingsRef();
@@ -2416,10 +2399,8 @@ static BlockIO executeQueryImpl(
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             /// Settings that align the query semantics with Trino: outer joins
-            /// produce NULLs (not type defaults), set operations use the numeric
-            /// supertype (not `Variant`), and the analyzer is required - the
-            /// column alias lists (`AS t (x, y)`) and the type resolution the
-            /// translation relies on do not work without it.
+            /// produce NULLs (not type defaults) and set operations use the numeric
+            /// supertype (not `Variant`).
             /// They are applied to the context rather than injected into the
             /// query text, so that they also hold for a query that carries its
             /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
@@ -2429,7 +2410,6 @@ static BlockIO executeQueryImpl(
             {
                 context->setSetting("join_use_nulls", true);
                 context->setSetting("use_variant_as_common_type", false);
-                context->setSetting("enable_analyzer", true);
             }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
@@ -2854,7 +2834,7 @@ static BlockIO executeQueryImpl(
                 visitor.visit(out_ast);
             }
 
-            validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
+            normalizeAnalyzerSettings(out_ast);
 
             if (settings[Setting::enforce_strict_identifier_format])
             {
@@ -2983,9 +2963,9 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
-            else if (insert_query->select)
-                reason = "insert query has select";
-            else if (insert_query->hasInlinedData())
+            /// `INSERT ... SELECT` (including `FROM input()`) is routed through
+            /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
+            else if (!insert_query->select && insert_query->hasInlinedData())
                 async_insert = true;
 
             if (!reason.empty())
@@ -3034,7 +3014,8 @@ static BlockIO executeQueryImpl(
                         std::move(result.future),
                         timeout,
                         context->getProcessListElement(),
-                        context->getProgressCallback());
+                        context->getProgressCallback(),
+                        /* report_read_progress */ true);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -3300,7 +3281,10 @@ static BlockIO executeQueryImpl(
             plan.resolveStorages(context);
 
             /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
-            /// plan to a distributed one.
+            /// plan to a distributed one. A deserialized plan has no planner-registered contexts, and its
+            /// steps captured this query context at deserialization, so it is the object the decision
+            /// must write on fallback (set building reads `make_distributed_plan` live from it).
+            plan.addDistributedPlanDecisionContext(context);
             QueryPlanOptimizationSettings optimization_settings(context);
             plan.applyDistributedPlanFallbackToLocal(optimization_settings);
             plan.optimize(optimization_settings);
@@ -3495,6 +3479,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         return;
     }
 
+    /// A fuzz context copied from a collaborative worker inherits its replica number and the callbacks of the
+    /// initiator's read, so a fuzzed copy would take part in that read a second time as the same worker.
+    if (context->getClientInfo().collaborate_with_initiator)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -3633,6 +3625,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// silently clearing the user's active transaction on the caller session.
             fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
+            /// Detach the seed query's ProcessList entry: a fuzzed query failing before registering
+            /// its own entry would log `ExceptionBeforeStart` with the seed query's ProfileEvents.
+            fuzz_session_context->setProcessListElement(nullptr);
+
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
@@ -3767,6 +3763,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             finish_iteration(/*succeeded=*/false);
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        }
+        catch (...)
+        {
+            /// E.g. a Poco::Exception from a mutated URI: it must not fail the client's query, whose result is already sent.
+            finish_iteration(/*succeeded=*/false);
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
     }

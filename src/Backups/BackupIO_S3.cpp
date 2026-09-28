@@ -130,7 +130,7 @@ private:
         const ContextPtr & context)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        HTTPHeaderEntries headers;
+        NormalizedHTTPHeaderEntries headers;
         String session_token = settings.auth_settings[S3AuthSetting::session_token];
         String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;

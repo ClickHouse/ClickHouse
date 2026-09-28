@@ -59,6 +59,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
+#include <Common/SeccompFilter.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
@@ -77,8 +78,11 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/S3/Credentials.h>
@@ -160,7 +164,6 @@
 #    include <cstdlib>
 #    include <sys/un.h>
 #    include <sys/mman.h>
-#    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
 #endif
 
@@ -475,6 +478,7 @@ namespace ServerSetting
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
+    extern const ServerSettingsSeccompMode seccomp;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -637,6 +641,44 @@ Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_s
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
 }
+
+#if defined(OS_LINUX)
+/// Whether a debugger is attached to this process, according to the `TracerPid` field of
+/// `/proc/self/status`, which the kernel sets to the pid of the tracer and to zero when there is
+/// none. This is a plain read, so unlike the `ptrace(PTRACE_TRACEME)` probe it used to be, it
+/// answers the same way whatever the `seccomp` server setting denies.
+bool isRunUnderDebugger()
+{
+    try
+    {
+        ReadBufferFromFile status("/proc/self/status");
+        while (!status.eof())
+        {
+            String line;
+            readStringUntilNewlineInto(line, status);
+            if (!status.eof())
+                ++status.position();
+
+            static constexpr std::string_view prefix = "TracerPid:";
+            if (!line.starts_with(prefix))
+                continue;
+
+            UInt64 tracer_pid = 0;
+            ReadBufferFromString value(line);
+            value.ignore(prefix.size());
+            skipWhitespaceIfAny(value);
+            readIntText(tracer_pid, value);
+            return tracer_pid != 0;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return false;
+}
+#endif
 
 }
 
@@ -1808,6 +1850,29 @@ try
     addMergeTreeArenaPoolWarnings(global_context);
 
 #if defined(OS_LINUX)
+    /// Restrict the server to the system calls it is known to use, as early in the startup as the
+    /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
+    /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
+    /// was before a `from_zk` value arrived would stay in force while `system.server_settings`
+    /// reported the value from ZooKeeper. `TSYNC` extends the filter to the threads that already
+    /// exist, so everything that runs from here on - including the processes the server forks
+    /// later, which inherit it - is covered.
+    const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
+    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
+        LOG_INFO(
+            log,
+            "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
+            "be handled according to the `seccomp` server setting, which is set to `{}`",
+            seccomp_status.allowed_syscalls,
+            SettingFieldSeccompMode(seccomp_mode).toString());
+    else if (seccomp_mode != SeccompMode::Disabled)
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
+            "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
+
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -1837,8 +1902,9 @@ try
             }
             else
             {
-                /// If program is run under debugger, ptrace will fail.
-                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                /// Note: this must not rely on a system call the `seccomp` policy denies, such as
+                /// `ptrace`, because the filter is already installed by this point.
+                if (isRunUnderDebugger())
                 {
                     /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
                     global_context->addOrUpdateWarningMessage(
@@ -2536,6 +2602,16 @@ try
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
+            /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
+            if (const auto installed_seccomp_mode = getInstalledSeccompMode();
+                installed_seccomp_mode && *installed_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
+                LOG_WARNING(
+                    log,
+                    "The `seccomp` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
+                    "after a restart: the seccomp policy of a running process cannot be changed",
+                    SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
+                    new_server_settings[ServerSetting::seccomp].toString());
+
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
             const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
@@ -2661,11 +2737,6 @@ try
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
-
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Backups/BackupInfo.h>
 #include <Common/SettingsChanges.h>
 #include <map>
@@ -183,6 +185,13 @@ struct RestoreSettings
 
     /// Alternative storage policy that may be specified in the SETTINGS clause of RESTORE queries
     std::optional<String> storage_policy;
+
+#if CLICKHOUSE_CLOUD
+    /// Internal, should not be specified by user.
+    /// The initiator's verdict on `BackupUtils::mayRestoreLocalDictionarySource`: on each host the
+    /// restore runs in a context with no user. Locality is judged per host.
+    bool allow_local_dictionary_source = false;
+#endif
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
