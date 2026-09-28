@@ -15,8 +15,8 @@ shared_metadata
 1
 loading_retries	42	shared_metadata
 polling_min_timeout_ms	1234	definition
--- use_hive_partitioning reports the source of partitioning_mode, into which it is folded
+-- use_hive_partitioning reports what the definition states, not what partitioning_mode says
 smd_hive_by_flag	partitioning_mode	hive	shared_metadata
-smd_hive_by_flag	use_hive_partitioning	1	shared_metadata
+smd_hive_by_flag	use_hive_partitioning	1	definition
 smd_hive_by_mode	partitioning_mode	hive	shared_metadata
-smd_hive_by_mode	use_hive_partitioning	1	shared_metadata
+smd_hive_by_mode	use_hive_partitioning	0	default

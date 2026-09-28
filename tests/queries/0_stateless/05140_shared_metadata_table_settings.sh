@@ -85,8 +85,10 @@ WHERE database = currentDatabase() AND table = 'smd_tbl_joined'
   AND name IN ('loading_retries', 'polling_min_timeout_ms')
 ORDER BY name"
 
-echo "-- use_hive_partitioning reports the source of partitioning_mode, into which it is folded"
-# Whichever of the two the definition states, the table metadata keeps only `partitioning_mode`.
+echo "-- use_hive_partitioning reports what the definition states, not what partitioning_mode says"
+# Whichever of the two the definition states, the table metadata keeps only `partitioning_mode`. But only
+# `use_hive_partitioning` makes the table read hive columns from the path, so `partitioning_mode = 'hive'` alone
+# leaves it at the default.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE smd_hive_by_mode (a UInt64, date String)
 ENGINE = S3Queue('http://localhost:1/bucketname/data/date=*/*', 'key', 'secret', 'TSV')

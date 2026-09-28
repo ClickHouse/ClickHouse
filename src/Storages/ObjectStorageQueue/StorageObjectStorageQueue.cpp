@@ -2263,22 +2263,11 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// replica has already changed it while this replica's `CREATE` query still states the old value.
     setOrigin(settings, from_shared_metadata, SettingOrigin::SharedMetadata);
 
-    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built, so the
-    /// rebuilt object carries its default. Report what `partitioning_mode` says, last, so it takes that
-    /// setting's final origin - even when the value is the default, since after the fold they are one setting.
-    ///
-    /// Only where the rebuild read the metadata. Without it `partitioning_mode` is the definition's text or the
-    /// compiled-in default, never the folded value, and `use_hive_partitioning` already holds what the definition
-    /// states - which is what the table works with, as its own `use_hive_partitioning` member is read from it.
-    /// Folding then would report a stated `use_hive_partitioning = 1` as `0`, from a source that is not the one.
-    const String partitioning_mode{ObjectStorageQueueSettings::nameAtOffset(ObjectStorageQueueSetting::partitioning_mode.offset)};
-    if (from_shared_metadata.contains(partitioning_mode))
-    {
-        const auto mode = std::ranges::find(settings, partitioning_mode, &SettingDescription::name);
-        if (mode != settings.end())
-            setEffectiveValue(
-                settings, ObjectStorageQueueSetting::use_hive_partitioning, mode->value == "hive" ? "1" : "0", mode->origin);
-    }
+    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built, but not the other
+    /// way round: whether hive columns are read from the path is decided by the storage's own `use_hive_partitioning`
+    /// member, which comes from the definition alone, and `partitioning_mode = 'hive'` does not set it. So the row
+    /// keeps what the definition states, or the default - which is that member - rather than being derived from
+    /// `partitioning_mode`, which would report `1` for a table that reads no hive columns.
 
     return settings;
 }
