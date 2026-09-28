@@ -59,6 +59,9 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
+    UInt64 freeform_max_search_steps = 4096;
+
     bool allow_special_serialization_kinds = false;
 
     /// Infers a number, not a `String`, for an integer with leading zeros

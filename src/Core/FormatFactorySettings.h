@@ -716,6 +716,10 @@ When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not 
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0, \
         {"24.2", true, false, "Don't infer floats in exponential notation by default"}) \
+    DECLARE(UInt64, input_format_freeform_max_search_steps, 4096, R"(
+The maximum number of steps of the search for the structure of a row in the `Freeform` format. The search branches on every field that several escaping rules read alike (for example, a word in a tab-separated row is read the same by the `Raw` and `Escaped` rules), so a wide row of strings has exponentially many candidate structures. When the search exceeds this number of steps, an exception is thrown instead of exhausting memory and time. 0 means unlimited.
+)", 0, \
+        {"26.10", 0, 4096, "New setting bounding the search for the structure of a `Freeform` row. The search was unbounded before and could exhaust memory on a wide row of strings; 0 restores that behavior."}) \
     DECLARE(Bool, output_format_markdown_escape_special_characters, false, R"(
 When enabled, escape special characters in Markdown.
 

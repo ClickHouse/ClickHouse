@@ -321,7 +321,8 @@ DataTypePtr RestOfLineFieldMatcher::getDataTypeFromField(const String &)
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings_)
-    : in(in_)
+    : max_search_steps(settings_.freeform_max_search_steps)
+    , in(in_)
 {
     setLimits(settings_.max_rows_to_read_for_schema_inference, settings_.max_bytes_to_read_for_schema_inference);
 
@@ -394,11 +395,11 @@ void FreeformFieldMatcher::buildSolutions(
 {
     /// Every candidate is kept in memory and then validated against the sample rows, so an unbounded
     /// search over a wide row of strings exhausts memory and time long before it ends.
-    if (++search_steps > max_search_steps)
+    if (max_search_steps && ++search_steps > max_search_steps)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot infer the structure of the row: it can be split into fields in too many ways (the search exceeded {} steps). "
-            "Use a format with a fixed structure, such as `TSV` or `CSV`",
+            "Use a format with a fixed structure, such as `TSV` or `CSV`, or raise `input_format_freeform_max_search_steps`",
             max_search_steps);
 
     seekInRow(offset);
