@@ -42,6 +42,7 @@ ch_replica_name = cluster.add_instance(
     main_configs=["configs/config.d/convert_replica_name_uuid.xml"],
     with_zookeeper=True,
     macros={"shard": "01", "replica": "node4"},
+    stay_alive=True,
 )
 
 # A template that describes the position of {uuid} through the name of the table cannot survive a rename: the
@@ -51,12 +52,14 @@ ch_name_in_path = cluster.add_instance(
     main_configs=["configs/config.d/convert_name_in_path.xml"],
     with_zookeeper=True,
     macros={"shard": "01", "replica": "node5"},
+    stay_alive=True,
 )
 
 database_name = "modify_engine_uuid_shaped"
 
 CANNOT_MATCH_ERROR = "cannot be matched back against the default_replica_path template"
 NAME_IN_PATH_ERROR = "is located inside the default_replica_path template"
+UUID_IN_REPLICA_NAME_ERROR = "Macro 'uuid' in engine arguments is only supported"
 
 
 @pytest.fixture(scope="module")
@@ -210,24 +213,27 @@ def test_two_uuids_accepted_for_atomic(started_cluster):
     ch_two_uuids.query(f"DROP DATABASE {database_name} SYNC")
 
 
-def test_two_uuids_refused_on_restart_for_ordinary(started_cluster):
-    create_database(ch_two_uuids, "Ordinary")
-    create_mergetree_table(ch_two_uuids, "flagged")
-    set_convert_flags(ch_two_uuids, database_name, ["flagged"])
-    table_data_path = get_table_path(ch_two_uuids, "flagged", database_name)
+def check_convert_to_replicated_refused_on_restart(node, expected_error):
+    """The `convert_to_replicated` flag goes through a separate entrypoint, which must refuse the same templates."""
+    create_database(node, "Ordinary")
+    create_mergetree_table(node, "flagged")
+    set_convert_flags(node, database_name, ["flagged"])
+    table_data_path = get_table_path(node, "flagged", database_name)
 
-    ch_two_uuids.stop_clickhouse()
-    ch_two_uuids.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
-    assert ch_two_uuids.contains_in_log(CANNOT_MATCH_ERROR)
+    node.stop_clickhouse()
+    node.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
+    assert node.contains_in_log(expected_error)
 
     # Cancelling the conversion lets the server start again with the table still unconverted.
-    ch_two_uuids.exec_in_container(
-        ["bash", "-c", f"rm {table_data_path}convert_to_replicated"]
-    )
-    ch_two_uuids.start_clickhouse()
-    assert get_engine(ch_two_uuids, "flagged") == "MergeTree"
-    assert q(ch_two_uuids, "SELECT count() FROM flagged").strip() == "1"
-    ch_two_uuids.query(f"DROP DATABASE {database_name} SYNC")
+    node.exec_in_container(["bash", "-c", f"rm {table_data_path}convert_to_replicated"])
+    node.start_clickhouse()
+    assert get_engine(node, "flagged") == "MergeTree"
+    assert q(node, "SELECT count() FROM flagged").strip() == "1"
+    node.query(f"DROP DATABASE {database_name} SYNC")
+
+
+def test_two_uuids_refused_on_restart_for_ordinary(started_cluster):
+    check_convert_to_replicated_refused_on_restart(ch_two_uuids, CANNOT_MATCH_ERROR)
 
 
 @pytest.mark.parametrize("engine", ["Atomic", "Ordinary"])
@@ -235,7 +241,7 @@ def test_uuid_in_replica_name_refused(started_cluster, engine):
     create_database(ch_replica_name, engine)
     create_mergetree_table(ch_replica_name, "mt")
     check_attach_as_replicated_refused(
-        ch_replica_name, "mt", "Macro 'uuid' in engine arguments is only supported"
+        ch_replica_name, "mt", UUID_IN_REPLICA_NAME_ERROR
     )
     ch_replica_name.query(f"DROP DATABASE {database_name} SYNC")
 
@@ -245,6 +251,16 @@ def test_name_in_path_refused_for_ordinary(started_cluster):
     create_mergetree_table(ch_name_in_path, "mt")
     check_attach_as_replicated_refused(ch_name_in_path, "mt", NAME_IN_PATH_ERROR)
     ch_name_in_path.query(f"DROP DATABASE {database_name} SYNC")
+
+
+def test_uuid_in_replica_name_refused_on_restart_for_ordinary(started_cluster):
+    check_convert_to_replicated_refused_on_restart(
+        ch_replica_name, UUID_IN_REPLICA_NAME_ERROR
+    )
+
+
+def test_name_in_path_refused_on_restart_for_ordinary(started_cluster):
+    check_convert_to_replicated_refused_on_restart(ch_name_in_path, NAME_IN_PATH_ERROR)
 
 
 def test_name_in_path_accepted_for_atomic(started_cluster):
