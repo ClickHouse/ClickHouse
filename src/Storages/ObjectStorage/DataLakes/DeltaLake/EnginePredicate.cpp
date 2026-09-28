@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
@@ -113,7 +114,7 @@ namespace
         bool swapped;
     };
 
-    std::optional<DateComparison> matchDateComparison(const DB::ActionsDAG::Node * node)
+    std::optional<DateComparison> matchDateComparison(const DB::ActionsDAG::Node * node, const DB::ContextPtr & context)
     {
         const auto * conversion = node->children[0];
         const auto * literal = node->children[1];
@@ -151,7 +152,15 @@ namespace
             && !DB::isDateOrDate32(literal_type->getTypeId()))
             return {};
 
-        const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get());
+        /// Coerce the literal exactly as the real comparison does: under the query's format settings
+        /// (notably `date_time_overflow_behavior`), not the default `ignore`. `FunctionComparison`'s
+        /// `executeWithConstString` converts the constant string with `params.format_settings`, so a
+        /// bare `tryConvertFieldToType` here would translate e.g.
+        /// `toDate(d) = '1969-12-31' SETTINGS date_time_overflow_behavior='throw'` as if the literal
+        /// had been clamped, and could prune away the exception the comparison must raise. Under
+        /// `throw` an out-of-range literal makes this return null, so the file stays unpruned.
+        const auto format_settings = context ? DB::getFormatSettings(context) : DB::FormatSettings{};
+        const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get(), format_settings);
         if (value.isNull())
             return {};
 
@@ -632,7 +641,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return ffi::visit_predicate_le(iterator_data.state, column, constant);
                 }
 
-                if (auto comparison = matchDateComparison(node))
+                if (auto comparison = matchDateComparison(node, iterator_data.predicate.getContext()))
                 {
                     if (auto visitors = comparisonVisitors(func_name))
                         return visitComparisonOverDateConversion(
