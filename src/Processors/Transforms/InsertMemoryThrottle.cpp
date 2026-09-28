@@ -70,7 +70,7 @@ void InsertMemoryThrottle::observeChunkBytes(size_t bytes)
 
     const Int64 sample = static_cast<Int64>(bytes);
     Int64 prev = avg_chunk_bytes.load(std::memory_order_relaxed);
-    Int64 next;
+    Int64 next = 0;
     do
     {
         if (prev == 0)
