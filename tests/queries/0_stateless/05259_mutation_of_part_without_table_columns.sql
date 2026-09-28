@@ -12,7 +12,7 @@
 -- `NO_SUCH_COLUMN_IN_TABLE` and keep it, so its data can be recovered by adding the column back. A
 -- mutation that reads nothing from the part (`MODIFY COLUMN`, `RENAME COLUMN` of the new column) must
 -- fail the same way and keep the part too, not write a part with no columns, which can be neither read
--- nor loaded. Block number and offset columns are disabled, because they would be kept in the part.
+-- nor loaded.
 
 DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_wide;
@@ -20,8 +20,7 @@ DROP TABLE IF EXISTS t_replicated;
 DROP TABLE IF EXISTS t_two_columns;
 
 CREATE TABLE t_compact (v UInt32) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0, enable_block_offset_column = 0;
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_compact VALUES (1);
 ALTER TABLE t_compact DETACH PARTITION ALL;
 ALTER TABLE t_compact ADD COLUMN w UInt32;
@@ -40,8 +39,7 @@ ALTER TABLE t_compact ADD COLUMN v UInt32;
 SELECT 'compact', v, w FROM t_compact;
 
 CREATE TABLE t_wide (v UInt32) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0, enable_block_offset_column = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_wide VALUES (1);
 ALTER TABLE t_wide DETACH PARTITION ALL;
 ALTER TABLE t_wide ADD COLUMN w UInt32;
@@ -65,8 +63,7 @@ SELECT 'wide', v, z FROM t_wide;
 
 CREATE TABLE t_replicated (v UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_replicated', '1') ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0, enable_block_offset_column = 0;
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_replicated VALUES (1);
 ALTER TABLE t_replicated DETACH PARTITION ALL;
 ALTER TABLE t_replicated ADD COLUMN w UInt32;
@@ -85,7 +82,8 @@ ALTER TABLE t_replicated ADD COLUMN v UInt32;
 SELECT 'replicated', v, w FROM t_replicated;
 
 -- The same with a second column that the table still has: the mutation keeps that column and drops
--- the one the table does not have.
+-- the one the table does not have. Block number and offset columns are disabled, because this mutation
+-- would also write them to the new part.
 CREATE TABLE t_two_columns (v UInt32, x UInt32) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0, enable_block_offset_column = 0;
