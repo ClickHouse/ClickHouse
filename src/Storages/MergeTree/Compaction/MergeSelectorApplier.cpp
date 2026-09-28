@@ -54,13 +54,13 @@ struct ChooseContext
     const bool aggressive;
 };
 
-MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
+MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type, bool ttl_column_drop = false)
 {
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
         const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
         PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
-        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
+        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type, /*final=*/ false, ttl_column_drop};
     };
 
     MergeSelectorChoices choices;
@@ -88,13 +88,14 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Drop columns - 2 priority
     ///
     /// Dropping a column whose every value has expired does not need to rewrite the other columns of the
-    /// part, so, like dropping whole parts, it is done regardless of `ttl_only_drop_columns`.
+    /// part, so, like dropping whole parts, it is done regardless of `ttl_only_drop_columns`, and neither
+    /// waits for nor postpones the other TTL merges of the partition (see `MergeSelectorChoice::ttl_column_drop`).
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
     {
-        TTLColumnDropMergeSelector drop_ttl_selector(ctx.next_delete_times, ctx.current_time);
+        TTLColumnDropMergeSelector drop_ttl_selector(ctx.current_time);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete, /*ttl_column_drop=*/ true);
     }
 
     /// Delete rows - 3 priority

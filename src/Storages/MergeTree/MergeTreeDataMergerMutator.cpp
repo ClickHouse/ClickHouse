@@ -206,6 +206,15 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             }
             case MergeType::TTLDelete:
             {
+                /// A column drop does not postpone the other TTL merges of the partition, like `TTLDrop`.
+                /// It still forgets the advance of an earlier selection, which has either started or been
+                /// rolled back by now, so that discarding this selection does not undo that advance.
+                if (choice.ttl_column_drop)
+                {
+                    last_delete_ttl_merge_time_advance.erase(partition_id);
+                    break;
+                }
+
                 const time_t next_time = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
                 last_delete_ttl_merge_time_advance[partition_id]
                     = {.installed = next_time, .previous = getTTLMergeTime(next_delete_ttl_merge_times_by_partition, partition_id)};
