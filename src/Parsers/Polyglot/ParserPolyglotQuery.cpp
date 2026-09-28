@@ -30,7 +30,8 @@ namespace
 
 /// Words that MySQL and PostgreSQL put right after `SET` and that are not ClickHouse settings:
 /// scope modifiers (`SET SESSION sql_mode = ...`, `SET GLOBAL x = 1`, `SET LOCAL x TO 1`) and
-/// special forms (`SET NAMES utf8mb4`, `SET CHARACTER SET utf8mb4`, `SET TIME ZONE 'UTC'`).
+/// special forms (`SET NAMES utf8mb4`, `SET CHARACTER SET utf8mb4`). `TIME` is not here: `ParserSetQuery`
+/// parses `SET TIME ZONE 'tz'` itself, so a shorthand `SET TIME` followed by junk is a malformed ClickHouse SET.
 bool isForeignSetPrefix(const ASTPtr & name)
 {
     const auto * identifier = name ? name->as<ASTIdentifier>() : nullptr;
@@ -38,7 +39,7 @@ bool isForeignSetPrefix(const ASTPtr & name)
         return false;
 
     static constexpr std::string_view prefixes[]
-        = {"SESSION", "GLOBAL", "LOCAL", "PERSIST", "PERSIST_ONLY", "NAMES", "CHARACTER", "TIME"};
+        = {"SESSION", "GLOBAL", "LOCAL", "PERSIST", "PERSIST_ONLY", "NAMES", "CHARACTER"};
     const String & word = identifier->name();
     for (const auto prefix : prefixes)
         if (equalsCaseInsensitive(word, prefix))

@@ -80,3 +80,9 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
     -q "SET max_threads garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
     -q "SET GLOBAL max_connections = 10" 2>&1 | grep -cim1 'polyglot'
+
+# Test that `SET TIME` plus junk stays a ClickHouse SET: `SET TIME ZONE 'tz'` is native ClickHouse syntax
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET TIME garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET TIME garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
