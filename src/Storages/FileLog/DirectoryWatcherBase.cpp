@@ -364,6 +364,20 @@ void DirectoryWatcherBase::watchFunc()
         return result;
     };
 
+    /// Listing, `stat` and opening the watches are not atomic with a rename, which would be diffed as
+    /// REMOVED + ADDED, so the caller discards a pass the directory changed under. The drain before
+    /// `sync_file_watches` keeps the NOTE_DELETE of a departed name, which closing its watch drops.
+    auto scan_and_watch = [&](std::map<std::string, FileState> & out)
+    {
+        scan(out);
+        auto result = drain_events();
+        sync_file_watches(out);
+        const auto after_sync = drain_events();
+        result.any |= after_sync.any;
+        result.structural |= after_sync.structural;
+        return result;
+    };
+
     /// Pre-existing files are loaded by StorageFileLog's own directory scan; the watcher, like
     /// inotify, reports only subsequent changes. So seed the snapshot without emitting events. A
     /// transient failure here (e.g. the directory being briefly recreated) must not permanently kill
@@ -375,9 +389,7 @@ void DirectoryWatcherBase::watchFunc()
     {
         try
         {
-            scan(snapshot);
-            sync_file_watches(snapshot);
-            if (drain_events().structural)
+            if (scan_and_watch(snapshot).structural)
                 continue;
             break;
         }
@@ -419,15 +431,11 @@ void DirectoryWatcherBase::watchFunc()
         std::map<std::string, FileState> current;
         try
         {
-            scan(current);
             /// Install/refresh the per-file watches for the new set BEFORE emitting any events. A
             /// transient failure here (e.g. EMFILE) then just retries the whole pass with nothing
             /// queued and StorageFileLog left untouched, instead of stranding a half-emitted batch
             /// behind a dead watcher. It also drops any file that vanished mid-scan from `current`.
-            sync_file_watches(current);
-            /// Listing, `stat` and opening the watches are not atomic with a rename, which would be
-            /// diffed as REMOVED + ADDED, so a pass the directory changed under is discarded.
-            const auto drained = drain_events();
+            const auto drained = scan_and_watch(current);
             /// The drain consumed wakeups that the pass may not reflect.
             rescan_without_waiting = drained.any;
             if (drained.structural)
