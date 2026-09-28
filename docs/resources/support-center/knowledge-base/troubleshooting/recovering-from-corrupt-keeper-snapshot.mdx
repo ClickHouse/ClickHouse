@@ -289,7 +289,11 @@ Keeper deliberately refuses to start if a local log entry above the snapshot ref
 region: a removed node, anything below it, or the direct parent of a removed subtree. The direct parent
 counts as a conflict because its set of children no longer matches the tree the log was written against,
 so even an entry that only touches it — including a create or remove of a *sibling* under it, which
-updates its repaired child counters — could replay differently. Nodes further up the chain are not
+updates its repaired child counters — could replay differently. Entries that look only at the parent's
+existence, version or modification ids, such as a `Check` or `CheckNotExists` (but not `CheckStat`) or
+the data, child and exist watches a client re-registers after a reconnect, are unaffected and do not
+block recovery; persistent watches re-registered by a client never consult the tree and never block it.
+Nodes further up the chain are not
 affected: they keep exactly the data, version and children they have on a healthy peer, so an entry that
 only touches such a node replays identically and does not block recovery. The exception is an entry that
 walks the whole subtree below its path, such as a recursive removal or a recursive listing: those do

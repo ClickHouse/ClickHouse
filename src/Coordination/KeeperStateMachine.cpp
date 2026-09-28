@@ -252,6 +252,11 @@ namespace
 /// subtree the path may sit before the request would replay differently.
 enum class RequestPathKind
 {
+    /// Only the node itself: whether it exists and stats that removing a subtree never touches (its
+    /// `version`, `mzxid`, `pzxid`, ACL). Orphan cleanup repairs only `numChildren` and the children set
+    /// of the removed root's direct parent, so such a request replays identically unless the node
+    /// itself was removed.
+    NodeOnly,
     /// The node itself and its direct children: whether it exists, its data, version and ACL, and the
     /// `Stat` it reports (which carries `numChildren` and `cversion`) or an explicit children listing.
     /// Nothing below the children is observed.
@@ -325,30 +330,22 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
         /// be called on them: it dereferences `data_watches[0]` without checking that the list is
         /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
-        /// against the tree -- whether the node exists and its `mzxid`/`pzxid` decide between an immediate
-        /// `DELETED`/`CHANGED`/`CREATED` watch event and re-registering the watch -- so a watch on a pruned
-        /// path would replay differently after orphan cleanup. The persistent watch lists of `SetWatches2`
-        /// are registered without consulting the tree, but they are checked all the same: a tail entry
-        /// naming a pruned path is evidence the log postdates state the snapshot lost, and being broader
-        /// than strictly necessary is the safe direction for this guard.
+        /// against the tree -- whether the node exists, its `mzxid` for a data watch and its `pzxid` for a
+        /// child watch decide between an immediate `DELETED`/`CHANGED`/`CREATED` watch event and
+        /// re-registering the watch -- so a watch on a pruned path would replay differently after orphan
+        /// cleanup. None of these fields is touched on a surviving node, so they only conflict inside the
+        /// removed region. The persistent (and persistent recursive) watch lists of `SetWatches2` are
+        /// registered without consulting the tree, exactly like `AddWatch` above, so they are not checked.
         case OpNum::SetWatch:
         case OpNum::SetWatch2:
         {
             const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
             for (const auto & path : set_watches.data_watches)
-                f(path, RequestPathKind::NodeAndChildren);
+                f(path, RequestPathKind::NodeOnly);
             for (const auto & path : set_watches.child_watches)
-                f(path, RequestPathKind::NodeAndChildren);
+                f(path, RequestPathKind::NodeOnly);
             for (const auto & path : set_watches.exist_watches)
-                f(path, RequestPathKind::NodeAndChildren);
-            if (const auto * set_watches2 = dynamic_cast<const Coordination::SetWatches2Request *>(&request))
-            {
-                for (const auto & path : set_watches2->persistent_watches)
-                    f(path, RequestPathKind::NodeAndChildren);
-                /// A recursive watch covers the whole subtree, so it is checked against all of it.
-                for (const auto & path : set_watches2->persistent_recursive_watches)
-                    f(path, RequestPathKind::Subtree);
-            }
+                f(path, RequestPathKind::NodeOnly);
             return true;
         }
         /// Everything else has a meaningful single path.
@@ -382,12 +379,16 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             /// `remove_nodes_limit`), `ListRecursive` returns every descendant, and `Reconfig` rewrites
             /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
             /// subtree anywhere below them changes the outcome. `ListWithOptions` can be recursive
-            /// depending on its options. Everything else in this group resolves the node itself and at
-            /// most its direct children.
-            auto kind = request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
-                    || request.getOpNum() == OpNum::Reconfig
-                ? RequestPathKind::Subtree
-                : RequestPathKind::NodeAndChildren;
+            /// depending on its options. `Check` and `CheckNotExists` compare only the node's existence,
+            /// ACL and `version` (`CheckStat` can also compare `numChildren`/`cversion`, so it stays
+            /// broader). Everything else in this group resolves the node itself and at most its direct
+            /// children.
+            auto kind = RequestPathKind::NodeAndChildren;
+            if (request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
+                || request.getOpNum() == OpNum::Reconfig)
+                kind = RequestPathKind::Subtree;
+            else if (request.getOpNum() == OpNum::Check || request.getOpNum() == OpNum::CheckNotExists)
+                kind = RequestPathKind::NodeOnly;
             if (request.getOpNum() == OpNum::ListWithOptions)
             {
                 const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
@@ -445,7 +446,8 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
 ///  - the path is the direct parent of the removed root: its children set and `numChildren` differ
 ///    from the tree the log was written against, so e.g. `Remove` returns `ZOK` here but was
 ///    `ZNOTEMPTY`, `Create <root>` succeeds here but was `ZNODEEXISTS`, and a sibling create/remove
-///    updates the parent's stats from a repaired base. Conflicts for every kind;
+///    updates the parent's stats from a repaired base. Conflicts for every kind except `NodeOnly`,
+///    whose observed fields are unchanged there;
 ///  - the path is a higher strict ancestor: only a request that walks the whole subtree
 ///    (`RemoveRecursive`, `ListRecursive`) sees the difference. A `Set`, `Get`, `List` or sibling
 ///    create on such an ancestor does not, and returns `false` here.
@@ -453,6 +455,9 @@ bool conflictsWithRemovedSubtree(std::string_view path, RequestPathKind kind, st
 {
     if (Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH)
         return true;
+
+    if (kind == RequestPathKind::NodeOnly)
+        return false;
 
     if (Coordination::matchPath(subtree_root, path) != Coordination::PathMatchResult::IS_CHILD)
         return false;
