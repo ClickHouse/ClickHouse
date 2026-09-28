@@ -93,7 +93,9 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
+        /// No `expect_eof`: `Content-Length` already defines where the body ends, and with keep-alive
+        /// the socket legitimately holds the bytes of the next request.
+        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length});
         stream_is_bounded = true;
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -203,7 +205,7 @@ std::string HTTPServerRequest::toStringForLogging() const
         getMethod(),
         clientAddress().toString(),
         get("User-Agent", "(none)"),
-        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ""),
         getContentType(),
         getTransferEncoding(),
         get("X-Forwarded-For", "(none)"));

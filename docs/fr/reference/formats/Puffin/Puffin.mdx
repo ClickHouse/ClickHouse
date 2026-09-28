@@ -1,0 +1,51 @@
+---
+description: 'Documentation sur le format Puffin'
+keywords: ['Puffin']
+slug: /interfaces/formats/Puffin
+title: 'Puffin'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Format d’entrée permettant de lire des fichiers [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/).
+
+Le format expose les positions des lignes supprimées à partir des blobs `deletion-vector-v1`. Il s’agit du seul type de blob pris en charge : un fichier contenant tout autre type de blob (par exemple `apache-datasketches-theta-v1`) est rejeté.
+Si un fichier Puffin contient plusieurs blobs `deletion-vector-v1`, le format produit une ligne pour chacun d’eux.
+
+Colonnes de sortie fixes :
+
+* `referenced_data_file` (`String`) - chemin du fichier de données auquel s’applique le vecteur de suppression (propriété de blob `referenced-data-file`)
+* `deleted_rows` (`Array(UInt64)`) - positions sur 64 bits des lignes supprimées selon le bitmap Roaring du vecteur de suppression
+
+Les vecteurs de suppression dont la `cardinality` déclarée dépasse un plafond absolu de matérialisation sont rejetés lorsque `deleted_rows` est demandé. Les propriétés `deletion-vector-v1` du pied de page (notamment la validité de `cardinality` en tant qu’entier non signé) sont toujours vérifiées. La sélection de `referenced_data_file` uniquement évite les E/S de payload sur disque et ignore donc également l’enveloppe, le CRC, la désérialisation Roaring et le plafond de matérialisation — volontairement, afin qu’une projection limitée au chemin ne lise pas de données jusqu’à la limite de taille du blob.
+
+La longueur sur disque d’un blob `deletion-vector-v1` est limitée par un plafond absolu (aligné sur la vérification de taille de contenu de 2 Gio d’Iceberg). Lorsque `deleted_rows` est demandé, le lecteur examine l’en-tête de l’enveloppe (longueur combinée et nombre magique) avant d’allouer le payload complet ; le CRC est vérifié après la lecture limitée.
+
+Les pieds de page Puffin compressés avec LZ4 et non compressés sont pris en charge. La taille du payload du pied de page (ainsi que la taille de contenu LZ4 déclarée) est limitée, le cas échéant, par un taux de compression et par un plafond absolu ; les pieds de page surdimensionnés sont rejetés avant l’allocation.
+
+Seul un sous-ensemble des colonnes de sortie peut être demandé. Une structure fournie par l’utilisateur comportant des noms ou des types de colonnes inattendus est rejetée lors de la création du format.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Lisez les positions des lignes supprimées à partir du fichier de données référencé :
+
+```sql
+SELECT referenced_data_file, deleted_rows
+FROM file(deletes.puffin, Puffin);
+```
+
+Développez les positions supprimées en lignes distinctes :
+
+```sql
+SELECT referenced_data_file, row_number
+FROM file(deletes.puffin, Puffin)
+ARRAY JOIN deleted_rows AS row_number
+ORDER BY referenced_data_file, row_number;
+```
+
+Utilisez `PuffinMetadata` pour examiner les descripteurs de blobs du pied de page avant de lire les vecteurs de suppression.

@@ -1,0 +1,202 @@
+---
+description: 'Des contraintes sur les paramètres peuvent être définies dans la section `profiles`
+  du fichier de configuration `user.xml` et empêchent les utilisateurs de modifier certains
+  paramètres à l’aide de la requête `SET`.'
+sidebarTitle: 'Contraintes sur les paramètres'
+slug: /operations/settings/constraints-on-settings
+title: 'Contraintes sur les paramètres'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Dans ClickHouse, les « contraintes sur les paramètres » désignent les limitations et les règles
+que vous pouvez leur définir. Ces contraintes permettent de préserver
+la stabilité, la sécurité et le comportement prévisible de votre base de données.
+
+<div id="defining-constraints">
+  ## Définition des contraintes
+</div>
+
+Les contraintes sur les paramètres peuvent être définies dans la section `profiles` du fichier de configuration `user.xml`.
+Elles empêchent les utilisateurs de modifier certains paramètres à l’aide de
+l’instruction [`SET`](/fr/reference/statements/set).
+
+Les contraintes sont définies comme suit :
+
+```xml
+<profiles>
+  <user_name>
+    <constraints>
+      <setting_name_1>
+        <min>lower_boundary</min>
+      </setting_name_1>
+      <setting_name_2>
+        <max>upper_boundary</max>
+      </setting_name_2>
+      <setting_name_3>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+      </setting_name_3>
+      <setting_name_4>
+        <readonly/>
+      </setting_name_4>
+      <setting_name_5>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <changeable_in_readonly/>
+      </setting_name_5>
+      <setting_name_6>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <disallowed>value1</disallowed>
+        <disallowed>value2</disallowed>
+        <disallowed>value3</disallowed>
+        <changeable_in_readonly/>
+      </setting_name_6>
+    </constraints>
+  </user_name>
+</profiles>
+```
+
+Si l&#39;utilisateur tente d&#39;enfreindre les contraintes, une exception est levée et le
+paramètre reste inchangé.
+
+<div id="types-of-constraints">
+  ## Types de contraintes
+</div>
+
+ClickHouse prend en charge plusieurs types de contraintes :
+
+* `min`
+* `max`
+* `disallowed`
+* `readonly` (avec l’alias `const`)
+* `changeable_in_readonly`
+
+Les contraintes `min` et `max` définissent les bornes inférieure et supérieure d’un
+paramètre numérique, et peuvent être utilisées conjointement.
+
+La contrainte `disallowed` permet de spécifier une ou plusieurs valeurs qui ne doivent pas
+être autorisées pour un paramètre donné.
+
+La contrainte `readonly` ou `const` indique que l’utilisateur ne peut pas modifier
+du tout le paramètre correspondant.
+
+Le type de contrainte `changeable_in_readonly` permet aux utilisateurs de modifier le paramètre
+dans la plage `min`/`max` même si le paramètre `readonly` est défini sur `1` ;
+autrement, les paramètres ne peuvent pas être modifiés en mode `readonly=1`.
+
+<Note>
+  `changeable_in_readonly` n’est pris en charge que si `settings_constraints_replace_previous`
+  est activé :
+
+  ```xml
+  <access_control_improvements>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+  </access_control_improvements>
+  ```
+</Note>
+
+<div id="multiple-constraint-profiles">
+  ## Plusieurs profils de contraintes
+</div>
+
+S&#39;il y a plusieurs profils actifs pour un utilisateur, les contraintes sont fusionnées.
+Le processus de fusion dépend de `settings_constraints_replace_previous` :
+
+* **true** (recommandé) : les contraintes d&#39;un même paramètre sont remplacées lors de la
+  fusion, de sorte que la dernière contrainte est utilisée et que toutes les précédentes sont ignorées.
+  Cela inclut les champs non définis dans la nouvelle contrainte.
+* **false** (par défaut) : les contraintes d&#39;un même paramètre sont fusionnées de telle sorte que
+  chaque type de contrainte non défini est repris du profil précédent et que chaque
+  type de contrainte défini est remplacé par la valeur du nouveau profil.
+
+<div id="read-only">
+  ## Mode lecture seule
+</div>
+
+Le mode lecture seule est activé par le paramètre `readonly`, à ne pas confondre
+avec le type de contrainte `readonly` :
+
+* `readonly=0` : aucune restriction de lecture seule.
+* `readonly=1` : seules les requêtes en lecture sont autorisées et les paramètres ne peuvent pas être modifiés,
+  sauf si `changeable_in_readonly` est défini.
+* `readonly=2` : seules les requêtes en lecture sont autorisées, mais les paramètres peuvent être modifiés,
+  à l’exception du paramètre `readonly` lui-même.
+
+<div id="example-read-only">
+  ### Exemple
+</div>
+
+Supposons que `users.xml` contienne les lignes suivantes :
+
+```xml
+<profiles>
+  <default>
+    <max_memory_usage>10000000000</max_memory_usage>
+    <force_index_by_date>0</force_index_by_date>
+    ...
+    <constraints>
+      <max_memory_usage>
+        <min>5000000000</min>
+        <max>20000000000</max>
+      </max_memory_usage>
+      <force_index_by_date>
+        <readonly/>
+      </force_index_by_date>
+    </constraints>
+  </default>
+</profiles>
+```
+
+Les requêtes suivantes renverront toutes une exception :
+
+```sql
+SET max_memory_usage=20000000001;
+SET max_memory_usage=4999999999;
+SET force_index_by_date=1;
+```
+
+```text
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be greater than 20000000000.
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
+Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
+```
+
+<Note>
+  Le profil `default` est traité de manière particulière : toutes les contraintes définies pour le
+  profil `default` deviennent les contraintes par défaut et s’appliquent donc à tous les utilisateurs
+  jusqu’à ce qu’elles soient explicitement remplacées pour ces utilisateurs.
+</Note>
+
+<div id="constraints-on-merge-tree-settings">
+  ## Contraintes sur les paramètres de MergeTree
+</div>
+
+Il est possible de définir des contraintes pour les [paramètres de MergeTree](/fr/reference/settings/merge-tree-settings).
+Ces contraintes sont appliquées lors de la création d&#39;une table utilisant le moteur MergeTree
+ou lors de la modification de ses paramètres de stockage.
+
+Le nom d&#39;un paramètre de MergeTree doit être précédé du préfixe `merge_tree_` lorsqu&#39;il est
+référencé dans la section `<constraints>`.
+
+<div id="example-read-only">
+  ### Exemple
+</div>
+
+Vous pouvez interdire la création de nouvelles tables avec un `storage_policy` spécifié explicitement
+
+```xml
+<profiles>
+  <default>
+    <constraints>
+      <merge_tree_storage_policy>
+        <const/>
+      </merge_tree_storage_policy>
+    </constraints>
+  </default>
+</profiles>
+```

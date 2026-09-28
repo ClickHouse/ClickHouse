@@ -1,0 +1,8 @@
+=== tree ===
+root
+└─ child
+orphan
+cycle_a
+└─ cycle_b
+=== every replica of the cluster resolves to this node: still one row per span ===
+5	1

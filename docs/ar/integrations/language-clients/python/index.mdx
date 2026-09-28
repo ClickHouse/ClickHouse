@@ -1,0 +1,183 @@
+---
+keywords: ['clickhouse', 'بايثون', 'عميل', 'Connect', 'تكامل']
+slug: /integrations/python
+description: 'حزمة مشاريع ClickHouse Connect لربط بايثون بـ ClickHouse'
+title: مقدمة
+sidebarTitle: 'مقدمة'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+يُعد ClickHouse Connect برنامج تشغيل أساسيًا لقواعد البيانات، ويوفّر توافقًا تشغيليًا مع مجموعة واسعة من تطبيقات بايثون.
+
+* الواجهات الرئيسية هي `Client` المتزامن و`AsyncClient` الأصلي المعتمد على aiohttp ضمن `clickhouse_connect.driver`. كما توفّر حزمة برنامج التشغيل سياقات الاستعلام والإدراج، ومساعدات البث، ودعم DB-API، وطرق HTTP منخفضة المستوى.
+* تتولى حزمة `clickhouse_connect.datatypes` تسلسل أنواع ClickHouse وإلغاء تسلسلها باستخدام التنسيق الثنائي العمودي الأصلي لـ ClickHouse.
+* تُسرّع امتدادات Cython الاختيارية في `clickhouse_connect.driverc` مسارات التسلسل والتحويل والتخزين المؤقت الشائعة. ويظل مسار بايثون خالص متاحًا على المنصات التي يتعذر فيها بناء هذه الامتدادات.
+* تتضمن الحزمة معلومات الأنواع وفق PEP 561، بحيث تتمكن أدوات التحقق من الأنواع اللاحقة من استخدام التعليقات التوضيحية الخاصة بالواجهات العامة لبرنامج التشغيل وDB-API وSQLAlchemy.
+* تدعم لهجة [SQLAlchemy](https://www.sqlalchemy.org/) في `clickhouse_connect.cc_sqlalchemy` واجهة SQLAlchemy Core، وانعكاس المخطط، وبنود الاستعلام ومحركات الجداول الخاصة بـ ClickHouse، وعمليات ترحيل Alembic. تعمل عمليات قراءة ORM الأساسية وعمليات الإدراج، لكن هذه اللهجة مصممة لأعباء العمل التحليلية لا لسلوك ORM الكامل القائم على وحدة العمل.
+* يُعد برنامج التشغيل الأساسي وتنفيذ [ClickHouse Connect SQLAlchemy](/ar/integrations/language-clients/python/sqlalchemy) الطريقة المفضلة لربط ClickHouse مع Apache Superset. استخدم اتصال قاعدة البيانات `ClickHouse Connect` أو سلسلة اتصال لهجة SQLAlchemy ‏`clickhousedb`.
+
+هذه الوثائق محدثة حتى الإصدار clickhouse-connect 1.6.0. إذا كنت تُجري ترقية من 0.15.x أو إصدار أقدم، فراجع [دليل الترحيل 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
+
+<Note>
+  تستخدم برامج ClickHouse Connect العميلة القياسية واجهة HTTP. ويدعم ذلك موازنات تحميل HTTP والوكيلات وضوابط الشبكات المؤسسية الشائعة. كما يوفّر ClickHouse Connect أيضًا واجهة خلفية [chDB](#embedded-chdb-backend) تجريبية تعمل داخل العملية.
+</Note>
+
+<div id="requirements-and-compatibility">
+  ## المتطلبات والتوافق
+</div>
+
+| المكوّن    | الإصدارات المدعومة                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| بايثون     | من 3.10 إلى 3.14. تُدعَم تجريبيًا إصدارات البناء الحرة متعددة الخيوط مثل 3.14t.                           |
+| ClickHouse | إصدارات ClickHouse المدعومة حاليًا. تُجرى اختبارات CI على أحدث إصدارات LTS والإصدارات المستقرة من الخادم. |
+| SQLAlchemy | ‏1.4.40 أو أحدث، وأقل من 3.0                                                                              |
+| Pandas     | ‏2.x و3.x                                                                                                 |
+| Polars     | ‏1.0 أو أحدث                                                                                              |
+| aiohttp    | ‏3.9 أو أحدث                                                                                              |
+| المنصات    | Linux وmacOS وWindows على المعماريات التي تُنشر لها حزم wheel لكل إصدار من بايثون                         |
+
+تتضمن الحزمة حزم wheel مُصرَّفة حيثما كانت متاحة، وتلجأ إلى تنفيذ ببايثون خالص عندما يتعذر بناء امتدادات Cython. ‏PyArrow مدعوم على بايثون من 3.10 إلى 3.14. يتطلب بايثون 3.14 إصدار PyArrow 22 أو أحدث.
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+ثبّت ClickHouse Connect من [PyPI](https://pypi.org/project/clickhouse-connect/) عبر pip:
+
+```bash
+pip install clickhouse-connect
+```
+
+تُثبَّت عمليات التكامل الاختيارية عبر الحزم الإضافية:
+
+```bash
+pip install "clickhouse-connect[async]"      # Native asyncio client
+pip install "clickhouse-connect[pandas]"     # Pandas
+pip install "clickhouse-connect[arrow]"      # PyArrow
+pip install "clickhouse-connect[polars]"     # Polars
+pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
+pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
+```
+
+يمكن أيضًا تثبيت ClickHouse Connect من المصدر:
+
+* نفّذ `git clone` لـ [مستودع GitHub](https://github.com/ClickHouse/clickhouse-connect).
+* انتقل إلى جذر المشروع وشغّل `pip install .`. يثبّت نظام البناء Cython تلقائيًا لتجميع امتدادات C الاختيارية.
+
+يمكن الوصول إلى الإصدار المثبّت عبر `clickhouse_connect.__version__`.
+
+<div id="support-policy">
+  ## سياسة الدعم
+</div>
+
+حدِّث إلى أحدث إصدار من ClickHouse Connect قبل الإبلاغ عن مشكلة. سجّل المشكلات في [مشروع GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). يستهدف ClickHouse Connect [إصدارات ClickHouse المدعومة حاليًا](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) وقت إصدار كل نسخة من برنامج التشغيل. وغالبًا ما يعمل مع إصدارات الخادم الأقدم، لكن أنواع البيانات الأحدث وميزات البروتوكول قد تتطلب خادمًا أحدث.
+
+<div id="basic-usage">
+  ## الاستخدام الأساسي
+</div>
+
+<div id="gather-your-connection-details">
+  ### اجمع بيانات الاتصال الخاصة بك
+</div>
+
+<ConnectionDetails />
+
+<div id="establish-a-connection">
+  ### إنشاء اتصال
+</div>
+
+فيما يلي مثالان للاتصال بـ ClickHouse:
+
+* الاتصال بخادم ClickHouse على localhost.
+* الاتصال بخدمة ClickHouse Cloud.
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
+  #### استخدم مثيل عميل ClickHouse Connect للاتصال بخادم ClickHouse على localhost:
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host="localhost",
+    username="default",
+    password="password",
+)
+```
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
+  #### استخدم مثيل عميل ClickHouse Connect للاتصال بخدمة ClickHouse Cloud:
+</div>
+
+<Tip>
+  استخدم تفاصيل الاتصال التي جُمعت سابقًا. تتطلب خدمات ClickHouse Cloud استخدام TLS، لذا استخدم المنفذ 8443.
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host="HOSTNAME.clickhouse.cloud",
+    port=8443,
+    username="default",
+    password="your password",
+)
+```
+
+<div id="interact-with-your-database">
+  ### التفاعل مع قاعدة البيانات
+</div>
+
+لتنفيذ أمر في ClickHouse SQL، استخدم طريقة ‏`command` الخاصة بالعميل:
+
+```python
+client.command(
+    "CREATE TABLE new_table "
+    "(key UInt32, value String, metric Float64) "
+    "ENGINE MergeTree ORDER BY key"
+)
+```
+
+لإدراج البيانات على دفعات، استخدم الطريقة `insert` الخاصة بالعميل مع مصفوفة ثنائية الأبعاد من الصفوف والقيم:
+
+```python
+row1 = [1000, "String Value 1000", 5.233]
+row2 = [2000, "String Value 2000", -107.04]
+data = [row1, row2]
+client.insert("new_table", data, column_names=["key", "value", "metric"])
+```
+
+لاسترداد البيانات باستخدام ClickHouse SQL، استخدم الطريقة `query` الخاصة بالعميل:
+
+```python
+result = client.query("SELECT max(key), avg(metric) FROM new_table")
+print(result.result_rows)
+# Output: [(2000, -50.9035)]
+
+client.close()
+```
+
+<div id="embedded-chdb-backend">
+  ## الواجهة الخلفية المضمّنة لـ chDB
+</div>
+
+تُشغِّل الواجهة الخلفية التجريبية لـ chDB استعلامات ClickHouse داخل عملية بايثون من دون خادم HTTP. ثبّت الإضافة `chdb`، ثم اختر الواجهة الخلفية باستخدام `interface="chdb"` أو عبر `chdb://` DSN:
+
+```python
+import clickhouse_connect
+
+with clickhouse_connect.get_client(interface="chdb") as client:
+    result = client.query("SELECT number FROM numbers(3)")
+    print(result.result_rows)
+    # Output: [(0,), (1,), (2,)]
+```
+
+قاعدة البيانات الافتراضية تكون في الذاكرة. مرِّر `path="/data/my_chdb"` أو استخدم `dsn="chdb:///data/my_chdb"` للتخزين الدائم. يتيح chDB مسار engine واحدًا لكل عملية. ولا يدعم العميل غير المتزامن أو البيانات الخارجية.

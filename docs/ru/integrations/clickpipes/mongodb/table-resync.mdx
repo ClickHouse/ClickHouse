@@ -1,0 +1,30 @@
+---
+title: 'Повторная синхронизация отдельных таблиц'
+description: 'Повторная синхронизация отдельных таблиц в MongoDB ClickPipe'
+slug: /integrations/clickpipes/mongodb/table_resync
+sidebarTitle: 'Повторно синхронизировать таблицу'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'приём данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+В некоторых сценариях бывает полезно повторно синхронизировать отдельные таблицы в пайпе. Например, это может потребоваться при крупных изменениях схемы в MongoDB или при переработке модели данных в ClickHouse.
+
+Хотя возможность повторной синхронизации отдельных таблиц по нажатию кнопки всё ещё находится в разработке, в этом руководстве описано, как уже сегодня выполнить это в MongoDB ClickPipe.
+
+<Steps>
+  <Step title="Удалите таблицу из пайпа" id="removing-table">
+    Для этого следуйте [руководству по удалению таблицы](/ru/integrations/clickpipes/mongodb/remove-table).
+  </Step>
+
+  <Step title="Выполните TRUNCATE или DROP таблицы в ClickHouse" id="truncate-drop-table">
+    Этот шаг нужен, чтобы избежать дублирования данных, когда на следующем шаге вы снова добавите эту таблицу. Для этого перейдите на вкладку **SQL Console** в ClickHouse Cloud и выполните запрос.
+    Обратите внимание: действует проверка, которая блокирует добавление таблицы, если она уже существует в ClickHouse и не пуста.
+  </Step>
+
+  <Step title="Снова добавьте таблицу в ClickPipe" id="add-table-again">
+    Для этого следуйте [руководству по добавлению таблицы](/ru/integrations/clickpipes/mongodb/add-table).
+  </Step>
+</Steps>

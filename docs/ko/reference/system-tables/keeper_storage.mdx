@@ -1,0 +1,60 @@
+---
+description: '로컬 in-process ClickHouse Keeper 노드에 저장된 데이터 트리의 각 노드당 한 행을 포함합니다.'
+keywords: ['시스템 테이블', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: '참고'
+---
+
+import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
+
+<SystemTableCloud />
+
+<div id="description">
+  ## 설명
+</div>
+
+이 테이블은 `clickhouse server` 프로세스(`clickhouse keeper` 프로세스 제외)를 사용하는 ClickHouse Keeper 배포에만 존재합니다. `/keeper` 시스템 노드를 비롯해 로컬 Keeper 노드에 저장된 데이터 트리의 각 노드마다 하나의 행을 포함합니다.
+
+`system.zookeeper`와 달리 이 테이블은 Keeper 클러스터에 요청을 전송하지 않습니다. 요청 처리에 영향을 주지 않으면서 일관된 잠금 없는 뷰를 통해 로컬 Keeper의 커밋된 상태를 직접 읽습니다. 테이블을 읽는 데 경로 조건은 필요하지 않으며 전체 트리를 반환하므로, 가장 많은 자식을 가진 노드나 가장 큰 데이터를 가진 노드를 찾는 것처럼 모든 노드를 스캔하는 쿼리에 적합합니다.
+
+<div id="columns">
+  ## 컬럼
+</div>
+
+* `path` ([String](/ko/reference/data-types/string)) — 노드의 절대 경로입니다.
+* `data` ([String](/ko/reference/data-types/string)) — 노드에 저장된 데이터입니다.
+* `czxid` ([Int64](/ko/reference/data-types/int-uint)) — 노드를 생성한 트랜잭션의 ID입니다.
+* `mzxid` ([Int64](/ko/reference/data-types/int-uint)) — 노드를 마지막으로 수정한 트랜잭션의 ID입니다.
+* `ctime` ([DateTime64(3)](/ko/reference/data-types/datetime64)) — 노드가 생성된 시간입니다.
+* `mtime` ([DateTime64(3)](/ko/reference/data-types/datetime64)) — 노드가 마지막으로 수정된 시간입니다.
+* `version` ([Int32](/ko/reference/data-types/int-uint)) — 노드 데이터의 수정 횟수입니다.
+* `cversion` ([Int32](/ko/reference/data-types/int-uint)) — 노드 자식의 수정 횟수입니다.
+* `aversion` ([Int32](/ko/reference/data-types/int-uint)) — 노드 ACL의 수정 횟수입니다.
+* `ephemeral_owner` ([Int64](/ko/reference/data-types/int-uint)) — 노드가 임시(ephemeral) 노드인 경우 소유 세션의 ID이며, 그렇지 않으면 `0`입니다.
+* `data_length` ([UInt32](/ko/reference/data-types/int-uint)) — 노드 데이터의 바이트 단위 크기입니다.
+* `num_children` ([Int32](/ko/reference/data-types/int-uint)) — 노드의 자식 수입니다.
+* `pzxid` ([Int64](/ko/reference/data-types/int-uint)) — 노드의 자식을 마지막으로 추가하거나 제거한 트랜잭션의 ID입니다.
+* `seq_num` ([Int64](/ko/reference/data-types/int-uint)) — 노드의 순차적(sequential) 자식 이름을 생성하는 데 사용되는 카운터입니다.
+* `ttl` ([Int64](/ko/reference/data-types/int-uint)) — 노드가 TTL 노드인 경우 TTL(밀리초)이며, 그렇지 않으면 `0`입니다.
+* `acl_id` ([UInt32](/ko/reference/data-types/int-uint)) — 노드 ACL의 내부 ID이며, ACL이 없으면 `0`입니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```

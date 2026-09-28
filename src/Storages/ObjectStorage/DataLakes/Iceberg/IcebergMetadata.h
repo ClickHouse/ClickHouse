@@ -8,6 +8,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
+#include <Common/MultiVersion.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -22,12 +23,14 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <IO/CompressionMethod.h>
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+
 
 namespace DB
 {
@@ -48,6 +51,7 @@ struct IcebergFileRecord
     std::map<Int32, Int64> column_sizes;
     std::map<Int32, Int64> value_counts;
     std::vector<Int32> equality_ids;
+    std::optional<UInt64> first_row_id;
 };
 
 class IcebergMetadata : public IDataLakeMetadata
@@ -102,13 +106,15 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+
+    void setExplicitMetadataFilePath(const String & path) override;
+
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
-    IcebergHistory getHistory(ContextPtr local_context) const;
+    std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
+    IcebergHistory getHistory(ContextPtr local_context) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
@@ -123,6 +129,8 @@ public:
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+
+    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -140,6 +148,11 @@ public:
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
+    bool optimizeManifestFiles(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & storage_id);
     bool supportsDelete() const override { return true; }
     void mutate(
         const MutationCommands & commands,
@@ -155,11 +168,17 @@ public:
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands) const override;
     void alter(
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -179,6 +198,21 @@ public:
 
     void drop(ContextPtr context) override;
 
+    static DataLakeMetadataPtr createWithDeserialization(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        ReadBuffer & in);
+
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context,
+        bool force_fetch_latest_metadata = false) const;
+
+    const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
+    {
+        return persistent_components;
+    }
+
 private:
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
@@ -190,24 +224,34 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
 
-    Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
+    Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
     getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
+    StorageObjectStorageConfigurationPtr getConfiguration() const;
+    DataLakeStorageSettings getMetadataLookupSettings() const;
+
+    /// Refuse `operation` while the table root is deeper than the queried path, because anything
+    /// scoped to the queried path reaches beyond this table there.
+    void checkTableRootIsQueriedPath(std::string_view operation) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
+    MultiVersion<String> explicit_metadata_file_path;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
+    ObjectIterator prepared_iterator;
 
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
+
+    void alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context);
 };
 }
 

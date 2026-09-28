@@ -73,6 +73,8 @@ namespace
         if (query.grantees)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can't specify grantees in query using config file");
 
+        query.access_rights_elements.throwIfFilterIsNotCompilable();
+
         for (auto & element : query.access_rights_elements)
         {
             if (query.is_revoke)

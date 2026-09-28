@@ -1,0 +1,32 @@
+-- LowCardinality(Nullable(Int32)), compact part
+0
+1
+\N
+-- LowCardinality(Nullable(String)), wide part
+0
+a
+\N
+-- plain Nullable(Int32) control
+0
+1
+\N
+-- plain Int32 control
+0
+1
+2
+-- LowCardinality(Int32) control
+0
+1
+2
+-- composite partition key (LowCardinality(Nullable(Int32)), Int32)
+0
+1	10
+\N	20
+-- only NULL values
+0
+\N
+\N
+-- only NULL values, after merge
+0
+\N
+\N

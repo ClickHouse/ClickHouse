@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
 -- Test that virtual columns are available when reading from normal projections.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_proj_virtuals;
 

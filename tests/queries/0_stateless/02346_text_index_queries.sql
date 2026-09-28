@@ -34,8 +34,10 @@ SELECT sum(rows) == 4 FROM (EXPLAIN ESTIMATE SELECT * FROM tab WHERE s LIKE '%01
 
 -- search text index with hasToken
 SELECT * FROM tab WHERE hasToken(s, 'Click') ORDER BY k;
--- check the query only read 4 granules (8 rows total; each granule has 2 rows)
-SELECT sum(rows) == 8 FROM (EXPLAIN ESTIMATE SELECT * FROM tab WHERE hasToken(s, 'Click') ORDER BY k);
+-- `hasToken` uses `splitByNonAlpha` semantics, which disagree with the `ngrams` index tokens,
+-- so the index is intentionally not used for `hasToken` (it would otherwise return wrong rows).
+-- The whole table (10 granules, 20 rows) is read and the row-level predicate filters it.
+SELECT sum(rows) == 20 FROM (EXPLAIN ESTIMATE SELECT * FROM tab WHERE hasToken(s, 'Click') ORDER BY k);
 
 ----------------------------------------------------
 SELECT 'Test text(tokenizer = "splitByNonAlpha")';

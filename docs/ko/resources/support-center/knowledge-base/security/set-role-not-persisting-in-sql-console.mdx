@@ -1,0 +1,144 @@
+---
+description: 'ClickHouse Cloud SQL 콘솔에서 `SET ROLE`이 유지되지 않는 이유와 사용자별 영구 권한을 할당하는 방법을 알아봅니다.'
+sidebar_label: 'SQL 콘솔에서 `SET ROLE`이 유지되지 않는 이유'
+sidebar_position: 6
+slug: /resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console
+title: 'ClickHouse Cloud SQL 콘솔에서 `SET ROLE`이 유지되지 않는 이유'
+doc_type: 'guide'
+date: 2026-07-24
+tags: ['보안 및 인증', 'Cloud 관리', '문제 해결']
+keywords: ['SQL 콘솔', 'SET ROLE', 'RBAC', '액세스 제어']
+---
+
+ClickHouse Cloud SQL 콘솔에서 `SET ROLE`을 실행하면 한 쿼리에서는 역할이 변경된 것처럼 보이지만, 다음 쿼리에서는 원래 역할로 되돌아갈 수 있습니다. 쿼리와 세션 전반에서 권한을 유지해야 한다면 사용자별 SQL 콘솔 역할을 사용하십시오.
+
+<Tip>
+  콘솔에서 데이터베이스 액세스를 관리하려면 [Cloud 관리형 데이터베이스 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)(베타)을 사용하는 것이 좋습니다. `sql-console-role:<email>` 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않습니다.
+</Tip>
+
+<div id="symptoms">
+  ## 증상
+</div>
+
+다음 증상 중 하나 이상이 나타날 수 있습니다.
+
+* `SET ROLE sql_console_developer`를 실행한 후에도 이후 쿼리가 계속 `sql_console_read_only` 역할로 실행됩니다.
+* 쿼리마다 `currentRoles`, `enabledRoles`, `defaultRoles`의 결과가 달라집니다.
+* `SET ROLE`와 다른 쿼리를 함께 실행하면 선택한 역할이 항상 유지되는 것은 아닙니다.
+* `SHOW GRANTS`에 예상한 역할이 표시되지만, 해당 권한은 활성화되지 않습니다.
+
+다음 명령으로 현재 사용자와 역할을 확인할 수 있습니다.
+
+```sql
+SELECT
+    currentUser(),
+    currentRoles(),
+    enabledRoles(),
+    defaultRoles();
+```
+
+<div id="why-this-happens">
+  ## 이 문제가 발생하는 이유
+</div>
+
+SQL 콘솔은 여러 레플리카로 구성된 ClickHouse Cloud 서비스에 상태 비저장 HTTP 연결을 통해 쿼리를 전송합니다. 연속된 쿼리가 동일한 연결이나 레플리카를 사용할 것이라고 보장할 수 없습니다.
+
+`SET ROLE`은 현재 세션에서 활성화된 역할을 변경합니다. 하지만 이후 SQL 콘솔 요청에서도 세션 상태가 유지되지는 않습니다. 따라서 후속 쿼리는 이전 요청에서 활성화한 역할 없이 실행될 수 있습니다.
+
+따라서 SQL 콘솔에서는 `SET ROLE`을 영구적인 액세스 제어 수단으로 사용하지 마십시오.
+
+<div id="how-sql-console-user-roles-work">
+  ## SQL 콘솔 사용자 역할의 작동 방식
+</div>
+
+사용자가 SQL 콘솔을 열면 ClickHouse Cloud에서 다음 명명 규칙에 따라 데이터베이스 사용자가 프로비저닝됩니다:
+
+```text
+sql-console:user@example.com
+```
+
+ClickHouse Cloud는 이름이 다음 규칙을 따르는 데이터베이스 역할도 확인합니다:
+
+```text
+sql-console-role:user@example.com
+```
+
+해당 역할이 있으면 ClickHouse Cloud가 일치하는 SQL 콘솔 사용자에게 할당합니다. 이는 개별 SQL 콘솔 사용자에게 영구적인 사용자 지정 권한을 부여하는 지원 방식입니다.
+
+| 엔터티                                           | 용도                                  | 영구 유지 여부                 |
+| --------------------------------------------- | ----------------------------------- | ------------------------ |
+| `sql-console:<email>`                         | 사용자가 SQL 콘솔을 열 때 프로비저닝되는 데이터베이스 사용자 | 예, ClickHouse Cloud에서 관리 |
+| `sql_console_admin` 및 `sql_console_read_only` | 기본 제공 SQL 콘솔 역할                     | 예, ClickHouse Cloud에서 관리 |
+| `sql-console-role:<email>`                    | 관리자가 생성한 사용자별 사용자 지정 역할             | 예, 사용자가 로그인할 때 적용됩니다     |
+
+<div id="configure-persistent-permissions">
+  ## 영구 권한 구성
+</div>
+
+`sql_console_admin` 역할이 있는 SQL 콘솔 사용자 또는 `ACCESS MANAGEMENT` 권한이 있는 사용자 등, 서비스에 대한 관리자 권한이 있는 사용자로 다음 SQL 문을 실행하십시오.
+
+<Steps>
+  <Step title="사용자 지정 역할 만들기" id="create-the-custom-role">
+    다음 예시는 사용자 지정 `sql_console_developer` 역할을 만들고 `my_database`에 대한 권한을 부여합니다.
+
+    ```sql
+    CREATE ROLE IF NOT EXISTS sql_console_developer;
+
+    GRANT SELECT, INSERT, CREATE TABLE
+    ON my_database.*
+    TO sql_console_developer;
+    ```
+
+    `sql_console_developer`는 기본 제공되는 ClickHouse Cloud 역할이 아닌 예시 역할입니다. 대신 사용자에게 필요한 권한이 부여된 기존 사용자 지정 역할을 사용할 수 있습니다.
+  </Step>
+
+  <Step title="사용자별 SQL 콘솔 역할 만들기" id="create-the-per-user-sql-console-role">
+    이름에 사용자의 정확한 이메일 주소가 포함된 역할을 만드십시오.
+
+    ```sql
+    CREATE ROLE IF NOT EXISTS `sql-console-role:user@example.com`;
+    ```
+
+    역할 이름에 특수 문자가 포함되어 있으므로 백틱이 필요합니다.
+  </Step>
+
+  <Step title="사용자 지정 역할 부여" id="grant-the-custom-role">
+    원하는 역할을 사용자별 SQL 콘솔 역할에 부여하십시오.
+
+    ```sql
+    GRANT sql_console_developer
+    TO `sql-console-role:user@example.com`;
+    ```
+
+    필요에 따라 여러 역할을 부여할 수 있습니다.
+
+    ```sql
+    GRANT sql_console_developer, sql_console_read_only
+    TO `sql-console-role:user@example.com`;
+    ```
+  </Step>
+
+  <Step title="새 SQL 콘솔 세션 시작" id="start-a-new-sql-console-session">
+    사용자에게 SQL 콘솔에서 로그아웃한 후 다시 로그인하거나 브라우저 탭을 새로 고치도록 안내하십시오. 새 세션에서는 ClickHouse Cloud가 `sql-console-role:user@example.com`을 `sql-console:user@example.com`에 적용하므로 `SET ROLE` SQL 문을 실행할 필요가 없습니다.
+
+    활성 역할을 확인하십시오.
+
+    ```sql
+    SELECT
+        currentUser(),
+        currentRoles(),
+        enabledRoles(),
+        defaultRoles();
+    ```
+
+    결과에는 `sql-console-role:user@example.com`을 통해 부여된 권한이 포함되어야 합니다.
+  </Step>
+</Steps>
+
+<div id="avoid-modifying-managed-roles">
+  ## 관리형 역할을 수정하지 마십시오
+</div>
+
+사용자 지정 권한을 부여하려고 `sql_console_admin` 또는 `sql_console_read_only`를 수정하지 마십시오. 이러한 기본 제공 역할은 ClickHouse Cloud에서 관리합니다. 대신 사용자별 권한에는 `sql-console-role:<email>`을 사용하십시오.
+
+일반적인 역할 관리 예시는 [일반적인 액세스 관리 쿼리](/ko/products/cloud/guides/security/cloud-access-management/common-access-management-queries)를 참조하십시오.

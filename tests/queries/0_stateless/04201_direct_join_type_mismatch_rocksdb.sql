@@ -14,6 +14,8 @@
 -- wrapping, matching `getByKeys`'s own equivalence). On mismatch, decline direct
 -- join so the planner falls back to `HashJoin`, which handles type conversion.
 
+SET explain_query_plan_default='legacy';
+
 DROP TABLE IF EXISTS rdb_pk_type;
 DROP TABLE IF EXISTS t_uint64_nullable;
 DROP TABLE IF EXISTS t_int64;

@@ -8,9 +8,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/XMLConfiguration.h>
-
 #include <boost/noncopyable.hpp>
 #include <boost/intrusive/list.hpp>
 
@@ -25,12 +22,6 @@ class IWorkloadNode;
 class EventQueue;
 using EventId = UInt64;
 
-inline const Poco::Util::AbstractConfiguration & emptyConfig()
-{
-    static Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration();
-    return *config;
-}
-
 /// Common configuration info for scheduler nodes
 struct SchedulerNodeInfo
 {
@@ -42,7 +33,6 @@ struct SchedulerNodeInfo
 
     explicit SchedulerNodeInfo(double weight_, Priority priority_ = {}, Priority precedence_ = {});
     explicit SchedulerNodeInfo(const WorkloadSettings & settings);
-    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix = {});
 
     SchedulerNodeInfo & setWeight(double value);
     SchedulerNodeInfo & setPriority(Int64 value);
@@ -51,9 +41,6 @@ struct SchedulerNodeInfo
     SchedulerNodeInfo & setPrecedence(Priority value);
 
     void update(const WorkloadSettings & new_settings);
-
-    // To check if configuration update required
-    bool equals(const SchedulerNodeInfo & o) const;
 };
 
 /// Node of hierarchy for scheduling requests for resource. Base class for all
@@ -105,11 +92,6 @@ struct SchedulerNodeInfo
 class ISchedulerNode : private boost::noncopyable
 {
 public:
-    explicit ISchedulerNode(
-        EventQueue & event_queue_,
-        const Poco::Util::AbstractConfiguration & config = emptyConfig(),
-        const String & config_prefix = {});
-
     ISchedulerNode(
         EventQueue & event_queue_,
         const SchedulerNodeInfo & info_);
@@ -117,9 +99,6 @@ public:
     virtual ~ISchedulerNode();
 
     virtual std::string_view getTypeName() const = 0;
-
-    /// Checks if two nodes configuration is equal
-    virtual bool equals(ISchedulerNode * other);
 
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;

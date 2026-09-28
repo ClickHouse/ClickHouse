@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'ClickHouse Cloud 청구 규정 준수'
+slug: /manage/clickhouse-cloud-billing-compliance
+title: 'ClickHouse Cloud 청구 규정 준수'
+description: 'ClickHouse Cloud 청구 규정 준수에 대한 페이지'
+keywords: ['청구 규정 준수', 'pay-as-you-go']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="billing-compliance">
+  ## 청구 규정 준수
+</div>
+
+ClickHouse Cloud를 사용하려면 조직에 활성 상태의 유효한 청구 수단이
+구성되어 있어야 합니다. 30일 체험 기간이 종료되거나 체험
+크레딧이 소진되는 시점 중 더 이른 시점 이후에도 ClickHouse Cloud를
+계속 사용하려면 다음 청구 옵션 중 하나를 선택해야 합니다:
+
+| Billing option                                        | Description                                                |
+| ----------------------------------------------------- | ---------------------------------------------------------- |
+| [Direct PAYG](#direct-payg)                           | 조직에 유효한 신용카드를 추가하여 Pay-As-You-Go 방식으로 사용합니다                |
+| [Marketplace PAYG](#cloud-marketplace-payg)           | 지원되는 클라우드 마켓플레이스 공급자를 통해 Pay-As-You-Go subscription을 설정합니다 |
+| [Committed spend contract](#committed-spend-contract) | 직접 또는 지원되는 클라우드 마켓플레이스를 통해 Committed spend contract를 체결합니다 |
+
+체험 기간이 종료되었는데 조직에 청구 옵션이 구성되어 있지 않으면
+모든 서비스가 중지됩니다. 이후 2주가 지나도록 청구 수단이
+여전히 구성되지 않으면 모든 데이터가 삭제됩니다.
+
+ClickHouse는 조직 단위로 서비스 요금을 청구합니다. 현재 청구 수단으로
+결제를 처리할 수 없는 경우 서비스 중단을 방지하려면 위에 나열된 세 가지 옵션 중
+하나로 청구 수단을 업데이트해야 합니다. 선택한 청구 수단에 따른 청구 규정 준수에 대한 자세한 내용은
+아래를 참조하십시오.
+
+<div id="direct-payg">
+  ### 신용카드로 Pay-as-you-go 청구
+</div>
+
+신용카드를 사용해 ClickHouse Cloud 사용량을 월별 후불 방식으로 결제할 수 있습니다.
+신용카드를 추가하려면 다음 [지침](#add-credit-card)을 따르십시오.
+
+ClickHouse의 월별 청구 주기는 조직에서 티어
+(Basic, Scale 또는 Enterprise)를 선택하고 조직 내에서 첫 번째 서비스를 생성한 날부터
+시작됩니다.
+
+등록된 신용카드에는 일반적으로 월별
+청구 주기 종료 시점에 요금이 청구되지만, 주기 중 미납 금액이
+미화 1,000달러에 도달하면 청구 시점이 앞당겨집니다(결제 임계값에 대한 자세한 내용은 [여기](/ko/products/cloud/reference/billing/payment-thresholds)를 참조하십시오).
+
+등록된 신용카드는 유효해야 하며, 만료되지 않았고, 총 인보이스 금액을
+결제할 수 있을 만큼 사용 가능한 한도가 있어야 합니다. 어떤 이유로든
+미납된 전체 금액을 청구할 수 없는 경우, 다음 미납 인보이스 제한이 즉시
+적용됩니다.
+
+* 레플리카당 최대 120 GiB까지만 확장할 수 있습니다
+* 중지된 서비스를 시작할 수 없습니다
+* 새 서비스를 시작하거나 생성할 수 없습니다
+
+조직에 구성된 청구
+수단을 사용해 최대 30일 동안 결제를 처리합니다. 14일이 지나도록 결제가 성공하지 않으면 조직 내의 모든 서비스가
+중지됩니다. 이 30일 기간이 끝날 때까지도 결제가 이루어지지 않고 연장이
+승인되지 않은 경우, 조직과 연결된 모든 데이터와
+서비스가 삭제됩니다.
+
+<div id="cloud-marketplace-payg">
+  ### Cloud marketplace Pay-As-You-Go 청구
+</div>
+
+Pay-As-You-Go(Pay-As-You-Go) 청구는 지원되는 클라우드 마켓플레이스
+(AWS, GCP 또는 Azure) 중 하나를 통해 조직에 요금이 청구되도록 구성할 수도 있습니다. Marketplace PAYG 청구에 가입하려면 다음
+[안내](#marketplace-payg)를 따르십시오.
+
+Direct PAYG를 통한 청구와 마찬가지로 Marketplace PAYG의 경우에도 ClickHouse의 월별 청구 주기는 조직에서 티어(Basic, Scale,
+또는 Enterprise)를 선택하고 첫 번째 서비스를 생성한 날부터 시작됩니다.
+
+다만 마켓플레이스의 요구 사항에 따라 Pay-As-You-Go(Pay-As-You-Go) 사용 요금은 시간 단위로 보고됩니다. 인보이스는 해당 마켓플레이스와 체결한 계약 약관에 따라 발행되며, 일반적으로
+달력 월 기준 청구 주기를 따릅니다.
+
+예를 들어 1월 18일에 조직의 첫 번째 서비스를 생성한 경우, ClickHouse Cloud에서의 첫 번째 사용량 청구 주기는 1월 18일부터 2월 17일
+하루가 끝날 때까지입니다. 그러나 첫 번째 인보이스는 클라우드 마켓플레이스에서 2월 초에 받을 수 있습니다.
+
+다만 PAYG 마켓플레이스 구독이 취소되거나 자동 갱신에 실패하면,
+조직에 등록된 신용카드가 있는 경우 청구는 해당 신용카드로 전환됩니다. 신용카드를 추가하려면 [지원팀에 문의](/ko/resources/about/support)하여
+도움을 받으십시오. 유효한 신용카드가 등록되어 있지 않으면, 위에서 설명한 [Direct PAYG](#direct-payg)의 미납 인보이스
+제한 사항이 동일하게 적용됩니다. 여기에는 서비스 중단 및 최종적인 데이터 삭제가 포함됩니다.
+
+<div id="committed-spend-contract">
+  ### 약정 계약 청구
+</div>
+
+다음과 같은 방법으로 약정 계약을 통해 조직용 크레딧을 구매할 수 있습니다.
+
+1. 영업팀에 문의하여 크레딧을 직접 구매합니다. 결제 방법에는 ACH
+   또는 전신 송금이 포함됩니다. 결제 약관은 해당 주문서에 명시됩니다.
+2. 영업팀에 문의하여 지원되는 클라우드 마켓플레이스(AWS, GCP 또는 Azure) 중 하나의
+   subscription을 통해 크레딧을 구매합니다. 요금은 비공개 제안을 수락하면 해당
+   마켓플레이스에 보고되며, 이후에는 제안 약관에 따라 처리됩니다. 다만 인보이스는 해당
+   마켓플레이스와의 계약 약관에 따라 발행됩니다. 마켓플레이스를 통해 결제하려면
+   다음 [안내](#marketplace-payg)를 따르십시오.
+
+조직에 적용된 크레딧(예: 약정 계약 또는 환불을 통해 제공된 크레딧)은
+주문서 또는 수락한 비공개 제안에 명시된 기간 동안 사용할 수 있습니다.
+크레딧은 부여된 날부터 차감되기 시작하며, 첫 번째 조직 tier(Basic, Scale 또는 Enterprise)가
+선택된 날짜를 기준으로 하는 청구 기간에 따라 사용됩니다.
+
+조직이 클라우드 마켓플레이스 약정 계약을 사용하지 **않는** 상태에서 크레딧을
+모두 사용했거나 크레딧이 만료되면, 해당 조직은 자동으로
+Pay-As-You-Go (PAYG) 청구로 전환됩니다. 이 경우, 조직에 등록된
+신용카드가 있으면 해당 카드로 결제를 처리하려고 시도합니다.
+
+조직이 클라우드 마켓플레이스 약정 계약을 사용 **중인** 상태에서 크레딧을
+모두 사용한 경우에도, 남은 subscription 기간 동안 동일한
+마켓플레이스를 통한 PAYG 청구로 자동 전환됩니다. 그러나 subscription이
+갱신되지 않아 만료되면, 조직에 등록된 신용카드가 있으면 해당 카드로
+결제를 처리하려고 시도합니다.
+
+어느 경우이든, 설정된 신용카드로 청구할 수 없는 경우에는
+신용카드로 결제하는 [Pay-as-you-go (PAYG)](#direct-payg)
+청구에 대해 위에서 설명한 미납 인보이스 제한이 적용되며, 여기에는 서비스 중지가 포함됩니다.
+약정 계약에서 PAYG 청구로 전환하는 과정에 대한 자세한 내용은 [약관](https://clickhouse.com/legal/agreements/terms-of-service)의
+「Overconsumption」 섹션을 참조하십시오.
+다만 약정 계약 고객의 경우, 데이터 삭제를 시작하기 전에 미납
+인보이스와 관련해 먼저 연락드립니다. 데이터는 일정 기간이 지났다고 해서 자동으로
+삭제되지 않습니다.
+
+기존 크레딧이 만료되거나 모두 소진되기 전에 추가 크레딧을 구매하려면
+[문의해 주십시오](https://clickhouse.com/company/contact).
+
+<div id="add-credit-card">
+  ### 신용카드로 결제하는 방법
+</div>
+
+ClickHouse Cloud UI의 청구 섹션으로 이동하여 아래와 같이 표시된 &#39;Add Credit Card&#39;
+버튼을 클릭해 설정을 완료하십시오. 궁금한 점이 있으면 [지원팀에 문의하십시오](/ko/resources/about/support).
+
+<Image img="/images/cloud/manage/billing_compliance.webp" size="md" alt="신용카드를 추가하는 방법" />
+
+<div id="marketplace-payg">
+  ## 마켓플레이스를 통해 결제하는 방법
+</div>
+
+지원되는 마켓플레이스(AWS, GCP 또는 Azure) 중 하나를 통해 결제하려면
+[여기](/ko/products/cloud/reference/billing/marketplace/overview)에 안내된 단계를 따르십시오.
+클라우드 마켓플레이스 청구와 직접 관련된 질문이 있으면 해당 클라우드 서비스 제공업체에 직접 문의하십시오.
+
+마켓플레이스 청구 문제를 해결하는 데 도움이 되는 링크:
+
+* [AWS Billing FAQs](https://aws.amazon.com/aws-cost-management/aws-billing/faqs/)
+* [GCP Billing FAQs](https://cloud.google.com/compute/docs/billing-questions)
+* [Azure Billing FAQs](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-faq)

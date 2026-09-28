@@ -54,17 +54,16 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
     if (options_description.hosts_and_ports_description.has_value())
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    output_stream << "See also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/reference/settings/session-settings.\n\n";
+    output_stream << "See also: https://clickhouse.com/docs/concepts/features/interfaces/client\n";
 }
 
 
-void ClientEmbedded::processError(std::string_view) const
+void ClientEmbedded::processError(std::string_view query) const
 {
-    if (ignore_error)
-        return;
-
-    if (is_interactive)
+    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
+    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
+    if (is_interactive || ignore_error)
     {
         String message;
         if (server_exception)
@@ -76,7 +75,10 @@ void ClientEmbedded::processError(std::string_view) const
             message = client_exception->message();
         }
 
-        error_stream << fmt::format("Received exception\n{}\n\n", message);
+        if (is_interactive)
+            error_stream << fmt::format("Received exception\n{}\n\n", message);
+        else
+            error_stream << fmt::format("Received exception\n{}\n(query: {})\n", message, query);
     }
     else
     {
@@ -202,7 +204,7 @@ try
     prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
-    enable_highlight = getClientConfiguration().getBool("highlight", true);
+    enable_highlight = ConfigHelper::getBool(getClientConfiguration(), "highlight", true);
     multiline = getClientConfiguration().has("multiline");
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     default_database = getClientConfiguration().getString("database", "");

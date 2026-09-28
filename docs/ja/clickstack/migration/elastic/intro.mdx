@@ -1,0 +1,31 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/intro
+title: 'Elastic から ClickStack への移行'
+sidebarTitle: '概要'
+description: 'Elastic から ClickHouse オブザーバビリティスタックへ移行する際の概要'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+<div id="migrating-to-clickstack-from-elastic">
+  ## Elastic から ClickStack への移行
+</div>
+
+このガイドは、Elastic Stack からの移行を検討しているユーザー、特に Elastic Agent で収集して Elasticsearch に保存したログ、トレース、メトリクスを Kibana で監視しているユーザーを対象としています。ClickStack における対応する概念やデータ型の概要を示し、Kibana の Lucene ベースのクエリを HyperDX の構文に置き換える方法を説明するとともに、スムーズに移行するためのデータとエージェントの移行ガイダンスを提供します。
+
+移行を始める前に、ClickStack と Elastic Stack のトレードオフを理解しておくことが重要です。
+
+次のような場合は、ClickStack への移行を検討してください。
+
+* 大量のオブザーバビリティデータを取り込んでおり、圧縮効率の低さやリソース使用状況の悪さから Elastic のコストが見合わないと感じている。ClickStack はストレージとコンピュートのコストを大幅に削減でき、生データで少なくとも 10 倍の圧縮を実現します。
+* 大規模環境で検索パフォーマンスが低い、またはインジェストのボトルネックに直面している。
+* SQL を使ってオブザーバビリティシグナルとビジネスデータを相関付け、オブザーバビリティと分析のワークフローを統合したい。
+* OpenTelemetry を重視しており、ベンダーロックインを避けたい。
+* ClickHouse Cloud におけるストレージとコンピュートの分離を活用したい。これにより、事実上無制限にスケールでき、アイドル時はインジェスト用のコンピュートとオブジェクトストレージに対してのみ課金されます。
+
+一方で、次のような場合は ClickStack が適していない可能性があります。
+
+* オブザーバビリティデータを主にセキュリティ用途で利用しており、SIEM に特化した製品が必要である。
+* ユニバーサルプロファイリングがワークフローの重要な一部である。
+* ビジネスインテリジェンス (BI) 向けのダッシュボードプラットフォームが必要である。ClickStack は、SRE や開発者向けに意図的に最適化された可視化ワークフローを備えており、ビジネスインテリジェンス (BI) ツールとして設計されていません。同等の機能が必要な場合は、[ClickHouse plugin を使用した Grafana](/ja/integrations/connectors/data-visualization/grafana/index) または [Superset](/ja/integrations/connectors/data-visualization/superset-and-clickhouse) の利用を推奨します。

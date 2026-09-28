@@ -1,0 +1,154 @@
+---
+title: 'サポートセッション'
+sidebarTitle: 'サポートセッション'
+description: 'ClickHouse Connector を介した ClickHouse サポートアクセスの有効化、範囲設定、監査、取り消し'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+サポートセッションでは、ClickHouse Connector を介して ClickHouse への一時的な診断アクセスを付与できます。このページでは、セッションの概要、有効化と無効化の方法、セッションが有効な間に ClickHouse のオペレーターが実行できる操作、およびその間に行われたすべての操作を監査する方法について説明します。
+
+<div id="what-a-support-session-is">
+  ## サポートセッションとは
+</div>
+
+サポートセッションとは、トラブルシューターがClickHouse Support エンジニアからのコマンドを受け付ける、時間が限定された期間です。セッションがアクティブでない場合、アウトバウンドWebSocketが接続されていても、トラブルシューターはすべてのコマンドを拒否します。ほかに実行経路はありません。セッションなしで何かが実行されることはなく、ClickHouseがお客様に代わってセッションを開始することもできません。ClickHouseのコントロールプレーンがお客様の環境に接続することはありません。トラブルシューターがアウトバウンドチャネル経由で送信するものだけを受信し、そのチャネルがコマンドを伝送するのは、セッション状態によって許可されている場合のみです。
+
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connectorサポートセッションの信頼フロー" />
+
+セッションは次の2つの手段で制御できます。
+
+* **セッションゲートウェイ**: トラブルシューターに組み込まれた認証済みAPIで、`enable`、`disable`、`status`エンドポイントを提供します。すべてのゲートウェイ呼び出しには、メールアドレスがオペレーターの許可リストに含まれている、短期間有効なOIDC IDトークンが必要です。
+* Linux VMへのインストールで使用する**ローカルセッションファイル**: rootアクセスでホストに直接書き込みます。
+
+ゲートウェイの通信方式はターゲットによって異なります。VMゲートウェイは、各オペレーターがフィンガープリントをピン留めする自己署名TLSを提供します。KubernetesゲートウェイはポッドローカルでHTTPをリッスンし、`kubectl port-forward` (トンネルはKubernetes API serverのTLSを経由します) またはCA発行の証明書でTLSを終端するイングレスを介してアクセスします。
+
+オペレーターの許可リストを含むセッション方針は、`clicklink clctl init`の実行時に選択します。
+
+<div id="enabling-and-disabling-sessions">
+  ## セッションの有効化と無効化
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    ゲートウェイは トラブルシューター ポッドのポート 8443 で待ち受けます。クラスターにアクセスできる場合は、ポートフォワード経由で接続してください。このトンネルは Kubernetes API server の TLS を利用します。
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # 初期化時に選択したコネクタのネームスペース
+    kubectl -n "${CONNECTOR_NAMESPACE}" port-forward statefulset/clicklink-connector-troubleshooter 8443:8443
+    ```
+
+    次に、別の端末でセッションを有効にします。
+
+    ```bash
+    clicklink clctl troubleshoot session enable \
+      --gateway-url http://localhost:8443 \
+      --duration 4h \
+      --reason "<ticket reference>"
+    ```
+
+    同様に、セッションの状態確認や終了も行えます。
+
+    ```bash
+    clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
+    clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
+    ```
+
+    呼び出し元の OIDC アイデンティティは、オペレーター の許可リストに含まれている必要があります。認証されていない呼び出し元や許可リストにない呼び出し元には 401 または 403 が返され、その試行はログに記録されます。クラスター認証情報を必須にしたくない場合は、chart でオプトインのイングレスを介してゲートウェイを公開できます。このイングレスは CA 発行の証明書で TLS を終端します。詳細は[設定](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
+  </Tab>
+
+  <Tab title="Linux VM">
+    ホストで root 権限を使用できる場合は、セッションを直接管理します。状態は `/var/lib/clicklink/session.json` に永続化され、デーモン と CLI がアトミックに読み書きします。
+
+    ```bash
+    sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<ticket reference>"
+    sudo clicklink clctl troubleshoot session status
+    sudo clicklink clctl troubleshoot session disable
+    ```
+
+    root 権限のない呼び出し元も、VM 上のゲートウェイを利用できます。ゲートウェイは自己署名 TLS を提供するため、各セッションユーザーはゲートウェイの証明書フィンガープリントを一度だけピン留めします。
+
+    ```bash
+    clicklink clctl troubleshoot gateway trust \
+      --gateway-url https://<vm-host>:8443 \
+      --gateway-fingerprint <sha256-fingerprint>
+    ```
+
+    ピンは `~/.clicklink/clctl.yaml` に保存され、提示された証明書が一致しない場合、接続はフェイルクローズします。
+  </Tab>
+</Tabs>
+
+<div id="session-expiry">
+  ## セッションの有効期限
+</div>
+
+セッションは自動的に期限切れになります。デフォルトの有効期間は4時間で、`session enable --duration` により最大24時間まで設定できます。セッションの期限が切れるか、`session disable` を実行した時点で、トラブルシューターはコマンドを受け付けなくなります。セッションの無効化は即時の失効手段です。再起動やClickHouseとの協調は必要ありません。
+
+<div id="operator-allowlist">
+  ## オペレーターの許可リスト
+</div>
+
+すべてのゲートウェイ呼び出しは、検証済みの OIDC トークンで証明されたメールアドレスと照合して、オペレーターの許可リストに基づき認可されます。クライアントが自身について申告した内容に基づいて認可されることはありません。
+
+* **Kubernetes:** values オーバーレイで `clctl.gateway.allowedOperators` を設定します。リストは ConfigMap にレンダリングされ、ゲートウェイは 30 秒ごとに再読み込みします。そのため、values を変更して `helm upgrade` を実行すると、ポッドを再起動せずに許可リストを更新できます。
+* **Linux VM:** 許可リストは `/etc/clicklink/allowed-operators.txt` にあり、指定したオペレーターのメールアドレスに基づいて `clicklink clctl init` により書き込まれます。
+
+<div id="what-operators-can-do">
+  ## セッション中にオペレーターが実行できる操作
+</div>
+
+セッションがアクティブな間、ClickHouse Support エンジニアは次の操作を実行できます。
+
+* 明示的に指定されたテーブル許可リストに制限された、`pcm_troubleshooter` ユーザーとしてクラスターに対する**読み取り専用 SQL**。デフォルトの許可リストには、`system.parts`、`system.merges`、`system.replicas`、`system.metrics`、`system.settings` などの ClickHouse `system` テーブルが含まれます。`system.query_log` および `system.text_log` は無条件で拒否されるため、クエリ履歴が外部に出ることはありません。デフォルトの許可リストには `system.processes` も含まれており、その `query` カラムにはその時点で実行中のステートメントのテキストが表示されます。セッション中にライブのクエリテキストを決して表示させたくない場合は、セッションのテーブル許可リストからこれを削除してください (Helm オーバーレイでは `troubleshooter.allowedTables`、VM 構成ファイルでは `troubleshooter.allowed_tables`) 。このユーザーにはテーブル単位の `SELECT` 権限のみが付与され、書き込み、DDL、管理権限はありません。
+* プロビジョニング済みのすべてのデプロイメントに対する**読み取り専用の Kubernetes リソース閲覧** (アクセスバンドルは、両方のインストール先で Kubernetes ServiceAccount に関連付けられます) 。付与されたネームスペース内のポッド、ポッドログ、サービス、configmaps、イベント、PersistentVolumeClaims、デプロイメント、statefulsets、replicasets に対する `get`、`list`、`watch`。プロビジョニング済みのバンドルがない場合、トラブルシューターは kubectl 型のコマンドを一切受け付けません。
+
+トラブルシューターの RBAC には `exec`、`delete`、`patch` 権限がないため、オペレーターはポッド内でシェルを開くことも、コネクタ経由で変更を加えることもできません。すべての権限付与と RBAC の一覧については、[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のリファレンスを参照してください。
+
+<div id="audit-log">
+  ## 監査ログ
+</div>
+
+すべてのゲートウェイ呼び出しとセッション中に実行されたすべてのコマンドは、1 行に 1 つの JSON オブジェクト (NDJSON) として `/var/log/clicklink/troubleshoot-audit.log` に追記されます。`submitted_by` フィールドには各エントリに対応するアイデンティティが記録され、その内容はエントリの発生元によって異なります。ゲートウェイ呼び出しには、検証済みトークンで証明されたメールアドレスが記録され、クライアントが指定した値が記録されることはありません。VM 上でローカルに行われたセッション変更には、操作を実行したホストユーザーが記録されます。セッション中に実行されたコマンドには、認証済みコマンドチャネルで渡される組織アイデンティティが記録されます。ゲートウェイによるセッション有効化のエントリは次のようになります。
+
+```json
+{
+  "timestamp": "2026-06-22T22:30:00.123456789Z",
+  "command_id": "11111111-2222-4333-8444-555555555555",
+  "submitted_by": "operator@clickhouse.com",
+  "command_type": "clctl.session.enable",
+  "command_text": "ticket #1234",
+  "instance_id": "",
+  "status": "ok",
+  "duration_ms": 42,
+  "output_lines": 0,
+  "remote_addr": "10.20.30.40"
+}
+```
+
+セッションのライフサイクルエントリには、`clctl.session.enable`、`clctl.session.disable`、`clctl.session.status` のコマンドタイプが使用されます。enable の `--reason` は `command_text` として記録され、セッション中に実行されたコマンドも同じスキーマでログに記録されます。`status` は成功した呼び出しと `unauthorized`、`forbidden`、`rate_limited` の試行を区別するため、拒否されたアクセスもログに残ります。
+
+VM では、`clicklink clctl troubleshoot audit tail` でファイルを直接読み取ります。Kubernetes では、ログはトラブルシューターのポッド内にあり、コンテナーイメージにはシェルが含まれていないため、`kubectl exec` を使用してバイナリに組み込まれたリーダーを呼び出します。
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-troubleshooter -- \
+  /clicklink clctl troubleshoot audit tail
+```
+
+ログは環境内の通常のファイルです。他のホストログやコンテナーログと同様に、任意のSIEMに送信してください。
+
+<div id="redaction">
+  ## マスキング
+</div>
+
+トラブルシューターが返すすべての情報は、環境外に送信される前にマスキングされます。組み込みパターンは、IPv4 および IPv6 アドレス、Bearer トークン、AWS アクセスキー、メールアドレス、JWT、SSH 秘密鍵、接続文字列に埋め込まれた認証情報を対象とします。これらは `/etc/clicklink/redaction-patterns.yaml` で拡張またはオーバーライドできます。組み込みパターンと同じ名前のエントリは、そのパターンを置き換えます。パターンファイルが無効な場合、デーモンは起動を拒否し、`clicklink clctl preflight` によって検証されるため、マスキング設定が壊れている場合はデータが黙って通過するのではなく、明示的に失敗します。
+
+<div id="related-pages">
+  ## 関連ページ
+</div>
+
+* [Architecture](/ja/products/bring-your-own-cloud/connector/architecture): コネクタが確立するすべての接続と、セッションを中心としたデータフロー。
+* [Configuration](/ja/products/bring-your-own-cloud/connector/configuration): ゲートウェイ、許可リスト、機密情報のマスキングに関する設定。
+* [よくある質問](/ja/products/bring-your-own-cloud/connector/reference/faq): 失効、監査、データegressに関するよくある質問の概要。

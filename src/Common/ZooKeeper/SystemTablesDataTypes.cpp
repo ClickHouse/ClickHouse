@@ -66,6 +66,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"Check",               static_cast<Int16>(OpNum::Check)},
             {"Multi",               static_cast<Int16>(OpNum::Multi)},
             {"Create2",             static_cast<Int16>(OpNum::Create2)},
+            {"CreateContainer",     static_cast<Int16>(OpNum::CreateContainer)},
             {"CreateTTL",           static_cast<Int16>(OpNum::CreateTTL)},
             {"CheckWatch",          static_cast<Int16>(OpNum::CheckWatch)},
             {"RemoveWatch",         static_cast<Int16>(OpNum::RemoveWatch)},
@@ -82,6 +83,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"CheckStat",           static_cast<Int16>(OpNum::CheckStat)},
             {"FilteredListWithStatsAndData", static_cast<Int16>(OpNum::FilteredListWithStatsAndData)},
             {"ListRecursive",               static_cast<Int16>(OpNum::ListRecursive)},
+            {"ListWithOptions",             static_cast<Int16>(OpNum::ListWithOptions)},
         });
     return result;
 }

@@ -1,0 +1,202 @@
+---
+description: 'Las restricciones de configuración se pueden definir en la sección `profiles` del
+  archivo de configuración `user.xml` e impiden que los usuarios cambien algunos ajustes
+  con la consulta `SET`.'
+sidebarTitle: 'Restricciones de configuración'
+slug: /operations/settings/constraints-on-settings
+title: 'Restricciones de configuración'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+En ClickHouse, las &quot;restricciones&quot; de los ajustes se refieren a limitaciones y reglas que
+se pueden asignar a los ajustes. Estas restricciones pueden aplicarse para mantener
+la estabilidad, la seguridad y un comportamiento predecible de la base de datos.
+
+<div id="defining-constraints">
+  ## Definición de restricciones
+</div>
+
+Las restricciones de configuración pueden definirse en la sección `profiles` del archivo de configuración `user.xml`.
+Impiden que los usuarios cambien algunos ajustes mediante la
+sentencia [`SET`](/es/reference/statements/set).
+
+Las restricciones se definen de la siguiente manera:
+
+```xml
+<profiles>
+  <user_name>
+    <constraints>
+      <setting_name_1>
+        <min>lower_boundary</min>
+      </setting_name_1>
+      <setting_name_2>
+        <max>upper_boundary</max>
+      </setting_name_2>
+      <setting_name_3>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+      </setting_name_3>
+      <setting_name_4>
+        <readonly/>
+      </setting_name_4>
+      <setting_name_5>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <changeable_in_readonly/>
+      </setting_name_5>
+      <setting_name_6>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <disallowed>value1</disallowed>
+        <disallowed>value2</disallowed>
+        <disallowed>value3</disallowed>
+        <changeable_in_readonly/>
+      </setting_name_6>
+    </constraints>
+  </user_name>
+</profiles>
+```
+
+Si el usuario intenta incumplir las restricciones, se lanza una excepción y la
+configuración permanece sin cambios.
+
+<div id="types-of-constraints">
+  ## Tipos de restricciones
+</div>
+
+ClickHouse admite varios tipos de restricciones:
+
+* `min`
+* `max`
+* `disallowed`
+* `readonly` (con el alias `const`)
+* `changeable_in_readonly`
+
+Las restricciones `min` y `max` especifican los límites inferior y superior de una
+configuración numérica, y pueden usarse en combinación.
+
+La restricción `disallowed` puede usarse para especificar valores concretos que no
+deben permitirse para una configuración determinada.
+
+La restricción `readonly` o `const` especifica que el usuario no puede cambiar en
+absoluto la configuración correspondiente.
+
+El tipo de restricción `changeable_in_readonly` permite a los usuarios cambiar la configuración
+dentro del rango `min`/`max` incluso si la configuración `readonly` está establecida en `1`;
+de lo contrario, no se permite cambiar configuraciones en el modo `readonly=1`.
+
+<Note>
+  `changeable_in_readonly` solo es compatible si `settings_constraints_replace_previous`
+  está habilitado:
+
+  ```xml
+  <access_control_improvements>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+  </access_control_improvements>
+  ```
+</Note>
+
+<div id="multiple-constraint-profiles">
+  ## Varios perfiles de restricciones
+</div>
+
+Si hay varios perfiles activos para un usuario, las restricciones se fusionan.
+El proceso de fusión depende de `settings_constraints_replace_previous`:
+
+* **true** (recomendado): las restricciones para el mismo ajuste se sustituyen durante
+  la fusión, de modo que se usa la última restricción y se ignoran todas las anteriores.
+  Esto incluye los campos que no están definidos en la nueva restricción.
+* **false** (predeterminado): las restricciones para el mismo ajuste se fusionan de forma que
+  cada tipo de restricción no definido se toma del perfil anterior y cada
+  tipo de restricción definido se sustituye por el valor del nuevo perfil.
+
+<div id="read-only">
+  ## Modo de solo lectura
+</div>
+
+El modo de solo lectura se habilita mediante la configuración `readonly`, que no debe confundirse
+con el tipo de restricción `readonly`:
+
+* `readonly=0`: Sin restricciones de solo lectura.
+* `readonly=1`: Solo se permiten consultas de lectura y no se puede cambiar la configuración,
+  salvo que se haya establecido `changeable_in_readonly`.
+* `readonly=2`: Solo se permiten consultas de lectura, pero sí se puede cambiar la configuración,
+  excepto la propia configuración `readonly`.
+
+<div id="example-read-only">
+  ### Ejemplo
+</div>
+
+Incluya las siguientes líneas en `users.xml`:
+
+```xml
+<profiles>
+  <default>
+    <max_memory_usage>10000000000</max_memory_usage>
+    <force_index_by_date>0</force_index_by_date>
+    ...
+    <constraints>
+      <max_memory_usage>
+        <min>5000000000</min>
+        <max>20000000000</max>
+      </max_memory_usage>
+      <force_index_by_date>
+        <readonly/>
+      </force_index_by_date>
+    </constraints>
+  </default>
+</profiles>
+```
+
+Las siguientes consultas producirán excepciones:
+
+```sql
+SET max_memory_usage=20000000001;
+SET max_memory_usage=4999999999;
+SET force_index_by_date=1;
+```
+
+```text
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be greater than 20000000000.
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
+Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
+```
+
+<Note>
+  El perfil `default` recibe un tratamiento especial: todas las restricciones definidas para el
+  perfil `default` pasan a ser las restricciones predeterminadas, por lo que se aplican a todos los usuarios
+  hasta que se sobrescriban explícitamente para esos usuarios.
+</Note>
+
+<div id="constraints-on-merge-tree-settings">
+  ## Restricciones en la configuración de MergeTree
+</div>
+
+Es posible establecer restricciones para la [configuración de MergeTree](/es/reference/settings/merge-tree-settings).
+Estas restricciones se aplican al crear una tabla con el motor MergeTree
+o al modificar su configuración de almacenamiento.
+
+El nombre de la configuración de MergeTree debe llevar el prefijo `merge_tree_` cuando
+se haga referencia a ella en la sección `<constraints>`.
+
+<div id="example-read-only">
+  ### Ejemplo
+</div>
+
+Puede prohibir la creación de tablas nuevas con `storage_policy` especificada explícitamente
+
+```xml
+<profiles>
+  <default>
+    <constraints>
+      <merge_tree_storage_policy>
+        <const/>
+      </merge_tree_storage_policy>
+    </constraints>
+  </default>
+</profiles>
+```

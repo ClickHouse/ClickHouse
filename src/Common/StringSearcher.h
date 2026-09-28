@@ -3,8 +3,8 @@
 #include <base/types.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 
 #include <Common/TargetSpecific.h>
@@ -39,7 +39,9 @@ class CaseSensitiveStringSearcher final
     sz_cptr_t const needle_end;
 
 public:
-    CaseSensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    CaseSensitiveStringSearcher(const CharT * needle_, size_t needle_size)
         : needle(reinterpret_cast<sz_cptr_t>(needle_))
         , needle_end(needle + needle_size)
     {
@@ -73,6 +75,25 @@ public:
         size_t haystack_size = haystack_end - haystack;
         size_t needle_size = needle_end - needle;
 
+        /// With few candidate positions a direct scan is cheaper than the dispatched sz_find call.
+        /// Also covers needles longer than the haystack (the loop body never runs).
+        if (haystack_size < needle_size + 8)
+        {
+            for (const UInt8 * pos = haystack; pos + needle_size <= haystack_end; ++pos)
+            {
+                sz_cptr_t c = needle;
+                sz_cptr_t p = reinterpret_cast<sz_cptr_t>(pos);
+                while (c != needle_end && *c == *p)
+                {
+                    ++c;
+                    ++p;
+                }
+                if (c == needle_end)
+                    return pos;
+            }
+            return haystack_end;
+        }
+
         const char * res = sz_find(haystack_cptr, haystack_size, needle, needle_size);
 
         if (!res)
@@ -93,6 +114,10 @@ private:
     /// lower and uppercase variants of the first character in `needle`
     uint8_t l = 0;
     uint8_t u = 0;
+
+    /// ASCII-only case folding, branchless, unlike the locale-aware std::tolower/std::toupper.
+    static uint8_t lowerASCII(uint8_t c) { return (c >= 'A' && c <= 'Z') ? (c | 0x20) : c; }
+    static uint8_t upperASCII(uint8_t c) { return (c >= 'a' && c <= 'z') ? (c & ~0x20) : c; }
 
 #if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
 #ifdef __AVX2__
@@ -132,37 +157,38 @@ private:
 #endif
 
 public:
-    ASCIICaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    ASCIICaseInsensitiveStringSearcher(const CharT * needle_, size_t needle_size)
         : needle(reinterpret_cast<const uint8_t *>(needle_))
         , needle_end(needle + needle_size)
     {
         if (needle_size == 0)
             return;
 
-        l = static_cast<uint8_t>(std::tolower(*needle));
-        u = static_cast<uint8_t>(std::toupper(*needle));
+        l = lowerASCII(*needle);
+        u = upperASCII(*needle);
 
 #if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
         patl = vecSet1(l);
         patu = vecSet1(u);
 
-        uint8_t cache_l_bytes[N] = {};
-        uint8_t cache_u_bytes[N] = {};
-        const auto * needle_pos = needle;
+        /// Filled branchlessly: folding the zero padding is identity, so only the mask depends on the needle size.
+        size_t cached_len = std::min(needle_size, N);
+        uint8_t needle_bytes[N] = {};
+        memcpy(needle_bytes, needle, cached_len);
 
+        uint8_t cache_l_bytes[N];
+        uint8_t cache_u_bytes[N];
         for (size_t i = 0; i < N; ++i)
         {
-            if (needle_pos != needle_end)
-            {
-                cache_l_bytes[i] = static_cast<uint8_t>(std::tolower(*needle_pos));
-                cache_u_bytes[i] = static_cast<uint8_t>(std::toupper(*needle_pos));
-                cachemask |= 1u << i;
-                ++needle_pos;
-            }
+            cache_l_bytes[i] = lowerASCII(needle_bytes[i]);
+            cache_u_bytes[i] = upperASCII(needle_bytes[i]);
         }
 
         cachel = vecLoad(cache_l_bytes);
         cacheu = vecLoad(cache_u_bytes);
+        cachemask = (cached_len == N) ? full_cache_mask : ((1u << cached_len) - 1u);
 #endif
     }
 
@@ -187,7 +213,7 @@ public:
                     pos += N;
                     const auto * needle_pos = needle + N;
 
-                    while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
+                    while (needle_pos < needle_end && pos < haystack_end && lowerASCII(*pos) == lowerASCII(*needle_pos))
                     {
                         ++pos;
                         ++needle_pos;
@@ -209,7 +235,7 @@ public:
             ++pos;
             const auto * needle_pos = needle + 1;
 
-            while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
+            while (needle_pos < needle_end && pos < haystack_end && lowerASCII(*pos) == lowerASCII(*needle_pos))
             {
                 ++pos;
                 ++needle_pos;
@@ -226,6 +252,31 @@ public:
     {
         if (needle == needle_end)
             return haystack;
+
+        size_t haystack_size = haystack_end - haystack;
+        size_t needle_size = needle_end - needle;
+
+        /// With few candidate positions a scalar scan is cheaper than the SIMD kernel.
+        /// Also covers needles longer than the haystack (the loop body never runs).
+        if (haystack_size < needle_size + 16)
+        {
+            for (const UInt8 * pos = haystack; pos + needle_size <= haystack_end; ++pos)
+            {
+                if (*pos == l || *pos == u)
+                {
+                    const uint8_t * haystack_pos = reinterpret_cast<const uint8_t *>(pos) + 1;
+                    const uint8_t * needle_pos = needle + 1;
+                    while (needle_pos != needle_end && lowerASCII(*haystack_pos) == lowerASCII(*needle_pos))
+                    {
+                        ++haystack_pos;
+                        ++needle_pos;
+                    }
+                    if (needle_pos == needle_end)
+                        return pos;
+                }
+            }
+            return haystack_end;
+        }
 
         while (haystack < haystack_end)
         {
@@ -264,7 +315,7 @@ public:
                             const auto * needle_pos = needle + N;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end
-                                   && std::tolower(*haystack_pos) == std::tolower(*needle_pos))
+                                   && lowerASCII(*haystack_pos) == lowerASCII(*needle_pos))
                             {
                                 ++haystack_pos;
                                 ++needle_pos;
@@ -291,7 +342,7 @@ public:
                 const auto * haystack_pos = haystack + 1;
                 const auto * needle_pos = needle + 1;
 
-                while (haystack_pos < haystack_end && needle_pos < needle_end && std::tolower(*haystack_pos) == std::tolower(*needle_pos))
+                while (haystack_pos < haystack_end && needle_pos < needle_end && lowerASCII(*haystack_pos) == lowerASCII(*needle_pos))
                 {
                     ++haystack_pos;
                     ++needle_pos;
@@ -406,42 +457,6 @@ public:
     }
 
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
-};
-
-/// Use only with short haystacks where cheap initialization is required.
-template <bool CaseInsensitive>
-struct StdLibASCIIStringSearcher
-{
-    const char * const needle_start;
-    const char * const needle_end;
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    StdLibASCIIStringSearcher(const CharT * const needle_start_, size_t needle_size_)
-        : needle_start(reinterpret_cast<const char *>(needle_start_))
-        , needle_end(reinterpret_cast<const char *>(needle_start) + needle_size_)
-    {}
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack_start, const CharT * const haystack_end) const
-    {
-        if constexpr (CaseInsensitive)
-            return std::search(
-                haystack_start, haystack_end, needle_start, needle_end,
-                [](char c1, char c2) { return std::toupper(c1) == std::toupper(c2); });
-        else
-            return std::search(
-                haystack_start, haystack_end, needle_start, needle_end,
-                [](char c1, char c2) { return c1 == c2; });
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack_start, size_t haystack_length) const
-    {
-        return search(haystack_start, haystack_start + haystack_length);
-    }
 };
 
 }

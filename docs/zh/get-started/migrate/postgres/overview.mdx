@@ -1,0 +1,56 @@
+---
+slug: /migrations/postgresql/overview
+title: '比较 PostgreSQL 与 ClickHouse'
+description: '从 PostgreSQL 迁移到 ClickHouse 的指南'
+keywords: ['postgres', 'postgresql', '迁移', 'migration']
+sidebarTitle: '概述'
+doc_type: 'guide'
+---
+
+<div id="why-use-clickhouse-over-postgres">
+  ## 为什么使用 ClickHouse 而不是 Postgres？
+</div>
+
+简而言之：因为 ClickHouse 是为快速分析而设计的，尤其擅长 `GROUP BY` 查询。它是一个 OLAP 数据库，而 Postgres 则是一个为事务型工作负载设计的 OLTP 数据库。
+
+OLTP，即在线事务处理数据库，旨在管理事务性信息。这类数据库的首要目标——Postgres 就是其中的经典代表——是确保工程师可以向数据库提交一组更新操作，并确信这些更新要么全部成功，要么全部失败。具备 ACID 特性的事务保障，是 OLTP 数据库的核心关注点，也是 Postgres 的一大优势。由于这些要求，OLTP 数据库在对大型数据集执行分析型查询时，通常会遇到性能瓶颈。
+
+OLAP，即在线分析处理数据库，则是为满足这类需求而设计的——也就是管理分析型工作负载。这类数据库的首要目标，是确保工程师能够高效地对海量数据集进行查询和聚合。像 ClickHouse 这样的实时 OLAP 系统，能够在数据被实时摄取的同时完成这类分析。
+
+如需更深入地比较 ClickHouse 与 PostgreSQL，请参阅[这里](/zh/get-started/migrate/postgres/appendix#postgres-vs-clickhouse-equivalent-and-different-concepts)。
+
+如需了解 ClickHouse 和 Postgres 在分析型查询上的潜在性能差异，请参阅 [Rewriting PostgreSQL Queries in ClickHouse](/zh/get-started/migrate/postgres/migration-guide/migration-guide-part2)。
+
+<div id="migration-strategies">
+  ## 迁移策略
+</div>
+
+从 PostgreSQL 迁移到 ClickHouse 时，采用哪种策略取决于您的使用场景、基础设施和数据要求。一般来说，对于大多数现代使用场景，实时 CDC (变更数据捕获) 是最佳方案；而手动批量加载并辅以定期更新，则更适合较简单的场景或一次性迁移。
+
+下面将介绍两种主要的迁移策略：**实时 CDC** 和 **手动批量加载 + 定期更新**。
+
+<div id="real-time-replication-cdc">
+  ### 实时复制 (CDC (变更数据捕获) )
+</div>
+
+变更数据捕获 (CDC (变更数据捕获) ) 是让两个数据库中的表保持同步的过程。对于大多数从 PostgreSQL 迁移的场景来说，这是最高效的方法，但也更复杂，因为它需要以近乎实时的方式将 PostgreSQL 中的 insert、update 和 delete 同步到 ClickHouse。对于注重实时分析的用例，这种方式尤其适合。
+
+如果你使用的是 ClickHouse Cloud，可以通过 [ClickPipes](/zh/integrations/clickpipes/postgres/deduplication) 在 ClickHouse 中实现实时 CDC (变更数据捕获)  (变更数据捕获) ；如果你运行的是本地部署的 ClickHouse，则可以使用 [PeerDB](https://github.com/PeerDB-io/peerdb)。这些方案能够处理实时数据同步的复杂性，包括初始加载：通过捕获 PostgreSQL 中的 insert、update 和 delete，并将其复制到 ClickHouse 中，实现持续同步。这种方式可确保 ClickHouse 中的数据始终保持最新且准确，无需人工干预。
+
+<div id="manual-bulk-load-periodic-updates">
+  ### 手动批量加载 + 定期更新
+</div>
+
+在某些情况下，采用更直接的方法即可，例如先手动批量加载，再定期更新。这种策略非常适合一次性迁移，或不需要实时复制的场景。它的做法是将数据从 PostgreSQL 批量加载到 ClickHouse，可通过直接执行 SQL `INSERT` 命令，或通过导出和导入 CSV 文件来完成。完成初始迁移后，你可以按固定时间间隔从 PostgreSQL 同步变更，定期更新 ClickHouse 中的数据。
+
+批量加载流程简单且灵活，但缺点是不支持实时更新。初始数据写入 ClickHouse 后，后续更新不会立即反映，因此你必须定期安排同步 PostgreSQL 中的变更。这种方法很适合对时效性要求不高的用例，但 PostgreSQL 中的数据发生变化后，这些变化在 ClickHouse 中出现会有一定延迟。
+
+<div id="which-strategy-to-choose">
+  ### 选择哪种策略？
+</div>
+
+对于大多数需要 ClickHouse 中数据保持最新的应用，推荐采用通过 ClickPipes 实现的实时 CDC (变更数据捕获) 。它只需极少的配置和维护，即可持续同步数据。另一方面，对于更简单的一次性迁移，或对实时更新要求不高的工作负载，手动批量加载并定期更新也是一种可行的方案。
+
+***
+
+**[从这里开始阅读 PostgreSQL 迁移指南](/zh/get-started/migrate/postgres/migration-guide/migration-guide-part1)。**

@@ -1,0 +1,18 @@
+---
+sidebarTitle: 'Configuration des paramètres'
+slug: /manage/settings
+title: 'Configuration des paramètres'
+description: 'Comment configurer les paramètres de votre service ClickHouse Cloud pour un utilisateur ou un rôle donnés'
+keywords: ['ClickHouse Cloud', 'configuration des paramètres', 'paramètres Cloud', 'paramètres utilisateur', 'paramètres de rôle']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Pour définir des paramètres pour votre service ClickHouse Cloud pour un [utilisateur](/fr/concepts/features/security/access-rights#user-account-management) ou un [rôle](/fr/concepts/features/security/access-rights#role-management) donné, vous devez utiliser les [profils de paramètres gérés par SQL](/fr/concepts/features/security/access-rights#settings-profiles-management). L’application de profils de paramètres garantit que les paramètres que vous configurez sont conservés, même lorsque vos services sont arrêtés, inactifs ou mis à niveau. Pour en savoir plus sur les profils de paramètres, veuillez consulter [cette page](/fr/concepts/features/configuration/settings/settings-profiles).
+
+Veuillez noter que les profils de paramètres basés sur XML et les [fichiers de configuration](/fr/concepts/features/configuration/server-config/configuration-files) ne sont actuellement pas pris en charge pour ClickHouse Cloud.
+
+Pour en savoir plus sur les paramètres que vous pouvez définir pour votre service ClickHouse Cloud, consultez la liste complète des paramètres possibles par catégorie dans [notre documentation](/fr/reference/settings/index).
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Volet latéral des paramètres Cloud" border />
