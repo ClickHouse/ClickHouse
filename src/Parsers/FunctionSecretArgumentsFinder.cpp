@@ -417,6 +417,18 @@ void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const 
         const auto positional = classifyPositionalArguments();
         if (*signature.positional_secret_slot < positional.size())
             markSecretArgument(positional[*signature.positional_secret_slot]);
+
+        /// The explicit form constant-folds its positionals, so an `equals` at the secret slot can be the
+        /// folded secret with the secret as its left operand (`Redis('host:port', 0, 'password' = 'x')`):
+        /// hide it whole. Only when the first argument is not an identifier: after a collection name the
+        /// slot holds an ordinary override.
+        const size_t slot = *signature.positional_secret_slot;
+        if (slot < function->arguments->size() && !function->arguments->at(0)->isIdentifier())
+        {
+            const auto equals_func = function->arguments->at(slot)->getFunction();
+            if (equals_func && equals_func->name() == "equals")
+                markSecretArgument(slot);
+        }
     }
 
     for (const auto & key : signature.secret_keys)

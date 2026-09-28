@@ -59,6 +59,11 @@ other_queries=(
     # A `SETTINGS` clause is not a positional argument and stays readable.
     "SELECT * FROM remote('127.0.0.1', 'db', 't', 'user', 'pw', number = 1, SETTINGS skip_unavailable_shards = 1)"
     "SELECT * FROM mysql(creds, password = 'S2', SETTINGS connect_timeout = 1)"
+    # A folded `equals` at the secret slot can hold the secret as its left operand: it is hidden whole.
+    "CREATE TABLE t (x Int32) ENGINE = Redis('127.0.0.1:6379', 0, 'S10' = 'x') PRIMARY KEY x"
+    "SELECT * FROM redis('127.0.0.1:6379', 'k', 'k String', 0, 'S10' = 'x')"
+    "CREATE TABLE t (x Int32) ENGINE = ArrowFlight('127.0.0.1:5006', 'ds', 'user', 'S10' = 'x')"
+    "CREATE TABLE t (x Int32) ENGINE = Redis(creds, host = 'h', port = 6379) PRIMARY KEY x"
     # An identifier can be a positional endpoint rather than a named collection.
     "SELECT * FROM redis(localhost, 'k', 'k String', 0, 'S6')"
     "SELECT * FROM ytsaurus(proxy, '//p', 'S6', 'x Int32')"
