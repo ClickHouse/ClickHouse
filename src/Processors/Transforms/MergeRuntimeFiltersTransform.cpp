@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -23,6 +24,12 @@ namespace ErrorCodes
 {
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char distributed_plan_runtime_filter_merge_pause_before_finalize[];
+extern const char distributed_plan_runtime_filter_merge_fails_before_finalize[];
 }
 
 SharedHeader runtimeFilterPartialsHeader()
@@ -185,6 +192,15 @@ void MergeRuntimeFiltersTransform::consume()
 void MergeRuntimeFiltersTransform::finalize()
 {
     finalized = true;
+
+    if (mode == Mode::ForwardUnion)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_plan_runtime_filter_merge_pause_before_finalize);
+        fiu_do_on(FailPoints::distributed_plan_runtime_filter_merge_fails_before_finalize,
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Injected runtime filter merge failure");
+        });
+    }
 
     /// A missing state (e.g. a cancelled stream, or one whose producer was lost) means the union
     /// would be incomplete and must not be used for filtering: without it rows keep passing

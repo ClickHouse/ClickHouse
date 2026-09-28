@@ -1238,6 +1238,12 @@ protected:
         return true;
     }
 
+    /// An in-memory sink never waits for its reader, so a merge task ends soon after its inputs
+    /// and waiting for it does not hold up the query. Without this wait, a merge task that fails
+    /// after the data stages finish goes unreported, because `cleanup` drops the task futures
+    /// without reading them.
+    bool waitsForFilterOnlyStages() const override { return true; }
+
 private:
     /// Rethrow the exception of any already-finished failed task across all stages, without blocking.
     void rethrowFailedTasks()
@@ -2188,10 +2194,10 @@ void DistributedQueryPlanExecutor::start()
             startStageWithDependencies(stage_name, executed_stages);
     }
 
-    /// Wait for all data stages to finish. Filter-only stages are not waited for, see
-    /// `DistributedQueryStage::filter_only`.
+    /// Wait for all data stages to finish. Whether the filter-only stages are waited for depends on
+    /// the executor, see `DistributedQueryStage::filter_only`.
     for (const auto & [stage_name, stage] : distributed_query_plan.stages)
-        if (!stage.filter_only)
+        if (!stage.filter_only || waitsForFilterOnlyStages())
             running_stages.push_back(stage_name);
 }
 
