@@ -116,7 +116,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
                                 size_t function_index) const override
     {
-        const auto & current_block = transform->blockAt(transform->current_row);
+        const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
 
@@ -129,7 +129,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 
         if (ts_scale_multiplier)
         {
-            const auto & column = transform->blockAt(transform->current_row).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
+            const auto & column = transform->blocks.blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
             const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
 
             Float64 time_elapsed = static_cast<Float64>(curr_timestamp) - state.previous_timestamp;

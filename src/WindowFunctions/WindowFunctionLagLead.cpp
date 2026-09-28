@@ -92,7 +92,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blockAt(transform->current_row);
+        const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
@@ -112,7 +112,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
             }
         }
 
-        const auto target_row = transform->moveRowNumber(
+        const auto target_row = transform->blocks.move(
             transform->current_row, offset * (is_lead ? 1 : -1));
 
         if (!target_row
@@ -135,7 +135,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(*target_row).input_columns[
+            to.insertFrom(*transform->blocks.blockAt(target_row->block).input_columns[
                     workspace.argument_column_indices[0]],
                 target_row->row);
         }

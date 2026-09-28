@@ -80,11 +80,11 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
 
         while (remaining_rows > 0)
         {
-            auto block_rows_number = transform->blockRowsNumber(state.start_row);
+            auto block_rows_number = transform->blocks.blockAt(state.start_row.block).rows_count;
             auto available_block_rows = block_rows_number - state.start_row.row;
             if (available_block_rows <= remaining_rows)
             {
-                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & to_column = *transform->blocks.blockAt(state.start_row.block).output_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
                 for (Int64 i = state.start_row.row; i < block_rows_number; ++i)
                     data[i] = data[i] / cume_dist_denominator;
@@ -95,7 +95,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             }
             else
             {
-                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & to_column = *transform->blocks.blockAt(state.start_row.block).output_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
                 for (Int64 i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
                 {
@@ -127,7 +127,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             // Advance through all rows that are peers with the current row
             while (true)
             {
-                RowNumber next = transform->nextRowNumber(check_row);
+                RowNumber next = transform->blocks.next(check_row);
                 if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
                     break;
                 check_row = next;
@@ -138,7 +138,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             state.cached_peer_group_end_row_number = peer_group_end_row_number;
         }
 
-        auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
+        auto & to_column = *transform->blocks.blockAt(transform->current_row.block).output_columns[function_index];
         assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(state.cached_peer_group_end_row_number));
     }
 };

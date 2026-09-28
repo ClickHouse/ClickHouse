@@ -50,7 +50,7 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blockAt(transform->current_row);
+        const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
@@ -67,7 +67,7 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         }
 
         --offset;
-        const auto target_row = transform->moveRowNumber(transform->frame_start, offset);
+        const auto target_row = transform->blocks.move(transform->frame_start, offset);
         if (!target_row
             || *target_row < transform->frame_start
             || transform->frame_end <= *target_row)
@@ -78,7 +78,7 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(*target_row).input_columns[
+            to.insertFrom(*transform->blocks.blockAt(target_row->block).input_columns[
                     workspace.argument_column_indices[0]],
                target_row->row);
         }

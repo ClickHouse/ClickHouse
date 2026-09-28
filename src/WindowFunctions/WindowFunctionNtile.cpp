@@ -35,7 +35,7 @@ struct NtileState
     {
         if (!buckets) [[unlikely]]
         {
-            const auto & current_block = transform->blockAt(transform->current_row);
+            const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
             if (!isColumnConst(arg_col))
@@ -84,8 +84,8 @@ struct NtileState
             auto left_rows = current_bucket_capacity;
             while (left_rows)
             {
-                auto available_block_rows = transform->blockRowsNumber(start_row) - start_row.row;
-                IColumn & to = *transform->blockAt(start_row).output_columns[function_index];
+                auto available_block_rows = transform->blocks.blockAt(start_row.block).rows_count - start_row.row;
+                IColumn & to = *transform->blocks.blockAt(start_row.block).output_columns[function_index];
                 auto & pod_array = assert_cast<ColumnUInt64 &>(to).getData();
                 if (left_rows < available_block_rows)
                 {

@@ -100,35 +100,6 @@ public:
     void updateAggregationState();
     void writeOutCurrentRow();
 
-    const Columns & inputAt(const RowNumber & x) const
-    {
-        return blocks.blockAt(x.block).input_columns;
-    }
-    const SlidingBlock & blockAt(const RowNumber & x) const
-    {
-        return blocks.blockAt(x.block);
-    }
-    Int64 blockRowsNumber(const RowNumber & x) const
-    {
-        return blocks.blockAt(x.block).rows_count;
-    }
-    void advanceRowNumber(RowNumber & x) const
-    {
-        x = blocks.next(x);
-    }
-    RowNumber nextRowNumber(const RowNumber & x) const
-    {
-        return blocks.next(x);
-    }
-    RowNumber prevRowNumber(const RowNumber & x) const
-    {
-        return blocks.prev(x);
-    }
-    std::optional<RowNumber> moveRowNumber(const RowNumber & x, Int64 offset) const
-    {
-        return blocks.move(x, offset);
-    }
-
     /// Data for window transform itself.
     const WindowTransformParams params;
 

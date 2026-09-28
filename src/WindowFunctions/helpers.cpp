@@ -13,13 +13,13 @@ namespace WindowRowAccess
 Float64 getArgumentFloat64(const WindowTransform * transform, size_t function_index, size_t argument_index, RowNumber row)
 {
     const auto & workspace = transform->workspaces[function_index];
-    const auto & column = transform->blockAt(row).input_columns[workspace.argument_column_indices[argument_index]];
+    const auto & column = transform->blocks.blockAt(row.block).input_columns[workspace.argument_column_indices[argument_index]];
     return column->getFloat64(row.row);
 }
 
 void insertResultFloat64(const WindowTransform * transform, size_t function_index, Float64 value)
 {
-    IColumn & to = *transform->blockAt(transform->current_row).output_columns[function_index];
+    IColumn & to = *transform->blocks.blockAt(transform->current_row.block).output_columns[function_index];
     assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
 }
 
@@ -46,7 +46,7 @@ bool isPartitionLastRow(const WindowTransform * transform)
     {
         /// when current row is not the partition end row, we need to check whether it's the last
         /// input row.
-        if (current_row.row < transform->blockRowsNumber(current_row))
+        if (current_row.row < transform->blocks.blockAt(current_row.block).rows_count)
             return false;
         if (partition_end_row.block != current_row.block + 1 || partition_end_row.row)
             return false;
