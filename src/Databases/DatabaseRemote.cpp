@@ -759,6 +759,8 @@ StoragePtr DatabaseRemote::fetchTable(
         /* relative_data_path_ = */ String{},
         local_context->getDistributedSettings(),
         LoadingStrictnessLevel::ATTACH,
+        /// The sharding key is synthesized here, not supplied by the user.
+        /* is_fresh_definition = */ false,
         table_cluster,
         /* remote_table_function_ptr_ = */ nullptr,
         /* is_remote_function_ = */ true,
