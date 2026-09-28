@@ -291,6 +291,9 @@ namespace Net
         Context::Ptr _pContext;
         bool _needHandshake;
         bool _fatalError;
+        bool _pendingWrite = false;
+        /// Whether the last `SSL_write` returned `SSL_ERROR_WANT_WRITE`. OpenSSL keeps that record pending
+        /// until `SSL_write` is retried, even after other operations change what `SSL_get_error` reports.
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;
