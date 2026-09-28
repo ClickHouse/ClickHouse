@@ -30,7 +30,7 @@ CREATE VIEW expected_rows AS
         s.readonly AS readonly, s.type AS type, s.is_obsolete AS is_obsolete, s.tier AS tier, s.source AS source,
         s.alias_for AS alias_for
     FROM (SELECT name AS engine, startsWith(name, 'Replicated') AS replicated FROM system.table_engines
-          WHERE endsWith(name, 'MergeTree')) AS e
+          WHERE endsWith(name, 'MergeTree') AND NOT startsWith(name, 'Shared')) AS e
     INNER JOIN (SELECT 0 AS replicated, * FROM system.merge_tree_settings
                 UNION ALL
                 SELECT 1 AS replicated, * FROM system.replicated_merge_tree_settings) AS s
@@ -40,7 +40,7 @@ CREATE VIEW engine_rows AS
     SELECT engine, name, value, \`default\`, changed, description, min, max, disallowed_values,
         readonly, type, is_obsolete, tier, source, alias_for
     FROM system.engine_settings
-    WHERE endsWith(engine, 'MergeTree');
+    WHERE endsWith(engine, 'MergeTree') AND NOT startsWith(engine, 'Shared');
 
 SELECT 'the sections took effect', engine, value, source FROM engine_rows
 WHERE engine IN ('MergeTree', 'ReplicatedMergeTree') AND name IN ('merge_max_block_size', 'max_suspicious_broken_parts')
