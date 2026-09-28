@@ -189,6 +189,10 @@ BlockIO InterpreterUpdateQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        MutationCommands commands;
+        commands.emplace_back(createMutationCommand(update_query, settings));
+        validateMutationBeforeEnqueue(table, commands, getContext());
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));

@@ -64,6 +64,10 @@ void checkNoRowPolicyForSetOperands(
     const ContextPtr & context,
     bool throw_if_unresolved = false);
 
+/// The DDL worker of a `Replicated` database runs a mutation with full access, so analyze the mutation as the
+/// submitting user before it is enqueued. Unlike `checkNoRowPolicyForSetOperands`, this sees inside views.
+void validateMutationBeforeEnqueue(const StoragePtr & table, const MutationCommands & commands, const ContextPtr & context);
+
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter

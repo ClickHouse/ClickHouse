@@ -524,6 +524,25 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        MutationCommands mutation_commands;
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+                mutation_commands.push_back(*MutationCommand::parse(
+                    command,
+                    /* parse_alter_commands = */ false,
+                    /* with_pure_metadata_commands = */ false,
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]));
+        }
+        if (!mutation_commands.empty())
+        {
+            if (!table)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
+            validateMutationBeforeEnqueue(table, mutation_commands, getContext());
+        }
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));

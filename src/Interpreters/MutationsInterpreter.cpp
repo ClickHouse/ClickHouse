@@ -152,6 +152,19 @@ void checkNoRowPolicyForSetOperands(
     check(ast, check);
 }
 
+void validateMutationBeforeEnqueue(const StoragePtr & table, const MutationCommands & commands, const ContextPtr & context)
+{
+    auto validation_context = Context::createCopy(context);
+    /// The worker resolves unqualified names in the database of the table.
+    validation_context->setCurrentDatabase(table->getStorageID().database_name);
+    /// Skip the determinism check: the worker runs it itself, and not at all for lightweight updates.
+    validation_context->setSetting("allow_nondeterministic_mutations", true);
+
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(validation_context, false);
+    MutationsInterpreter::Settings settings(false);
+    MutationsInterpreter(table, metadata_snapshot, commands, validation_context, settings).validate();
+}
+
 /// Stored SQL text always carries explicit modes, so the `*_default_mode` fallbacks are not reached in
 /// practice; passing the current context settings just mirrors `executeQuery`.
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context)
