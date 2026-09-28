@@ -10,9 +10,7 @@ doc_type: 'guide'
 如果你习惯使用传统关系型数据库，可能会想在 ClickHouse 中寻找存储过程和预处理语句。
 本指南将介绍 ClickHouse 对这些概念的处理方式，并提供推荐的替代方案。
 
-<div id="alternatives-to-stored-procedures">
-  ## ClickHouse 中存储过程的替代方案
-</div>
+## ClickHouse 中存储过程的替代方案 {#alternatives-to-stored-procedures}
 
 ClickHouse 不支持包含控制流逻辑 (`IF`/`ELSE`、循环等) 的传统存储过程。
 这是由 ClickHouse 作为分析型数据库的架构特性决定的有意设计选择。
@@ -26,15 +24,11 @@ ClickHouse 主要针对以下场景进行了优化：
 
 带有过程式逻辑的存储过程与这些优化方向背道而驰。相应地，ClickHouse 提供了更符合其优势的替代方案。
 
-<div id="user-defined-functions">
-  ### 用户自定义函数 (UDFs)
-</div>
+### 用户自定义函数 (UDFs) {#user-defined-functions}
 
 用户自定义函数可让您在不使用控制流的情况下封装可复用的逻辑。ClickHouse 支持两种类型：
 
-<div id="lambda-based-udfs">
-  #### 基于 Lambda 的 UDF
-</div>
+#### 基于 Lambda 的 UDF {#lambda-based-udfs}
 
 使用 SQL 表达式和 Lambda 语法创建函数：
 
@@ -107,9 +101,7 @@ SELECT format_phone('5551234567');
 
 完整语法请参见 [`CREATE FUNCTION`](/zh/reference/statements/create/function)。
 
-<div id="executable-udfs">
-  #### 可执行 UDF
-</div>
+#### 可执行 UDF {#executable-udfs}
 
 对于更复杂的逻辑，可使用调用外部程序的可执行 UDF：
 
@@ -141,9 +133,7 @@ FROM customer_reviews;
 
 详情请参阅 [可执行 UDF](/zh/reference/functions/regular-functions/udf)。
 
-<div id="parameterized-views">
-  ### 参数化视图
-</div>
+### 参数化视图 {#parameterized-views}
 
 参数化视图的行为类似于返回数据集的函数。
 它们非常适合用于带动态过滤条件的可复用查询：
@@ -198,9 +188,7 @@ FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
 WHERE product_id = 12345;
 ```
 
-<div id="common-use-cases">
-  #### 常见用例
-</div>
+#### 常见用例 {#common-use-cases}
 
 * 按日期范围动态筛选
 * 按用户切分数据
@@ -245,9 +233,7 @@ SELECT * FROM top_products_by_category(
 
 更多信息，请参见[参数化视图](/zh/reference/statements/create/view#parameterized-view)一节。
 
-<div id="materialized-views">
-  ### Materialized views
-</div>
+### Materialized views {#materialized-views}
 
 materialized views 非常适合对原本通常由存储过程完成的高成本聚合进行预计算。如果你使用的是传统数据库，可以将 materialized view 视为一种 **插入触发器**：它会在数据插入源表时自动进行转换和聚合：
 
@@ -300,9 +286,7 @@ WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY user_id;
 ```
 
-<div id="refreshable-materialized-views">
-  #### 可刷新materialized view
-</div>
+#### 可刷新materialized view {#refreshable-materialized-views}
 
 对于按计划执行的批处理 (例如每晚运行的存储过程) ：
 
@@ -328,15 +312,11 @@ WHERE month = toStartOfMonth(today());
 
 有关高级用法，请参阅 [级联 materialized views](/zh/concepts/features/materialized-views/cascading-materialized-views)。
 
-<div id="external-orchestration">
-  ### 外部编排
-</div>
+### 外部编排 {#external-orchestration}
 
 对于复杂的业务逻辑、ETL 工作流或多步骤流程，始终可以借助各种编程语言的客户端，在 ClickHouse 外部实现相关逻辑。
 
-<div id="using-application-code">
-  #### 使用应用代码
-</div>
+#### 使用应用代码 {#using-application-code}
 
 下面通过并排对比，展示如何将 MySQL 存储过程改写为借助 ClickHouse 和应用代码来实现：
 
@@ -568,12 +548,10 @@ WHERE month = toStartOfMonth(today());
 
 <br />
 
-<div id="key-differences">
-  #### 关键差异
-</div>
+#### 关键差异 {#key-differences}
 
 1. **控制流** - MySQL 存储过程使用 `IF/ELSE` 和 `WHILE` 循环。在 ClickHouse 中，这类逻辑应在应用代码 (Python、Java 等) 中实现
-2. **事务** - MySQL 支持用于 ACID 事务的 `BEGIN/COMMIT/ROLLBACK`。ClickHouse 是面向分析的数据库，针对只追加工作负载进行了优化，而非事务性更新
+2. **事务** - MySQL 支持用于 ACID 事务的 `BEGIN/COMMIT/ROLLBACK`。ClickHouse 是分析型数据库，针对只追加工作负载进行了优化，而非事务性更新
 3. **更新** - MySQL 使用 `UPDATE` 语句。对于可变数据，ClickHouse 更适合使用 `INSERT`，并配合 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 或 [CollapsingMergeTree](/zh/reference/engines/table-engines/mergetree-family/collapsingmergetree)
 4. **变量和状态** - MySQL 存储过程可以声明变量 (`DECLARE v_discount`) 。在 ClickHouse 中，状态应由应用代码管理
 5. **错误处理** - MySQL 支持 `SIGNAL` 和异常处理程序。在应用代码中，请使用所选编程语言的原生错误处理机制 (try/catch)
@@ -581,14 +559,12 @@ WHERE month = toStartOfMonth(today());
 <Tip>
   **何时使用各自的方法：**
 
-  * **OLTP 工作负载** (订单、支付、用户账户) → 使用带存储过程的 MySQL/PostgreSQL
+  * **OLTP 工作负载** (订单、支付、用户账户) → 使用 MySQL 或 PostgreSQL 处理应用事务和存储过程。[ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 已在 ClickHouse Cloud 中提供。
   * **分析型工作负载** (报表、聚合、时间序列) → 使用 ClickHouse，并由应用程序进行编排
-  * **混合架构** → 两者结合使用！将事务型数据从 OLTP 流式传输到 ClickHouse 进行分析
+  * **混合架构** → 将应用事务保留在 Postgres 中，并将已提交的变更复制到 ClickHouse 进行分析。请参阅 [Postgres 与 ClickHouse 如何协同工作](/zh/products/managed-postgres/overview#transactions-and-analytics) 以及[集成快速入门](/zh/products/managed-postgres/quickstart#part-2)。
 </Tip>
 
-<div id="using-workflow-orchestration-tools">
-  #### 使用工作流编排工具
-</div>
+#### 使用工作流编排工具 {#using-workflow-orchestration-tools}
 
 * **Apache Airflow** - 调度并监控由 ClickHouse 查询构成的复杂 DAG
 * **dbt** - 使用基于 SQL 的工作流转换数据
@@ -604,21 +580,15 @@ WHERE month = toStartOfMonth(today());
 * 监控和告警
 * 更灵活的调度
 
-<div id="alternatives-to-prepared-statements-in-clickhouse">
-  ## ClickHouse 中预处理语句的替代方案
-</div>
+## ClickHouse 中预处理语句的替代方案 {#alternatives-to-prepared-statements-in-clickhouse}
 
 虽然 ClickHouse 没有传统关系型数据库意义上的“预处理语句”，但它提供了**查询参数**，可实现相同的目的：以安全的参数化查询方式防止 SQL 注入。
 
-<div id="query-parameters-syntax">
-  ### 语法
-</div>
+### 语法 {#query-parameters-syntax}
 
 定义查询参数有两种方式：
 
-<div id="method-1-using-set">
-  #### 方法 1：使用 `SET`
-</div>
+#### 方法 1：使用 `SET` {#method-1-using-set}
 
 <Accordion title="示例表和数据">
   ```sql
@@ -668,9 +638,7 @@ WHERE user_id = {user_id: UInt64}
 GROUP BY event_name;
 ```
 
-<div id="method-2-using-cli-parameters">
-  #### 方法 2：使用 CLI 参数
-</div>
+#### 方法 2：使用 CLI 参数 {#method-2-using-cli-parameters}
 
 ```bash
 clickhouse-client \
@@ -682,18 +650,14 @@ clickhouse-client \
              AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
 ```
 
-<div id="parameter-syntax">
-  ### 参数语法
-</div>
+### 参数语法 {#parameter-syntax}
 
 参数通过以下语法引用：`{parameter_name: DataType}`
 
 * `parameter_name` - 参数名称 (不含 `param_` 前缀)
 * `DataType` - 用于将参数转换为该类型的 ClickHouse 数据类型
 
-<div id="data-type-examples">
-  ### 数据类型示例
-</div>
+### 数据类型示例 {#data-type-examples}
 
 <Accordion title="示例中的表和样本数据">
   ```sql
@@ -807,9 +771,7 @@ clickhouse-client \
 
 有关在[编程语言客户端](/zh/integrations/language-clients/index)中使用查询参数的信息，请参阅相应编程语言客户端的文档。
 
-<div id="limitations-of-query-parameters">
-  ### 查询参数的局限性
-</div>
+### 查询参数的局限性 {#limitations-of-query-parameters}
 
 查询参数**不是通用的文本替换机制**。它们有以下特定限制：
 
@@ -849,9 +811,7 @@ ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- 不支持
 {statements: String};  -- 不支持
 ```
 
-<div id="security-best-practices">
-  ### 安全最佳实践
-</div>
+### 安全最佳实践 {#security-best-practices}
 
 **始终使用查询参数传递用户输入：**
 
@@ -887,9 +847,7 @@ def get_user_orders(user_id: int, start_date: str):
     )
 ```
 
-<div id="mysql-protocol-prepared-statements">
-  ### MySQL 协议预处理语句
-</div>
+### MySQL 协议预处理语句 {#mysql-protocol-prepared-statements}
 
 ClickHouse 的 [MySQL 接口](/zh/concepts/features/interfaces/mysql) 对预处理语句 (`COM_STMT_PREPARE`、`COM_STMT_EXECUTE`、`COM_STMT_CLOSE`) 仅提供有限支持，主要是为了让 Tableau Online 这类会将查询封装为预处理语句的工具能够连接。
 
@@ -919,13 +877,9 @@ EXECUTE stmt USING @user_id;  -- 不支持参数绑定
 
 更多详情，请参阅 [MySQL 接口文档](/zh/concepts/features/interfaces/mysql) 和 [关于 MySQL 支持的博文](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey)。
 
-<div id="summary">
-  ## 摘要
-</div>
+## 摘要 {#summary}
 
-<div id="summary-stored-procedures">
-  ### ClickHouse 中存储过程的替代方案
-</div>
+### ClickHouse 中存储过程的替代方案 {#summary-stored-procedures}
 
 | 传统存储过程模式   | ClickHouse 替代方案                                   |
 | ---------- | ------------------------------------------------- |
@@ -936,9 +890,7 @@ EXECUTE stmt USING @user_id;  -- 不支持参数绑定
 | 复杂的多步骤 ETL | 链式 materialized views 或外部编排 (Python、Airflow、dbt)  |
 | 带控制流的业务逻辑  | 应用代码                                              |
 
-<div id="summary-query-parameters">
-  ### 查询参数的用途
-</div>
+### 查询参数的用途 {#summary-query-parameters}
 
 查询参数可用于：
 
@@ -947,9 +899,7 @@ EXECUTE stmt USING @user_id;  -- 不支持参数绑定
 * 在应用程序中进行动态过滤
 * 复用查询模板
 
-<div id="related-documentation">
-  ## 相关文档
-</div>
+## 相关文档 {#related-documentation}
 
 * [`CREATE FUNCTION`](/zh/reference/statements/create/function) - 用户自定义函数
 * [`CREATE VIEW`](/zh/reference/statements/create/view) - 视图，包括参数化视图和 materialized view

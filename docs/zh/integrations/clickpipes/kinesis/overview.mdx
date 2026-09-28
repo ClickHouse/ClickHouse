@@ -20,15 +20,13 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 你应已了解 [ClickPipes 简介](/zh/integrations/clickpipes/home)，并已设置好 [IAM 凭证](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) 或 [IAM 角色](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)。有关如何设置可与 ClickHouse Cloud 配合使用的角色，请参阅 [Kinesis 基于角色的访问指南](/zh/integrations/clickpipes/kinesis/auth)。
 
-<div id="creating-your-first-clickpipe">
-  ## 创建你的第一个 ClickPipe
-</div>
+## 创建你的第一个 ClickPipe {#creating-your-first-clickpipe}
 
 1. 进入你的 ClickHouse Cloud 服务的 SQL 控制台。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
 
-2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“Set up a ClickPipe”
+2. 在左侧菜单中选择 `数据源` 按钮，然后点击“Set up a ClickPipe”
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
 
@@ -40,7 +38,9 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="填写连接详细信息" size="lg" border />
 
-5. 选择 Kinesis Stream 和起始偏移量。UI 会显示所选源中的一个样本文档 (Kafka topic 等) 。你还可以为 Kinesis 数据流启用 Enhanced Fan-out，以提升 ClickPipe 的性能和稳定性 (有关 Enhanced Fan-out 的更多信息，请参见[此处](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. 选择 Kinesis 数据流、**数据格式** 和起始偏移量。对于 `Protobuf`，请上传 `.proto` 文件或序列化的 `FileDescriptorSet` (最大 768 KiB) 。无需 Schema Registry。
+
+   UI 会显示所选数据流中的样本数据。**Use Kinesis Enhanced Fan-Out** 默认已启用。详情请参见 [Amazon Kinesis 文档](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="设置数据格式和 topic" size="lg" border />
 
@@ -88,6 +88,7 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 支持的格式如下：
 
 * [JSON](/zh/reference/formats/JSON/JSON)
+* [Protobuf](/zh/reference/formats/Protobuf/Protobuf)
 
 <div id="compression">
   ## 压缩
@@ -198,13 +199,7 @@ ClickPipes 以批次方式将数据插入 ClickHouse。这样做是为了避免�
   ### 活跃分片
 </div>
 
-我们强烈建议将同时处于活跃状态的分片数量限制在满足吞吐量需求的范围内。对于 “On Demand” Kinesis 数据流，AWS 会根据吞吐量自动分配相应数量的分片；
-但对于 “Provisioned” 数据流，配置过多分片不仅会导致下文所述的延迟问题，还会增加成本，因为这类 Kinesis 数据流按“每个分片”计费。
-
-如果生产者应用持续向大量活跃分片写入数据，而您的管道规模又不足以高效处理这些分片，就可能产生延迟。根据 Kinesis 的吞吐量限制，
-ClickPipes 会为每个副本分配固定数量的“工作线程”来读取分片数据。例如，在最小规格下，一个 ClickPipes 副本会有 4 个这样的工作线程。如果生产者同时向
-超过 4 个分片写入数据，那么在某个工作线程空闲之前，“额外”分片中的数据不会得到处理。特别是，如果该管道使用了 “enhanced fanout”，每个工作线程都会订阅
-单个分片 5 分钟，并且在此期间无法读取任何其他分片。这会导致延迟出现以 5 分钟为倍数的“尖峰”。
+如果 ClickPipe 未[扩缩容](#scaling)到足以处理这些分片，大量活跃分片会降低 ClickPipe 的吞吐量。
 
 <div id="scaling">
   ### 扩缩容
@@ -219,8 +214,6 @@ ClickPipes 通过跨可用区的分布式架构提供高可用性。
 如果某个消费者或其底层基础设施发生故障，
 ClickPipe 会自动重启该消费者并继续处理消息。
 
-<div id="authentication">
-  ## 身份验证
-</div>
+## 身份验证 {#authentication}
 
 要访问Amazon Kinesis 数据流，您可以使用 [IAM 凭证](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) 或 [IAM 角色](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)。如需进一步了解如何设置 IAM 角色，您可以[参阅本指南](/zh/integrations/clickpipes/kinesis/auth)，了解如何设置可与 ClickHouse Cloud 配合使用的角色。
