@@ -1,4 +1,5 @@
 -- Query parameters in CREATE / ALTER ROW POLICY filters are substituted when the policy is stored.
+-- An `Identifier` query parameter in a filter setting is never substituted, so it is rejected.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
@@ -30,6 +31,16 @@ SET param_col = 'a';
 CREATE ROW POLICY p2 ON t USING k IN (SELECT k FROM keys LEFT ARRAY JOIN 'abc', {col:Identifier}) TO ALL;
 SELECT k FROM t; -- { serverError TYPE_MISMATCH }
 DROP ROW POLICY p2 ON t;
+
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT k FROM keys LEFT ARRAY JOIN \'abc\', {x:Identifier})'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_result_filter = 'k IN (SELECT k FROM keys LEFT ARRAY JOIN \'abc\', {x:Identifier})'; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT COLUMNS({x:Identifier}) FROM keys)'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT k FROM {x:Identifier}.keys)'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'arrayExists({x:Identifier} -> 1, [k])'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT * EXCEPT ({x:Identifier}) FROM keys)'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT {x:Identifier}.* FROM keys)'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT {x:Identifier}.COLUMNS(k) FROM keys)'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT {x:Identifier}.COLUMNS(\'k\') FROM keys)'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
 
 DROP ROW POLICY IF EXISTS p ON t;
 DROP ROW POLICY IF EXISTS p2 ON t;
