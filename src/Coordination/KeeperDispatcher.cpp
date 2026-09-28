@@ -871,9 +871,16 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 }
 
 
-void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, KeeperDispatcher::ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count)
+void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
+    const ClusterUpdateAction & action,
+    KeeperDispatcher::ConfigCheckCallback check_callback,
+    UInt64 max_action_wait_time_ms,
+    UInt64 retry_count,
+    const Stopwatch & total_watch,
+    UInt64 max_total_wait_time_ms)
 {
-    for (int64_t attempt = 0; attempt <= retry_count; ++attempt)
+    UInt64 attempt = 0;
+    for (; attempt <= retry_count; ++attempt)
     {
         if (check_callback(server.get()))
         {
@@ -881,10 +888,17 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
             return;
         }
 
+        UInt64 time_spent = total_watch.elapsedMilliseconds();
+        UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
+        UInt64 wait_time_ms = std::min(max_action_wait_time_ms, time_left_total);
+        /// A retry with no time left to wait for its result would only push the action again.
+        if (attempt > 0 && wait_time_ms == 0)
+            break;
+
         pushClusterUpdates({action});
         Stopwatch watch;
-        LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
-        while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
+        LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, wait_time_ms);
+        while (watch.elapsedMilliseconds() < wait_time_ms)
         {
             if (isShuttingDown() || keeper_context->isShutdownCalled())
                 throw Exception(ErrorCodes::ABORTED, "Shutdown started, aborting configuration update");
@@ -899,7 +913,12 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded (with retries count {}) waiting for configuration update {} to happen", retry_count, action);
+    throw Exception(
+        ErrorCodes::TIMEOUT_EXCEEDED,
+        "Timeout exceeded (with retries count {}, attempts made {}) waiting for configuration update {} to happen",
+        retry_count,
+        attempt,
+        action);
 }
 
 void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command)
@@ -952,6 +971,18 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
     }
 
 }
+
+static UInt64 getRetryCount(const Poco::JSON::Object::Ptr & action_obj)
+{
+    if (!action_obj->has("retry"))
+        return 1;
+
+    Int64 retry_count = action_obj->getValue<Int64>("retry");
+    if (retry_count < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command action 'retry' must be non-negative, got {}", retry_count);
+    return static_cast<UInt64>(retry_count);
+}
+
 void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command)
 {
     if (!reconfig_command->has("actions"))
@@ -979,6 +1010,7 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
     for (const auto & action_json : *actions)
     {
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+        (void)getRetryCount(action_obj);
         if (action_obj->has("remove_members"))
         {
             auto remove_members = action_obj->getArray("remove_members");
@@ -1094,17 +1126,8 @@ try
     Stopwatch total_watch;
     for (const auto & action_json : *actions)
     {
-
-        UInt64 time_left_for_action = max_action_wait_time_ms;
-        UInt64 time_spent = total_watch.elapsedMilliseconds();
-        UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
-        UInt64 time_left = std::min(time_left_for_action, time_left_total);
-
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
-
-        int64_t retry_count = 1;
-        if (action_obj->has("retry"))
-            retry_count = std::min(retry_count, action_obj->getValue<int64_t>("retry"));
+        UInt64 retry_count = getRetryCount(action_obj);
 
         if (action_obj->has("remove_members"))
         {
@@ -1131,7 +1154,8 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(remove_action, std::move(remove_callback), time_left, retry_count);
+                executeClusterUpdateActionAndWaitConfigChange(
+                    remove_action, std::move(remove_callback), max_action_wait_time_ms, retry_count, total_watch, max_total_wait_time_ms);
             }
         }
         else if (action_obj->has("add_members"))
@@ -1163,7 +1187,8 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(add_action, std::move(add_callback), time_left, retry_count);
+                executeClusterUpdateActionAndWaitConfigChange(
+                    add_action, std::move(add_callback), max_action_wait_time_ms, retry_count, total_watch, max_total_wait_time_ms);
             }
         }
         else if (action_obj->has("transfer_leadership"))
@@ -1195,7 +1220,8 @@ try
                     return false;
                 }
             };
-            executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left, retry_count);
+            executeClusterUpdateActionAndWaitConfigChange(
+                transfer_action, std::move(check_callback), max_action_wait_time_ms, retry_count, total_watch, max_total_wait_time_ms);
         }
         else if (action_obj->has("set_priority"))
         {
@@ -1231,7 +1257,13 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(update_priority_action, std::move(priority_callback), time_left, retry_count);
+                executeClusterUpdateActionAndWaitConfigChange(
+                    update_priority_action,
+                    std::move(priority_callback),
+                    max_action_wait_time_ms,
+                    retry_count,
+                    total_watch,
+                    max_total_wait_time_ms);
             }
         }
         else

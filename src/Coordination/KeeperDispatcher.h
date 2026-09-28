@@ -125,7 +125,13 @@ private:
     void clusterUpdateThread();
 
     using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
-    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
+    void executeClusterUpdateActionAndWaitConfigChange(
+        const ClusterUpdateAction & action,
+        ConfigCheckCallback check_callback,
+        UInt64 max_action_wait_time_ms,
+        UInt64 retry_count,
+        const Stopwatch & total_watch,
+        UInt64 max_total_wait_time_ms);
 
     /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
