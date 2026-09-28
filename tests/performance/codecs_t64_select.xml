@@ -1,0 +1,92 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+        <use_query_cache>0</use_query_cache>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>table_settings</name>
+            <values>
+                <value>min_bytes_for_wide_part=0, min_rows_for_wide_part=0, merge_selector_base=1000</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>case</name>
+            <values>
+                <value>uint8_one_byte</value>
+                <value>uint16_one_byte</value>
+                <value>uint32_one_byte</value>
+                <value>uint64_one_byte</value>
+                <value>uint64_one_bit</value>
+                <value>uint8_prefix_one_byte</value>
+                <value>uint64_prefix_one_byte</value>
+                <value>int16_negative_byte</value>
+                <value>int64_crossing_byte</value>
+                <value>uint64_six_byte</value>
+                <value>uint64_eight_byte</value>
+                <value>uint64_eight_bit</value>
+                <value>uint64_prefix_six_byte</value>
+                <value>uint64_sequential_bit</value>
+                <value>uint64_jittered_bit</value>
+                <value>uint64_jittered_byte</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE t64_select_uint8_one_byte (n UInt8 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint16_one_byte (n UInt16 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint32_one_byte (n UInt32 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_one_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_one_bit (n UInt64 CODEC(T64('bit'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint8_prefix_one_byte (n UInt8 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_prefix_one_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_int16_negative_byte (n Int16 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_int64_crossing_byte (n Int64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_six_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_eight_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_eight_bit (n UInt64 CODEC(T64('bit'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_prefix_six_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_sequential_bit (n UInt64 CODEC(T64('bit'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_jittered_bit (n UInt64 CODEC(T64('bit'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_jittered_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+
+    <fill_query>INSERT INTO t64_select_uint8_one_byte SELECT number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint16_one_byte SELECT number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint32_one_byte SELECT number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_one_byte SELECT number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_one_bit SELECT number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint8_prefix_one_byte SELECT toUInt64(16) + number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_prefix_one_byte SELECT toUInt64(1125899906842624) + number % 2 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_int16_negative_byte SELECT toInt64(number % 2) - 4 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_int64_crossing_byte SELECT toInt64(number % 2) - 1 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_six_byte SELECT number % 64 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_eight_byte SELECT number % 256 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_eight_bit SELECT number % 256 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_prefix_six_byte SELECT toUInt64(1125899906842624) + number % 64 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_sequential_bit SELECT number FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_jittered_bit SELECT number * 512 + intHash64(number) % 512 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_jittered_byte SELECT number * 512 + intHash64(number) % 512 FROM numbers(100000000)</fill_query>
+
+    <fill_query>OPTIMIZE TABLE t64_select_{case} FINAL SETTINGS optimize_throw_if_noop=1</fill_query>
+
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_one_byte) WHERE ignore(n) = 0 LIMIT 5367000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint16_one_byte) WHERE ignore(n) = 0 LIMIT 5083000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint32_one_byte) WHERE ignore(n) = 0 LIMIT 4733000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_byte) WHERE ignore(n) = 0 LIMIT 3604000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_bit) WHERE ignore(n) = 0 LIMIT 3712000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 5196000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 3594000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_int16_negative_byte) WHERE ignore(n) = 0 LIMIT 5078000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_int64_crossing_byte) WHERE ignore(n) = 0 LIMIT 3242000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_six_byte) WHERE ignore(n) = 0 LIMIT 1607000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_byte) WHERE ignore(n) = 0 LIMIT 2154000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_bit) WHERE ignore(n) = 0 LIMIT 1380000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_six_byte) WHERE ignore(n) = 0 LIMIT 1597000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_sequential_bit) WHERE ignore(n) = 0 LIMIT 765000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_bit) WHERE ignore(n) = 0 LIMIT 543000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_byte) WHERE ignore(n) = 0 LIMIT 927000000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS t64_select_{case} SYNC</drop_query>
+</test>

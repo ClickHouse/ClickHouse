@@ -11,7 +11,9 @@ ENGINE = MergeTree ORDER BY k
 -- `index_granularity_bytes` is randomized, so pin it too: the granule count asserted below has to
 -- be decided by `index_granularity` alone. Not 0, which would disable adaptive granularity, and a
 -- randomized non-zero `min_bytes_for_wide_part` then makes the server warn on stderr.
-SETTINGS index_granularity = 4, index_granularity_bytes = 10485760;
+-- A merge computes granularity per output block, so a small `merge_max_block_size` can leave a short
+-- granule and shift that count.
+SETTINGS index_granularity = 4, index_granularity_bytes = 10485760, merge_max_block_size = 8192;
 -- Merges stay stopped until the `ALTER` has landed, so no merge can consume the two parts early and
 -- rebuild `idx` while the recorded type is still consistent.
 SYSTEM STOP MERGES t_ckn_index;
