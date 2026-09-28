@@ -34,10 +34,13 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM FLUSH LOGS part_log;
 
+    -- Other engines (SharedMergeTree in Cloud CI) can log further event types for a fresh part, e.g. DownloadPart;
+    -- only the two event types under test count.
     SELECT table, event_type, count()
     FROM system.part_log
     WHERE event_date >= yesterday() AND toUnixTimestamp64Micro(event_time_microseconds) >= $start_time
         AND database = currentDatabase() AND table IN ('t_part_log_drop', 't_part_log_drop_replicated')
+        AND event_type IN ('NewPart', 'RemovePart')
     GROUP BY table, event_type
     ORDER BY table, event_type;
 "
