@@ -303,6 +303,8 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_join_right_table_sorting`."}]}]}/>
 
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+This setting is experimental and currently does not work together with all other join optimizations.
+In particular, when the right table is reranged, the per-key split controlled by `joined_block_split_single_row` is disabled, so neither `max_joined_block_size_rows` nor `max_joined_block_size_bytes` bounds the number of rows produced for a single left row.
 
 ## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
 
@@ -377,7 +379,37 @@ Allow named collections' fields override by default.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Allow to execute alters which affects not only tables metadata, but also data on disk
+Allows `ALTER` statements that modify data on disk, not only table metadata.
+
+When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejected with
+`ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
+scheduling a mutation (see `system.mutations`). This covers:
+
+- `ALTER TABLE ... MODIFY COLUMN` with a type change that rewrites the column,
+  `ALTER TABLE ... DROP COLUMN` or `... CLEAR COLUMN` of a physical column,
+  `ALTER TABLE ... RENAME COLUMN` of any column including an `ALIAS`,
+  `ALTER TABLE ... DROP INDEX`, `... CLEAR INDEX`, `... DROP PROJECTION`,
+  `... CLEAR PROJECTION`, `... DROP STATISTICS`, `... CLEAR STATISTICS`, and
+  `ALTER TABLE ... MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
+- `ALTER TABLE ... UPDATE` whenever it runs as a heavyweight mutation, which is the default
+  `alter_update_mode = 'heavy'` and every case the other modes fall back to,
+  `ALTER TABLE ... DELETE WHERE`, `ALTER TABLE ... MATERIALIZE INDEX`,
+  `... MATERIALIZE PROJECTION`, `... MATERIALIZE STATISTICS`, `... MATERIALIZE COLUMN`,
+  `... MATERIALIZE TTL` (unconditionally, unlike `MODIFY TTL` above),
+  `... APPLY DELETED MASK`, `... APPLY PATCHES` and `... REWRITE PARTS`.
+
+Other `ALTER` statements are allowed, including `ADD COLUMN`, `COMMENT COLUMN`,
+`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column.
+
+The dedicated `DELETE FROM ...` and `UPDATE ... SET ...` statements are a different thing from
+the `ALTER TABLE ... DELETE WHERE` and `ALTER TABLE ... UPDATE` commands above, and this setting
+never refuses them, in any mode they support. It governs `ALTER` DDL only. Use `GRANT` and
+`REVOKE` of `ALTER DELETE` and `ALTER UPDATE` to restrict data modification as a whole; note that
+those privileges cover the dedicated statements and the `ALTER` commands together, so they cannot
+separate the two forms.
+
+The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
+`Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
 
 ## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 

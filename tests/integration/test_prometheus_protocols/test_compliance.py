@@ -13,6 +13,7 @@ import re
 import requests
 import pytest
 
+from helpers.client import DEFAULT_QUERY_TIMEOUT
 from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
@@ -650,11 +651,41 @@ def test_promql_compliance():
     print()
 
 
+# A query that throws after its first block answers with HTTP 200 and the exception
+# appended to the response body, in this exact shape whatever the output format.
+_HTTP_EXCEPTION_RE = re.compile(r"^Code: \d+\. DB::Exception: ", re.MULTILINE)
+
+_HTTP_PARAMS = {
+    # Hold the response server-side until the query resolves, so a failure arrives
+    # as an error status rather than as a 200 whose body ends in the exception.
+    "http_wait_end_of_query": "1",
+    # Without a memory budget that buffer is a temporary file, one per statement.
+    "http_response_buffer_size": "1048576",
+}
+
+
 def _run_promql_sql(sql: str):
+    # One process-free round trip per statement; this suite issues ~985 of them.
     try:
-        return node.query(sql), None
+        answer, error = node.http_query_and_get_answer_with_error(
+            None,
+            data=sql.encode("utf-8"),
+            params=_HTTP_PARAMS,
+            timeout=DEFAULT_QUERY_TIMEOUT,
+        )
     except Exception as e:
         return "", str(e)
+    if error:
+        return "", error
+    if _HTTP_EXCEPTION_RE.search(answer or ""):
+        return "", answer
+    return answer or "", None
+
+
+def _run_promql_ddl(sql: str):
+    _, error = _run_promql_sql(sql)
+    if error:
+        raise RuntimeError(f"{sql}: {error}")
 
 
 def test_promql_extended_support():
@@ -671,7 +702,7 @@ def test_promql_extended_support():
     node.query(f"CREATE TABLE {table} ENGINE=TimeSeries")
     try:
         for scenario in scenarios:
-            node.query(f"TRUNCATE TABLE {table}")
+            _run_promql_ddl(f"TRUNCATE TABLE {table}")
             for command in scenario.commands:
                 if isinstance(command, promqltest.LoadBlock):
                     insert_values = []

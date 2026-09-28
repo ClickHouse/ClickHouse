@@ -1559,10 +1559,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
         {
-            auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
-                getDataPartStorage().getFullPath(), message);
-
             if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
@@ -1582,6 +1578,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 if (isEmpty())
                     e->addMessage("Part is empty");
             }
+
+            auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
+                getDataPartStorage().getFullPath(), message);
         }
 
         throw;
@@ -1903,11 +1903,14 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
         return;
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);

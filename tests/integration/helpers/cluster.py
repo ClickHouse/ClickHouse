@@ -1,5 +1,6 @@
 import base64
 import errno
+import glob
 import http.client
 import json
 import logging
@@ -61,7 +62,7 @@ from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import Client, QueryRuntimeException
+from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
@@ -94,6 +95,17 @@ DEFAULT_ENV_NAME = ".env"
 # `temp_dir` is relative to tests/integration; anchoring it here makes it independent of
 # the cwd, which differs between a CI job and a native pytest run.
 TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
+
+# Per-module coverage (a `WITH_COVERAGE_DEPTH` build). When this is set, every ClickHouse
+# process of a cluster (servers, Keeper, bridges) gets `CLICKHOUSE_COVERAGE_TEST_NAME` = the
+# running test module, arms coverage for it at startup, and appends every flush (exit, crash,
+# `SYSTEM SET COVERAGE TEST`) to `coverage/` next to its log; see `initCoverageFromEnvironment`.
+# No SQL is needed for that, so a protected `default` user, a failing startup or any kind of
+# restart does not lose coverage. The cluster moves the files here on shutdown, and the CI job
+# exports them into the same CIDB tables as the stateless per-test coverage.
+PER_TEST_COVERAGE_DIR = os.environ.get("CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR")
+# The harness queries must not show up in `system.query_log`, which some tests count.
+COVERAGE_QUERY_SETTINGS = {"log_queries": 0}
 
 # Marker of the one docker failure mode that looks exactly like a broken server: the
 # container keeps running but has no network interface at all, so every connection to it
@@ -144,6 +156,38 @@ NETWORK_INTERFACE_PROBE_TIMEOUT = 30
 # the probe below only runs when a query has already failed with one of these, so the normal
 # path costs nothing and an ordinary refused connection is not investigated.
 UNREACHABLE_ADDRESS_ERRORS = ("No route to host", "Network is unreachable")
+
+# Every `ClickHouseInstance` that currently holds an address, keyed by that address.
+#
+# A request names the server it is aimed at by address and by nothing else, so the address
+# is all there is to lead a failed request back to the container that has to be probed. That
+# matters for the two ways a request reaches a server the harness did not build a client
+# for: `query(host=...)` re-aims an existing client at another node, and tests construct a
+# `Client` straight against a node's IP (`test_system_start_stop_listen`,
+# `test_server_reload`, `test_introspection_port`, `test_accept_invalid_certificate`,
+# `test_composable_protocol_without_global_ssl`). Both land here, and so will the clients
+# written next, which auditing today's call sites would not cover.
+#
+# Maintained by the `ip_address` setter, the single place an instance's address is
+# established or cleared.
+_INSTANCES_BY_ADDRESS = {}
+
+
+def describe_transport_error_for_host(host, error_text):
+    """The cause of a failed request to `host` that the client cannot see, or "".
+
+    Installed into `helpers/client.py` below, so every request made through any `Client`
+    consults it. An address that belongs to no instance - a proxy, a Keeper node, a
+    loopback client for a manually launched server - is not ours to explain, and says
+    nothing.
+    """
+    instance = _INSTANCES_BY_ADDRESS.get(host)
+    if instance is None:
+        return ""
+    return instance.describe_transport_error(error_text)
+
+
+set_transport_error_describer(describe_transport_error_for_host)
 
 
 def find_default_config_path():
@@ -569,6 +613,35 @@ def extract_test_name(base_path):
     return name
 
 
+def escape_sql_string(value):
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+# Started clusters, so that clusters shared between modules (e.g. created in `conftest.py`)
+# can be re-armed when the next module starts; see `arm_per_test_coverage_for_module`.
+started_clusters = []
+
+
+def current_coverage_test_name():
+    """The running test module relative to tests/integration, e.g. `test_storage_s3/test.py`.
+
+    Not the cluster's `base_path`: a cluster may be created in `conftest.py` and serve
+    several modules, and some tests pass an arbitrary `base_path`.
+    """
+    current = os.environ.get("PYTEST_CURRENT_TEST")
+    return current.split("::")[0] if current else None
+
+
+def arm_per_test_coverage_for_module():
+    """Attribute the coverage of the already running servers to the module that starts now."""
+    if not PER_TEST_COVERAGE_DIR:
+        return
+    for cluster in started_clusters:
+        for instance in cluster.instances.values():
+            if instance.coverage_test_name is not None:
+                instance.arm_per_test_coverage(restarted=False)
+
+
 def find_binary(name):
     def is_executable(path):
         return os.access(path, os.X_OK) and os.path.isfile(path)
@@ -667,6 +740,8 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
         self.instances_dir_name = get_instances_dir(self.name)
+        # The module whose name the processes arm themselves with; see `PER_TEST_COVERAGE_DIR`.
+        self.coverage_env_test_name = None
         xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
         if xdist_worker:
             self.project_name += f"-{xdist_worker}"
@@ -2275,8 +2350,10 @@ class ClickHouseCluster:
         # %c enables continuous mode: counters are memory-mapped into the file,
         # so the profile survives SIGKILL / `docker kill` intact instead of being
         # lost or half-written by an exit-time dump interrupted by the kill.
+        # Continuous mode releases the static counter section that per-module
+        # coverage reads inside the server, so the two are mutually exclusive.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%c%4m.profraw"
+            "/debug/it-%4m.profraw" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -2688,11 +2765,7 @@ class ClickHouseCluster:
         )
         node.ip_address = self.get_instance_ip(node.name)
         node.ipv6_address = self.get_instance_global_ipv6(node.name)
-        node.client = Client(
-            node.ip_address,
-            command=self.client_bin_path,
-            describe_transport_error=node.describe_transport_error,
-        )
+        node.client = Client(node.ip_address, command=self.client_bin_path)
 
         logging.info("Restart node with ip change")
         # In builds with sanitizer the server can take a long time to start
@@ -3797,6 +3870,15 @@ class ClickHouseCluster:
         except Exception:
             logging.warning("Cleanup failed:{e}")
 
+        if PER_TEST_COVERAGE_DIR:
+            # The processes arm themselves with it on every start. A cluster that outlives
+            # the module is re-armed over SQL; see `arm_per_test_coverage_for_module`.
+            self.coverage_env_test_name = current_coverage_test_name()
+            coverage_env = {"CLICKHOUSE_COVERAGE_TEST_NAME": self.coverage_env_test_name or ""}
+            self.env_variables.update(coverage_env)
+            for instance in self.instances.values():
+                instance.env_variables.update(coverage_env)
+
         try:
             for instance in list(self.instances.values()):
                 logging.debug(f"Setup directory for instance: {instance.name}")
@@ -4430,12 +4512,12 @@ class ClickHouseCluster:
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
-                    instance.ip_address,
-                    command=self.client_bin_path,
-                    describe_transport_error=instance.describe_transport_error,
+                    instance.ip_address, command=self.client_bin_path
                 )
+                instance.arm_per_test_coverage()
 
             self.is_up = True
+            started_clusters.append(self)
             self.save_logs()
 
         except BaseException as e:
@@ -4445,6 +4527,24 @@ class ClickHouseCluster:
             self.save_logs()
             self.shutdown()
             raise
+
+    def collect_per_test_coverage(self) -> None:
+        """Move the coverage files of all processes of this cluster to `PER_TEST_COVERAGE_DIR`.
+
+        They lie in `coverage/` next to the log of each process (`<instance>/logs`,
+        `keeper<N>/log`), and the next start of the cluster wipes these directories.
+        """
+        if not PER_TEST_COVERAGE_DIR:
+            return
+        os.makedirs(PER_TEST_COVERAGE_DIR, exist_ok=True)
+        for path in glob.glob(p.join(self.instances_dir, "*", "*", "coverage", "*.tsv")):
+            process_dir = p.basename(p.dirname(p.dirname(p.dirname(path))))
+            target = p.join(
+                PER_TEST_COVERAGE_DIR, f"{self.project_name}_{process_dir}_{p.basename(path)}"
+            )
+            with open(path, "rb") as source, open(target, "ab") as destination:
+                shutil.copyfileobj(source, destination)
+            os.remove(path)
 
     def save_logs(self) -> None:
         # Launch the `docker-compose logs` in background to collect all the logs
@@ -4471,6 +4571,8 @@ class ClickHouseCluster:
         failure_logs = []
 
         if self.up_called:
+            if self in started_clusters:
+                started_clusters.remove(self)
             if kill:
                 try:
                     # NOTE: no --timeout, rely on stop_grace_period
@@ -4527,6 +4629,9 @@ class ClickHouseCluster:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
                 )
+
+            # The processes have exited, which flushed their coverage.
+            self.collect_per_test_coverage()
 
             # Finish `docker compose logs --follow` process, just in case
             # It should be already finished because of the `docker compose down`
@@ -4996,6 +5101,28 @@ services:
 
 
 class ClickHouseInstance:
+    # The address an instance is reachable at, mirrored into `_INSTANCES_BY_ADDRESS` so a
+    # failed request can be traced back from the address it named to the container behind
+    # it. A property because the address is assigned from several places - `start`, a
+    # restart with an address change, `shutdown` - and the mirror must not depend on
+    # remembering to update it at each of them.
+    _ip_address = None
+
+    @property
+    def ip_address(self):
+        return self._ip_address
+
+    @ip_address.setter
+    def ip_address(self, address):
+        if self._ip_address is not None:
+            # Only if it is still ours: a restarted container can be handed the address a
+            # stopped one used to have, and that entry now belongs to the new holder.
+            if _INSTANCES_BY_ADDRESS.get(self._ip_address) is self:
+                del _INSTANCES_BY_ADDRESS[self._ip_address]
+        self._ip_address = address
+        if address is not None:
+            _INSTANCES_BY_ADDRESS[address] = self
+
     def __init__(
         self,
         cluster,
@@ -5073,6 +5200,9 @@ class ClickHouseInstance:
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
+        # The module the server attributes its coverage to, None when it is not armed.
+        # See `arm_per_test_coverage`.
+        self.coverage_test_name = None
         self.cluster = cluster  # type: ClickHouseCluster
         self.hostname = hostname if hostname is not None else self.name
 
@@ -5185,8 +5315,18 @@ class ClickHouseInstance:
         # and there is no other way to kill clickhouse properly (easily), since
         # clickhosue is spawned with --daemon, and it is not a child neither in
         # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
-            self.clickhouse_start_command_in_daemon
+        #
+        # With per-module coverage the trap waits for the server to exit: otherwise this shell,
+        # and with it the container, exits right after the signal, the kernel kills the server
+        # in the middle of its shutdown, and the coverage it flushes at exit is lost. That was
+        # the whole coverage of every module whose `stay_alive` servers are only stopped by the
+        # cluster shutdown. `docker compose stop` still escalates after `stop_grace_period`.
+        # The watchdog renames itself, so `clickhouse` matches only the server.
+        wait_for_server = (
+            "; while pkill -0 clickhouse; do sleep 0.1; done" if PER_TEST_COVERAGE_DIR else ""
+        )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill clickhouse{}; pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+            wait_for_server, self.clickhouse_start_command_in_daemon
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
@@ -5255,6 +5395,44 @@ class ClickHouseInstance:
         )
         return "ON" in with_coverage.upper()
 
+    def arm_per_test_coverage(self, restarted=True):
+        """Attribute the coverage of this server to the running test module.
+
+        A server arms itself on every start with the module the cluster was started in.
+        This switches it over SQL when a cluster serves several modules (`restarted=False`
+        at the start of the next one, or after a restart, which reverts to the first
+        module); the switch flushes the counters of the previous module.
+        """
+        if not PER_TEST_COVERAGE_DIR:
+            return
+        if restarted:
+            self.coverage_test_name = self.cluster.coverage_env_test_name
+        test_name = current_coverage_test_name()
+        if not test_name or test_name == self.coverage_test_name:
+            return
+        try:
+            self.query(
+                f"SYSTEM SET COVERAGE TEST {escape_sql_string(test_name)}",
+                timeout=300,
+                settings=COVERAGE_QUERY_SETTINGS,
+            )
+            self.coverage_test_name = test_name
+        except Exception as e:
+            logging.warning(f"Cannot switch per-module coverage of {self.name} to {test_name}: {e}")
+
+    def flush_per_test_coverage(self):
+        """Flush the coverage of a server that is about to be killed, which skips the flush at exit."""
+        if not PER_TEST_COVERAGE_DIR or self.coverage_test_name is None:
+            return
+        try:
+            self.query(
+                f"SYSTEM SET COVERAGE TEST {escape_sql_string(self.coverage_test_name)}",
+                timeout=300,
+                settings=COVERAGE_QUERY_SETTINGS,
+            )
+        except Exception as e:
+            logging.warning(f"Cannot flush per-module coverage of {self.name}: {e}")
+
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
 
@@ -5322,22 +5500,20 @@ class ClickHouseInstance:
         )
 
     def describe_transport_error(self, error_text):
-        """The cause of a failed request that the client cannot see from its side, or "".
+        """The cause of a failed request to this instance that the client cannot see, or "".
 
-        Handed to this instance's `Client`, so every request made through it goes through
-        the same gate - the ones that raise, the ones that hand the error back for the
-        test to assert on, and the handles a test collects later. `CommandRequest` prepends
-        whatever comes back to the text it was going to report anyway, so a caller that
-        catches the error and matches on it keeps working.
+        Reached for every request whose address resolves to this instance, through
+        `describe_transport_error_for_host` - the ones that raise, the ones that hand the
+        error back for the test to assert on, and the handles a test collects later - and
+        directly by the HTTP helpers, which do not go through `Client` at all.
+        `CommandRequest` prepends whatever comes back to the text it was going to report
+        anyway, so a caller that catches the error and matches on it keeps working.
 
         The probe only runs once the client has already reported one of
         `UNREACHABLE_ADDRESS_ERRORS`, which nothing in the suite produces deliberately -
         `PartitionManager` drops or resets connections, it does not unplug interfaces. So
         the normal path costs one substring check, and an ordinary refused connection is
         not investigated.
-
-        `query(host=...)` aims the same client at another node; the probe still looks at
-        this container, which can only withhold a verdict, never invent one.
         """
         if not error_text:
             return ""
@@ -5702,6 +5878,9 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
+            if kill:
+                self.flush_per_test_coverage()
+
             # Under LLVM coverage the server runs several times slower and writes its
             # .profraw only on a graceful shutdown (the libprofile atexit handler, or
             # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
@@ -5845,6 +6024,7 @@ class ClickHouseInstance:
                 if pid is None:
                     raise Exception("ClickHouse server is not running. Check logs.")
                 exec_query_with_retry(self, "select 20", retry_count=10, silent=True)
+                self.arm_per_test_coverage()
                 return
             except QueryRuntimeException as err:
                 last_err = err
@@ -6278,6 +6458,9 @@ class ClickHouseInstance:
             ports = [9000]
         self.wait_until_any_port_is_ready(ports, timeout=start_timeout, connection_timeout=connection_timeout)
         self.is_up = True
+        # On the first start the cluster creates the client and arms the server itself.
+        if self.client is not None:
+            self.arm_per_test_coverage()
 
     def wait_until_any_port_is_ready(self, ports, timeout=None, connection_timeout=None):
         if not ports:

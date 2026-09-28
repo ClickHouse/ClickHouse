@@ -78,17 +78,52 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     ///
     /// Used for remote() function.
+    ///
+    /// `shard_keys` are the per-shard keys this constructor's caller grouped `names` by and then
+    /// discarded - the shards are renumbered `1..N` here regardless. They are what makes a shard number
+    /// of this cluster mean something, so they, and not `params.cluster_name`, form the shard-scope
+    /// identity (see `getShardScopeIdentity`): the same name describes a different numbering as soon as
+    /// the caller's visible membership differs. A caller that has no such keys passes none and gets no
+    /// identity, which declines a shard scope rather than trusting the name.
+    ///
+    /// `shard_scope_key` plays the same role it plays for a `Replicated` database below: it says whose
+    /// shard keys those are, for keys that are per-cluster numbers rather than the shards' membership.
+    /// A discovered cluster's keys are each node's own `discovery.shard`, so two discovery paths with
+    /// shards `0`/`1` over different hosts must stay apart - but two `remote_servers` entries over one
+    /// path read the same znodes and cannot disagree about which shard a node belongs to, so such a
+    /// caller passes the discovery path and keeps parallel replicas through either name. A caller
+    /// without such a key leaves it empty and `params.cluster_name` is used.
     Cluster(
         const Settings & settings,
         const HostsByShard & names,
-        const ClusterConnectionParameters & params);
+        const ClusterConnectionParameters & params,
+        const Strings & shard_keys = {},
+        const String & shard_scope_key = {});
 
 
+    /// The shards are renumbered `1..N` here as well, so the shard-scope identity comes from each
+    /// shard's `DatabaseReplicaInfo::shard_name` rather than from `params.cluster_name`.
+    ///
+    /// `shard_scope_key` says whose shard names those are. Shard names are chosen per database and
+    /// repeat across databases, so the key must tell one database from another, but it must not tell
+    /// apart two spellings of the same one: a `Replicated` database is reachable both as `<db>` and as
+    /// `all_groups.<db>`, and when both spellings see the same ordered shards, a shard number means the
+    /// same shard through either. Such a caller passes a spelling-independent key - the database's
+    /// Keeper name and path (see `makeKeeperScopeKey`). A caller without one leaves it empty and
+    /// `params.cluster_name` is used.
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
         const ClusterConnectionParameters & params,
-        bool internal_replication = false);
+        bool internal_replication = false,
+        const String & shard_scope_key = {});
+
+    /// The scope key of a cluster whose shards live in Keeper, for `ClusterDiscovery` and a `Replicated`
+    /// database: the Keeper name together with the path. A path is unique only inside one Keeper - two
+    /// unrelated databases can be mounted at `/clickhouse/db` on two auxiliary Keepers - so the path
+    /// alone would let a `_shard_num` produced by one of them pass as scoped on the other. The name is
+    /// length-prefixed so the boundary between the two parts cannot slide.
+    static String makeKeeperScopeKey(const String & zookeeper_name, const String & zookeeper_path);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -296,6 +331,11 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
+    /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
+    /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
+    const String & getShardScopeIdentity() const { return shard_scope_identity; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -304,6 +344,25 @@ public:
 
 private:
     void initMisc();
+
+    /// Namespaces of `shard_scope_identity` values. A cluster name and a `Replicated` database name share
+    /// one namespace, so an identity a reader can spell is also one a user can name a database - and then
+    /// that database's cluster would authenticate a shard number it never produced. Every identity is
+    /// therefore prefixed with the shape that built it, and no identity is a bare name: a name is equal on
+    /// both sides of a hop by construction and so identifies no numbering.
+    static constexpr auto CONFIG_SHARDS_SCOPE = "config-shards ";
+    static constexpr auto HOSTS_BY_SHARD_SCOPE = "hosts-by-shard ";
+    static constexpr auto REPLICAS_BY_SHARD_SCOPE = "replicas-by-shard ";
+
+    /// Builds a shard-scope identity out of the ordered shard keys a constructor renumbered away.
+    /// Every part is written length-prefixed, so no two different (prefix, key, keys) triples can spell
+    /// the same identity however the parts are punctuated. No keys means no identity.
+    ///
+    /// `scope_key` is the namespace the shard keys are chosen in, and is empty when they need none:
+    /// replica sets identify a shard wherever they are read, while shard `<name>`s and the shard names
+    /// of a `Replicated` database only identify one within their cluster or database. Leaving it out
+    /// where it is not needed is what lets two names for the same ordered shards compare equal.
+    static String makeShardScopeIdentity(std::string_view prefix, const String & scope_key, const Strings & shard_keys);
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};
@@ -342,6 +401,7 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+    String shard_scope_identity;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
