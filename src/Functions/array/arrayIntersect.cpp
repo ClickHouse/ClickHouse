@@ -355,8 +355,6 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
     return eq_func->execute(args, eq_func->getResultType(), args.front().column->size(), /* dry_run = */ false);
 }
 
-/// Returns the mask of the elements that the cast of `initial` to `cast` changed (a `Tuple` or `Array` changed if any value
-/// in it did; a value under `NULL` is not compared), or `nullptr` if it changes none.
 static ColumnPtr getOverflowMask(
     const IColumn & cast, const DataTypePtr & cast_type, const IColumn & initial, const DataTypePtr & initial_type,
     const FunctionOverloadResolverPtr & not_equals_func)
