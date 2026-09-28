@@ -415,9 +415,13 @@ VersionHintState readVersionHint(const DB::ObjectStoragePtr & object_storage, co
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
-    const std::vector<std::string> & files_to_take_back)
+    const std::vector<std::string> & files_to_take_back,
+    const DB::ContextPtr & context)
 {
-    if (!object_storage->getObjectMetadata(storage_version_hint_path, /*with_tags=*/ false).etag.empty())
+    /// Read the tag back the same way `readVersionHint` does for the next commit. A metadata-only
+    /// request may legitimately disagree with a read about whether the optional header is there,
+    /// and only the tag the next commit will see decides whether it can advance the hint.
+    if (!readVersionHint(object_storage, storage_version_hint_path, context).etag.empty())
         return;
 
     std::vector<std::string> paths{storage_version_hint_path};
@@ -559,7 +563,7 @@ bool writeMetadataFileAndVersionHint(
                 /// same rule the pre-check above applies to an existing hint. If it is not, take
                 /// back both files, so the refused commit leaves nothing published.
                 if (!version_hint->exists)
-                    takeBackVersionHintWithoutETag(object_storage, storage_version_hint_path, {storage_metadata_path});
+                    takeBackVersionHintWithoutETag(object_storage, storage_version_hint_path, {storage_metadata_path}, context);
                 break;
             }
         }

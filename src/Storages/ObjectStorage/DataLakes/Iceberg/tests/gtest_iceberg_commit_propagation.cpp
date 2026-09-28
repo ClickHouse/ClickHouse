@@ -175,8 +175,14 @@ public:
         AppearsAfterTheMetadataFileIsWritten,
     };
 
-    explicit ExistingVersionHintObjectStorage(std::string hint_etag_, Race race_ = Race::None)
-        : hint_etag(std::move(hint_etag_)), race(race_), hint_present(race == Race::None)
+    /// `head_etag` is what a metadata-only request reports for the hint; by default it agrees with
+    /// the read.
+    explicit ExistingVersionHintObjectStorage(
+        std::string hint_etag_, Race race_ = Race::None, std::optional<std::string> head_etag_ = std::nullopt)
+        : hint_etag(std::move(hint_etag_))
+        , head_etag(head_etag_.value_or(hint_etag))
+        , race(race_)
+        , hint_present(race == Race::None)
     {
     }
 
@@ -244,14 +250,13 @@ public:
     void startup() override { }
     void shutdown() override { }
 
-    /// Only the read-back of a hint this commit has just created asks for the metadata alone.
     ObjectMetadata getObjectMetadata(const std::string & path, bool) const override
     {
         EXPECT_TRUE(path.ends_with(version_hint_name)) << path;
         EXPECT_TRUE(hint_present) << path;
 
         ObjectMetadata metadata;
-        metadata.etag = hint_etag;
+        metadata.etag = head_etag;
         return metadata;
     }
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override
@@ -290,6 +295,7 @@ private:
     static constexpr std::string_view metadata_file_name = ".metadata.json";
 
     std::string hint_etag;
+    std::string head_etag;
     Race race;
     bool hint_present;
 };
@@ -301,8 +307,9 @@ struct CommitOverExistingVersionHint
 {
     using Race = ExistingVersionHintObjectStorage::Race;
 
-    explicit CommitOverExistingVersionHint(const std::string & hint_etag, Race race = Race::None)
-        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag, race))
+    explicit CommitOverExistingVersionHint(
+        const std::string & hint_etag, Race race = Race::None, std::optional<std::string> head_etag = std::nullopt)
+        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag, race, std::move(head_etag)))
     {
     }
 
@@ -484,6 +491,21 @@ TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagTakesBothFilesBack)
     ASSERT_EQ(removed.size(), 2u);
     EXPECT_EQ(removed[0], writes[1].path);
     EXPECT_EQ(removed[1], writes[0].path);
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintIsJudgedByTheTagTheNextCommitReads)
+{
+    /// An Azure-compatible endpoint may omit the optional `ETag` on a metadata-only request while
+    /// still returning it on a read. The next commit reads the hint, so it can advance it under that
+    /// tag, and the hint this commit has created must be kept.
+    CommitOverExistingVersionHint commit(
+        "\"abc\"", CommitOverExistingVersionHint::Race::CreatedByThisCommit, /*head_etag=*/ std::string{});
+    EXPECT_TRUE(commit.run());
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_TRUE(commit.removed().empty());
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
