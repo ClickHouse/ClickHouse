@@ -14,3 +14,5 @@ BAD_ARGUMENTS
 -- a stored self-referential definition loads
 -- and reading it is bounded
 TOO_DEEP_RECURSION
+-- and describing it is bounded too
+TOO_DEEP_RECURSION

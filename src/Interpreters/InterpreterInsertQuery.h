@@ -6,6 +6,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TableLockHolder.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 
 class Chain;
 class ReadBuffer;
+class InsertDependenciesBuilder;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
@@ -28,7 +30,8 @@ public:
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
-        bool async_insert_);
+        bool async_insert_,
+        bool is_initial_insert_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -66,6 +69,33 @@ public:
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
+    /// Convert SELECT output to the insert schema, without attaching the write sink.
+    static Block convertSelectToInsertSchema(
+        QueryPipelineBuilder & pipeline,
+        const ASTInsertQuery & query,
+        const StoragePtr & table,
+        const ContextPtr & context_,
+        bool no_destination,
+        bool allow_materialized);
+
+    static bool queryHasOrderByAll(const ASTPtr & select);
+
+    /// Adjust the SELECT context's block-size settings to match the INSERT granularity when the
+    /// SELECT is "trivial" (no joins/subqueries). Shared between the sync and async INSERT paths.
+    static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context);
+
+    /// Builds a "push" pipeline (an unconnected input port feeding sinks completed with `EmptySink`)
+    /// from an already-built `insert_dependencies`. Shared by a plain `INSERT` and by
+    /// `AsyncInsertQueueTransform`'s synchronous fallback, so a lazily-started fallback reuses the
+    /// exact sink construction of a plain insert instead of a second, divergent implementation.
+    static QueryPipeline buildPushPipelineFromDependencies(
+        std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
+        ContextPtr context_,
+        const StoragePtr & table,
+        size_t max_threads_,
+        bool no_squash_,
+        bool async_insert_);
+
 private:
     static Block getSampleBlock(
         const Names & names,
@@ -80,14 +110,21 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
+    /// True only for the user-initiated INSERT the factory builds; internal inserts stay synchronous.
+    const bool is_initial_insert;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
 
-    QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
-    QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
+    /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
+    /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.
+    QueryPipeline buildInsertSelectPipeline(
+        ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform, TableLockHolder & destination_lock);
+    QueryPipeline addInsertToSelectPipeline(
+        ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder, bool add_async_insert_queue_transform,
+        TableLockHolder * destination_lock);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);

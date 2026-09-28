@@ -554,6 +554,59 @@ def test_postgres_on_conflict(started_cluster):
     cursor.execute(f"DROP TABLE {table} ")
 
 
+def test_postgres_on_conflict_mixed_case_identifiers(started_cluster):
+    # PostgreSQL folds unquoted identifiers to lowercase, so the generated
+    # INSERT ... ON CONFLICT statement must quote schema, table and column names.
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute('DROP SCHEMA IF EXISTS "MixedCaseSchema" CASCADE')
+    cursor.execute('CREATE SCHEMA "MixedCaseSchema"')
+    cursor.execute(
+        """
+        CREATE TABLE "MixedCaseSchema"."MixedCaseTable" (
+            "Key" text,
+            "SubKey" text,
+            "IntValue" integer,
+            "TextValue" text,
+            PRIMARY KEY ("Key", "SubKey")
+        )
+        """
+    )
+    cursor.execute(
+        """INSERT INTO "MixedCaseSchema"."MixedCaseTable" VALUES ('x', 'a', NULL, NULL)"""
+    )
+
+    on_conflict = 'ON CONFLICT ("Key", "SubKey") DO UPDATE SET "IntValue" = EXCLUDED."IntValue", "TextValue" = EXCLUDED."TextValue"'
+    node1.query(
+        f"""
+        CREATE TABLE test.test_conflict_mixed_case (Key String, SubKey String, IntValue Int32, TextValue String)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'MixedCaseTable', 'postgres', '{pg_pass}', 'MixedCaseSchema', '{on_conflict}');
+    """
+    )
+    node1.query(
+        "INSERT INTO test.test_conflict_mixed_case VALUES ('x', 'a', 500, 'first'), ('x', 'b', 501, 'second')"
+    )
+
+    table_func = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', 'MixedCaseTable', 'postgres', '{pg_pass}', 'MixedCaseSchema', '{on_conflict}')"""
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {table_func} VALUES ('x', 'b', 502, 'third')"
+    )
+
+    cursor.execute(
+        'SELECT "Key", "SubKey", "IntValue", "TextValue" FROM "MixedCaseSchema"."MixedCaseTable" ORDER BY "SubKey" ASC'
+    )
+    assert cursor.fetchall() == [
+        ("x", "a", 500, "first"),
+        ("x", "b", 502, "third"),
+    ]
+
+    assert node1.query(
+        "SELECT Key, SubKey, IntValue, TextValue FROM test.test_conflict_mixed_case ORDER BY SubKey ASC"
+    ) == "x\ta\t500\tfirst\nx\tb\t502\tthird\n"
+
+    node1.query("DROP TABLE test.test_conflict_mixed_case")
+    cursor.execute('DROP SCHEMA "MixedCaseSchema" CASCADE')
+
+
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_table")
