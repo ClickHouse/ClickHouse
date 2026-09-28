@@ -1557,18 +1557,18 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     if (engine_name == "S3")
     {
         const bool is_named_collection = isNamedCollectionName(0);
-        auto positional = classifyS3Arguments(is_named_collection ? 1 : 0, /* positionals_allowed_after_named= */ true);
-        /// `BackupInfo::fromAST` reads a function in the last position as the credential clause, not a positional.
-        if (!positional.empty() && positional.back() + 1 == function->arguments->size()
-            && function->arguments->at(positional.back())->getFunction())
-        {
-            markSecretArgument(positional.back());
-            positional.pop_back();
-        }
-        /// It rejects anything but a literal in the other positions, after the statement is logged.
+        const auto positional = classifyS3Arguments(is_named_collection ? 1 : 0, /* positionals_allowed_after_named= */ true);
+        /// `BackupInfo::fromAST` reads only literals as positionals (a last function is the credential clause)
+        /// and rejects anything else after the statement is logged, so such a locator has no valid triple.
+        bool only_literals = true;
         for (const size_t index : positional)
+        {
             if (!function->arguments->at(index)->tryGetLiteralText(nullptr))
+            {
                 markSecretArgument(index);
+                only_literals = false;
+            }
+        }
         if (is_named_collection)
         {
             /// BACKUP ... TO S3(named_collection[, 'filename'], ..., secret_access_key = '...', ...):
@@ -1584,7 +1584,7 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
         /// but logged before validation, and the intended slots are unknowable, so fail closed on
         /// everything after the url.
         maskS3UrlArgument(positional, 0);
-        maskS3PositionalsFrom(positional, positional.size() == 3 ? 2 : 1);
+        maskS3PositionalsFrom(positional, positional.size() == 3 && only_literals ? 2 : 1);
     }
     else if (engine_name == "AzureBlobStorage")
     {
