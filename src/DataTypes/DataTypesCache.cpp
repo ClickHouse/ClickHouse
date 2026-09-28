@@ -125,10 +125,8 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     return element.serialization ? element.serialization : element.type->getDefaultSerialization();
 }
 
-SerializationPtr DataTypesCache::getSerialization(const DataTypePtr & type)
+SerializationPtr DataTypesCache::getSerialization(const String & type_name, const DataTypePtr & type)
 {
-    auto type_name = type->getName();
-
     /// Check the thread-local cache of simple types first.
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;

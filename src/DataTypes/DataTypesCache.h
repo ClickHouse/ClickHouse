@@ -66,8 +66,10 @@ public:
     DataTypePtr getType(const String & type_name);
     SerializationPtr getSerialization(const String & type_name);
 
-    /// Keys by `type->getName()` and, on a miss, takes the type as given rather than parsing that name.
-    SerializationPtr getSerialization(const DataTypePtr & type);
+    /// Same as getSerialization(type_name), but on a cache miss reuses the already
+    /// constructed `type` instead of parsing `type_name` through DataTypeFactory.
+    /// `type_name` must be equal to `type->getName()`.
+    SerializationPtr getSerialization(const String & type_name, const DataTypePtr & type);
 
 private:
     /// Sized to cover a full set of Dynamic variants (up to 255) plus types from the
