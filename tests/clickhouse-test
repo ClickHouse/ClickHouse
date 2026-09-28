@@ -1986,10 +1986,7 @@ class SettingsRandomizer:
             'greedy,dpsize', 'greedy,dpsub', 'greedy,dphyp',
             'dphyp,dpsize,greedy', 'dpsub,dphyp,greedy',
         ]),
-        # Disabled: exhausting the budget with no next algorithm in the chain throws Code 717
-        # instead of leaving the join order as written, and the suite pins a single algorithm with
-        # no `greedy` fallback in ~130 places, so a budget of 1 or 10 fails those queries outright.
-        #"query_plan_optimize_join_order_max_searched_plans": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
+        "query_plan_optimize_join_order_max_searched_plans": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         # Reachable: dpsub is in the algorithm list above. The detector decides which reorderings
         # DPsub considers valid, so an unsound one is a wrong-results bug. The two `cd_a`/`cd_c`
         # flags this replaces were renamed into this enum in 26.9 with no alias kept, and the bug
@@ -2020,9 +2017,11 @@ class SettingsRandomizer:
             [0, 1024, 512 * 1024, 16 * 1024 * 1024]
         ),
         "join_runtime_bloom_filter_hash_functions": lambda: random.choice([0, 1, 3, 10]),
-        # 0 disables the filter as soon as any bit is set, 1.0 keeps it whatever its fill rate
+        # 1.0 keeps the filter whatever its fill rate. 0.0 is left out: any non-empty build side
+        # sets a bit, so it drops every filter ever built - a blanket feature-disable rather than
+        # coverage. 0.5 still exercises the drop path whenever the filter is genuinely over-full.
         "join_runtime_bloom_filter_max_ratio_of_set_bits": lambda: random.choice(
-            [0.0, 0.5, 0.7, 1.0]
+            [0.5, 0.7, 1.0]
         ),
         # Picks between the two filter implementations, which must agree: 0 is always a bloom
         # filter, a huge limit is always an exact set
