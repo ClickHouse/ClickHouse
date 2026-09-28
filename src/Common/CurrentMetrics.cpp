@@ -71,8 +71,8 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
-    M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
-    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
+    M(MemoryTracking, "Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.") \
+    M(MemoryTrackingUncorrected, "The value the global memory tracker would have had with no corrections from a measurement applied: a plain counter to which allocations are added and from which deallocations are subtracted. It is a snapshot taken by the background memory worker on every tick (see `memory_worker_period_ms`), so it lags the counter by at most one tick, and it stays `0` when the worker is not running. The difference between the two is the current gap between the plain counter and the measured usage: besides the accounting drift, it includes the memory that the process uses but that never went through the counter, such as the pages retained by the allocator.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(MaxAllocatedEphemeralLockSequentialNumber, "The maximum sequential number allocated for ephemeral lock znodes in ZooKeeper. Primarily influenced by the block numbers.") \
@@ -297,6 +297,9 @@
     M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
+    M(OptimizeFinalThreads, "Number of threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
+    M(OptimizeFinalThreadsActive, "Number of active threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
+    M(OptimizeFinalThreadsScheduled, "Number of queued or active jobs in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \

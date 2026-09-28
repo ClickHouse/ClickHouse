@@ -120,6 +120,7 @@ namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsBool allow_experimental_iceberg_compaction;
 }
 
 namespace ServerSetting
@@ -731,7 +732,22 @@ StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context
     return tryGetTableImpl(name, context_, false, false);
 }
 
-StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
+void DatabaseDataLake::evictStatefulTable(const String & name) const
+{
+    StoragePtr storage;
+    {
+        std::lock_guard lock(stateful_tables_mutex);
+        auto it = stateful_tables.find(name);
+        if (it == stateful_tables.end())
+            return;
+        storage = std::move(it->second.storage);
+        stateful_tables.erase(it);
+    }
+    storage->shutdown(/*is_drop*/ false);
+}
+
+StoragePtr DatabaseDataLake::tryGetTableImpl(
+    const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables) const
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
@@ -767,7 +783,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+    {
+        evictStatefulTable(name);
         return nullptr;
+    }
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
@@ -862,11 +881,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         }
     }
 
-    LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
+    const auto table_endpoint = args[0]->as<ASTLiteral>()->value.safeGet<String>();
+    LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
+    String explicit_metadata_location;
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
@@ -877,12 +898,49 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         }
 
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
+        explicit_metadata_location = metadata_location;
     }
 
+    const auto catalog_uuid = table_metadata.getTableUUID();
+    const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
+
+    const auto & query_settings = context_->getSettingsRef();
+
+    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+        && query_settings[Setting::parallel_replicas_for_cluster_engines]
+        && context_->canUseTaskBasedParallelReplicas()
+        && !context_->isDistributed();
+
+    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    const bool want_stateful = use_stateful_tables && !lightweight
+        && !can_use_parallel_replicas
+        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction];
+    if (want_stateful)
+    {
+        StoragePtr cached_storage;
+        {
+            std::lock_guard lock(stateful_tables_mutex);
+            if (auto it = stateful_tables.find(name); it != stateful_tables.end())
+            {
+                const auto & cached = it->second;
+                if (cached.endpoint == table_endpoint && cached.uuid == table_uuid && cached.settings_version == settings_version)
+                    cached_storage = cached.storage;
+            }
+        }
+        if (cached_storage)
+        {
+            if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
+                object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
+            return cached_storage;
+        }
+        evictStatefulTable(name);
+    }
     const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
     /// HACK: Hacky-hack to enable lazy load
-    ContextMutablePtr context_copy = Context::createCopy(context_);
+    ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
     context_copy->setSettings(settings_copy);
@@ -936,16 +994,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
-    const auto & query_settings = context_->getSettingsRef();
-
-    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
-        && !context_->isDistributed();
-
-    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
     /// When we applied static credentials from database settings, they are authoritative:
     /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)
     /// silently re-fetch credentials and override them. The same holds when the user disabled
@@ -963,9 +1011,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             return std::nullopt;
         return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
-
-    const auto catalog_uuid = table_metadata.getTableUUID();
-    const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
 
     if (can_use_parallel_replicas && !is_secondary_query)
     {
@@ -1017,13 +1062,35 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         distributed_processing,
         /* partition_by */nullptr,
         /* order_by */nullptr,
-        /// Use is_table_function = true,
-        /// because this table is actually stateless like a table function.
-        /* is_table_function */true,
-        /* lazy_init */true);
+        /// A normal catalog table is stateless like a table function. A compaction-enabled
+        /// (stateful) table is long-lived instead, so it eagerly initializes its metadata and
+        /// refreshes it via update() on each access, and can run a background-compaction assignee.
+        /* is_table_function */!want_stateful,
+        /* lazy_init */!want_stateful);
 
     if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
         context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
+
+    if (want_stateful)
+    {
+        result_storage->startup();
+        StoragePtr cached_storage;
+        {
+            std::lock_guard lock(stateful_tables_mutex);
+            auto [it, inserted] = stateful_tables.emplace(
+                name, StatefulTable{result_storage, table_endpoint, table_uuid, settings_version});
+            if (!inserted)
+                cached_storage = it->second.storage;
+        }
+        if (cached_storage)
+        {
+            /// Lost a race to another query; keep the already-cached storage and drop ours.
+            result_storage->shutdown(/*is_drop*/ false);
+            if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
+                object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
+            return cached_storage;
+        }
+    }
 
     return result_storage;
 }
@@ -1033,7 +1100,9 @@ void DatabaseDataLake::dropTable( /// NOLINT
     const String & name,
     bool /*sync*/)
 {
-    auto table = tryGetTable(name, context_);
+    evictStatefulTable(name);
+
+    auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false);
     if (table)
         table->drop();
     else
@@ -1473,6 +1542,26 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     }
 
     return create_table_query;
+}
+
+void DatabaseDataLake::shutdown()
+{
+    std::unordered_map<String, StatefulTable> tables;
+    {
+        std::lock_guard lock(stateful_tables_mutex);
+        tables.swap(stateful_tables);
+    }
+    for (auto & [table_name, table] : tables)
+    {
+        try
+        {
+            table.storage->shutdown(/*is_drop*/ false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to shutdown stateful data lake table " + table_name);
+        }
+    }
 }
 
 void registerDatabaseDataLake(DatabaseFactory & factory);
