@@ -32,6 +32,16 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 struct SortCursorImpl
 {
     ColumnRawPtrs sort_columns;
+
+    /// Per sort column: the column whose values are compared (the nested column of a `ColumnNullable`,
+    /// otherwise the sort column itself) and the null map of a `ColumnNullable` (nullptr otherwise).
+    struct SortValueColumn
+    {
+        const IColumn * column = nullptr;
+        const UInt8 * null_map = nullptr;
+    };
+    VectorWithMemoryTracking<SortValueColumn> sort_value_columns;
+
     ColumnRawPtrs all_columns;
     SortDescription desc;
     size_t sort_columns_size = 0;
@@ -204,10 +214,21 @@ struct SortCursor : SortCursorHelper<SortCursor>
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
             const auto & desc = impl->desc[i];
-            int direction = desc.direction;
-            int nulls_direction = desc.nulls_direction;
-            int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+            const auto & lhs_values = impl->sort_value_columns[i];
+            const auto & rhs_values = rhs.impl->sort_value_columns[i];
+            chassert(!lhs_values.null_map == !rhs_values.null_map);
 
+            int res = 0;
+            if (lhs_values.null_map && unlikely(lhs_values.null_map[lhs_pos] || rhs_values.null_map[rhs_pos]))
+            {
+                bool lhs_is_null = lhs_values.null_map[lhs_pos];
+                bool rhs_is_null = rhs_values.null_map[rhs_pos];
+                res = (lhs_is_null && rhs_is_null) ? 0 : (lhs_is_null ? desc.nulls_direction : -desc.nulls_direction);
+            }
+            else
+                res = lhs_values.column->compareAt(lhs_pos, rhs_pos, *rhs_values.column, desc.nulls_direction);
+
+            res *= desc.direction;
             if (res > 0)
                 return true;
             if (res < 0)
