@@ -6,7 +6,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 
-#include <algorithm>
 
 namespace DB
 {
@@ -41,11 +40,6 @@ bool ParserShowTableSettingsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
     /// A name has at most two parts, `db.table`, as in `SHOW CREATE TABLE`; anything more would lose a part.
     const auto * identifier = table_identifier->as<ASTIdentifier>();
     if (!identifier || identifier->name_parts.size() > 2)
-        return false;
-
-    /// Nor an empty part: ``` ``.t ``` would otherwise lose its qualifier and name `t` of the current database, or a
-    /// temporary table of the session, which is not what it says.
-    if (std::ranges::any_of(identifier->name_parts, [](const String & part) { return part.empty(); }))
         return false;
 
     query->table = identifier->shortName();
