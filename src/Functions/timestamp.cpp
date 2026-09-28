@@ -22,9 +22,12 @@ namespace
 /// 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]'. The DateTime parser stops at the first character that cannot
 /// continue the value (such as a field delimiter in row-based input), so a malformed argument like
 /// '2024 April 4' would otherwise be silently truncated to the Unix timestamp 2024. Reject any
-/// characters left after the value.
-void assertDateTimeFullyParsed(ReadBuffer & buf, bool skip_zero_padding)
+/// characters left after the value. The parser also pads a fractional part that consists of a bare
+/// '.' with zeros, so reject a value that ends with '.', like '12:00:00.' or '1234.'.
+void assertDateTimeFullyParsed(ReadBufferFromMemory & buf, bool skip_zero_padding)
 {
+    const char * value_end = buf.position();
+
     /// FixedString values are right-padded with zero bytes.
     if (skip_zero_padding)
         while (!buf.eof() && *buf.position() == 0)
@@ -32,6 +35,9 @@ void assertDateTimeFullyParsed(ReadBuffer & buf, bool skip_zero_padding)
 
     if (!buf.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has trailing characters after the value");
+
+    if (value_end != buf.buffer().begin() && value_end[-1] == '.')
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has no digits after the fractional separator");
 }
 
 /** timestamp(expr[, expr_time])
