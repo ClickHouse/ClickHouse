@@ -76,7 +76,7 @@ namespace
 
             /// This only checks for top-level aliases, nested aliases are always parenthesized so they
             /// do not cause a formatting inconsistency.
-            if (!x->tryGetAlias().empty())
+            if (x->hasAlias())
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Top-level aliases are not allowed in row policy filter expressions.");
 
             expr = x;

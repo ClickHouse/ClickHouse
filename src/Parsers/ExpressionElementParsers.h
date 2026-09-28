@@ -12,6 +12,7 @@ namespace DB
 {
 
 class ASTLiteral;
+class ASTWithAlias;
 
 /** The SELECT or EXPLAIN subquery, in parentheses.
   */
@@ -423,6 +424,10 @@ private:
     const char * getName() const override { return "alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+/// Sets an alias parsed by `ParserAlias` on `node`, replacing a previous alias of either kind.
+/// An alias written as a query parameter is kept as `parametrised_alias` until the parameter is resolved.
+void setParsedAlias(ASTWithAlias & node, const ASTPtr & alias);
 
 
 /** Prepared statements.

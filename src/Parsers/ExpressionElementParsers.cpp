@@ -1449,6 +1449,7 @@ ASTPtr exactCastArgument(
     /// literal token map - it is not a literal of the query on its own.
     auto result = make_intrusive<ASTLiteral>(std::move(literal->text));
     result->setAlias(argument->tryGetAlias());
+    result->parametrised_alias = literal_ast->parametrised_alias;
     return result;
 }
 
@@ -2180,6 +2181,14 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+void setParsedAlias(ASTWithAlias & node, const ASTPtr & alias)
+{
+    tryGetIdentifierNameInto(alias, node.alias);
+    node.parametrised_alias.reset();
+    if (!alias->children.empty())
+        node.parametrised_alias = boost::dynamic_pointer_cast<ASTQueryParameter>(alias->children.front());
+}
+
 bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword apply(Keyword::APPLY);
@@ -2712,11 +2721,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         /// FIXME: try to prettify this cast using `as<>()`
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
-            tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
-
-            // the alias is parametrised and will be resolved later when the query context is known
-            if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
-                ast_with_alias->parametrised_alias = boost::dynamic_pointer_cast<ASTQueryParameter>(alias_node->children.front());
+            setParsedAlias(*ast_with_alias, alias_node);
         }
         else
         {
@@ -2749,7 +2754,7 @@ bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected &
     /// but it can parse
     /// (1 AS x)
     /// which we should not allow as well.
-    if (!expr_elem->tryGetAlias().empty())
+    if (expr_elem->hasAlias())
         return false;
 
     if (!allow_order)
