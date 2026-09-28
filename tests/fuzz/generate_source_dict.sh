@@ -216,6 +216,9 @@ done >> "$LABEL_FRAGMENTS_FILE"
     #     static constexpr auto makeDateName = "makeDate";
     # Both = and brace initializers are accepted:
     #     static constexpr auto name{"JSONHas"};
+    # An initializer that is an immediately-invoked lambda is taken up to its
+    # closing }(); rather than up to the first ; of its body:
+    #     static constexpr const char * name = [] { if constexpr (...) return "icebergYear"; ... }();
     # Besides constexpr, plain const definitions are covered too, including
     # out-of-class template specializations and inline members:
     #     const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
@@ -249,7 +252,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # optional_argument_names of makeDate* ("year", "month", "fraction", ...)
     # in src/Functions/makeDate.cpp, or the tuple element labels element_names
     # ("min_x", "max_lat", ...) in src/Functions/MVTBoundingBox.cpp.
-    optional_grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ames?(\[\])?[[:space:]]*[={][^;]*;' \
+    optional_grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ames?(\[\])?[[:space:]]*([={][^;]*;|=[[:space:]]*\[[^]]*\][^{;]*\{[^{}]*\}[[:space:]]*\(\)[[:space:]]*;)' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
@@ -389,7 +392,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
     aggregate_names=$(
         {
             optional_grep -rhozE --exclude-dir=Combinators \
-                '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ame(\[\])?[[:space:]]*[={][^;]*;' \
+                '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ame(\[\])?[[:space:]]*([={][^;]*;|=[[:space:]]*\[[^]]*\][^{;]*\{[^{}]*\}[[:space:]]*\(\)[[:space:]]*;)' \
                 "$SOURCE_ROOT/src/AggregateFunctions" \
                 | { grep -zvE '\+|map<|string_view' || true; }
             optional_grep -rhozE --exclude-dir=Combinators \
