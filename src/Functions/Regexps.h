@@ -116,7 +116,7 @@ private:
     using CacheTable = std::array<Bucket, CACHE_SIZE>;
     CacheTable known_regexps;
 
-    /// Reported once, in the destructor: a per-lookup increment would hit query counters shared by all threads of the query.
+    /// Flushed once, in the destructor: per-lookup increments would contend on counters shared by all threads of the query.
     size_t hits = 0;
     size_t misses = 0;
 };
