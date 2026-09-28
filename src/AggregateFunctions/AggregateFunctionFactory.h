@@ -29,6 +29,8 @@ class ASTFunction;
  * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
+ * `Settings` is null when the function is constructed outside a query, e.g. while a background
+ * thread parses an `AggregateFunction(...)` type name.
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 

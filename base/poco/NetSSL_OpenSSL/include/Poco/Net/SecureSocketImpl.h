@@ -209,7 +209,7 @@ namespace Net
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
 
-        bool mustRetry(int rc, Poco::Timespan & remaining_time);
+        bool mustRetry(int rc, int sslError, int socketError, Poco::Timespan & remaining_time);
         /// Returns true if the last operation should be retried,
         /// otherwise false.
         ///
@@ -223,7 +223,7 @@ namespace Net
         /// not become readable or writable within the sockets
         /// receive or send timeout.
 
-        int handleError(int rc);
+        int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
         /// Handles an SSL error by throwing an appropriate exception.
 
         void reset();
@@ -244,6 +244,7 @@ namespace Net
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
+        bool _fatalError;
         std::string _peerHostName;
         Session::Ptr _pSession;
 

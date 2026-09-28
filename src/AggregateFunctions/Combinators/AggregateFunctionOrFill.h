@@ -295,10 +295,20 @@ public:
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    if constexpr (merge)
-                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
-                    else
-                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    /// The null map entry is this call's own, and the nested transfer restores the nested
+                    /// column itself when it throws, so only the entry has to go.
+                    try
+                    {
+                        if constexpr (merge)
+                            nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                        else
+                            nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    }
+                    catch (...)
+                    {
+                        col.getNullMapColumn().getData().pop_back();
+                        throw;
+                    }
                 }
             }
             else
@@ -332,10 +342,18 @@ public:
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
                     col.getNullMapColumn().getData().push_back(static_cast<UInt8>(1));
-                    if constexpr (merge)
-                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
-                    else
-                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    try
+                    {
+                        if constexpr (merge)
+                            nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                        else
+                            nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    }
+                    catch (...)
+                    {
+                        col.getNullMapColumn().getData().pop_back();
+                        throw;
+                    }
                 }
             }
             else
@@ -358,6 +376,35 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        /// The flag-unset branches are indistinguishable from the appended row alone: with a state-nested
+        /// function they alias like the flag-set branch, otherwise they append a default `to` owns.
+        if (!place[size_of_data] && !nested_function->isState())
+        {
+            to.popBack(1);
+            return;
+        }
+
+        if constexpr (UseNull)
+        {
+            if (!result_is_nullable || inner_nullable)
+            {
+                nested_function->rollbackInsertResult(place, to);
+            }
+            else
+            {
+                ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+                col.getNullMapColumn().getData().pop_back();
+                nested_function->rollbackInsertResult(place, col.getNestedColumn());
+            }
+        }
+        else
+        {
+            nested_function->rollbackInsertResult(place, to);
+        }
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

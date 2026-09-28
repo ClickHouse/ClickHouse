@@ -131,6 +131,18 @@ public:
         return getData().size();
     }
 
+    /// Real reserve (base IColumn::reserve is a no-op): lets a caller make a run of `push_back`
+    /// non-throwing.
+    void reserve(size_t n) override
+    {
+        data.reserve(n);
+    }
+
+    size_t capacity() const override
+    {
+        return data.capacity();
+    }
+
     MutableColumnPtr cloneEmpty() const override;
 
     Field operator[](size_t n) const override;
@@ -200,6 +212,10 @@ public:
 #endif
 
     void popBack(size_t n) override;
+
+    /// Removes the last n rows without destroying the states they point to, for rows that alias a state
+    /// owned elsewhere.
+    void popBackWithoutDestroy(size_t n);
 
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
