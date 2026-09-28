@@ -61,8 +61,16 @@ def attempts_logged_since(member_id, before, reported):
     return attempts_logged(member_id) - before
 
 
-def log_count(substring):
-    return int(node.count_in_log(substring))
+def queue_events(member_id):
+    # This member's "pushed" and "accepted" update lines, in the order they were logged.
+    lines = node.grep_in_log(
+        f"Processing config update (Add server {member_id}): ", only_latest=True
+    )
+    return [
+        line.rsplit(": ", 1)[1]
+        for line in lines.splitlines()
+        if line.endswith((": pushed", ": accepted"))
+    ]
 
 
 def add_unreachable_member(member_id, retry, **limits):
@@ -173,17 +181,20 @@ def test_retries_do_not_pile_up_in_the_update_queue(started_cluster):
     node.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node)
 
-    pushed = "Processing config update (Add server 7): pushed"
-    accepted = "Processing config update (Add server 7): accepted"
-    pushed_before = log_count(pushed)
-    accepted_before = log_count(accepted)
+    events_before = len(queue_events(7))
     result, elapsed, before = add_unreachable_member(
         7, retry=10, max_action_wait_time_ms=1000
     )
     attempts = attempts_logged_since(7, before, reported=11)
-    pushes = log_count(pushed) - pushed_before
-    accepts = log_count(accepted) - accepted_before
-    info = (result, elapsed, attempts, pushes, accepts)
+    events = queue_events(7)[events_before:]
+    pushes = events.count("pushed")
+    accepts = events.count("accepted")
+    outstanding = 0
+    max_outstanding = 0
+    for event in events:
+        outstanding += 1 if event == "pushed" else -1
+        max_outstanding = max(max_outstanding, outstanding)
+    info = (result, elapsed, attempts, pushes, accepts, max_outstanding)
 
     assert result["status"] == "error", info
     assert "with retries count 10, attempts made 11" in result["message"], info
@@ -191,4 +202,5 @@ def test_retries_do_not_pile_up_in_the_update_queue(started_cluster):
     # Each copy waits in the queue for several attempts while the previous one is joining.
     assert 1 <= accepts <= attempts - 5, info
     # The action is queued again once its previous copy was taken, never once per attempt.
-    assert 2 <= pushes <= accepts + 2, info
+    assert pushes >= 2, info
+    assert max_outstanding <= 2, info
