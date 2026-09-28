@@ -15,6 +15,8 @@
 #include <Formats/FormatFactory.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -22,12 +24,17 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/Impl/SQLiteCommon.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/CurrentThread.h>
+
+#include <mutex>
+#include <unordered_map>
 
 namespace DB::ErrorCodes
 {
@@ -109,6 +116,77 @@ bool markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
     }
 
     return true;
+}
+
+/// The writer lock of one SQLite database, shared by all `SQLiteSink`s of this server that write into it.
+///
+/// SQLite admits a single writer per database, and a connection waiting for the lock can only poll for it. With
+/// several sinks committing chunk after chunk, a polling writer can starve: the lock is re-acquired by one of the
+/// others in the short window between their transactions, so an insert fails with `database is locked` after
+/// waiting for a long time although every transaction is short. Taking this mutex around each chunk transaction
+/// queues the writers of this server instead; the SQLITE_BUSY retry of the transaction remains for the locks
+/// taken by other processes and by the readers.
+std::shared_ptr<std::timed_mutex> getSQLiteWriterMutex(const String & database_file)
+{
+    static std::mutex registry_mutex;
+    static std::unordered_map<String, std::weak_ptr<std::timed_mutex>> registry;
+
+    std::lock_guard lock(registry_mutex);
+
+    /// Drop the entries of databases that nobody writes into anymore, so the registry does not grow unbounded.
+    std::erase_if(registry, [](const auto & entry) { return entry.second.expired(); });
+
+    auto & entry = registry[database_file];
+    auto writer_mutex = entry.lock();
+    if (!writer_mutex)
+    {
+        writer_mutex = std::make_shared<std::timed_mutex>();
+        entry = writer_mutex;
+    }
+    return writer_mutex;
+}
+
+/// The names of the columns that the `WHERE` / `PREWHERE` of the analyzed query may refer to, or `std::nullopt`
+/// when the query was not analyzed into a query tree. Only a column named here can appear in the filter that
+/// `transformQueryForExternalDatabase` pushes down, so only these columns need the (metadata-probing) pushdown
+/// safety check. The set is a superset: it also collects the columns of other tables and of subqueries inside the
+/// filter, and every dot-separated prefix of a name, so that a filter over a subcolumn (`x.null`) still checks
+/// the column it belongs to.
+std::optional<NameSet> getColumnNamesReferencedByFilter(const SelectQueryInfo & query_info)
+{
+    if (query_info.syntax_analyzer_result || !query_info.query_tree)
+        return std::nullopt;
+
+    const auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node)
+        return std::nullopt;
+
+    NameSet names;
+    std::vector<const IQueryTreeNode *> nodes;
+    if (query_node->hasWhere())
+        nodes.push_back(query_node->getWhere().get());
+    if (query_node->hasPrewhere())
+        nodes.push_back(query_node->getPrewhere().get());
+
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+
+        if (const auto * column_node = node->as<ColumnNode>())
+        {
+            const auto & name = column_node->getColumnName();
+            names.insert(name);
+            for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+                names.insert(name.substr(0, pos));
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes.push_back(child.get());
+    }
+
+    return names;
 }
 
 }
@@ -333,11 +411,20 @@ Pipe StorageSQLite::read(
         /// set of columns known to belong to this table, and a predicate over such a column would then look
         /// like a predicate of another table of the query: it would be dropped as foreign instead of being
         /// kept local, and `external_table_strict_query = 1` would silently accept the query.
+        ///
+        /// The safety check probes the remote metadata, so it runs only for the columns the filter can refer to
+        /// (none for a query without `WHERE` / `PREWHERE`): the eligibility of any other column does not affect
+        /// the rewritten query.
         NamesAndTypesList available_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
+        const auto filter_column_names = getColumnNamesReferencedByFilter(query_info);
+        std::optional<bool> table_is_strict;
         for (const auto & column : available_columns)
         {
+            if (filter_column_names && !filter_column_names->contains(column.name))
+                continue;
+
             if (!SQLiteFormatImpl::isPushdownSafeColumn(
-                    read_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
+                    read_connection.get(), remote_table_or_query.getTableName(), column.name, column.type, table_is_strict))
                 local_only_columns.insert(column.name);
         }
 
@@ -409,6 +496,9 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
+        /// `sqlite3_db_filename` is the absolute path of the opened file, so every spelling of the database path
+        /// maps to the same lock.
+        , writer_mutex(getSQLiteWriterMutex(sqlite3_db_filename(sqlite_db_.get(), "main")))
         , remote_table_name(remote_table_name_)
         , explicitly_inserted_columns(explicitly_inserted_columns_.begin(), explicitly_inserted_columns_.end())
         , format_settings(getFormatSettings(storage_.getContext()))
@@ -473,7 +563,19 @@ public:
         /// Reusing a single-row prepared statement executes one SQLite statement per row. Without an explicit
         /// transaction, SQLite autocommits every successful row and a later constraint violation leaves a partial
         /// chunk behind. Keep the previous multi-row INSERT semantics by committing the whole chunk atomically.
-        SQLiteFormatImpl::executeSQLite(sqlite_db.get(), "BEGIN");
+        ///
+        /// Every sink has its own connection, so concurrent inserts into the same database compete for its single
+        /// writer lock. A deferred `BEGIN` would only take that lock on the first `sqlite3_step`, and SQLite does not
+        /// allow retrying a statement that failed with SQLITE_BUSY inside an explicit transaction - so the losing
+        /// insert would fail with `database is locked`. `BEGIN IMMEDIATE` takes the writer lock up front, where a
+        /// busy database can safely be waited for; `COMMIT` may still have to wait for readers to release their
+        /// locks, and a busy `COMMIT` keeps the transaction open, so it is retried as well. The writers of this
+        /// server are queued on `writer_mutex` first (see `getSQLiteWriterMutex`); the wait stays cancellable.
+        while (!writer_mutex->try_lock_for(std::chrono::milliseconds(100)))
+            CurrentThread::checkIfNotCancelled();
+        std::unique_lock writer_lock(*writer_mutex, std::adopt_lock);
+
+        SQLiteFormatImpl::executeSQLiteRetryOnBusy(sqlite_db.get(), "BEGIN IMMEDIATE");
         try
         {
             sqlite3_stmt * compiled_stmt = nullptr;
@@ -525,7 +627,7 @@ public:
             }
 
             statement.reset();
-            SQLiteFormatImpl::executeSQLite(sqlite_db.get(), "COMMIT");
+            SQLiteFormatImpl::executeSQLiteRetryOnBusy(sqlite_db.get(), "COMMIT");
         }
         catch (...)
         {
@@ -553,6 +655,7 @@ private:
 
     StorageMetadataPtr metadata_snapshot;
     StorageSQLite::SQLitePtr sqlite_db;
+    std::shared_ptr<std::timed_mutex> writer_mutex;
     String remote_table_name;
     std::unordered_set<String> generated_columns;
     std::unordered_set<String> explicitly_inserted_columns;

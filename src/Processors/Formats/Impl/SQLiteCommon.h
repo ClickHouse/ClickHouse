@@ -16,6 +16,7 @@
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/copyData.h>
 #    include <Poco/String.h>
+#    include <optional>
 #    include <Common/CurrentThread.h>
 #    include <Common/Exception.h>
 #    include <Common/NaNUtils.h>
@@ -211,6 +212,40 @@ inline int stepSQLiteStatementRetryOnBusy(sqlite3_stmt * statement)
     }
 }
 
+/// `executeSQLite` that idles instead of failing while another connection holds a conflicting lock. Only for
+/// statements that SQLite allows to be retried after SQLITE_BUSY: a statement outside of an explicit transaction
+/// (such as `BEGIN IMMEDIATE`) or a `COMMIT` (a busy `COMMIT` leaves the transaction open, see
+/// https://www.sqlite.org/lang_transaction.html).
+///
+/// Unlike the metadata paths, the wait is bounded by `sqlite_busy_retry_timeout_ms` even on a query thread (and
+/// stays cancellable): it is used by the write path, where the lock may be held by a reader of the very same
+/// query - `INSERT INTO t SELECT ... FROM t` over one database keeps a read statement open between chunks, and a
+/// `COMMIT` waiting for it would never finish.
+inline void executeSQLiteRetryOnBusy(sqlite3 * db, const String & query)
+{
+    Stopwatch watch;
+    while (true)
+    {
+        char * err_message = nullptr;
+        int status = sqlite3_exec(db, query.c_str(), nullptr, nullptr, &err_message);
+        if (status == SQLITE_OK)
+            return;
+
+        String message(err_message ? err_message : sqlite3_errmsg(db));
+        sqlite3_free(err_message);
+        if (status == SQLITE_BUSY && watch.elapsedMilliseconds() < sqlite_busy_retry_timeout_ms)
+        {
+            if (CurrentThread::isInitialized() && !CurrentThread::getQueryId().empty())
+                CurrentThread::checkIfNotCancelled();
+            sleepForMilliseconds(sqlite_busy_retry_sleep_ms);
+            continue;
+        }
+
+        throw Exception(
+            ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot execute SQLite query: {}. Status: {}. Message: {}", query, status, message);
+    }
+}
+
 inline void bindSQLiteTextValue(
     sqlite3 * db,
     sqlite3_stmt * statement,
@@ -402,7 +437,11 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 /// locked database (SQLITE_BUSY) is the one condition that does not fail closed: it proves nothing about
 /// the column, so the metadata probes wait for the lock like every other metadata path and surface the
 /// error once the wait is cancelled or times out.
-inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const String & column_name, const DataTypePtr & type)
+///
+/// `table_is_strict` caches the result of `isStrictTable` across the columns of one table: it is probed on
+/// the first column that reaches that check and reused for the others.
+inline bool isPushdownSafeColumn(
+    sqlite3 * db, const String & table_name, const String & column_name, const DataTypePtr & type, std::optional<bool> & table_is_strict)
 {
     if (!isPushdownSafeType(type))
         return false;
@@ -412,7 +451,9 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     if (table_name.contains('\0') || column_name.contains('\0'))
         return false;
 
-    if (!isStrictTable(db, table_name))
+    if (!table_is_strict)
+        table_is_strict = isStrictTable(db, table_name);
+    if (!*table_is_strict)
         return false;
 
     const char * declared_type = nullptr;
