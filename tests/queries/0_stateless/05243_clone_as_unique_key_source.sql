@@ -15,7 +15,9 @@ DROP TABLE IF EXISTS dst_uk_refused;
 CREATE TABLE src_uk (id UInt32, val String)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY id;
 
-INSERT INTO src_uk SELECT number, concat('v', toString(number)) FROM numbers(10);
+-- Inserting into a UNIQUE KEY table requires rocksdb (USE_ROCKSDB=1), which most
+-- CI builds ship without, so no data is inserted: the veto rejects the clone based
+-- on the source having a UNIQUE KEY, not on its contents.
 
 CREATE TABLE dst_uk_refused CLONE AS src_uk ENGINE = MergeTree ORDER BY id; -- { serverError 344 }
 
