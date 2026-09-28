@@ -190,3 +190,52 @@ TEST(AggregatingStepExtraFlags, StepVersionOneRoundTripsTheBits)
         EXPECT_FALSE(buildsGradualResize(*restored, header, context));
     }
 }
+
+/// A step with `skip_merging` never takes the pre-aggregation resize locally, but neither the query plan
+/// serialization nor `clone` carries `skip_merging`, so the restored or cloned step does reach the resize
+/// branch. The gradual-resize mark must not travel with it, otherwise the processor choice would depend
+/// on the transport (or on whether the plan was copied).
+TEST(AggregatingStepExtraFlags, SkipMergingSuppressesGradualResizeInCopies)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const auto & context_holder = getContext();
+    auto context = Context::createCopy(context_holder.context);
+    context->setSetting("min_rows_per_stream_for_gradual_resize", 1000);
+
+    auto header = makeHeader();
+
+    auto step = makeStep(header);
+    step->enableGradualResize();
+    step->skipMerging();
+
+    {
+        auto restored = deserializeStep(serializeStep(*step, /*step_version=*/1), header, /*step_version=*/1);
+        ASSERT_NE(restored, nullptr);
+        EXPECT_FALSE(restored->isGradualResizeEnabled());
+        EXPECT_FALSE(buildsGradualResize(*restored, header, context));
+    }
+
+    {
+        auto cloned_step = step->clone();
+        auto * cloned = typeid_cast<AggregatingStep *>(cloned_step.get());
+        ASSERT_NE(cloned, nullptr);
+        EXPECT_FALSE(cloned->isGradualResizeEnabled());
+        EXPECT_FALSE(buildsGradualResize(*cloned, header, context));
+    }
+
+    /// Control: without `skip_merging` both copies keep the mark and build the `GradualResize`.
+    {
+        auto merging_step = makeStep(header);
+        merging_step->enableGradualResize();
+        auto restored = deserializeStep(serializeStep(*merging_step, /*step_version=*/1), header, /*step_version=*/1);
+        ASSERT_NE(restored, nullptr);
+        EXPECT_TRUE(buildsGradualResize(*restored, header, context));
+        auto cloned_step = merging_step->clone();
+        auto * cloned = typeid_cast<AggregatingStep *>(cloned_step.get());
+        ASSERT_NE(cloned, nullptr);
+        EXPECT_TRUE(buildsGradualResize(*cloned, header, context));
+    }
+}

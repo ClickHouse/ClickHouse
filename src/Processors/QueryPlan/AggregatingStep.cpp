@@ -1249,7 +1249,9 @@ void AggregatingStep::serialize(Serialization & ctx) const
         /// `GradualResize` that the same query never builds when it is planned locally. Leave the
         /// bit off the wire in that case: the shipped plan then keeps the strict resize that is
         /// built there today, and the processor choice does not depend on the transport.
-        if (gradual_resize_enabled && !storage_has_evenly_distributed_read && !ctx.for_cache_key)
+        /// `skip_merging` has the same shape: it also makes the step skip the resize locally, and it
+        /// is not serialized either (a restored step always merges), so it suppresses the bit too.
+        if (gradual_resize_enabled && !storage_has_evenly_distributed_read && !skip_merging && !ctx.for_cache_key)
             extra_flags |= 2;
         writeIntBinary(extra_flags, ctx.out);
     }
@@ -1458,7 +1460,13 @@ QueryPlanStepPtr AggregatingStep::clone() const
     if (group_by_keys_semantically_constant)
         cloned->markGroupByKeysSemanticallyConstant();
     /// Same: only the planner knows whether this is the pre-aggregation of an ordinary `GROUP BY`.
-    if (gradual_resize_enabled)
+    /// `skip_merging` is not copied: it asserts that the input streams hold disjoint key sets, which
+    /// holds for the plan the optimization inspected but not necessarily for the plan the clone is put
+    /// into (`makeDistributed` and `applyParallelReplicas` turn the clone into a partial aggregation on
+    /// another node). The clone of such a step therefore merges and reaches the resize branch, which the
+    /// original never does; keep it on the strict resize there instead of introducing a `GradualResize`
+    /// the source plan had ruled out, like `serialize` does for the same reason.
+    if (gradual_resize_enabled && !skip_merging)
         cloned->enableGradualResize();
 
     return cloned;
