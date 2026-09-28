@@ -141,9 +141,20 @@ SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr cont
     /// From the global context, which the creator fills them from.
     settings.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
 
-    /// Filling one of these copies the core setting's changed bit too, so the value decides, as in
-    /// `StorageDistributed::getTableSettings`.
-    return withOriginByValue(settings.enumerateSettings());
+    return settings.enumerateSettingsByValue(context->getSettingsRef());
+}
+
+SettingDescriptions DistributedSettings::enumerateSettingsByValue(const Settings & metadata) const
+{
+    auto settings = enumerateSettings();
+    for (auto & setting : settings)
+    {
+        if (setting.name == "background_insert_sleep_time_ms")
+            setting.default_value = metadata.getDefaultValueString("distributed_background_insert_sleep_time_ms");
+        else if (setting.name == "background_insert_max_sleep_time_ms")
+            setting.default_value = metadata.getDefaultValueString("distributed_background_insert_max_sleep_time_ms");
+    }
+    return withOriginByValue(std::move(settings));
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)

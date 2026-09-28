@@ -49,6 +49,10 @@ struct DistributedSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     SettingDescriptions enumerateSettings() const;
+    /// The same, with sources judged by value, since `applyBackgroundInsertDefaults` marks what it fills in as changed.
+    /// The two sleep times default to `0`, meaning "the server's setting", so they are measured against that
+    /// setting's default, which `metadata` - any core `Settings` instance - gives: a table that takes it is not changed.
+    SettingDescriptions enumerateSettingsByValue(const Settings & metadata) const;
     /// The engine's own settings, for `system.engine_settings`.
     static SettingDescriptions enumerateEngineSettings(ContextPtr context);
 

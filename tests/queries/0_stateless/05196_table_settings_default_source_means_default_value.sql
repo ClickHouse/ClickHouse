@@ -21,8 +21,8 @@ SELECT table, name, value, `default`, source FROM system.table_settings
 WHERE database = currentDatabase() AND source = 'default' AND value != `default`
 ORDER BY table, name;
 
-SELECT '-- the settings a Distributed table copies from the server are attributed';
-SELECT name, value != `default` AS copied, source FROM system.table_settings
+SELECT '-- what a Distributed table copies from the server is measured against the default of the server setting';
+SELECT name, value != `default` AS differs, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'dist' AND alias_for = ''
   AND name IN ('background_insert_sleep_time_ms', 'background_insert_max_sleep_time_ms')
 ORDER BY name;

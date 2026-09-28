@@ -22,7 +22,6 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -2651,11 +2650,11 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
     return true;
 }
 
-SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_context */) const
+SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_context) const
 {
     /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings, with their
     /// changed bits, into the ones the definition does not state, so the bit says nothing here: the value decides.
-    return withOriginByValue(distributed_settings->enumerateSettings());
+    return distributed_settings->enumerateSettingsByValue(query_context->getSettingsRef());
 }
 
 }
