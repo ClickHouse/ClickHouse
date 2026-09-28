@@ -167,7 +167,7 @@ def test_remove_replica(started_cluster):
 def test_invalid_shard_directory_format(started_cluster, fsync_directories):
     """
     A subdirectory whose name is not one the sink writes names no destination, so its files can
-    never be sent. It is renamed to 'unrecognized_<hash>' instead of being taken for a directory
+    never be sent. It is renamed to 'unrecognized_<random UUID>' instead of being taken for a directory
     queue, so it is not reported and a single stray subdirectory cannot break the attach. The old
     name is kept in the file 'original_name' in it. With fsync_directories, the rename and the
     removal on TRUNCATE go through the directory sync guard, like the rest of the spool.

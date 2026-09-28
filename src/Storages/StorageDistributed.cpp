@@ -39,7 +39,6 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/setThreadName.h>
 
@@ -113,6 +112,7 @@
 
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/UUID.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -1661,8 +1661,10 @@ void StorageDistributed::renameUnrecognizedDirectoryQueue(const DiskPtr & disk, 
     const auto parent_path = dir_path.parent_path();
     const auto old_name = dir_path.filename().string();
 
-    /// The new name is a hash, because the old one may hold a password (a server older than 26.9
-    /// named the directory after `user:password@host:port`) and the new one is logged and shown.
+    /// The new name is a random UUID, because the old one may hold a password (a server older than
+    /// 26.9 named the directory after `user:password@host:port`) and the new one is logged and shown.
+    /// Not a hash of the old name: an unkeyed hash would let anyone who sees the new name check
+    /// guesses of the password against it offline.
     /// The old name is the only record of where the files were meant to be sent, so it is kept in
     /// a file next to them: a downgrade or a manual recovery needs it to replay them. Written
     /// before the rename, so an interrupted start leaves the directory with its old name, and the
@@ -1675,7 +1677,7 @@ void StorageDistributed::renameUnrecognizedDirectoryQueue(const DiskPtr & disk, 
         out.sync();
     }
 
-    const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, sipHash128String(old_name));
+    const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, toString(UUIDHelpers::generateV4()));
     {
         auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
         std::filesystem::rename(dir_path, parent_path / new_name);
