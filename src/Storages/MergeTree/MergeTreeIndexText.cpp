@@ -1832,6 +1832,72 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
     ++current_row;
 }
 
+bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
+    const IColumn & column,
+    const IColumn::Offsets * offsets,
+    size_t start_row,
+    size_t rows_read,
+    const PostingListBuildContext & context)
+{
+    const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
+    /// A stateful tokenizer can return no tokens for a value tokenized again right after itself.
+    if (!column_low_cardinality || postprocessor_drop_filter || tokenizer->isStateful())
+        return false;
+
+    auto elements_begin = [&](size_t row) { return offsets ? (*offsets)[row - 1] : row; };
+
+    /// Rarely repeating values gain nothing, while `ranges` costs O(dictionary), and the dictionary is per block.
+    static constexpr size_t min_documents_per_value = 8;
+    const IColumnUnique & dictionary = column_low_cardinality->getDictionary();
+    if (dictionary.size() * min_documents_per_value > elements_begin(start_row + rows_read) - elements_begin(start_row))
+        return false;
+
+    /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, `not_seen` before that.
+    static constexpr size_t not_seen = std::numeric_limits<size_t>::max();
+    std::vector<std::pair<size_t, size_t>> ranges(dictionary.size(), {not_seen, not_seen});
+    std::vector<PostingListBuilder *> builders;
+    size_t buffer_size = tokens_map.getBufferSizeInCells();
+
+    for (size_t row = start_row; row < start_row + rows_read; ++row)
+    {
+        for (size_t i = elements_begin(row); i < elements_begin(row + 1); ++i)
+        {
+            const size_t index = column_low_cardinality->getIndexAt(i);
+            auto & [begin, end] = ranges[index];
+
+            if (begin == not_seen && !dictionary.isNullAt(index))
+            {
+                const std::string_view value = dictionary.getDataAt(index);
+                begin = builders.size();
+                UInt32 token_position = 0;
+                forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token_start, size_t token_length)
+                {
+                    addToken({token_start, token_length}, token_position++, context);
+                    builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
+                    return false;
+                });
+                end = builders.size();
+
+                /// Growing the map moves the builders.
+                if (tokens_map.getBufferSizeInCells() != buffer_size)
+                {
+                    std::ranges::fill(ranges, std::pair{not_seen, not_seen});
+                    builders.clear();
+                    buffer_size = tokens_map.getBufferSizeInCells();
+                }
+            }
+            else
+            {
+                for (size_t j = begin; j < end; ++j)
+                    builders[j]->add(static_cast<UInt32>(current_row), static_cast<UInt32>(j - begin), context);
+                num_processed_tokens += end - begin;
+            }
+        }
+        incrementCurrentRow();
+    }
+    return true;
+}
+
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
     SortedTokens sorted_tokens;
@@ -1940,14 +2006,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromMap(preprocessed_column, offset, rows_read, context);
     }
-    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(preprocessed_column.get());
-             column_low_cardinality && !postprocessor->hasActions() && !tokenizer->isStateful()
-             && column_low_cardinality->getDictionary().size() * 8 <= rows_read)
-    {
-        /// A stateful tokenizer can return other tokens for the same value.
-        addDocumentsFromLowCardinality(preprocessed_column, offset, rows_read, context);
-    }
-    else
+    else if (!granule_builder.tryAddLowCardinalityDocuments(*preprocessed_column, nullptr, offset, rows_read, context))
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
 
@@ -1973,6 +2032,12 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     const IColumn::Offsets & column_offsets = column_array->getOffsets();
     const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
 
+    if constexpr (tokenize)
+    {
+        if (granule_builder.tryAddLowCardinalityDocuments(column_data, &column_offsets, start_row, rows_read, context))
+            return;
+    }
+
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
         /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
@@ -1991,56 +2056,6 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
                 granule_builder.addDocument(ref, context);
             else
                 granule_builder.addToken(ref, token_position++, context);
-        }
-
-        granule_builder.incrementCurrentRow();
-    }
-}
-
-void MergeTreeIndexAggregatorText::addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
-{
-    const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(*column);
-    const auto & dictionary = column_low_cardinality.getDictionary();
-
-    auto & tokens_map = granule_builder.tokens_map;
-    /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, `not_seen` before that.
-    static constexpr size_t not_seen = std::numeric_limits<size_t>::max();
-    std::vector<std::pair<size_t, size_t>> ranges(dictionary.size(), {not_seen, not_seen});
-    std::vector<PostingListBuilder *> builders;
-    size_t buffer_size = tokens_map.getBufferSizeInCells();
-
-    for (size_t i = start_row; i < start_row + rows_read; ++i)
-    {
-        const size_t index = column_low_cardinality.getIndexAt(i);
-        auto & [begin, end] = ranges[index];
-
-        if (begin == not_seen && !dictionary.isNullAt(index))
-        {
-            const std::string_view value = dictionary.getDataAt(index);
-            begin = builders.size();
-            UInt32 token_position = 0;
-            forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token_start, size_t token_length)
-            {
-                granule_builder.addToken({token_start, token_length}, token_position++, context);
-                builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
-                return false;
-            });
-            end = builders.size();
-
-            /// Growing the map moves the builders.
-            if (tokens_map.getBufferSizeInCells() != buffer_size)
-            {
-                std::fill(ranges.begin(), ranges.end(), std::pair{not_seen, not_seen});
-                builders.clear();
-                buffer_size = tokens_map.getBufferSizeInCells();
-            }
-        }
-        else
-        {
-            const auto row = static_cast<UInt32>(granule_builder.current_row);
-            for (size_t j = begin; j < end; ++j)
-                builders[j]->add(row, static_cast<UInt32>(j - begin), context);
-            granule_builder.num_processed_tokens += end - begin;
         }
 
         granule_builder.incrementCurrentRow();

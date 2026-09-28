@@ -1,15 +1,36 @@
 <test>
-    <!-- Building a text index over a LowCardinality column with 50 distinct values. -->
-    <create_query>CREATE TABLE text_index_low_cardinality (service LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+  <substitutions>
+    <substitution>
+      <name>distinct</name>
+      <values>
+        <value>100</value>
+        <value>500</value>
+        <value>1000</value>
+      </values>
+    </substitution>
+  </substitutions>
 
-    <fill_query>
-        INSERT INTO text_index_low_cardinality SELECT concat('service-', toString(cityHash64(number) % 50))
-        FROM numbers(2000000)
-        SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 3000000, min_insert_block_size_bytes = 0
-    </fill_query>
-    <fill_query>ALTER TABLE text_index_low_cardinality ADD INDEX idx service TYPE text(tokenizer = 'splitByNonAlpha')</fill_query>
+  <create_query>
+    CREATE TABLE text_index_lc_build_{distinct} (s LowCardinality(String), INDEX idx s TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple();
+  </create_query>
+  <create_query>
+    CREATE TABLE text_index_lc_array_build_{distinct} (tags Array(LowCardinality(String)), INDEX idx tags TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple();
+  </create_query>
+  <create_query>
+    CREATE TABLE text_index_lc_build_src_{distinct} (s String, tags Array(String)) ENGINE = Memory;
+  </create_query>
 
-    <query>ALTER TABLE text_index_low_cardinality CLEAR INDEX idx, MATERIALIZE INDEX idx SETTINGS mutations_sync = 2</query>
+  <fill_query>
+    INSERT INTO text_index_lc_build_src_{distinct} SELECT
+        concat('service-', toString(cityHash64(number) % {distinct})),
+        arrayMap(x -> concat('tag-', toString(cityHash64(number, x) % {distinct})), range(10))
+    FROM numbers(1000000);
+  </fill_query>
 
-    <drop_query>DROP TABLE IF EXISTS text_index_low_cardinality</drop_query>
+  <query>INSERT INTO text_index_lc_build_{distinct} SELECT s FROM text_index_lc_build_src_{distinct}</query>
+  <query>INSERT INTO text_index_lc_array_build_{distinct} SELECT tags FROM text_index_lc_build_src_{distinct}</query>
+
+  <drop_query>DROP TABLE IF EXISTS text_index_lc_build_{distinct}</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_lc_array_build_{distinct}</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_lc_build_src_{distinct}</drop_query>
 </test>
