@@ -36,7 +36,7 @@ std::vector<std::string_view> scanPathNamesForBucket(
     size_t target_bucket, size_t num_buckets);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
-/// Templated on the paths container: deserialization passes a tracked one, generated data a plain one.
+/// Callers hold the paths in different containers, so it is explicitly instantiated for each of them.
 template <typename PathsContainer>
 void unflattenAndInsertPaths(const PathsContainer & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
 
