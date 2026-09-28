@@ -1020,11 +1020,17 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
         /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
         const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
-        /// A synchronous remote read raises the plan's limit to `max_distributed_connections` for threads
-        /// that wait on sockets; the local tasks do not, so they never get more than the setting.
-        distributed_plan.max_threads = getMaxThreads()
-            ? std::min<UInt64>(getMaxThreads(), optimization_settings.max_threads)
-            : optimization_settings.max_threads;
+        /// Local tasks all run in this process at once, so the tasks of a stage share the plan's thread limit.
+        /// A synchronous remote read raises that limit to `max_distributed_connections` for threads that wait
+        /// on sockets; the tasks do not, so they never get more than the setting.
+        if (execute_locally)
+        {
+            const UInt64 plan_max_threads = getMaxThreads()
+                ? std::min<UInt64>(getMaxThreads(), optimization_settings.max_threads)
+                : optimization_settings.max_threads;
+            for (auto & [_, stage] : distributed_plan.stages)
+                stage.query_plan_fragment.setMaxThreads(std::max<UInt64>(1, plan_max_threads / std::max<size_t>(1, stage.tasks.size())));
+        }
         /// Local execution runs every task in-process and needs no worker hosts; constructing
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
         TaskToHostMapPtr task_to_host_map = execute_locally
