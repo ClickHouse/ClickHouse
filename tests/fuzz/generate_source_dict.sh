@@ -65,7 +65,7 @@ SCANNED_TREES=(
     "$SOURCE_ROOT/src/TableFunctions"
     "$SOURCE_ROOT/src/DataTypes"
     "$SOURCE_ROOT/src/Formats"
-    "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp"
+    "$SOURCE_ROOT/src/WindowFunctions"
     "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
 )
 
@@ -333,13 +333,13 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # with a line break before the name, e.g. factory.registerSimpleDataType(
     #     "Date32", ...). Window functions and their aliases (rank, denseRank,
     # row_number, lag, lead, ...) live outside the four directories above, in
-    # src/Processors/Transforms/WindowTransform.cpp, so it is scanned too.
+    # src/WindowFunctions, so it is scanned too.
     optional_grep -rhozE '(registerFunction|registerAlias|factory\.register[A-Za-z]+)[[:space:]]*\([[:space:]]*"[^"]+"' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/DataTypes" \
-        "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp" \
+        "$SOURCE_ROOT/src/WindowFunctions" \
         | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"'
 
     # The same registration with the name arriving through a loop variable
@@ -356,7 +356,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/DataTypes" \
-        "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp" \
+        "$SOURCE_ROOT/src/WindowFunctions" \
         | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only \
         | tee "$LOOP_REGISTERED_FILE"
 
@@ -386,7 +386,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # and looped-over alias lists). Window functions (rank, lag, dense_rank,
     # ...) are aggregate functions too - the binary path crosses them with the
     # combinators as well - so their registration site
-    # src/Processors/Transforms/WindowTransform.cpp is included. The
+    # src/WindowFunctions is included. The
     # Combinators subdirectory is excluded so the combinator suffixes
     # themselves are not treated as base names.
     aggregate_names=$(
@@ -401,7 +401,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
             optional_grep -rhozE --exclude-dir=Combinators \
                 '(registerFunction|registerAlias[A-Za-z]*)[[:space:]]*\([[:space:]]*"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions" \
-                "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp"
+                "$SOURCE_ROOT/src/WindowFunctions"
             optional_grep -rhozE --exclude-dir=Combinators \
                 '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
