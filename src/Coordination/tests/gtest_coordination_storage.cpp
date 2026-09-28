@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
 
+#include <map>
 #include <unordered_set>
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
@@ -953,6 +954,133 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 
     ASSERT_EQ(storage.watches.size(), 0);
     ASSERT_EQ(storage.list_watches.size(), 0);
+}
+
+/// A session gets one watch event per change, however many of its watches match it (as in ZooKeeper).
+TEST_P(CoordinationTest, TestOverlappingWatchesNotifySessionOnce)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const int64_t watcher = 1;
+    const int64_t other_watcher = 2;
+    const int64_t writer = 3;
+
+    using WatchEvents = std::map<int64_t, std::vector<std::pair<Event, String>>>;
+    const auto run = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, session_id, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        WatchEvents events;
+        for (const auto & response_for_session : storage.processRequest(request, session_id, new_zxid))
+        {
+            const auto & response = *response_for_session.response;
+            if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(&response))
+                events[response_for_session.session_id].emplace_back(static_cast<Event>(watch_response->type), watch_response->path);
+            else
+                EXPECT_EQ(response.error, Error::ZOK) << request->toString();
+        }
+        for (auto & [_, session_events] : events)
+            std::ranges::sort(session_events);
+        return events;
+    };
+
+    const auto create = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto set = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperSetRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto remove = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto add_watch = [&](const String & path, AddWatchRequest::AddWatchMode mode, int64_t session_id)
+    {
+        auto request = std::make_shared<ZooKeeperAddWatchRequest>();
+        request->path = path;
+        request->mode = mode;
+        EXPECT_TRUE(run(request, session_id).empty());
+    };
+
+    const auto exists_with_watch = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    const auto list_with_watch = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperListRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    for (const auto * path : {"/r", "/r/a", "/p", "/p/n", "/d", "/o", "/o/n", "/e"})
+        EXPECT_TRUE(create(path).empty());
+
+    const auto persistent = AddWatchRequest::AddWatchMode::PERSISTENT;
+    const auto recursive = AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE;
+    add_watch("/r", recursive, watcher);
+    add_watch("/r/a", recursive, watcher);
+    add_watch("/r", recursive, other_watcher);
+    add_watch("/p", recursive, watcher);
+    add_watch("/p/n", persistent, watcher);
+    add_watch("/d", persistent, watcher);
+    add_watch("/o", recursive, watcher);
+    exists_with_watch("/e");
+    list_with_watch("/e");
+
+    EXPECT_EQ(create("/r/a/b"), (WatchEvents{{watcher, {{Event::CREATED, "/r/a/b"}}}, {other_watcher, {{Event::CREATED, "/r/a/b"}}}}));
+    EXPECT_EQ(set("/r/a/b"), (WatchEvents{{watcher, {{Event::CHANGED, "/r/a/b"}}}, {other_watcher, {{Event::CHANGED, "/r/a/b"}}}}));
+    {
+        const Requests ops{
+            zkutil::makeCreateRequest("/r/a/x", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/r/a/y", "", zkutil::CreateMode::Persistent)};
+        const std::vector<std::pair<Event, String>> created{{Event::CREATED, "/r/a/x"}, {Event::CREATED, "/r/a/y"}};
+        EXPECT_EQ(run(std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{}), writer), (WatchEvents{{watcher, created}, {other_watcher, created}}));
+    }
+    EXPECT_EQ(remove("/r/a/b"), (WatchEvents{{watcher, {{Event::DELETED, "/r/a/b"}}}, {other_watcher, {{Event::DELETED, "/r/a/b"}}}}));
+
+    EXPECT_EQ(set("/p/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/p/n"}}}}));
+    EXPECT_EQ(create("/p/n/c"), (WatchEvents{{watcher, {{Event::CREATED, "/p/n/c"}, {Event::CHILD, "/p/n"}}}}));
+    EXPECT_EQ(remove("/p/n/c"), (WatchEvents{{watcher, {{Event::DELETED, "/p/n/c"}, {Event::CHILD, "/p/n"}}}}));
+    EXPECT_EQ(remove("/p/n"), (WatchEvents{{watcher, {{Event::DELETED, "/p/n"}}}}));
+
+    EXPECT_EQ(remove("/d"), (WatchEvents{{watcher, {{Event::DELETED, "/d"}}}}));
+    EXPECT_EQ(create("/d"), (WatchEvents{{watcher, {{Event::CREATED, "/d"}}}}));
+
+    exists_with_watch("/o/n");
+    EXPECT_EQ(set("/o/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/o/n"}}}}));
+    EXPECT_EQ(set("/o/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/o/n"}}}}));
+    list_with_watch("/o");
+    add_watch("/o", persistent, watcher);
+    EXPECT_EQ(create("/o/m"), (WatchEvents{{watcher, {{Event::CREATED, "/o/m"}, {Event::CHILD, "/o"}}}}));
+    EXPECT_EQ(remove("/e"), (WatchEvents{{watcher, {{Event::DELETED, "/e"}}}}));
+
+    EXPECT_FALSE(storage.watches.contains("/o/n"));
+    EXPECT_FALSE(storage.list_watches.contains("/o"));
+    EXPECT_FALSE(storage.watches.contains("/e"));
+    EXPECT_FALSE(storage.list_watches.contains("/e"));
+    EXPECT_EQ(storage.getTotalWatchesCount(), 11);
 }
 
 TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
