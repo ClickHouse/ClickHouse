@@ -43,7 +43,14 @@ ALTER TABLE tab CLEAR INDEX idx_lc, MATERIALIZE INDEX idx_lc SETTINGS mutations_
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab, idx_lc);
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 
-SELECT 'Arrays with NULL and empty elements, and a value repeated within a row';
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3');
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299');
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3');
+SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+
+SELECT 'Arrays with NULL and empty elements, a value repeated within a row, and empty arrays';
 
 CREATE TABLE tab_array
 (
@@ -57,10 +64,13 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8192, index_granularity_bytes = 104857600, allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab_array SELECT number, v, v
-FROM (SELECT number, arrayMap(k -> multiIf(k = 0, NULL, k = 1, '', concat('e', toString((number + k) % 13), ' f')), [0, 1, 2, 3, 3]) AS v FROM numbers(1000));
+FROM (SELECT number, if(number % 10 = 0, [], arrayMap(k -> multiIf(k = 0, NULL, k = 1, '', concat('e', toString((number + k) % 13), ' f')), [0, 1, 2, 3, 3])) AS v FROM numbers(1000));
 
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab_array, idx_lc);
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab_array, idx_s);
+
+SELECT count(), sum(id) FROM tab_array WHERE hasAnyTokens(lc, ['e3']);
+SELECT count(), sum(id) FROM tab_array WHERE hasAnyTokens(lc, ['e3']) SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 
 SELECT 'Stateful tokenizer';
 CREATE TABLE tab_sparse_grams
