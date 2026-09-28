@@ -154,6 +154,10 @@ std::string joinPathUnderPrefix(const std::string & prefix, const std::string & 
     if (prefix.empty())
         return path;
 
+    /// MRAP namespaces contain literal S3 keys, including repeated and leading separators.
+    if (prefix.starts_with("arn:"))
+        return prefix + "/" + path;
+
     std::string_view key = path;
     if (key.starts_with("/"))
         key.remove_prefix(1);
@@ -171,6 +175,14 @@ std::string relativizePathUnderPrefix(const std::string & prefix, const std::str
 std::string formatObjectPath(
     const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info)
 {
+    const auto namespace_name = configuration.getNamespace();
+    if (configuration.getType() == ObjectStorageType::S3 && namespace_name.starts_with("arn:"))
+    {
+        /// ARN targets accept literal keys; filesystem normalization would conflate distinct S3 objects.
+        const auto prefix = include_connection_info ? configuration.getDataSourceDescription() : namespace_name;
+        return prefix + "/" + path;
+    }
+
     if (configuration.supportsFullyQualifiedPaths())
     {
         if (const auto qualified = trySplitFullyQualifiedObjectPath(path))
@@ -188,6 +200,15 @@ std::string formatObjectPath(
 
 Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)
 {
+    if (prefix.starts_with("arn:"))
+    {
+        /// MRAP `_path` values append the literal key after a separator. Keep every separator in the key.
+        const auto key_start = prefix.size() + 1;
+        if (path.size() < key_start || !path.starts_with(prefix) || path[prefix.size()] != '/')
+            return {};
+        return {path.substr(key_start)};
+    }
+
     auto relative_path = relativizePathUnderPrefix(prefix, path);
     if (prefix.empty() || relative_path.empty() || relative_path.starts_with("/"))
         return {std::move(relative_path)};

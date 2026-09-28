@@ -57,6 +57,8 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
+    static void validateNamespace(const String & name, const StorageObjectStorageConfigurationPtr & configuration);
+
     /// Returns the object path of the last object written by `createSinkForPartition`.
     /// This is the final resolved path (after any rewrite by `checkAndGetNewFileOnInsertIfNeeded`),
     /// not the partition id passed to `createSinkForPartition`.

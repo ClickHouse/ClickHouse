@@ -102,6 +102,10 @@ String ITableFunction::getFunctionURINormalized() const
     try
     {
         Poco::URI uri(getFunctionURI());
+        /// An MRAP access target encodes a literal S3 key. Normalizing the path would make
+        /// distinct keys such as `a//b` and `a/b` share the same scoped grant.
+        if (getFunctionURI().starts_with("arn:aws:s3::"))
+            return getFunctionURI();
         uri.normalize();
         return uri.toString();
     }

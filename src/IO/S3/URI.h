@@ -35,6 +35,7 @@ struct URI
     std::string uri_str;
 
     bool is_virtual_hosted_style = false;
+    bool is_mrap = false;
 
     URI() = default;
     explicit URI(
@@ -42,6 +43,10 @@ struct URI
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
         S3UriStyle uri_style = S3UriStyle::AUTO);
+    /// Construct an MRAP target with an ARN bucket and a separately supplied object key.
+    static URI fromMRAPArn(const std::string & arn, const std::string & key);
+    static void validateMRAPArn(const std::string & arn);
+
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);

@@ -43,15 +43,17 @@ namespace
         PartitionedSink::validatePartitionKey(str, true);
     }
 
-    void validateNamespace(const String & str, StorageObjectStorageConfigurationPtr configuration)
-    {
-        configuration->validateNamespace(str);
+}
 
-        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
+void PartitionedStorageObjectStorageSink::validateNamespace(
+    const String & str, const StorageObjectStorageConfigurationPtr & configuration)
+{
+    configuration->validateNamespace(str);
 
-        PartitionedSink::validatePartitionKey(str, false);
-    }
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
+
+    PartitionedSink::validatePartitionKey(str, configuration->namespaceAllowsSlash());
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
