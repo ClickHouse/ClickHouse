@@ -200,6 +200,10 @@ public:
     /// For a source whose rows repeat too little for sharing them to pay off.
     void copyShortRowsFrom(const ColumnReplicated & source);
 
+    /// Whether every row is a string or a fixed-size value, possibly Nullable, shorter than an insertion_cache entry:
+    /// inserts from a source registered with copyShortRowsFrom then copy all its rows.
+    bool hasOnlyShortRows() const;
+
 private:
     /// Rows already inserted from one replicated source column.
     struct InsertedRows
@@ -212,6 +216,9 @@ private:
 
     /// Returns the row of nested_column holding row src_index of src_nested, inserting the value if needed.
     size_t insertNestedRow(InsertedRows & inserted_rows, const IColumn & src_nested, size_t src_index);
+
+    /// Whether inserts from `source` copy all its rows, see copyShortRowsFrom and hasOnlyShortRows.
+    bool copiesAllRowsFrom(const ColumnReplicated & source) const;
 
     WrappedPtr nested_column;
     ColumnIndex indexes;

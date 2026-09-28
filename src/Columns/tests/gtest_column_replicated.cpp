@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -200,6 +201,42 @@ TEST(ColumnReplicated, CopyShortRowsFrom)
     ASSERT_EQ(array_dest->getNestedColumn()->size(), 1);
     ASSERT_EQ(array_dest->size(), 2);
     ASSERT_EQ((*array_dest)[1], Field(Array{UInt64(1)}));
+}
+
+TEST(ColumnReplicated, CopyShortRowsFromWholeColumn)
+{
+    const String long_value(200, 'l');
+    auto short_source = createColumn({"a", "b", "x"}, {0, 1, 0});
+    auto long_source = createColumn({long_value, "x"}, {0, 0});
+    auto other_source = createColumn({"c", "x"}, {0, 0});
+    ASSERT_TRUE(short_source->hasOnlyShortRows());
+    ASSERT_FALSE(long_source->hasOnlyShortRows());
+    ASSERT_FALSE(createColumn({"a", long_value}, {0, 1})->hasOnlyShortRows());
+
+    MutableColumnPtr dest_nested = ColumnString::create();
+    auto dest = ColumnReplicated::create(std::move(dest_nested));
+    dest->copyShortRowsFrom(*short_source);
+    dest->copyShortRowsFrom(*long_source);
+    /// A whole registered source with only short rows is copied row by row; any other source is appended whole, with its
+    /// unreferenced row "x".
+    dest->insertRangeFrom(*short_source, 0, 3);
+    dest->insertRangeFrom(*long_source, 0, 2);
+    dest->insertRangeFrom(*other_source, 0, 2);
+    checkColumn(*dest, {"a", "b", "a", long_value, "x", "c", "x"}, {0, 1, 2, 3, 3, 5, 5});
+
+    /// Nullable strings qualify; arrays never do, however short.
+    MutableColumnPtr nullable_nested = ColumnNullable::create(ColumnString::create(), ColumnUInt8::create());
+    nullable_nested->insert(Field("a"));
+    nullable_nested->insert(Field());
+    MutableColumnPtr nullable_indexes = ColumnUInt8::create();
+    nullable_indexes->insert(0);
+    nullable_indexes->insert(1);
+    ASSERT_TRUE(ColumnReplicated::create(std::move(nullable_nested), std::move(nullable_indexes))->hasOnlyShortRows());
+    MutableColumnPtr array_nested = ColumnArray::create(ColumnUInt64::create());
+    array_nested->insert(Array{UInt64(1)});
+    MutableColumnPtr array_indexes = ColumnUInt8::create();
+    array_indexes->insert(0);
+    ASSERT_FALSE(ColumnReplicated::create(std::move(array_nested), std::move(array_indexes))->hasOnlyShortRows());
 }
 
 TEST(ColumnReplicated, IndicesOfNonDefaultRows)

@@ -110,6 +110,20 @@ Chunk MergeSorter::read()
     {
         auto res = std::move(chunks[0]);
         chunks.clear();
+
+        /// Materialize the columns whose rows a merge would copy, as a merge would return them (see mergeBatchImpl).
+        const auto & columns_to_copy = columns_to_copy_short_rows[cursors.front().order];
+        if (!columns_to_copy.empty())
+        {
+            const size_t num_rows = res.getNumRows();
+            auto columns = res.detachColumns();
+            for (size_t i : columns_to_copy)
+            {
+                if (assert_cast<const ColumnReplicated &>(*columns[i]).hasOnlyShortRows())
+                    columns[i] = columns[i]->convertToFullColumnIfReplicated();
+            }
+            res.setColumns(std::move(columns), num_rows);
+        }
         return res;
     }
 

@@ -264,6 +264,25 @@ void ColumnReplicated::copyShortRowsFrom(const ColumnReplicated & source)
     insertion_cache[source.id].copy_short_rows = hasExactRowSize(*source.nested_column);
 }
 
+bool ColumnReplicated::hasOnlyShortRows() const
+{
+    if (!hasExactRowSize(*nested_column))
+        return false;
+
+    for (size_t row = 0; row != nested_column->size(); ++row)
+    {
+        if (nested_column->byteSizeAt(row) >= MIN_ROW_BYTES_TO_DEDUPLICATE)
+            return false;
+    }
+    return true;
+}
+
+bool ColumnReplicated::copiesAllRowsFrom(const ColumnReplicated & source) const
+{
+    auto it = insertion_cache.find(source.id);
+    return it != insertion_cache.end() && it->second.copy_short_rows && source.hasOnlyShortRows();
+}
+
 size_t ColumnReplicated::insertNestedRow(InsertedRows & inserted_rows, const IColumn & src_nested, size_t src_index)
 {
     if (inserted_rows.copy_short_rows && src_nested.byteSizeAt(src_index) < MIN_ROW_BYTES_TO_DEDUPLICATE)
@@ -295,7 +314,7 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
         /// Optimization for case when we insert the whole column (may happen in squashing).
-        if (start == 0 && length == src_replicated->size())
+        if (start == 0 && length == src_replicated->size() && !copiesAllRowsFrom(*src_replicated))
         {
             indexes.insertIndexesRangeWithShift(*src_replicated->getIndexesColumn(), start, length, nested_column->size(), nested_column->size() + src_replicated->getNestedColumn()->size());
             nested_column->insertRangeFrom(*src_replicated->getNestedColumn(), 0, src_replicated->getNestedColumn()->size());

@@ -33,10 +33,10 @@
 
     <!-- Every probe row is repeated 3 times, the sort key comes from the build side -->
     <query>SELECT p.k, p.v1, p.v2, p.v3, p.v4, p.v5, b.t FROM lazy_sort_probe p INNER JOIN lazy_sort_build b ON b.k = p.k ORDER BY b.t FORMAT Null SETTINGS query_plan_join_swap_table = false, enable_lazy_columns_replication = {lazy}</query>
-    <!-- Same join, the repeated rows are adjacent in the sort order -->
-    <query>SELECT p.k, p.v1, p.v2, p.v3, p.v4, p.v5, b.t FROM lazy_sort_probe p INNER JOIN lazy_sort_build b ON b.k = p.k ORDER BY p.k FORMAT Null SETTINGS query_plan_join_swap_table = false, enable_lazy_columns_replication = {lazy}</query>
-    <!-- Two chained joins with a full sort on a column of the last joined table -->
-    <query>SELECT p.k, p.v1, p.v2, p.v3, p.v4, p.v5, m.m, b.t FROM lazy_sort_probe p INNER JOIN lazy_sort_mid m ON m.k = p.k INNER JOIN lazy_sort_build b ON b.k = p.k ORDER BY b.t FORMAT Null SETTINGS query_plan_join_swap_table = false, enable_lazy_columns_replication = 0, query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}</query>
+    <!-- Same join, the repeated rows are adjacent in the sort order; 16 threads, so that every thread sorts several blocks -->
+    <query>SELECT p.k, p.v1, p.v2, p.v3, p.v4, p.v5, b.t FROM lazy_sort_probe p INNER JOIN lazy_sort_build b ON b.k = p.k ORDER BY p.k FORMAT Null SETTINGS query_plan_join_swap_table = false, enable_lazy_columns_replication = {lazy}, max_threads = 16</query>
+    <!-- Two chained joins, 80% of the probe keys match the middle table, full sort on a column of the last joined table -->
+    <query>SELECT p.k, p.v1, p.v2, p.v3, p.v4, p.v5, m.m, b.t FROM lazy_sort_probe p INNER JOIN lazy_sort_mid m ON m.k = p.k INNER JOIN lazy_sort_build b ON b.k = p.k WHERE m.m > 0 ORDER BY b.t FORMAT Null SETTINGS query_plan_join_swap_table = false, enable_lazy_columns_replication = 0, query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}</query>
     <!-- Long values, each repeated 100 times in random order -->
     <query>SELECT p.s, b.t FROM lazy_sort_wide p INNER JOIN lazy_sort_fan b ON b.k = p.k ORDER BY b.t FORMAT Null SETTINGS query_plan_join_swap_table = false</query>
 

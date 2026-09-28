@@ -57,6 +57,28 @@ SortDescription ascending()
     return description;
 }
 
+struct ReplicatedSource
+{
+    std::vector<UInt64> keys;
+    std::vector<String> payloads;
+    std::vector<UInt8> payload_indexes;
+};
+
+Chunk makeReplicatedChunk(const ReplicatedSource & source)
+{
+    auto key_column = ColumnUInt64::create();
+    for (const auto key : source.keys)
+        key_column->insertValue(key);
+    MutableColumnPtr nested = ColumnString::create();
+    for (const auto & payload : source.payloads)
+        nested->insert(payload);
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    for (const auto index : source.payload_indexes)
+        indexes->insert(index);
+    return Chunk(
+        Columns{std::move(key_column), ColumnReplicated::create(std::move(nested), std::move(indexes))}, source.keys.size());
+}
+
 }
 
 TEST(MergeSorter, UniqueChunksKeepFirstPayloadAcrossBatches)
@@ -268,31 +290,10 @@ TEST(MergeSorter, ReplicatedPayloadCopiedOrShared)
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"),
         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
 
-    struct Source
-    {
-        std::vector<UInt64> keys;
-        std::vector<String> payloads;
-        std::vector<UInt8> payload_indexes;
-    };
-    auto make_chunk = [](const Source & source)
-    {
-        auto key_column = ColumnUInt64::create();
-        for (const auto key : source.keys)
-            key_column->insertValue(key);
-        MutableColumnPtr nested = ColumnString::create();
-        for (const auto & payload : source.payloads)
-            nested->insert(payload);
-        MutableColumnPtr indexes = ColumnUInt8::create();
-        for (const auto index : source.payload_indexes)
-            indexes->insert(index);
-        return Chunk(
-            Columns{std::move(key_column), ColumnReplicated::create(std::move(nested), std::move(indexes))}, source.keys.size());
-    };
-
     struct Case
     {
-        Source a;
-        Source b;
+        ReplicatedSource a;
+        ReplicatedSource b;
         size_t block_size;
         /// Nested size of the merged payload of every block, 0 if the payload must be a plain column.
         size_t nested_size;
@@ -312,6 +313,10 @@ TEST(MergeSorter, ReplicatedPayloadCopiedOrShared)
         {{{1, 3, 5, 7}, {"a"}, {0, 0, 0, 0}}, {{2, 4, 6, 8}, {"b", "c"}, {0, 0, 1, 1}}, 64, 5, {{"a", "b", "a", "b", "a", "c", "a", "c"}}},
         /// It holds in every merged block.
         {{{1, 2, 5, 6}, {"a", "b"}, {0, 0, 1, 1}}, {{3, 4, 7, 8}, {"c", "d"}, {0, 0, 1, 1}}, 4, 0, {{"a", "a", "c", "c"}, {"b", "b", "d", "d"}}},
+        /// A chunk merged as one batch copies its rows too.
+        {{{1, 2}, {"a"}, {0, 0}}, {{3, 4}, {"c", "d"}, {0, 1}}, 64, 0, {{"a", "a", "c", "d"}}},
+        /// A chunk with a long row merged as one batch is appended as it is, with its unreferenced row.
+        {{{1, 2}, {l, "x"}, {0, 0}}, {{3, 4}, {"c", "d"}, {0, 1}}, 64, 4, {{l, l, "c", "d"}}},
     };
 
     for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
@@ -321,8 +326,8 @@ TEST(MergeSorter, ReplicatedPayloadCopiedOrShared)
             SCOPED_TRACE(::testing::Message() << "mode=" << static_cast<int>(mode) << ", case=" << case_index);
             const auto & test_case = cases[case_index];
             Chunks chunks;
-            chunks.push_back(make_chunk(test_case.a));
-            chunks.push_back(make_chunk(test_case.b));
+            chunks.push_back(makeReplicatedChunk(test_case.a));
+            chunks.push_back(makeReplicatedChunk(test_case.b));
             MergeSorter sorter(header, std::move(chunks), ascending(), test_case.block_size, 0, mode);
 
             std::vector<std::vector<String>> blocks;
@@ -339,6 +344,65 @@ TEST(MergeSorter, ReplicatedPayloadCopiedOrShared)
                     values.emplace_back(payload->getDataAt(row));
             }
             EXPECT_EQ(blocks, test_case.blocks);
+        }
+    }
+}
+
+TEST(MergeSorter, ReplicatedPayloadOfSingleChunk)
+{
+    /// A single chunk is returned as it is, except that a payload whose rows are all short and referenced fewer than 4 times
+    /// is materialized.
+    const auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
+
+    struct Case
+    {
+        ReplicatedSource input;
+        /// Whether the payload of the result must be a plain column, otherwise it must hold the input payload's columns.
+        bool materialized;
+        std::vector<String> payloads;
+    };
+    const String l(200, 'l');
+    const std::vector<Case> cases{
+        {{{1, 2}, {"a"}, {0, 0}}, true, {"a", "a"}},
+        {{{1, 2}, {l}, {0, 0}}, false, {l, l}},
+        {{{1, 2, 3, 4}, {"a"}, {0, 0, 0, 0}}, false, {"a", "a", "a", "a"}},
+    };
+
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    {
+        for (size_t case_index = 0; case_index < cases.size(); ++case_index)
+        {
+            SCOPED_TRACE(::testing::Message() << "mode=" << static_cast<int>(mode) << ", case=" << case_index);
+            const auto & test_case = cases[case_index];
+            auto input = makeReplicatedChunk(test_case.input);
+            const auto & input_payload = assert_cast<const ColumnReplicated &>(*input.getColumns()[1]);
+            const IColumn * input_nested = input_payload.getNestedColumn().get();
+            const IColumn * input_indexes = input_payload.getIndexesColumn().get();
+            Chunks chunks;
+            chunks.push_back(std::move(input));
+            MergeSorter sorter(header, std::move(chunks), ascending(), 64, 0, mode);
+
+            auto result = sorter.read();
+            ASSERT_EQ(result.getNumRows(), test_case.payloads.size());
+            const auto & payload = result.getColumns()[1];
+            if (test_case.materialized)
+            {
+                EXPECT_FALSE(payload->isReplicated());
+            }
+            else
+            {
+                const auto * replicated = typeid_cast<const ColumnReplicated *>(payload.get());
+                ASSERT_NE(replicated, nullptr);
+                EXPECT_EQ(replicated->getNestedColumn().get(), input_nested);
+                EXPECT_EQ(replicated->getIndexesColumn().get(), input_indexes);
+            }
+            std::vector<String> values;
+            for (size_t row = 0; row < result.getNumRows(); ++row)
+                values.emplace_back(payload->getDataAt(row));
+            EXPECT_EQ(values, test_case.payloads);
+            EXPECT_FALSE(sorter.read());
         }
     }
 }
