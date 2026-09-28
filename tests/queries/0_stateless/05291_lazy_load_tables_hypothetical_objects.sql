@@ -16,9 +16,13 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
+SELECT 'a drop leaves the table unloaded';
+DROP HYPOTHETICAL INDEX IF EXISTS x ON t0;
+DROP HYPOTHETICAL PROJECTION IF EXISTS x ON t0;
+SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't0';
+
 SELECT 'index on an unloaded table';
 CREATE HYPOTHETICAL INDEX hi0 ON t0 (c0) TYPE minmax GRANULARITY 1;
-DROP HYPOTHETICAL INDEX IF EXISTS x ON t0;
 DROP HYPOTHETICAL INDEX hi0 ON t0;
 
 SELECT 'projection on a loaded table';

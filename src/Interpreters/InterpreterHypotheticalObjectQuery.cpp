@@ -229,8 +229,21 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
-    auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, context));
+    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto & store = context->getHypotheticalObjectStore();
 
+    /// Dropping only forgets a session entry, so it must not load a lazily loaded table.
+    if (query.kind == ASTHypotheticalObjectQuery::Drop)
+    {
+        auto object_name = query.object_name->as<ASTIdentifier &>().name();
+        if (is_projection)
+            store.removeProjection(table_id, object_name, query.if_exists);
+        else
+            store.remove(table_id, object_name, query.if_exists);
+        return {};
+    }
+
+    table = resolveStorageProxyLoading(table);
     const auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(
@@ -248,18 +261,6 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             object_kind_name,
             table_id.getDatabaseName(),
             table_id.getTableName());
-
-    auto & store = context->getHypotheticalObjectStore();
-
-    if (query.kind == ASTHypotheticalObjectQuery::Drop)
-    {
-        auto object_name = query.object_name->as<ASTIdentifier &>().name();
-        if (is_projection)
-            store.removeProjection(table_id, object_name, query.if_exists);
-        else
-            store.remove(table_id, object_name, query.if_exists);
-        return {};
-    }
 
     auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
 
