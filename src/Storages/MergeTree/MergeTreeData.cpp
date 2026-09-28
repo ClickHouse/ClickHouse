@@ -1219,10 +1219,14 @@ void MergeTreeData::checkProperties(
                                 "You can add expressions that use only the newly added columns",
                                 backQuoteIfNeed(col));
 
-            if (new_metadata.columns.getDefaults().contains(col))
+            /// A subcolumn (for example, an element of a Tuple) has the default expression of its storage column.
+            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
+            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+
+            if (const auto column_default = new_metadata.columns.getDefault(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Newly added column {} has a default expression, so adding expressions that use "
-                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
+                                "Newly added column {} has a {} expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(name_in_storage), toString(column_default->kind));
         }
     }
 
@@ -7864,30 +7868,12 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
 }
 
 MergeTreeData::ColumnDefaultnessStatsUnavailableReason
-MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot)
-{
-    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
-    if (query_context->getCurrentTransaction())
-        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
-
-    if (!mutations_snapshot)
-        return ColumnDefaultnessStatsUnavailableReason::None;
-
-    if (mutations_snapshot->hasPatchParts())
-        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
-    if (mutations_snapshot->hasDataMutations())
-        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
-    if (mutations_snapshot->hasAlterMutations())
-        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
-
-    return ColumnDefaultnessStatsUnavailableReason::None;
-}
-
-MergeTreeData::ColumnDefaultnessStatsUnavailableReason
 MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
 {
-    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
-    if (query_context->getCurrentTransaction())
+    /// Storages supporting transactions should return stats from the actual visible snapshot.
+    /// If the storage does not support transactions it may return stats from all active parts instead of snapshot
+    /// visible to the transaction.
+    if (!supportsTransactions() && query_context->getCurrentTransaction())
         return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
 
     /// Patch parts apply updates/deletes at read time and don't update the base part's
@@ -10654,7 +10640,14 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (analyzed_partition_ids)
             analyzed_partition_ids->insert(part->info.getPartitionId());
 
-        if (!partition_pruner.canBePruned(*part))
+        /** The partition value decides, not the part: an empty part - the state a delete-all
+          * mutation or a `TTL` expiry leaves behind until the cleanup thread removes it - would
+          * otherwise prune its whole partition out of the mutation while ruling it analyzed, which
+          * also keeps `allocateBlockNumbersInAffectedPartitions` from widening the scope with the
+          * partitions only ZooKeeper knows. Rows another replica acknowledged in that partition
+          * would then survive the mutation on every replica.
+          */
+        if (!partition_pruner.canPartitionBePruned(*part))
             affected_partition_ids.insert(part->info.getPartitionId());
     }
 
@@ -12681,6 +12674,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
+    /// The clone keeps the source's physically stored data, so it must also keep the source's
+    /// disclaimer of the persisted _block_number/_block_offset values. Callers that adopt a part
+    /// from another table pass the columns explicitly; for all other clones (e.g. a mutation that
+    /// does not touch the part) propagate the source part's own invalidated set, otherwise the
+    /// clone would resurrect the stale persisted values (issue #107501).
+    IDataPartStorage::ClonePartParams params_with_invalidated_columns = params;
+    params_with_invalidated_columns.invalidated_columns_to_write.insert(
+        src_part->invalidated_system_columns.begin(), src_part->invalidated_system_columns.end());
+
     /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
     /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
@@ -12693,7 +12695,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params);
+            params_with_invalidated_columns);
     }
     else
     {
@@ -12712,7 +12714,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params);
+            params_with_invalidated_columns);
     }
 
     if (params.metadata_version_to_write.has_value())
@@ -12754,11 +12756,25 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         params.hardlinked_files->source_part_name = src_part->name;
         params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
+        /// invalidated_system_columns.txt is not shared with the source part whenever the destination
+        /// receives a fresh copy of it: a non-empty set makes every freeze path remove the inherited
+        /// file and rewrite it, and packed storage never hardlinks the file at all (only data.packed is
+        /// hardlinked, and the file is written separately next to it). Recording it as hardlinked from
+        /// the source would put it into `files_not_to_remove` of `unlockSharedDataByID`, so the source
+        /// blob would be kept alive - leaked - for a child that does not reference it. Only the
+        /// full-storage clone that inherits the file (an empty set) keeps the hardlink, and only there
+        /// the file has to stay in the list.
+        const bool dst_part_owns_invalidated_system_columns_file
+            = !params_with_invalidated_columns.invalidated_columns_to_write.empty()
+            || isPackedPartStorage(src_part->getDataPartStorage());
+
         for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                 && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
+                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME
+                && !(dst_part_owns_invalidated_system_columns_file
+                     && it->name() == IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
             {
                 params.hardlinked_files->hardlinks_from_source_part.insert(it->name());
             }
@@ -12771,7 +12787,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             for (auto it = projection_storage.iterate(); it->isValid(); it->next())
             {
                 auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-                if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+                /// Match on the bare file name: that is how the clone itself decides copy-vs-hardlink inside
+                /// a projection (`BackupImpl` recursing into the projection directory, and the packed
+                /// projection `freeze` receiving the same `params`). Matching on the prefixed name would record
+                /// e.g. `p.proj/checksums.txt` as hardlinked although the untouched-part mutation copied it,
+                /// so zero-copy would keep the source blob alive for a child that does not reference it.
+                if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                     && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                     && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
                 {
@@ -13958,7 +13979,8 @@ ReservationPtr MergeTreeData::balancedReservation(
     MergeTreeData::DataPartsVector covered_parts,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
     const IMergeTreeDataPart::TTLInfos * ttl_infos,
-    bool is_insert)
+    bool is_insert,
+    time_t time_of_move)
 {
     ReservationPtr reserved_space;
     auto min_bytes_to_rebalance_partition_over_jbod = (*getSettings())[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod];
@@ -14081,7 +14103,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         metadata_snapshot,
                         part_size,
                         *ttl_infos,
-                        time(nullptr),
+                        time_of_move ? time_of_move : time(nullptr),
                         max_volume_index,
                         is_insert,
                         getStoragePolicy()->getDiskByName(selected_disk_name));
