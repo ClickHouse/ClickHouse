@@ -217,8 +217,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
 
-    /// Connectivity, over exactly the links `initDPTable` seeds: every two-relation predicate, plus,
-    /// with a conflict detector, one per operator whose predicate does not span its two sides.
+    /// Connectivity, over the links `initDPTable` seeds: every two-relation predicate, plus, with a
+    /// conflict detector, one per operator whose predicate does not span its two sides.
     /// Cross products are left out - they join on nothing, so a graph they alone hold together is
     /// disconnected. A query whose other predicates tie the same relations together still counts as
     /// connected, which is what lets DPsub plan a cross product feeding an inner join.
@@ -253,9 +253,13 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         unite(lowest, sources & ~lowest);
     }
 
+    /// `initDPTable` seeds an operator link only for a degenerate operator - one whose predicate does
+    /// not span its two sides. A spanning predicate is already linked by its binary edge above, and
+    /// uniting the operator's whole subtrees instead would attach a relation that only a nested cross
+    /// product holds on (`t1` in `t1 CROSS JOIN t2 JOIN t3 ON t2.k = t3.k`).
     for (const auto & op : dpsub_data.conflict_operators)
     {
-        if (isCrossOrComma(op.kind))
+        if (isCrossOrComma(op.kind) || !op.degenerate)
             continue;
         unite(op.left_relations, op.relations & ~op.left_relations);
     }

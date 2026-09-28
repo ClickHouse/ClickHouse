@@ -1,4 +1,9 @@
 -- dpsub alone declines an unconditioned join
+-- dpsub alone declines a nested cross product
+-- nested cross product keeps its kind, CD-C
+Type: cross
+Type: inner
+12
 -- cross join, no detector
 Type: cross
 -- cross join, CD-A

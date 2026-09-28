@@ -21,20 +21,40 @@ INSERT INTO t_05238_b SELECT number FROM numbers(3);
 INSERT INTO t_05238_c SELECT number FROM numbers(3);
 
 SET query_plan_optimize_join_order_randomize = 0; -- the test asserts on the join kind
+-- The harness randomizes the limit, and at 0 (or below the number of joined tables) the join order
+-- algorithms do not run at all, so nothing here would exercise the path under test.
+SET query_plan_optimize_join_order_limit = 10;
 
 -- DPsub on its own has nothing to plan here and says so, with or without a detector. This is the
 -- behaviour the fix restores for the detector cases: before it, `'dpsub'` alone answered `cross`
 -- for a graph it should have turned down.
 SELECT '-- dpsub alone declines an unconditioned join';
--- `query_plan_optimize_join_order_limit` is pinned because the harness randomizes it, and at 0 no
--- algorithm runs at all, so nothing would decline and the query would simply succeed.
+SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_optimize_join_order_limit = 10; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
-SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
+         query_plan_optimize_join_order_conflict_detector = 'c'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
+
+-- A nested cross product: `t_05238_a` is attached to the rest only by the cross join, even though
+-- the inner join above it has a predicate. The inner operator's predicate spans `b` and `c` only,
+-- so it must not count as a link to `a`, and DPsub still has to decline the graph.
+SELECT '-- dpsub alone declines a nested cross product';
+SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_optimize_join_order_conflict_detector = 'c',
-         query_plan_optimize_join_order_limit = 10; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
+         query_plan_optimize_join_order_conflict_detector = 'a'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
+SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
+         query_plan_optimize_join_order_conflict_detector = 'c'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
+
+SELECT '-- nested cross product keeps its kind, CD-C';
+SELECT extract(explain, 'Type: [a-z]+') FROM (
+    EXPLAIN SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub,greedy',
+             query_plan_optimize_join_order_conflict_detector = 'c'
+) WHERE explain LIKE '%Type:%';
+SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub,greedy',
+         query_plan_optimize_join_order_conflict_detector = 'c';
 
 SELECT '-- cross join, no detector';
 SELECT extract(explain, 'Type: [a-z]+') FROM (
