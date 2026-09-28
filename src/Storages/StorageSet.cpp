@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -316,7 +317,8 @@ void StorageSetOrJoinBase::waitForOutstandingSinks(std::chrono::milliseconds tim
         return;
     }
 
-    if (!outstanding_sinks_changed.wait_for(lock, timeout, [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; }))
+    /// `lock_acquire_timeout` is user-controlled and `wait_for` converts it to nanoseconds, which overflows for huge values.
+    if (!outstanding_sinks_changed.wait_for(lock, saturatedMilliseconds(timeout.count()), [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; }))
     {
         /// The lock is held here; the analysis does not see through `wait_for`.
         size_t remaining = TSA_SUPPRESS_WARNING_FOR_READ(outstanding_sinks);
