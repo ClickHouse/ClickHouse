@@ -16,7 +16,6 @@
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
-#include <Interpreters/ConvertFunctionOrHasAnyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
@@ -57,7 +56,6 @@ namespace Setting
     extern const SettingsBool optimize_time_filter_with_preimage;
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
-    extern const SettingsBool optimize_or_has_any_chain;
 }
 
 namespace ErrorCodes
@@ -596,12 +594,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeOrHasAnyChain(ASTPtr & query)
-{
-    ConvertFunctionOrHasAnyVisitor::Data data = {};
-    ConvertFunctionOrHasAnyVisitor(data).visit(query);
-}
-
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
@@ -747,11 +739,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
-
-    if (settings[Setting::optimize_or_has_any_chain])
-    {
-        optimizeOrHasAnyChain(query);
-    }
 
     /// Note: `optimize_or_like_chain` is an analyzer-only optimization (`ConvertOrLikeChainPass`);
     /// the old analyzer does not rewrite `OR LIKE` chains.
