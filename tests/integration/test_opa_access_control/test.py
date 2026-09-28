@@ -844,3 +844,120 @@ def test_a_rename_is_authorized_on_both_names():
     finally:
         node.query("DROP TABLE IF EXISTS plain.after")
 
+
+
+
+def test_a_row_filter_applies_through_a_merge_table():
+    """A `Merge` table reads its children, so the filter has to reach them rather than stopping at the
+    wrapper."""
+    enable_row_filters()
+    node.query(
+        "CREATE TABLE IF NOT EXISTS plain.merged (id UInt32, amount UInt32, customer_email String) "
+        "ENGINE = Merge('plain', '^orders$')"
+    )
+    node.query("GRANT SELECT ON plain.merged TO analyst")
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert node.query("SELECT count() FROM plain.merged", user="analyst").strip() == "1"
+
+
+def test_a_mask_applies_through_a_merge_table():
+    enable_column_masking()
+    node.query(
+        "CREATE TABLE IF NOT EXISTS plain.merged (id UInt32, amount UInt32, customer_email String) "
+        "ENGINE = Merge('plain', '^orders$')"
+    )
+    node.query("GRANT SELECT ON plain.merged TO analyst")
+    set_column_masks(REDACT_EMAIL)
+
+    assert (
+        node.query("SELECT DISTINCT customer_email FROM plain.merged", user="analyst")
+        == "****\n"
+    )
+
+
+def test_a_denial_applies_inside_a_scalar_subquery():
+    """A subquery is still a read of the table, so it cannot be used to reach denied data."""
+    set_rule("input['action']['resource'].get('table') != 'orders'")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT (SELECT count() FROM plain.orders)", user="analyst"
+    )
+
+
+def test_a_row_filter_applies_inside_a_scalar_subquery():
+    enable_row_filters()
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert (
+        node.query("SELECT (SELECT count() FROM plain.orders)", user="analyst").strip()
+        == "1"
+    )
+
+
+def test_a_denial_is_reported_when_only_analyzing():
+    """`EXPLAIN` resolves the query without running it, and must not become a way to confirm access to
+    something a policy refuses."""
+    set_rule("input['action']['resource'].get('table') != 'orders'")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "EXPLAIN SELECT id FROM plain.orders", user="analyst"
+    )
+
+
+def test_a_mask_survives_a_projection():
+    """A projection is precomputed from the real values, so it must not be used to answer a query over
+    a masked column."""
+    enable_column_masking()
+    node.query(
+        "CREATE TABLE IF NOT EXISTS plain.with_projection "
+        "(id UInt32, customer_email String, "
+        "PROJECTION by_email (SELECT customer_email, count() GROUP BY customer_email)) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO plain.with_projection VALUES (1, 'a@x.com'), (2, 'b@x.com')"
+    )
+    node.query("GRANT SELECT ON plain.with_projection TO analyst")
+    set_column_masks(REDACT_EMAIL)
+
+    assert (
+        node.query(
+            "SELECT customer_email, count() FROM plain.with_projection GROUP BY customer_email",
+            user="analyst",
+        )
+        == "****\t2\n"
+    )
+
+
+def test_a_definer_view_does_not_bypass_the_callers_row_filter():
+    """`SQL SECURITY DEFINER` runs the view body with the definer's rights, so it is worth being
+    explicit that it does not become a way around a policy: the filter for the underlying table is
+    still resolved for the calling user, even when the definer is exempt."""
+    enable_row_filters()
+    node.query(
+        "CREATE VIEW IF NOT EXISTS plain.definer_view "
+        "DEFINER = default SQL SECURITY DEFINER AS SELECT * FROM plain.orders"
+    )
+    node.query("GRANT SELECT ON plain.definer_view TO analyst")
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert (
+        node.query("SELECT count() FROM plain.definer_view", user="analyst").strip()
+        == "1"
+    )
+
+
+def test_an_invoker_view_keeps_the_caller_identity():
+    enable_row_filters()
+    node.query(
+        "CREATE VIEW IF NOT EXISTS plain.invoker_view "
+        "SQL SECURITY INVOKER AS SELECT * FROM plain.orders"
+    )
+    node.query("GRANT SELECT ON plain.invoker_view TO analyst")
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert (
+        node.query("SELECT count() FROM plain.invoker_view", user="analyst").strip()
+        == "1"
+    )
