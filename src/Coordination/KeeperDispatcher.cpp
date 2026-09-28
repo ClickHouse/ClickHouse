@@ -919,7 +919,8 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
                 pushed = true;
             }
 
-            interruptibleSleep(1000ms);
+            UInt64 elapsed_ms = std::min(watch.elapsedMilliseconds(), wait_time_ms);
+            interruptibleSleep(std::chrono::milliseconds(std::min<UInt64>(1000, wait_time_ms - elapsed_ms)));
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }

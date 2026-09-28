@@ -148,6 +148,20 @@ def test_retry_count_is_honored(started_cluster):
     )
     assert attempts == 1, (result, elapsed, attempts)
 
+    result, elapsed, before = add_unreachable_member(
+        8, retry=3, max_action_wait_time_ms=250
+    )
+    attempts = attempts_logged_since(8, before, reported=4)
+    assert result["status"] == "error", result
+    assert "with retries count 3, attempts made 4" in result["message"], (
+        result,
+        elapsed,
+        attempts,
+    )
+    assert attempts == 4, (result, elapsed, attempts)
+    # An attempt waits max_action_wait_time_ms, also when that is less than a second.
+    assert elapsed < 3, (result, elapsed, attempts)
+
 
 def test_retries_stop_at_max_total_wait_time(started_cluster):
     result, elapsed, before = add_unreachable_member(
