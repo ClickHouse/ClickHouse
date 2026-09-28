@@ -54,7 +54,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
 }
@@ -272,18 +271,17 @@ Block executeInternalQuery(const String & query, ContextPtr context)
     query_context->setCurrentQueryId("");
 
     /// The caller's settings that shape its own result - `filter`, `additional_result_filter`,
-    /// `additional_table_filters`, `limit`, `offset`, and the result size limits - belong to the
-    /// final traceView output, not to the queries that build it: applied here they would cut the
-    /// spans read, or fail on a column that only the output has. The resource limits (rows read,
-    /// memory, time) stay: these queries are where the work of the call is done.
+    /// `limit`, `offset`, and the result size limits - belong to the final traceView output, not
+    /// to the queries that build it: applied here they would cut the spans read, or fail on a
+    /// column that only the output has. The resource limits (rows read, memory, time) stay:
+    /// these queries are where the work of the call is done. `additional_table_filters` stays too:
+    /// keyed by table name, a filter on `system.opentelemetry_span_log` restricts the spans the
+    /// caller may see, possibly pinned by a profile as a row restriction, and it must apply to the
+    /// reads here exactly as it would to a view over the span log.
     Settings settings = query_context->getSettingsCopy();
     ClusterProxy::stripInitiatorOnlySettings(settings);
     settings[Setting::max_result_rows] = 0;
     settings[Setting::max_result_bytes] = 0;
-    /// Keyed by table name, so a filter the caller set for the span log would apply to the reads
-    /// of the span log here and drop spans before the tree is built. Not an initiator-only setting.
-    settings[Setting::additional_table_filters] = Map{};
-    settings[Setting::additional_table_filters].changed = false;
     query_context->setSettings(settings);
     auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
     return pullMonoBlock(io.pipeline);
