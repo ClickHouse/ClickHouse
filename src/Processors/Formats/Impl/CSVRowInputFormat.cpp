@@ -173,13 +173,14 @@ void CSVFormatReader::skipRow()
             if (*pos == '\r')
             {
                 ++istr.position();
-                if (format_settings.csv.allow_cr_end_of_line)
-                    return;
+                /// `\r\n` is a single line ending even if a bare `\r` is allowed, as in `skipEndOfLine`.
                 if (!istr.eof() && *istr.position() == '\n')
                 {
                     ++istr.position();
                     return;
                 }
+                if (format_settings.csv.allow_cr_end_of_line)
+                    return;
             }
         }
     }
