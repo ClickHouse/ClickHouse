@@ -9,7 +9,7 @@ SELECT uniq(id) FROM (
 ) AS t
 WHERE event_type = 'online';
 
--- folded filter condition becomes a plain constant in the plan
+-- folded filter condition becomes a plain constant in the plan; the always-true branch loses its filter
 SELECT 'folded filters', countIf(explain LIKE '%Filter column: 1%' OR explain LIKE '%Filter column: 0%')
 FROM (
     EXPLAIN PLAN actions = 1
@@ -34,7 +34,7 @@ SELECT x FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) WHERE x > 1 ORDER BY x;
 
 -- standalone WHERE materialize(const) = const
 SELECT count() FROM numbers(100) WHERE materialize('online'::String) = 'online';
-SELECT 'simple folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'simple folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM numbers(100) WHERE materialize('online'::String) = 'online'
@@ -86,7 +86,7 @@ SELECT count() > 0 FROM (
 
 -- a mixed comparison with the String operand constant runs `executeWithConstString` both at
 -- runtime and in the fold, so it folds to the same value the query would produce
-SELECT 'mixed string comparison with const string folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'mixed string comparison with const string folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '1');
 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '1';
 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '257';
@@ -163,26 +163,26 @@ WHERE m = 5;
 
 -- tuple comparison decomposes a constant tuple into constant element columns, so a nested
 -- string / non-string pair with the string side constant folds the same way a top-level one does
-SELECT 'mixed tuple comparison with const string folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'mixed tuple comparison with const string folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple(toUInt8(1))) = tuple('1'));
 SELECT count() FROM numbers(1) WHERE materialize(tuple(toUInt8(1))) = tuple('1');
-SELECT 'nested mixed tuple comparison folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'nested mixed tuple comparison folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple(tuple(toUInt8(1)), 1)) = tuple(tuple('1'), 1));
 -- with the string on the materialized side the comparison already raises while the query header
 -- is built, before any plan-level fold could run - the exception is preserved
 SELECT count() FROM numbers(1) WHERE materialize(tuple('1')) = tuple(toUInt8(1)); -- { serverError NO_COMMON_TYPE }
 -- same-shaped tuples still fold
-SELECT 'same-typed tuple folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'same-typed tuple folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple('1', 2)) = tuple('1', 2));
 SELECT count() FROM numbers(1) WHERE materialize(tuple('1', 2)) = tuple('1', 2);
 
 -- unary `not` depends only on its argument value, so it folds through `materialize` like the
 -- binary logical operators
-SELECT 'not folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'not folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE NOT materialize(0));
 SELECT count() FROM numbers(100) WHERE NOT materialize(0);
 SELECT count() FROM numbers(100) WHERE NOT materialize(1);
-SELECT 'not over all-const and folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'not over all-const and folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE NOT and(materialize(1), materialize(0)));
 SELECT count() FROM numbers(100) WHERE NOT and(materialize(1), materialize(0));
 -- `not` of NULL is NULL, which is not decisive and filters everything out
@@ -190,14 +190,14 @@ SELECT count() FROM numbers(100) WHERE NOT materialize(CAST(NULL AS Nullable(UIn
 
 -- `xor` is value-only like `not`: it never short-circuits and has no const-only argument. The
 -- analyzer cannot fold it on its own because it is not saturable, so it relied entirely on this pass.
-SELECT 'xor folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'xor folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(0)));
 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(0));
 SELECT 'xor folded to false', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1)));
 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1));
 -- variadic form folds pairwise: 1 xor 1 xor 1 = 1
-SELECT 'variadic xor folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'variadic xor folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1), materialize(1)));
 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1), materialize(1));
 -- `xor` with NULL is NULL, which is not decisive and filters everything out
@@ -211,21 +211,21 @@ SELECT count() FROM numbers(100) WHERE xor(materialize(1), number = 1);
 -- column it wraps share, so they fold through `materialize` as well. The analyzer cannot fold them
 -- on its own here: `getConstantResultForNonConstArguments` gives up as soon as the argument type
 -- can contain NULL.
-SELECT 'isNull folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'isNull folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(NULL AS Nullable(UInt8)))));
 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(NULL AS Nullable(UInt8))));
 SELECT 'isNull folded to false', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(1 AS Nullable(UInt8)))));
 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(1 AS Nullable(UInt8))));
-SELECT 'isNotNull folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'isNotNull folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNotNull(materialize(CAST(1 AS Nullable(UInt8)))));
 SELECT count() FROM numbers(100) WHERE isNotNull(materialize(CAST(1 AS Nullable(UInt8))));
 -- the `IS NULL` operator spelling goes through the same function
-SELECT 'is null operator folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'is null operator folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE materialize(CAST(NULL AS Nullable(UInt8))) IS NULL);
 SELECT count() FROM numbers(100) WHERE materialize(CAST(NULL AS Nullable(UInt8))) IS NULL;
 -- combined with a logical operator the whole predicate still collapses
-SELECT 'isNull under and folded', countIf(explain LIKE '%Filter column: 1%')
+SELECT 'isNull under and folded', countIf(explain LIKE '%Filter column%') = 0
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(NULL AS Nullable(UInt8)))) AND materialize(1) = 1);
 -- a column-dependent argument is not constant, so nothing folds
 SELECT 'isNull over a column not folded', countIf(explain LIKE '%Filter column: materialize(CAST(number AS Nullable(UInt64))) IS NULL%')

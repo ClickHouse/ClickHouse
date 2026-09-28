@@ -181,22 +181,18 @@ size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes 
     const auto & filter_column_name = filter->getFilterColumnName();
     const bool folded = dag.foldFilterPredicateThroughMaterialize(filter_column_name);
 
-    /// a no-op always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
-    const auto * filter_node = dag.tryFindInOutputs(filter_column_name);
-    if (filter_node && filter_node->type == ActionsDAG::ActionType::COLUMN && ConstantFilterDescription(*filter_node->column).always_true)
+    /// an always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
+    const auto & filter_node = dag.findInOutputs(filter_column_name);
+    if (filter_node.type == ActionsDAG::ActionType::COLUMN && ConstantFilterDescription(*filter_node.column).always_true)
     {
-        auto actions = dag.clone();
-        actions.removeUnusedResult(filter_column_name);
-        actions.removeUnusedActions(false, false);
-        if (isPassthroughActions(actions))
-        {
-            auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(actions));
-            expression->setStepDescription(*filter);
-            if (filter->isInputRemovalPrevented())
-                expression->setPreventInputRemoval();
-            node->step = std::move(expression);
-            return 1;
-        }
+        dag.removeUnusedResult(filter_column_name);
+        dag.removeUnusedActions(false, false);
+        auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
+        expression->setStepDescription(*filter);
+        if (filter->isInputRemovalPrevented())
+            expression->setPreventInputRemoval();
+        node->step = std::move(expression);
+        return 1;
     }
 
     if (!folded)
