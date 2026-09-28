@@ -379,9 +379,10 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             /// that a violation leaves the whole statement without effect. The `changes` check is kept
             /// behind the emptiness test it has always had: it also runs a sanity clamp over the whole
             /// settings object, which must not start happening for a clause that overrides nothing.
+            /// const on purpose - see the note in execute().
             if (!core.changes.empty())
-                context_->checkSettingsConstraints(core.changes, SettingSource::QUERY);
-            context_->checkSettingsConstraintsForSettingsReset(core.default_names, SettingSource::QUERY);
+                context_->checkSettingsConstraints(std::as_const(core.changes), SettingSource::QUERY);
+            context_->checkSettingsConstraintsForSettingsReset(core.default_names, core.changes, SettingSource::QUERY);
             rejectHTTPOnlyConstructionSettings(backup_query->settings->as<const ASTSetQuery &>());
 
             if (!core.changes.empty())
