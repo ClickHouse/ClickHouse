@@ -2,6 +2,7 @@
 
 #include <IO/VarInt.h>
 #include <base/sort.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sanitizer_defs.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaUtils.h>
@@ -188,8 +189,10 @@ public:
 
         if (auto * counter = findCounter(key, hash))
         {
-            counter->count += increment;
-            counter->error += error;
+            /// The increment is a weight straight from the caller's column, so `topKWeighted(k)(x, -2)`
+            /// contributes 2^64-2 and the sum is modular, as `merge` below already assumes.
+            counter->count = common::addIgnoreOverflow(counter->count, increment);
+            counter->error = common::addIgnoreOverflow(counter->error, error);
             return;
         }
 
@@ -423,7 +426,7 @@ protected:
             for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
                 size_t pos = counter_list[i].hash & alpha_mask;
-                alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
+                alpha_map[pos] = std::min(common::addIgnoreOverflow(alpha_map[pos], counter_list[i].count - counter_list[i].error), MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
             }
 
