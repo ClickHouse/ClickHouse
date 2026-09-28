@@ -2820,9 +2820,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);
-                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
-                    argument_column.type = get_scalar_function_node->getResultType();
-                    argument_is_constant = true;
+                    const auto & scalar_column = scalar.getByPosition(0).column;
+                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
+                    /// The column comes from the scalars map while the type comes from the resolved node, and the
+                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
+                    {
+                        argument_column.column = ColumnConst::create(scalar_column, 1);
+                        argument_column.type = get_scalar_result_type;
+                        argument_is_constant = true;
+                    }
                 }
             }
         }
@@ -2991,6 +2998,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function

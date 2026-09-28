@@ -1298,6 +1298,8 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -1780,6 +1782,7 @@ public:
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+    std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
     size_t getClustersVersion() const;
