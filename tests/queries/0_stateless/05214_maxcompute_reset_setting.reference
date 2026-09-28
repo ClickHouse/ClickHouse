@@ -1,0 +1,6 @@
+initial	3	2	0
+reset	3	0	0
+reattach	3	0	0
+reset_after_reattach	3	0	0
+modify_again	3	3
+reset_again	3	0	0

@@ -261,15 +261,19 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
                 storage_ast.reset(storage_ast.ttl_table);
-
-            if (metadata.settings_changes)
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
-        else if (metadata.settings_changes)
+
+        if (metadata.settings_changes)
         {
-            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            const auto & settings_changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
             if (!settings_changes.empty())
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
+            else
+            {
+                /// Keep the empty metadata container for subsequent `RESET SETTING` commands,
+                /// but do not serialize an empty `SETTINGS` clause in the table definition.
+                storage_ast.reset(storage_ast.settings);
+            }
         }
     }
 

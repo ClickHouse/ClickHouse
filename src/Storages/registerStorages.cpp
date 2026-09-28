@@ -110,6 +110,10 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
+#if USE_ODPS_TUNNEL
+void registerStorageMaxCompute(StorageFactory & factory);
+#endif
+
 void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
@@ -216,6 +220,10 @@ void registerStorages()
 
 #if USE_SQLITE
     registerStorageSQLite(factory);
+#endif
+
+#if USE_ODPS_TUNNEL
+    registerStorageMaxCompute(factory);
 #endif
 
     registerStorageKeeperMap(factory);
