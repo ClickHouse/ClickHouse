@@ -57,10 +57,7 @@ def test_iceberg_history_missing_optional_summary_metrics(
         "(x Int)",
         format_version,
     )
-    # Two `append` snapshots. `getHistory` parses every summary regardless of operation,
-    # so `append` is required not to reach the parse but to avoid an unrelated rejection
-    # after it: `tryGetAppendUpdate` skips `delete` and position-delete-only `overwrite`
-    # and throws on `replace` and any other `overwrite`.
+    # Two `append` snapshots.
     instance.query(f"INSERT INTO {table_name} VALUES (1);")
     instance.query(f"INSERT INTO {table_name} VALUES (2);")
 
@@ -73,8 +70,7 @@ def test_iceberg_history_missing_optional_summary_metrics(
         assert (
             summary.get("operation") == "append"
         ), f"fixture requires append snapshots, got {summary.get('operation')!r}"
-        # `checkIfIcebergHistorySupported` rejects an append with 0 added files, so only
-        # the two fields from the bug report are removed.
+        # Only the two fields from the bug report are removed.
         assert "added-data-files" in summary, "added-data-files must be kept"
         for field in ("added-files-size", "changed-partition-count"):
             if field in summary:
