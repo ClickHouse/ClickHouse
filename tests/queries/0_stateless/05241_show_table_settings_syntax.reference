@@ -3,6 +3,7 @@ SHOW TABLE SETTINGS FROM t
 SHOW CHANGED TABLE SETTINGS FROM `a.b`.`1c` NOT ILIKE \'x%\'
 SHOW TABLE SETTINGS FROM t LIKE \'it\\\'s\\\\\'
 -- a name has at most two parts
+-- and neither of them may be empty
 -- a table name and a pattern with a quote and a backslash reach the rewritten query intact
 max_rows_to_keep	10	1	definition
 -- FORMAT applies to the result

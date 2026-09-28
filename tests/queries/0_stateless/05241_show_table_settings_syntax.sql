@@ -9,6 +9,10 @@ SELECT formatQuery('SHOW TABLE SETTINGS FROM t LIKE \'it\'\'s\\\\\'');
 SELECT '-- a name has at most two parts';
 SELECT formatQuery('SHOW TABLE SETTINGS FROM a.b.c'); -- { serverError SYNTAX_ERROR }
 
+SELECT '-- and neither of them may be empty';
+SELECT formatQuery('SHOW TABLE SETTINGS FROM ``.t'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('SHOW TABLE SETTINGS FROM db.``'); -- { serverError SYNTAX_ERROR }
+
 SELECT '-- a table name and a pattern with a quote and a backslash reach the rewritten query intact';
 DROP TABLE IF EXISTS `it's\\05241`;
 CREATE TABLE `it's\\05241` (x UInt64) ENGINE = Memory SETTINGS max_rows_to_keep = 10;
