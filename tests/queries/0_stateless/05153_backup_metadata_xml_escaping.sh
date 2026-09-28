@@ -40,11 +40,17 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'utf8_id', sum(a) FROM tbl_from_utf8"
 # decodes `\0` and `\v` into one.
 control_nul="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_control_nul')"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${control_nul} SETTINGS id = 'a\0b ${CLICKHOUSE_TEST_UNIQUE_NAME}'" 2>&1 \
-    | grep -qF 'XML cannot represent' && echo -e "control_char_nul\trejected" || echo -e "control_char_nul\tNOT rejected"
+    | grep -qF 'XML cannot carry unchanged' && echo -e "control_char_nul\trejected" || echo -e "control_char_nul\tNOT rejected"
 
 control_vtab="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_control_vtab')"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${control_vtab} SETTINGS id = 'a\vb ${CLICKHOUSE_TEST_UNIQUE_NAME}'" 2>&1 \
-    | grep -qF 'XML cannot represent' && echo -e "control_char_vtab\trejected" || echo -e "control_char_vtab\tNOT rejected"
+    | grep -qF 'XML cannot carry unchanged' && echo -e "control_char_vtab\trejected" || echo -e "control_char_vtab\tNOT rejected"
+
+# A carriage return is legal XML, but a parser rewrites it to a line feed on read, so the value would read
+# back different. Refused for that.
+control_cr="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_control_cr')"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${control_cr} SETTINGS id = 'a\rb ${CLICKHOUSE_TEST_UNIQUE_NAME}'" 2>&1 \
+    | grep -qF 'XML cannot carry unchanged' && echo -e "carriage_return\trejected" || echo -e "carriage_return\tNOT rejected"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE tbl;

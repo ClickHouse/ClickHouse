@@ -6,7 +6,7 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
 #include <Backups/getBackupDataFileName.h>
-#include <Backups/findCharacterNotWritableAsXML.h>
+#include <Backups/findCharacterNotRoundTrippableAsXML.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -492,17 +492,17 @@ void BackupImpl::writeBackupMetadata()
     else
         out = writer->writeFile(metadata_file);
 
-    /// A value XML cannot represent has no escaped form either, and writing it raw reported `BACKUP_CREATED`
-    /// over a manifest no parser reads back.
+    /// A value XML cannot carry unchanged has no escaped form either, and writing it raw reported
+    /// `BACKUP_CREATED` over a manifest that reads back wrong, or not at all.
     ///
     /// The value is never quoted in the message: `<base_backup>` holds a locator that can carry credentials.
     auto xml_string = [](std::string_view element, const String & str)
     {
-        if (auto offset = findCharacterNotWritableAsXML(str))
+        if (auto offset = findCharacterNotRoundTrippableAsXML(str))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot write the backup metadata: the value of <{}> has a character at byte offset {} that "
-                "XML cannot represent. The value is not shown because it may carry credentials",
+                "XML cannot carry unchanged. The value is not shown because it may carry credentials",
                 element,
                 *offset);
         return std::string_view(str.data(), str.size());

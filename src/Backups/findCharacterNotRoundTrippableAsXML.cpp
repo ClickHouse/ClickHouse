@@ -1,4 +1,4 @@
-#include <Backups/findCharacterNotWritableAsXML.h>
+#include <Backups/findCharacterNotRoundTrippableAsXML.h>
 
 #include <Common/UTF8Helpers.h>
 
@@ -17,7 +17,7 @@ namespace
     }
 }
 
-std::optional<size_t> findCharacterNotWritableAsXML(std::string_view s)
+std::optional<size_t> findCharacterNotRoundTrippableAsXML(std::string_view s)
 {
     const char * const begin = s.data();
     const char * const end = begin + s.size();
@@ -30,7 +30,9 @@ std::optional<size_t> findCharacterNotWritableAsXML(std::string_view s)
         if (length <= static_cast<size_t>(end - pos))
             code_point = UTF8::convertUTF8ToCodePoint(pos, length);
 
-        if (!code_point || !isValidXMLCharacter(*code_point))
+        /// A carriage return passes the `Char` production but not the round trip, so it is rejected
+        /// separately rather than by bending what that production means.
+        if (!code_point || !isValidXMLCharacter(*code_point) || *code_point == '\r')
             return pos - begin;
 
         pos += length;
