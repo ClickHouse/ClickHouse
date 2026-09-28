@@ -270,8 +270,12 @@ class FuzzerLogParser:
         # every SQL comment, so only the record's first line carries a marker. The
         # quoted query is the last field of the `executeQuery` messages, so it ends
         # either at STACK_TRACE_MARKER or at the ")" closing the marker's parenthesis.
+        # A line with a "--" comment was broken by that comment, so the query goes on
+        # and a ")" it ends with belongs to the comment, e.g. "-- Selecting (e.g. x)".
         for line in self.lines_before(position, file):
-            if self.STACK_TRACE_MARKER in line or line.rstrip().endswith(")"):
+            if self.STACK_TRACE_MARKER in line:
+                return False
+            if line.rstrip().endswith(")") and "--" not in line:
                 return False
             if any(marker in line for marker in self.QUERY_TEXT_MARKERS):
                 return True
