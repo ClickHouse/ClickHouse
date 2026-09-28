@@ -1,8 +1,9 @@
--- The hash-table-stats cache key hashes an expression below the aggregation by its DAG without the
--- values of its constants, so that a large folded constant is not hashed on every execution. The key
+-- The hash-table-stats cache key hashes the actions DAGs below the aggregation without the values
+-- of their constants, so that a large folded constant is not hashed on every execution. The key
 -- must still tell apart expressions that differ only in a literal: seen through a subquery the
 -- aggregation key is named `__table1.k` in both queries below, so only the expression step separates
 -- them. A query over a large folded scalar must keep a stable key, so its second run preallocates.
+-- Constants are named by their value, so filters that differ only in a literal get distinct keys too.
 --
 -- Each run is checked through the `AggregationPreallocatedElementsInHashTables` profile event. The
 -- group counts stay above the 500e3 lower bound under which `getSizeHint` does not preallocate.
@@ -30,6 +31,12 @@ WITH (SELECT groupBitmapState(toUInt32(number)) FROM numbers(1e6)) AS bm
 SELECT k FROM (SELECT v % 600000 + bitmapContains(bm, toUInt32(v)) AS k FROM t_05291) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05291_bitmap_1';
 WITH (SELECT groupBitmapState(toUInt32(number)) FROM numbers(1e6)) AS bm
 SELECT k FROM (SELECT v % 600000 + bitmapContains(bm, toUInt32(v)) AS k FROM t_05291) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05291_bitmap_2';
+
+-- The same for a filter moved to PREWHERE, which the read step keys: 600000 groups, then 550000.
+SELECT k FROM (SELECT v % 600000 AS k FROM t_05291 WHERE v < 700000) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05291_prewhere700k_1';
+SELECT k FROM (SELECT v % 600000 AS k FROM t_05291 WHERE v < 700000) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05291_prewhere700k_2';
+SELECT k FROM (SELECT v % 600000 AS k FROM t_05291 WHERE v < 550000) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05291_prewhere550k_1';
+SELECT k FROM (SELECT v % 600000 AS k FROM t_05291 WHERE v < 550000) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05291_prewhere550k_2';
 
 SYSTEM FLUSH LOGS query_log;
 

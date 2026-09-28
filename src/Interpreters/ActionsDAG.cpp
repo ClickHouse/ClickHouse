@@ -285,7 +285,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool with_constant_values) const
 {
     hash_state.update(type);
 
@@ -319,12 +319,12 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
         /// builds matching without dropping any other constant's value (it still serializes normally
         /// for distributed propagation).
-        if (!is_runtime_filter_id)
+        if (with_constant_values && !is_runtime_filter_id)
             column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state);
+        child->updateHash(hash_state, with_constant_values);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -334,7 +334,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool with_constant_values) const
 {
     struct Frame
     {
@@ -351,7 +351,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, with_constant_values);
             stack.pop();
         }
         else
@@ -4943,16 +4943,13 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        /// When computing a cache key (`registry.for_cache_key`), skip the VALUE of the runtime-filter
-        /// id carrier only: it is a volatile per-plan-build rendezvous key, not a stable key component,
-        /// while its `result_name`/`column_flags` (already written) carry the stable structural id.
-        /// Every other constant's value — including a folded `now()`/`randConstant` — must stay in the
-        /// key, otherwise semantically different queries would share statistics. This output is
-        /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
-        /// path (`for_cache_key == false`) always writes it. `ExpressionStep` and `FilterStep` do not
-        /// reach this path for the hash-table-stats key: they are keyed without constant values by
-        /// `updateHashWithoutConstantValues`, because a folded constant can be arbitrarily large.
-        if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
+        /// A cache key (`registry.for_cache_key`) leaves out every constant's value: it can be
+        /// arbitrarily large (a folded scalar subquery), and hashing it on every execution costs more
+        /// than the rest of planning. The `result_name` and `column_flags` written above still identify
+        /// the constant, since a literal or a folded expression is named by its value. This also drops
+        /// the value of the runtime-filter id carrier, a volatile per-plan-build rendezvous key. This
+        /// output is hash-only and never deserialized; the transmission path always writes the value.
+        if (has_column && !registry.for_cache_key)
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)

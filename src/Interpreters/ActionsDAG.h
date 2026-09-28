@@ -121,7 +121,8 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        void updateHash(SipHash & hash_state) const;
+        /// See `ActionsDAG::updateHash` for `with_constant_values`.
+        void updateHash(SipHash & hash_state, bool with_constant_values = true) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -577,7 +578,11 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    void updateHash(SipHash & hash_state) const;
+    /// With `with_constant_values = false` a constant is hashed by its name and type but not by its
+    /// value, which can be arbitrarily large (a folded scalar subquery). The name still identifies the
+    /// value in practice: a literal or a folded expression is named by it. Meant for keys that tolerate
+    /// the rare collision, such as the hash-table-stats cache key.
+    void updateHash(SipHash & hash_state, bool with_constant_values = true) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 
