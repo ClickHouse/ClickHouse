@@ -3538,6 +3538,11 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                         auto * from_type = arguments[0].value->getType();
                         auto * from_value = arguments[0].value;
                         result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<double>(multiplier)));
+                        /// Round to nearest before truncation to integer; matches `std::rint` (round half
+                        /// to even) in the scalar/batch paths in `DataTypesDecimal.cpp`.
+                        auto * func_round = llvm::Intrinsic::getOrInsertDeclaration(
+                            builder.GetInsertBlock()->getModule(), llvm::Intrinsic::rint, {from_type});
+                        result = builder.CreateCall(func_round, {result});
                         result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                     }
                     else
@@ -3663,6 +3668,11 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                         /// left type is float and right type is decimal
                         auto * from_type = toNativeType(builder, left);
                         result_value = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<double>(multiplier)));
+                        /// Round to nearest before truncation to integer; matches `std::rint` (round half
+                        /// to even) in the scalar/batch paths in `DataTypesDecimal.cpp`.
+                        auto * func_round = llvm::Intrinsic::getOrInsertDeclaration(
+                            builder.GetInsertBlock()->getModule(), llvm::Intrinsic::rint, {from_type});
+                        result_value = builder.CreateCall(func_round, {result_value});
                         result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                     }
                     else

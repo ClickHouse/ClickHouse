@@ -18,6 +18,12 @@
     <query>SELECT toFloat32(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
     <query>SELECT toFloat64(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
 
+    <!-- Fractional inputs (the integer-valued casts above never exercise the rounding step) and
+         Decimal256 coverage. `% 1000` bounds the magnitude and the scales are chosen so the Float32
+         multiplier (10^scale) and the scaled product stay within Float32 range, avoiding overflow. -->
+    <query>SELECT toFloat32(x % 1000) / 3 y, toDecimal32(y, 6), toDecimal64(y, 12), toDecimal128(y, 24), toDecimal256(y, 30) FROM t FORMAT Null</query>
+    <query>SELECT toFloat64(x % 1000) / 3 y, toDecimal32(y, 6), toDecimal64(y, 12), toDecimal128(y, 24), toDecimal256(y, 30) FROM t FORMAT Null</query>
+
     <query>SELECT toInt32(d32),   toInt64(d32),   toInt128(d32)   FROM t FORMAT Null</query>
     <query>SELECT toInt32(d64),   toInt64(d64),   toInt128(d64)   FROM t FORMAT Null</query>
     <query>SELECT toInt32(d128),  toInt64(d128),  toInt128(d128)  FROM t FORMAT Null</query>
