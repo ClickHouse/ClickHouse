@@ -105,6 +105,8 @@ public:
     /// Update metadata to the latest version.
     virtual void update(const ContextPtr &) { }
 
+    virtual void setExplicitMetadataFilePath(const String & /*path*/) { }
+
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
 

@@ -8,6 +8,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
+#include <Common/MultiVersion.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -107,6 +108,9 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+
+    void setExplicitMetadataFilePath(const String & path) override;
+
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
@@ -232,6 +236,7 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
+    DataLakeStorageSettings getMetadataLookupSettings() const;
 
     /// Refuse `operation` while the table root is deeper than the queried path, because anything
     /// scoped to the queried path reaches beyond this table there.
@@ -242,6 +247,7 @@ private:
     mutable std::shared_ptr<ExternalStorageCache> external_storages;
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
+    MultiVersion<String> explicit_metadata_file_path;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
