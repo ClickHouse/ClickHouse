@@ -1,6 +1,7 @@
 #include <Access/OPA/OpaClient.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <IO/HTTPCommon.h>
 #include <base/defines.h>
@@ -11,6 +12,13 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/StreamCopier.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event OpaRequests;
+    extern const Event OpaRequestFailures;
+}
 
 
 namespace DB
@@ -161,7 +169,19 @@ bool OpaClient::parseDecision(const Poco::URI & uri, const String & response_bod
 bool OpaClient::isAllowed(const OpaRequest & request, const OpaRequestContext & request_context) const
 {
     const String body = request.serialize(request_context);
-    return parseDecision(configuration->uri, send(configuration->uri, body));
+
+    /// Counted around the whole exchange, so that a request which fails to produce a usable decision
+    /// is visible as a failure rather than only as a denied query.
+    ProfileEvents::increment(ProfileEvents::OpaRequests);
+    try
+    {
+        return parseDecision(configuration->uri, send(configuration->uri, body));
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::OpaRequestFailures);
+        throw;
+    }
 }
 
 }

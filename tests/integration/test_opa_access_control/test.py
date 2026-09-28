@@ -333,3 +333,39 @@ def test_a_table_wide_denial_also_blocks_a_trivial_query():
     assert "ACCESS_DENIED" in node.query_and_get_error(
         "SELECT count() FROM plain.orders", user="analyst"
     )
+
+
+def test_a_repeated_question_is_asked_once_per_query():
+    """One query checks the same table several times - the planner, then the analyzer resolving
+    columns, then any wrapper storage. Each of those must not cost a request, or a policy server sees
+    traffic shaped by the query plan rather than by the objects the query touches."""
+    set_rule("True")
+    node.query(
+        "SELECT a.id FROM plain.orders AS a JOIN plain.orders AS b ON a.id = b.id",
+        user="analyst",
+    )
+
+    select_questions = [
+        (
+            tuple(request["input"]["action"]["operations"]),
+            request["input"]["action"]["resource"].get("database"),
+            request["input"]["action"]["resource"].get("table"),
+            tuple(request["input"]["action"]["resource"].get("columns", [])),
+        )
+        for request in recorded_requests()
+    ]
+
+    # Every question asked was distinct; nothing was asked twice.
+    assert len(select_questions) == len(set(select_questions))
+
+
+def test_decisions_are_not_reused_across_queries():
+    """A policy can change between queries, so a decision must not outlive the query that reached
+    it."""
+    set_rule("True")
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+
+    set_rule("False")
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT count() FROM plain.orders", user="analyst"
+    )

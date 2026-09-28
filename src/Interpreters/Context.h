@@ -183,6 +183,8 @@ class ShellCommand;
 class ICompressionCodec;
 class AccessControl;
 class GSSAcceptorContext;
+class OpaDecisionCache;
+using OpaDecisionCachePtr = std::shared_ptr<OpaDecisionCache>;
 struct Settings;
 struct SettingChange;
 class SettingsChanges;
@@ -599,6 +601,9 @@ protected:
     /// Created by `makeQueryContext` and shared by every context copied from the query context.
     DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
+    /// Memoizes Open Policy Agent decisions for this query. Created by `makeQueryContext` and shared
+    /// by every context copied from it, so a subquery reuses the decisions the outer query reached.
+    OpaDecisionCachePtr opa_decision_cache;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
     /// Query metrics about the execution of a query.
@@ -1211,6 +1216,10 @@ public:
     /// a copy of the original query context but should still account its access checks to the original query.
     void setQueryPrivilegesInfo(const QueryPrivilegesInfoPtr & query_privileges_info_) { query_privileges_info = query_privileges_info_; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
+
+    /// The per-query cache of Open Policy Agent decisions. Null outside a query context, where there
+    /// is nothing for the decisions to be scoped to.
+    OpaDecisionCachePtr getOpaDecisionCache() const { return opa_decision_cache; }
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.

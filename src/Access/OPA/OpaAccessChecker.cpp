@@ -1,6 +1,15 @@
 #include <Access/OPA/OpaAccessChecker.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event OpaDenials;
+    extern const Event OpaCacheHits;
+    extern const Event OpaCacheMisses;
+}
 
 
 namespace DB
@@ -33,7 +42,10 @@ bool OpaAccessChecker::governs(const String & user_name, const AccessRightsEleme
     return configuration->isDatabaseInScope(element.database);
 }
 
-bool OpaAccessChecker::isAllowed(const AccessRightsElement & element, const OpaRequestContext & request_context) const
+bool OpaAccessChecker::isAllowed(
+    const AccessRightsElement & element,
+    const OpaRequestContext & request_context,
+    const OpaDecisionCachePtr & cache) const
 {
     OpaRequest request;
 
@@ -55,7 +67,29 @@ bool OpaAccessChecker::isAllowed(const AccessRightsElement & element, const OpaR
         request.resource = OpaResource::forTable(element.database, element.table, std::move(columns));
     }
 
-    return client.isAllowed(request, request_context);
+    /// The identity is not part of the key: a cache belongs to one query, and a query has one
+    /// requesting user throughout.
+    const OpaDecisionCache::Key key{request.operations, *request.resource};
+
+    if (cache)
+    {
+        if (const auto cached = cache->get(key))
+        {
+            ProfileEvents::increment(ProfileEvents::OpaCacheHits);
+            return *cached;
+        }
+        ProfileEvents::increment(ProfileEvents::OpaCacheMisses);
+    }
+
+    const bool decision = client.isAllowed(request, request_context);
+
+    if (cache)
+        cache->set(key, decision);
+
+    if (!decision)
+        ProfileEvents::increment(ProfileEvents::OpaDenials);
+
+    return decision;
 }
 
 }

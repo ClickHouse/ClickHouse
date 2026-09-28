@@ -2,6 +2,7 @@
 
 #include <Access/OPA/OpaClient.h>
 #include <Access/OPA/OpaConfiguration.h>
+#include <Access/OPA/OpaDecisionCache.h>
 #include <Access/OPA/OpaRequest.h>
 
 
@@ -25,7 +26,11 @@ public:
     bool governs(const String & user_name, const AccessRightsElement & element) const;
 
     /// Asks OPA about a check that native grants have already allowed. Any failure propagates.
-    bool isAllowed(const AccessRightsElement & element, const OpaRequestContext & request_context) const;
+    /// A `cache` memoizes the answer for the rest of the query; passing null asks every time.
+    bool isAllowed(
+        const AccessRightsElement & element,
+        const OpaRequestContext & request_context,
+        const OpaDecisionCachePtr & cache) const;
 
 private:
     const OpaConfigurationPtr configuration;

@@ -920,7 +920,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             /// A transport failure, a malformed response or an unreachable server propagates instead
             /// of being turned into an allow. Losing the policy engine must not silently lose the
             /// restrictions it was enforcing.
-            if (!checker.isAllowed(element, request_context))
+            if (!checker.isAllowed(element, request_context, context->getOpaDecisionCache()))
             {
                 return access_denied(
                     ErrorCodes::ACCESS_DENIED,

@@ -776,6 +776,12 @@ The server successfully detected this situation and will download merged part fr
     M(QueryProfilerRuns, "Number of times QueryProfiler had been run.", ValueType::Number) \
     M(QueryProfilerErrors, "Invalid memory accesses during asynchronous stack unwinding.", ValueType::Number) \
     \
+    M(OpaRequests, "Number of authorization requests sent to an Open Policy Agent server.", ValueType::Number) \
+    M(OpaRequestFailures, "Number of Open Policy Agent authorization requests that did not produce a usable decision, because of a transport error, a bad status or an unexpected response. Each one denies the access it was asked about.", ValueType::Number) \
+    M(OpaDenials, "Number of times an Open Policy Agent policy denied an access that native grants allowed.", ValueType::Number) \
+    M(OpaCacheHits, "Number of Open Policy Agent decisions answered from the per-query cache instead of a request.", ValueType::Number) \
+    M(OpaCacheMisses, "Number of Open Policy Agent decisions that were not in the per-query cache and required a request.", ValueType::Number) \
+    \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.", ValueType::Number) \
     M(NotCreatedLogEntryForMerge, "Log entry to merge parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.", ValueType::Number) \
     M(CreatedLogEntryForMutation, "Successfully created log entry to mutate parts in ReplicatedMergeTree.", ValueType::Number) \
