@@ -355,6 +355,94 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
     return eq_func->execute(args, eq_func->getResultType(), args.front().column->size(), /* dry_run = */ false);
 }
 
+/// Returns the mask of the elements that the cast of `initial` to `cast` changed (a `Tuple` or `Array` changed if any value
+/// in it did; a value under `NULL` is not compared), or `nullptr` if it changes none.
+static ColumnPtr getOverflowMask(
+    const IColumn & cast, const DataTypePtr & cast_type, const IColumn & initial, const DataTypePtr & initial_type,
+    const FunctionOverloadResolverPtr & not_equals_func)
+{
+    if (cast_type->equals(*initial_type))
+        return nullptr;
+
+    const auto * cast_nullable = typeid_cast<const ColumnNullable *>(&cast);
+    const auto * initial_nullable = typeid_cast<const ColumnNullable *>(&initial);
+    if (cast_nullable || initial_nullable)
+    {
+        ColumnPtr nested_mask = getOverflowMask(
+            cast_nullable ? cast_nullable->getNestedColumn() : cast, removeNullable(cast_type),
+            initial_nullable ? initial_nullable->getNestedColumn() : initial, removeNullable(initial_type),
+            not_equals_func);
+        if (!nested_mask)
+            return nullptr;
+
+        auto mask = IColumn::mutate(std::move(nested_mask));
+        auto & mask_data = typeid_cast<ColumnUInt8 &>(*mask).getData();
+        for (const auto * nullable : {cast_nullable, initial_nullable})
+        {
+            if (!nullable)
+                continue;
+            const auto & null_map = nullable->getNullMapData();
+            for (size_t i = 0; i < mask_data.size(); ++i)
+                if (null_map[i])
+                    mask_data[i] = 0;
+        }
+        return mask;
+    }
+
+    const auto * cast_tuple = typeid_cast<const ColumnTuple *>(&cast);
+    const auto * initial_tuple = typeid_cast<const ColumnTuple *>(&initial);
+    if (cast_tuple && initial_tuple)
+    {
+        const auto & cast_elements = typeid_cast<const DataTypeTuple &>(*cast_type).getElements();
+        const auto & initial_elements = typeid_cast<const DataTypeTuple &>(*initial_type).getElements();
+        MutableColumnPtr mask;
+        for (size_t i = 0; i < cast_elements.size(); ++i)
+        {
+            ColumnPtr element_mask = getOverflowMask(
+                cast_tuple->getColumn(i), cast_elements[i], initial_tuple->getColumn(i), initial_elements[i], not_equals_func);
+            if (!element_mask)
+                continue;
+            if (!mask)
+            {
+                mask = IColumn::mutate(std::move(element_mask));
+                continue;
+            }
+            auto & mask_data = typeid_cast<ColumnUInt8 &>(*mask).getData();
+            const auto & element_mask_data = typeid_cast<const ColumnUInt8 &>(*element_mask).getData();
+            for (size_t row = 0; row < mask_data.size(); ++row)
+                mask_data[row] |= element_mask_data[row];
+        }
+        return mask;
+    }
+
+    const auto * cast_array = typeid_cast<const ColumnArray *>(&cast);
+    const auto * initial_array = typeid_cast<const ColumnArray *>(&initial);
+    if (cast_array && initial_array)
+    {
+        ColumnPtr nested_mask = getOverflowMask(
+            cast_array->getData(), typeid_cast<const DataTypeArray &>(*cast_type).getNestedType(),
+            initial_array->getData(), typeid_cast<const DataTypeArray &>(*initial_type).getNestedType(),
+            not_equals_func);
+        if (!nested_mask)
+            return nullptr;
+
+        const auto & nested_mask_data = typeid_cast<const ColumnUInt8 &>(*nested_mask).getData();
+        const auto & offsets = cast_array->getOffsets();
+        auto mask = ColumnUInt8::create(offsets.size(), static_cast<UInt8>(0));
+        auto & mask_data = mask->getData();
+        for (size_t row = 0; row < offsets.size(); ++row)
+            for (size_t i = offsets[row - 1]; i < offsets[row]; ++i)
+                mask_data[row] |= nested_mask_data[i];
+        return mask;
+    }
+
+    if (!isInteger(initial_type) && !isDate(initial_type) && !isDateTime(initial_type) && !isDateTime64(initial_type))
+        return nullptr;
+
+    return removeNullable(
+        callFunctionNotEquals({cast.getPtr(), cast_type, ""}, {initial.getPtr(), initial_type, ""}, not_equals_func));
+}
+
 FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const
 {
@@ -409,18 +497,9 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 const auto nested_cast_type
                     = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType());
 
-                if (isInteger(nested_init_type)
-                    || isDate(nested_init_type)
-                    || isDateTime(nested_init_type)
-                    || isDateTime64(nested_init_type))
+                if (auto overflow_mask = getOverflowMask(*arg.nested_column, nested_cast_type, *initial_column, nested_init_type, not_equals_func))
                 {
-                    /// Compare original and cast columns. It seem to be the easiest way.
-                    auto overflow_mask = callFunctionNotEquals(
-                            {arg.nested_column->getPtr(), nested_cast_type, ""},
-                            {initial_column->getPtr(), nested_init_type, ""},
-                            not_equals_func);
-
-                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*removeNullable(overflow_mask)).getData();
+                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
