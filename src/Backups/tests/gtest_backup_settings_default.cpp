@@ -29,13 +29,15 @@ ASTBackupQuery * parseBackupQuery(ASTPtr & holder, const String & query)
 /// stateless tests cannot reach: their configs offer a single-host cluster only, and
 /// `BACKUP/RESTORE ON CLUSTER` coverage lives in integration tests.
 ///
-/// The rebuild emits the RESOLVED effective state, so only a CORE `name = DEFAULT` may ride along, and
-/// only as an ordinary change carrying the declared default: the clause reaches the other hosts as SQL
-/// text, which each of them re-parses, so a `= DEFAULT` in it would break a cluster that is
-/// mid-rolling-upgrade. A backup-specific one must not ride along in any form: `backup_uuid` is empty at
-/// parse time, generated later by `BackupsWorker` and emitted as a change here, so a surviving
-/// `backup_uuid = DEFAULT` would reset it away on every receiving host.
-TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
+/// The rebuild emits the RESOLVED effective state, and a `name = DEFAULT` does not ride along in any form.
+/// The clause reaches the other hosts as SQL text, which each of them re-parses, so a `= DEFAULT` in it
+/// would break a cluster that is mid-rolling-upgrade. A core reset must not be replaced with its declared
+/// default either: that would mark the setting as changed on every receiving host, while the reset leaves
+/// it unset on the initiator, and the initiator's DDL settings packet already omits it. A backup-specific
+/// reset must not ride along because `backup_uuid` is empty at parse time, generated later by
+/// `BackupsWorker` and emitted as a change here, so a surviving `backup_uuid = DEFAULT` would reset it away
+/// on every receiving host.
+TEST(BackupSettingsDefault, BackupCopySettingsToQueryForwardsNoReset)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
                          "SETTINGS max_execution_time = DEFAULT, backup_uuid = DEFAULT";
@@ -58,10 +60,9 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
     EXPECT_EQ(String::npos, backup_query->formatWithSecretsOneLine().find("DEFAULT"))
         << "a parser without this fix rejects a `= DEFAULT` item that follows a comma";
 
-    const auto * reset_change = rebuilt.changes.tryGet("max_execution_time");
-    ASSERT_NE(nullptr, reset_change) << "the core reset was dropped instead of being resolved";
-    EXPECT_EQ(Settings{}.get("max_execution_time"), *reset_change)
-        << "the forwarded value is not the declared default a reset would produce";
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("max_execution_time"))
+        << "the core reset arrives as an explicit value, which marks the setting as changed on the receiver: "
+        << backup_query->formatWithSecretsOneLine();
 
     const auto * uuid_change = rebuilt.changes.tryGet("backup_uuid");
     ASSERT_NE(nullptr, uuid_change) << "the generated backup_uuid was not emitted";
@@ -70,13 +71,16 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
 }
 
 /// A core name written in BOTH carriers. On the host that parsed the clause the reset wins, because it is
-/// applied after every override, so the forwarded clause must resolve the same way. The receiver applies
-/// the changes in order, so what pins it is that the declared default is the LAST change for that name -
-/// dropping the reset here would ship the pre-reset value and silently diverge the hosts.
-TEST(BackupSettingsDefault, BackupCopySettingsToQueryResolvesANameInBothCarriers)
+/// applied after every override, so the rebuilt clause must not carry the override: a receiving host
+/// applies the text on top of the DDL settings packet, so a surviving `max_threads = 4` would silently
+/// diverge the hosts. The same holds for an override written through an alias of the reset setting
+/// (`insert_distributed_sync` is an alias of `distributed_foreground_insert`), while an unrelated override
+/// stays.
+TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsTheOverridesOfAReset)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
-                         "SETTINGS max_threads = 4, max_threads = DEFAULT";
+                         "SETTINGS max_threads = 4, max_threads = DEFAULT, "
+                         "insert_distributed_sync = 1, distributed_foreground_insert = DEFAULT, max_block_size = 1000";
     ASTPtr holder;
     ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
     ASSERT_NE(nullptr, backup_query) << "query: " << query;
@@ -87,50 +91,19 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryResolvesANameInBothCarriers
     ASSERT_NE(nullptr, backup_query->settings);
     const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
 
-    std::vector<Field> max_threads_values;
-    for (const auto & change : rebuilt.changes)
-        if (change.name == "max_threads")
-            max_threads_values.push_back(change.value);
-
-    ASSERT_FALSE(max_threads_values.empty()) << "the whole setting vanished from the rebuild";
-    /// The default's TEXT, not its `Field` form: `SettingFieldMaxThreads::operator Field` is not
-    /// invertible, see the test below.
-    EXPECT_EQ(Field(Settings{}.getDefaultValueString("max_threads")), max_threads_values.back())
-        << "the last value the receiver applies is not the declared default, so the reset lost";
-}
-
-/// `max_threads` defaults to `auto(N)`, where N is the host's own core count, and
-/// `SettingFieldMaxThreads::operator Field` yields only the resolved N, dropping `is_auto`. Forwarding
-/// that `Field` would pin every receiving host to the INITIATOR's core count, while the reset it stands
-/// for leaves each host on its own auto value. The declared default's text carries `is_auto` across,
-/// because `stringToMaxThreads` reads back the `auto(...)` form as auto. The same field type backs
-/// `max_insert_threads`, `max_final_threads` and `max_parsing_threads`.
-TEST(BackupSettingsDefault, BackupCopySettingsToQueryKeepsAnAutoDefaultAuto)
-{
-    const String query = "BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = DEFAULT";
-    ASTPtr holder;
-    ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
-    ASSERT_NE(nullptr, backup_query) << "query: " << query;
-
-    BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
-    settings.copySettingsToQuery(*backup_query);
-
-    ASSERT_NE(nullptr, backup_query->settings);
-    const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
-    const auto * change = rebuilt.changes.tryGet("max_threads");
-    ASSERT_NE(nullptr, change) << "the core reset was dropped instead of being resolved";
-
-    /// What the receiving host does with the change it parsed out of the forwarded text.
-    SettingFieldMaxThreads received{UInt64{4}};
-    received = *change;
-    EXPECT_TRUE(received.is_auto)
-        << "the receiving host is pinned to the initiator's thread count instead of its own auto value: "
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("max_threads"))
+        << "the override the reset cancels arrives on every other host: " << backup_query->formatWithSecretsOneLine();
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("insert_distributed_sync"))
+        << "an override written through an alias of the reset setting survived: "
         << backup_query->formatWithSecretsOneLine();
+
+    const auto * kept = rebuilt.changes.tryGet("max_block_size");
+    ASSERT_NE(nullptr, kept) << "an unrelated override was dropped with it";
+    EXPECT_EQ(Field(UInt64{1000}), *kept);
 }
 
-/// A name with no declared default cannot be forwarded as a value, so the rebuild drops its overrides
-/// instead: a setting the reset removed on the host that parsed the clause must not arrive set on any
-/// other host. The unrelated override pins that only the reset name is dropped.
+/// A custom setting the reset removed on the host that parsed the clause must not arrive set on any other
+/// host. The unrelated override pins that only the reset name is dropped.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsAResetCustomSetting)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
@@ -185,13 +158,13 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsEveryNameOfAResetMerge
     EXPECT_EQ(Field(UInt64{1}), *kept);
 }
 
-/// The RESTORE twin of the case above. `restore_uuid` is generated after parsing exactly like
-/// `backup_uuid` and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop, so the same defect is
-/// possible on this side and is pinned the same way.
-TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
+/// The RESTORE twin of `BackupCopySettingsToQueryForwardsNoReset`. `restore_uuid` is generated after
+/// parsing exactly like `backup_uuid` and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop, so the same
+/// defect is possible on this side and is pinned the same way.
+TEST(BackupSettingsDefault, RestoreCopySettingsToQueryForwardsNoReset)
 {
     const String query = "RESTORE TABLE t FROM Disk('d', 'b') "
-                         "SETTINGS max_execution_time = DEFAULT, restore_uuid = DEFAULT";
+                         "SETTINGS max_execution_time = 10, max_execution_time = DEFAULT, restore_uuid = DEFAULT";
     ASTPtr holder;
     ASTBackupQuery * restore_query = parseBackupQuery(holder, query);
     ASSERT_NE(nullptr, restore_query) << "query: " << query;
@@ -209,10 +182,9 @@ TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
     EXPECT_EQ(String::npos, restore_query->formatWithSecretsOneLine().find("DEFAULT"))
         << "a parser without this fix rejects a `= DEFAULT` item that follows a comma";
 
-    const auto * reset_change = rebuilt.changes.tryGet("max_execution_time");
-    ASSERT_NE(nullptr, reset_change) << "the core reset was dropped instead of being resolved";
-    EXPECT_EQ(Settings{}.get("max_execution_time"), *reset_change)
-        << "the forwarded value is not the declared default a reset would produce";
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("max_execution_time"))
+        << "the core reset or the override it cancels arrives on the receiver: "
+        << restore_query->formatWithSecretsOneLine();
 
     const auto * uuid_change = rebuilt.changes.tryGet("restore_uuid");
     ASSERT_NE(nullptr, uuid_change) << "the generated restore_uuid was not emitted";

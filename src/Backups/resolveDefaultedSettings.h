@@ -53,19 +53,16 @@ SettingsWithDefaultsResolved resolveDefaultedSettings(
 CoreSettingsFromQuery extractCoreSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
-/// Append each core name of `default_names` to `changes` as an ordinary `name = value` change carrying the
-/// setting's declared default, which is the value resetting it produces. For rebuilding a SETTINGS clause
-/// that has to survive a re-parse by another host: see `BackupSettings::copySettingsToQuery`.
+/// Remove from `changes` every override of a setting named in `default_names`, under any name of that
+/// setting. For rebuilding a SETTINGS clause that is sent to other hosts: see
+/// `BackupSettings::copySettingsToQuery`.
 ///
-/// Appended after the existing changes on purpose. A name may appear in both carriers, and then the reset
-/// wins, exactly as it wins on the host that parsed the clause, where the reset is applied after every
-/// override. Order is what decides that, so this holds for an alias spelling of the same field too.
-///
-/// A name with no declared default has its overrides dropped instead, which is the same end state.
-///
-/// The default travels as its textual form whenever the setting's `operator Field` is not invertible, so
-/// that a default the `Field` cannot express - `max_threads`, whose default is `auto(N)` for the host's
-/// own N - still resets on the receiving host instead of pinning it to this host's resolved value.
-void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<String> & default_names);
+/// A reset is not forwarded in any form. The host that parsed the clause resets the setting on its query
+/// context, which clears the setting's `changed` bit, so the DDL settings packet built from that context
+/// (`DDLLogEntry::setSettingsIfRequired`) leaves the setting out, and each receiving host ends with the
+/// setting unset too. What must not survive is an override of it in the rebuilt text, because a receiving
+/// host applies that text on top of the packet: `SETTINGS max_threads = 4, max_threads = DEFAULT` must not
+/// arrive as `max_threads = 4`.
+void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<String> & default_names);
 
 }

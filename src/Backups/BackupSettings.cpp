@@ -181,21 +181,24 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    /// A CORE `name = DEFAULT` describes a reset on the receiving host's query context, and it is carried
-    /// as an ordinary change holding the declared default - the value the reset produces - rather than in
-    /// `ASTSetQuery::default_settings`. The reason is that this clause reaches the other hosts as SQL
-    /// *text*: `executeDDLQueryOnCluster` serializes the rebuilt query with `formatWithSecretsOneLine` and
-    /// every host re-parses that text with its own parser, before the DDL settings packet is applied.
-    /// `ASTSetQuery` prints all `changes` before all `default_settings`, and this rebuild always emits a
-    /// generated `backup_uuid` change, so a `name = DEFAULT` here would always be printed after a comma -
-    /// the one shape a parser without this fix rejects. Emitting it would make
-    /// `BACKUP ... ON CLUSTER ... SETTINGS <core setting> = DEFAULT` fail on every host of a cluster that
-    /// is mid-rolling-upgrade.
+    /// A `name = DEFAULT` is not carried over in any form, only the overrides it cancels are dropped. This
+    /// clause reaches the other hosts as SQL *text*: `executeDDLQueryOnCluster` serializes the rebuilt query
+    /// with `formatWithSecretsOneLine` and every host re-parses it with its own parser. `ASTSetQuery` prints
+    /// all `changes` before all `default_settings`, and this rebuild always emits a generated `backup_uuid`
+    /// change, so a `name = DEFAULT` here would always be printed after a comma - the one shape a parser
+    /// without this fix rejects, which would break a cluster that is mid-rolling-upgrade.
     ///
-    /// A backup-specific `name = DEFAULT` is not carried in any form: the rebuild emits resolved effective
-    /// state, so re-resolving a defaulted name on the receiver would discard state generated since parsing
+    /// Nor is a CORE reset replaced with its declared default: an explicit value marks the setting as
+    /// changed on the receiving host, where the reset leaves it unset, and object-storage code reads that
+    /// bit (e.g. `BackupWriterS3` applies a query-level `s3_retry_attempts` over the host's own `<s3>`
+    /// configuration only if it is changed). The reset has already been applied to the query context,
+    /// which is where the DDL settings packet sent with this text comes from, so the packet already leaves
+    /// the setting out, see `eraseOverridesOfResetSettings`.
+    ///
+    /// A backup-specific reset needs nothing either: the rebuild emits resolved effective state, and
+    /// re-resolving a defaulted name on the receiver would discard state generated since parsing
     /// (`backup_uuid` is the concrete case).
-    appendCoreDefaultsAsChanges(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
+    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())
         query_settings = nullptr;

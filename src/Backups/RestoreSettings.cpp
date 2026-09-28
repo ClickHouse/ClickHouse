@@ -294,12 +294,11 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    /// A CORE `name = DEFAULT` carries over as an ordinary change holding the declared default, and a
-    /// restore-specific one does not carry over at all, both for the reasons spelled out in
-    /// `BackupSettings::copySettingsToQuery`: the rebuilt clause is re-parsed from text by each receiving
-    /// host, so it must contain no `= DEFAULT`, and `restore_uuid` is generated after parsing and emitted
-    /// above as a change.
-    appendCoreDefaultsAsChanges(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
+    /// A `name = DEFAULT` does not carry over in any form, only the overrides it cancels are dropped, for
+    /// the reasons spelled out in `BackupSettings::copySettingsToQuery`: the rebuilt clause is re-parsed from
+    /// text by each receiving host, so it must contain no `= DEFAULT`; a core reset is already absent from
+    /// the DDL settings packet; and `restore_uuid` is generated after parsing and emitted above as a change.
+    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())
         query_settings = nullptr;
