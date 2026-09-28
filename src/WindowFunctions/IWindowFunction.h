@@ -19,6 +19,7 @@ class WindowTransform;
 // true window functions, and the fact that the WindowTransform internals are
 // pretty much well-defined in domain terms (e.g. frame boundaries), this is
 // somewhat acceptable.
+/// TODO(Michicosun): Completely untie window functions from aggregate functions.
 class IWindowFunction
 {
 public:
