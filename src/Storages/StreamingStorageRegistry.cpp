@@ -214,9 +214,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     }
     catch (...)
     {
-        /// Until the reference count is raised nothing outside this call knows about the entry, so an
-        /// entry left behind here is owned by no table and a later CREATE at this path would compare
-        /// its metadata against it.
+        /// No table references a new entry until its count is raised below, so it must not outlive a failure.
         if (inserted)
             metadata_by_path.erase(it);
         throw;

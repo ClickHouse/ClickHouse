@@ -145,9 +145,8 @@ public:
     ///     under a persistent node "zookeeper_path / registry".
     ///     This is needed to be able to know when we would have to delete all metadata in keeper.
     ///     Metadata can be deleted only by the last registered table.
-    ///     A deletion excludes concurrent registrations: the atomic path checks the registry
-    ///     version it counted, and the non-atomic one holds "zookeeper_path / drop" for as long as
-    ///     its session lives, which registerNonActive refuses to register under.
+    ///     A deletion excludes concurrent registrations: the atomic path checks the registry version it
+    ///     counted, the non-atomic one holds "zookeeper_path / drop", under which registration is refused.
     ///
     /// active = true:
     ///     We also want to register nodes only for a period when they are active.
@@ -158,8 +157,6 @@ public:
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
     void unregisterActive(const StorageID & storage_id);
-    /// A non-atomic metadata removal marks "zookeeper_path" while it runs, so a CREATE at that path
-    /// can tell what such a removal abandoned from a node this engine never created.
     void unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 

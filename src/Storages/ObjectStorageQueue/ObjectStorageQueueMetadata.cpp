@@ -83,9 +83,7 @@ namespace FailPoints
 
 namespace
 {
-    /// Written to `zookeeper_path` while its metadata is removed without `REMOVE_RECURSIVE`, and
-    /// gone with the path itself. A path carrying it was abandoned by such a removal, which is what
-    /// tells it apart from any other node at a `keeper_path` a query happens to name.
+    /// Marks a `zookeeper_path` whose metadata a removal without `REMOVE_RECURSIVE` is deleting.
     constexpr std::string_view drop_marker = "ObjectStorageQueue: dropped";
 
     enum class RootRemoval
@@ -95,8 +93,6 @@ namespace
         NotOurs,
     };
 
-    /// Removes `zookeeper_path` while it still carries the marker, at the version it was read at, so
-    /// a node recreated at that path since is left alone rather than removed with it.
     RootRemoval tryRemoveMarkedRoot(ZooKeeperWithFaultInjection & zk_client, const std::string & zookeeper_path)
     {
         std::string root_data;
@@ -107,8 +103,7 @@ namespace
         if (root_data != drop_marker)
             return RootRemoval::NotOurs;
 
-        /// Hardware errors throw, so the only failures left are `ZNOTEMPTY`, something lives under
-        /// the path again, and `ZBADVERSION`, it changed between the read and the removal.
+        /// Other errors throw, so a failure here is `ZNOTEMPTY` or `ZBADVERSION`: the path is in use or changed.
         switch (zk_client.tryRemove(zookeeper_path, root_stat.version))
         {
             case Coordination::Error::ZOK:
@@ -676,8 +671,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 }
             }
 
-            /// No `metadata` means no table lives here, but the path itself can, and a path this
-            /// table may not take over is not a path it may create at either.
+            /// A root without `metadata` is taken over only if an interrupted removal left it marked.
             const auto root_removal = tryRemoveMarkedRoot(*zk_client, zookeeper_path);
             if (root_removal == RootRemoval::NotOurs)
             {
@@ -1112,8 +1106,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
                 else
                 {
-                    /// The removal below is not atomic, so it can be interrupted with the root still
-                    /// there. The marker outlives the session that writes it, unlike `drop`.
+                    /// Unlike `drop`, the marker survives this session if the removal below is interrupted.
                     removal_started = true;
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
                     requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
