@@ -366,9 +366,12 @@ public:
         , view_plan(std::move(view_plan_))
         , optimization_settings(view_context)
     {
-        /// The view's plan becomes a part of the outer pipeline, built on this server.
-        optimization_settings.make_distributed_plan = false;
+        /// The view's plan becomes a part of the outer pipeline, so parallel replicas, which ship the fragment
+        /// of the outer plan around the read, cannot apply. A distributed plan is decided for the view's plan
+        /// on its own, as for a child plan of `ReadFromMerge`: the outer plan cannot be distributed, because
+        /// this step is not serializable, but the view's plan still can.
         optimization_settings.enable_parallel_replicas = false;
+        view_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
         view_plan.optimize(optimization_settings);
     }
 
