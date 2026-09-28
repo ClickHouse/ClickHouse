@@ -14,6 +14,7 @@ function cleanup()
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05137_table"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05137_query"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05137_explicit"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05137_explicit_query"
     rm -rf "${BASE}"
 }
 trap cleanup EXIT
@@ -41,6 +42,19 @@ for source in "'source'" "query('SELECT id FROM source')"; do
 
     ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${table}"
 done
+
+# A query-backed source is read-only, so even with an explicit column list a `CREATE TABLE` must not fabricate
+# an empty database that could never be written through.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05137_explicit_query (id Int32) ENGINE = SQLite('${DB_PATH}', query('SELECT id FROM source'))" 2>&1 \
+    | grep -oF -m1 'Cannot access sqlite database'
+
+if [[ -e "${DB_PATH}" ]]; then
+    echo 'SQLite database file was created'
+else
+    echo 'SQLite database file was not created'
+fi
+
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE t_05137_explicit_query"
 
 # An explicit column list does not need the remote schema, so a `CREATE TABLE` still materializes the file.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05137_explicit (id Int32) ENGINE = SQLite('${DB_PATH}', 'source')"

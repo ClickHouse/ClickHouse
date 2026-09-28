@@ -641,9 +641,11 @@ void registerStorageSQLite(StorageFactory & factory)
         /// of silently querying a fabricated empty database. A schema-inference `CREATE` (`args.columns.empty()`) must not create it either: the
         /// storage constructor immediately reads the shape of the remote table or query, so a missing file can
         /// never make the statement succeed, and creating the file first would leave an empty database behind in
-        /// `user_files` after the rejected DDL.
+        /// `user_files` after the rejected DDL. A query-backed source must not create it even with an explicit
+        /// column list: it is read-only, so the fabricated empty database could never be written through, and
+        /// the first read would only fail against it later.
         const bool is_create = args.mode <= LoadingStrictnessLevel::CREATE;
-        const bool allow_create = is_create && !args.columns.empty();
+        const bool allow_create = is_create && !args.columns.empty() && !table_or_query.isQuery();
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create, allow_create);
 
         ColumnsDescription columns = args.columns;
