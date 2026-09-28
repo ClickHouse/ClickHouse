@@ -41,6 +41,11 @@ SET enable_join_runtime_filters = 0;
 -- two plans then disagree and the optimization gives up for an unrelated reason.
 SET query_plan_join_swap_table = 'false';
 SET query_plan_optimize_join_order_randomize = 0;
+-- Randomization turns these off, and without statistics the cost model does not favour replicas for this
+-- data at all: the optimization is then never applied and the test measures nothing. Diagnosed with
+-- `clickhouse-test --diagnose-random-settings`, which minimized the failure to `use_statistics False`.
+SET use_statistics = 1;
+SET use_statistics_cache = 1;
 -- With a single reading thread the cost model sees replicas as a win on tables of this size, which is
 -- what makes the optimization actually apply rather than decline.
 SET max_threads = 1;
