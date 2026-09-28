@@ -5,6 +5,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -137,7 +138,15 @@ void checkNoRowPolicyForSetOperands(
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
                     Identifier(table_identifier->name_parts), context);
                 if (!resolved.resolved_identifier && throw_if_unresolved)
-                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_identifier->formatForErrorMessage());
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} on the right side of IN does not exist on the initiator. The initiator must check whether it is a "
+                        "Set table with a row policy, because the other hosts run the query without the initiating user. Run the query "
+                        "on a host that has this table. Alternatively, let every host check the table as the initiating user: enable "
+                        "the server setting distributed_ddl_use_initial_user_and_roles and set distributed_ddl_entry_format_version "
+                        "to at least {}",
+                        table_identifier->formatForErrorMessage(),
+                        DDLLogEntry::INITIATOR_USER_VERSION);
 
                 auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
                 if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)

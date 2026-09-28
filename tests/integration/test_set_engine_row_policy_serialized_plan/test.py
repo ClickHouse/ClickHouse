@@ -48,6 +48,15 @@ def assert_privilege_error(error, privilege, table=None):
     assert "because a row policy applies to it" not in error
 
 
+def assert_missing_on_initiator_error(error, table):
+    assert "UNKNOWN_TABLE" in error
+    assert (
+        f"Table {table} on the right side of IN does not exist on the initiator"
+        in error
+    )
+    assert "distributed_ddl_use_initial_user_and_roles" in error
+
+
 def test_worker_checks_set_row_policy(started_cluster):
     for node in (initiator, worker):
         node.query("CREATE TABLE set_rp (k UInt64) ENGINE = Set")
@@ -350,8 +359,18 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
         "DELETE WHERE k IN remote_only_set_rp",
         user="cluster_mutator",
     )
-    assert "UNKNOWN_TABLE" in unresolved_source_error
-    assert "default.remote_only_set_rp" in unresolved_source_error
+    assert_missing_on_initiator_error(
+        unresolved_source_error, "default.remote_only_set_rp"
+    )
+    # The initiator cannot tell the engine of a table it does not have.
+    unresolved_merge_tree_error = initiator.query_and_get_error(
+        "ALTER TABLE default.remote_cluster_data_rp ON CLUSTER worker_only "
+        "DELETE WHERE (k, v) IN remote_cluster_data_rp",
+        user="cluster_mutator",
+    )
+    assert_missing_on_initiator_error(
+        unresolved_merge_tree_error, "default.remote_cluster_data_rp"
+    )
     assert (
         worker.query("SELECT count(), sum(v) FROM remote_cluster_data_rp") == "2\t30\n"
     )
@@ -407,8 +426,7 @@ def test_on_cluster_mutation_defers_worker_only_set_to_worker(started_cluster):
         "DELETE WHERE k IN iu_set_policy",
         user="iu_mutator",
     )
-    assert "UNKNOWN_TABLE" in unresolved_source_error
-    assert "default.iu_set_policy" in unresolved_source_error
+    assert_missing_on_initiator_error(unresolved_source_error, "default.iu_set_policy")
     assert (
         initial_user_worker.query("SELECT groupArray(k) FROM iu_data_rp") == "[2,3]\n"
     )
