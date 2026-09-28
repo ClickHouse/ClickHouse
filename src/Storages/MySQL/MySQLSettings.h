@@ -50,8 +50,7 @@ struct MySQLSettings
     /// nothing, so a database's tables report its values as `other`.
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
-    /// A key the engine arguments override is recorded as `overridden_origin`: `Definition` for a table, `Default`
-    /// for a database, whose tables state none of its settings. See `loadSettingsFromNamedCollection`.
+    /// A key the engine arguments override is recorded as `overridden_origin`: see `loadSettingsFromNamedCollection`.
     void loadFromNamedCollection(const NamedCollection & named_collection, SettingOrigin overridden_origin);
 
     static bool hasBuiltin(std::string_view name);

@@ -70,8 +70,8 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     /// Rebuilt from the table metadata, the metadata handle and members of this storage. What it reads from the
-    /// metadata serialized to Keeper is recorded as `shared_metadata`; before `startup()` finishes and after
-    /// `shutdown()` it returns the untouched defaults, and so records nothing.
+    /// metadata serialized to Keeper is recorded as `shared_metadata`; before `startup` finishes and after
+    /// `shutdown` it returns the untouched defaults, and so records nothing.
     ObjectStorageQueueSettings getSettings() const;
 
     SettingDescriptions getTableSettings(ContextPtr query_context) const override;

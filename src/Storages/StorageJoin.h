@@ -43,8 +43,7 @@ public:
 
     String getName() const override { return "Join"; }
 
-    /// Reports the values this table holds for every setting it has, not only the ones its `SETTINGS`
-    /// clause states - see the definition.
+    /// Every setting the table has, with the value it holds, not only the ones its `SETTINGS` clause states.
     SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     /// For `system.engine_settings`: those settings with the values a table created now would get.

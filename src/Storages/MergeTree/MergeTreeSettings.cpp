@@ -3531,8 +3531,7 @@ SettingDescriptions MergeTreeSettings::enumerateEngineSettings(ContextPtr contex
 
 SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
 {
-    /// The replicated family reads an additional `replicated_merge_tree` config section, so its
-    /// settings differ from the rest of the family and it registers its own function.
+    /// The replicated family also reads the `replicated_merge_tree` config section.
     return context->getReplicatedMergeTreeSettings().enumerateSettingsWithConstraints(context);
 }
 

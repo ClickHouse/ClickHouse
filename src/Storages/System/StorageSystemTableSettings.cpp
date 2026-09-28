@@ -426,7 +426,7 @@ private:
     std::unordered_map<String, bool> engine_filter_answers;
     TablesFilter table_name_hint;
     ContextPtr context;
-    /// Taken once: the same object for the query's lifetime, and `generate()` asks it per database and per table.
+    /// Taken once: the same object for the query's lifetime, and `generate` asks it per database and per table.
     /// Declared after `context`, which its initializer reads.
     std::shared_ptr<const ContextAccessWrapper> access;
     const bool require_datalake_metadata_access;

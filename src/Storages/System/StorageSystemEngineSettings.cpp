@@ -28,9 +28,8 @@ Block StorageSystemEngineSettings::getFilterSampleBlock() const
     return { { {}, std::make_shared<DataTypeString>(), "engine" } };
 }
 
-/// The engines a query can still be interested in. Enumerating a settings struct is not free - the
-/// `MergeTree` family alone has hundreds of settings per engine - so a query naming one engine should
-/// not pay for all the others.
+/// The engines a query can still be interested in: enumerating a settings struct - hundreds of settings for each
+/// `MergeTree` engine - is not free, so a query naming one engine does not pay for the others.
 static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr engine_column = ColumnString::create();
@@ -50,8 +49,7 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
     const auto filtered_engines = getFilteredEngines(storages, predicate, context);
-    /// An engine's own settings hold nothing a named collection supplied - a collection belongs to a table - so
-    /// the gate that decides those is the secrets gate alone, and no collection is ever asked about.
+    /// An engine's own settings hold nothing a named collection supplied, so only the secrets gate applies.
     SettingRowWriter writer(res_columns, columns_mask, canDisplaySecrets(context));
 
     for (size_t engine_index = 0; engine_index < filtered_engines->size(); ++engine_index)

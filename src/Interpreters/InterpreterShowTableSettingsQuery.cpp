@@ -100,11 +100,9 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
         getContext()->checkAccess(AccessType::SHOW_TABLES, database, query.table);
         const auto table = DatabaseCatalog::instance().getTable(StorageID(database, query.table), getContext());
 
-        /// `system.table_settings` reports nothing for an alias whose target the user may not see, so as not to
-        /// expose the target's settings through it. Here that is an error too, for the same reason as above.
+        /// An alias whose target the user may not see is an error too, in the form of the other access errors. The
+        /// target is not named: `SHOW TABLES` on the alias alone does not reveal it.
         if (const auto * alias = table->as<StorageAlias>(); alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_TABLES, {}))
-            /// In the form of the other access errors. The target is not named: `SHOW TABLES` on the alias alone does
-            /// not reveal it.
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant SHOW TABLES "

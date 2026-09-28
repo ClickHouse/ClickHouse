@@ -7746,7 +7746,6 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        ///
         /// From the global context, not from this one - see `getMergeTreeSettings`.
         mt_settings.applyCompatibilitySetting(getGlobalContext()->getSettingsRef()[Setting::compatibility]);
 
