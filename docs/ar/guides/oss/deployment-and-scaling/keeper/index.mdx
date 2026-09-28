@@ -1107,19 +1107,19 @@ curl 127.0.0.1:9363/metrics
 </Steps>
 
 <div id="summary">
-  ### الملخص {#summary}
+  ### الملخص
 </div>
 
 يشرح هذا الدليل كيفية إعداد عنقود باستخدام ClickHouse Keeper. وباستخدام ClickHouse Keeper، يمكنك تهيئة العناقيد وتعريف الجداول الموزعة التي يمكن نسخها متماثلًا عبر الشوارد.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## تهيئة ClickHouse Keeper بمسارات فريدة {#configuring-clickhouse-keeper-with-unique-paths}
+  ## تهيئة ClickHouse Keeper بمسارات فريدة
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### الوصف {#description}
+  ### الوصف
 </div>
 
 تشرح هذه المقالة كيفية استخدام إعداد الماكرو المضمّن `{uuid}`
@@ -1130,7 +1130,7 @@ curl 127.0.0.1:9363/metrics
 في كل مرة يُنشأ فيها مسار؛ ولا يُعاد استخدام المسارات مطلقًا.
 
 <div id="example-environment">
-  ### بيئة مثال {#example-environment}
+  ### بيئة مثال
 </div>
 
 عنقود مكوّن من ثلاث عقد سيُهيَّأ بحيث يعمل ClickHouse Keeper
@@ -1170,7 +1170,7 @@ curl 127.0.0.1:9363/metrics
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### إجراءات إعداد الجداول لاستخدام `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
+  ### إجراءات إعداد الجداول لاستخدام `{uuid}`
 </div>
 
 1. اضبط وحدات الماكرو على كل خادم
@@ -1264,7 +1264,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### الاختبار {#testing}
+  ### الاختبار
 </div>
 
 1. أدرِج البيانات في العقدة الأولى (مثل `chnode1`)
@@ -1328,7 +1328,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### بدائل {#alternatives}
+  ### بدائل
 </div>
 
 يمكن تحديد مسار النسخ المتماثل الافتراضي مسبقًا باستخدام وحدات الماكرو و`{uuid}` أيضًا
@@ -1396,7 +1396,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها {#troubleshooting}
+  ### استكشاف الأخطاء وإصلاحها
 </div>
 
 مثال لأمر يعرض معلومات الجدول ومعرّف UUID الخاص به:
@@ -1443,13 +1443,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper {#reconfiguration}
+  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### الوصف {#description-1}
+  ### الوصف
 </div>
 
 يدعم ClickHouse Keeper جزئيًا أمر ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1541,7 +1541,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
   قد طُبِّق.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## تحويل Keeper أحادي العقدة إلى عنقود {#converting-a-single-node-keeper-into-a-cluster}
+  ## تحويل Keeper أحادي العقدة إلى عنقود
 </div>
 
 أحيانًا تكون هناك حاجة إلى توسيع عقدة Keeper تجريبية لتصبح عنقودًا. فيما يلي مخطط يوضح كيفية القيام بذلك خطوة بخطوة لعنقود من 3 عقد:
@@ -1557,7 +1557,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
 ولفهم العملية عمليًا بشكل أفضل، إليك [sandbox repository](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## الميزات غير المدعومة {#unsupported-features}
+  ## الميزات غير المدعومة
 </div>
 
 مع أن ClickHouse Keeper يهدف إلى تحقيق توافق كامل مع ZooKeeper، فلا تزال هناك بعض الميزات غير المُنفَّذة حتى الآن (مع استمرار العمل على تطويرها):

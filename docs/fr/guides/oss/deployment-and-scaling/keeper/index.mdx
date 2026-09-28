@@ -1106,19 +1106,19 @@ Ce guide présente une configuration simple et minimale de ClickHouse Keeper, ai
 </Steps>
 
 <div id="summary">
-  ### Résumé {#summary}
+  ### Résumé
 </div>
 
 Ce guide a montré comment configurer un cluster à l’aide de ClickHouse Keeper. Avec ClickHouse Keeper, vous pouvez configurer des clusters et définir des tables distribuées qui peuvent être répliquées sur plusieurs shards.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## Configuration de ClickHouse Keeper avec des chemins uniques {#configuring-clickhouse-keeper-with-unique-paths}
+  ## Configuration de ClickHouse Keeper avec des chemins uniques
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Description {#description}
+  ### Description
 </div>
 
 Cet article explique comment utiliser la macro intégrée `{uuid}`
@@ -1129,7 +1129,7 @@ supprime les entrées de chemin, puisque chaque fois qu&#39;un chemin est créé
 dans ce chemin ; les chemins ne sont jamais réutilisés.
 
 <div id="example-environment">
-  ### Environnement d’exemple {#example-environment}
+  ### Environnement d’exemple
 </div>
 
 Un cluster à trois nœuds, configuré avec ClickHouse Keeper
@@ -1169,7 +1169,7 @@ Exemple de configuration du cluster :
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### Procédures pour configurer les tables afin d’utiliser `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
+  ### Procédures pour configurer les tables afin d’utiliser `{uuid}`
 </div>
 
 1. Configurez les macros sur chaque serveur
@@ -1263,7 +1263,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### Test {#testing}
+  ### Test
 </div>
 
 1. Insérez des données dans le premier nœud (par exemple `chnode1`)
@@ -1327,7 +1327,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### Alternatives {#alternatives}
+  ### Alternatives
 </div>
 
 Le chemin de réplication par défaut peut être défini à l’avance à l’aide de macros, en utilisant également `{uuid}`
@@ -1395,7 +1395,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### Dépannage {#troubleshooting}
+  ### Dépannage
 </div>
 
 Exemple de commande pour obtenir des informations sur la table et son UUID :
@@ -1442,13 +1442,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## Reconfiguration dynamique de ClickHouse Keeper {#reconfiguration}
+  ## Reconfiguration dynamique de ClickHouse Keeper
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Description {#description-1}
+  ### Description
 </div>
 
 ClickHouse Keeper prend en charge partiellement la commande ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1539,7 +1539,7 @@ Il existe quelques points à connaître concernant l&#39;implémentation de la r
   a été appliquée.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## Conversion d’un Keeper mono-nœud en cluster {#converting-a-single-node-keeper-into-a-cluster}
+  ## Conversion d’un Keeper mono-nœud en cluster
 </div>
 
 Il est parfois nécessaire d’étendre un nœud Keeper expérimental pour en faire un cluster. Voici la procédure à suivre, étape par étape, pour un cluster de 3 nœuds :
@@ -1555,7 +1555,7 @@ Il est parfois nécessaire d’étendre un nœud Keeper expérimental pour en fa
 Pour vous familiariser avec le processus, consultez ce [dépôt sandbox](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## Fonctionnalités non prises en charge {#unsupported-features}
+  ## Fonctionnalités non prises en charge
 </div>
 
 Bien que ClickHouse Keeper vise une compatibilité totale avec ZooKeeper, certaines fonctionnalités ne sont pas encore implémentées (même si leur développement est en cours) :

@@ -1107,19 +1107,19 @@ Esta guía proporciona una configuración sencilla y mínima para ClickHouse Kee
 </Steps>
 
 <div id="summary">
-  ### Resumen {#summary}
+  ### Resumen
 </div>
 
 En esta guía se mostró cómo configurar un clúster con ClickHouse Keeper. Con ClickHouse Keeper, puede configurar clústeres y definir tablas distribuidas que pueden replicarse entre segmentos.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## Configuración de ClickHouse Keeper con rutas únicas {#configuring-clickhouse-keeper-with-unique-paths}
+  ## Configuración de ClickHouse Keeper con rutas únicas
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Descripción {#description}
+  ### Descripción
 </div>
 
 Este artículo describe cómo usar la configuración integrada de la macro `{uuid}`
@@ -1130,7 +1130,7 @@ elimine las entradas de ruta, ya que cada vez que se crea una ruta se utiliza un
 en ella; las rutas nunca se reutilizan.
 
 <div id="example-environment">
-  ### Entorno de ejemplo {#example-environment}
+  ### Entorno de ejemplo
 </div>
 
 Un clúster de tres nodos que se configurará para ejecutar ClickHouse Keeper
@@ -1170,7 +1170,7 @@ Configuración de ejemplo para el clúster:
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### Procedimiento para configurar tablas para usar `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
+  ### Procedimiento para configurar tablas para usar `{uuid}`
 </div>
 
 1. Configure las macros en cada servidor
@@ -1264,7 +1264,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### Prueba {#testing}
+  ### Prueba
 </div>
 
 1. Inserte datos en el primer nodo (p. ej., `chnode1`)
@@ -1328,7 +1328,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### Alternativas {#alternatives}
+  ### Alternativas
 </div>
 
 La ruta de replicación predeterminada puede definirse de antemano mediante macros, usando también `{uuid}`
@@ -1396,7 +1396,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### Solución de problemas {#troubleshooting}
+  ### Solución de problemas
 </div>
 
 Comando de ejemplo para obtener información de la tabla y el UUID:
@@ -1443,13 +1443,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## Reconfiguración dinámica de ClickHouse Keeper {#reconfiguration}
+  ## Reconfiguración dinámica de ClickHouse Keeper
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Descripción {#description-1}
+  ### Descripción
 </div>
 
 ClickHouse Keeper admite parcialmente el comando [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying) de ZooKeeper
@@ -1541,7 +1541,7 @@ Hay algunas consideraciones que tener en cuenta en la implementación de la reco
   se aplicó.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## Convertir un keeper de un solo nodo en un clúster {#converting-a-single-node-keeper-into-a-cluster}
+  ## Convertir un keeper de un solo nodo en un clúster
 </div>
 
 A veces es necesario ampliar un nodo keeper experimental hasta convertirlo en un clúster. A continuación se muestra un esquema de cómo hacerlo paso a paso para un clúster de 3 nodos:
@@ -1557,7 +1557,7 @@ A veces es necesario ampliar un nodo keeper experimental hasta convertirlo en un
 Para familiarizarte con el proceso, aquí tienes un [repositorio sandbox](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## Funciones no compatibles {#unsupported-features}
+  ## Funciones no compatibles
 </div>
 
 Aunque ClickHouse Keeper pretende ser totalmente compatible con ZooKeeper, hay algunas funciones que aún no están implementadas (aunque el desarrollo sigue en curso):

@@ -1103,19 +1103,19 @@ ClickHouse Cloud の[Prometheus インテグレーション](/ja/products/cloud/
 </Steps>
 
 <div id="summary">
-  ### まとめ {#summary}
+  ### まとめ
 </div>
 
 このガイドでは、ClickHouse Keeper を使用してクラスターを構成する方法を説明しました。ClickHouse Keeper を使用すると、クラスターを構成し、分片をまたいでレプリケーション可能な分散テーブルを定義できます。
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## 一意のパスでClickHouse Keeperを設定する {#configuring-clickhouse-keeper-with-unique-paths}
+  ## 一意のパスでClickHouse Keeperを設定する
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### 説明 {#description}
+  ### 説明
 </div>
 
 この記事では、組み込みの `{uuid}` マクロ設定を使って、
@@ -1127,7 +1127,7 @@ ClickHouse Keeper または ZooKeeper に一意のエントリを作成する方
 パスが再利用されることはありません。
 
 <div id="example-environment">
-  ### 環境例 {#example-environment}
+  ### 環境例
 </div>
 
 3 ノードのクラスターを構成し、3 つすべてのノードで ClickHouse Keeper を、
@@ -1167,7 +1167,7 @@ ClickHouse は 2 つのレプリカからなる単一の分片として構成さ
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### テーブルで `{uuid}` を使用するための設定手順 {#procedures-to-set-up-tables-to-use-uuid}
+  ### テーブルで `{uuid}` を使用するための設定手順
 </div>
 
 1. 各サーバーでマクロを設定します
@@ -1261,7 +1261,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### 動作確認 {#testing}
+  ### 動作確認
 </div>
 
 1. 最初のノード (例: `chnode1`) にデータを挿入します
@@ -1325,7 +1325,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### 別の方法 {#alternatives}
+  ### 別の方法
 </div>
 
 デフォルトのレプリケーションパスは、マクロと `{uuid}` を使ってあらかじめ定義できます
@@ -1393,7 +1393,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### トラブルシューティング {#troubleshooting}
+  ### トラブルシューティング
 </div>
 
 テーブル情報とUUIDを取得するコマンドの例:
@@ -1440,13 +1440,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## ClickHouse Keeper の動的再設定 {#reconfiguration}
+  ## ClickHouse Keeper の動的再設定
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### 説明 {#description-1}
+  ### 説明
 </div>
 
 `keeper_server.enable_reconfiguration` が有効な場合、ClickHouse Keeper はクラスターを動的に再構成するための ZooKeeper の [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1539,7 +1539,7 @@ Keeper の再構成実装には、いくつかの注意点があります。
   適用されたかどうかを確認できます。
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## 単一ノードの Keeper をクラスター化する {#converting-a-single-node-keeper-into-a-cluster}
+  ## 単一ノードの Keeper をクラスター化する
 </div>
 
 実験的な Keeper ノードをクラスターに拡張する必要が生じる場合があります。以下は、3 ノードのクラスターに段階的に拡張する手順の概要です。
@@ -1555,7 +1555,7 @@ Keeper の再構成実装には、いくつかの注意点があります。
 この手順を確実に理解するのに役立つよう、[サンドボックスリポジトリ](https://github.com/ClickHouse/keeper-extend-cluster)も用意されています。
 
 <div id="unsupported-features">
-  ## サポートされていない機能 {#unsupported-features}
+  ## サポートされていない機能
 </div>
 
 ClickHouse Keeper は ZooKeeper との完全な互換性を目指していますが、現時点では未実装の機能がいくつかあります (現在も開発は進行中です) 。
