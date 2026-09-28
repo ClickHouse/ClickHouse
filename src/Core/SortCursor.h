@@ -33,8 +33,7 @@ struct SortCursorImpl
 {
     ColumnRawPtrs sort_columns;
 
-    /// Per sort column: the column whose values are compared (the nested column of a `ColumnNullable`,
-    /// otherwise the sort column itself) and the null map of a `ColumnNullable` (nullptr otherwise).
+    /// Per sort column: the nested column and null map of a `ColumnNullable`, otherwise the column itself and nullptr.
     struct SortValueColumn
     {
         const IColumn * column = nullptr;
