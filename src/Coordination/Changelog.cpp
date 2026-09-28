@@ -672,8 +672,7 @@ private:
 
     bool prealloc_done{false};
 
-    /// A file fsync does not persist the file's directory entry, which may not be durable yet for a new file or for
-    /// a segment left by a previous run, so the first flush after `setFile` also syncs the directory.
+    /// A file fsync does not persist its directory entry, which is not known to be durable even for a segment left by a previous run.
     bool directory_sync_pending{false};
 
     LogFileSettings log_file_settings;
