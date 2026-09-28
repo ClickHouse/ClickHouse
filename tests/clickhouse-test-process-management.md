@@ -275,7 +275,7 @@ When the bash script exits normally (exit code is set), `kill_process_group` is
 # process_result_impl
 timed_out = proc.returncode is None      # only true on TimeoutExpired
 if timed_out:
-    kill_process_group(os.getpgid(proc.pid), ...)
+    kill_process_group(proc.pid, ...)
 elif test_process_group_is_gone(proc.pid):
     forget_test_process_group(proc.pid)
 ```

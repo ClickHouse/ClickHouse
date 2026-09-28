@@ -952,20 +952,12 @@ def kill_process_group(pgid, fatal_log, diagnostics=True):
         # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
         # not be enough, but at least something)
         sleep(0.1)
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except OSError as e:
-            # SIGTERM above succeeded, so we have permission to signal this group.
-            # EPERM here is a macOS-specific behavior: killpg returns EPERM when
-            # the group contains zombie processes (already exited after SIGTERM
-            # but not yet reaped). Linux ignores zombies in killpg instead.
-            if e.errno in (ESRCH, EPERM):
-                print(f"Got {e.strerror} while sending SIGKILL to {pgid}. Ignoring.")
-            else:
-                raise
+        os.killpg(pgid, signal.SIGKILL)
     except OSError as e:
-        if e.errno == ESRCH:
-            print(f"Got ESRCH while killing {pgid}. Ignoring.")
+        # EPERM is how macOS reports a group whose members have all exited but are not
+        # reaped yet: its `killpg` skips zombies, so it finds nothing it may signal.
+        if e.errno in (ESRCH, EPERM):
+            print(f"Got {e.strerror} while killing {pgid}. Ignoring.")
         else:
             raise
     print(f"Process group {pgid} should be killed")
@@ -3626,9 +3618,7 @@ class TestCase:
                 f = io.StringIO()
                 try:
                     with redirect_stdout(f):
-                        kill_process_group(
-                            os.getpgid(proc.pid), self.fatal_sanitizer_prefix
-                        )
+                        kill_process_group(pgid, self.fatal_sanitizer_prefix)
                 except Exception as e:
                     # An escaping exception returns UNKNOWN without stopping the run, so
                     # the group would stay live.
