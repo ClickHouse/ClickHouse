@@ -325,7 +325,11 @@ void WriteBufferFromAzureDataLakeStorage::cancelImpl() noexcept
         try
         {
             LOG_INFO(log, "Deleting incomplete ADLS Gen2 file `{}` after cancel", blob_path);
-            file_client.DeleteIfExists();
+            runWithRetries(
+                [&]() { file_client.DeleteIfExists(); },
+                "DeleteIfExists",
+                BlobStorageLogElement::EventType::Delete,
+                /*data_size=*/ 0);
         }
         catch (...)
         {
