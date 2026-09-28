@@ -45,7 +45,7 @@ public:
     /// Ties go to the earliest pool entry, so `NONE` beats an equal-sized compressor and a codec beats its own chain.
     /// Candidates reporting their size via `tryGetCompressedSize` are compressed only if they win, unless a chain needs their block.
     /// Selection cost scales with the block size, so there is no small-block skip.
-    UInt32 compress(const char * source, UInt32 source_size, char * dest) const override;
+    UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }

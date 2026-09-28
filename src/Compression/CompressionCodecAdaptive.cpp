@@ -150,7 +150,7 @@ ASTPtr CompressionCodecAdaptive::getCodecDescription() const
     return makeCodecDescription("Adaptive");
 }
 
-UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest) const
+UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest, CompressionState *) const
 {
     chassert(dest != nullptr);
     CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
