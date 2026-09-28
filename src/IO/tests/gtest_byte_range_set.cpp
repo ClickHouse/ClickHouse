@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 
-#include <IO/IntervalSet.h>
+#include <IO/ByteRangeSet.h>
 
 using namespace DB;
 
-TEST(IntervalSet, AddMergesOverlapAndAdjacency)
+TEST(ByteRangeSet, AddMergesOverlapAndAdjacency)
 {
-    IntervalSet s;
+    ByteRangeSet s;
     s.add({0, 10});
     s.add({5, 10});   /// [5, 15) overlaps [0, 10) -> merges to [0, 15)
     EXPECT_EQ(s.totalBytes(), 15u);
@@ -24,16 +24,56 @@ TEST(IntervalSet, AddMergesOverlapAndAdjacency)
     EXPECT_EQ(gaps[0].size, 10u);
 }
 
-TEST(IntervalSet, AddIgnoresEmptyRange)
+TEST(ByteRangeSet, AddInAnyOrderKeepsSortedDisjointIntervals)
 {
-    IntervalSet s;
+    ByteRangeSet s;
+    s.add({50, 10});   /// [50, 60)
+    s.add({10, 10});   /// [10, 20), before it
+    s.add({30, 5});    /// [30, 35), between
+    s.add({18, 14});   /// [18, 32) bridges [10, 20) and [30, 35) -> [10, 35)
+    s.add({60, 1});    /// adjacent to [50, 60) -> [50, 61)
+
+    const auto & ranges = s.ranges();
+    ASSERT_EQ(ranges.size(), 2u);
+    EXPECT_EQ(ranges[0].offset, 10u);
+    EXPECT_EQ(ranges[0].size, 25u);
+    EXPECT_EQ(ranges[1].offset, 50u);
+    EXPECT_EQ(ranges[1].size, 11u);
+}
+
+TEST(ByteRangeSet, IntersectClipsAndShiftMoves)
+{
+    ByteRangeSet s;
+    s.add({0, 10});
+    s.add({90, 20});
+    s.add({150, 5});
+
+    auto inside = s.intersect({5, 95});   /// [5, 100)
+    const auto & clipped = inside.ranges();
+    ASSERT_EQ(clipped.size(), 2u);
+    EXPECT_EQ(clipped[0].offset, 5u);
+    EXPECT_EQ(clipped[0].size, 5u);
+    EXPECT_EQ(clipped[1].offset, 90u);
+    EXPECT_EQ(clipped[1].size, 10u);
+
+    inside.shift(100);
+    EXPECT_EQ(inside.ranges()[0].offset, 105u);
+    EXPECT_EQ(inside.ranges()[1].offset, 190u);
+    EXPECT_EQ(inside.totalBytes(), 15u);
+
+    EXPECT_TRUE(s.intersect({20, 50}).empty());
+}
+
+TEST(ByteRangeSet, AddIgnoresEmptyRange)
+{
+    ByteRangeSet s;
     s.add({5, 0});
     EXPECT_EQ(s.totalBytes(), 0u);
 }
 
-TEST(IntervalSet, SubtractSplitsCoversAndPassesThrough)
+TEST(ByteRangeSet, SubtractSplitsCoversAndPassesThrough)
 {
-    IntervalSet s;
+    ByteRangeSet s;
     s.add({10, 10});   /// [10, 20)
 
     const auto split = s.subtract({0, 30});   /// [0, 30) minus [10, 20)
@@ -51,9 +91,9 @@ TEST(IntervalSet, SubtractSplitsCoversAndPassesThrough)
     EXPECT_EQ(pass[0].size, 5u);
 }
 
-TEST(IntervalSet, RemoveTrimsSplitsAndClears)
+TEST(ByteRangeSet, RemoveTrimsSplitsAndClears)
 {
-    IntervalSet s;
+    ByteRangeSet s;
     s.add({0, 30});   /// [0, 30)
 
     s.remove({10, 10});   /// punch out [10, 20) -> [0, 10) + [20, 30)

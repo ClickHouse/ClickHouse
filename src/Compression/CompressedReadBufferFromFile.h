@@ -68,7 +68,7 @@ public:
 
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
 
-    void setRequestMap(VectorWithMemoryTracking<ByteRange> ranges) override { file_in.setRequestMap(std::move(ranges)); }
+    void setRequestMap(ByteRangeSet ranges) override { file_in.setRequestMap(std::move(ranges)); }
 };
 
 }

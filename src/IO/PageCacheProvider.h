@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
-#include <IO/IntervalSet.h>
+#include <IO/ByteRangeSet.h>
 #include <Common/PageCache.h>
 #include <Common/VectorWithMemoryTracking.h>
 

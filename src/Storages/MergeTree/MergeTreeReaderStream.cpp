@@ -159,7 +159,7 @@ void MergeTreeReaderStream::announceRequestMap()
     if (!settings.request_map || !settings.read_settings.reader_executor.enabled)
         return;
 
-    VectorWithMemoryTracking<ByteRange> file_ranges;
+    ByteRangeSet file_ranges;
     for (const auto & range : *settings.request_map)
     {
         const auto left = getLeftOffset(range.begin);
@@ -167,14 +167,8 @@ void MergeTreeReaderStream::announceRequestMap()
             return;
 
         const size_t right = getRightOffset(range.end);
-        if (right <= *left)
-            continue;
-
-        /// Adjacent mark ranges can share a compressed block, so their byte ranges can overlap.
-        if (!file_ranges.empty() && *left <= file_ranges.back().end())
-            file_ranges.back().size = std::max(file_ranges.back().end(), right) - file_ranges.back().offset;
-        else
-            file_ranges.push_back({*left, right - *left});
+        if (right > *left)
+            file_ranges.add({*left, right - *left});
     }
     data_buffer->setRequestMap(std::move(file_ranges));
 }

@@ -60,23 +60,24 @@ void ReadBufferFromFileView::setReadUntilEnd()
     resizeWorkingBuffer();
 }
 
-void ReadBufferFromFileView::setRequestMap(VectorWithMemoryTracking<ByteRange> ranges)
+void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
 {
     if (right_bound == left_bound)
         return;
-    executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(std::move(ranges))); });
+    executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(ranges)); });
 }
 
-VectorWithMemoryTracking<ByteRange> ReadBufferFromFileView::toArchiveRanges(VectorWithMemoryTracking<ByteRange> ranges) const
+ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
 {
     /// For the caller the view is the whole file, so the default map is the view's own slice.
-    const size_t size = right_bound - left_bound;
+    const ByteRange file{0, right_bound - left_bound};
+    ByteRangeSet result;
     if (ranges.empty())
-        ranges.push_back({0, size});
-    std::erase_if(ranges, [&](const ByteRange & range) { return range.offset >= size; });
-    for (auto & range : ranges)
-        range = {left_bound + range.offset, std::min(range.end(), size) - range.offset};
-    return ranges;
+        result.add(file);
+    else
+        result = ranges.intersect(file);
+    result.shift(left_bound);
+    return result;
 }
 
 off_t ReadBufferFromFileView::getPosition()

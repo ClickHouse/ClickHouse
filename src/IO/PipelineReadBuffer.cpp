@@ -138,7 +138,7 @@ void PipelineReadBuffer::setReadUntilEnd()
     executor->setReadUntil(std::nullopt);
 }
 
-void PipelineReadBuffer::setRequestMap(VectorWithMemoryTracking<ByteRange> ranges)
+void PipelineReadBuffer::setRequestMap(ByteRangeSet ranges)
 {
     executor->setRequestMap(std::move(ranges));
 }

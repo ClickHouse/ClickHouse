@@ -1,11 +1,11 @@
-#include <IO/IntervalSet.h>
+#include <IO/ByteRangeSet.h>
 
 #include <algorithm>
 
 namespace DB
 {
 
-void IntervalSet::add(ByteRange range)
+void ByteRangeSet::add(ByteRange range)
 {
     if (range.size == 0)
         return;
@@ -13,9 +13,8 @@ void IntervalSet::add(ByteRange range)
     size_t new_start = range.offset;
     size_t new_end = range.end();
 
-    auto erase_from = intervals.begin();
-    while (erase_from != intervals.end() && erase_from->end() < new_start)
-        ++erase_from;
+    auto erase_from = std::partition_point(
+        intervals.begin(), intervals.end(), [&](const ByteRange & interval) { return interval.end() < new_start; });
 
     auto it = erase_from;
     while (it != intervals.end() && it->offset <= new_end)
@@ -29,7 +28,7 @@ void IntervalSet::add(ByteRange range)
     intervals.insert(insert_pos, ByteRange{new_start, new_end - new_start});
 }
 
-VectorWithMemoryTracking<ByteRange> IntervalSet::subtract(ByteRange range) const
+VectorWithMemoryTracking<ByteRange> ByteRangeSet::subtract(ByteRange range) const
 {
     VectorWithMemoryTracking<ByteRange> out;
     if (range.size == 0)
@@ -53,7 +52,7 @@ VectorWithMemoryTracking<ByteRange> IntervalSet::subtract(ByteRange range) const
     return out;
 }
 
-void IntervalSet::remove(ByteRange range)
+void ByteRangeSet::remove(ByteRange range)
 {
     if (range.size == 0)
         return;
@@ -77,7 +76,26 @@ void IntervalSet::remove(ByteRange range)
     intervals = std::move(next);
 }
 
-size_t IntervalSet::totalBytes() const
+ByteRangeSet ByteRangeSet::intersect(ByteRange range) const
+{
+    ByteRangeSet out;
+    for (const auto & i : intervals)
+    {
+        const size_t begin = std::max(i.offset, range.offset);
+        const size_t end = std::min(i.end(), range.end());
+        if (begin < end)
+            out.intervals.push_back({begin, end - begin});
+    }
+    return out;
+}
+
+void ByteRangeSet::shift(size_t delta)
+{
+    for (auto & i : intervals)
+        i.offset += delta;
+}
+
+size_t ByteRangeSet::totalBytes() const
 {
     size_t total = 0;
     for (const auto & i : intervals)

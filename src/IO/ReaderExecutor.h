@@ -84,7 +84,7 @@ public:
     void setReadUntil(std::optional<size_t> bound) { read_until = bound; }
 
     /// The logical ranges the caller will read (see `ReadBuffer::setRequestMap`).
-    void setRequestMap(VectorWithMemoryTracking<ByteRange> ranges);
+    void setRequestMap(ByteRangeSet ranges);
 
     size_t getPosition() const { return position; }
 
@@ -245,7 +245,7 @@ private:
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
     /// Empty = the whole file.
-    VectorWithMemoryTracking<ByteRange> request_map;
+    ByteRangeSet request_map;
 
     std::optional<LongConnection> long_conn;
     ReadContinuityTracker fetch_tracker;

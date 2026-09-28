@@ -25,7 +25,7 @@ public:
     void prefetch(Priority priority) override;
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
-    void setRequestMap(VectorWithMemoryTracking<ByteRange> ranges) override;
+    void setRequestMap(ByteRangeSet ranges) override;
 
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
@@ -41,8 +41,8 @@ public:
 private:
     size_t getRightBound() const;
 
-    /// Shifts a map of this file's ranges into the archive and clips it to the view's slice.
-    VectorWithMemoryTracking<ByteRange> toArchiveRanges(VectorWithMemoryTracking<ByteRange> ranges) const;
+    /// Clips a map of this file's ranges to the view's slice and shifts it into the archive.
+    ByteRangeSet toArchiveRanges(const ByteRangeSet & ranges) const;
 
     /// Resizes working buffer if it exceeds the right bound.
     void resizeWorkingBuffer();
