@@ -181,27 +181,6 @@ Block makeTimeSeriesBlock(
     return block;
 }
 
-/// Metadata is stored in columns of its own, which a Distributed table declaring only the sample columns has not got:
-/// the sink sends what the wrapper declares, so metadata it cannot name could not reach a shard that would store it.
-void checkTableAcceptsMetricsMetadata(const StorageInMemoryMetadata & metadata, const StorageID & storage_id)
-{
-    for (const auto * column :
-         {TimeSeriesColumnNames::MetricFamily, TimeSeriesColumnNames::Type, TimeSeriesColumnNames::Unit, TimeSeriesColumnNames::Help})
-    {
-        if (!metadata.columns.has(column))
-            throw Exception(
-                ErrorCodes::INCOMPATIBLE_SCHEMA,
-                "Table {} does not declare column `{}`, so remote write cannot store the metric metadata sent with the samples: "
-                "declare `{}`, `{}`, `{}` and `{}` on it, or send the samples without metadata",
-                storage_id.getNameForLogs(),
-                column,
-                TimeSeriesColumnNames::MetricFamily,
-                TimeSeriesColumnNames::Type,
-                TimeSeriesColumnNames::Unit,
-                TimeSeriesColumnNames::Help);
-    }
-}
-
 /// The type a TimeSeries table's outer columns are generated with (`generateOuterColumns`), or empty for the
 /// samples column, whose type varies per table and which the shard-target check holds every shard to.
 std::string_view timeSeriesOuterColumnType(const String & column_name)
@@ -225,8 +204,19 @@ void checkTableDeclaresOuterColumnTypes(
         const auto expected_type = timeSeriesOuterColumnType(column_name);
         if (expected_type.empty())
             continue;
-        /// A column the table has not got throws here as it would in `makeBlock`, which this runs before.
-        const auto & declared_type = metadata.columns.get(column_name).type;
+        const auto * declared = metadata.columns.tryGet(column_name);
+        if (!declared)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} does not declare column `{}`, which remote write fills as {}{}",
+                storage_id.getNameForLogs(),
+                column_name,
+                expected_type,
+                /// The hint helps only for a metadata column: a request without metadata names none of them.
+                column_name == TimeSeriesColumnNames::MetricName || column_name == TimeSeriesColumnNames::Tags
+                    ? ""
+                    : ": declare `metric_family`, `type`, `unit` and `help` on it, or send the samples without metadata");
+        const auto & declared_type = declared->type;
         if (declared_type->getName() != expected_type)
             throw Exception(
                 ErrorCodes::INCOMPATIBLE_SCHEMA,
@@ -454,12 +444,8 @@ void PrometheusRemoteWriteProtocol::write(
     if (!distributed_target)
         checkTimeSeriesVersionIsWritable(*storagePtrToTimeSeries(time_series_storage));
 
-    /// Refused before the shards are asked anything: no wrapper of that shape could take this request.
-    if (!metrics_metadata.empty())
-        checkTableAcceptsMetricsMetadata(*metadata, storage_id);
-
-    /// Refused there too: a TimeSeries table's outer columns are generated rather than declared, so this
-    /// holds only a Distributed wrapper to anything.
+    /// Refused before the shards are asked anything. A TimeSeries table's outer columns are generated rather
+    /// than declared, so this holds only a Distributed wrapper to anything.
     checkTableDeclaresOuterColumnTypes(*metadata, storage_id, columns_to_write);
 
     auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);

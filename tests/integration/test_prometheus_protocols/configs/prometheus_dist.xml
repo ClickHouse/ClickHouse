@@ -112,6 +112,13 @@
                     <table>default.prom_retyped_ok</table>
                 </handler>
             </retyped_ok_write>
+            <no_metric_name_write>
+                <url>/no_metric_name/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_no_metric_name</table>
+                </handler>
+            </no_metric_name_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>
