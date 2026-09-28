@@ -8,7 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -24,10 +24,9 @@ struct BitSwapLastTwoImpl
 
     static ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
     {
+        /// Other argument types are rejected by `getReturnTypeImpl`.
         if constexpr (!std::is_same_v<A, ResultType>)
-            // Should be a logical error, but this function is callable from SQL.
-            // Need to investigate this.
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.");
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.");
 
         auto little_bits = littleBits<A>(a);
         return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));
@@ -59,6 +58,14 @@ public:
     using FunctionUnaryArithmetic::FunctionUnaryArithmetic;
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitSwapLastTwo>(context_); }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isUInt8(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+        return FunctionUnaryArithmetic::getReturnTypeImpl(arguments);
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
