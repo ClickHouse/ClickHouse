@@ -14,23 +14,17 @@
 namespace DB
 {
 
-/// The columns `system.engine_settings`, `system.merge_tree_settings` and `system.table_settings` all carry,
-/// declared and written in one place so those three cannot drift. The settings tables built on other paths -
-/// `system.settings`, `system.object_storage_queue_settings`, `system.filesystem_cache_settings` - still
-/// declare their own columns, and `system.object_storage_queue_settings` renders a settings struct this code
-/// also renders.
-///
-/// The descriptions say what is true of a *setting*, not of a *table*, because the same text has to
-/// read correctly in a table describing one engine family and in one describing every engine.
+/// The columns `system.engine_settings`, `system.merge_tree_settings` and `system.table_settings` all carry, declared
+/// and written in one place so the three cannot drift. The descriptions speak of a setting rather than a table, so
+/// that they read correctly in all three.
 ColumnsDescription sharedSettingColumns();
 
 /// Writes the rows of a settings table one column at a time, skipping the columns the query does not read.
 class SettingRowWriter
 {
 public:
-    /// Whether this reader may see the values the named collection of this name supplied. A collection is
-    /// secret as a whole rather than key by key, and a grant names one collection, so the answer is per
-    /// collection - `system.named_collections` decides it the same way.
+    /// Whether this reader may see the values the named collection of this name supplied: decided per collection, as
+    /// a grant names one.
     using MayShowNamedCollection = std::function<bool(const String &)>;
 
     /// `show_secrets` is whether this reader sees the real value of a setting that holds one. A table whose rows
@@ -51,18 +45,11 @@ public:
     /// Whether this setting's value is reported as a placeholder rather than as it is.
     bool masks(const SettingDescription & setting) const
     {
-        /// A collection's contents are secret as a whole: `SHOW CREATE TABLE` prints the collection's name rather
-        /// than what it holds, and `system.named_collections` hides every key without the grant. So a value this
-        /// reader could not read there must not be readable here either, whether or not a masking rule knows the
-        /// name - a broker address or a database name says as much as a password does about where a table points.
-        /// The question is asked of the collection that supplied it, because that is what a grant names; a row
-        /// whose collection was not recorded cannot be checked, and so is not shown.
-        /// A secret the server's configuration supplied - the password of its `nats` or `rabbitmq` section, which a
-        /// table that states no authentication of its own uses, or a macro expanded into one the table or a named
-        /// collection states - belongs to whoever runs the server, not to a query's author: `SHOW CREATE TABLE` never
-        /// printed it, `system.named_collections` shows the macro rather than its value, and
-        /// `displaySecretsInShowAndSelect`, which governs the secrets a query states, does not reach it. So it is
-        /// asked first, before a collection's own rule could show it to a reader of that collection.
+        /// A secret the server's configuration supplied - the password of its `nats` or `rabbitmq` section, or a macro
+        /// expanded into a stated one - belongs to whoever runs the server: `SHOW CREATE TABLE` never prints it, and
+        /// `displaySecretsInShowAndSelect` does not reach it. So it is asked first, before a collection's rule.
+        /// A named collection's values are secret as a whole, as in `system.named_collections` - a broker address says
+        /// where a table points as much as a password - so only a reader of that collection sees them.
         if (setting.origin == SettingOrigin::Config || setting.from_server_configuration)
             return !setting.masked_value.empty();
         if (setting.origin == SettingOrigin::NamedCollection)

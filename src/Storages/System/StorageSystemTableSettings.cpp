@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-
 StorageSystemTableSettings::StorageSystemTableSettings(const StorageID & table_id_)
     : StorageWithCommonVirtualColumns(table_id_)
 {
@@ -125,13 +124,9 @@ protected:
     {
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-        /// Whether this user may see the real value of a secret setting - decided as `SHOW CREATE TABLE` decides
-        /// it - and what a named collection supplied, decided as `system.named_collections` decides it, so no
-        /// surface disagrees with another. That table asks two questions about a collection: whether this reader
-        /// may see the collection at all, which is granted per collection, and whether it may see secrets. Both
-        /// are asked here, of the collection that supplied the value - a reader who may not read a collection
-        /// there must not read it through a table built on it. A value whose collection was not recorded cannot
-        /// be checked, so it is not shown.
+        /// A secret is shown as `SHOW CREATE TABLE` decides, and a named collection's value as
+        /// `system.named_collections` does: only to a reader who may see that collection and its secrets. A value
+        /// whose collection was not recorded cannot be checked, so it is not shown.
         const bool show_secrets = canDisplaySecrets(context);
         SettingRowWriter writer(
             res_columns,
@@ -171,11 +166,10 @@ private:
             {
                 const auto & database = databases_cursor.getDatabase();
                 auto allowed = makeTableNameFilterFor(database_name);
-                /// A data lake catalog lists its tables over the network, and only the hinted iterator passes the
-                /// name hint on, as `system.tables` does - the plain one walks the whole catalog to resolve a
-                /// single table. The hinted one hands back a table it could not resolve as a null storage, which
-                /// `resolveTable` turns back into the plain iterator's outcome. Other databases keep the plain
-                /// iterator: for `Remote` the hinted one would turn an unreachable server into an error.
+                /// A data lake catalog takes the hinted iterator, as in `system.tables`: the plain one walks the whole
+                /// catalog over the network. It returns a table it could not resolve as null, for `resolveTable`.
+                /// Other databases keep the plain one: for `Remote` the hinted one turns an unreachable server into
+                /// an error.
                 databases_cursor.setTablesIterator(
                     database->isDatalakeCatalog()
                         ? database->getTablesIteratorWithHint(context, allowed, /* skip_not_loaded */ false, table_name_hint)
@@ -196,12 +190,9 @@ private:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                /// One table must not fail the scan. An engine reads its settings from wherever it keeps them -
-                /// its stored definition on disk, a remote catalog - so a single table whose store cannot be
-                /// read would otherwise make this table unreadable for the whole server. `system.tables`
-                /// degrades per row for the same reason. The table is skipped rather than reported with empty
-                /// settings, because no row is honest about settings that could not be read; the exception is
-                /// logged, which is where the error surfaces.
+                /// One table whose settings cannot be read - from its definition on disk, a remote catalog - must not
+                /// fail the scan, as in `system.tables`. It is skipped rather than reported with no settings, and the
+                /// exception is logged.
                 try
                 {
                     if (const auto table = resolveTable(tables_it.table(), table_name))
@@ -209,29 +200,13 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    /// Three kinds of failure are not this table's own and are not swallowed.
-                    ///
-                    /// The query is over: a scan that ate a memory limit would run on and meet it again on the
-                    /// next table, and one that ate a cancellation would keep reading after being asked to stop.
-                    if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                    /// Not the table's own failure: the query is over, the server has a bug, or the reader asked to be
+                    /// told of a lake catalog's error through `database_datalake_require_metadata_access`.
+                    if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                        || e.code() == ErrorCodes::LOGICAL_ERROR
+                        || (require_datalake_metadata_access && databases_cursor.getDatabase()->isDatalakeCatalog()))
                         throw;
 
-                    /// The server has a bug. Logging one and answering the query hides it from the tests that
-                    /// exist to find it, which is why other catch sites that otherwise swallow re-raise it too -
-                    /// `StorageReplicatedMergeTree.cpp` and `UndoWithRetries.cpp` among them.
-                    if (e.code() == ErrorCodes::LOGICAL_ERROR)
-                        throw;
-
-                    /// The reader asked to be told. `resolveTable` re-raises a lake catalog's error on purpose
-                    /// when `database_datalake_require_metadata_access` is set, which is its default, and says
-                    /// in the message how to ask for the opposite. Swallowing it here would leave that setting
-                    /// meaning nothing, its message untrue, and the rows of a table the catalog cannot describe
-                    /// quietly missing - which is the outcome `resolveTable` exists to prevent.
-                    if (require_datalake_metadata_access && databases_cursor.getDatabase()->isDatalakeCatalog())
-                        throw;
-
-                    /// `const Exception &` rather than `...` for the reason `system.tables` catches that: a
-                    /// `std::bad_alloc` is not a table's problem either.
                     tryLogCurrentException(
                         "StorageSystemTableSettings",
                         fmt::format("Cannot read the settings of table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name)));
@@ -326,12 +301,10 @@ private:
     /// `table` the answer holds for every table of one database with that engine, and is remembered.
     bool engineFilterKeeps(const String & db_name, const String & tbl_name, const String & engine_name)
     {
-        /// Nothing is remembered where the predicate reads `table`, since then the answer is this table's alone.
+        /// Where the predicate reads `table`, the answer is this table's alone. Otherwise it is remembered for one
+        /// database: the predicate may read `database`, and temporary tables report an empty one.
         if (!engine_filter_reads_table)
         {
-            /// The answer holds for one database, not for the server: the predicate may read `database` too, and
-            /// the session's temporary tables report an empty one. So the memo goes with the database it was
-            /// built for.
             if (engine_filter_answers_database != db_name)
             {
                 engine_filter_answers.clear();
@@ -403,19 +376,13 @@ private:
         std::erase_if(tables, [&allowed](const auto & entry) { return !allowed.contains(entry.first); });
     }
 
-    /// Which of a database's tables the query can still be about: the names are filtered first, and the real
-    /// iterator is asked only for the survivors - which is what makes `WHERE table = ...`, the query
-    /// `SHOW TABLE SETTINGS` generates, read one table rather than all of them.
+    /// Which of a database's tables the query can still be about: the names are filtered first and the iterator is
+    /// asked only for the survivors, so `WHERE table = ...`, which `SHOW TABLE SETTINGS` generates, reads one table.
     ///
-    /// The names come from `getAllTableNames`, which lists them without resolving a storage: for an external
-    /// database resolving fetches the table (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`),
-    /// so listing through anything that resolves would open every table here and again through the iterator
-    /// below. It also decides the rows: a listing that drops a name it cannot resolve - which
-    /// `getLightweightTablesIterator` does, since its default implementation skips a null `table()` - would make
-    /// a filtered query return fewer rows than an unfiltered one, and a table dropped between the listing and
-    /// the scan disappear from `WHERE table LIKE ...` while `WHERE table = ...`, which never lists, still reads
-    /// it. A datalake catalog keeps the hinted iterator: its own override lists namespaces without resolving,
-    /// and the hint is what stops it from enumerating the whole catalog.
+    /// The names come from `getAllTableNames`, which resolves no storage: for an external database resolving fetches
+    /// the table, and `getLightweightTablesIterator` drops a name it cannot resolve, which would make a filtered
+    /// query return fewer rows than an unfiltered one. A datalake catalog lists through its hinted iterator, which
+    /// resolves nothing either, and the hint keeps it from enumerating the whole catalog.
     IDatabase::FilterByNameFunction makeTableNameFilterFor(const String & database_name) const
     {
         if (!table_filter)
@@ -516,24 +483,19 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     if (!filter_actions_dag)
         return;
 
-    /// A predicate that reads `table` narrows a database's tables; one on `database` alone is applied to the
-    /// database list itself, in `initializePipeline`.
-
+    /// Only a predicate that reads `table` narrows a database's tables: listing a data lake catalog's names only to
+    /// keep all of them costs a full catalog walk. One on `database` alone is applied in `initializePipeline`.
     Block tables_block
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
     };
-    /// Only a predicate that reads `table` can narrow a database's tables: listing a data lake catalog's names just
-    /// to keep all of them costs a full catalog walk.
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context);
         dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "table"; }))
         table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
 
-    /// And one that reads `engine`, applied to each table once it is resolved - `system.tables` pushes it down too.
-    /// Applied inside the source, rather than to a column of names as `detail::getFilteredTables` does for
-    /// `system.tables`, because a table's engine is known only once the table is, and because a name filtered per
-    /// database cannot collide with the same name in another one.
+    /// And one that reads `engine`, which `system.tables` pushes down too: applied inside the source, since a
+    /// table's engine is known only once the table is resolved.
     Block engines_block
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
@@ -548,9 +510,8 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
         engine_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 
-    /// A namespace-pushdown hint for catalogs that can restrict what they list server-side. The
-    /// table name lives in the `table` column here - `name` is the setting's name - so that is the
-    /// column the hint has to be read from.
+    /// For a catalog that can restrict what it lists server-side. Here the table name is `table`; `name` is the
+    /// setting's.
     table_name_hint = extractTableNameFilter(filter_actions_dag->getOutputs().at(0), "table");
 }
 
@@ -585,11 +546,8 @@ void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipe
     const auto & filter_dag = getFilterActionsDAG();
     const ActionsDAG::Node * predicate = filter_dag ? filter_dag->getOutputs().at(0) : nullptr;
 
-    /// The same databases `system.tables` selects, through the same helper, rather than the unconditional exclusion
-    /// that `system.constraints`, `system.projections` and `system.data_skipping_indices` use. Those skip an external
-    /// database because a table in one has no ClickHouse constraints, projections or skipping indices to report -
-    /// there is genuinely nothing there. Settings are not like that: `StorageMySQL` and the data lake storages both
-    /// answer `getTableSettings`, so excluding them would hide rows this table exists to show.
+    /// The databases `system.tables` selects. `system.constraints` and the like skip external ones, whose tables
+    /// have nothing to report there, but `StorageMySQL` and the data lake storages do answer `getTableSettings`.
     auto filtered_databases = detail::getFilteredDatabases(predicate, context);
 
     /// The session's temporary tables are not in any database, and report an empty `database`. Ask the same

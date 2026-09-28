@@ -182,9 +182,7 @@ struct RecordedSettingOrigins
 
     CompactArray<size_t, 4, num_settings> origins;
 
-    /// The named collection a loader took values from. A reader may see those values only where it may read that
-    /// collection, so the name has to travel with them - `SettingOrigin::NamedCollection` alone says a collection
-    /// supplied a value, not which one, and a grant names one. Empty where none supplied any.
+    /// The named collection a loader took values from: a reader may see them only where it may read that collection.
     String named_collection;
 };
 
@@ -284,25 +282,15 @@ public:
     /// remote server, which only receives changed settings. No-op for custom settings.
     void markUnchanged(std::string_view name);
 
-    /// Origins - where each setting came from, for traits declared with `DECLARE_SETTINGS_TRAITS_WITH_ORIGIN`.
-    ///
-    /// A server config section and `compatibility` assign every key they name, and so set the changed flag even
-    /// where the value equals the default; a named collection's values look like any other; the table's own
-    /// `SETTINGS` clause is applied by each engine's loader. Each of them records itself as it assigns, and the
-    /// record travels with every copy of the object - from the server's baseline into each table, from a database
-    /// into each table it makes - so a table's settings object alone says where its values came from. The `source`
-    /// column of `system.table_settings` is that record.
-    ///
-    /// Every assignment records an origin - `setWithOrigin` the one it names, `set` `Default`, meaning none, as do
-    /// `read` and `readBinary`, whose serialized forms carry none, and `updateHotReloadableSettings` the one the new
-    /// settings recorded - so a setting belongs to whoever assigned it last, a reset to the default included. An
-    /// assignment through `operator[]` bypasses all of them and keeps the origin, which suits an engine that adjusts
-    /// a value in place, such as by expanding macros; one that replaces a value records the new origin, through the
-    /// typed `set` that `DECLARE_SETTINGS_TYPED_SET` gives its public settings class.
+    /// Origins, for traits declared with `DECLARE_SETTINGS_TRAITS_WITH_ORIGIN`: each source - a server config section,
+    /// `compatibility`, a named collection, the table's `SETTINGS` clause - records itself as it assigns, and the record
+    /// travels with every copy of the object, so a table's settings alone say where each value came from. Every
+    /// assignment records an origin - `set`, `read` and `readBinary` record `Default` - except one through `operator[]`,
+    /// which keeps it and so suits a value adjusted in place, such as by expanding macros. An engine that replaces a
+    /// value records the new origin through the typed `set` of `DECLARE_SETTINGS_TYPED_SET`.
 
-    /// Assigns `value` and records `origin` as its source; `Default` records none. Through the base's own assignment,
-    /// not through `set`: an `Impl` that overrides `set` - core `Settings` does - is not one whose traits record origins,
-    /// and one that did would have to route this through its override too.
+    /// Assigns `value` and records `origin` as its source. Through the base's own assignment rather than the virtual
+    /// `set`, which core `Settings` overrides - its traits record no origins.
     void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin) requires Traits::record_origin
     {
         storeOrigin(assign(name, value), origin);
@@ -319,9 +307,8 @@ public:
         }
     }
 
-    /// Records `origin` for the setting whose field is at `offset` in the settings data, as a `SettingIndex` stores
-    /// it, which the caller has just assigned through `operator[]`: for the typed `set` of a public settings class
-    /// (`DECLARE_SETTINGS_TYPED_SET`), which holds this behind an incomplete type and so can pass on only the offset.
+    /// Records `origin` for the setting whose field is at `offset`, just assigned through `operator[]`: for the typed
+    /// `set` of `DECLARE_SETTINGS_TYPED_SET`, which holds this behind an incomplete type.
     void recordOriginAtOffset(size_t offset, SettingOrigin origin) requires Traits::record_origin
     {
         const size_t index = Traits::Accessor::instance().findByOffset(offset);
@@ -526,9 +513,8 @@ private:
 
     static size_t indexOf(std::string_view name) { return Traits::Accessor::instance().find(Traits::resolveName(name)); }
 
-    /// Records `origin` for the built-in setting at `index`; nothing for traits that record no origins. An index out
-    /// of range is a name `BaseSettings` does not know - a custom setting, which has no origin to record - and is
-    /// skipped, as `resetToDefault` skips it.
+    /// Records `origin` for the built-in setting at `index`, where the traits record origins. An index out of range -
+    /// a custom setting - is skipped.
     void storeOrigin(size_t index, SettingOrigin origin)
     {
         if constexpr (Traits::record_origin)
@@ -722,9 +708,7 @@ void BaseSettings<TTraits>::markUnchanged(std::string_view name)
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
         accessor.setValueChanged(*this, index, false);
-        /// The setting stops counting as assigned, so it forgets its source too: enumeration reports it as the
-        /// default, and an assignment through `operator[]`, which keeps the record, would otherwise report the
-        /// source this call retired.
+        /// No longer assigned, so it forgets its source, which an assignment through `operator[]` would report again.
         storeOrigin(index, SettingOrigin::Default);
     }
 }

@@ -22,15 +22,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// The database `system.table_settings` reports the named table under. A name without a database may be one of
-/// the session's temporary tables, which that table reports with an empty `database`. As in `SHOW CREATE TABLE`,
-/// a temporary table takes precedence over a table of the current database with the same name.
-///
-/// Asked of the session, which is where `system.table_settings` enumerates temporary tables from, as
-/// `system.tables` does. A request that carries external data without a session holds them in its query context
-/// instead, and resolving one here that the table will not report would answer with an empty result - a table
-/// that exists and states settings would read as one with none. Left unresolved, the name falls through to the
-/// current database and the lookup below says the table is not there, which is the truthful answer.
+/// The database `system.table_settings` reports the named table under. A name without a database may be one of the
+/// session's temporary tables, reported with an empty `database`; as in `SHOW CREATE TABLE`, it takes precedence over
+/// a table of the current database. Only the session's, which `system.table_settings` enumerates: external data held
+/// in a query context falls through to the current database, and is reported missing rather than as settings-less.
 String resolveReportedDatabase(const ASTShowTableSettingsQuery & query, const ContextPtr & context)
 {
     if (query.database.empty() && context->hasSessionContext()
@@ -52,19 +47,11 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery(const String & datab
 
     if (query.has_like)
     {
-        /// Match the pattern against every name a setting answers to, but print it under the one it is declared
-        /// under: the alias rows exist so that a lookup by an old name finds the setting. `NOT LIKE` drops a
-        /// setting when any of its names matches.
-        ///
-        /// Every row of a setting carries the same value, source and `changed` - only `alias_for` tells them apart
-        /// - so grouping them under the declared name and taking any of them answers in one reading of the table.
-        /// It rests on one assumption: that no setting of an engine is declared under a name that is another
-        /// setting's alias. Such a pair would fold into one row here, and `any` would pick between two different
-        /// values. Nothing in this statement can check that, and an engine whose struct had such a pair would
-        /// already resolve the name ambiguously everywhere else, so it is left as an assumption rather than
-        /// defended here - a `DISTINCT` would only hide the collision behind an arbitrary row.
-        /// A second `SELECT` over it would read the table twice, which for a `S3Queue` table means fetching its
-        /// settings from Keeper twice.
+        /// Match the pattern against every name a setting answers to, but print the declared one: alias rows exist so
+        /// that a lookup by an old name finds the setting. `NOT LIKE` drops a setting when any of its names matches.
+        /// All rows of a setting carry the same value, source and `changed`, so grouping them under the declared name
+        /// answers in one reading of the table - a second would fetch an `S3Queue` table's settings from Keeper again.
+        /// This assumes no setting is declared under another's alias, which would make the name ambiguous everywhere.
         const std::string_view like = query.case_insensitive_like ? "ILIKE " : "LIKE ";
 
         rewritten_query
@@ -135,10 +122,8 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
                 getContext()->getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(query.table));
     }
 
-    /// `system.table_settings` shows a data lake catalog or a remote database only when the
-    /// corresponding setting allows it, and `show_data_lake_catalogs_in_system_tables` is off by
-    /// default. Naming such a database explicitly is an unambiguous request for it, so enable it
-    /// for this query - the same thing `InterpreterShowTablesQuery` does for `SHOW TABLES`.
+    /// `system.table_settings` shows a data lake catalog or a remote database only where a setting allows it. Naming
+    /// one is an unambiguous request for it, so allow it for this query, as `InterpreterShowTablesQuery` does.
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))

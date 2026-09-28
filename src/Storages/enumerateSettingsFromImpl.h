@@ -7,12 +7,8 @@
 namespace DB
 {
 
-/// Reads every setting of a settings object whose traits record origins into the common form both settings tables use.
-///
-/// The instance decides what is reported: a default-constructed one describes an engine, the one a
-/// storage holds describes a table. `origin` is the source the instance recorded, and otherwise `Other` for
-/// a changed setting: the instance cannot tell the rest apart, so a storage refines it, since only the
-/// storage knows where the rest of its values came from.
+/// Reads every setting of a settings object whose traits record origins into the form both settings tables use. A
+/// changed setting reports the origin the object recorded, else `Other`, which a storage's override may refine.
 template <typename TTraits>
 SettingDescriptions enumerateSettingsFromImpl(const BaseSettings<TTraits> & impl)
     requires TTraits::record_origin
@@ -24,10 +20,8 @@ SettingDescriptions enumerateSettingsFromImpl(const BaseSettings<TTraits> & impl
     {
         SettingDescription described;
         described.name = setting.getName();
-        /// The real value, which `masked_value` below hides when the reader may not see it. The flag on the
-        /// default is defence in depth and nothing more: `getDefaultValueString` honours it for a custom
-        /// setting only, and a built-in one holding a secret has an empty default anyway, which
-        /// `05214_engine_settings_secrets_have_empty_default` asserts for every engine.
+        /// The real value, which `masked_value` hides from a reader who may not see it. A built-in secret has an empty
+        /// default, as `05214_engine_settings_secrets_have_empty_default` asserts.
         described.value = setting.getValueString(/* show_secrets */ true);
         described.default_value = setting.getDefaultValueString(/* show_secrets */ false);
         described.type = setting.getTypeName();

@@ -21,17 +21,13 @@ String maskEngineSettingValue(const String & setting_name, const Field & field, 
     {
         if (auto it = registry->find(setting_name); it != registry->end())
         {
-            /// A registry names a setting that *may* carry a secret and decides per value whether
-            /// this one does - a URL without credentials in it does not - so `nullopt` means there
-            /// is nothing to hide. The first registry that knows the name answers, as
-            /// `renderSecretChangeValue` in `ASTSetQuery.cpp` does, so the two cannot disagree on what is
-            /// secret.
+            /// A registry names a setting that *may* carry a secret and decides per value, `nullopt` meaning there is
+            /// nothing to hide. The first registry that knows the name answers, as in `renderSecretChangeValue`.
             auto rendered = it->second(field);
             if (!rendered)
                 return {};
 
-            /// Some rules answer with whatever they are given - a URI with no password in it comes back as it
-            /// went in. Nothing was hidden then, and a row saying its value is a placeholder would be lying.
+            /// A rule may return its input unchanged - a URI with no password - and then nothing was hidden.
             return *rendered == value ? String{} : std::move(*rendered);
         }
     }

@@ -6,11 +6,9 @@
 namespace DB
 {
 
-/// Assigns every setting of `impl` that `collection` holds, and records that the collection supplied it - except
-/// a key the engine arguments overrode (`ENGINE = Kafka(collection, key = value)`), which holds their value, not
-/// the collection's, and is recorded as `overridden_origin`: `Definition` for a table, whose own `CREATE` states
-/// it as surely as its `SETTINGS` clause; `Default`, meaning none, where the collection builds something else - a
-/// database, whose tables state none of its settings.
+/// Assigns every setting of `impl` that `collection` holds, recording that the collection supplied it - except a key
+/// the engine arguments overrode (`ENGINE = Kafka(collection, key = value)`), recorded as `overridden_origin`:
+/// `Definition` for a table, `Default` for what builds something else, such as a database.
 template <typename TTraits>
 void loadSettingsFromNamedCollection(
     BaseSettings<TTraits> & impl, const NamedCollection & collection, SettingOrigin overridden_origin)

@@ -19,24 +19,13 @@ struct StorageID;
 using NameSetWithViewLookup
     = std::unordered_set<String, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
-/// Helpers for `IStorage::getTableSettings` overrides. Free functions, since none of them needs the storage
-/// beyond its id.
-///
-/// There are two ways a table answers for its settings. Most engines *record*: the settings object marks each
-/// value with the source that assigned it as it is assigned, so the override is the enumeration and needs none of
-/// these helpers. The rest *reconstruct*, because their settings object cannot be believed, in one of four ways:
-///
-///   - the engine keeps no settings object at all, so nothing recorded anything - `Join`, `Set`, the `IStorage`
-///     base: `getSettingsStatedInDefinition` and `withOriginFromDefinition` read the stored `CREATE` query;
-///   - the object is rebuilt on every call, so every setting in it reads as assigned and the marks say nothing -
-///     `ObjectStorageQueue`: `setOriginByValue` recovers the distinction from the value;
-///   - the loader assigns every setting from the session before the table's own sources, with the same effect -
-///     `PostgreSQL`: `setOriginByValue` again;
-///   - the engine derives what it works with after loading - an expanded macro, a generated id, a value taken
-///     from a server config section when the table gave none - so the object holds what it was given rather than
-///     what it uses: `setEffectiveValue` and `setEffectiveValueWithConfigFallback` report the latter.
-///
-/// `set*` modify in place; `withOriginFromDefinition` returns.
+/// Helpers for `IStorage::getTableSettings` overrides. Most engines need none: their settings object records the
+/// source of each value as it is assigned. The rest reconstruct it:
+///   - no settings object - `Join`, `Set`, the `IStorage` base: `withOriginFromDefinition` reads the stored `CREATE`;
+///   - a loader that assigns every setting, from the session or by rebuilding the object - `PostgreSQL`,
+///     `ObjectStorageQueue`: `setOriginByValue`;
+///   - a working value derived after loading - an expanded macro, a generated id, a value from a server config
+///     section: `setEffectiveValue` and `setEffectiveValueWithConfigFallback`.
 
 /// The `SETTINGS` clause of the table's stored `CREATE` query, copied out. Empty when there is none, or when
 /// the catalog does not know the table, as for a table function's storage.
@@ -62,12 +51,8 @@ void markSecretsFromServerConfiguration(SettingDescriptions & settings, const Na
 /// engine assigns settings outside its loaders, so the settings object cannot record the source.
 void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOrigin origin);
 
-/// Recomputes `origin` from the value alone: `Default` where it equals the compiled-in default and
-/// `Other` where it does not. For an engine whose loader assigns every setting - from the session, as
-/// `PostgreSQLSettings::loadFromQueryContext` does, or by rebuilding the struct - which marks them all as
-/// changed even where the value is the default, so the change alone says nothing about where it is from.
-/// Only settings that enumeration left at `Default` or `Other`: a source the settings object recorded is
-/// known whatever the value.
+/// Recomputes `origin` from the value - `Default` where it equals the compiled-in default, else `Other` - for an
+/// engine whose loader assigns every setting, marking them all changed. A source the object recorded is kept.
 void setOriginByValue(SettingDescriptions & settings);
 
 /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
@@ -81,11 +66,8 @@ void setEffectiveValue(
 void setEffectiveValueWithConfigFallback(
     SettingDescriptions & settings, std::string_view name, const String & stated, const String & value);
 
-/// The same two, taking the setting's typed index rather than its name - which is how an engine should name
-/// one of its own settings. A name that is misspelled, or that a later release renames, then fails to compile
-/// rather than matching no row and leaving the value the engine does not use in the table. The name itself is
-/// resolved from the offset, so the index stays one word wide: `nameAtOffset` reads it from the traits, which
-/// only the settings class's own .cpp can see.
+/// The same two by the setting's typed index, which is how an engine should name its own setting: a misspelled or
+/// renamed one then fails to compile rather than matching no row.
 template <typename Owner, typename FieldType>
 void setEffectiveValue(
     SettingDescriptions & settings,

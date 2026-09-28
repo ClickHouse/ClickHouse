@@ -267,20 +267,13 @@ public:
         return metadata.get();
     }
 
-    /// Report this table's settings as they are actually in effect, for `system.table_settings`.
+    /// This table's settings as they are in effect, each with its `SettingOrigin`, for `system.table_settings`.
     ///
-    /// The base implementation answers from the table's own `SETTINGS` clause, with the metadata the engine's
-    /// registered settings give each stated setting, and reports nothing for a view, a dictionary or a system
-    /// table. That is all a storage can say when it keeps no settings of its own: `File` and `URL` take core
-    /// settings, plain object storage only a `FormatSettings`. An engine with settings of its own overrides this to
-    /// report every one of them with its
-    /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
-    /// It is a method on the storage rather than a static enumeration of the settings type because some values
-    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. An override with a settings
-    /// object enumerates it, and reaches for `Storages/TableSettingsHelpers.h` only for what that object cannot hold.
-    ///
-    /// The `type`, `comment` and `aliases` an override reports are views: they have to point at storage that lives
-    /// as long as the program, a string literal or a settings struct's metadata, never at anything this call owns.
+    /// The base implementation reports the table's own `SETTINGS` clause, which is all a storage without settings of
+    /// its own can say, and nothing for a dictionary or a system table. An engine with settings of its own overrides
+    /// it - some values live only in the instance, such as replicated metadata - enumerating its settings object and
+    /// using `Storages/TableSettingsHelpers.h` for what that object cannot hold. See `SettingDescription` for the
+    /// lifetime of the views an override reports.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.

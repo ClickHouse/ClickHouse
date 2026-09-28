@@ -13,7 +13,6 @@
 
 #include <algorithm>
 
-
 namespace DB
 {
 
@@ -62,16 +61,9 @@ struct EngineSettingsMetadata
     std::unordered_map<String, size_t> by_name;
 };
 
-/// The same for every table of an engine, and built by enumerating the engine's whole settings struct - hundreds
-/// of rows for `MergeTree` - so a scan of `system.table_settings` would otherwise rebuild it per table. Kept for
-/// the life of the program, which costs one copy of each engine's metadata.
-///
-/// Only what is compiled in is kept - the name, default, type, description, tier and aliases. Two other kinds
-/// of field are in a `SettingDescription` and neither belongs here: a value, which an engine with a server-level
-/// instance reports from the server and a config reload changes, and the constraints, which
-/// `MergeTreeSettings::enumerateEngineSettings` fills from the calling user's profile. This is shared by every
-/// user and keyed by the engine name alone, so both are cleared rather than merely left unread - a later caller
-/// must not be able to take one from here by mistake.
+/// Built by enumerating the engine's whole settings struct - hundreds of rows for `MergeTree` - so kept for the life
+/// of the program rather than rebuilt per table. Only what is compiled in is kept: the value, which a config reload
+/// changes, and the constraints, which come from the calling user's profile, are cleared in a cache every user shares.
 const EngineSettingsMetadata & engineSettingsMetadata(const String & engine_name, ContextPtr context)
 {
     static std::mutex mutex;
@@ -95,8 +87,6 @@ const EngineSettingsMetadata & engineSettingsMetadata(const String & engine_name
         setting.masked_value.clear();
         setting.named_collection.clear();
         setting.origin = SettingOrigin::Default;
-        /// Per user, not compiled in: `MergeTreeSettings::enumerateEngineSettings` fills these from the calling
-        /// user's settings constraints, while this is shared by every user and keyed by the engine name alone.
         setting.min_value.reset();
         setting.max_value.reset();
         setting.disallowed_values.clear();
@@ -134,8 +124,7 @@ SettingDescriptions describeSettingsStatedInDefinition(const StorageID & table_i
     result.reserve(changes.size());
     for (const auto & change : changes)
     {
-        /// A clause may state a setting under an alias; the row then carries the canonical name, as every other
-        /// row does. Both are keys of the index, so an alias costs no more than the declared name.
+        /// A clause may state a setting under an alias; the row carries the canonical name, as every other row does.
         const auto it = known.by_name.find(change.name);
 
         SettingDescription described;
@@ -144,8 +133,7 @@ SettingDescriptions describeSettingsStatedInDefinition(const StorageID & table_i
             const auto & setting = known.settings[it->second];
             described.name = setting.name;
             described.default_value = setting.default_value;
-            /// Views outliving the cache entry is what makes this safe: every engine's enumeration points them
-            /// at its settings struct's metadata or at a literal, both of which live as long as the program.
+            /// Views into storage that lives as long as the program: see `SettingDescription`.
             described.type = setting.type;
             described.comment = setting.comment;
             described.tier = setting.tier;
@@ -180,9 +168,7 @@ SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const
 
     for (auto & setting : settings)
     {
-        /// A definition may name a setting by any of its aliases - `monitor_batch_inserts` for
-        /// `background_insert_batch`, say - so matching only the canonical name would miss it and
-        /// report the value as coming from somewhere unknown.
+        /// A definition may name a setting by an alias: `monitor_batch_inserts` for `background_insert_batch`.
         const bool is_stated = stated_in_definition.contains(setting.name)
             || std::any_of(setting.aliases.begin(), setting.aliases.end(),
                            [&](std::string_view alias) { return stated_in_definition.contains(alias); });

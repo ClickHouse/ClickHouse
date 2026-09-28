@@ -311,9 +311,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
 
 SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
 {
-    /// A dictionary and a system table have no `SETTINGS` clause, so their stored definition is not read at all.
-    /// A view can have one - a materialized view's own `ENGINE` takes it, and its rows are the view's, separate
-    /// from those of the inner table the data lands in - so views are read like any other table.
+    /// A dictionary and a system table have no `SETTINGS` clause. A materialized view's own `ENGINE` can have one.
     if (isDictionary() || isSystemStorage())
         return {};
 

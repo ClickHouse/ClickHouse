@@ -20,13 +20,8 @@
     SettingField##TYPE & operator[](CLASS_NAME##TYPE t);
 
 /// The typed `set` of a public settings class whose traits record origins (`DECLARE_SETTINGS_TRAITS_WITH_ORIGIN`),
-/// and what it needs from the `Impl` the class holds behind an incomplete type. Defined in the .cpp by
-/// `IMPLEMENT_SETTINGS_TYPED_SET`.
-///
-/// `set` assigns `value` and records `origin` as where it came from - unlike an assignment through `operator[]`,
-/// which keeps whatever origin was recorded, and so suits only a value adjusted in place, such as by expanding
-/// macros. By the setting's typed index, so that a misspelled or renamed setting does not compile, and with the
-/// value in whatever form the setting's field accepts - an atomic or an enum member of a storage included.
+/// and what it needs from the `Impl` it holds behind an incomplete type; defined by `IMPLEMENT_SETTINGS_TYPED_SET`.
+/// `set` assigns `value` and records `origin`, unlike an assignment through `operator[]`: see `BaseSettings`.
 /// `nameAtOffset` names the setting a typed index points at, for matching a row of a described vector.
 #define DECLARE_SETTINGS_TYPED_SET(CLASS_NAME) \
     template <typename FieldType, typename Value> \
