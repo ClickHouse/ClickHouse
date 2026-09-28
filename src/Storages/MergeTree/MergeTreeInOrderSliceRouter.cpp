@@ -76,6 +76,21 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
     if (num_finished_lanes == lanes.size())
         return finish();
 
+    /// A source ends its stream on its own only when reading was cancelled for a partial result. The
+    /// rows of its slice are not coming, so no lane can be completed in order anymore: end them all,
+    /// the way a cancelled source ends its stream.
+    for (const auto & input : inputs)
+    {
+        if (input.isFinished())
+        {
+            for (auto & output : outputs)
+                output.finish();
+            for (auto & other : inputs)
+                other.close();
+            return Status::Finished;
+        }
+    }
+
     scheduleSlices();
 
     for (const auto & assignment : assignments)
