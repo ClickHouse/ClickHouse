@@ -87,9 +87,6 @@
     <create_query>INSERT INTO {database}.wr_planned SELECT * FROM tpch10.lineitem LIMIT 800000, 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
     <create_query>INSERT INTO {database}.wr_planned SELECT * FROM tpch10.lineitem LIMIT 900000, 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
 
-    <!-- optimize_table: with an append-only history and no position deletes nothing is rewritten, so every run measures the planning pass over the fixed ten snapshots. -->
-    <query>OPTIMIZE TABLE {database}.wr_planned SETTINGS allow_experimental_iceberg_compaction = 1</query>
-
     <!-- update_no_match: mutation planning only - per-file stats refute the predicate, so nothing is scanned or rewritten and no snapshot is committed. -->
     <query><![CDATA[ALTER TABLE {database}.wr_planned UPDATE l_quantity = l_quantity + 1 WHERE l_partkey < 0]]></query>
 
