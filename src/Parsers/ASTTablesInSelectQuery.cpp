@@ -471,6 +471,11 @@ void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
     if (table_join && !table_expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTTablesInSelectQueryElement has 'table_join' without 'table_expression' during AST JSON deserialization");
+    /// The parser treats `LATERAL` as a keyword only before a parenthesized subquery, so `JOIN LATERAL` with
+    /// a table or a table function would not round-trip through the formatter.
+    if (table_join && table_join->as<ASTTableJoin &>().lateral && !table_expression->as<ASTTableExpression &>().subquery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LATERAL is only supported with a subquery during AST JSON deserialization");
 }
 
 void ASTTableExpression::readJSON(const Poco::JSON::Object & json)

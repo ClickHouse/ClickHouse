@@ -605,7 +605,7 @@ Only the following subset is supported so far; anything else is rejected with an
 - The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
 - No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
   cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
-- `GLOBAL` is not supported.
+- The `GLOBAL` and `LOCAL` join modifiers are not supported.
 - The lateral subquery must reference at least one column of the left side. Use a regular join for a
   non-correlated subquery.
 - The lateral subquery is evaluated once per distinct value of the left-side columns it references, not

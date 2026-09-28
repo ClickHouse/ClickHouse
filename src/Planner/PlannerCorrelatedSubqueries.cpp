@@ -523,7 +523,9 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
         std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
-        predicates.push_back(JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+        /// The keys identify a correlated domain tuple, where `NULL` is a value like any other (`DISTINCT` and
+        /// `GROUP BY` treat it so), hence the null-safe comparison.
+        predicates.push_back(JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::NullSafeEquals)));
     }
 
     NameSet output_columns;
@@ -1434,7 +1436,10 @@ QueryPlan buildLogicalJoinForLateral(
         std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        /// The keys match an outer row to its correlated domain tuple, not the user's `=` predicate: an outer row
+        /// with a `NULL` correlated value has its own evaluation of the subquery (e.g. `count()` = 0), so compare
+        /// null-safely.
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::NullSafeEquals));
         predicates.push_back(std::move(eq_node));
     }
 
