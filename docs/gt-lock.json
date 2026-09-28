@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-28T19:13:34.912Z",
+          "updatedAt": "2026-09-28T19:27:40.619Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-28T19:13:35.108Z",
+          "updatedAt": "2026-09-28T19:27:40.409Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-28T19:13:35.336Z",
+          "updatedAt": "2026-09-28T19:27:41.030Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-28T19:13:35.564Z",
+          "updatedAt": "2026-09-28T19:27:40.191Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-28T19:13:35.790Z",
+          "updatedAt": "2026-09-28T19:27:40.824Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-28T19:13:36.001Z",
+          "updatedAt": "2026-09-28T19:27:41.228Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-28T19:13:36.246Z",
+          "updatedAt": "2026-09-28T19:27:41.655Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-28T19:13:36.469Z",
+          "updatedAt": "2026-09-28T19:27:41.452Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -40883,47 +40883,47 @@
     },
     {
       "fileId": "d056a0b322fd52145842a4140d2c36435ec8e09af128cb0ac942514e54763d91",
-      "versionId": "4e909232527496f9f62c93c0c0743d107a794f1665eaa034531fefd7d5eb436f",
+      "versionId": "102fbdd6dcf331da5cb9d37e1796e0e9a89d8666b2c71deba2578b7217ad54b7",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:05.010Z",
-          "fileName": "es/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "5febe8d0f59ff5f1d10feb0c5293da1e929f15683c2813d1c598f30cae076fc3"
-        },
         "ja": {
-          "updatedAt": "2026-09-24T10:24:05.011Z",
+          "updatedAt": "2026-09-28T19:27:45.157Z",
           "fileName": "ja/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "7b95e934ffbbd2ddedca465d38c6d14e4d5cfc6a35446a9c9ee9024bed77483a"
+          "postProcessHash": "e39eceab5943c20fc6eab7a27eae4b6f4eabf0db23bc20264d7e2a2aa0d2354c"
         },
         "ko": {
-          "updatedAt": "2026-09-24T10:24:05.012Z",
+          "updatedAt": "2026-09-28T19:27:45.158Z",
           "fileName": "ko/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "1f3fec2f89fe36421b38e3c0f56e11b8582f83e08ea7d63865d0a978209e2cf1"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:05.012Z",
-          "fileName": "pt-BR/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "3cbfb0f7383525017ff91f5699e98e7be4d512764311b6facb31f420c9b259e1"
-        },
-        "ru": {
-          "updatedAt": "2026-09-24T10:24:05.013Z",
-          "fileName": "ru/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "e4e5a3ef7263f13bd273085b41253f6249b67cec5b86c070c66acf88e60085dc"
-        },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:05.014Z",
-          "fileName": "zh/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "c4e8aa049f1cc1cd6115f300dc020afc82dd82aa21c403065d4ab929ae7bb685"
-        },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:05.014Z",
-          "fileName": "ar/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "45315c1626d2cb159f7aad9c3599dffceffb57208ad79c1335a03f1cdef4adee"
+          "postProcessHash": "8bd50bf8efc25ec9d64f93816990449d3d9648065dad781868bd6948051030be"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:05.014Z",
+          "updatedAt": "2026-09-28T19:27:45.158Z",
           "fileName": "fr/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "a582ddf494dd2d2426d70c017099970d6410e3c851a51014c1a6dd00f4095848"
+          "postProcessHash": "32f887b7f68c86162946ea3c952543540cf9e1115e19e90d67ee8ce2c062f0c4"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-28T19:27:45.158Z",
+          "fileName": "pt-BR/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "0d370e8bec423c7c31d107feb40396a1770e8cad7c4632250e03492f7ae86d32"
+        },
+        "es": {
+          "updatedAt": "2026-09-28T19:27:45.159Z",
+          "fileName": "es/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "2328edfc20ad03fe3f03d94e322dfa66ce9f6040978cdfd1beca9993b9e34037"
+        },
+        "zh": {
+          "updatedAt": "2026-09-28T19:27:45.159Z",
+          "fileName": "zh/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "da05757bc1a10f084a2ad11d55b2901895d43114d28b47bf25be29bd046d4fbf"
+        },
+        "ar": {
+          "updatedAt": "2026-09-28T19:27:45.160Z",
+          "fileName": "ar/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "c4f87ac4342994773b9b97d7ba520e5a147dffbc331ff229ec128e307df0e0cd"
+        },
+        "ru": {
+          "updatedAt": "2026-09-28T19:27:45.161Z",
+          "fileName": "ru/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "7ce2fb010e7fc0d158917322c135c06632c7302b2c9a7655b27d522e8e67b230"
         }
       },
       "fileName": "integrations/connectors/tools/gui.mdx"
@@ -139373,6 +139373,100 @@
         }
       },
       "fileName": "integrations/language-clients/csharp/http.mdx"
+    },
+    {
+      "fileId": "7c388688481f5afc9dc349d7c446aafdc16ae238aa5ac0254889b1f3041cd90e",
+      "versionId": "7d65ec2b6af3fbdb664c8ef189c2c6bfb33d5919d2c090bde4e20dbb0eedeea8",
+      "translations": {
+        "ar": {
+          "updatedAt": "2026-09-28T19:27:45.096Z",
+          "fileName": "snippets/ar/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "c0ea04f229fc45ce1dbefe7ab5d5e6040e9af3455a3815dfc76459ebed4fcc19"
+        },
+        "fr": {
+          "updatedAt": "2026-09-28T19:27:45.097Z",
+          "fileName": "snippets/fr/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "dd3d08e045b80807e6df1b02bbe2a6fdb78efabea1d720b6943aa009a00f5481"
+        },
+        "ja": {
+          "updatedAt": "2026-09-28T19:27:45.154Z",
+          "fileName": "snippets/ja/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "d864dfadda317cb213f6b35b79cedf2608dba0bff0f5aa43fa941683a09302ed"
+        },
+        "ru": {
+          "updatedAt": "2026-09-28T19:27:45.155Z",
+          "fileName": "snippets/ru/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "e67147aaf4d2601e8ec2c91027eb80fc426ef0435831f433bb47b2678318f9fe"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-28T19:27:45.155Z",
+          "fileName": "snippets/pt-BR/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "7a55c6538e2a73e6a513296cb6c0e63c6cf6d3a07610844046c1434fa336a4f1"
+        },
+        "ko": {
+          "updatedAt": "2026-09-28T19:27:45.155Z",
+          "fileName": "snippets/ko/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "66f70fd1d6728336394aadffaa92008aaaffe5c37c0ec7863095e289646d656e"
+        },
+        "es": {
+          "updatedAt": "2026-09-28T19:27:45.156Z",
+          "fileName": "snippets/es/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "a8ef923f69da9664dab81a7f36ee58a85923daca37d6bd2275b7a32bf549d851"
+        },
+        "zh": {
+          "updatedAt": "2026-09-28T19:27:45.156Z",
+          "fileName": "snippets/zh/components/Badges/PublicPreviewBadge.jsx",
+          "postProcessHash": "cc867604b82da497cd95e3bbeead379888ea5b0cc499635fd7da94d5855b8b7d"
+        }
+      },
+      "fileName": "snippets/components/Badges/PublicPreviewBadge.jsx"
+    },
+    {
+      "fileId": "de53ef9e514ab8596fd862fd2c4d61d977d5b86826e98779ddfa60f10c12de75",
+      "versionId": "9c59b9462e07c508e4130cea75cf2f512d4b6e7ef0943b421a51c7a458480980",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-09-28T19:27:45.131Z",
+          "fileName": "snippets/es/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "6205ae93f882ef060dcb504000323709840e549e40e60d8967317cddfb3fbd69"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-28T19:27:45.153Z",
+          "fileName": "snippets/pt-BR/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "6927210b736854f1a0bd377e5b1415e0ed42c577cd9991e25e6f91292f19fa65"
+        },
+        "ko": {
+          "updatedAt": "2026-09-28T19:27:45.153Z",
+          "fileName": "snippets/ko/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "87dac1732deb5293e15d457b3c627295ad06e9d1b2dd3a639e322b7878249a16"
+        },
+        "ja": {
+          "updatedAt": "2026-09-28T19:27:45.154Z",
+          "fileName": "snippets/ja/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "f2b5f83800137f93bcdd287aca27e535d04b795d1febeb3eaf8ac44faa3620dc"
+        },
+        "ar": {
+          "updatedAt": "2026-09-28T19:27:45.154Z",
+          "fileName": "snippets/ar/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "37842c2ebe4c04f0eb3489488e2894bf2380fd8bf41c8b85c7ab79f7f20ab411"
+        },
+        "fr": {
+          "updatedAt": "2026-09-28T19:27:45.155Z",
+          "fileName": "snippets/fr/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "33d18699d8293a83494cb627aabfeadfb83fd7733d4a03ecf4d6bffa0abc5832"
+        },
+        "ru": {
+          "updatedAt": "2026-09-28T19:27:45.156Z",
+          "fileName": "snippets/ru/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "f4b4c0a91f5b78b30bb24b8088c20081028591ca17d15a16ac05d8a76b692eaf"
+        },
+        "zh": {
+          "updatedAt": "2026-09-28T19:27:45.156Z",
+          "fileName": "snippets/zh/components/PublicPreviewBadge/PublicPreviewBadge.jsx",
+          "postProcessHash": "6e54e5068ac09759f5c4da03fa6c7bf059f1159adc753f8f3028042f1853017f"
+        }
+      },
+      "fileName": "snippets/components/PublicPreviewBadge/PublicPreviewBadge.jsx"
     }
   ]
 }

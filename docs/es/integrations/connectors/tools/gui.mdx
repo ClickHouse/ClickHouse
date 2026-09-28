@@ -605,7 +605,7 @@ doc_type: 'reference'
   Características:
 
   * Resumen del servidor al conectarse: versión, tiempo de actividad, consultas en ejecución, fusiones activas, partes y tamaños de almacenamiento, estado de la réplica, clústeres y nodos de un vistazo.
-  * Constructor visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
+  * Generador visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
   * Asistente visual de `CREATE TABLE` compatible con variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` y aplicación automática de `Nullable()`.
   * Manejo nativo de tipos de ClickHouse: `Nullable`, `Array`, `LowCardinality` y objetos anidados.
   * Soporte para búsqueda vectorial: columnas de embeddings `Array(Float32)` representadas como celdas vectoriales compactas, visualización de embeddings en 2D y búsqueda de elementos similares mediante `cosineDistance`.
@@ -615,7 +615,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ADQM Control">
-  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) es una plataforma de observabilidad para clústeres de ClickHouse desplegados como [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el SGBD orientado a columna desarrollado por Arenadata sobre ClickHouse. Combina métricas de hosts procedentes de Prometheus con datos sobre hosts, tablas y consultas recopilados del clúster para mostrar cómo crecen las tablas, cómo se comportan las consultas y qué hosts están sometidos a mayor carga, en uno o varios clústeres de ADQM. ADQM Control se despliega como un clúster independiente con [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) y almacena los datos recopilados en PostgreSQL.
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) es una plataforma de observabilidad para clústeres de ClickHouse desplegados como [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el DBMS orientado a columna desarrollado por Arenadata sobre ClickHouse. Combina métricas de hosts procedentes de Prometheus con datos sobre hosts, tablas y consultas recopilados del clúster para mostrar cómo crecen las tablas, cómo se comportan las consultas y qué hosts están sometidos a mayor carga, en uno o varios clústeres de ADQM. ADQM Control se despliega como un clúster independiente con [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) y almacena los datos recopilados en PostgreSQL.
 
   Características:
 
@@ -627,4 +627,18 @@ doc_type: 'reference'
   * Filtros de consultas por texto, tabla, usuario, host, duración, estado y valores predefinidos de códigos de excepción.
   * Gráficos de consultas por duración, usuario y tipo; gráficos de carga por host con detección de anomalías.
   * Alertas por umbral sobre los recursos de los hosts que explican el problema y recomiendan una solución.
+</Accordion>
+
+<Accordion title="VisuaLeaf">
+  [VisuaLeaf](https://visualeaf.com/database/) es una interfaz gráfica de escritorio multiplataforma para bases de datos con soporte para ClickHouse, además de MongoDB, PostgreSQL, MySQL y otras bases de datos.
+
+  Características:
+
+  * Exploración de bases de datos de ClickHouse y tablas columnares.
+  * Ejecución de consultas SQL analíticas.
+  * Conversión de los resultados de las consultas en gráficos y dashboards.
+  * Reconocimiento de conexiones de ClickHouse Cloud.
+  * Disponible para Windows, macOS y Linux.
+
+  Hay disponible una Community Edition gratuita, así como ediciones de pago con características adicionales.
 </Accordion>
