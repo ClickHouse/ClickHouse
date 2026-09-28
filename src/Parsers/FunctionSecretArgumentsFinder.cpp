@@ -1565,6 +1565,10 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
             markSecretArgument(positional.back());
             positional.pop_back();
         }
+        /// It rejects anything but a literal in the other positions, after the statement is logged.
+        for (const size_t index : positional)
+            if (!function->arguments->at(index)->tryGetLiteralText(nullptr))
+                markSecretArgument(index);
         if (is_named_collection)
         {
             /// BACKUP ... TO S3(named_collection[, 'filename'], ..., secret_access_key = '...', ...):
