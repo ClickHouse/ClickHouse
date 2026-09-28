@@ -3,6 +3,7 @@
 #include <Access/OPA/OpaConfiguration.h>
 #include <Access/OPA/OpaExpressions.h>
 #include <Access/OPA/OpaRequest.h>
+#include <Core/Types.h>
 #include <base/types.h>
 
 #include <Poco/JSON/Object.h>
@@ -31,7 +32,7 @@ public:
     /// Asks for the row filters that apply to the resource. An empty result means no filtering, which
     /// is the common case and is not an error - unlike a missing decision from the allow endpoint,
     /// the absence of a filter is a meaningful answer.
-    std::vector<OpaViewExpression> getRowFilters(const OpaRequest & request, const OpaRequestContext & request_context) const;
+    Strings getRowFilters(const OpaRequest & request, const OpaRequestContext & request_context) const;
 
     /// Asks for the masks that apply to the columns named in the request. One request covers a whole
     /// table, so a wide table does not turn into one request per column.
@@ -46,8 +47,8 @@ private:
     /// since which one a deployment produces depends on how the policy is written.
     static bool parseDecision(const Poco::URI & uri, const String & response_body);
 
-    /// Extracts a list of expressions. An absent or null `result` yields an empty list.
-    static std::vector<OpaViewExpression> parseViewExpressions(const Poco::URI & uri, const String & response_body);
+    /// Extracts the filter expressions. An absent or null `result` yields an empty list.
+    static Strings parseRowFilters(const Poco::URI & uri, const String & response_body);
 
     /// Extracts a list of per-column masks. An absent or null `result` yields an empty list.
     static std::vector<OpaColumnMask> parseColumnMasks(const Poco::URI & uri, const String & response_body);

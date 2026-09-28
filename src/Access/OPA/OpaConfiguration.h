@@ -57,10 +57,6 @@ struct OpaConfiguration
     /// have to keep working while a policy is broken.
     std::unordered_set<String> exempt_users;
 
-    /// Users a policy may name in the `identity` field of a row filter or a column mask. Empty
-    /// means any existing user.
-    std::unordered_set<String> allowed_expression_identities;
-
     /// True when the configuration contains an `<open_policy_agent>` section.
     static bool isConfigured(const Poco::Util::AbstractConfiguration & config);
 
@@ -75,7 +71,6 @@ struct OpaConfiguration
     /// An object of a database that is out of scope is authorized by native grants alone.
     bool isDatabaseInScope(std::string_view database) const;
     bool isUserExempt(const String & user_name) const;
-    bool isIdentityAllowed(const String & user_name) const;
 };
 
 using OpaConfigurationPtr = std::shared_ptr<const OpaConfiguration>;

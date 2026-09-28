@@ -63,7 +63,7 @@ public:
     RowPolicyFilterPtr getOpaRowFilter(const ContextPtr & context, const String & database, const String & table_name) const;
 
     /// Returns the masks an Open Policy Agent policy applies to the named columns, keyed by column name.
-    std::unordered_map<String, OpaParsedMask> getOpaColumnMasks(
+    std::unordered_map<String, ASTPtr> getOpaColumnMasks(
         const ContextPtr & context, const String & database, const String & table_name, const Names & columns) const;
 
 #if CLICKHOUSE_CLOUD
@@ -275,7 +275,7 @@ public:
 
     ALWAYS_INLINE RowPolicyFilterPtr getOpaRowFilter(const ContextPtr & query_context, const String & database, const String & table_name) const { return access->getOpaRowFilter(query_context, database, table_name); }
 
-    ALWAYS_INLINE std::unordered_map<String, OpaParsedMask> getOpaColumnMasks(const ContextPtr & query_context, const String & database, const String & table_name, const Names & columns) const { return access->getOpaColumnMasks(query_context, database, table_name, columns); }
+    ALWAYS_INLINE std::unordered_map<String, ASTPtr> getOpaColumnMasks(const ContextPtr & query_context, const String & database, const String & table_name, const Names & columns) const { return access->getOpaColumnMasks(query_context, database, table_name, columns); }
 
 #if CLICKHOUSE_CLOUD
     ALWAYS_INLINE std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const { return access->getEnabledMaskingPolicies(); }

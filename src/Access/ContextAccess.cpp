@@ -636,7 +636,7 @@ RowPolicyFilterPtr ContextAccess::getOpaRowFilter(const ContextPtr & context, co
     return checker.getRowFilter(database, table_name, request_context, context->getOpaDecisionCache());
 }
 
-std::unordered_map<String, OpaParsedMask> ContextAccess::getOpaColumnMasks(
+std::unordered_map<String, ASTPtr> ContextAccess::getOpaColumnMasks(
     const ContextPtr & context, const String & database, const String & table_name, const Names & columns) const
 {
     if (params.full_access)

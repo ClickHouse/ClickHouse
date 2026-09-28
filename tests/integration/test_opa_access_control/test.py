@@ -152,8 +152,12 @@ def test_a_missing_uri_is_rejected():
 
 def test_an_unknown_element_in_a_user_list_is_rejected():
     """A typo in a security-relevant list must not silently widen access."""
-    write_section(
-        extra="<allowed_expression_identities><usr>oops</usr></allowed_expression_identities>"
+    node.replace_config(
+        CONFIG_PATH,
+        "<clickhouse><open_policy_agent>"
+        f"<uri>{DEFAULT_URI}</uri>"
+        "<exempt_users><usr>oops</usr></exempt_users>"
+        "</open_policy_agent></clickhouse>",
     )
 
     assert "Unexpected element" in node.query_and_get_error("SYSTEM RELOAD CONFIG")

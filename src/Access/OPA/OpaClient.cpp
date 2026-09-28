@@ -171,7 +171,7 @@ bool OpaClient::parseDecision(const Poco::URI & uri, const String & response_bod
         response_body);
 }
 
-std::vector<OpaViewExpression> OpaClient::parseViewExpressions(const Poco::URI & uri, const String & response_body)
+Strings OpaClient::parseRowFilters(const Poco::URI & uri, const String & response_body)
 {
     const auto object = parseResponseObject(uri, response_body);
 
@@ -196,7 +196,7 @@ std::vector<OpaViewExpression> OpaClient::parseViewExpressions(const Poco::URI &
 
     const auto array = result.extract<Poco::JSON::Array::Ptr>();
 
-    std::vector<OpaViewExpression> expressions;
+    Strings expressions;
     expressions.reserve(array->size());
 
     for (size_t i = 0; i < array->size(); ++i)
@@ -214,13 +214,11 @@ std::vector<OpaViewExpression> OpaClient::parseViewExpressions(const Poco::URI &
 
         const auto entry_object = entry.extract<Poco::JSON::Object::Ptr>();
 
-        OpaViewExpression view_expression;
-        view_expression.expression = entry_object->optValue<String>("expression", "");
-        view_expression.identity = entry_object->optValue<String>("identity", "");
+        String expression = entry_object->optValue<String>("expression", "");
 
         /// An entry without an expression cannot be applied. Skipping it would show more rows than the
         /// policy intended, so it is reported instead.
-        if (view_expression.expression.empty())
+        if (expression.empty())
         {
             throw Exception(
                 ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
@@ -230,7 +228,7 @@ std::vector<OpaViewExpression> OpaClient::parseViewExpressions(const Poco::URI &
                 response_body);
         }
 
-        expressions.push_back(std::move(view_expression));
+        expressions.push_back(std::move(expression));
     }
 
     return expressions;
@@ -281,7 +279,6 @@ std::vector<OpaColumnMask> OpaClient::parseColumnMasks(const Poco::URI & uri, co
         OpaColumnMask mask;
         mask.column = entry_object->optValue<String>("column", "");
         mask.expression = entry_object->optValue<String>("expression", "");
-        mask.identity = entry_object->optValue<String>("identity", "");
 
         /// A mask that does not say which column it applies to, or has nothing to apply, cannot be
         /// used. Ignoring it would show the real value, which is the opposite of what was intended.
@@ -320,7 +317,7 @@ bool OpaClient::isAllowed(const OpaRequest & request, const OpaRequestContext & 
     }
 }
 
-std::vector<OpaViewExpression> OpaClient::getRowFilters(const OpaRequest & request, const OpaRequestContext & request_context) const
+Strings OpaClient::getRowFilters(const OpaRequest & request, const OpaRequestContext & request_context) const
 {
     chassert(configuration->row_filters_uri.has_value());
     const Poco::URI & uri = *configuration->row_filters_uri;
@@ -330,7 +327,7 @@ std::vector<OpaViewExpression> OpaClient::getRowFilters(const OpaRequest & reque
     ProfileEvents::increment(ProfileEvents::OpaRequests);
     try
     {
-        return parseViewExpressions(uri, send(uri, body));
+        return parseRowFilters(uri, send(uri, body));
     }
     catch (...)
     {

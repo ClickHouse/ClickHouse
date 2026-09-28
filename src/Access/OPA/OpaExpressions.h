@@ -7,28 +7,11 @@
 namespace DB
 {
 
-/// An expression a policy returned, together with the identity it should be resolved under.
-struct OpaViewExpression
-{
-    String expression;
-    /// The user whose privileges the expression is resolved and authorized with. Empty means the
-    /// requesting user.
-    String identity;
-};
-
 /// A mask a policy returned for one column of a table, as it arrives on the wire.
 struct OpaColumnMask
 {
     String column;
     String expression;
-    String identity;
-};
-
-/// A mask after its expression has been parsed, ready to be attached to a column.
-struct OpaParsedMask
-{
-    ASTPtr expression;
-    String identity;
 };
 
 /** Parses an expression a policy returned.
@@ -36,7 +19,7 @@ struct OpaParsedMask
   * `description` names what is being parsed and appears in the error, because a policy author reading
   * a failure needs to know which rule produced the broken text. A parse failure propagates: an
   * expression that cannot be understood must not be quietly dropped, since dropping a row filter
-  * shows more rows than the policy intended.
+  * shows more rows than the policy intended, and dropping a mask shows the real value.
   */
 ASTPtr parseOpaExpression(const String & expression, const String & description);
 

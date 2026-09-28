@@ -2,6 +2,7 @@
 
 #include <Access/OPA/OpaExpressions.h>
 #include <Access/OPA/OpaRequest.h>
+#include <Core/Types.h>
 #include <base/defines.h>
 
 #include <mutex>
@@ -45,8 +46,8 @@ public:
 
     /// Row filters are memoized separately: they answer a different question about the same resource,
     /// and a query asks for them as often as it asks whether the table may be read at all.
-    std::optional<std::vector<OpaViewExpression>> getRowFilters(const Key & key) const;
-    void setRowFilters(const Key & key, const std::vector<OpaViewExpression> & filters);
+    std::optional<Strings> getRowFilters(const Key & key) const;
+    void setRowFilters(const Key & key, const Strings & filters);
 
     std::optional<std::vector<OpaColumnMask>> getColumnMasks(const Key & key) const;
     void setColumnMasks(const Key & key, const std::vector<OpaColumnMask> & masks);
@@ -54,7 +55,7 @@ public:
 private:
     mutable std::mutex mutex;
     std::unordered_map<Key, bool, Hash> decisions TSA_GUARDED_BY(mutex);
-    std::unordered_map<Key, std::vector<OpaViewExpression>, Hash> row_filters TSA_GUARDED_BY(mutex);
+    std::unordered_map<Key, Strings, Hash> row_filters TSA_GUARDED_BY(mutex);
     std::unordered_map<Key, std::vector<OpaColumnMask>, Hash> column_masks TSA_GUARDED_BY(mutex);
 };
 

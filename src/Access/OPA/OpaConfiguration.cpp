@@ -116,7 +116,6 @@ OpaConfiguration OpaConfiguration::parse(const Poco::Util::AbstractConfiguration
     result.max_batch_size = parsePositive(config, CONFIG_SECTION + ".max_batch_size", 1000);
 
     result.exempt_users = parseUserList(config, CONFIG_SECTION + ".exempt_users");
-    result.allowed_expression_identities = parseUserList(config, CONFIG_SECTION + ".allowed_expression_identities");
 
     return result;
 }
@@ -145,11 +144,6 @@ bool OpaConfiguration::isDatabaseInScope(std::string_view database) const
 bool OpaConfiguration::isUserExempt(const String & user_name) const
 {
     return exempt_users.contains(user_name);
-}
-
-bool OpaConfiguration::isIdentityAllowed(const String & user_name) const
-{
-    return allowed_expression_identities.empty() || allowed_expression_identities.contains(user_name);
 }
 
 }

@@ -43,7 +43,7 @@ public:
 
     /// The masks a policy applies to the named columns of a table, keyed by column name. One request
     /// covers the whole table.
-    std::unordered_map<String, OpaParsedMask> getColumnMasks(
+    std::unordered_map<String, ASTPtr> getColumnMasks(
         const String & database,
         const String & table,
         const Names & columns,

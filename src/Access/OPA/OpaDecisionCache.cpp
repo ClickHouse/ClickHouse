@@ -40,7 +40,7 @@ void OpaDecisionCache::set(const Key & key, bool decision)
     decisions.emplace(key, decision);
 }
 
-std::optional<std::vector<OpaViewExpression>> OpaDecisionCache::getRowFilters(const Key & key) const
+std::optional<Strings> OpaDecisionCache::getRowFilters(const Key & key) const
 {
     std::lock_guard lock{mutex};
 
@@ -50,7 +50,7 @@ std::optional<std::vector<OpaViewExpression>> OpaDecisionCache::getRowFilters(co
     return {};
 }
 
-void OpaDecisionCache::setRowFilters(const Key & key, const std::vector<OpaViewExpression> & filters)
+void OpaDecisionCache::setRowFilters(const Key & key, const Strings & filters)
 {
     std::lock_guard lock{mutex};
     row_filters.emplace(key, filters);

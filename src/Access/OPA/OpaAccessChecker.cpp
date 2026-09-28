@@ -117,33 +117,33 @@ RowPolicyFilterPtr OpaAccessChecker::getRowFilter(
 
     const OpaDecisionCache::Key key{request.operations, *request.resource};
 
-    std::vector<OpaViewExpression> view_expressions;
+    Strings expressions;
     if (cache)
     {
         if (auto cached = cache->getRowFilters(key))
         {
             ProfileEvents::increment(ProfileEvents::OpaCacheHits);
-            view_expressions = std::move(*cached);
+            expressions = std::move(*cached);
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::OpaCacheMisses);
-            view_expressions = client.getRowFilters(request, request_context);
-            cache->setRowFilters(key, view_expressions);
+            expressions = client.getRowFilters(request, request_context);
+            cache->setRowFilters(key, expressions);
         }
     }
     else
     {
-        view_expressions = client.getRowFilters(request, request_context);
+        expressions = client.getRowFilters(request, request_context);
     }
 
-    if (view_expressions.empty())
+    if (expressions.empty())
         return nullptr;
 
     ASTs parsed;
-    parsed.reserve(view_expressions.size());
-    for (const auto & view_expression : view_expressions)
-        parsed.push_back(parseOpaRowFilterExpression(view_expression.expression, "row filter"));
+    parsed.reserve(expressions.size());
+    for (const auto & expression : expressions)
+        parsed.push_back(parseOpaRowFilterExpression(expression, "row filter"));
 
     auto filter = std::make_shared<RowPolicyFilter>();
     /// Several filters all apply, so they are combined with AND: a policy can add restrictions but
@@ -154,7 +154,7 @@ RowPolicyFilterPtr OpaAccessChecker::getRowFilter(
     return filter;
 }
 
-std::unordered_map<String, OpaParsedMask> OpaAccessChecker::getColumnMasks(
+std::unordered_map<String, ASTPtr> OpaAccessChecker::getColumnMasks(
     const String & database,
     const String & table,
     const Names & columns,
@@ -191,12 +191,10 @@ std::unordered_map<String, OpaParsedMask> OpaAccessChecker::getColumnMasks(
         masks = client.getColumnMasks(request, request_context);
     }
 
-    std::unordered_map<String, OpaParsedMask> result;
+    std::unordered_map<String, ASTPtr> result;
     for (const auto & mask : masks)
     {
-        OpaParsedMask parsed;
-        parsed.expression = parseOpaExpression(mask.expression, "mask for column " + backQuote(mask.column));
-        parsed.identity = mask.identity;
+        auto parsed = parseOpaExpression(mask.expression, "mask for column " + backQuote(mask.column));
 
         /// Two masks for the same column would make the effective one depend on the order a policy
         /// happened to emit them.

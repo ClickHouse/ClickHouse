@@ -5051,7 +5051,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
               * value behind the mask. Applying it later, as a step over the read data, would leave
               * predicates comparing against the real value.
               */
-            std::unordered_map<String, OpaParsedMask> column_masks;
+            std::unordered_map<String, ASTPtr> column_masks;
             if (masked_storage_id.hasDatabase())
             {
                 Names column_names;
@@ -5096,7 +5096,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
 
                 if (is_masked)
                 {
-                    auto mask_expression = buildQueryTree(mask_it->second.expression, scope.context);
+                    auto mask_expression = buildQueryTree(mask_it->second, scope.context);
                     auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(mask_expression), table_expression_node);
                     node_map.emplace(column_name_and_type.name, column_node);
                     alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
