@@ -2576,6 +2576,37 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitOperatorResource)
     b.waitSync();
 }
 
+// While enabled, DROP RESOURCE / re-declaration of the operator resource must re-derive the implicit
+// server-limit resource in place, so the budget keeps applying without waiting for the next config
+// reload (regression: previously re-applied only on resource creation, not on drop/update).
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitReappliedOnOperatorResourceDropAndReplace)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = 100;
+    t.manager->updateServerLimits(limits);
+
+    // Operator resource takes precedence: no implicit resource is created.
+    EXPECT_TRUE(t.manager->hasResource("memory"));
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+
+    // Dropping the operator resource while enabled re-derives the implicit one in place.
+    t.query("DROP RESOURCE memory");
+    EXPECT_FALSE(t.manager->hasResource("memory"));
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+
+    // Re-declaring the operator resource hands precedence back and drops the implicit one.
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    EXPECT_TRUE(t.manager->hasResource("memory"));
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+}
+
 // Hot-reload: the budget moves finite -> unlimited -> finite in place (the resource is kept for the
 // enabled lifetime), and disabling removes the auto-created resource.
 TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitHotReload)

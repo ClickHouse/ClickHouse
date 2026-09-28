@@ -382,11 +382,12 @@ void WorkloadResourceManager::createOrUpdateResource(const String & resource_nam
 
         // Attach the resource
         resources.emplace(resource_name, resource);
-
-        // Mirror the latest server-wide limits onto a resource that appears after they were pushed
-        // (e.g. an operator resource created while the feature is enabled).
-        applyServerLimitsLocked();
     }
+
+    // Re-apply the latest server-wide limits after any resource create OR replace: a newly created
+    // operator resource must take over the implicit one, and a CREATE OR REPLACE that changes the
+    // relevant role must re-derive the implicit resource and root accordingly.
+    applyServerLimitsLocked();
 }
 
 void WorkloadResourceManager::deleteResource(const String & resource_name)
@@ -395,6 +396,10 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
     if (auto resource_iter = resources.find(resource_name); resource_iter != resources.end())
     {
         resources.erase(resource_iter);
+        // Re-apply the latest server-wide limits: if the dropped resource was the operator CPU/memory
+        // resource while the feature is enabled, the implicit server-limit resource must be recreated
+        // so the budget keeps applying without waiting for the next config reload.
+        applyServerLimitsLocked();
     }
     else // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
