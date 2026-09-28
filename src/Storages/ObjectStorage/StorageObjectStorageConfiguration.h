@@ -188,7 +188,8 @@ public:
     /// no read ever sees them, and they are released when the insert is over - see `WrittenPathReservations`.
     ///
     /// Returns false when the key is already reserved by another insert into this table, or names an object
-    /// that this table has already published. A published key is checked here as well, under the same lock, and
+    /// that this table has already published (or committed from a partitioned insert, see
+    /// `commitPathWrittenByPartitionedInsert`). A published key is checked here as well, under the same lock, and
     /// not only in the object storage: the insert that wrote it publishes it before it releases the reservation,
     /// so a key is never free for a moment in between, whatever the object storage reports about a just written
     /// object - not every S3 implementation answers `HEAD` consistently right after the `PUT` has returned.
@@ -199,6 +200,8 @@ public:
         std::lock_guard lock(paths_mutex);
         const Paths & paths = getPathsUnlocked();
         if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path; }) != paths.end())
+            return false;
+        if (paths_committed_by_partitioned_writes.contains(path))
             return false;
         return paths_reserved_for_write.paths.insert(path).second;
     }
@@ -226,6 +229,31 @@ public:
     {
         std::lock_guard lock(paths_mutex);
         return paths_reserved_for_write.paths.contains(path);
+    }
+
+    /// A partitioned insert writes the keys of the partitions, which are not in the list of the paths of the table:
+    /// the table reads the raw path, not the keys it has generated from it. A key it has committed is kept here
+    /// instead, so that it stays taken for the other inserts into the table after the insert that wrote it has
+    /// released the reservation - exactly like a published key, see `tryReservePathForWrite`. Otherwise only the
+    /// object storage would tell that the key is taken, and it may not report a just written object yet.
+    /// Only the objects this table has written are kept, so the set grows like the list of the paths of a table
+    /// that is not partitioned; a truncating insert drops the keys of the objects it removes.
+    void commitPathWrittenByPartitionedInsert(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        paths_committed_by_partitioned_writes.insert(path);
+    }
+
+    bool isPathCommittedByPartitionedInsert(const String & path) const
+    {
+        std::lock_guard lock(paths_mutex);
+        return paths_committed_by_partitioned_writes.contains(path);
+    }
+
+    void forgetPathCommittedByPartitionedInsert(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        paths_committed_by_partitioned_writes.erase(path);
     }
 
     virtual String getDataSourceDescription() const = 0;
@@ -529,6 +557,9 @@ protected:
         ReservedPaths & operator=(const ReservedPaths &) { paths.clear(); return *this; }  /// NOLINT(cert-oop54-cpp)
     };
     ReservedPaths paths_reserved_for_write;
+    /// See `commitPathWrittenByPartitionedInsert`. Guarded by `paths_mutex`. Unlike the reservations, the keys name
+    /// the committed objects, which a copy of the configuration reads as well, so they are copied with it.
+    std::unordered_set<String> paths_committed_by_partitioned_writes;
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

@@ -113,7 +113,7 @@ void removeStaleSplitObjects(
 /// A key that another insert into the table is still writing is skipped, like in `removeStaleSplitObjects`.
 void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    StorageObjectStorageConfiguration & configuration,
     const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
     const LoggerPtr & log);

@@ -259,18 +259,28 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
 
     last_written_object_path = file_path;
 
+    /// The `hive` strategy generates a fresh name for the first object of every insert, so an insert never
+    /// meets an object of a previous insert, and a truncating insert does not overwrite or delete anything,
+    /// with or without splitting: the numbered sequence of the new name cannot exist yet, and probing it
+    /// would only cost requests.
+    const bool names_are_generated = configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
+
+    /// The reservations of this insert are released when it is over, and from then on only the object storage would
+    /// tell the next insert into the partition that the keys are taken - and not every S3 implementation reports an
+    /// object right after it has been written. So every committed key stays taken in the configuration of the table,
+    /// see `StorageObjectStorageConfiguration::commitPathWrittenByPartitionedInsert`. It is done after the object is
+    /// committed, before the reservation is released, so the key is never free in between. A generated name cannot
+    /// be met again, so it is not kept.
+    StorageObjectStorageSink::PublishPathCallback publish_path;
+    if (!names_are_generated)
+        publish_path = [config = configuration](const String & key) { config->commitPathWrittenByPartitionedInsert(key); };
+
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     if (query_settings.split_on_write_by_size_bytes)
     {
         /// A partitioned sink keeps no list of the objects it has written, so there is nothing to attribute
         /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert
         /// that is split by size and therefore claims the whole sequence.
-        ///
-        /// The `hive` strategy generates a fresh name for the first object of every insert, so an insert never
-        /// meets an object of a previous insert, and a truncating insert does not overwrite or delete anything,
-        /// with or without splitting: the numbered sequence of the new name cannot exist yet, and probing it
-        /// would only cost requests.
-        const bool names_are_generated = configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
         if (query_settings.truncate_on_insert && !names_are_generated)
             removeStaleSplitObjectsByNumber(
                 *object_storage,
@@ -294,7 +304,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         configuration->format,
         configuration->compression_method,
         query_settings.split_on_write_by_size_bytes,
-        std::move(get_next_path));
+        std::move(get_next_path),
+        std::move(publish_path),
+        /* path_is_published = */ false);
 }
 
 }

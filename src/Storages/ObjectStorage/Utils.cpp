@@ -69,7 +69,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     /// The starting key is free when the object is not there and no other insert into this table is writing it:
     /// the object appears only when that insert is committed, and until then the reservation is the only thing
     /// that tells the two inserts apart - without it both would write the same key, and one would lose its rows.
-    const bool object_exists = object_storage.exists(StoredObject(key));
+    /// A key committed by a previous partitioned insert is taken even if the object storage does not report it yet.
+    const bool object_exists = configuration.isPathCommittedByPartitionedInsert(key) || object_storage.exists(StoredObject(key));
     if (!object_exists && reservations.tryReserveStartingPath(key))
         return std::nullopt;
 
@@ -176,7 +177,7 @@ void removeStaleSplitObjects(
 /// known which of the objects belong to this table - nothing is deleted in that case.
 void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    StorageObjectStorageConfiguration & configuration,
     const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
     const LoggerPtr & log)
@@ -197,10 +198,13 @@ void removeStaleSplitObjectsByNumber(
             continue;
         }
 
-        if (!object_storage.exists(StoredObject(stale_key)))
+        /// A key committed by a previous partitioned insert into this table names an object, even if the object storage
+        /// does not report it yet. Its key is dropped along with the object, so that the rewrite can take it again.
+        if (!configuration.isPathCommittedByPartitionedInsert(stale_key) && !object_storage.exists(StoredObject(stale_key)))
             break;
 
         object_storage.removeObjectIfExists(StoredObject(stale_key));
+        configuration.forgetPathCommittedByPartitionedInsert(stale_key);
         LOG_INFO(log, "Removed the stale object {} of a previous insert split by size, overwritten by a truncating insert", stale_key);
     }
 }
