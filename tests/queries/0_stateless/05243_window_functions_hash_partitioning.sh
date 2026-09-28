@@ -7,6 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `query_plan_window_functions_hash_partitioning` must not change any result, and must be used only for
 # aggregate functions over whole partitions.
 
+# Hash partitioning is not used when the storage ordering may be reused for the window sort.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_reuse_storage_ordering_for_window_functions=0"
+
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE t (k Int32, s String, lc LowCardinality(String), n Nullable(Int32), d Decimal(10, 2), f Float64, x Int64, y Int64)
 ENGINE = MergeTree ORDER BY tuple();
@@ -73,3 +76,4 @@ check "no PARTITION BY" "$(digest "SELECT x, sum(x) OVER () FROM t")"
 check "Float key" "$(digest "SELECT x, sum(x) OVER (PARTITION BY f) FROM t")"
 check "ORDER BY the partition key" "SELECT k, sum(x) OVER (PARTITION BY k) AS c FROM t ORDER BY k LIMIT 3"
 check "ORDER BY a prefix of the partition key" "SELECT k, sum(x) OVER (PARTITION BY k, k % 2) AS c FROM t ORDER BY k LIMIT 3"
+check "reuse of the storage ordering" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k) FROM t SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1")"

@@ -153,6 +153,9 @@ namespace Setting
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
     extern const SettingsBool query_plan_window_functions_hash_partitioning;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+    extern const SettingsBool query_plan_read_in_order;
+    extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsFloat totals_auto_threshold;
@@ -1967,13 +1970,19 @@ void addWindowSteps(QueryPlan & query_plan,
         }
 
         /// Hash partitioning replaces a sort, unless the sort would also serve the final ORDER BY: either the
-        /// final sort extends the window sort, or the window sort already satisfies it completely. The
-        /// distributed plan only distributes windows over a sort (`tryPushWindowBelowSortedGather`).
+        /// final sort extends the window sort, or the window sort already satisfies it completely. It also
+        /// keeps the sort when `optimizeReadInOrder` may reuse the storage ordering for it, because that
+        /// decision is made later, on the sort. The distributed plan only distributes windows over a sort
+        /// (`tryPushWindowBelowSortedGather`).
         const bool window_sort_serves_query_order = sortDescriptionIsPrefix(window_description.partition_by, query_sort_description)
             || (!query_sort_description.empty() && sortDescriptionIsPrefix(query_sort_description, window_description.partition_by));
+        const bool may_reuse_storage_ordering = settings[Setting::query_plan_enable_optimizations]
+            && settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+            && settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order];
         const bool use_hash_partitioning = need_sort && settings[Setting::query_plan_window_functions_hash_partitioning]
             && !settings[Setting::make_distributed_plan]
             && !window_sort_serves_query_order
+            && !may_reuse_storage_ordering
             && WindowStep::canUseHashPartitioning(window_description, *query_plan.getCurrentHeader());
         previous_uses_hash_partitioning = use_hash_partitioning;
 
