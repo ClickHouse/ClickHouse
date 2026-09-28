@@ -179,7 +179,8 @@ StorageKafka::StorageKafka(
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
-    , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
+    , brokers(StorageKafkaUtils::validateBrokerList(
+          getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info), context_))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
           (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty()
@@ -195,8 +196,6 @@ StorageKafka::StorageKafka(
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
 {
-    StorageKafkaUtils::checkBrokerList(brokers, context_);
-
     kafka_settings->sanityCheck(getContext());
 
     if (auto mode = getStreamingHandleErrorMode();

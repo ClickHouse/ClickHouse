@@ -29,7 +29,6 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -39,7 +38,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/parseAddress.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -92,27 +91,6 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
-namespace
-{
-
-/// Checks the NATS address against the remote host filter and throws `UNACCEPTABLE_URL` for a host it does not allow.
-/// libnats takes URLs of the form `[nats://|tls://][user[:password]@]host[:port]` and connects to port 4222 when
-/// none is given, so the filter has to see the same host and port the client will dial.
-void checkNATSAddress(const String & address, const RemoteHostFilter & remote_host_filter)
-{
-    String host_and_port = address;
-
-    if (const auto scheme_end = host_and_port.find("://"); scheme_end != String::npos)
-        host_and_port = host_and_port.substr(scheme_end + 3);
-
-    if (const auto credentials_end = host_and_port.rfind('@'); credentials_end != String::npos)
-        host_and_port = host_and_port.substr(credentials_end + 1);
-
-    const auto parsed_address = parseAddress(host_and_port, 4222);
-    remote_host_filter.checkHostAndPort(parsed_address.first, toString(parsed_address.second));
-}
-
-}
 
 namespace ErrorCodes
 {
@@ -121,6 +99,57 @@ extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int CANNOT_CONNECT_NATS;
 extern const int QUERY_NOT_ALLOWED;
+}
+
+namespace
+{
+
+/// Checks a NATS address against the remote host filter and returns the address rebuilt from its parsed
+/// parts - the string to hand to libnats in place of the original value. The remote host filter must see
+/// exactly the host and port libnats will dial, so the value is not passed on as it was written: the
+/// rebuilt address is `[scheme://][credentials@]host:port` with an explicit port, a form libnats
+/// re-parses to the same host and port.
+///
+/// libnats reads a URL of the form `[scheme://][user[:password]@]host[:port]` as a C string, splits the
+/// credentials at the last `@`, substitutes `localhost` for an empty host, allows a `/path` after the
+/// port, and connects to port 4222 when none is given (`natsUrl_Create`). An address which such a
+/// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable ASCII -
+/// is rejected instead of repaired. Throws `UNACCEPTABLE_URL` for a host the filter does not allow and
+/// `BAD_ARGUMENTS` for an address it cannot parse safely.
+String validateNATSAddress(const String & address, const RemoteHostFilter & remote_host_filter)
+{
+    if (address.find('\0') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS address must not contain NUL characters");
+
+    String host_and_port = address;
+
+    String scheme;
+    if (const auto scheme_end = host_and_port.find("://"); scheme_end != String::npos)
+    {
+        scheme = host_and_port.substr(0, scheme_end + strlen("://"));
+        host_and_port = host_and_port.substr(scheme_end + strlen("://"));
+
+        for (const char c : scheme.substr(0, scheme_end))
+            if (!isAlphaASCII(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid scheme in NATS address '{}'", address);
+    }
+
+    String credentials;
+    if (const auto credentials_end = host_and_port.rfind('@'); credentials_end != String::npos)
+    {
+        credentials = host_and_port.substr(0, credentials_end + 1);
+        host_and_port = host_and_port.substr(credentials_end + 1);
+
+        /// The credentials are kept verbatim (a password may contain almost anything, including
+        /// non-ASCII), only ASCII control characters (which include DEL) are rejected.
+        for (const char c : credentials)
+            if (isASCII(c) && !isPrintableASCII(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected character in the credentials of NATS address '{}'", address);
+    }
+
+    return scheme + credentials + remote_host_filter.checkAndGetCanonicalHostAndPort(host_and_port, 4222, "NATS address");
+}
+
 }
 
 
@@ -194,10 +223,10 @@ StorageNATS::StorageNATS(
 
     const auto & remote_host_filter = context_->getRemoteHostFilter();
     if (!configuration.url.empty())
-        checkNATSAddress(configuration.url, remote_host_filter);
-    for (const auto & server : configuration.servers)
+        configuration.url = validateNATSAddress(configuration.url, remote_host_filter);
+    for (auto & server : configuration.servers)
         if (!server.empty())
-            checkNATSAddress(server, remote_host_filter);
+            server = validateNATSAddress(server, remote_host_filter);
 
     if (configuration.client_cert_file.empty() != configuration.client_key_file.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings nats_client_cert_file and nats_client_key_file must be specified together");

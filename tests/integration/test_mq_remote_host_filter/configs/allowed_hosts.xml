@@ -3,5 +3,6 @@
         <host>localhost:19092</host>
         <host>localhost:14222</host>
         <host>allowed-any-port</host>
+        <host_regexp>.*\.allowed\.example\.com</host_regexp>
     </remote_url_allow_hosts>
 </clickhouse>

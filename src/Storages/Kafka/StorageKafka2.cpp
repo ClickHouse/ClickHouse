@@ -169,7 +169,8 @@ StorageKafka2::StorageKafka2(
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_, .shard = getContext()->getMacros()->tryGetValue("shard")}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
-    , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
+    , brokers(StorageKafkaUtils::validateBrokerList(
+          getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info), context_))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
           (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty()
@@ -186,7 +187,6 @@ StorageKafka2::StorageKafka2(
     , active_node_identifier(toString(ServerUUID::get()))
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
-    StorageKafkaUtils::checkBrokerList(brokers, context_);
     kafka_settings->sanityCheck(getContext());
     parsePartitionAffinitySettings();
 
