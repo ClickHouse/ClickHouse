@@ -213,6 +213,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
 
+    vhost_from_config = config.has("rabbitmq.vhost");
     configuration =
     {
         .host = parsed_address.first,
@@ -255,6 +256,7 @@ StorageRabbitMQ::StorageRabbitMQ(
          * for the names of later declared queues
          */
         queue_base = getTableBasedName("", table_id_);
+        queue_base_generated = true;
     }
     else
     {
@@ -1840,7 +1842,7 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
     setEffectiveValue(settings, RabbitMQSetting::rabbitmq_routing_key_list, boost::algorithm::join(routing_keys, ","));
     setEffectiveValue(settings, RabbitMQSetting::rabbitmq_schema, schema_name);
     setEffectiveValue(settings, RabbitMQSetting::rabbitmq_queue_base, queue_base,
-        (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_base].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
+        queue_base_generated ? std::optional(SettingOrigin::Other) : std::nullopt);
     setEffectiveValue(settings, RabbitMQSetting::rabbitmq_queue_settings_list, boost::algorithm::join(queue_settings_list, ","));
     setEffectiveValue(settings, RabbitMQSetting::rabbitmq_address, configuration.connection_string);
 
@@ -1850,7 +1852,7 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
     if (!configuration.host.empty())
     {
         setEffectiveValue(settings, RabbitMQSetting::rabbitmq_vhost, configuration.vhost,
-            getContext()->getConfigRef().has("rabbitmq.vhost") ? std::optional(SettingOrigin::Config) : std::nullopt);
+            vhost_from_config ? std::optional(SettingOrigin::Config) : std::nullopt);
         setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_username, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
         setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_password, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
     }

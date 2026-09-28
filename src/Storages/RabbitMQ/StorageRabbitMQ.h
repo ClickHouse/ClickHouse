@@ -105,6 +105,9 @@ private:
     size_t num_consumers;
     size_t num_queues;
     String queue_base;
+    /// Whether `queue_base` is the one this storage named after the table, because the setting expanded to nothing.
+    /// For `getTableSettings`, which reports such a value as the engine's rather than the definition's.
+    bool queue_base_generated = false;
     Names queue_settings_list;
     size_t max_rows_per_message;
     bool reject_unhandled_messages = false;
@@ -123,6 +126,9 @@ private:
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
+    /// Whether `configuration.vhost` came from the `rabbitmq` server config section, as it was when the table was
+    /// built: the section may have changed since, and the value reported is the one the table took.
+    bool vhost_from_config = false;
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
