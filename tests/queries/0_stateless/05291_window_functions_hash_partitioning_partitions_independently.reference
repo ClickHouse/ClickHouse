@@ -1,0 +1,32 @@
+-- { echo }
+
+-- The partition key is a function of the window `PARTITION BY` column: the scatter is skipped.
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT k, sum(x) OVER (PARTITION BY k) FROM t_hash_window_partitions SETTINGS query_plan_window_functions_hash_partitioning = 1)
+WHERE explain LIKE '%Hash partitioning%' OR explain LIKE '%Skip scatter by partition%';
+Hash partitioning: 1
+Skip scatter by partition: 1
+SELECT count() FROM (EXPLAIN PIPELINE SELECT k, sum(x) OVER (PARTITION BY k) FROM t_hash_window_partitions SETTINGS query_plan_window_functions_hash_partitioning = 1)
+WHERE explain LIKE '%ScatterByPartitionTransform%';
+0
+SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- `DISTINCT` after the window.
+SELECT (SELECT groupArraySorted(100)((k, s)) FROM (SELECT DISTINCT k, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT groupArraySorted(100)((k, s)) FROM (SELECT DISTINCT k, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- Another window after the hash window.
+SELECT (SELECT sum(cityHash64(k, x, s, m, r)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s, max(x) OVER (PARTITION BY k % 3) AS m, row_number() OVER (PARTITION BY k ORDER BY x) AS r FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(k, x, s, m, r)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s, max(x) OVER (PARTITION BY k % 3) AS m, row_number() OVER (PARTITION BY k ORDER BY x) AS r FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- The partition key is not determined by the window `PARTITION BY` column: the scatter stays.
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT k, sum(x) OVER (PARTITION BY k) FROM t_hash_window_other_partitions SETTINGS query_plan_window_functions_hash_partitioning = 1)
+WHERE explain LIKE '%Hash partitioning%' OR explain LIKE '%Skip scatter by partition%';
+Hash partitioning: 1
+SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_other_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_other_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- Sort limits keep the scatter.
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT k, sum(x) OVER (PARTITION BY k) FROM t_hash_window_partitions SETTINGS query_plan_window_functions_hash_partitioning = 1, max_rows_to_sort = 1000000)
+WHERE explain LIKE '%Hash partitioning%' OR explain LIKE '%Skip scatter by partition%';
+Hash partitioning: 1

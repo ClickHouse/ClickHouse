@@ -1,0 +1,9 @@
+1000	827569046260263161
+1000	827569046260263161
+1000	827569046260263161
+05292_hash	['PartitionAggregateTransform']
+05292_sort	['WindowTransform']
+05292_spill	['PartitionAggregateTransform']
+05292_hash	0
+05292_sort	0
+05292_spill	1
