@@ -2389,6 +2389,32 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
 {
+    /// `CREATE ... CLONE AS` copies the source parts via an internal `REPLACE PARTITION ALL FROM`, which
+    /// validates the source against the target with `checkStructureAndGetMergeTreeData` -- but only after the
+    /// new table is already published, so a rejection (e.g. a target ENGINE appends a column to the effective
+    /// sorting key, like `VersionedCollapsingMergeTree`) left an orphan empty table and made a retry fail with
+    /// `TABLE_ALREADY_EXISTS`. Run the same validation up front, against the not yet published storage, so the
+    /// clone is rejected with the same error and no table is left behind.
+    auto check_clone_as_source_structure = [&](const StoragePtr & new_storage)
+    {
+        if (!create.is_clone_as || create.is_create_empty)
+            return;
+        const String as_database_name = getContext()->resolveDatabase(as_database_saved.empty() ? create.as_database : as_database_saved);
+        const String as_table_name = as_table_saved.empty() ? create.as_table : as_table_saved;
+        if (as_table_name.empty())
+            return;
+        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(new_storage.get()))
+        {
+            if (auto source_table = DatabaseCatalog::instance().tryGetTable({as_database_name, as_table_name}, getContext()))
+            {
+                TableLockHolder source_lock = source_table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+                auto my_snapshot = new_storage->getInMemoryMetadataPtr(getContext(), false);
+                auto src_snapshot = source_table->getInMemoryMetadataPtr(getContext(), false);
+                merge_tree_data->checkStructureAndGetMergeTreeData(source_table, src_snapshot, my_snapshot);
+            }
+        }
+    };
+
     if (create.isTemporary())
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -2408,6 +2434,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 mode,
                 is_restore_from_backup);
             validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            check_clone_as_source_structure(res);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2659,6 +2686,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
     }
+
+    check_clone_as_source_structure(res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
