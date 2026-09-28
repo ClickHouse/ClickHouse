@@ -81,15 +81,22 @@ IMergeTreeReader::IMergeTreeReader(
     {
         auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
-        serializations.emplace_back(std::move(column_and_serialization_in_part.serialization));
-
-        if (column.isSubcolumn()
-            && data_part_info_for_read->isCompactPart()
+        auto & serialization = column_and_serialization_in_part.serialization;
+        if (data_part_info_for_read->isCompactPart()
             && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto it = serializations_of_full_columns.find(column_to_read.getNameInStorage());
+            if (it == serializations_of_full_columns.end())
+            {
+                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                it = serializations_of_full_columns.emplace(
+                    column_to_read.getNameInStorage(),
+                    column.isSubcolumn() ? getSerializationInPart(requested_column_in_storage) : serialization).first;
+            }
+            serializations.emplace_back(column.isSubcolumn() ? std::move(serialization) : it->second);
         }
+        else
+            serializations.emplace_back(std::move(serialization));
     }
 }
 
