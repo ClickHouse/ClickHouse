@@ -162,6 +162,10 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     /// (shared data paths and dynamic paths map keys), which stays alive during serialization.
     std::vector<std::pair<std::string_view, ColumnPtr>> flattened_paths;
 
+    /// The serialization and the state of each typed path in the order of `sorted_typed_paths`, resolved on
+    /// the first call to `serializeBinaryBulkWithMultipleStreams`, which is called for every granule.
+    std::vector<std::pair<const ISerialization *, ISerialization::SerializeBinaryBulkStatePtr *>> typed_paths_serializations_and_states;
+
     explicit SerializeBinaryBulkStateObject(SerializationObject::SerializationVersion serialization_version_)
         : serialization_version(serialization_version_)
     {
@@ -776,6 +780,32 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
     return state;
 }
 
+void SerializationObject::serializeTypedPathsBulk(
+    const ColumnObject & column_object,
+    size_t offset,
+    size_t limit,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStateObject & object_state) const
+{
+    auto & serializations_and_states = object_state.typed_paths_serializations_and_states;
+    if (serializations_and_states.empty() && !sorted_typed_paths.empty())
+    {
+        serializations_and_states.reserve(sorted_typed_paths.size());
+        for (const auto & path : sorted_typed_paths)
+            serializations_and_states.emplace_back(typed_paths_serializations.at(path).get(), &object_state.typed_path_states[path]);
+    }
+
+    for (size_t i = 0; i != sorted_typed_paths.size(); ++i)
+    {
+        const auto & path = sorted_typed_paths[i];
+        const auto & [serialization, path_state] = serializations_and_states[i];
+        settings.path.push_back(Substream::ObjectTypedPath);
+        settings.path.back().object_path_name = path;
+        serialization->serializeBinaryBulkWithMultipleStreams(*column_object.getTypedPaths().at(path), offset, limit, settings, *path_state);
+        settings.path.pop_back();
+    }
+}
+
 void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
@@ -810,19 +840,12 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     const auto & column_object = assert_cast<const ColumnObject &>(column);
-    const auto & typed_paths = column_object.getTypedPaths();
 
     if (object_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
         settings.path.push_back(Substream::ObjectData);
 
-        for (const auto & path : sorted_typed_paths)
-        {
-            settings.path.push_back(Substream::ObjectTypedPath);
-            settings.path.back().object_path_name = path;
-            typed_paths_serializations.at(path)->serializeBinaryBulkWithMultipleStreams(*typed_paths.at(path), offset, limit, settings, object_state->typed_path_states[path]);
-            settings.path.pop_back();
-        }
+        serializeTypedPathsBulk(column_object, offset, limit, settings, *object_state);
 
         for (const auto & [path, path_column] : object_state->flattened_paths)
         {
@@ -845,13 +868,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
 
     settings.path.push_back(Substream::ObjectData);
 
-    for (const auto & path : sorted_typed_paths)
-    {
-        settings.path.push_back(Substream::ObjectTypedPath);
-        settings.path.back().object_path_name = path;
-        typed_paths_serializations.at(path)->serializeBinaryBulkWithMultipleStreams(*typed_paths.at(path), offset, limit, settings, object_state->typed_path_states[path]);
-        settings.path.pop_back();
-    }
+    serializeTypedPathsBulk(column_object, offset, limit, settings, *object_state);
 
     const auto * dynamic_serialization_typed = assert_cast<const SerializationDynamic *>(dynamic_serialization.get());
     for (const auto & path : object_state->sorted_dynamic_paths)
