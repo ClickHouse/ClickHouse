@@ -1,29 +1,16 @@
 <test run_all_queries="1">
-    <!-- Keep both setting variants when CI uses a soft query limit.
-         In this PR, the new setting makes the test PR-only: compare the paired
-         runtimes explicitly, rather than expecting a master/PR speedup row. -->
+    <!-- Keep this benchmark reference-compatible. The stateless test verifies
+         the opt-in analyzer rewrite; here explicit s.size expressions measure
+         the resulting read shape against full-String controls on both binaries. -->
     <settings>
         <max_threads>1</max_threads>
         <max_insert_threads>4</max_insert_threads>
         <use_query_condition_cache>0</use_query_condition_cache>
         <use_uncompressed_cache>0</use_uncompressed_cache>
-        <optimize_functions_to_subcolumns>1</optimize_functions_to_subcolumns>
+        <optimize_functions_to_subcolumns>0</optimize_functions_to_subcolumns>
         <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
     </settings>
-    <substitutions>
-        <substitution>
-            <name>optimize_full_read</name>
-            <values>
-                <value>1</value>
-                <value>0</value>
-            </values>
-        </substitution>
-    </substitutions>
 
-    <!-- The reference build does not have this setting yet. -->
-    <create_query do_not_check_in_pr="121377">
-        SELECT getSetting('optimize_string_size_subcolumn_with_full_read')
-    </create_query>
     <create_query>
         CREATE TABLE string_size_filter_only_perf
         (
@@ -49,25 +36,39 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE string_size_filter_only_perf FINAL SETTINGS mutations_sync = 1</fill_query>
 
-    <!-- Empty rows are clustered in the first 1%; the size filter can skip the remaining payloads. -->
-    <query tag="String size filter-only">
+    <!-- Empty rows are clustered in the first 1%. This is the read shape produced
+         by the opt-in analyzer rewrite and can skip the remaining String payloads. -->
+    <query tag="String size filter-only optimized shape">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE s.size = 0
+        FORMAT Null
+    </query>
+
+    <!-- Full-String control for the same selective predicate. -->
+    <query tag="String full-read filter-only control">
         SELECT s
         FROM string_size_filter_only_perf
         PREWHERE empty(s)
         FORMAT Null
-        SETTINGS
-            optimize_string_size_subcolumn_with_full_read = {optimize_full_read}
     </query>
 
-    <!-- Most granules survive: split reads must not be assumed to help. -->
-    <query tag="String size nonselective filter-only">
+    <!-- Most granules survive: the extra size-stream read may not help. -->
+    <query tag="String size nonselective optimized shape">
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE s.size != 0
+        FORMAT Null
+    </query>
+
+    <!-- Full-String control for the nonselective predicate. -->
+    <query tag="String full-read nonselective control">
         SELECT s
         FROM string_size_filter_only_perf
         PREWHERE notEmpty(s)
         FORMAT Null
-        SETTINGS
-            optimize_string_size_subcolumn_with_full_read = {optimize_full_read}
     </query>
+
     <drop_query>DROP TABLE IF EXISTS string_size_filter_only_perf</drop_query>
     <create_query>
         CREATE TABLE string_size_filter_only_legacy_perf
@@ -94,36 +95,38 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE string_size_filter_only_legacy_perf FINAL SETTINGS mutations_sync = 1</fill_query>
 
-    <!-- Legacy sizes still require the full String stream. -->
+    <!-- Legacy sizes are virtual. Explicit s.size keeps this benchmark runnable
+         on both binaries while exercising the co-read planner added by this PR. -->
     <query tag="Legacy String size filter-only">
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE s.size = 0
+        FORMAT Null
+    </query>
+
+    <query tag="Legacy String full-read filter-only control">
         SELECT s
         FROM string_size_filter_only_legacy_perf
         PREWHERE empty(s)
         FORMAT Null
-        SETTINGS
-            optimize_string_size_subcolumn_with_full_read = {optimize_full_read}
     </query>
 
     <!-- Legacy multi-step PREWHERE, with the size predicate written first. -->
     <query tag="Legacy String size-first filter-only">
         SELECT s
         FROM string_size_filter_only_legacy_perf
-        PREWHERE notEmpty(s) AND id &gt; 0 AND like(s, '%foo%')
+        PREWHERE s.size != 0 AND id &gt; 0 AND like(s, '%foo%')
         FORMAT Null
-        SETTINGS
-            enable_multiple_prewhere_read_steps = 1,
-            optimize_string_size_subcolumn_with_full_read = {optimize_full_read}
+        SETTINGS enable_multiple_prewhere_read_steps = 1
     </query>
 
     <!-- Same legacy workload with the full-String predicate written first. -->
     <query tag="Legacy String full-first filter-only">
         SELECT s
         FROM string_size_filter_only_legacy_perf
-        PREWHERE like(s, '%foo%') AND id &gt; 0 AND notEmpty(s)
+        PREWHERE like(s, '%foo%') AND id &gt; 0 AND s.size != 0
         FORMAT Null
-        SETTINGS
-            enable_multiple_prewhere_read_steps = 1,
-            optimize_string_size_subcolumn_with_full_read = {optimize_full_read}
+        SETTINGS enable_multiple_prewhere_read_steps = 1
     </query>
     <drop_query>DROP TABLE IF EXISTS string_size_filter_only_legacy_perf</drop_query>
 </test>
