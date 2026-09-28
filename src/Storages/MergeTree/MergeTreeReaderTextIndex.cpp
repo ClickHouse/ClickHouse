@@ -55,8 +55,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Intersects `current` (all rows if null) with the rows of a token given by its blocks, which cover disjoint row ranges,
-/// keeping only the rows in `window`.
 PostingListPtr intersectWithBlocks(const PostingList * current, const std::vector<PostingListPtr> & blocks, const PostingList & window)
 {
     auto result = std::make_shared<PostingList>(*blocks.front() & window);
@@ -140,8 +138,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     chassert(index_granule);
     auto text_granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
 
-    /// Intersections are built from the analyzer's postings of the granule. Every read task of a part sets the
-    /// same granule again; its intersections stay valid because they are matched by the identity of their blocks.
+    /// Cached intersections include the granule's analyzer postings. Every read task of a part sets the same granule again.
     if (text_granule != granule)
     {
         for (auto & steps : intersection_steps)

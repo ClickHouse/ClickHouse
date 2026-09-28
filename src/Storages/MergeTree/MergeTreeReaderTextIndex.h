@@ -64,8 +64,7 @@ private:
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
     PostingList buildPostingsForQuery(size_t column_idx, const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
-    /// Returns the intersection of `folded_postings` (all rows if null) and the large tokens in `range`, which lies inside
-    /// one Roaring container, from the intersections kept for the previous rows of this container when they apply.
+    /// Intersects `folded_postings` (all rows if null) with the large tokens in `range`, which lies in one Roaring container.
     PostingList intersectPostingsInContainer(
         size_t column_idx, const TokenToPostingsInfosMap & tokens, const PostingList * folded_postings, const RowsRange & range, const PostingList & range_posting);
     /// Reads and unions all posting list blocks for a large-posting token within the given range.
