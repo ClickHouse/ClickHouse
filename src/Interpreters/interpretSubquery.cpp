@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -159,8 +160,17 @@ std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
     /// which the interpreter never did for a subquery - including one built by a background merge for a `TTL`
     /// expression, whose context carries the settings of the default profile.
     prepared.context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    /// The analyzer re-applies the subquery's own `SETTINGS` clause over this context, so strip the parallel
+    /// replica settings from it as well. The AST belongs to the analysed statement, whose text is persisted,
+    /// so strip a clone.
+    static constexpr std::array parallel_replica_settings{
+        std::string_view{"allow_experimental_parallel_reading_from_replicas"},
+        std::string_view{"enable_parallel_replicas"},
+    };
+    ASTPtr query = prepared.query->clone();
+    removeSettingsFromQuery(query, parallel_replica_settings);
     return std::make_shared<InterpreterSelectQueryAnalyzer>(
-        prepared.query, prepared.context, prepared.options, required_source_columns);
+        query, prepared.context, prepared.options, required_source_columns);
 }
 
 }
