@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_pause_before_new_file_claim[];
 }
 
 namespace ErrorCodes
@@ -297,6 +298,8 @@ ObjectStorageQueueSource::FileIterator::next()
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
                         /* bucket_info */ {}); /// No buckets for Unordered mode.
+
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_new_file_claim);
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -1543,6 +1546,61 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
+    /// Batch the `.retriable` marker lookup for every file that will go through a
+    /// success-path cleanup below, instead of letting each file's own cleanup do a
+    /// separate synchronous Keeper read (the extra-round-trip-per-success issue
+    /// flagged in review). A cache miss (e.g. an empty failed_node_path in exclusive
+    /// mode) is simply skipped here - addClearRetriableRequestIfExists() still works
+    /// correctly via its direct-read fallback for any file this loop does not cover.
+    if (insert_succeeded)
+    {
+        std::vector<std::string> retriable_paths;
+        std::vector<FileMetadataPtr> retriable_paths_metadata;
+        for (const auto & processed_file : processed_files)
+        {
+            if (processed_file.state != FileState::Processed)
+                continue;
+            const auto & failed_node_path = processed_file.metadata->getFailedNodePath();
+            if (failed_node_path.empty())
+                continue;
+            retriable_paths.push_back(failed_node_path + ".retriable");
+            retriable_paths_metadata.push_back(processed_file.metadata);
+        }
+
+        if (!retriable_paths.empty())
+        {
+            /// This lookup is only a success-path optimization (avoids a per-file
+            /// Keeper round-trip later in addClearRetriableRequestIfExists()), so a
+            /// transient Keeper error here must not abort an otherwise successful
+            /// commit. Retry like every other Keeper access on this path; if all
+            /// retries are exhausted, leave the cache unset for the affected files -
+            /// addClearRetriableRequestIfExists() falls back to a direct per-file
+            /// tryGet() read for any entry it finds unset.
+            try
+            {
+                ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+                {
+                    auto responses = files_metadata->getZooKeeper()->tryGet(retriable_paths);
+                    for (size_t i = 0; i < responses.size(); ++i)
+                    {
+                        if (responses[i].error == Coordination::Error::ZOK)
+                            retriable_paths_metadata[i]->setRetriableNodeStat(responses[i].stat);
+                        else
+                            retriable_paths_metadata[i]->setRetriableNodeStat(std::nullopt);
+                    }
+                });
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                LOG_WARNING(
+                    log,
+                    "Failed to batch-lookup .retriable markers after retries ({}), "
+                    "will fall back to per-file lookup during cleanup",
+                    e.displayText());
+            }
+        }
+    }
+
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
     /// If no buckets are used, we still do this for Ordered mode,
     /// just consider there will be only one bucket with id 0.
@@ -1611,7 +1669,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         }
                         else
                         {
-                            file_metadata->prepareResetProcessingRequests(requests);
+                            /// This file is Processed (succeeded) but is not the bucket's
+                            /// max-processed file, so it never reaches prepareProcessedRequestsImpl.
+                            /// Clear any stale `.retriable` marker here so a successful file never
+                            /// leaves behind a retry counter from an earlier failed attempt.
+                            file_metadata->prepareResetProcessingRequests(requests, /* clear_retriable */true);
                         }
                         if (has_partitioning)
                             file_metadata->preparePartitionProcessedMap(file_map);

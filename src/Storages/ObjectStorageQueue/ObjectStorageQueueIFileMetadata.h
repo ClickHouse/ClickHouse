@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <Core/Types.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -41,6 +42,7 @@ public:
         void onProcessed();
         void reset();
         void onFailed(const std::string & exception);
+        void updateState(State state_);
 
         std::string getException() const;
 
@@ -53,6 +55,7 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
+        std::atomic<uint64_t> generation{0};  /// Incremented on every state transition, for eviction race detection
         /// Non-zero only while `state` is a `Processing` state which was read from keeper instead
         /// of being set by the processor which holds the file: the time of that observation.
         std::atomic<time_t> processing_observed_in_keeper_time = 0;
@@ -111,6 +114,7 @@ public:
         const std::string & failed_node_path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<UInt64> & loading_retries_ref_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
         const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
@@ -144,10 +148,43 @@ public:
 
     /// Check Keeper to determine whether this file has already been processed or failed.
     /// Sets `failure_message` when the result is `Failed`.
-    virtual PathState getPathState(std::string & failure_message) const = 0;
+    /// If `retries_out` is non-null and the result is `Failed`, it is set to the retry
+    /// count stored in Keeper (from either the terminal failed node or a live `.retriable`
+    /// marker) so callers can revalidate a lowered `loading_retries` limit even when their
+    /// own in-memory cache is cold (e.g. after a restart or on a different replica).
+    /// If `is_terminal_out` is non-null and the result is `Failed`, it is set to true when
+    /// the failure came from the terminal `/failed/<hash>` node (permanent, not retryable
+    /// regardless of a later-raised `loading_retries`) and false when it came from a live
+    /// `.retriable` marker (still eligible for the live retry-limit comparison).
+    virtual PathState getPathState(
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const = 0;
+
+    /// Cheap check for a fresh file (state == None): only probes the live
+    /// `.retriable` marker (a single Keeper read), which nothing in the
+    /// downstream claim path (claim-multi / claim loop) checks on its own.
+    /// Does NOT recheck processed/failed terminal nodes - the downstream
+    /// claim path already does that cheaply as part of its own Keeper call.
+    /// Returns true if the marker's stored retry count is at or above the
+    /// current `max_loading_retries` limit (file should not be claimed).
+    bool isRetriableMarkerExhausted() const;
+
+    /// Called when isRetriableMarkerExhausted() returns true: atomically converts the
+    /// exhausted `.retriable` marker into a terminal `/failed/<hash>` node, so the file
+    /// becomes visible to and cleanable by failed_files_ttl_sec / SYSTEM DROP S3QUEUE
+    /// FAILED FILES instead of remaining stuck forever (neither retryable nor cleanable).
+    /// Best-effort: returns false (and leaves nothing changed) on any Keeper error or a
+    /// concurrent race with another replica doing the same terminalization - safe to call
+    /// again on the next attempt at this file regardless of the outcome.
+    bool tryTerminalizeExhaustedRetriableMarker() const;
 
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }
+
+    /// Populate the `.retriable` marker cache from a batched lookup done by the
+    /// caller (see addClearRetriableRequestIfExists()), so success-path cleanup
+    /// for this file does not need its own Keeper read. `std::nullopt` means the
+    /// marker does not exist.
+    void setRetriableNodeStat(std::optional<Coordination::Stat> stat) const { retriable_node_stat_cache = stat; }
 
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
@@ -185,7 +222,11 @@ public:
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
-    virtual void prepareResetProcessingRequests(Coordination::Requests & requests);
+    /// `clear_retriable`: also remove a live `.retriable` marker in the same multi.
+    /// Only safe when the file is known to have succeeded (e.g. a bucket's non-max
+    /// Processed file in ordered mode) - never set this for an actual failure reset,
+    /// or a file that is still genuinely retry-pending would lose its retry count.
+    virtual void prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();
@@ -248,6 +289,10 @@ protected:
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
+    /// Live reference to the table-level loading_retries setting, so that commit-time
+    /// failure decisions honor an ALTER TABLE ... MODIFY SETTING made while this file
+    /// was already claimed (max_loading_retries above is frozen at construction time).
+    std::atomic<UInt64> & loading_retries_ref;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
     const std::atomic<size_t> & processing_state_cache_ttl_seconds;
@@ -275,6 +320,29 @@ protected:
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;
+
+    /// Cached result of a batched `.retriable` marker existence check done by the
+    /// caller (ObjectStorageQueueSource::prepareCommitRequests) before its commit
+    /// loop, so per-file success-path cleanup does not repeat a synchronous Keeper
+    /// read for every file. Unset means "not checked by the caller" - callers that
+    /// don't populate it (or paths outside the batched commit loop) get a direct
+    /// fallback read instead, so correctness never depends on the cache being warm.
+    /// Outer optional: whether the batched lookup checked this file at all
+    /// (nullopt = not checked, e.g. cache never populated). Inner optional:
+    /// whether the marker exists (nullopt = checked, marker absent). Keeping
+    /// these separate means a known "marker absent" result does not trigger a
+    /// redundant fallback read in addClearRetriableRequestIfExists().
+    mutable std::optional<std::optional<Coordination::Stat>> retriable_node_stat_cache;
+
+    /// If a live `.retriable` marker exists for this file, add its removal to
+    /// `requests` (with the version from the cache set via setRetriableNodeStat(),
+    /// or from a direct read if the cache was never populated). Shared by every
+    /// success-path cleanup site (prepareProcessedRequestsImpl in both Unordered
+    /// and Ordered mode, and prepareResetProcessingRequests's clear_retriable path)
+    /// to avoid repeating the same tryGet-then-conditionally-remove logic. A no-op
+    /// when failed_node_path is empty (exclusive mode, which never tracks retries
+    /// via Keeper).
+    void addClearRetriableRequestIfExists(Coordination::Requests & requests) const;
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
