@@ -26,9 +26,23 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    void checkLabelName(std::string_view function_name, const SQLQueryPiece & argument, size_t argument_number)
+    /// Checks that a label name argument is a valid label name.
+    /// Reads the text from the string literal node, because `SQLQueryPiece::string_value` isn't set
+    /// if the evaluation range of the literal is empty (see `fromLiteral`).
+    void checkLabelName(const PrometheusQueryTree::Function * function_node, size_t argument_index)
     {
-        const auto & label_name = argument.string_value;
+        const auto & function_name = function_node->function_name;
+        const auto * argument_node = function_node->getArguments().at(argument_index);
+        if (argument_node->node_type != PrometheusQueryTree::NodeType::StringLiteral)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                "Function '{}' expects a string literal in argument #{}",
+                function_name,
+                argument_index + 1);
+        }
+
+        const auto & label_name = static_cast<const PrometheusQueryTree::StringLiteral *>(argument_node)->string;
         if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
         {
             throw Exception(
@@ -36,7 +50,7 @@ namespace
                 "Function '{}' received invalid label name {} in argument #{}",
                 function_name,
                 quoteString(label_name),
-                argument_number);
+                argument_index + 1);
         }
     }
 
@@ -85,14 +99,14 @@ namespace
 
         if (function_name == "label_replace")
         {
-            checkLabelName(function_name, arguments[1], 2);
+            checkLabelName(function_node, 1);
         }
         else
         {
             for (size_t i = 3; i < arguments.size(); ++i)
-                checkLabelName(function_name, arguments[i], i + 1);
+                checkLabelName(function_node, i);
 
-            checkLabelName(function_name, arguments[1], 2);
+            checkLabelName(function_node, 1);
         }
     }
 
