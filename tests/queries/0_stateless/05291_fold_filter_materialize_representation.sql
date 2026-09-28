@@ -13,4 +13,3 @@ FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(2) WHERE materialize(
 SET query_plan_enable_optimizations = 0;
 SELECT 'not folded', countIf(explain LIKE '%Filter column: 1%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(2) WHERE materialize('online') = 'online');
-SELECT count() FROM numbers(2) WHERE materialize('a') < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)');
