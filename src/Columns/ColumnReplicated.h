@@ -196,8 +196,8 @@ public:
     const ColumnPtr & getNestedColumn() const { return nested_column; }
     WrappedPtr & getNestedColumn() { return nested_column; }
 
-    /// Later inserts from `source` copy its rows shorter than an insertion_cache entry instead of remembering them.
-    /// For a source whose rows repeat too little for sharing them to pay off.
+    /// Later inserts from `source` copy its rows shorter than an insertion_cache entry instead of remembering them, if `source`
+    /// holds strings or fixed-size values, possibly Nullable. For a source whose rows repeat too little for sharing them to pay off.
     void copyShortRowsFrom(const ColumnReplicated & source);
 
     /// Whether every row is a string or a fixed-size value, possibly Nullable, shorter than an insertion_cache entry:

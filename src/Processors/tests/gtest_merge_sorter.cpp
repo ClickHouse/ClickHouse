@@ -317,6 +317,8 @@ TEST(MergeSorter, ReplicatedPayloadCopiedOrShared)
         {{{1, 2}, {"a"}, {0, 0}}, {{3, 4}, {"c", "d"}, {0, 1}}, 64, 0, {{"a", "a", "c", "d"}}},
         /// A chunk with a long row merged as one batch is appended as it is, with its unreferenced row.
         {{{1, 2}, {l, "x"}, {0, 0}}, {{3, 4}, {"c", "d"}, {0, 1}}, 64, 4, {{l, l, "c", "d"}}},
+        /// Rows referenced 3 times are copied too.
+        {{{1, 3, 5}, {"a"}, {0, 0, 0}}, {{2, 4, 6}, {"b"}, {0, 0, 0}}, 64, 0, {{"a", "b", "a", "b", "a", "b"}}},
     };
 
     for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})

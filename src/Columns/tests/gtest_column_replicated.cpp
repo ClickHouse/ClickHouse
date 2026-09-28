@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
@@ -237,6 +238,43 @@ TEST(ColumnReplicated, CopyShortRowsFromWholeColumn)
     MutableColumnPtr array_indexes = ColumnUInt8::create();
     array_indexes->insert(0);
     ASSERT_FALSE(ColumnReplicated::create(std::move(array_nested), std::move(array_indexes))->hasOnlyShortRows());
+}
+
+TEST(ColumnReplicated, CopyShortRowsFromSizeBoundary)
+{
+    /// A row is copied if byteSizeAt is below 48: a String of 39 bytes (plus its 8-byte offset) is, one of 40 bytes is not.
+    const String below(39, 'b');
+    const String at(40, 'a');
+    auto source = createColumn({below, at}, {0, 1});
+    MutableColumnPtr dest_nested = ColumnString::create();
+    auto dest = ColumnReplicated::create(std::move(dest_nested));
+    dest->copyShortRowsFrom(*source);
+    dest->insertFrom(*source, 0);
+    dest->insertFrom(*source, 0);
+    dest->insertFrom(*source, 1);
+    dest->insertFrom(*source, 1);
+    checkColumn(*dest, {below, below, at}, {0, 1, 2, 2});
+
+    /// Fixed-size values follow the same rule: FixedString(47) is copied, FixedString(48) is shared.
+    for (const size_t n : {size_t(47), size_t(48)})
+    {
+        SCOPED_TRACE(n);
+        MutableColumnPtr fixed_nested = ColumnFixedString::create(n);
+        fixed_nested->insert(Field(String(n, 'f')));
+        MutableColumnPtr fixed_indexes = ColumnUInt8::create();
+        fixed_indexes->insert(0);
+        fixed_indexes->insert(0);
+        auto fixed_source = ColumnReplicated::create(std::move(fixed_nested), std::move(fixed_indexes));
+        ASSERT_EQ(fixed_source->hasOnlyShortRows(), n < 48);
+
+        MutableColumnPtr fixed_dest_nested = ColumnFixedString::create(n);
+        auto fixed_dest = ColumnReplicated::create(std::move(fixed_dest_nested));
+        fixed_dest->copyShortRowsFrom(*fixed_source);
+        fixed_dest->insertFrom(*fixed_source, 0);
+        fixed_dest->insertFrom(*fixed_source, 1);
+        ASSERT_EQ(fixed_dest->size(), 2u);
+        ASSERT_EQ(fixed_dest->getNestedColumn()->size(), n < 48 ? 2u : 1u);
+    }
 }
 
 TEST(ColumnReplicated, IndicesOfNonDefaultRows)

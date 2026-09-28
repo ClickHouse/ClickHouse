@@ -22,7 +22,7 @@ namespace
 {
 
 /// Merged columns copy the short rows of a source instead of sharing them if the source references each of its rows fewer
-/// times than this: such a row repeats at most that often in a merged block, which does not pay for a cache entry.
+/// times than this: such a row then repeats fewer times than this in a merged block, which does not pay for a cache entry.
 constexpr UInt64 MIN_REPEATS_TO_SHARE_SHORT_ROWS = 4;
 
 bool hasFewRepeats(const ColumnReplicated & column)
