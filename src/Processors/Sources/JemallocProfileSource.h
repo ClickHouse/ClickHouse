@@ -34,7 +34,10 @@ public:
         size_t max_block_size_,
         JemallocProfileFormat mode_,
         bool symbolize_with_inline_,
-        bool collapsed_use_count_ = false);
+        bool collapsed_use_count_,
+        bool remove_file_);
+
+    ~JemallocProfileSource() override;
 
     String getName() const override { return "JemallocProfile"; }
 
@@ -64,6 +67,7 @@ private:
     JemallocProfileFormat mode;
     bool symbolize_with_inline;
     bool collapsed_use_count;
+    bool remove_file;
 
     /// For Symbolized mode streaming
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
