@@ -566,11 +566,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
         /// The whole-seconds value of an extended-range date (e.g. `9999-12-31` = 253402214400) times a large
         /// scale multiplier can exceed the underlying `Int64`. Such a value is not representable in this
-        /// `DateTime64` and therefore cannot equal any stored value - return Null ("cannot convert") instead
-        /// of throwing `DECIMAL_OVERFLOW` from the multiplication.
+        /// `DateTime64` and therefore cannot equal any stored value - an exact-bound caller gets Null ("cannot
+        /// convert") instead of `DECIMAL_OVERFLOW` from the multiplication, while a materialization caller gets
+        /// the `date_time_overflow_behavior` outcome of the equivalent `CAST` (see `dateTime64OutOfWindow`).
+        const Int64 scale_multiplier = date_time64_type.getScaleMultiplier();
         DateTime64 result;
-        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier(), result))
-            return {};
+        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<DateTime64>(value, 0, scale_multiplier, result))
+            return dateTime64OutOfWindow<DateTime64>(
+                Field(static_cast<Int64>(value)), type, std::nullopt,
+                minTicksForDateTime64(scale_multiplier), maxTicksForDateTime64(scale_multiplier),
+                date_time64_type.getScale(), format_settings, strict, convert_inexact_floats);
         return DecimalField<DateTime64>(result, date_time64_type.getScale());
     }
     if (which_type.isDate() && which_from_type.isTime())
