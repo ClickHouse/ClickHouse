@@ -22,7 +22,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
     using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -80,7 +80,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
 
@@ -115,7 +115,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
                 s1 = x + y;
             }
 
-            return static_cast<ValueType>(s1);
+            return s1;
         }
     };
 

@@ -65,6 +65,23 @@ echo "-- Invalid factors are rejected (must be in the open interval (0, 1))."
 promql_client -q "double_exponential_smoothing(m[3m], 1.5, 0.5)" 2>&1 | grep -o "expects smoothing factor in the open interval (0, 1)" | head -1
 promql_client -q "double_exponential_smoothing(m[3m], 0.5, 0)" 2>&1 | grep -o "expects trend factor in the open interval (0, 1)" | head -1
 
+echo "-- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32."
+$CLICKHOUSE_CLIENT --enable_time_series_aggregate_functions 1 -q "
+SELECT
+    f32 = f64,
+    toTypeName(f32),
+    arrayExists(x -> ifNull(x != toFloat32(x), 0), f64)
+FROM
+(
+    SELECT
+        timeSeriesDoubleExponentialSmoothingToGrid(100, 160, 30, 60, 0.3, 0.3)(ts, toFloat32(v)) AS f32,
+        timeSeriesDoubleExponentialSmoothingToGrid(100, 160, 30, 60, 0.3, 0.3)(ts, toFloat64(v)) AS f64
+    FROM
+    (
+        SELECT arrayJoin([(90, 1), (100, 4), (110, 2), (130, 7), (140, 5), (160, 11)]) AS p, toDateTime(p.1) AS ts, p.2 AS v
+    )
+)"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"

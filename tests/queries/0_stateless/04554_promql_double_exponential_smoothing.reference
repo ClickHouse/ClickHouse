@@ -11,3 +11,5 @@
 -- Invalid factors are rejected (must be in the open interval (0, 1)).
 expects smoothing factor in the open interval (0, 1)
 expects trend factor in the open interval (0, 1)
+-- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32.
+1	Array(Nullable(Float64))	1
