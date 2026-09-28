@@ -858,8 +858,10 @@ discarded. Neighboring curves can therefore share an ordering key; when they do,
 them as equal for ordering and hashing.
 
 For a nonzero curve, `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
-time at which its magnitude is one. Sign and unit-time forms are internal derived representations,
-not SQL construction tuples.
+time at which its magnitude is one. The authoritative internal payload is
+`(value_at_anchor, anchor_time)`, and ordering uses the derived `UInt64` key described above.
+There is no three-field sign/unit-time/decay-length representation. Sign and unit-time may be
+derived for inspection, but a tuple containing them is not a value representation or constructor.
 
 Public CAST construction uses raw `(value, timestamp[, decay_length])` input. When the target omits
 its type parameter, the third tuple element supplies the decay length; when both are present they
