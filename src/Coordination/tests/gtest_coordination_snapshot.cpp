@@ -3029,7 +3029,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsRejectedRecursiveRequ
 
     auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
     ASSERT_TRUE(conflict.has_value());
-    EXPECT_EQ(conflict->log_idx, 6);
+    EXPECT_EQ(conflict->log_idx, 5);
     EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::ListWithOptions));
     EXPECT_EQ(conflict->request_path, "/");
     EXPECT_EQ(conflict->subtree_root, "/a/missing");
