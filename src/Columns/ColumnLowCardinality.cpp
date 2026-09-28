@@ -353,7 +353,7 @@ void batchSerializeLowCardinalityString(
     const bool zero_byte = settings && settings->serialize_string_with_zero_byte;
 
     IColumn::Offset current_offset = 0;
-    for (size_t row = 0; row < memories.size(); ++row)
+    for (size_t row = 0, size = memories.size(); row < size; ++row)
     {
         const size_t index = data[row];
         const size_t begin = current_offset;
