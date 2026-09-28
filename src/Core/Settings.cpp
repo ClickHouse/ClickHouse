@@ -10277,6 +10277,7 @@ Allow to clean up old data files during Iceberg compaction.
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+In open-source builds only `OPTIMIZE TABLE ... MANIFEST` is supported; data compaction (`OPTIMIZE TABLE` without `MANIFEST`) reports `NOT_IMPLEMENTED`.
 )", EXPERIMENTAL, \
         {"25.8", 0, 0, "New setting"}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
