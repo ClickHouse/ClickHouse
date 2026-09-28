@@ -95,11 +95,13 @@ def get_lcov_summary(
         )
         if match:
             return float(match.group(1)), int(match.group(2)), int(match.group(3))
-        if re.search(rf"^\s*{metric}\.*:\s*no data found", output, re.MULTILINE):
-            raise ValueError(
-                f"lcov summary contains no data for '{metric}'. "
-                "Make sure you run lcov with --branch-coverage when you need branch stats."
-            )
+        no_data = re.search(rf"^\s*{metric}\.*:\s*no data found", output, re.MULTILINE)
+        if no_data and metric == "branches":
+            # The coverage build uses single-byte counters (see `cmake/sanitize.cmake`),
+            # which record no branch counts, so there are no branches to report.
+            return 0.0, 0, 0
+        if no_data:
+            raise ValueError(f"lcov summary contains no data for '{metric}'")
         raise ValueError(
             f"Failed to parse '{metric}' from lcov output:\n{output}"
         )

@@ -177,6 +177,21 @@ if (WITH_COVERAGE)
     set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping "SHELL:-mllvm -runtime-counter-relocation")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 
+    if (NOT WITH_COVERAGE_DEPTH)
+        # The regular coverage build only needs to know whether a region was executed, not how
+        # many times. With the default 64-bit counters every region entry is a read-modify-write
+        # of a counter shared by all threads, so threads running the same hot code keep stealing
+        # the cache line from each other; the relocation above adds a load of the bias to every
+        # update. This made the coverage binary 2.5 times slower than the debug build in
+        # functional tests and 47 times slower in the parallel `INSERT` of the stateful data.
+        # Single-byte counters are only ever set to zero, and with the conditional update the
+        # store happens only on the first execution, so later executions merely read a shared
+        # cache line. The report keeps line, region and function coverage but loses execution
+        # counts and branch coverage (llvm-cov derives branch counts by subtracting counters).
+        # The per-test build keeps 64-bit counters: `coverage.cpp` reads them in-process.
+        set (COVERAGE_FLAGS ${COVERAGE_FLAGS} "SHELL:-mllvm -enable-single-byte-coverage" "SHELL:-mllvm -conditional-counter-update")
+    endif()
+
     if (WITH_COVERAGE_DEPTH)
         # WITH_COVERAGE_DEPTH enables per-test collection (CoverageCollection.cpp,
         # LLVMCoverageMapping.cpp, SYSTEM SET COVERAGE TEST).  All per-test-specific

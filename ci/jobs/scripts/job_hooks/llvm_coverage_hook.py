@@ -125,8 +125,11 @@ def check():
                 f"|--------|----------|---------|---|\n"
                 f"| Lines | {b_line_cov:.2f}% | {c_line_cov:.2f}% | {c_line_cov - b_line_cov:+.2f}% |\n"
                 f"| Functions | {b_function_cov:.2f}% | {c_function_cov:.2f}% | {c_function_cov - b_function_cov:+.2f}% |\n"
-                f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
             )
+            # Single-byte coverage counters record no branch counts (see `cmake/sanitize.cmake`),
+            # so the row is shown only while both sides still have branch data.
+            if d.get("b_branch_total", 0) and d.get("c_branch_total", 0):
+                body += f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
             if pr_changed_lines_info:
                 changed_line = f"\n**Changed lines:** {pr_changed_lines_info}"
                 if uncovered_code_url:
