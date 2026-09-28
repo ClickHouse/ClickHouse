@@ -69,8 +69,8 @@ void FinishSortingTransform::consume(Chunk chunk)
 
     removeConstColumns(chunk);
 
-    /// The cross-chunk `less` below compares keys with a raw `IColumn::compareAt`, which handles
-    /// neither sparse nor replicated columns, at any nesting depth inside a composite key.
+    /// We don't support sorting by replicated or sparse columns because `compareAt` over a full column
+    /// does not accept a `ColumnReplicated` or a `ColumnSparse`.
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (const auto & desc : description_with_positions)

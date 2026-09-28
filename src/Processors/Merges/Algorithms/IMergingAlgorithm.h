@@ -69,9 +69,6 @@ public:
             removeConstAndSparse(input);
     }
 
-    /// The sort cursors below compare keys with a raw `IColumn::compareAt`, which handles neither
-    /// sparse nor replicated columns, at any nesting depth inside a composite key (a
-    /// tuple/nullable/array/map child).
     static void removeReplicatedFromSortingColumns(const SharedHeader & header, Input & input, const SortDescription & description)
     {
         if (!input.chunk)
@@ -82,7 +79,7 @@ public:
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullIfWrapped();
+            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
         }
         input.chunk.setColumns(std::move(columns), num_rows);
     }
@@ -101,7 +98,7 @@ public:
         size_t num_rows = input.chunk.getNumRows();
         auto columns = input.chunk.detachColumns();
         for (const auto & column_desc : description)
-            columns[column_desc.column_number] = columns[column_desc.column_number]->convertToFullIfWrapped();
+            columns[column_desc.column_number] = columns[column_desc.column_number]->convertToFullColumnIfReplicated();
         input.chunk.setColumns(std::move(columns), num_rows);
     }
 

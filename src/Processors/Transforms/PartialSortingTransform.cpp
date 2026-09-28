@@ -170,11 +170,9 @@ void PartialSortingTransform::transform(Chunk & chunk)
             {
                 MutableColumnPtr sort_description_threshold_column_updated = raw_block_columns[i]->cloneEmpty();
                 sort_description_threshold_column_updated->insertFrom(*raw_block_columns[i], min_row_to_compare);
-                ColumnPtr threshold_column = std::move(sort_description_threshold_column_updated);
-                /// The rhs of a raw `compareAt` against the next block's live keys: sparse and replicated
-                /// bad-cast against a dense lhs at any nesting depth, and `ColumnConst::compareAt` casts its rhs.
+                /// Without this, `assertTypeEquality` may fail when comparing a ColumnNullable against a ColumnReplicated (received from JOIN).
                 sort_description_threshold_columns_updated[i]
-                    = threshold_column->isConst() ? threshold_column : threshold_column->convertToFullIfWrapped();
+                    = removeSpecialRepresentations(sort_description_threshold_column_updated->getPtr());
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);
