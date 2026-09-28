@@ -1,0 +1,6 @@
+-- the granularity of the old MergeTree syntax, before and after the table is loaded again
+index_granularity	4096	definition
+index_granularity	4096	definition
+-- a key the engine arguments override, next to one the collection supplies
+kafka_max_block_size	5	definition
+kafka_skip_broken_messages	[HIDDEN]	named_collection

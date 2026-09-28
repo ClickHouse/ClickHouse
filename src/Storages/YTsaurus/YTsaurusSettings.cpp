@@ -96,7 +96,7 @@ void YTsaurusSettings::loadFromNamedCollection(const NamedCollection & named_col
     /// it was. A reader may see a collection's values only where it may read that collection, and that is
     /// decided from what the settings object recorded - so a loader that assigns without recording would put
     /// its values outside the check.
-    loadSettingsFromNamedCollection(*impl, named_collection);
+    loadSettingsFromNamedCollection(*impl, named_collection, SettingOrigin::Default);
 }
 
 void YTsaurusSettings::set(const std::string & name, const std::string & value)

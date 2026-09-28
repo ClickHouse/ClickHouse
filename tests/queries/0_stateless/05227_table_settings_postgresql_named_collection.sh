@@ -5,8 +5,10 @@
 # The `PostgreSQL` engine resolves its settings from four places in turn: the creating session, a named
 # collection, key-value overrides in the engine arguments, and the table's own `SETTINGS` clause. The table
 # keeps the settings and the names the collection actually supplied - not the collection's name, which would
-# answer for whatever it holds when the table is read - so all four are told apart, including a collection
-# value that happens to be the compiled-in default, which no comparison of values could reveal.
+# answer for whatever it holds when the table is read - so the collection, the session and the table's own
+# definition are told apart, including a collection value that happens to be the compiled-in default, which no
+# comparison of values could reveal. The overrides and the clause are both the definition: the table's `CREATE`
+# states each.
 #
 # The engine does not connect at `CREATE` time when the columns are given explicitly, so an unreachable host is
 # fine here. A shell test because a named collection is server-wide, so its name has to carry this test's database.

@@ -1725,8 +1725,8 @@ def test_nats_table_settings_report_the_named_collection(nats_cluster):
         "nats_subjects\t[HIDDEN]\tnamed_collection\n"
     )
 
-    # An engine argument overriding a collection key is not the collection either: the engine took the
-    # value from the argument list, and cannot say more than `other` about it.
+    # An engine argument overriding a collection key is not the collection either: the table's own `CREATE`
+    # states it, as surely as its `SETTINGS` clause would, so it is the definition's.
     instance.query(
         """
         CREATE TABLE test.nats_override (key UInt64, value UInt64)
@@ -1738,7 +1738,7 @@ def test_nats_table_settings_report_the_named_collection(nats_cluster):
             "SELECT value, source FROM system.table_settings WHERE database = 'test' "
             "AND table = 'nats_override' AND name = 'nats_skip_broken_messages'"
         ).strip()
-        == "222\tother"
+        == "222\tdefinition"
     )
     instance.query("DROP TABLE test.nats_override")
 

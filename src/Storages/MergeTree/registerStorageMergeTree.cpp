@@ -1176,9 +1176,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
-            /// Through `set` rather than the field, so that this counts as an assignment: it is what clears
-            /// the marks the server's baseline left, and this value is the engine argument's, not the config's.
-            storage_settings->set(MergeTreeSetting::index_granularity, ast->value.safeGet<UInt64>());
+            /// Through `set` rather than the field, so that this counts as an assignment: it is what replaces the
+            /// marks the server's baseline left - this value is the engine argument's, which the table's own
+            /// definition states, not the config's.
+            storage_settings->set(MergeTreeSetting::index_granularity, ast->value.safeGet<UInt64>(), SettingOrigin::Definition);
             /// The old syntax states `index_granularity` as an engine argument instead of a setting
             if (is_fresh_definition)
             {

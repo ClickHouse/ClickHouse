@@ -115,7 +115,7 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 
 void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    loadSettingsFromNamedCollection(*impl, *named_collection);
+    loadSettingsFromNamedCollection(*impl, *named_collection, SettingOrigin::Definition);
 }
 
 

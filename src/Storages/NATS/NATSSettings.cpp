@@ -100,7 +100,7 @@ void NATSSettings::loadFromQuery(ASTStorage & storage_def)
 
 void NATSSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    loadSettingsFromNamedCollection(*impl, *named_collection);
+    loadSettingsFromNamedCollection(*impl, *named_collection, SettingOrigin::Definition);
 }
 
 

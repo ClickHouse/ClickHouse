@@ -820,7 +820,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.ssl = getSSLParams(named_collection);
 
     if (storage_settings)
-        storage_settings->loadFromNamedCollection(named_collection);
+        storage_settings->loadFromNamedCollection(
+            named_collection, require_table ? SettingOrigin::Definition : SettingOrigin::Default);
 
     return configuration;
 }

@@ -181,7 +181,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             if (!mysql_settings[MySQLSetting::read_write_timeout].changed)
                 mysql_settings[MySQLSetting::read_write_timeout] = settings[Setting::external_storage_rw_timeout_sec];
 
-            mysql_settings.loadFromNamedCollection(*named_collection);
+            mysql_settings.loadFromNamedCollection(*named_collection, SettingOrigin::Default);
 
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 createMySQLPoolWithFailover(

@@ -531,7 +531,8 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
     configuration.ssl_params = getSSLParams(named_collection);
 
-    storage_settings.loadFromNamedCollection(named_collection);
+    storage_settings.loadFromNamedCollection(
+        named_collection, require_table_or_query ? SettingOrigin::Definition : SettingOrigin::Default);
 
     return configuration;
 }

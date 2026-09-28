@@ -75,7 +75,7 @@ ORDER BY name;"
 
 echo "-- an engine argument is not the config, even for a setting the config also sets"
 # The old syntax passes `index_granularity` as the third engine argument, which assigns it after the
-# server's baseline; the baseline's mark must not survive that.
+# server's baseline; the baseline's mark must not survive that. The argument is the table's own definition.
 $CLICKHOUSE_LOCAL --config-file "$CONFIG" -q "
 SET allow_deprecated_syntax_for_merge_tree = 1;
 CREATE TABLE mt (d Date, a UInt64) ENGINE = MergeTree(d, a, 16384);

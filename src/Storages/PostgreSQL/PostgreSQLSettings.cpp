@@ -89,9 +89,9 @@ void PostgreSQLSettings::loadFromQueryContext(const Context & context)
     (*impl)[PostgreSQLSetting::postgresql_connection_attempt_timeout] = settings[Setting::postgresql_connection_attempt_timeout];
 }
 
-void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
+void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection, SettingOrigin overridden_origin)
 {
-    loadSettingsFromNamedCollection(*impl, named_collection);
+    loadSettingsFromNamedCollection(*impl, named_collection, overridden_origin);
 }
 
 VectorWithMemoryTracking<std::string_view> PostgreSQLSettings::getAllRegisteredNames() const

@@ -129,9 +129,9 @@ VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames(
     return all_settings;
 }
 
-void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
+void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collection, SettingOrigin overridden_origin)
 {
-    loadSettingsFromNamedCollection(*impl, named_collection);
+    loadSettingsFromNamedCollection(*impl, named_collection, overridden_origin);
 }
 
 bool MySQLSettings::hasBuiltin(std::string_view name)

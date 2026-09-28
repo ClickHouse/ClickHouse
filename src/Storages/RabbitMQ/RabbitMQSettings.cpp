@@ -98,7 +98,7 @@ void RabbitMQSettings::loadFromQuery(ASTStorage & storage_def)
 
 void RabbitMQSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    loadSettingsFromNamedCollection(*impl, *named_collection);
+    loadSettingsFromNamedCollection(*impl, *named_collection, SettingOrigin::Definition);
 }
 
 SettingsChanges RabbitMQSettings::getFormatSettings() const

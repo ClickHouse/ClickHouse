@@ -41,7 +41,9 @@ struct PostgreSQLSettings
     void loadFromQuery(const ASTSetQuery & settings_def);
     /// A table's own `SETTINGS` clause, recorded as the definition.
     void loadFromQuery(ASTStorage & storage_def);
-    void loadFromNamedCollection(const NamedCollection & named_collection);
+    /// A key the engine arguments override is recorded as `overridden_origin`: `Definition` for a table, `Default`
+    /// for a database, whose tables state none of its settings. See `loadSettingsFromNamedCollection`.
+    void loadFromNamedCollection(const NamedCollection & named_collection, SettingOrigin overridden_origin);
 
     /// Seed the connection-pool settings from the query-level `postgresql_*` settings. This keeps the
     /// historical behaviour where the pool parameters were taken from the query context; an explicit
