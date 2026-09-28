@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 
@@ -750,7 +751,9 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
 
 SettingDescriptions StorageExecutable::getTableSettings(ContextPtr /* query_context */) const
 {
-    return settings->enumerateSettings();
+    /// `ExecutablePool` assigns `max_command_execution_time` itself, capped by `max_execution_time`, so that one is
+    /// judged by its value, as `Distributed` judges what it copies from the server.
+    return withOriginByValue(settings->enumerateSettings());
 }
 
 }
