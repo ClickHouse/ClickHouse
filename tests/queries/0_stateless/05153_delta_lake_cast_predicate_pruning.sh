@@ -152,11 +152,7 @@ run_checks() {
     done
 }
 
-# Runs the recorded error cases of one mode in one launch under `--ignore-error`, which in
-# clickhouse-local silently skips a failed query and continues. A failed SELECT contributes no
-# result row, so each case must produce exactly one line: the cumulative count of its expected
-# error code, read from `system.errors` right after it. The count must grow across the case,
-# which both proves the query failed and pins the error identity.
+# Runs each error case with a `-- { serverError <code> }` hint that consumes the expected exception (no stderr), while its following `system.errors` counter must grow to prove the query failed.
 run_errors() {
     local enabled=$1
     local i batch="" out
@@ -164,10 +160,10 @@ run_errors() {
     for i in "${!ERR_HEADERS[@]}"; do
         [[ "${ERR_ENABLED[$i]}" == "${enabled}" ]] || continue
         case_ids+=("$i")
-        batch+="$(data_query "${ERR_TABLES[$i]}" "${ERR_WHERES[$i]}" "${ERR_SETTINGS[$i]}")
+        batch+="$(data_query "${ERR_TABLES[$i]}" "${ERR_WHERES[$i]}" "${ERR_SETTINGS[$i]}") -- { serverError ${ERR_CODES[$i]} }
             SELECT sumIf(value, name = '${ERR_CODES[$i]}') FROM system.errors;"
     done
-    out=$(run_batch "${enabled}" --ignore-error --query "${batch}") || true
+    out=$(run_batch "${enabled}" --query "${batch}")
     local -a lines
     mapfile -t lines <<< "${out}"
     if [[ "${#lines[@]}" != "${#case_ids[@]}" ]]; then
