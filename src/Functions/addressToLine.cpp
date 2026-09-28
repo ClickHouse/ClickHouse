@@ -18,7 +18,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine final : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";
@@ -44,7 +44,7 @@ protected:
         return result_column;
     }
 
-    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &) const override
+    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);
@@ -72,7 +72,7 @@ This function is slow and may impose security considerations.
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
+- Set setting [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) to `1`.
     )";
     FunctionDocumentation::Syntax syntax = "addressToLine(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {

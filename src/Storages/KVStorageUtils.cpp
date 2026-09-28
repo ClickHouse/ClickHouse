@@ -137,7 +137,7 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
-        auto converted_field = convertFieldToType(value->column->getField(), *primary_key_type);
+        auto converted_field = convertFieldToType((*value->column)[0], *primary_key_type);
         if (!converted_field.isNull())
             res->push_back(converted_field);
         return true;
@@ -276,7 +276,7 @@ bool traverseDAGFilter(
             if (right->type != ActionsDAG::ActionType::COLUMN)
                 return false;
 
-            auto value_field = right->column->getField();
+            const auto & value_field = (*right->column)[0];
             if (value_field.getType() != Field::Types::Tuple)
                 return false;
 
@@ -572,41 +572,6 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
         keys.column->get(i, field);
         /// TODO(@vdimir): use serializeBinaryBulk
         keys.type->getDefaultSerialization()->serializeBinary(field, wb, {});
-    }
-    return result;
-}
-
-std::vector<std::string> serializeKeysToRawString(
-    const ColumnWithTypeAndName & keys, const DataTypePtr & serialization_type, PaddedPODArray<UInt8> * null_map)
-{
-    if (!keys.column)
-        return {};
-
-    size_t num_keys = keys.column->size();
-
-    if (null_map && null_map->size() != num_keys)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "serializeKeysToRawString: null_map size {} does not match column size {}",
-            null_map->size(), num_keys);
-
-    std::vector<std::string> result;
-    result.reserve(num_keys);
-
-    auto serialization = serialization_type->getDefaultSerialization();
-    for (size_t i = 0; i < num_keys; ++i)
-    {
-        std::string & serialized_key = result.emplace_back();
-        WriteBufferFromString wb(serialized_key);
-        Field field;
-        keys.column->get(i, field);
-        if (field.isNull())
-        {
-            if (null_map)
-                (*null_map)[i] = 0;
-            /// Leave `serialized_key` empty; the lookup will not match any stored key.
-            continue;
-        }
-        serialization->serializeBinary(field, wb, {});
     }
     return result;
 }

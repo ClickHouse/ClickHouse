@@ -3,39 +3,16 @@
 #if USE_PARQUET
 
 #include <Formats/FormatSettings.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
 
-struct ParquetFileBucketInfo : public FileBucketInfo
-{
-    std::vector<size_t> row_group_ids;
-
-    ParquetFileBucketInfo() = default;
-    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
-    String getIdentifier() const override;
-    String getFormatName() const override
-    {
-        return "Parquet";
-    }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
-};
-using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
-
-struct ParquetBucketSplitter : public IBucketSplitter
-{
-    ParquetBucketSplitter() = default;
-    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
-};
-
-class ParquetV3BlockInputFormat final : public IInputFormat
+class ParquetV3BlockInputFormat : public IInputFormat
 {
 public:
     ParquetV3BlockInputFormat(
@@ -50,6 +27,8 @@ public:
 
     void resetParser() override;
 
+    void resetReadBuffer() override;
+
     String getName() const override { return "ParquetV3BlockInputFormat"; }
 
     const BlockMissingValues * getMissingValues() const override;
@@ -60,8 +39,6 @@ public:
     }
 
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
-
-    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
 
 private:
     Chunk read() override;
@@ -92,7 +69,7 @@ private:
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
-class NativeParquetSchemaReader final : public ISchemaReader
+class NativeParquetSchemaReader : public ISchemaReader
 {
 public:
     NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

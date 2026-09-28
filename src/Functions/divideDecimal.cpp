@@ -30,7 +30,7 @@ struct DivideDecimalsImpl
         Int256 sign_a = a.value < 0 ? -1 : 1;
         Int256 sign_b = b.value < 0 ? -1 : 1;
 
-        VectorWithMemoryTracking<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
+        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
 
         while (scale_a < scale_b + result_scale)
         {
@@ -47,7 +47,7 @@ struct DivideDecimalsImpl
         if (a_digits.empty())
             return Decimal256(0);
 
-        VectorWithMemoryTracking<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
+        std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
 
         if (divided.size() > DecimalUtils::max_precision<Decimal256>)
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");

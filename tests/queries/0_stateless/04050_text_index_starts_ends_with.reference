@@ -1,5 +1,6 @@
 tokenizer: array
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -9,6 +10,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -18,6 +20,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -28,6 +31,7 @@ Expression ((Project names + Projection))
 1	ClickHouse is a fast analytical database
 tokenizer: splitByString
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -37,6 +41,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -46,6 +51,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -56,6 +62,7 @@ Expression ((Project names + Projection))
 1	ClickHouse is a fast analytical database
 tokenizer: ngrams(3)
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -71,6 +78,7 @@ Expression ((Project names + Projection))
       Ranges: 1
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -86,6 +94,7 @@ Expression ((Project names + Projection))
       Ranges: 1
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -102,6 +111,7 @@ Expression ((Project names + Projection))
 1	ClickHouse is a fast analytical database
 tokenizer: splitByNonAlpha
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -117,6 +127,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey
@@ -132,6 +143,7 @@ Expression ((Project names + Projection))
       Ranges: 3
 2	Full-text search is now generally available
 Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_fts)
     Indexes:
       PrimaryKey

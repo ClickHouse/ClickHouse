@@ -1,5 +1,4 @@
 SET send_logs_level = 'fatal';
-SET optimize_on_insert = 1;
 
 DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign;
 

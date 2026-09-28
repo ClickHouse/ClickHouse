@@ -1,6 +1,6 @@
 #include <array>
-#include <base/defines.h>
 #include <cmath>
+#include <cassert>
 #include <Functions/GeoHash.h>
 
 
@@ -115,7 +115,7 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, uin
     result.fill(0);
 
     uint8_t bits = (precision * BITS_PER_SYMBOL) / 2;
-    chassert(bits < 255);
+    assert(bits < 255);
     uint8_t i = 0;
     for (; i < bits; ++i)
     {
@@ -170,7 +170,7 @@ inline void base32Encode(const Encoded & binary, uint8_t precision, char * out)
         v <<= 1;
         v |= binary[i + 4];
 
-        chassert(v < 32);
+        assert(v < 32);
 
         *out = geohash_base32_encode_lookup_table[v];
         ++out;
@@ -330,23 +330,18 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     }
 
     UInt64 items = 0;
-    /// A zero item count on either axis makes the loops below produce nothing, while the other
-    /// axis can still be ~2^32 wide. Skip them and let the fallback emit the single geohash.
-    if (args.longitude_items != 0 && args.latitude_items != 0)
+    for (size_t i = 0; i < args.longitude_items; ++i)
     {
-        for (size_t i = 0; i < args.longitude_items; ++i)
+        for (size_t j = 0; j < args.latitude_items; ++j)
         {
-            for (size_t j = 0; j < args.latitude_items; ++j)
-            {
-                size_t length = geohashEncodeImpl(
-                    args.longitude_min + args.longitude_step * static_cast<Float64>(i),
-                    args.latitude_min + args.latitude_step * static_cast<Float64>(j),
-                    args.precision,
-                    out);
+            size_t length = geohashEncodeImpl(
+                args.longitude_min + args.longitude_step * static_cast<Float64>(i),
+                args.latitude_min + args.latitude_step * static_cast<Float64>(j),
+                args.precision,
+                out);
 
-                out += length;
-                ++items;
-            }
+            out += length;
+            ++items;
         }
     }
 

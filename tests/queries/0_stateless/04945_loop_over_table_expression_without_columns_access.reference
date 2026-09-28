@@ -1,0 +1,9 @@
+Without SELECT on the loop table
+ACCESS_DENIED
+With SELECT on the loop table
+UNSUPPORTED_METHOD
+With SELECT on a live alias but not on its target
+ACCESS_DENIED
+With SELECT on a live alias and on its target
+1
+1

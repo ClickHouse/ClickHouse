@@ -1,5 +1,3 @@
--- Tags: long
-SET explain_query_plan_default = 'legacy';
 SET enable_optimize_predicate_expression = 0;
 SET convert_query_to_cnf = 0;
 SET cross_to_inner_join_rewrite = 1;

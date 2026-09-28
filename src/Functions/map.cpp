@@ -24,7 +24,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -40,14 +39,13 @@ namespace
 {
 
 // map(x, y, ...) is a function that allows you to make key-value pair
-class FunctionMap final : public IFunction
+class FunctionMap : public IFunction
 {
 public:
     static constexpr auto name = "map";
 
     explicit FunctionMap(ContextPtr context)
         : use_variant_as_common_type(context->getSettingsRef()[Setting::use_variant_as_common_type])
-        , allow_lossy_numeric_supertype(context->getSettingsRef()[Setting::allow_lossy_numeric_supertype])
         , function_array(FunctionFactory::instance().get("array", context))
         , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {
@@ -103,13 +101,13 @@ public:
         DataTypes tmp;
         if (use_variant_as_common_type)
         {
-            tmp.emplace_back(getLeastSupertypeOrVariant(keys, allow_lossy_numeric_supertype));
-            tmp.emplace_back(getLeastSupertypeOrVariant(values, allow_lossy_numeric_supertype));
+            tmp.emplace_back(getLeastSupertypeOrVariant(keys));
+            tmp.emplace_back(getLeastSupertypeOrVariant(values));
         }
         else
         {
-            tmp.emplace_back(getLeastSupertype(keys, allow_lossy_numeric_supertype));
-            tmp.emplace_back(getLeastSupertype(values, allow_lossy_numeric_supertype));
+            tmp.emplace_back(getLeastSupertype(keys));
+            tmp.emplace_back(getLeastSupertype(values));
         }
         return std::make_shared<DataTypeMap>(tmp);
     }
@@ -146,13 +144,12 @@ public:
 
 private:
     bool use_variant_as_common_type = false;
-    bool allow_lossy_numeric_supertype = false;
     FunctionOverloadResolverPtr function_array;
     FunctionOverloadResolverPtr function_map_from_arrays;
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
-class FunctionMapFromArrays final : public IFunction
+class FunctionMapFromArrays : public IFunction
 {
 public:
     static constexpr auto name = "mapFromArrays";
@@ -262,7 +259,7 @@ public:
     }
 };
 
-class FunctionMapUpdate final : public IFunction
+class FunctionMapUpdate : public IFunction
 {
 public:
     static constexpr auto name = "mapUpdate";

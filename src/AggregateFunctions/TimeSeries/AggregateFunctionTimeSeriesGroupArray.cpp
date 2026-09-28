@@ -89,7 +89,6 @@ namespace
     }
 }
 
-void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -112,7 +111,6 @@ timeSeriesGroupArray(timestamp, value)
     {
         "Basic usage with individual values",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -134,7 +132,6 @@ FROM
     {
         "Passing multiple samples of timestamps and values as arrays of equal size",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -147,7 +144,7 @@ SELECT timeSeriesGroupArray(timestamps, values);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 

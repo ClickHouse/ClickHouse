@@ -44,7 +44,7 @@ public:
 
     void finalizeImpl() override
     {
-        chassert(!checkpoint);
+        assert(!checkpoint);
         sub_buf.position() = position();
     }
 

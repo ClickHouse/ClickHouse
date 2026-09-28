@@ -1,12 +1,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
 
@@ -203,40 +200,6 @@ TEST(SerializationInfoJSON, FromJSONOverwritesExistingData)
     EXPECT_EQ(info.getData().num_defaults, 1999);
 }
 
-TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
-{
-    SerializationInfoSettings settings;
-    settings.ratio_of_defaults_for_sparse = 0.5;
-    settings.choose_kind = true;
-    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
-    settings.propagate_types_serialization_versions_to_nested_types = true;
-
-    auto string_type = std::make_shared<DataTypeString>();
-    NamesAndTypesList columns
-    {
-        {"string\"with\\escapes", string_type},
-        {"tuple", std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type}, Strings{"a", "b"})},
-    };
-
-    SerializationInfoByName infos(columns, settings);
-
-    WriteBufferFromOwnString out;
-    infos.writeJSON(out);
-    auto json = out.str();
-
-    EXPECT_THAT(json, testing::HasSubstr(R"("name":"string\"with\\escapes")"));
-    EXPECT_THAT(json, testing::HasSubstr(R"("subcolumns")"));
-    EXPECT_THAT(json, testing::HasSubstr(R"("types_serialization_versions")"));
-
-    auto restored = SerializationInfoByName::readJSONFromString(columns, json);
-    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_TYPES);
-    EXPECT_EQ(restored.getSettings().string_serialization_version, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
-    EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
-    EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
-    EXPECT_NE(restored.tryGet("tuple"), nullptr);
-}
-
 /// Malformed kind tests.
 /// stringToKind throws LOGICAL_ERROR which aborts in debug builds
 /// but throws a catchable exception in release builds.
@@ -310,6 +273,49 @@ TEST(SerializationInfoJSON, ChooseKindStackZeroRows)
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
+}
+
+/// Only a reader that accepts `Kind::DETACHED` at all reaches this check, and no such reader is exposed
+/// to a client, so it cannot be covered by a functional test.
+TEST(SerializationInfoBinary, RejectsDetachedThatIsNotOutermost)
+{
+    /// COMBINATION encoding of {Default, Detached, Sparse}.
+    const char kinds[] = {5, 3, 0, 2, 1};
+    ReadBufferFromMemory in(kinds, sizeof(kinds));
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    EXPECT_THROW(info.deserializeFromKindsBinary(in, ISerialization::KindSet::all()), Exception);
+}
+
+TEST(SerializationInfoBinary, AcceptsDetachedOverSparse)
+{
+    /// COMBINATION encoding of {Default, Sparse, Detached}.
+    const char kinds[] = {5, 3, 0, 1, 2};
+    ReadBufferFromMemory in(kinds, sizeof(kinds));
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    info.deserializeFromKindsBinary(in, ISerialization::KindSet::all());
+
+    ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED};
+    EXPECT_EQ(info.getKindStack(), expected);
+}
+
+/// The full stack a writer can build, with every kind in its canonical position.
+TEST(SerializationInfoBinary, AcceptsDetachedOverReplicatedOverSparse)
+{
+    /// COMBINATION encoding of {Default, Sparse, Replicated, Detached}.
+    const char kinds[] = {5, 4, 0, 1, 3, 2};
+    ReadBufferFromMemory in(kinds, sizeof(kinds));
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    info.deserializeFromKindsBinary(in, ISerialization::KindSet::all());
+
+    ISerialization::KindStack expected{
+        ISerialization::Kind::DEFAULT,
+        ISerialization::Kind::SPARSE,
+        ISerialization::Kind::REPLICATED,
+        ISerialization::Kind::DETACHED};
+    EXPECT_EQ(info.getKindStack(), expected);
 }
 
 }

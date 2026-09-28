@@ -88,8 +88,7 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            double res = 0;
-            getHexagonAreaAvgKm2(resolution, &res);
+            Float64 res = getHexagonAreaAvgKm2(resolution);
             dst_data[row] = res;
         }
 

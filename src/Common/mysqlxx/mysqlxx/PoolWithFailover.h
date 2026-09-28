@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include <mysqlxx/Pool.h>
 
 
@@ -134,8 +132,7 @@ namespace mysqlxx
             uint64_t wait_timeout_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT,
             size_t connect_timeout = MYSQLXX_DEFAULT_TIMEOUT,
             size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
-            bool bg_reconnect_ = false,
-            bool enable_compression_ = false);
+            bool bg_reconnect_ = false);
 
         PoolWithFailover(const PoolWithFailover & other);
 

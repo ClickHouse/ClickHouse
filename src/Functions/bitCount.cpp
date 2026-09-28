@@ -58,7 +58,7 @@ struct BitCountImpl
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitCountImpl compilation expected native integer or floating-point type");
 
-        auto * func_ctpop = llvm::Intrinsic::getOrInsertDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
+        auto * func_ctpop = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
         llvm::Value * ctpop_value = b.CreateCall(func_ctpop, {int_value});
         return b.CreateZExtOrTrunc(ctpop_value, llvm::Type::getInt8Ty(b.getContext()));
     }
@@ -86,7 +86,7 @@ REGISTER_FUNCTION(BitCount)
         {"x", "An integer or float value.", {"(U)Int*", "Float*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
-Returns the number of bits set to one in `x`. [`UInt8`](/reference/data-types/int-uint).
+Returns the number of bits set to one in `x`. [`UInt8`](../data-types/int-uint.md).
 
 :::note
 The function does not convert the input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).
