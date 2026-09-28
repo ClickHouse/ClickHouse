@@ -27,9 +27,11 @@ ${CLICKHOUSE_CLIENT} --query "
 " &
 
 echo '--- An object of the running insert is published'
+# The running insert overwrites `data.tsv`, so a read that overlaps it can fail with `S3_OBJECT_CHANGED_DURING_READ`.
+# That is the expected outcome of reading an object while it is replaced, so the error is ignored and the read retried.
 for _ in $(seq 1 300)
 do
-    published=$(${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM test_05241 WHERE x >= 1000000")
+    published=$(${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM test_05241 WHERE x >= 1000000" 2>/dev/null)
     if [ "$published" = "1" ]
     then
         break
