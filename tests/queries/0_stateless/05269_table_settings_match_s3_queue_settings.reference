@@ -1,0 +1,6 @@
+-- the same settings, with the same type and description
+rows compared	1	0
+-- values that differ, compared as values
+input_format_tsv_skip_first_lines	0	2	definition
+-- changed that differs
+shared_metadata	0	1	1

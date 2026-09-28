@@ -1,0 +1,14 @@
+-- config sections
+the sections took effect	MergeTree	50	config
+the sections took effect	MergeTree	1234	config
+the sections took effect	ReplicatedMergeTree	77	config
+the sections took effect	ReplicatedMergeTree	1234	config
+rolled back by compatibility	0	0
+rolled back by compatibility	1	0
+-- config sections and compatibility
+the sections took effect	MergeTree	50	config
+the sections took effect	MergeTree	1234	config
+the sections took effect	ReplicatedMergeTree	77	config
+the sections took effect	ReplicatedMergeTree	1234	config
+rolled back by compatibility	0	1
+rolled back by compatibility	1	1
