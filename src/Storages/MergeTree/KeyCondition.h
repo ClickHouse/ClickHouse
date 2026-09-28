@@ -744,7 +744,7 @@ private:
 
     /// If query has no filter, rpn will has one element with unknown function.
     /// This flag identify whether there are filters.
-    bool has_filter;
+    bool has_filter = false;
 
     ColumnIndices key_columns;
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
