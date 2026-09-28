@@ -143,6 +143,10 @@ public:
     /// The returned snapshot stays valid for as long as it is held, even across a configuration reload.
     std::shared_ptr<const OpaConfiguration> getOpaConfiguration() const;
 
+    /// Whether OPA authorization is configured at all. Reading the configuration itself takes a lock,
+    /// which is too much for a probe on every access check, so the answer is kept separately.
+    bool isOpaConfigured() const { return opa_configured.load(std::memory_order_relaxed); }
+
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
@@ -302,6 +306,7 @@ private:
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<MultiVersion<OpaConfiguration>> opa_configuration;
+    std::atomic_bool opa_configured = false;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
     std::unique_ptr<PasswordComplexityRules> password_rules;

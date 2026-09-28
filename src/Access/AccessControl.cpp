@@ -688,6 +688,7 @@ void AccessControl::setOpaConfiguration(const Poco::Util::AbstractConfiguration 
             LOG_INFO(getLogger(), "Open Policy Agent authorization is disabled: the 'open_policy_agent' section is gone");
 
         opa_configuration->set(std::unique_ptr<const OpaConfiguration>{});
+        opa_configured.store(false, std::memory_order_relaxed);
         return;
     }
 
@@ -698,13 +699,15 @@ void AccessControl::setOpaConfiguration(const Poco::Util::AbstractConfiguration 
 
     LOG_INFO(
         getLogger(),
-        "Open Policy Agent authorization is enabled, decision endpoint {}{}{}{}",
+        "Open Policy Agent authorization is enabled, decision endpoint {}{}{}{}{}",
         parsed->uri.toString(),
         parsed->batch_uri ? ", batch endpoint " + parsed->batch_uri->toString() : "",
         parsed->row_filters_uri ? ", row filters endpoint " + parsed->row_filters_uri->toString() : "",
-        parsed->column_masking_uri ? ", column masking endpoint " + parsed->column_masking_uri->toString() : "");
+        parsed->column_masking_uri ? ", column masking endpoint " + parsed->column_masking_uri->toString() : "",
+        parsed->authoritative ? ", authoritative" : ", narrowing grants");
 
     opa_configuration->set(std::move(parsed));
+    opa_configured.store(true, std::memory_order_relaxed);
 }
 
 

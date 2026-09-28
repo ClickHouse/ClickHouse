@@ -98,6 +98,7 @@ OpaConfiguration OpaConfiguration::parse(const Poco::Util::AbstractConfiguration
 
     result.token = config.getString(CONFIG_SECTION + ".token", "");
 
+    result.authoritative = config.getBool(CONFIG_SECTION + ".authoritative", false);
     result.check_system_database = config.getBool(CONFIG_SECTION + ".check_system_database", false);
     result.log_requests = config.getBool(CONFIG_SECTION + ".log_requests", false);
     result.log_responses = config.getBool(CONFIG_SECTION + ".log_responses", false);

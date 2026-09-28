@@ -961,3 +961,105 @@ def test_an_invoker_view_keeps_the_caller_identity():
         node.query("SELECT count() FROM plain.invoker_view", user="analyst").strip()
         == "1"
     )
+
+
+
+def enable_authoritative(extra=""):
+    write_section(extra="<authoritative>true</authoritative>" + extra)
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+@pytest.fixture
+def ungranted_user():
+    """A user with no grants at all, which is the whole point of authoritative mode: permissions live
+    in the policy and nothing has to be mirrored as a grant."""
+    node.query("DROP USER IF EXISTS nogrants")
+    node.query("CREATE USER nogrants IDENTIFIED WITH no_password")
+    try:
+        yield "nogrants"
+    finally:
+        node.query("DROP USER IF EXISTS nogrants")
+
+
+def test_without_authoritative_mode_a_grant_is_still_required(ungranted_user):
+    """The default is to narrow grants, so a policy cannot hand out access that was never granted."""
+    set_rule("True")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT count() FROM plain.orders", user=ungranted_user
+    )
+
+
+def test_authoritative_mode_needs_no_grant(ungranted_user):
+    enable_authoritative()
+    set_rule("True")
+
+    assert (
+        node.query("SELECT count() FROM plain.orders", user=ungranted_user).strip() == "2"
+    )
+
+
+def test_authoritative_mode_still_denies_what_the_policy_refuses(ungranted_user):
+    enable_authoritative()
+    set_rule("False")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT count() FROM plain.orders", user=ungranted_user
+    )
+
+
+def test_authoritative_mode_is_still_column_aware(ungranted_user):
+    enable_authoritative()
+    set_rule(DENY_EMAIL)
+
+    assert (
+        node.query("SELECT id, amount FROM plain.orders ORDER BY id", user=ungranted_user)
+        == "1\t10\n2\t20\n"
+    )
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT customer_email FROM plain.orders", user=ungranted_user
+    )
+
+
+def test_authoritative_mode_applies_row_filters(ungranted_user):
+    enable_authoritative(
+        extra=f"<row_filters_uri>{ROW_FILTERS_URI}</row_filters_uri>"
+    )
+    set_rule("True")
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert (
+        node.query("SELECT count() FROM plain.orders", user=ungranted_user).strip() == "1"
+    )
+
+
+def test_authoritative_mode_does_not_reach_a_global_privilege(ungranted_user):
+    """Scope is what bounds the mode. A global privilege names no object a policy could describe, so
+    it is settled by grants alone and an allow-everything policy does not substitute for one."""
+    enable_authoritative()
+    set_rule("True")
+
+    assert node.query_and_get_error("SYSTEM RELOAD CONFIG", user=ungranted_user)
+
+
+def test_authoritative_mode_does_not_let_a_user_grant_what_they_lack(ungranted_user):
+    """Granting is never delegated: a grant-option check is settled by grants alone, so a policy
+    cannot be used to hand out a privilege the user never held."""
+    enable_authoritative()
+    set_rule("True")
+
+    assert node.query_and_get_error(
+        "GRANT SELECT ON plain.orders TO analyst", user=ungranted_user
+    )
+
+
+def test_authoritative_mode_still_refuses_a_readonly_session(ungranted_user):
+    """The mode replaces the grant requirement and nothing else, so the readonly rail still holds."""
+    enable_authoritative()
+    set_rule("True")
+
+    assert node.query_and_get_error(
+        "INSERT INTO plain.orders VALUES (9, 90, 'z@x.com')",
+        user=ungranted_user,
+        settings={"readonly": 1},
+    )

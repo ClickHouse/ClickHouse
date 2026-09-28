@@ -38,6 +38,13 @@ struct OpaConfiguration
     /// Sent as `Authorization: Bearer <token>` when not empty.
     String token;
 
+    /// Whether a policy decides on its own, rather than narrowing what grants already allow.
+    ///
+    /// Off by default, which makes a policy purely restrictive: a user needs both the grant and the
+    /// policy's approval. Turning it on means an in-scope object needs no grant at all and the policy
+    /// is the only thing consulted, which is what removes the need to maintain permissions twice.
+    bool authoritative = false;
+
     /// The `system` database is out of scope by default: clients poll it constantly for metadata,
     /// and routing that traffic to OPA would cost a request per poll.
     bool check_system_database = false;

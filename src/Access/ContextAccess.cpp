@@ -850,7 +850,35 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             granted = acs->isGranted(flags, args...);
     }
 
-    if (!granted)
+    /// Whether a policy governs this object, worked out before the grant is judged because an
+    /// authoritative policy makes a missing grant not decisive.
+    ///
+    /// Granting is deliberately never delegated: a user must not be able to hand out a privilege they
+    /// were never given, so a grant-option check is settled by grants alone.
+    OpaConfigurationPtr opa_configuration;
+    std::optional<AccessRightsElement> opa_element;
+    String opa_user_name;
+
+    if (!grant_option && access_control->isOpaConfigured())
+    {
+        if (auto configuration = access_control->getOpaConfiguration())
+        {
+            /// Read the identity before talking to OPA: the accessors take this object's mutex, and the
+            /// request must not be issued while it is held.
+            opa_user_name = getUserName();
+            AccessRightsElement element{flags, args...};
+
+            if (OpaAccessChecker{configuration}.governs(opa_user_name, element))
+            {
+                opa_configuration = std::move(configuration);
+                opa_element.emplace(std::move(element));
+            }
+        }
+    }
+
+    const bool opa_replaces_the_grant = opa_configuration && opa_configuration->authoritative;
+
+    if (!granted && !opa_replaces_the_grant)
     {
         auto format_required_access = [&](AccessFlags access_flags, const auto & ... fmt_args)
         {
@@ -975,36 +1003,27 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                                  "because setting 'allow_introspection_functions' is set to 0");
     }
 
-    /// Consulted last, once every native check has passed, so that a policy can only take access
-    /// away. This also keeps the number of requests down: a check that native grants already refuse
-    /// never reaches OPA.
-    if (auto opa_configuration = access_control->getOpaConfiguration())
+    /// Consulted after the rest of the checks, so that a policy which only narrows grants sees just
+    /// the accesses they allowed, and so a check grants already refuse costs no request.
+    if (opa_configuration)
     {
-        const AccessRightsElement element{flags, args...};
+        OpaRequestContext request_context;
+        request_context.user = opa_user_name;
+        request_context.query_id = context->getCurrentQueryId();
+        if (auto info = getRolesInfo())
+            request_context.roles = info->getEnabledRolesNames();
+
         const OpaAccessChecker checker{std::move(opa_configuration)};
 
-        /// Read the identity before talking to OPA. Both accessors take this object's mutex, and the
-        /// request must not be issued while it is held.
-        const String current_user_name = getUserName();
-
-        if (checker.governs(current_user_name, element))
+        /// A transport failure, a malformed response or an unreachable server propagates instead
+        /// of being turned into an allow. Losing the policy engine must not silently lose the
+        /// restrictions it was enforcing.
+        if (!checker.isAllowed(*opa_element, request_context, context->getOpaDecisionCache()))
         {
-            OpaRequestContext request_context;
-            request_context.user = current_user_name;
-            request_context.query_id = context->getCurrentQueryId();
-            if (auto info = getRolesInfo())
-                request_context.roles = info->getEnabledRolesNames();
-
-            /// A transport failure, a malformed response or an unreachable server propagates instead
-            /// of being turned into an allow. Losing the policy engine must not silently lose the
-            /// restrictions it was enforcing.
-            if (!checker.isAllowed(element, request_context, context->getOpaDecisionCache()))
-            {
-                return access_denied(
-                    ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. The Open Policy Agent policy denied {}",
-                    element.toStringWithoutOptions());
-            }
+            return access_denied(
+                ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. The Open Policy Agent policy denied {}",
+                opa_element->toStringWithoutOptions());
         }
     }
 

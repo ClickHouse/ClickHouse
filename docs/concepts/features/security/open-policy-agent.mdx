@@ -21,12 +21,36 @@ columns, which rows they see, and which column values are masked.
 
 ## How it fits with grants {#how-it-fits-with-grants}
 
-An OPA policy can only take access away. ClickHouse evaluates its own grants first, and consults OPA
-only for a check that the grants already allowed. A user therefore needs both the grant and the
-policy's approval, and a policy can never widen what a user was granted.
+By default an OPA policy only takes access away. ClickHouse evaluates its own grants first and
+consults OPA for a check the grants already allowed, so a user needs both the grant and the policy's
+approval. This also keeps request volume down, because a check grants already refuse never reaches
+OPA.
 
-This ordering also keeps the number of requests down, because a check that grants already refuse
-never reaches OPA.
+That default means permissions exist in two places: as grants, and as policy. If the policy is meant
+to be the only place they live, set `authoritative`:
+
+```xml
+<open_policy_agent>
+    <authoritative>true</authoritative>
+</open_policy_agent>
+```
+
+With it, an in-scope object needs no grant at all and the policy is the only thing consulted. A user
+can be created with nothing granted to them and still read exactly what the policy allows, which is
+what removes the duplicated bookkeeping.
+
+Three limits bound the mode, and none of them is affected by it:
+
+- **Scope.** A global privilege such as `SYSTEM RELOAD CONFIG` names no object a policy could
+  describe, so it is settled by grants alone. The same applies to any database out of scope.
+- **Granting.** A grant-option check is always settled by grants, so a user cannot use a policy to
+  hand out a privilege they were never given themselves.
+- **The session rails.** `readonly`, `allow_ddl` and the introspection restrictions still apply.
+
+Without `authoritative`, the alternative is to grant broadly once — a role holding
+`GRANT SELECT ON *.*` given to every user — and let the policy do the rest. Be careful with that: it
+also grants everything the policy does *not* govern, including the `system` database, which is out of
+scope by default.
 
 ## Failure is a denial {#failure-is-a-denial}
 
@@ -63,6 +87,7 @@ is absent.
 | `batch_uri` | none | Endpoint answering about many objects at once. Without it, those questions are asked one object at a time. |
 | `row_filters_uri` | none | Endpoint returning row filters. Without it, no row filtering is applied. |
 | `column_masking_uri` | none | Endpoint returning column masks. Without it, no masking is applied. |
+| `authoritative` | `false` | Whether a policy decides on its own instead of narrowing grants. See [How it fits with grants](#how-it-fits-with-grants). |
 | `token` | empty | Sent as `Authorization: Bearer <token>` when set. |
 | `check_system_database` | `false` | Whether checks on the `system` database are sent to OPA. Clients poll system tables constantly, so each poll would otherwise cost a request. |
 | `exempt_users` | empty | Users whose queries bypass OPA entirely. |
