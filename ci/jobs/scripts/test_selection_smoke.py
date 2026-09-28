@@ -388,11 +388,25 @@ class SelectionSmoke(unittest.TestCase):
 
     def test_brackets_pair_nearest_regions_around_uncovered_hunks(self):
         config = INTEGRATION_SELECTION_CONFIG
+        first, second = (FIXTURE_TIME, "shard 1"), ("2026-09-03 03:00:00", "shard 1")
+
+        def span(start, end, snapshot=first, path="src/a.cpp"):
+            return {
+                "canonical_file": path,
+                "line_start": start,
+                "line_end": end,
+                "observed_at": snapshot[0],
+                "check_name": snapshot[1],
+            }
+
         spans = [
-            {"file": "./src/a.cpp", "line_start": 344, "line_end": 345},
-            {"file": "src/a.cpp", "line_start": 300, "line_end": 300},
-            {"file": "src/a.cpp", "line_start": 403, "line_end": 404},
-            {"file": "src/a.cpp", "line_start": 500, "line_end": 500},
+            span(300, 300),
+            span(344, 345, path="./src/a.cpp"),
+            span(403, 404),
+            span(500, 500),
+            # The same code 7 lines lower in an older commit: never paired with `first`.
+            span(351, 352, second),
+            span(410, 411, second),
         ]
         hunks = {
             # Straight-line code between two regions.
@@ -403,26 +417,50 @@ class SelectionSmoke(unittest.TestCase):
         # (499, 501) overlaps a region and is scored as usual; (430, 436) has nothing
         # after it within the gap; `src/b.cpp` has no regions.
         self.assertEqual(
-            [(b["hunk"], b["before"], b["after"]) for b in brackets],
-            [("src/a.cpp:383-388", ("src/a.cpp", 344, 345), ("src/a.cpp", 403, 404))],
+            [(b["hunk"], [(p["snapshot"], p["before"], p["after"]) for p in b["pairs"]]) for b in brackets],
+            [
+                (
+                    "src/a.cpp:383-388",
+                    [
+                        (second, ("src/a.cpp", 351, 352), ("src/a.cpp", 410, 411)),
+                        (first, ("src/a.cpp", 344, 345), ("src/a.cpp", 403, 404)),
+                    ],
+                )
+            ],
         )
         self.assertEqual(find_brackets(hunks, spans, replace(config, bracket_gap_lines=10)), [])
 
         query = build_bracket_spans_query(hunks, fixture_snapshots(), config)
         self.assertIn("file IN ('src/a.cpp', './src/a.cpp')", query)
         self.assertIn("line_end >= 343 AND line_start <= 428", query)
+        self.assertNotIn("AS check_start_time", query)
         query = build_bracket_owners_query(brackets, fixture_snapshots(), config)
-        self.assertIn("(line_start, line_end) IN ((344, 345), (403, 404))", query)
+        self.assertIn("(line_start, line_end) IN ((344, 345), (351, 352), (403, 404), (410, 411))", query)
+        self.assertNotIn("AS check_start_time", query)
+
+        def row(start, end, snapshot, owners):
+            return {
+                "canonical_file": "src/a.cpp",
+                "line_start": start,
+                "line_end": end,
+                "observed_at": snapshot[0],
+                "check_name": snapshot[1],
+                "owners": owners,
+            }
 
         attach_bracket_owners(
             brackets,
             [
-                {"canonical_file": "src/a.cpp", "line_start": 344, "line_end": 345, "owners": ["test_x/test.py", "test_y/test.py"]},
-                {"canonical_file": "src/a.cpp", "line_start": 403, "line_end": 404, "owners": ["test_y/test.py", "test_z/test.py"]},
+                row(344, 345, first, ["test_x/test.py", "test_y/test.py"]),
+                row(403, 404, first, ["test_y/test.py", "test_z/test.py"]),
+                row(351, 352, second, ["test_w/test.py", "test_z/test.py"]),
+                row(410, 411, second, ["test_w/test.py"]),
             ],
         )
-        # Only a test that reached both regions ran the code between them.
-        self.assertEqual(brackets[0]["owners"], ["test_y/test.py"])
+        # Only a run that reached both regions ran the code between them: `test_z` owns
+        # the right region in `first` and the left one in `second`, but not both in one.
+        self.assertEqual(brackets[0]["owners"], ["test_w/test.py", "test_y/test.py"])
+        self.assertEqual(brackets[0]["width"], 59)
 
     def test_brackets_rank_after_precise_coverage(self):
         config = INTEGRATION_SELECTION_CONFIG
@@ -430,16 +468,25 @@ class SelectionSmoke(unittest.TestCase):
         bracket = {
             "file": region["file"],
             "hunk": f"{region['file']}:30-35",
-            "before": (region["file"], 20, 21),
-            "after": (region["file"], 40, 40),
+            "pairs": [
+                {
+                    "snapshot": (FIXTURE_TIME, "shard 1"),
+                    "before": (region["file"], 20, 21),
+                    "after": (region["file"], 40, 40),
+                }
+            ],
             "owners": ["test_bracket/test.py", "test_precise/test.py"],
+            "width": 20,
         }
         candidates = rank_candidates(
             [region], [(region["file"], 10), (region["file"], 30)], {}, fixture_snapshots(), config, brackets=[bracket]
         )
         self.assertEqual([c["test"] for c in candidates], ["test_precise/test.py", "test_bracket/test.py"])
         self.assertEqual(candidates[1]["admission_reason"], "bracketed_hunk_coverage")
-        self.assertEqual(candidates[1]["features"][0]["region"], f"{region['file']}:21-40")
+        self.assertEqual(
+            candidates[1]["features"][0]["bracket_regions"],
+            [f"{region['file']}:20-21", f"{region['file']}:40-40"],
+        )
         # A bracket owned by too many tests is as broad as an unselective region.
         bracket["owners"] = [f"test_{i}/test.py" for i in range(config.max_precise_region_owners + 1)]
         self.assertEqual(
