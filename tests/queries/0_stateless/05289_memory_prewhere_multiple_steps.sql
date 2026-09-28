@@ -31,10 +31,18 @@ SELECT k, tup.b FROM t_memory_prewhere_steps PREWHERE tup.a >= 1998 AND tup.b !=
 SELECT 'moved from WHERE';
 SELECT k, s FROM t_memory_prewhere_steps WHERE s != '' AND k = 1500 SETTINGS enable_multiple_prewhere_read_steps = 1, optimize_move_to_prewhere = 1;
 
+SELECT 'a stateful function sees all rows, not only those that passed the other conditions';
+DROP TABLE IF EXISTS t_memory_prewhere_steps_stateful;
+CREATE TABLE t_memory_prewhere_steps_stateful (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_prewhere_steps_stateful VALUES (0), (1), (2), (3), (4), (5), (6), (7);
+SELECT groupArray(k) FROM t_memory_prewhere_steps_stateful PREWHERE k % 2 = 1 AND rowNumberInBlock() < 4 SETTINGS enable_multiple_prewhere_read_steps = 1;
+SELECT groupArray(k) FROM t_memory_prewhere_steps_stateful PREWHERE k % 2 = 1 AND rowNumberInBlock() < 4 SETTINGS enable_multiple_prewhere_read_steps = 0;
+DROP TABLE t_memory_prewhere_steps_stateful;
+
 SELECT 'column added after the data was inserted';
-ALTER TABLE t_memory_prewhere_steps ADD COLUMN n UInt64 DEFAULT 7;
-SELECT k, n FROM t_memory_prewhere_steps PREWHERE k = 5 AND n = 7 SETTINGS enable_multiple_prewhere_read_steps = 1;
-SELECT k, n FROM t_memory_prewhere_steps PREWHERE n = 7 AND k = 5 SETTINGS enable_multiple_prewhere_read_steps = 1;
+ALTER TABLE t_memory_prewhere_steps ADD COLUMN n UInt64;
+SELECT k, n FROM t_memory_prewhere_steps PREWHERE k = 5 AND n = 0 SETTINGS enable_multiple_prewhere_read_steps = 1;
+SELECT k, n FROM t_memory_prewhere_steps PREWHERE n = 0 AND k = 5 SETTINGS enable_multiple_prewhere_read_steps = 1;
 
 -- The column of the second condition is read only for the block where the first one has passing rows.
 SELECT count() FROM t_memory_prewhere_steps PREWHERE k = 5 AND s != '' SETTINGS enable_multiple_prewhere_read_steps = 1, log_comment = '05289_multiple_steps';

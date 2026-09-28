@@ -449,8 +449,12 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         /// Split a conjunction into steps, so that the columns of a later condition are read only
         /// for the rows that passed the earlier ones. The steps always filter the block, which is
         /// what their `need_filter` asks for, so it is not needed here.
+        /// A stateful function (e.g. `runningConcurrency`, `rowNumberInBlock`) depends on the set of
+        /// rows it is evaluated on, so a condition with it must see all rows, not only those that
+        /// passed the preceding conditions: such a PREWHERE is evaluated in a single step.
         PrewhereExprInfo prewhere_steps;
         if (context->getSettingsRef()[Setting::enable_multiple_prewhere_read_steps]
+            && !query_info.prewhere_info->prewhere_actions.hasStatefulFunctions()
             && tryBuildPrewhereSteps(
                 query_info.prewhere_info,
                 actions_settings,
