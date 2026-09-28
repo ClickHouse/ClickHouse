@@ -439,6 +439,88 @@ def test_text_index_corrupted_positions(started_cluster):
     node1.query("DROP TABLE t_pos SYNC")
 
 
+def test_text_index_corrupted_postings_rank_cursor(started_cluster):
+    # A damaged posting list segment header (.pst) must raise an error when phrase search walks the postings
+    # with rank cursors, not return ranks that address the wrong position lists.
+    node1.query("DROP TABLE IF EXISTS t_pst SYNC")
+
+    node1.query(
+        """
+        CREATE TABLE t_pst
+        (
+            k UInt64,
+            s String,
+            INDEX txt(s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, posting_list_block_size = 256) GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
+                 allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'bitpacking'
+        """,
+        settings={"enable_full_text_index": 1},
+    )
+
+    # 'aaa' is in every row, so its first segment covers rows [0, 255], and it sorts first, so that segment's
+    # header starts the .pst file. 'zzz' is rare, so the phrase is selective and walks the cursors.
+    node1.query(
+        "INSERT INTO t_pst SELECT number, concat('aaa bbb', if(number % 40 = 7, ' zzz aaa', '')) FROM numbers(2000)"
+    )
+
+    pst = get_active_part_path(node1, "t_pst") + "skp_idx_txt.pst.idx"
+    assert file_nonempty(node1, pst)
+
+    # Header of the first segment: codec (1 = bitpacking), payload bytes, doc count 256 (2-byte varint), first row id 0.
+    assert bash(node1, f"od -An -tu1 -N 5 {pst}").split() == ["1", "34", "128", "2", "0"]
+
+    backup = "/tmp/t_pst_postings.orig"
+    bash(node1, f"cp {pst} {backup}")
+
+    index_settings = {
+        "use_skip_indexes": 1,
+        "use_skip_indexes_on_data_read": 1,
+        "query_plan_direct_read_from_text_index": 1,
+        "use_query_condition_cache": 0,
+        "text_index_postings_intersection_algorithm": "leapfrog",
+    }
+    query = "SELECT count() FROM t_pst WHERE hasPhrase(s, 'zzz aaa')"
+
+    def drop_caches():
+        node1.query(
+            "SYSTEM DROP TEXT INDEX CACHES; SYSTEM DROP MARK CACHE; SYSTEM DROP UNCOMPRESSED CACHE;"
+            " SYSTEM DROP MMAP CACHE; SYSTEM DROP PAGE CACHE"
+        )
+
+    def phrase_count():
+        drop_caches()
+        return node1.query(query, settings=index_settings).strip()
+
+    def phrase_error():
+        drop_caches()
+        return node1.query_and_get_error(query, settings=index_settings)
+
+    def corrupt(offset, data):
+        bash(node1, f"cp {backup} {pst} && printf '{data}' | dd of={pst} bs=1 seek={offset} conv=notrunc status=none")
+
+    expected = node1.query(query, settings={"use_skip_indexes": 0}).strip()
+    assert phrase_count() == expected
+
+    # Every edit keeps the file size.
+    corrupt(0, "\\x09")
+    assert "unknown posting list block codec type 9" in phrase_error()
+
+    corrupt(2, "\\xff\\x02")
+    assert "posting segment 0 holds 383 documents in a row range of 256" in phrase_error()
+
+    corrupt(4, "\\x01")
+    assert "posting segment 0 starts at row 1 but its range at 0" in phrase_error()
+
+    bash(node1, f"cp {backup} {pst}")
+    assert phrase_count() == expected
+
+    bash(node1, f"rm -f {backup}")
+    node1.query("DROP TABLE t_pst SYNC")
+
+
 def test_packed_part_fetch_checksum(started_cluster):
     # Converted from stateless test 04506_packed_part_fetch_checksum.sh.
     # The source table (with the packed part, corrupted on the local filesystem) lives on node1
