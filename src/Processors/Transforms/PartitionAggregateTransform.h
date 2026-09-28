@@ -66,9 +66,12 @@ private:
     size_t chunks_bytes = 0;
     size_t next_chunk = 0;
 
-    /// Constant columns are not written to the temporary file.
+    /// Constant columns are not written to the temporary files.
     std::vector<bool> is_const_column;
-    std::optional<TemporaryBlockStreamHolder> spilled;
+    SharedHeader spilled_header;
+    /// A file per spill, like `MergeSortingTransform`, so that each one reserves the disk space it needs.
+    std::vector<TemporaryBlockStreamHolder> spilled;
+    size_t next_spilled = 0;
     std::optional<TemporaryBlockStreamReaderHolder> spilled_reader;
 
     Columns results;

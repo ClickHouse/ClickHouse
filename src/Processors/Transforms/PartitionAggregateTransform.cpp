@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LIMIT_EXCEEDED;
+}
+
 PartitionAggregateTransform::PartitionAggregateTransform(
     SharedHeader input_header,
     SharedHeader output_header,
@@ -82,6 +87,15 @@ void PartitionAggregateTransform::consume(Chunk chunk)
         key_to_group.emplace(key, it, inserted);
         if (inserted)
         {
+            /// The group is stored as `UInt32` in the buffered and spilled rows.
+            if (places.size() > std::numeric_limits<UInt32>::max())
+            {
+                key_to_group.erase(key);
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                    "Too many partitions for a window computed with hash partitioning, the maximum is {}. "
+                    "Disable `query_plan_window_functions_hash_partitioning`", std::numeric_limits<UInt32>::max() + 1ULL);
+            }
+
             /// Reserved before the states are created, so that they are always destroyed.
             places.reserve(places.size() + 1);
             auto * place = arena.alignedAlloc(total_state_size, state_alignment);
@@ -140,7 +154,7 @@ void PartitionAggregateTransform::consume(Chunk chunk)
 
 void PartitionAggregateTransform::spill()
 {
-    if (!spilled)
+    if (!spilled_header)
     {
         Block header;
         const auto & input_header = getInputPort().getHeader();
@@ -148,13 +162,11 @@ void PartitionAggregateTransform::spill()
             if (!is_const_column[i])
                 header.insert(input_header.getByPosition(i).cloneEmpty());
         header.insert({ColumnUInt32::create(), std::make_shared<DataTypeUInt32>(), "__partition_aggregate_group"});
-        spilled.emplace(
-            std::make_shared<const Block>(std::move(header)),
-            spill_settings.tmp_data,
-            chunks_bytes + spill_settings.min_free_disk_space);
+        spilled_header = std::make_shared<const Block>(std::move(header));
     }
 
-    const auto & header = spilled->getHeader();
+    /// Throws if there is less free disk space than this.
+    auto & stream = spilled.emplace_back(spilled_header, spill_settings.tmp_data, chunks_bytes + spill_settings.min_free_disk_space);
     for (auto & chunk : chunks)
     {
         auto columns = chunk.detachColumns();
@@ -162,8 +174,9 @@ void PartitionAggregateTransform::spill()
         for (size_t i = 0; i < columns.size(); ++i)
             if (!is_const_column[i])
                 written.push_back(columns[i]->convertToFullIfWrapped());
-        (*spilled)->write(header.cloneWithColumns(written));
+        stream->write(spilled_header->cloneWithColumns(written));
     }
+    stream.finishWriting();
 
     chunks.clear();
     chunks_bytes = 0;
@@ -190,12 +203,6 @@ Chunk PartitionAggregateTransform::generate()
             results.push_back(std::move(column));
         }
         results_ready = true;
-
-        if (spilled)
-        {
-            spilled->finishWriting();
-            spilled_reader.emplace(spilled->getReadStream());
-        }
     }
 
     Columns columns;
@@ -206,11 +213,21 @@ Chunk PartitionAggregateTransform::generate()
         columns = chunks[next_chunk].detachColumns();
         ++next_chunk;
     }
-    else if (spilled_reader)
+    else
     {
-        auto block = (*spilled_reader)->read();
-        if (block.empty())
-            return {};
+        Block block;
+        while (block.empty())
+        {
+            if (!spilled_reader)
+            {
+                if (next_spilled == spilled.size())
+                    return {};
+                spilled_reader.emplace(spilled[next_spilled++].getReadStream());
+            }
+            block = (*spilled_reader)->read();
+            if (block.empty())
+                spilled_reader.reset();
+        }
 
         num_rows = block.rows();
         auto read_columns = block.getColumns();
@@ -223,10 +240,6 @@ Chunk PartitionAggregateTransform::generate()
             else
                 columns.push_back(std::move(read_columns[read_position++]));
         }
-    }
-    else
-    {
-        return {};
     }
 
     ColumnPtr groups = std::move(columns.back());
