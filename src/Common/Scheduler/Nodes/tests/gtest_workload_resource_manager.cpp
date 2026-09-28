@@ -2795,7 +2795,10 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialResourceNoEffect)
     limits.respect_cpu_limit = true;
     limits.cpu_slots = 4;
     t.manager->updateServerLimits(limits);
+    t.storage.setServerLimitsEnabled(/*respect_cpu_limit=*/ true, /*respect_memory_limit=*/ false);
 
+    // Manager: the partial layout is unsupported, so no implicit resource is created and the operator
+    // root is not capped.
     EXPECT_FALSE(t.manager->hasResource(implicit_resource));
     bool root_semaphore = false;
     t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
@@ -2804,6 +2807,11 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialResourceNoEffect)
             root_semaphore = true;
     });
     EXPECT_FALSE(root_semaphore);
+
+    // Storage getters stay consistent with the manager: the declared role resolves to the operator
+    // resource, and the missing role does NOT fall back to the never-created implicit resource.
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu_master");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
 }
 
 // Hot-reload: the CPU budget moves finite -> unlimited -> finite in place (the resource is kept for

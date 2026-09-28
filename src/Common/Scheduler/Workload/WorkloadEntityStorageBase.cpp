@@ -635,9 +635,11 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
 String WorkloadEntityStorageBase::getMasterThreadResourceName()
 {
     std::lock_guard lock{mutex};
-    // An operator-declared CPU resource takes precedence; otherwise, when the feature is enabled,
-    // route master threads through the implicit combined CPU resource created by the manager.
-    if (master_thread_resource.empty() && server_respect_cpu_limit)
+    // Fall back to the implicit combined CPU resource only when the operator declared NO CPU resource
+    // for either role: the manager creates `__server_cpu__` (MASTER + WORKER) only in that
+    // fully-implicit case. A partial operator CPU layout (only one role declared) is unsupported, so
+    // the other role stays unscheduled (empty) rather than pointing at a resource that is never created.
+    if (master_thread_resource.empty() && worker_thread_resource.empty() && server_respect_cpu_limit)
         return String(IMPLICIT_CPU_RESOURCE_NAME);
     return master_thread_resource;
 }
@@ -645,7 +647,7 @@ String WorkloadEntityStorageBase::getMasterThreadResourceName()
 String WorkloadEntityStorageBase::getWorkerThreadResourceName()
 {
     std::lock_guard lock{mutex};
-    if (worker_thread_resource.empty() && server_respect_cpu_limit)
+    if (master_thread_resource.empty() && worker_thread_resource.empty() && server_respect_cpu_limit)
         return String(IMPLICIT_CPU_RESOURCE_NAME);
     return worker_thread_resource;
 }
