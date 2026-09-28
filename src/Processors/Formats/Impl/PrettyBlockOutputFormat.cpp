@@ -23,6 +23,8 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <algorithm>
 
@@ -249,6 +251,15 @@ void PrettyBlockOutputFormat::writingThread()
         /// the query: otherwise the thread just exits, and the query keeps reading and accumulating
         /// chunks that are never written. Passed to the writing methods, which run under the same mutex.
         background_exception = std::current_exception();
+        auto exception = background_exception;
+        lock.unlock();
+
+        /// The writing methods are called only when the query produces more output. A query that has
+        /// already produced all of its output and keeps reading (for example, `SELECT DISTINCT` over a
+        /// huge table) would not notice the error until it finishes, so cancel it with this exception.
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto process_list_element = query_context->getProcessListElement())
+                process_list_element->cancelQuery(DB::CancelReason::CANCELLED_BY_ERROR, exception);
     }
 }
 
