@@ -1,7 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer
+-- Tags: no-fasttest
 -- Tag no-fasttest: parallel replicas require a cluster that is not configured in the fast test.
--- Tag no-old-analyzer: parallel reading from replicas is only built on the analyzer code path, so
--- 'max_execution_time_leaf' does not apply with the old analyzer (the query runs as a plain local read).
 
 DROP TABLE IF EXISTS test_max_execution_time_leaf SYNC;
 CREATE TABLE test_max_execution_time_leaf

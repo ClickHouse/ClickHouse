@@ -706,7 +706,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
     for (const auto & column : columns_list)
     {
-        auto compression = getCodecDescOrDefault(column.name, default_codec);
+        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 
