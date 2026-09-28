@@ -11,6 +11,9 @@ DROP TABLE IF EXISTS in_sub_fmt_merge;
 DROP TABLE IF EXISTS in_sub_fmt_dst;
 
 SET enable_materialized_cte = 1;
+-- The `TTL` subquery is analysed in the context of the table, which does not see this setting, so the analyzer warns
+-- that `MATERIALIZED` is ignored there.
+SET send_logs_level = 'error';
 
 CREATE TABLE in_sub_cte_keys (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO in_sub_cte_keys VALUES (1), (2);
