@@ -520,7 +520,7 @@ size_t DistinctSetFilter::estimateFilteringMemory(const Chunk & chunk) const
         chunk.getNumRows() * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right);
     /// Packed keys live through insertion but are released before filtering copies the columns.
     const size_t prepared_keys_bytes = data->estimatePreparedKeysMemory(chunk.getNumRows(), key_sizes);
-    return std::max(chunk.allocatedBytes(), prepared_keys_bytes) + 2 * mask_bytes;
+    return std::max<size_t>(chunk.allocatedBytes(), prepared_keys_bytes) + 2 * mask_bytes;
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)

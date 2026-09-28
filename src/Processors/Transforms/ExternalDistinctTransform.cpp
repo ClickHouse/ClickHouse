@@ -372,7 +372,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     /// Suppression extraction prepares a sorting unit at a time; the first ordinary run can contain
     /// the whole input chunk. Reserve sorting indices and their temporary arrays for the larger input.
-    const size_t sort_rows = std::max(maxRowsInSortingUnit(), input_chunk.getNumRows());
+    const size_t sort_rows = std::max<size_t>(maxRowsInSortingUnit(), input_chunk.getNumRows());
     const size_t sorting_workspace = estimateSortingWorkspace(sort_rows);
 
     /// Writing a temporary file can hold uncompressed input, compressed output, and a file buffer
@@ -739,11 +739,11 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
 
         if (progress.chunk.hasRows())
         {
-            progress.max_block_bytes = std::max(progress.max_block_bytes, progress.chunk.allocatedBytes());
+            progress.max_block_bytes = std::max<size_t>(progress.max_block_bytes, progress.chunk.allocatedBytes());
 
             /// Written blocks have materialized flags. Allow one byte for division rounding; merging
             /// can change the average width again when it removes duplicates across sorted chunks.
-            max_average_row_bytes = std::max(max_average_row_bytes, progress.chunk.bytes() / progress.chunk.getNumRows() + 1);
+            max_average_row_bytes = std::max<size_t>(max_average_row_bytes, progress.chunk.bytes() / progress.chunk.getNumRows() + 1);
             return;
         }
     }
