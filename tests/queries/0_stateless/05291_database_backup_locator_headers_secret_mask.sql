@@ -4,8 +4,8 @@
 -- A `Backup` database hides the secrets of its `S3(...)` destination in the logged query the same way
 -- `BACKUP ... TO` hides them for the same destination. A `headers(...)` map takes no positional slot and
 -- keeps its keys with the values hidden. Every statement is rejected, but only after it is logged. An
--- argument that is not a literal (a function or an identifier) is hidden, and a destination with one
--- shows nothing after its url.
+-- argument that is not a literal (a function or an identifier) is hidden, and an explicit url destination
+-- with one, or with a map that is not its last argument, hides every positional argument after the url.
 
 CREATE DATABASE db_05291_hdr2 ENGINE = Backup('', S3('url_dbhdr2', 'SEKRIT_DBHDR2',
     headers('X-Auth' = 'SEKRIT_DBHDR2V'))); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -24,6 +24,10 @@ BACKUP TABLE nonexistent_05291 TO S3('url_bkpmid3', 'SEKRIT_BKPMID3', concat('SE
     headers('X-Auth' = 'SEKRIT_BKPMID3V')); -- { serverError BAD_ARGUMENTS }
 CREATE DATABASE db_05291_mid3 ENGINE = Backup('', S3('url_dbmid3', 'SEKRIT_DBMID3', concat('SEKRIT_DBMID3X', 'x'),
     headers('X-Auth' = 'SEKRIT_DBMID3V'))); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_05291 TO S3('url_bkphdrmid', 'SEKRIT_BKPHDRMID',
+    headers('X-Auth' = 'SEKRIT_BKPHDRMIDV'), 'SEKRIT_BKPHDRMIDS'); -- { serverError BAD_ARGUMENTS }
+CREATE DATABASE db_05291_hdrmid ENGINE = Backup('', S3('url_dbhdrmid', 'SEKRIT_DBHDRMID',
+    headers('X-Auth' = 'SEKRIT_DBHDRMIDV'), 'SEKRIT_DBHDRMIDS')); -- { serverError BAD_ARGUMENTS }
 
 SYSTEM FLUSH LOGS query_log;
 

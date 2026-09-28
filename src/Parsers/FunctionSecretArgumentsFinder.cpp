@@ -1578,13 +1578,21 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
             maskS3PositionalsFrom(positional, 1);
             return;
         }
+        /// `BackupInfo::fromAST` also rejects a function other than `key = value` before the last argument, such as a
+        /// map skipped above, so such a locator has no valid triple either.
+        bool has_function_before_last = false;
+        for (size_t i = 0; i + 1 < function->arguments->size() && !has_function_before_last; ++i)
+        {
+            const auto f = function->arguments->at(i)->getFunction();
+            has_function_before_last = f && f->name() != "equals";
+        }
         /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
         /// the locator accepts exactly one or three positionals; the valid triple keeps the url and
         /// access_key_id visible and hides the secret at slot 2. Any other positional count is invalid
         /// but logged before validation, and the intended slots are unknowable, so fail closed on
         /// everything after the url.
         maskS3UrlArgument(positional, 0);
-        maskS3PositionalsFrom(positional, positional.size() == 3 && only_literals ? 2 : 1);
+        maskS3PositionalsFrom(positional, positional.size() == 3 && only_literals && !has_function_before_last ? 2 : 1);
     }
     else if (engine_name == "AzureBlobStorage")
     {
