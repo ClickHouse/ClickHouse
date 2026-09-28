@@ -6,6 +6,7 @@
 #include <Common/SettingsChanges.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IAST_fwd.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
@@ -72,6 +73,7 @@ public:
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
     TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
+    TableMetadata & withPartitionAndSortingKeys() { with_partition_and_sorting_keys = true; return *this; }
 
     bool hasLocation() const;
     bool hasSchema() const;
@@ -95,6 +97,10 @@ public:
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
+    void setPartitionAndSortingKeys(DB::ASTPtr partition_by_, DB::ASTPtr order_by_);
+    DB::ASTPtr getPartitionBy() const;
+    DB::ASTPtr getOrderBy() const;
+
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
     std::optional<std::string> getTableUUID() const { return table_uuid; }
     void setTableFormat(DataLakeTableFormat format) { table_format = format; }
@@ -104,6 +110,7 @@ public:
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
     bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
+    bool requiresPartitionAndSortingKeys() const { return with_partition_and_sorting_keys; }
 
     StorageType getStorageType() const;
 
@@ -148,6 +155,9 @@ private:
     /// Specific settings for iceberg and datalake
     std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
 
+    DB::ASTPtr partition_by;
+    DB::ASTPtr order_by;
+
     std::string reason_why_table_is_not_readable;
     std::optional<std::string> table_uuid;
 
@@ -158,6 +168,7 @@ private:
     bool with_schema = false;
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
+    bool with_partition_and_sorting_keys = false;
 
     std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };

@@ -37,6 +37,7 @@
 #include <filesystem>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
@@ -1743,6 +1744,12 @@ bool RestCatalog::getTableMetadataImpl(
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
+    }
+
+    if (result.requiresPartitionAndSortingKeys())
+    {
+        auto [partition_by, order_by] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(metadata_object);
+        result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by));
     }
 
     if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))

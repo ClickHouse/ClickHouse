@@ -1621,7 +1621,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             storage_def->set(storage_def->engine, as_create.storage->engine->clone());
             create.is_time_series_table = true;
         }
-        else if (as_create.storage)
+        else if (as_create.storage && as_create.storage->engine)
         {
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
         }

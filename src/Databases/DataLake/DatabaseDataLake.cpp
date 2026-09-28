@@ -1730,7 +1730,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
+    auto table_metadata = DataLake::TableMetadata().withLocation().withSchema().withPartitionAndSortingKeys();
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
         table_metadata.withForceAddBucket();
 
@@ -1763,10 +1763,24 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
+    const auto partition_by = table_metadata.getPartitionBy();
+    const auto order_by = table_metadata.getOrderBy();
+
     /// The catalog rejects an explicit `ENGINE` in `CREATE TABLE` when it assigns table locations itself,
     /// so the `ENGINE` clause is omitted to keep the query replayable.
     if (catalog->managesTableLocation())
+    {
+        if (partition_by || order_by)
+        {
+            auto storage = make_intrusive<ASTStorage>();
+            if (partition_by)
+                storage->set(storage->partition_by, partition_by);
+            if (order_by)
+                storage->set(storage->order_by, order_by);
+            create_table_query->set(create_table_query->storage, storage);
+        }
         return create_table_query;
+    }
 
     auto table_storage_define = table_engine_definition->clone();
 
@@ -1775,6 +1789,10 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
     storage->settings = {};
+    if (partition_by)
+        storage->set(storage->partition_by, partition_by);
+    if (order_by)
+        storage->set(storage->order_by, order_by);
 
     create_table_query->set(create_table_query->storage, table_storage_define);
 

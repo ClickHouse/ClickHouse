@@ -306,6 +306,31 @@ std::optional<DataLakeSpecificProperties> TableMetadata::getDataLakeSpecificProp
     return data_lake_specific_metadata;
 }
 
+void TableMetadata::setPartitionAndSortingKeys(DB::ASTPtr partition_by_, DB::ASTPtr order_by_)
+{
+    if (!with_partition_and_sorting_keys)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Partition and sorting keys were not requested");
+
+    partition_by = std::move(partition_by_);
+    order_by = std::move(order_by_);
+}
+
+DB::ASTPtr TableMetadata::getPartitionBy() const
+{
+    if (!with_partition_and_sorting_keys)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Partition and sorting keys were not requested");
+
+    return partition_by;
+}
+
+DB::ASTPtr TableMetadata::getOrderBy() const
+{
+    if (!with_partition_and_sorting_keys)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Partition and sorting keys were not requested");
+
+    return order_by;
+}
+
 StorageType TableMetadata::getStorageType() const
 {
     if (!storage_type_str.empty())

@@ -433,6 +433,17 @@ bool GlueCatalog::tryGetTableMetadata(
             }
             result.setSchema(schema);
         }
+
+        if (result.requiresPartitionAndSortingKeys() && result.isDefaultReadableTable())
+        {
+            if (!result.hasDataLakeSpecificProperties())
+                setup_specific_properties();
+            if (result.isDefaultReadableTable())
+            {
+                auto [partition_by, order_by] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(getIcebergMetadataObject(result));
+                result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by));
+            }
+        }
     }
     else
     {
@@ -514,6 +525,11 @@ bool GlueCatalog::empty() const
 
 String GlueCatalog::getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const
 {
+    return resolveTimestampTypeFromMetadata(getIcebergMetadataObject(table_metadata), column_name, glue_column_type);
+}
+
+Poco::JSON::Object::Ptr GlueCatalog::getIcebergMetadataObject(const TableMetadata & table_metadata) const
+{
     auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!table_specific_properties.has_value())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to read table metadata, reason why table is unreadable: {}", table_metadata.getReasonWhyTableIsUnreadable());
@@ -529,8 +545,7 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
         metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
 
-    auto metadata_object = *metadata_objects.get(metadata_uri);
-    return resolveTimestampTypeFromMetadata(metadata_object, column_name, glue_column_type);
+    return *metadata_objects.get(metadata_uri);
 }
 
 String GlueCatalog::resolveTimestampTypeFromMetadata(

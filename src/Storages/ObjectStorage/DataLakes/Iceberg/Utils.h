@@ -146,6 +146,8 @@ FileCategory inspectFileCategory(const String & relative_path);
 
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+
+std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::JSON::Object::Ptr & metadata_object);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
 void forEachAvroEntry(

@@ -61,7 +61,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\\nPARTITION BY icebergDay(datetime)\\nORDER BY symbol\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -947,7 +947,7 @@ def test_timestamps(started_cluster):
     df = pa.Table.from_pylist(data)
     table.append(df)
 
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\\nPARTITION BY icebergDay(timestamp)\\nORDER BY timestamptz\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
@@ -2532,6 +2532,68 @@ def test_show_create_table_round_trip_with_fixed_storage_backend(started_cluster
 
     assert node.query(f"SELECT count() FROM {source_table}") == "0\n"
     assert node.query(f"SELECT count() FROM {target_table}") == "0\n"
+
+    node.query(f"DROP TABLE {source_table}", settings=settings)
+    node.query(f"DROP TABLE {target_table}", settings=settings)
+
+
+def test_show_create_table_round_trip_partition_and_sort_order(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    suffix = uuid.uuid4().hex[:8]
+    namespace = f"test_show_create_keys_{suffix}"
+    source_table_name = f"source_{suffix}"
+    target_table_name = f"target_{suffix}"
+    settings = {
+        "allow_database_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    source_table = f"{CATALOG_NAME}.`{namespace}.{source_table_name}`"
+    target_table = f"{CATALOG_NAME}.`{namespace}.{target_table_name}`"
+    node.query(
+        f"""
+        CREATE TABLE {source_table} (id UInt64, dt Date, name String)
+        PARTITION BY (toYearNumSinceEpoch(dt), icebergBucket(8, id))
+        ORDER BY (id, name DESC)
+        """,
+        settings=settings,
+    )
+
+    create_query = node.query(
+        f"SHOW CREATE TABLE {source_table} FORMAT TSVRaw",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert "PARTITION BY (icebergYear(dt), icebergBucket(8, id))" in create_query
+    assert "ORDER BY tuple(id, name DESC)" in create_query
+
+    create_query = create_query.replace(
+        f"`{namespace}.{source_table_name}`", f"`{namespace}.{target_table_name}`"
+    ).replace(f"/{source_table_name}/", f"/{target_table_name}/")
+    node.query(create_query, settings=settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    source = catalog.load_table(f"{namespace}.{source_table_name}")
+    target = catalog.load_table(f"{namespace}.{target_table_name}")
+
+    def partition_fields(tbl):
+        return [(f.source_id, str(f.transform)) for f in tbl.spec().fields]
+
+    def sort_fields(tbl):
+        return [
+            (f.source_id, str(f.transform), str(f.direction))
+            for f in tbl.sort_order().fields
+        ]
+
+    assert partition_fields(target) == partition_fields(source)
+    assert sort_fields(target) == sort_fields(source)
 
     node.query(f"DROP TABLE {source_table}", settings=settings)
     node.query(f"DROP TABLE {target_table}", settings=settings)
