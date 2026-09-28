@@ -528,7 +528,7 @@ std::optional<size_t> findCharacterNotWritableAsXML(std::string_view s)
             code_point = UTF8::convertUTF8ToCodePoint(pos, length);
 
         if (!code_point || !isValidXMLCharacter(*code_point))
-            return static_cast<size_t>(pos - begin);
+            return pos - begin;
 
         pos += length;
     }
