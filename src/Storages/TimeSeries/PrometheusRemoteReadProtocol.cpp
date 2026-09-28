@@ -2,7 +2,6 @@
 
 #if USE_PROMETHEUS_PROTOBUFS
 
-#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
@@ -211,10 +210,8 @@ namespace
     }
 
     /// Each shard restarts timeSeriesIdToGroup()'s node-local counter, merging unrelated series.
-    /// SELECT first, so the engine refusal cannot describe a table the caller may not see.
-    ConstStoragePtr checkTargetIsNotDistributed(ConstStoragePtr storage, const ContextPtr & context)
+    ConstStoragePtr checkTargetIsNotDistributed(ConstStoragePtr storage)
     {
-        context->checkAccess(AccessType::SELECT, storage->getStorageID());
         if (typeid_cast<const StorageDistributed *>(storage.get()))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -225,9 +222,10 @@ namespace
 }
 
 
+/// The caller checks SELECT on the table before constructing this.
 PrometheusRemoteReadProtocol::PrometheusRemoteReadProtocol(ConstStoragePtr time_series_storage_, const ContextPtr & context_)
     : WithContext{context_}
-    , time_series_storage(storagePtrToTimeSeries(checkTargetIsNotDistributed(std::move(time_series_storage_), context_)))
+    , time_series_storage(storagePtrToTimeSeries(checkTargetIsNotDistributed(std::move(time_series_storage_))))
     , log(getLogger("PrometheusRemoteReadProtocol"))
 {
 }

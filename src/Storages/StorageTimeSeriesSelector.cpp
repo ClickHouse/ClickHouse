@@ -964,7 +964,7 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    /// Re-checked: getConfiguration already gates the only construction path, the table function.
+    /// Also checked here: a table created AS this function is configured once, not on the reader's context.
     context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);

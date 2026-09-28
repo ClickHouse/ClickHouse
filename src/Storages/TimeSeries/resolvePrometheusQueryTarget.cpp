@@ -428,10 +428,7 @@ void checkNoBypassedReadRestriction(
 void checkPrometheusQueryDistributedRead(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
 {
-    /// The planner never sees the wrapper (the rewrite hands it a cluster() call), so its SELECT grant
-    /// is checked explicitly: again here, before a probe that runs on the server's own context.
     const auto storage_id = storage.getStorageID();
-    context->checkAccess(AccessType::SELECT, storage_id);
 
     /// A plain SELECT through the wrapper applies both; the generated read never names the wrapper.
     /// The shard-local table's own policy and filters are each shard's to check, in the selector.

@@ -40,8 +40,8 @@ UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetada
 void checkNoBypassedReadRestriction(
     const StorageID & storage_id, const ContextPtr & context, std::string_view operation, std::string_view rewrite);
 
-/// SELECT on the wrapper, no row policy or filter the rewrite would skip, READ ON REMOTE and a local shard's own grants,
-/// all before the probe; then every replica's target must be a TimeSeries table of the wrapper's samples type.
+/// The caller has checked SELECT on the wrapper; this checks the row policy and filters, READ ON REMOTE and a local
+/// shard's grants, all before the probe; then every replica's target must be a TimeSeries table of the wrapper's type.
 void checkPrometheusQueryDistributedRead(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context);
 

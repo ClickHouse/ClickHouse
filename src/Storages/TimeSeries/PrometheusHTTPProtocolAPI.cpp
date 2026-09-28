@@ -33,7 +33,6 @@
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -130,10 +129,7 @@ ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, 
 /// a Distributed table has none, and the table's own row policy and filters would never be applied.
 void checkMetadataEndpointTarget(const IStorage & storage, std::string_view endpoint, const ContextPtr & context)
 {
-    /// The SELECT check comes first: the endpoint-specific refusals below must not tell a caller
-    /// without access what kind of table hides behind the name.
     const auto storage_id = storage.getStorageID();
-    context->checkAccess(AccessType::SELECT, storage_id);
     if (resolvePrometheusQueryTarget(storage))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -210,11 +206,9 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
-    /// Check the engine of the target table early, before any endpoint is called. The SELECT
-    /// check comes first so the engine error cannot fingerprint a table the caller cannot read.
-    context_->checkAccess(AccessType::SELECT, time_series_storage->getStorageID());
-    /// The shard-local tables' versions are checked by the selector on each shard.
+    /// The caller checks SELECT on the table before constructing this.
     distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
     if (!distributed_target)
         checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
 

@@ -16,6 +16,7 @@ from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     error_code,
     execute_query_via_http_api,
+    extract_error_from_http_api_response,
     get_error_from_query_endpoint,
     get_response_to_remote_read,
     get_response_to_remote_write,
@@ -217,6 +218,45 @@ def test_remote_read_needs_the_select_grant():
     assert denied.status_code == requests.codes.forbidden, denied.text
     assert "NOT_IMPLEMENTED" not in denied.text
     assert "Distributed" not in denied.text
+
+
+@pytest.mark.parametrize(
+    "path", ["series?match[]=m", "labels", "label/host/values", "metadata"]
+)
+def test_metadata_endpoints_need_the_select_grant(path):
+    url = f"http://{node.ip_address}:9093{DIST}/{path}"
+    # The privileged caller is told the endpoint cannot merge the shards...
+    allowed = extract_error_from_http_api_response(requests.get(url))
+    assert "is not supported over a Distributed table" in allowed, allowed
+
+    # ...while the restricted one learns only that it has no grant.
+    denied = extract_error_from_http_api_response(
+        requests.get(url, params=as_user(NO_SELECT_USER))
+    )
+    assert "Not enough privileges" in denied, denied
+    assert "Distributed" not in denied, denied
+
+
+def test_a_stored_selector_table_needs_the_select_grant_on_its_source():
+    """A table created AS timeSeriesSelector is configured once, so the reader's own SELECT on the
+    source table is checked when it is read."""
+    node.query(
+        f"CREATE TABLE stored_selector AS timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})"
+    )
+    node.query("CREATE USER stored_selector_reader IDENTIFIED WITH no_password")
+    node.query("GRANT SELECT ON default.stored_selector TO stored_selector_reader")
+    try:
+        # The creator reads it, so the denial below is not vacuous.
+        assert int(node.query("SELECT count() FROM stored_selector")) > 0
+
+        denied = node.query_and_get_error(
+            "SELECT count() FROM stored_selector", user="stored_selector_reader"
+        ).split("Stack trace:")[0]
+        assert "Not enough privileges" in denied, denied
+        assert "shard_0.ts_local" in denied, denied
+    finally:
+        node.query("DROP USER IF EXISTS stored_selector_reader")
+        node.query("DROP TABLE IF EXISTS stored_selector")
 
 
 def test_remote_write_needs_the_insert_grant():
