@@ -219,6 +219,23 @@ TEST(StorageAzureConfiguration, FromASTWithExtraCredentials)
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
 }
 
+TEST(StorageAzureConfiguration, FromASTKeepsExtraCredentialsInTableDefinition)
+{
+    /// Without `extra_credentials`, this url resolves to a managed identity.
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1?foo=bar', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
+    auto context = Context::getGlobalContextInstance();
+
+    /// `CREATE` stores the engine arguments as these two calls leave them, and loading the table parses them again.
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.fromAST(engine_args, context, false);
+    conf.addStructureAndFormatToArgsIfNeeded(engine_args, "", "auto", context, false);
+
+    StorageAzureConfigurationFriend loaded;
+    loaded.fromAST(engine_args, context, false);
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(loaded.getConnectionParams().auth_method));
+}
+
 TEST(StorageAzureConfiguration, FromASTWithAccount)
 {
     std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key')";

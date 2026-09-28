@@ -735,6 +735,10 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+
+    /// `engine_args` are persisted, so they must keep the credentials.
+    if (extra_credentials)
+        engine_args.push_back(extra_credentials);
 }
 
 static void addStructureAndFormatToArgsIfNeededAzure(
