@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
@@ -92,6 +93,24 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         maskURIPassword(&temp_buf.str());
         ostr << temp_buf.str();
     }
+    else if (!settings.show_secrets && second_with_brackets && (first == "header"))
+    {
+        /// Hide the values of HTTP headers in the definition of a dictionary, keeping their names.
+        /// They often carry credentials (e.g. API tokens), so all of them are hidden, the same way
+        /// as the `url` table function hides header values:
+        /// SOURCE(HTTP(url 'http://example.com/' format 'TSV' headers(header(name 'API-KEY' value '[HIDDEN]'))))
+        auto masked = second->clone();
+        for (auto & child : masked->children)
+        {
+            auto * pair = child->as<ASTPair>();
+            if (pair && pair->first == "value")
+            {
+                pair->second_with_brackets = false;
+                pair->replace(pair->second, make_intrusive<ASTLiteral>("[HIDDEN]"));
+            }
+        }
+        masked->format(ostr, settings, state, frame);
+    }
     else
     {
         second->format(ostr, settings, state, frame);
@@ -104,7 +123,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || second->hasSecretParts();
+    return isSecretKey(first) || first == "headers" || first == "header" || second->hasSecretParts();
 }
 
 

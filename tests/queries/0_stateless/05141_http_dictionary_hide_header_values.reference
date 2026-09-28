@@ -1,0 +1,3 @@
+CREATE DICTIONARY default.d_05141\n(\n    `id` UInt64,\n    `v` String\n)\nPRIMARY KEY id\nSOURCE(HTTP(URL \'http://localhost:11111/x.tsv\' FORMAT \'TabSeparated\' CREDENTIALS (USER \'user\' PASSWORD \'[HIDDEN]\') HEADERS (HEADER (NAME \'API-KEY\' VALUE \'[HIDDEN]\') HEADER (NAME \'X-Other\' VALUE \'[HIDDEN]\'))))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(FLAT())
+0	1	1
+1	0

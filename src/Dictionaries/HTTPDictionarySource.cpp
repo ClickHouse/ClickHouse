@@ -413,6 +413,8 @@ Setting fields:
 | `value` | Value set for a specific identifier name. |
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
+
+The values of the headers are shown as `[HIDDEN]` in the output of `SHOW CREATE DICTIONARY`, in `system.tables` and in the query logs, the same way as the password. To display them, enable the server setting [`display_secrets_in_show_and_select`](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select) and the format setting [`format_display_secrets_in_show_and_select`](/reference/settings/formats/format#format_display_secrets_in_show_and_select); the user also needs the `displaySecretsInShowAndSelect` privilege.
 )DOCS_MD",
         .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
         .related = {"file"}});
