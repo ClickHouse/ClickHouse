@@ -76,6 +76,12 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "
     SELECT count(), max(secret) FROM $db.definer_view GROUP BY owner;
     SELECT secret FROM $db.definer_view WHERE secret LIKE 'vis%';"
 
+echo "--- a plan fragment that reads the view can be cloned"
+# Without the in-memory buffer, the input of a correlated subquery is duplicated by cloning its plan.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT secret FROM $db.definer_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
+    SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
+
 echo "--- only a view that runs with other privileges and can hide rows is sealed"
 for view in definer_view none_view invoker_view projection_view policy_view; do
     echo -n "$view: "

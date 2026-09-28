@@ -27,6 +27,8 @@ visible
 alice	visible
 1	visible
 visible
+--- a plan fragment that reads the view can be cloned
+visible
 --- only a view that runs with other privileges and can hide rows is sealed
 definer_view: 1
 none_view: 1

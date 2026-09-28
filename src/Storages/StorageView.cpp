@@ -374,6 +374,11 @@ public:
 
     String getName() const override { return "ReadFromSealedView"; }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::unique_ptr<ReadFromSealedViewStep>(new ReadFromSealedViewStep(view_plan.clone(), optimization_settings));
+    }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override
     {
         pipeline = std::move(*view_plan.buildQueryPipeline(optimization_settings, settings, /*do_optimize=*/ false));
@@ -393,6 +398,14 @@ public:
     }
 
 private:
+    /// For `clone`: the plan is already optimized.
+    ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_)
+        : ISourceStep(view_plan_.getCurrentHeader())
+        , view_plan(std::move(view_plan_))
+        , optimization_settings(std::move(optimization_settings_))
+    {
+    }
+
     QueryPlan view_plan;
     QueryPlanOptimizationSettings optimization_settings;
 };
