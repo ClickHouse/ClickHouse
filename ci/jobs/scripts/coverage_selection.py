@@ -222,6 +222,104 @@ def build_candidate_query(
     """
 
 
+def build_bracket_spans_query(hunk_ranges, snapshots, config=SELECTION_CONFIG):
+    """Regions around the changed hunks, to find the hunks that overlap no region."""
+    conditions = []
+    for path, hunks in sorted(hunk_ranges.items()):
+        paths = ", ".join(map(sql_string, canonical_coverage_paths(path)))
+        windows = " OR ".join(
+            f"(line_end >= {max(0, a - config.bracket_gap_lines)} AND line_start <= {max(a, b) + config.bracket_gap_lines})"
+            for a, b in sorted(set(hunks))
+        )
+        conditions.append(f"(file IN ({paths}) AND ({windows}))")
+    if not conditions:
+        raise ValueError("Bracket query needs changed hunks")
+    return f"""
+        SELECT DISTINCT if(startsWith(file, './'), substring(file, 3), file) AS file,
+               line_start, line_end
+        FROM checks_coverage_lines
+        WHERE {snapshot_predicate(snapshots)}
+          AND match(test_name, {sql_string(config.coverage_test_name_pattern)})
+          AND line_end >= line_start
+          AND ({' OR '.join(conditions)})
+        ORDER BY file, line_start, line_end
+        FORMAT JSONEachRow
+    """
+
+
+def find_brackets(hunk_ranges, spans, config=SELECTION_CONFIG):
+    """For every hunk that overlaps no region, the nearest regions before and after it.
+
+    A test that ran both regions ran the straight-line code between them, which the
+    export does not record (it keeps one region per counter). Returns a list of
+    `{"file", "hunk", "before", "after"}` with regions as `(file, line_start, line_end)`.
+    """
+    by_file = defaultdict(list)
+    for span in spans:
+        by_file[canonical_coverage_path(span["file"])].append(
+            (int(span["line_start"]), int(span["line_end"]))
+        )
+    brackets = []
+    for path, hunks in sorted(hunk_ranges.items()):
+        path = canonical_coverage_path(path)
+        regions = by_file.get(path, [])
+        for a, b in sorted(set(hunks)):
+            b = max(a, b)
+            if any(end >= a and start <= b for start, end in regions):
+                continue
+            before = [r for r in regions if r[1] < a and a - r[1] <= config.bracket_gap_lines]
+            after = [r for r in regions if r[0] > b and r[0] - b <= config.bracket_gap_lines]
+            if not before or not after:
+                continue
+            before = max(before, key=lambda r: (r[1], -r[0]))
+            after = min(after, key=lambda r: (r[0], r[1]))
+            brackets.append(
+                {
+                    "file": path,
+                    "hunk": f"{path}:{a}-{b}",
+                    "before": (path, *before),
+                    "after": (path, *after),
+                }
+            )
+    return brackets
+
+
+def build_bracket_owners_query(brackets, snapshots, config=SELECTION_CONFIG):
+    regions = defaultdict(set)
+    for bracket in brackets:
+        for path, start, end in (bracket["before"], bracket["after"]):
+            regions[path].add((start, end))
+    if not regions:
+        raise ValueError("Bracket owners query needs regions")
+    conditions = []
+    for path, spans in sorted(regions.items()):
+        paths = ", ".join(map(sql_string, canonical_coverage_paths(path)))
+        keys = ", ".join(f"({start}, {end})" for start, end in sorted(spans))
+        conditions.append(f"(file IN ({paths}) AND (line_start, line_end) IN ({keys}))")
+    return f"""
+        SELECT if(startsWith(file, './'), substring(file, 3), file) AS canonical_file,
+               line_start, line_end, groupUniqArray(test_name) AS owners
+        FROM checks_coverage_lines
+        WHERE {snapshot_predicate(snapshots)}
+          AND match(test_name, {sql_string(config.coverage_test_name_pattern)})
+          AND ({' OR '.join(conditions)})
+        GROUP BY canonical_file, line_start, line_end
+        ORDER BY canonical_file, line_start, line_end
+        FORMAT JSONEachRow
+    """
+
+
+def attach_bracket_owners(brackets, rows):
+    """Set `owners` of every bracket to the tests that own both of its regions."""
+    owners = defaultdict(set)
+    for row in rows:
+        key = (canonical_coverage_path(row["canonical_file"]), int(row["line_start"]), int(row["line_end"]))
+        owners[key].update(row["owners"])
+    for bracket in brackets:
+        bracket["owners"] = sorted(owners[bracket["before"]] & owners[bracket["after"]])
+    return brackets
+
+
 def parse_rows(raw):
     if raw is None:
         raise RuntimeError("Coverage query returned no response")
@@ -234,6 +332,7 @@ def rank_candidates(
     hunk_ranges,
     snapshots,
     config=SELECTION_CONFIG,
+    brackets=None,
 ):
     snapshot_keys = {(s["check_start_time"], s["check_name"]) for s in snapshots}
     changed = defaultdict(set)
@@ -296,6 +395,39 @@ def rank_candidates(
                 },
             )
             candidate["score"] += weight / (width * owners)
+            candidate["features"].append(feature)
+
+    for bracket in brackets or []:
+        owners = len(bracket["owners"])
+        if not 0 < owners <= config.max_precise_region_owners:
+            continue
+        width = bracket["after"][1] - bracket["before"][2] + 1
+        for test in sorted(bracket["owners"]):
+            feature = {
+                "region": f"{bracket['file']}:{bracket['before'][2]}-{bracket['after'][1]}",
+                "file": bracket["file"],
+                "region_width": width,
+                "region_owners": owners,
+                "exact_lines": [],
+                "hunks": [bracket["hunk"]],
+                "bracket_regions": [
+                    f"{bracket['file']}:{start}-{end}"
+                    for _, start, end in (bracket["before"], bracket["after"])
+                ],
+                # The owners query does not count the runs per test.
+                "coverage_run_frequency": None,
+            }
+            candidate = candidates.setdefault(
+                test,
+                {
+                    "test": test,
+                    "source": "primary_coverage",
+                    "score": 0.0,
+                    "admission_reason": "bracketed_hunk_coverage",
+                    "features": [],
+                },
+            )
+            candidate["score"] += config.hunk_context_weight / (width * owners)
             candidate["features"].append(feature)
 
     ranked = sorted(

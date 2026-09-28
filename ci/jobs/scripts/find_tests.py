@@ -12,10 +12,14 @@ import time
 sys.path.append("./")
 
 from ci.jobs.scripts.coverage_selection import (
+    attach_bracket_owners,
+    build_bracket_owners_query,
+    build_bracket_spans_query,
     build_candidate_query,
     build_selector_smoke_seed_query,
     canonical_coverage_path,
     load_snapshots,
+    find_brackets,
     parse_rows,
     protect_selection,
     rank_candidates,
@@ -669,7 +673,41 @@ class Targeting:
             hunk_ranges or {},
             self.coverage_snapshots(),
             self.config,
+            brackets=self.get_brackets(coverage_lines, hunk_ranges or {}),
         )
+
+    def get_brackets(self, coverage_lines, hunk_ranges):
+        """The hunks that overlap no coverage region, with the tests that own the
+        regions on both sides of them; see `SelectionConfig.bracket_gap_lines`."""
+        if not self.config.bracket_gap_lines:
+            return []
+        files = {path for path, _ in coverage_lines}
+        hunks = {
+            canonical_coverage_path(path): ranges
+            for path, ranges in hunk_ranges.items()
+            if canonical_coverage_path(path) in files
+        }
+        if not hunks:
+            return []
+        snapshots = self.coverage_snapshots()
+        spans = parse_rows(
+            self._ci_db().query(
+                build_bracket_spans_query(hunks, snapshots, self.config), log_level=""
+            )
+        )
+        brackets = find_brackets(hunks, spans, self.config)
+        if brackets:
+            owners = parse_rows(
+                self._ci_db().query(
+                    build_bracket_owners_query(brackets, snapshots, self.config),
+                    log_level="",
+                )
+            )
+            attach_bracket_owners(brackets, owners)
+        self.selection_diagnostics["brackets"] = [
+            {**bracket, "owners": len(bracket["owners"])} for bracket in brackets
+        ]
+        return brackets
 
     def get_changed_or_new_tests_with_info(self, strict=False):
         tests = sorted(self.get_changed_tests(strict=strict))

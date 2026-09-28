@@ -10,15 +10,22 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from ci.jobs.scripts.coverage_selection import (
+    attach_bracket_owners,
+    build_bracket_owners_query,
+    build_bracket_spans_query,
     build_candidate_query,
     canonical_coverage_paths,
+    find_brackets,
     load_snapshots,
     protect_selection,
     rank_candidates,
     validate_snapshots,
 )
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+from ci.jobs.scripts.test_selection_config import (
+    INTEGRATION_SELECTION_CONFIG,
+    SELECTION_CONFIG,
+)
 
 FIXTURE_TIME = "2026-09-04 03:00:00"
 FIXTURE_DIFF = """--- a/src/Interpreters/Fixture.cpp
@@ -378,6 +385,66 @@ class SelectionSmoke(unittest.TestCase):
         self.assertEqual(shlex.split(Targeting.selection_args(selectors)), selectors)
         # Control: the plain join this replaces does not survive quote removal.
         self.assertNotEqual(shlex.split(" ".join(selectors)), selectors)
+
+    def test_brackets_pair_nearest_regions_around_uncovered_hunks(self):
+        config = INTEGRATION_SELECTION_CONFIG
+        spans = [
+            {"file": "./src/a.cpp", "line_start": 344, "line_end": 345},
+            {"file": "src/a.cpp", "line_start": 300, "line_end": 300},
+            {"file": "src/a.cpp", "line_start": 403, "line_end": 404},
+            {"file": "src/a.cpp", "line_start": 500, "line_end": 500},
+        ]
+        hunks = {
+            # Straight-line code between two regions.
+            "src/a.cpp": [(383, 388), (499, 501), (430, 436)],
+            "src/b.cpp": [(10, 12)],
+        }
+        brackets = find_brackets(hunks, spans, config)
+        # (499, 501) overlaps a region and is scored as usual; (430, 436) has nothing
+        # after it within the gap; `src/b.cpp` has no regions.
+        self.assertEqual(
+            [(b["hunk"], b["before"], b["after"]) for b in brackets],
+            [("src/a.cpp:383-388", ("src/a.cpp", 344, 345), ("src/a.cpp", 403, 404))],
+        )
+        self.assertEqual(find_brackets(hunks, spans, replace(config, bracket_gap_lines=10)), [])
+
+        query = build_bracket_spans_query(hunks, fixture_snapshots(), config)
+        self.assertIn("file IN ('src/a.cpp', './src/a.cpp')", query)
+        self.assertIn("line_end >= 343 AND line_start <= 428", query)
+        query = build_bracket_owners_query(brackets, fixture_snapshots(), config)
+        self.assertIn("(line_start, line_end) IN ((344, 345), (403, 404))", query)
+
+        attach_bracket_owners(
+            brackets,
+            [
+                {"canonical_file": "src/a.cpp", "line_start": 344, "line_end": 345, "owners": ["test_x/test.py", "test_y/test.py"]},
+                {"canonical_file": "src/a.cpp", "line_start": 403, "line_end": 404, "owners": ["test_y/test.py", "test_z/test.py"]},
+            ],
+        )
+        # Only a test that reached both regions ran the code between them.
+        self.assertEqual(brackets[0]["owners"], ["test_y/test.py"])
+
+    def test_brackets_rank_after_precise_coverage(self):
+        config = INTEGRATION_SELECTION_CONFIG
+        region = fixture_region(tests=[("test_precise/test.py", 1)])
+        bracket = {
+            "file": region["file"],
+            "hunk": f"{region['file']}:30-35",
+            "before": (region["file"], 20, 21),
+            "after": (region["file"], 40, 40),
+            "owners": ["test_bracket/test.py", "test_precise/test.py"],
+        }
+        candidates = rank_candidates(
+            [region], [(region["file"], 10), (region["file"], 30)], {}, fixture_snapshots(), config, brackets=[bracket]
+        )
+        self.assertEqual([c["test"] for c in candidates], ["test_precise/test.py", "test_bracket/test.py"])
+        self.assertEqual(candidates[1]["admission_reason"], "bracketed_hunk_coverage")
+        self.assertEqual(candidates[1]["features"][0]["region"], f"{region['file']}:21-40")
+        # A bracket owned by too many tests is as broad as an unselective region.
+        bracket["owners"] = [f"test_{i}/test.py" for i in range(config.max_precise_region_owners + 1)]
+        self.assertEqual(
+            [c["test"] for c in rank_candidates([], [], {}, fixture_snapshots(), config, brackets=[bracket])], []
+        )
 
     def test_query_keeps_file_pruning_and_separate_hunks(self):
         query = build_candidate_query(
