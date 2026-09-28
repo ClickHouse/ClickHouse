@@ -300,7 +300,9 @@ public:
     /// a value in place, such as by expanding macros; one that replaces a value records the new origin, through the
     /// typed `set` that `DECLARE_SETTINGS_TYPED_SET` gives its public settings class.
 
-    /// Assigns `value` and records `origin` as its source; `Default` records none.
+    /// Assigns `value` and records `origin` as its source; `Default` records none. Through the base's own assignment,
+    /// not through `set`: an `Impl` that overrides `set` - core `Settings` does - is not one whose traits record origins,
+    /// and one that did would have to route this through its override too.
     void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin) requires Traits::record_origin
     {
         storeOrigin(assign(name, value), origin);

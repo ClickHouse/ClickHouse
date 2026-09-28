@@ -4,6 +4,7 @@
 #include <Core/SettingOrigin.h>
 
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 /// Forward-declares CLASS_NAME so it can be used as a template tag in SettingIndex,
@@ -31,6 +32,10 @@
     template <typename FieldType, typename Value> \
     void set(SettingIndex<CLASS_NAME, FieldType> setting, Value && value, SettingOrigin origin = SettingOrigin::Default) \
     { \
+        /* A whole setting field would be copied with its `changed` flag, and a `false` one would hide the origin */ \
+        /* recorded below: enumeration reads it only for a setting that counts as changed. */ \
+        static_assert(!requires(const std::remove_cvref_t<Value> & field) { field.changed; }, \
+                      "`set` takes a value, not a setting field"); \
         (*this)[setting] = std::forward<Value>(value); \
         recordOriginAtOffset(setting.offset, origin); \
     } \
