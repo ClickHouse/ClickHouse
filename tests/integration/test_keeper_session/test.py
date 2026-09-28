@@ -149,6 +149,34 @@ def test_session_timeout(started_cluster):
     assert negotiated_timeout == 10000
 
 
+def test_handshake_to_continue_session_is_expired(started_cluster):
+    wait_nodes()
+    negotiated_timeout, session_id = handshake(
+        node1.name, session_timeout=8000, session_id=0
+    )
+    assert negotiated_timeout == 8000 and session_id > 0
+    # Keeper cannot restore a session, so a request to continue one must not be answered with a new session.
+    assert handshake(node1.name, session_timeout=8000, session_id=session_id) == (0, 0)
+
+    try:
+        node2.stop_clickhouse()
+        node3.stop_clickhouse()
+        keeper_utils.wait_until_quorum_lost(cluster, node1)
+        # A rejected client gets no session id that it would send back as the session to continue.
+        negotiated_timeout, rejected_session_id = handshake(
+            node1.name, session_timeout=8000, session_id=0
+        )
+        assert negotiated_timeout > 0 and rejected_session_id == 0
+        assert handshake(node1.name, session_timeout=8000, session_id=session_id) == (
+            0,
+            0,
+        )
+    finally:
+        node2.start_clickhouse()
+        node3.start_clickhouse()
+        wait_nodes()
+
+
 def test_session_close_shutdown(started_cluster):
     wait_nodes()
 
