@@ -14,11 +14,12 @@ ENGINE = MergeTree ORDER BY tuple()
 SETTINGS allow_experimental_text_index_phrase_search = 1;
 
 -- Every row is a new token, so most tracked allocations of each INSERT happen while the index is built.
-INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
-INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
-INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
-INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
-INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
+-- One thread: a fault while scheduling pipeline threads would fail with CANNOT_SCHEDULE_TASK instead.
+INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0, max_threads = 1 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
+INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0, max_threads = 1 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
+INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0, max_threads = 1 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
+INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0, max_threads = 1 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
+INSERT INTO tab SETTINGS memory_tracker_fault_probability = 0.001, max_untracked_memory = 0, max_threads = 1 SELECT concat('token', toString(number)) FROM numbers(20000); -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 TRUNCATE TABLE tab;
 INSERT INTO tab SELECT concat('token', toString(number)) FROM numbers(20000);
