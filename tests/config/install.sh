@@ -9,14 +9,17 @@ DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
-# Below we rm -rf config.d before repopulating it; refuse if that would wipe the source configs.
+# Below we rm -rf config.d and write into config.d, users.d and the client config directory; refuse if any of them
+# is the same directory as the source tree or one of its subdirectories, since that would destroy or pollute the tracked test configs.
 # Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
-# Check every pairing, since either the destination root or only its config.d may alias either the source root or its config.d.
-if [ "$DEST_SERVER_PATH" -ef "$SRC_PATH" ] || [ "$DEST_SERVER_PATH" -ef "$SRC_PATH/config.d" ] \
-    || [ "$DEST_SERVER_PATH/config.d" -ef "$SRC_PATH" ] || [ "$DEST_SERVER_PATH/config.d" -ef "$SRC_PATH/config.d" ]; then
-    echo "Refusing to install: DEST_SERVER_PATH ($DEST_SERVER_PATH) or its config.d is the same directory as SRC_PATH ($SRC_PATH) or its config.d. This script deletes and repopulates config.d, which would destroy the tracked test configs." >&2
-    exit 1
-fi
+for dest_dir in "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"; do
+    for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
+        if [ "$dest_dir" -ef "$src_dir" ]; then
+            echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
+            exit 1
+        fi
+    done
+done
 
 if [ $# -ge 2 ]; then
     shift 2
