@@ -252,7 +252,7 @@ private:
             auto group_it = std::find_if(haystack_groups.begin(), haystack_groups.end(),
                 [&](size_t group_index) { return groups[group_index].needles_type->equals(*needles_type); });
 
-            size_t group_index;
+            size_t group_index = 0;
             if (group_it == haystack_groups.end())
             {
                 group_index = groups.size();
