@@ -551,7 +551,7 @@ private:
     /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
-    /// Tokenizes each dictionary value of a ColumnLowCardinality slice once.
+    /// Tokenizes the dictionary values used by a ColumnLowCardinality slice instead of each of its rows.
     void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     String index_column_name;

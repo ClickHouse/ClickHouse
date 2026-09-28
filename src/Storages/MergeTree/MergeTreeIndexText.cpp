@@ -2001,37 +2001,37 @@ void MergeTreeIndexAggregatorText::addDocumentsFromLowCardinality(ColumnPtr colu
 {
     const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(*column);
     const auto & dictionary = column_low_cardinality.getDictionary();
-    const ColumnPtr tokenized = tokenizeToArray(*tokenizer, dictionary, 0, dictionary.size());
-    const auto & tokens = assert_cast<const ColumnArray &>(*tokenized);
-    const auto & tokens_data = tokens.getData();
-    const auto & tokens_offsets = tokens.getOffsets();
 
     auto & tokens_map = granule_builder.tokens_map;
-    std::vector<PostingListBuilder *> builders(tokens_data.size());
+    /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, empty before that.
+    std::vector<std::pair<size_t, size_t>> ranges(dictionary.size());
+    std::vector<PostingListBuilder *> builders;
     size_t buffer_size = tokens_map.getBufferSizeInCells();
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
         const size_t index = column_low_cardinality.getIndexAt(i);
-        const size_t begin = tokens_offsets[index - 1];
-        const size_t end = tokens_offsets[index];
+        auto & [begin, end] = ranges[index];
 
-        if (begin < end && !builders[begin])
+        if (begin == end && !dictionary.isNullAt(index))
         {
-            for (size_t j = begin; j < end; ++j)
-                granule_builder.addToken(tokens_data.getDataAt(j), static_cast<UInt32>(j - begin), context);
+            const std::string_view value = dictionary.getDataAt(index);
+            begin = builders.size();
+            UInt32 token_position = 0;
+            forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token_start, size_t token_length)
+            {
+                granule_builder.addToken({token_start, token_length}, token_position++, context);
+                builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
+                return false;
+            });
+            end = builders.size();
 
             /// Growing the map moves the builders.
             if (tokens_map.getBufferSizeInCells() != buffer_size)
             {
-                std::fill(builders.begin(), builders.end(), nullptr);
+                std::fill(ranges.begin(), ranges.end(), std::pair<size_t, size_t>{});
+                builders.clear();
                 buffer_size = tokens_map.getBufferSizeInCells();
-            }
-
-            for (size_t j = begin; j < end; ++j)
-            {
-                const std::string_view token = tokens_data.getDataAt(j);
-                builders[j] = &tokens_map.find(PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{}))->getMapped();
             }
         }
         else
