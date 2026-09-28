@@ -14,8 +14,8 @@ DROP TABLE IF EXISTS t_qcc_ip;
 
 -- The auto minmax indexes would answer before the cache, and the cache stores nothing for small parts.
 CREATE TABLE t_qcc_ip (k UInt64, s4 String, s6 String) ENGINE = MergeTree ORDER BY k
-    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0;
-INSERT INTO t_qcc_ip SELECT number, '{"ip":"192.168.1.1"}', '{"ip":"2001:db8::1"}' FROM numbers(1000000);
+    SETTINGS index_granularity = 256, add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_ip SELECT number, '{"ip":"192.168.1.1"}', '{"ip":"2001:db8::1"}' FROM numbers(4096);
 
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_ip WHERE dynamicType(CAST(s4 AS JSON).ip) = 'IPv4' SETTINGS input_format_try_infer_ipv4 = 0;
