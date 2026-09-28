@@ -778,14 +778,13 @@ static void splitAndModifyMutationCommands(
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
 
-        if (!dropped_column_names_in_part.empty())
+        /// A rename whose source was dropped above would win the file dedup and carry the old file
+        /// into the new part, so drop the renames of dropped columns.
+        std::erase_if(for_file_renames, [&](const MutationCommand & command_for_renames)
         {
-            std::erase_if(for_file_renames, [&](const MutationCommand & command_for_renames)
-            {
-                return command_for_renames.type == MutationCommand::Type::RENAME_COLUMN
-                    && dropped_column_names_in_part.contains(command_for_renames.column_name);
-            });
-        }
+            return command_for_renames.type == MutationCommand::Type::RENAME_COLUMN
+                && dropped_column_names_in_part.contains(command_for_renames.column_name);
+        });
     }
 
     /// Any mutation that processes data through the interpreter also materializes `_block_number` and `_block_offset` columns when they are enabled.

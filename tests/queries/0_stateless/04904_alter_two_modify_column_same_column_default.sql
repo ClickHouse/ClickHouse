@@ -160,14 +160,12 @@ ALTER TABLE t_mod_def MODIFY COLUMN c UInt64 CODEC(T64, LZ4),
                       MODIFY COLUMN c UInt64 COMMENT 'z'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 DROP TABLE t_mod_def;
 
--- 11. An existing default that cannot be read as the new type is still rejected, with or without a
---     second subcommand, and whether or not the statements are combined.
+-- 11. A default that cannot be read as the new type is still rejected when the type change stands
+--     alone; a preceding subcommand that removes it makes it irrelevant to the later one.
 CREATE TABLE t_mod_def (event String, c Enum8('x' = 1) MATERIALIZED 'x')
     ENGINE = MergeTree() ORDER BY tuple();
-ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED, MODIFY COLUMN c Int8; -- { serverError CANNOT_PARSE_TEXT }
 ALTER TABLE t_mod_def MODIFY COLUMN c Int8; -- { serverError CANNOT_PARSE_TEXT }
-ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED;
-ALTER TABLE t_mod_def MODIFY COLUMN c Int8;
+ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED, MODIFY COLUMN c Int8;
 SELECT '11', type, default_kind FROM system.columns
     WHERE database = currentDatabase() AND table = 't_mod_def' AND name = 'c';
 DROP TABLE t_mod_def;

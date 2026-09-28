@@ -443,3 +443,19 @@ ALTER TABLE modify_chain_snapshot
     (MODIFY COLUMN x String),
     (MODIFY COLUMN x CODEC(DoubleDelta)); -- { serverError BAD_ARGUMENTS }
 DROP TABLE modify_chain_snapshot;
+
+-- A default installed earlier in the same statement is checked against the type it will finally
+-- have, both for a MODIFY-installed and an ADD-installed default.
+DROP TABLE IF EXISTS modify_chain_bad_type;
+CREATE TABLE modify_chain_bad_type (k UInt64, x String) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE modify_chain_bad_type
+    (MODIFY COLUMN x String MATERIALIZED 'a'),
+    (MODIFY COLUMN x Int8); -- { serverError CANNOT_PARSE_TEXT }
+DROP TABLE modify_chain_bad_type;
+
+DROP TABLE IF EXISTS modify_chain_bad_type_add;
+CREATE TABLE modify_chain_bad_type_add (k UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE modify_chain_bad_type_add
+    (ADD COLUMN x String DEFAULT 'a'),
+    (MODIFY COLUMN x Int8); -- { serverError CANNOT_PARSE_TEXT }
+DROP TABLE modify_chain_bad_type_add;

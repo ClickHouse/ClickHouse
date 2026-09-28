@@ -5444,17 +5444,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the whole
-            /// part and drops the per-part `unique_key_index.sst`, regardless of
-            /// which column is targeted. Reject it on UNIQUE KEY tables, but only
-            /// when it would actually rewrite a part: the target must be an existing
-            /// physical (stored) column. `CLEAR COLUMN missing IF EXISTS` and CLEAR
-            /// of a non-stored column are no-ops (`hasPhysical` is false for both),
-            /// so they fall through to normal handling. CLEAR of a UK column falls
-            /// through to the ALTER_OF_COLUMN_IS_FORBIDDEN guard below. Note the
-            /// mutation-path guard in `checkMutationIsPossible` never sees CLEAR
-            /// COLUMN — it is dispatched as an AlterCommand, not a mutation — so this
-            /// is the effective chokepoint.
+            /// CLEAR COLUMN rewrites the whole part and would drop the per-part `unique_key_index.sst`.
+            /// Reject it only when it targets a stored column: `CLEAR COLUMN missing IF EXISTS` and
+            /// CLEAR of a non-stored column are no-ops, and CLEAR of a UK column hits the
+            /// ALTER_OF_COLUMN_IS_FORBIDDEN guard below. This is the only chokepoint: CLEAR COLUMN is
+            /// dispatched as an AlterCommand, not a mutation.
             if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore
                 && !uk_set.contains(command.column_name)
                 && (share_nested_offsets
@@ -5466,11 +5460,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     "per-part UNIQUE KEY dense index would be lost.",
                     backQuoteIfNeed(command.column_name));
 
-            if (!command.ignore && command.type == AlterCommand::RENAME_COLUMN
-                && working_columns.has(command.column_name))
-                working_columns.rename(command.column_name, command.rename_to);
-            else if (!command.ignore && command.type == AlterCommand::ADD_COLUMN && command.data_type)
-                command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets);
+            if (!command.ignore)
+            {
+                if (command.type == AlterCommand::RENAME_COLUMN && working_columns.has(command.column_name))
+                    working_columns.rename(command.column_name, command.rename_to);
+                else if (command.type == AlterCommand::ADD_COLUMN && command.data_type)
+                    command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets);
+            }
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN

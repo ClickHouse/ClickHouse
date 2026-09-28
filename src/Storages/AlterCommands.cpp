@@ -2096,24 +2096,16 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
             if (has_column && command.if_not_exists)
-            {
                 command.ignore = true;
-            }
             else
-            {
                 command.addColumnsFromAlter(columns, context, share_nested_offsets);
-            }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
             if (!has_column && command.if_exists)
-            {
                 command.ignore = true;
-            }
             else if (has_column && !command.clear && !command.partition)
-            {
                 columns.remove(command.column_name);
-            }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
@@ -2123,13 +2115,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
-            {
                 command.ignore = true;
-            }
             else if (columns.has(command.column_name))
-            {
                 columns.rename(command.column_name, command.rename_to);
-            }
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
@@ -2154,6 +2142,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    /// Tmp alias of the default entry an earlier command of this ALTER installed, so a later
+    /// type restatement replaces it instead of stacking a second entry for the same column.
+    std::unordered_map<String, String> installed_default_aliases;
     /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
     /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
@@ -2591,6 +2582,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
+                installed_default_aliases[final_column_name] = tmp_column_name;
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -2612,6 +2604,23 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto data_type_ptr = command.data_type;
+
+                /// A default installed by an earlier command of this ALTER is re-checked against the
+                /// type it will finally have; a default the table already had keeps its entry, so two
+                /// type restatements over it still collide.
+                if (auto it = installed_default_aliases.find(final_column_name); it != installed_default_aliases.end())
+                {
+                    const auto & previous_tmp = it->second;
+                    auto & children = default_expr_list->children;
+                    children.erase(
+                        std::remove_if(children.begin(), children.end(), [&](const ASTPtr & child)
+                        {
+                            const auto alias = child->tryGetAlias();
+                            return alias == final_column_name || alias == previous_tmp;
+                        }),
+                        children.end());
+                    it->second = tmp_column_name;
+                }
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
