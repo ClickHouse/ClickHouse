@@ -12,6 +12,11 @@ INSERT INTO t_finish_sorting_sparse SELECT if(number < 4750, toDate(0), toDate('
 SELECT DISTINCT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_finish_sorting_sparse' AND column = 'date' AND active;
 
-SELECT toStartOfMonth(date) AS d, i FROM t_finish_sorting_sparse ORDER BY d DESC, i LIMIT 5 SETTINGS optimize_read_in_order = 1;
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT toStartOfMonth(date) AS d, i FROM t_finish_sorting_sparse ORDER BY d DESC, i LIMIT 5)
+WHERE explain LIKE '%FinishSortingTransform%'
+SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0;
+
+SELECT toStartOfMonth(date) AS d, i FROM t_finish_sorting_sparse ORDER BY d DESC, i LIMIT 5
+SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0;
 
 DROP TABLE t_finish_sorting_sparse;
