@@ -909,7 +909,7 @@ void StorageDistributed::read(
         /// (the unresolved FunctionGrouping throws on execution, even with 0 rows).
         auto query_tree_for_ast = query_tree_distributed->clone();
         removeGroupingFunctionSpecializations(query_tree_for_ast);
-        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast, local_context);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 

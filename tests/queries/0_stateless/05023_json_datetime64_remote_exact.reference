@@ -8,3 +8,27 @@ remote, nanoseconds, best_effort
 1698543000123456789
 remote, before 1970, best_effort
 -1500
+remote, after 2286, fractional, basic
+10000000000123456
+remote, after 2286, fractional, Europe/Berlin, basic
+10000000000123456
+remote, before 1970, whole seconds, basic
+-2000
+remote, in 1900, fractional, basic
+-2208988799500
+remote, after 2286, fractional, best_effort
+10000000000123456
+remote, after 2286, fractional, Europe/Berlin, best_effort
+10000000000123456
+remote, before 1970, whole seconds, best_effort
+-2000
+remote, in 1900, fractional, best_effort
+-2208988799500
+remote, after 2286, fractional, best_effort_us
+10000000000123456
+remote, after 2286, fractional, Europe/Berlin, best_effort_us
+10000000000123456
+remote, before 1970, whole seconds, best_effort_us
+-2000
+remote, in 1900, fractional, best_effort_us
+-2208988799500

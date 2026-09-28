@@ -65,6 +65,7 @@ namespace Setting
 {
     extern const SettingsString additional_result_filter;
     extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
+    extern const SettingsDateTimeInputFormat date_time_input_format;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -179,16 +180,13 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     }
 }
 
-ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name)
+namespace
+{
+
+ASTPtr queryNodeToSelectQueryImpl(const QueryTreeNodePtr & query_node, const ConvertToASTOptions & options)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-
-    // In case of cross-replication we don't know what database is used for the table.
-    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    auto result_ast = query_node_typed.toAST({
-        .qualify_indentifiers_with_database = false,
-        .set_subquery_cte_name = set_subquery_cte_name
-    });
+    auto result_ast = query_node_typed.toAST(options);
 
     while (true)
     {
@@ -206,6 +204,18 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subq
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
 
     return result_ast;
+}
+
+}
+
+ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name)
+{
+    // In case of cross-replication we don't know what database is used for the table.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    return queryNodeToSelectQueryImpl(query_node, {
+        .qualify_indentifiers_with_database = false,
+        .set_subquery_cte_name = set_subquery_cte_name
+    });
 }
 
 namespace
@@ -276,13 +286,18 @@ void deduplicateProjectionAliasesRecursive(const ASTPtr & ast)
 
 }
 
-ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node, const ContextPtr & context)
 {
     /// Remove CTEs information from distributed queries.
     /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
     /// But CTE is defined only for top-level query part, so may not be sent.
     /// Removing cte_name forces subquery to be always printed.
-    auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
+    /// The shard parses `JSON` constants with the `date_time_input_format` of the query, which is sent to it.
+    auto ast = queryNodeToSelectQueryImpl(query_node, {
+        .date_time_input_format = context->getSettingsRef()[Setting::date_time_input_format],
+        .qualify_indentifiers_with_database = false,
+        .set_subquery_cte_name = false
+    });
 
     deduplicateProjectionAliasesRecursive(ast);
 
