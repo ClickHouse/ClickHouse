@@ -6438,7 +6438,7 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
     if (output_header == nullptr)
-        return {};
+        return keepEverything();
 
     /// Positions in the final RFMT output that must be preserved for the parent step or FINAL.
     std::set<size_t> required_final_output_positions(required_output_positions.begin(), required_output_positions.end());
@@ -6525,7 +6525,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
     }
 
     if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
-        return {};
+        return keepEverything();
 
     all_column_names = std::move(new_column_names);
 
@@ -6547,7 +6547,11 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
 
     required_source_columns = all_column_names;
 
-    return {true, {}, std::move(kept_output_positions)};
+    /// A read has no children to ask anything of.
+    RemoveUnusedColumnsResult result;
+    result.step_changed = true;
+    result.kept_output_positions = std::move(kept_output_positions);
+    return result;
 }
 
 bool ReadFromMergeTree::canRemoveColumnsFromOutput() const

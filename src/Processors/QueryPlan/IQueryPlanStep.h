@@ -147,26 +147,29 @@ public:
 
     struct RemoveUnusedColumnsResult
     {
-        /// Sentinel for kept_output_positions entries that were added
-        /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
-        static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
+        /// Whether the step itself changed: its expressions, or the columns it outputs.
+        bool step_changed = false;
 
-        /// Whether the step was actually modified.
-        /// Needed to distinguish "removed all outputs" from "nothing changed",
-        /// since both can have empty required_input_positions and kept_output_positions.
-        bool changed = false;
+        /// Whether some child has to produce fewer columns than it does now. Implies `step_changed`, but
+        /// not the other way round: a step that may not remove its inputs can change all the same.
+        bool inputs_changed = false;
 
-        /// Required input positions per child (outer index = child_id).
-        /// Empty outside vector means no inputs were changed.
-        /// Empty inside vector means the step doesn't require any inputs from the child.
+        /// Per child, in the order of the children: the positions of the child's current output header
+        /// the step still reads, sorted. Always one entry per child, and every position of a child whose
+        /// columns are all still read. An empty entry means the step reads nothing of that child.
         std::vector<std::vector<size_t>> required_input_positions;
 
-        /// Which original output positions survived, in order.
-        /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
-        /// Maps new output position to the original output position.
-        /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
+        /// The positions of the step's former output header that remain, in their order, which is also the
+        /// order of the new output header. Always filled.
         std::vector<size_t> kept_output_positions;
+
+        /// How many columns the step now outputs that it did not before, such as the dummy column a join
+        /// adds when nothing else is left. They come after the kept ones.
+        size_t added_output_count = 0;
     };
+
+    /// The answer of removeUnusedColumns when nothing changes: every input read, every output kept.
+    RemoveUnusedColumnsResult keepEverything() const;
 
     /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
     /// required_output_positions must be a sorted vector of indices into the step's current output header.

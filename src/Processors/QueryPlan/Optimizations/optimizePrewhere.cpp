@@ -371,7 +371,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
         const auto unused_column_removal_result = parent_step->removeUnusedColumns(all_positions, true);
 
-        if (unused_column_removal_result.changed && !unused_column_removal_result.required_input_positions.empty())
+        if (unused_column_removal_result.inputs_changed)
         {
             /// The parent step returned the positions it needs from its child (child 0).
             /// Pass them directly to the source step.
@@ -379,10 +379,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             const auto & required_positions = unused_column_removal_result.required_input_positions[0];
             auto source_removal_result = source_step_with_filter->removeUnusedColumns(required_positions, true);
 
-            const auto effective_kept_positions = effectiveKeptOutputPositions(
-                source_removal_result.changed,
-                std::move(source_removal_result.kept_output_positions),
-                source_step_with_filter->getOutputHeader()->columns());
+            const auto & effective_kept_positions = source_removal_result.kept_output_positions;
 
             /// The source step might keep extra columns it cannot remove (e.g., `ReadFromMergeTree` with
             /// FINAL must keep sort key columns for merging). If so, absorb them into the parent's DAG.
