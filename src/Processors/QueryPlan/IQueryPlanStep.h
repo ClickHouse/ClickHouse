@@ -111,12 +111,8 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
-    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
-
-    /// A step that runs a plan with privileges the current user does not hold hides its child plans and its
-    /// processors from EXPLAIN. The optimizations still see the child plans through `getChildPlans`.
-    virtual bool isOpaqueInExplain() const { return false; }
-    QueryPlanRawPtrs getChildPlansForExplain() { return isOpaqueInExplain() ? QueryPlanRawPtrs{} : getChildPlans(); }
+    /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
+    virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/ = false) { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);

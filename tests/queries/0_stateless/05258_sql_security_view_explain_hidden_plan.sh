@@ -10,10 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # values folded from data the invoker cannot read: a scalar subquery over a private table, a key derived on
 # the other side of a JOIN. EXPLAIN shows the plan to a user who could have created the same view (the definer,
 # a user with `SET DEFINER` on the definer, a user with `ALLOW SQL SECURITY NONE` for a `NONE` view) and to a
-# user who may display secrets; everyone else sees the `ReadFromSealedView` step alone. The server setting
-# `display_secrets_in_show_and_select` is off here, so the secrets privilege is covered by an integration test.
-# The plans are not dumped into the reference: only the presence of the private value, of the inner steps and
-# of the hidden-plan marker is counted.
+# user who may display secrets (the server setting `display_secrets_in_show_and_select`, the session setting
+# `format_display_secrets_in_show_and_select` and the `displaySecretsInShowAndSelect` privilege together);
+# everyone else sees the `ReadFromSealedView` step alone. The test server keeps the server setting off, so the
+# secrets path is not covered here. The plans are not dumped into the reference: only the presence of the
+# private value, of the inner steps and of the hidden-plan marker is counted.
 
 db=${CLICKHOUSE_DATABASE}
 definer="definer_${db}_$RANDOM"
@@ -46,8 +47,10 @@ EOSQL
 # Prints, per EXPLAIN flavour: lines with the private value, lines with an inner step, lines with the marker.
 explain_counts() {
     local user=$1 settings=$2 query=$3
+    local user_option=()
+    [ -n "$user" ] && user_option=(--user "$user")
     local out
-    out=$(${CLICKHOUSE_CLIENT} --user "$user" ${settings} --query "$query" 2>&1)
+    out=$(${CLICKHOUSE_CLIENT} "${user_option[@]}" ${settings} --query "$query" 2>&1)
     echo "$(grep -c 'PRIVATE_ROW_VALUE\|JOIN_SIDE_KEY' <<< "$out") $(grep -c 'ReadFromSystemNumbers' <<< "$out") $(grep -c 'plan hidden' <<< "$out")"
 }
 
@@ -74,6 +77,10 @@ for view in definer_view none_view; do
     echo "-- $view: the reader still queries it"
     ${CLICKHOUSE_CLIENT} --user "$reader" --query "SELECT count() FROM $db.$view"
 done
+
+echo "-- the default user may create views with any definer and SQL SECURITY NONE views, so it sees both plans"
+echo "$(explain_counts "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_counts "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 echo "-- definer_view for its definer: the plan is shown, with the value folded from the private table"
 echo "$(explain_counts "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"

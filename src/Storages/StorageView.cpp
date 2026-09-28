@@ -388,16 +388,14 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override
     {
         pipeline = std::move(*view_plan.buildQueryPipeline(optimization_settings, settings, /*do_optimize=*/ false));
-
-        /// EXPLAIN PIPELINE and `system.processors_profile_log` attribute the processors to their plan steps.
-        if (!show_plan)
-            for (const auto & processor : pipeline.getProcessors())
-                processor->setQueryPlanStep(this);
     }
 
-    QueryPlanRawPtrs getChildPlans() override { return {&view_plan}; }
-
-    bool isOpaqueInExplain() const override { return !show_plan; }
+    QueryPlanRawPtrs getChildPlans(bool for_explain) override
+    {
+        if (for_explain && !show_plan)
+            return {};
+        return {&view_plan};
+    }
 
     void describePipeline(FormatSettings & settings) const override
     {
