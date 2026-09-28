@@ -2,6 +2,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -28,7 +29,7 @@ public:
             visitSetQuery(*set_query);
         else
         {
-            /// The filters of a row policy are not children, see ASTCreateRowPolicyQuery::filters.
+            /// Row policy filters and masking policy expressions are not children, see ASTCreateRowPolicyQuery::filters.
             if (const auto * create_row_policy_query = ast->as<ASTCreateRowPolicyQuery>())
             {
                 for (const auto & [_, filter] : create_row_policy_query->filters)
@@ -36,6 +37,13 @@ public:
                     if (filter)
                         visit(filter);
                 }
+            }
+            else if (const auto * create_masking_policy_query = ast->as<ASTCreateMaskingPolicyQuery>())
+            {
+                if (create_masking_policy_query->update_assignments)
+                    visit(create_masking_policy_query->update_assignments);
+                if (create_masking_policy_query->where_condition)
+                    visit(create_masking_policy_query->where_condition);
             }
 
             for (const auto & child : ast->children)

@@ -1,4 +1,5 @@
 -- Query parameters in CREATE / ALTER ROW POLICY filters are substituted when the policy is stored.
+-- The same for MASKING POLICY expressions; masking policies are Cloud-only, so only an unset parameter is checked here.
 -- An `Identifier` query parameter in a filter setting is never substituted, so it is rejected.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
@@ -31,6 +32,9 @@ SET param_col = 'a';
 CREATE ROW POLICY p2 ON t USING k IN (SELECT k FROM keys LEFT ARRAY JOIN 'abc', {col:Identifier}) TO ALL;
 SELECT k FROM t; -- { serverError TYPE_MISMATCH }
 DROP ROW POLICY p2 ON t;
+
+CREATE MASKING POLICY mp ON t UPDATE k = {unset_param:UInt64} TO ALL; -- { serverError UNKNOWN_QUERY_PARAMETER }
+ALTER MASKING POLICY mp ON t UPDATE k = 0 WHERE k > {unset_param:UInt64}; -- { serverError UNKNOWN_QUERY_PARAMETER }
 
 SELECT k FROM t SETTINGS additional_table_filters = {'t': 'k IN (SELECT k FROM keys LEFT ARRAY JOIN \'abc\', {x:Identifier})'}; -- { serverError UNKNOWN_QUERY_PARAMETER }
 SELECT k FROM t SETTINGS additional_result_filter = 'k IN (SELECT k FROM keys LEFT ARRAY JOIN \'abc\', {x:Identifier})'; -- { serverError UNKNOWN_QUERY_PARAMETER }
