@@ -197,7 +197,7 @@ def run_tests(
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -932,6 +932,11 @@ def main():
                 results=results,
             ).complete_job()
 
+    # A selection made by `Targeting` names whole tests, so it becomes an exact
+    # selector. A hand-written `--test` stays the free-form regex it was typed as.
+    if tests and not args.test:
+        tests = [Targeting.selection_pattern(test) for test in tests]
+
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
@@ -1054,13 +1059,38 @@ def main():
             if not (CH.start_seaweedfs(test_type="stateless") and CH.start_azurite()):
                 print("SETUP FAILURE: seaweedfs/azurite did not start")
                 return False
-            if not CH.start():
-                print("SETUP FAILURE: clickhouse-server process did not start")
-                return False
-            if not CH.wait_ready():
-                # wait_ready() already tails the server err log to stdout on
-                # timeout; the marker just names the sub-step for triage.
-                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+            # Only the initial setup boot is retried; the per-build-type
+            # binary-swap boot below stays fail-closed.
+            boot_attempts = 3
+            booted = False
+            for boot_attempt in range(boot_attempts):
+                if not CH.start():
+                    setup_failure = "clickhouse-server process did not start"
+                elif not CH.wait_ready():
+                    # wait_ready() already tails the server err log to stdout on
+                    # timeout; the marker just names the sub-step for triage.
+                    setup_failure = "clickhouse-server not ready (wait_ready)"
+                else:
+                    booted = True
+                    break
+                # Only a boot no tracked replica survived is retried. While one is
+                # still up, the next attempt would wipe the run directory it is
+                # using, so this fails with `wait_ready`'s diagnostics instead.
+                if any(
+                    p is not None and p.poll() is None
+                    for p in (CH.proc, CH.proc_1, CH.proc_2)
+                ):
+                    break
+                if boot_attempt + 1 < boot_attempts:
+                    print(
+                        f"SETUP WARNING: {setup_failure} "
+                        f"(attempt {boot_attempt + 1}/{boot_attempts}); restarting"
+                    )
+                    CH.stop_server()
+                    CH.clean_logs()
+                    Utils.sleep(5)
+            if not booted:
+                print(f"SETUP FAILURE: {setup_failure}")
                 return False
 
             if not CH.start_kafka():

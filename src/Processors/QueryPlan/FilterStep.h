@@ -54,6 +54,8 @@ public:
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
     bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
+    /// Forget a previously attached query condition cache key, e.g. when a later optimization pass
+    /// discovers that the filter's verdict is no longer reusable across executions.
     void resetConditionForQueryConditionCache() { condition.reset(); }
     /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
     void saltConditionForQueryConditionCache(UInt64 salt);
