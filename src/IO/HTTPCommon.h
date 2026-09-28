@@ -29,9 +29,9 @@ public:
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
         const std::string & body,
-        bool mask_body = false
+        const std::vector<std::string> & body_secrets = {}
     )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, mask_body))
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, body_secrets))
         , http_status(http_status_)
     {}
 
@@ -49,7 +49,7 @@ private:
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
         const std::string & body,
-        bool mask_body);
+        const std::vector<std::string> & body_secrets);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -83,11 +83,15 @@ bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexc
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
-/// `request_has_credentials` must be set when the request carried credentials (userinfo or an
-/// `Authorization` header): an error response body can reflect them back (e.g. an auth error echoing
-/// the user name), so it is replaced with `[HIDDEN]` rather than logged.
+/// Returns the credential strings carried by a request's `Authorization` header (the Basic user name
+/// and password, or the Bearer token), so a caller can scrub them from an error response body that
+/// reflects them back (e.g. an auth error echoing the user name). Empty when there is no such header.
+std::vector<std::string> requestCredentialSecrets(const Poco::Net::HTTPRequest & request);
+
+/// `body_secrets` are credential strings to scrub from the reflected response body (see
+/// `requestCredentialSecrets`): a remote error body can echo the request's own credentials.
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false,
-    bool request_has_credentials = false);
+    const std::vector<std::string> & body_secrets = {});
 
 }

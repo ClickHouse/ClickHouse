@@ -2,8 +2,11 @@
 
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/StreamCopier.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Common/Exception.h>
 #include <Common/maskURIPassword.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 #include "config.h"
 
@@ -82,13 +85,39 @@ std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
     auto & istr = session.receiveResponse(response);
-    assertResponseIsOk(request.getURI(), response, istr, allow_redirects, request.has("Authorization"));
+    assertResponseIsOk(request.getURI(), response, istr, allow_redirects, requestCredentialSecrets(request));
     return &istr;
+}
+
+std::vector<std::string> requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
+{
+    if (!request.has("Authorization"))
+        return {};
+
+    const std::string & authorization = request.get("Authorization");
+    static constexpr std::string_view BEARER = "Bearer ";
+    if (authorization.starts_with(BEARER))
+        return {authorization.substr(BEARER.length())};
+
+    static constexpr std::string_view BASIC = "Basic ";
+    if (authorization.starts_with(BASIC))
+    {
+        /// `HTTPBasicCredentials` decodes the base64 user name and password from the header.
+        Poco::Net::HTTPBasicCredentials credentials(request);
+        std::vector<std::string> secrets;
+        if (!credentials.getUsername().empty())
+            secrets.push_back(credentials.getUsername());
+        if (!credentials.getPassword().empty())
+            secrets.push_back(credentials.getPassword());
+        return secrets;
+    }
+
+    return {};
 }
 
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects,
-    const bool request_has_credentials)
+    const std::vector<std::string> & body_secrets)
 {
     auto status = response.getStatus();
 
@@ -105,7 +134,7 @@ void assertResponseIsOk(
         std::string body;
         Poco::StreamCopier::copyToString(istr, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body, request_has_credentials);
+        throw HTTPException(code, uri, status, response.getReason(), body, body_secrets);
     }
 }
 
@@ -115,22 +144,20 @@ Exception HTTPException::makeExceptionMessage(
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body,
-    bool mask_body)
+    const std::vector<std::string> & body_secrets)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
 
-    /// When the request carried credentials, the error body can reflect them back in any form (e.g. an
-    /// auth error echoing the user name), which no pattern masker can catch, so hide it whole. Otherwise
-    /// mask only the presigned-URL parameters a reflected request URL can carry.
-    std::string masked_body;
-    if (mask_body)
-        masked_body = "[HIDDEN]";
-    else
-    {
-        masked_body = body;
-        maskPresignedURLParameters(masked_body);
-    }
+    /// The response body is remote content that can reflect the request back: its URL (masked here for
+    /// presigned parameters) and the request's own credentials, which a server may echo verbatim (e.g.
+    /// an auth error naming the user). Scrub those exact credential strings, keeping the rest of the
+    /// body - a useful diagnostic that does not carry a credential.
+    std::string masked_body = body;
+    maskPresignedURLParameters(masked_body);
+    for (const auto & secret : body_secrets)
+        if (!secret.empty())
+            boost::replace_all(masked_body, secret, "[HIDDEN]");
 
     return Exception(code,
         "Received error from remote server {}. "
