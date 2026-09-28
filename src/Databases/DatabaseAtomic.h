@@ -40,10 +40,11 @@ public:
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
-    /// Dependencies of the ordinary views of this database recomputed from their stored definitions against
-    /// `new_name`, for `DatabaseCatalog::updateDatabaseName`. Must be called under the exclusive DDL guard of the
-    /// database (as `renameDatabase` is), so that the set of tables and their definitions cannot change meanwhile.
-    DatabaseCatalog::RecomputedDependenciesByTable getOrdinaryViewDependenciesForNewDatabaseName(ContextPtr query_context, const String & new_name) const;
+    /// Dependencies of the ordinary views and of the `Alias` tables with a target written without a database
+    /// of this database recomputed from their stored definitions against `new_name`, for
+    /// `DatabaseCatalog::updateDatabaseName`. Must be called under the exclusive DDL guard of the database
+    /// (as `renameDatabase` is), so that the set of tables and their definitions cannot change meanwhile.
+    DatabaseCatalog::RecomputedDependenciesByTable getRecomputedDependenciesForNewDatabaseName(ContextPtr query_context, const String & new_name) const;
 
     void renameTable(
             ContextPtr context,

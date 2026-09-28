@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -750,13 +751,14 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     waitDatabaseStarted();
 
     /// The stored definitions of the tables are not rewritten by the rename, so the dependencies of the ordinary
-    /// views are recomputed from them against the new database name (reading a definition takes `mutex`, so this
+    /// views (and of the `Alias` tables whose target is written without a database) are recomputed from them
+    /// against the new database name (reading a definition takes `mutex`, so this
     /// is done before it is locked; the DDL guard keeps the tables unchanged meanwhile). A source written without
     /// a database follows the view into the new database, a qualified one keeps naming the database written in
     /// the definition: the resolution the metadata loading path uses, so the graphs stay equal to what a reload
     /// would rebuild. `DatabaseCatalog::updateDatabaseName` applies the result in the same critical section that
     /// publishes the new name, so the graphs are never observed in an intermediate state.
-    auto recomputed_dependencies = getOrdinaryViewDependenciesForNewDatabaseName(query_context, new_name);
+    auto recomputed_dependencies = getRecomputedDependenciesForNewDatabaseName(query_context, new_name);
 
     std::lock_guard lock(mutex);
 
@@ -832,16 +834,22 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 }
 
-DatabaseCatalog::RecomputedDependenciesByTable DatabaseAtomic::getOrdinaryViewDependenciesForNewDatabaseName(ContextPtr query_context, const String & new_name) const
+DatabaseCatalog::RecomputedDependenciesByTable DatabaseAtomic::getRecomputedDependenciesForNewDatabaseName(ContextPtr query_context, const String & new_name) const
 {
     DatabaseCatalog::RecomputedDependenciesByTable result;
     for (auto it = getTablesIterator(query_context, /*filter_by_table_name*/ {}, /*skip_not_loaded*/ false); it->isValid(); it->next())
     {
-        if (!dynamic_cast<const StorageView *>(it->table().get()))
+        const auto & table = it->table();
+        bool is_ordinary_view = dynamic_cast<const StorageView *>(table.get()) != nullptr;
+        /// `Alias('t')` resolves its target against the database of the alias itself (not the current database),
+        /// so its dependency is computed as if the alias were already in the new database.
+        const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
+        bool is_alias_to_own_database = alias && alias->isTargetDatabaseOwnDatabase();
+        if (!is_ordinary_view && !is_alias_to_own_database)
             continue;
 
         auto ast = getCreateTableQuery(it->name(), query_context);
-        QualifiedTableName table_name{getDatabaseName(), it->name()};
+        QualifiedTableName table_name{is_alias_to_own_database ? new_name : getDatabaseName(), it->name()};
         auto dependencies = getDependenciesFromCreateQuery(
             getContext(), table_name, ast, new_name, /*can_throw*/ false, /*validate_current_database*/ false);
         auto loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext(), table_name, ast, new_name);
