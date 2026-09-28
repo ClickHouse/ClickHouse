@@ -502,8 +502,8 @@ FROM
             at,
             bv,
             bt,
-            CAST((toFloat64(sign(av)), toFloat64(sign(av)) * (at + 10 * log(abs(av))), toFloat64(10)), 'ExponentialTimeDecaying(10)') AS a,
-            CAST((toFloat64(sign(bv)), toFloat64(sign(bv)) * (bt + 10 * log(abs(bv))), toFloat64(10)), 'ExponentialTimeDecaying(10)') AS b
+            CAST((av, at, toFloat64(10)), 'ExponentialTimeDecaying(10)') AS a,
+            CAST((bv, bt, toFloat64(10)), 'ExponentialTimeDecaying(10)') AS b
         FROM VALUES(
             'id UInt8, av Float64, at Float64, bv Float64, bt Float64',
             (1, 8, 0, 4, 10),
@@ -531,7 +531,7 @@ WITH
     (
         SELECT
             id,
-            CAST((toFloat64(sign(value)), toFloat64(sign(value)) * (time + 10 * log(abs(value))), toFloat64(10)), 'ExponentialTimeDecaying(10)') AS decaying_value
+            CAST((value, time, toFloat64(10)), 'ExponentialTimeDecaying(10)') AS decaying_value
         FROM VALUES(
             'id UInt8, value Float64, time Float64',
             (1, 8, 0),

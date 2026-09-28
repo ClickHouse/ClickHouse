@@ -25,10 +25,10 @@ SELECT name
 FROM system.functions
 WHERE name = 'exponentialTimeDecayingDecayLength';
 
--- The decay length is encoded in the type and validated against the stored marker.
+-- Three-field raw casts carry (value, timestamp, decay_length). When the target
+-- type is parameterized, the supplied decay length must agree with the type.
 SELECT toTypeName(CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying(10)'));
 
--- The stored marker is validated against the type parameter, including after explicit casts.
 SELECT exponentialTimeDecayingValueAt(
     CAST((toFloat64(1), toFloat64(0), toFloat64(20)), 'ExponentialTimeDecaying(10)'),
     toFloat64(0)); -- { serverError BAD_ARGUMENTS }
