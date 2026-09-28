@@ -858,12 +858,13 @@ discarded. Neighboring curves can therefore share an ordering key; when they do,
 them as equal for ordering and hashing.
 
 For a nonzero curve, `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
-time at which its magnitude is one. SQL/text presentation exposes
-`(sign, signed_unit_time, decay_length)` for serialization/debug presentation only; this is not a
-constructor tuple. Public CAST construction uses raw `(value, timestamp[, decay_length])` input.
-When the target omits its type parameter, the third tuple element supplies the decay length; when
-both are present they must agree. The decay length remains part of the static result type rather
-than being stored independently per row.
+time at which its magnitude is one. Sign and unit-time forms are internal derived representations,
+not SQL construction tuples.
+
+Public CAST construction uses raw `(value, timestamp[, decay_length])` input. When the target omits
+its type parameter, the third tuple element supplies the decay length; when both are present they
+must agree. The decay length remains part of the static result type rather than being stored
+independently per row.
 
 `PARTITION BY` is not supported for this experimental type. DateTime and DateTime64 inputs are
 represented as seconds. Values with different decay lengths are different logical types and cannot
