@@ -1060,15 +1060,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
-    /// When we applied static credentials from database settings, they are authoritative:
-    /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)
-    /// silently re-fetch credentials and override them. The same holds when the user disabled
-    /// `vended_credentials` and no static credentials were applied (e.g. relying on default or
-    /// environment S3 auth): the object storage layer invokes the refresh callback after an
-    /// auth error, so a catalog-vended callback would silently fall back to vended credentials
-    /// and defeat the setting. Provider-chain refresh callbacks (e.g. Glue STS/role) are not
-    /// credential vending, so they remain active regardless of the `vended_credentials` setting
-    /// to keep refreshing temporary credentials on long reads.
+    /// Static credentials win; with `vended_credentials` off only provider-chain refresh (Glue) stays active.
     auto get_credentials_refresh_callback = [&](const StorageID & storage_id) -> DataLake::ICatalog::CredentialsRefreshCallback
     {
         if (static_credentials_applied)
