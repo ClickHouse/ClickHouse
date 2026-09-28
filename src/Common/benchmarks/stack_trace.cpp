@@ -209,7 +209,11 @@ void BM_StackTraceProfilerSample(benchmark::State & state)
 {
     const auto depth = static_cast<size_t>(state.range(0));
     struct sigaction action{};
+    /// `sa_sigaction` is a macro in some libc headers (e.g. glibc on AArch64).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     action.sa_sigaction = sampleHandler;
+#pragma clang diagnostic pop
     action.sa_flags = SA_SIGINFO | SA_RESTART;
     sigaction(SIGUSR2, &action, nullptr);
 
