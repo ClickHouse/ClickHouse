@@ -59,7 +59,7 @@ ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/
 | `UPDATE` / `MERGE` | ❌ | ❌ | Not supported. |
 | Copy-on-write | ❌ | ❌ | Not supported |
 | Expire snapshots | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Requires Iceberg v2, `allow_insert_into_iceberg = 1`, and `allow_experimental_expire_snapshots = 1`. Tables backed by a transactional catalog are rejected. See [Expire snapshots](/reference/functions/table-functions/iceberg#iceberg-expire-snapshots). |
-| Remove orphan files | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Requires Iceberg v2 or higher, `allow_insert_into_iceberg = 1`, and `allow_iceberg_remove_orphan_files = 1`. Its reachable set is resolved through `version-hint.text`, so a hint left behind by another writer can classify committed files as orphans. See [Remove orphan files](/reference/functions/table-functions/iceberg#iceberg-remove-orphan-files). |
+| Remove orphan files | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Requires Iceberg v2 or higher, `allow_insert_into_iceberg = 1`, and `allow_iceberg_remove_orphan_files = 1`. See [Remove orphan files](/reference/functions/table-functions/iceberg#iceberg-remove-orphan-files). |
 | Writing partitions | ✅ Beta | ✅ Beta | Supported for Iceberg writes. |
 | Altering partitions | ❌ | ❌ | Changing the partitioning scheme from ClickHouse isn't supported. ClickHouse can write to Iceberg tables with an evolved partitioning scheme. |
 |  |  |  |  |
