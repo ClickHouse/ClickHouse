@@ -52,7 +52,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     /// Open the SQLite database on external contact (structure inference or execution) rather than in
-    /// `parseArguments`. The table function never creates the database file (`allow_create` is always false), so
+    /// `parseArguments`. The table function never creates the database file (it opens it read-only), so
     /// a `SELECT` / `DESCRIBE` / `INSERT` against a missing path fails closed instead of fabricating an empty
     /// database (matching the storage engine and the `SQLite` format reader).
     ///
@@ -79,7 +79,7 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 
     /// Open here (not in `parseArguments`), and never create the database file: a table function always refers
     /// to an already-existing table, so a missing path can only be a mistake. Even an `INSERT` would fail with
-    /// `no such table` after fabricating an empty database, so opening with `allow_create` would only leave a
+    /// `no such table` after fabricating an empty database, so opening with `SQLiteOpenMode::ReadWriteCreate` would only leave a
     /// junk file behind. A missing path therefore fails closed for reads and writes alike. The connection serves
     /// the construction-time schema inference of `StorageSQLite` only; neither the storage nor this table
     /// function retains it.
@@ -114,7 +114,8 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 
 std::shared_ptr<sqlite3> TableFunctionSQLite::openConnection(ContextPtr context) const
 {
-    return openSQLiteDB(database_path, context, /* throw_on_error */ true, /* allow_create */ false);
+    /// Only used to read the structure: the storage opens its own connections for reads and writes.
+    return openSQLiteDB(database_path, context, /* throw_on_error */ true, SQLiteOpenMode::ReadOnly);
 }
 
 

@@ -49,7 +49,8 @@ DatabaseSQLite::DatabaseSQLite(
     /// `ATTACH` (including replaying the stored definition on server startup) a missing file must stay
     /// missing, so that table lookups surface `Cannot access sqlite database` instead of silently operating
     /// on a fabricated empty database. The connection opened here is not kept: see `openConnection`.
-    openSQLiteDB(database_path_, context_, /* throw_on_error */ !is_attach_, /* allow_create */ !is_attach_);
+    openSQLiteDB(database_path_, context_, /* throw_on_error */ !is_attach_,
+                 is_attach_ ? SQLiteOpenMode::ReadOnly : SQLiteOpenMode::ReadWriteCreate);
 }
 
 
@@ -65,7 +66,10 @@ DatabaseSQLite::SQLitePtr DatabaseSQLite::openConnection() const
     /// The connection never creates the file: a missing file surfaces an error here instead of reading a
     /// fabricated empty database, both when the file was unavailable on `ATTACH` and when it went missing
     /// later.
-    return openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
+    ///
+    /// These connections only read metadata (the tables' data is read and written by `StorageSQLite` through its
+    /// own connections), so they are read-only and never modify the file, e.g. by rolling back a hot journal.
+    return openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, SQLiteOpenMode::ReadOnly);
 }
 
 

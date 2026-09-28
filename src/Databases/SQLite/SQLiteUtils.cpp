@@ -48,7 +48,7 @@ static String validateSQLiteDatabasePath(const String & path, const String & use
     return absolute_path;
 }
 
-SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_error, bool allow_create)
+SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_error, SQLiteOpenMode mode)
 {
     // If run in Local mode, no need for path checking.
     bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
@@ -60,14 +60,27 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
     if (database_path.empty())
         return nullptr;
 
+    const bool allow_create = mode == SQLiteOpenMode::ReadWriteCreate;
     if (allow_create && !fs::exists(database_path))
         LOG_DEBUG(getLogger("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
 
-    /// Do not implicitly create a new empty database when `allow_create` is off. This is used when reopening a
+    /// Do not implicitly create a new empty database unless the mode is `ReadWriteCreate`. This is used when reopening a
     /// persisted table whose file was unavailable at load time: fabricating an empty database would hide the
     /// still-missing file and, worse, mark the deferred generated-column reclassification as complete against a
     /// database that does not contain the table yet.
-    const int open_flags = SQLITE_OPEN_READWRITE | (allow_create ? SQLITE_OPEN_CREATE : 0);
+    int open_flags = 0;
+    switch (mode)
+    {
+        case SQLiteOpenMode::ReadOnly:
+            open_flags = SQLITE_OPEN_READONLY;
+            break;
+        case SQLiteOpenMode::ReadWrite:
+            open_flags = SQLITE_OPEN_READWRITE;
+            break;
+        case SQLiteOpenMode::ReadWriteCreate:
+            open_flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE;
+            break;
+    }
 
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = 0;

@@ -308,7 +308,7 @@ void StorageSQLite::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
     /// be pinned to the file it was first opened on, so after a same-path replacement of the database file it
     /// would keep observing the old schema and the repair would never complete (see
     /// `reclassifyGeneratedColumnsFromRemote`).
-    auto probe_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false, /* allow_create */ false);
+    auto probe_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false, SQLiteOpenMode::ReadOnly);
     if (!probe_connection)
         return;
 
@@ -354,10 +354,9 @@ Pipe StorageSQLite::read(
     /// with `sqlite3_interrupt`, which is connection-wide in SQLite. On a connection shared by every concurrent
     /// query on this table, cancelling one query could interrupt an unrelated sibling statement mid-scan.
     ///
-    /// A read must never materialize a missing SQLite database, so `allow_create` stays false and a missing or
-    /// inaccessible file fails closed here. In particular, query-backed storages are read-only and do not have
-    /// pending generated-column reclassification, so deriving `allow_create` from that flag would create an empty
-    /// file on the first read after an `ATTACH` while the file is unavailable.
+    /// A read must never modify the SQLite database, so the connection is read-only: a missing or inaccessible
+    /// file fails closed here instead of being materialized, and a hot journal left by a crashed writer is not
+    /// rolled back as a side effect of a `SELECT`.
     ///
     /// The connection is opened before the pushdown decision below because that decision must be derived from
     /// the very database the scan will run against. A connection retained across queries would keep the file it
@@ -366,7 +365,7 @@ Pipe StorageSQLite::read(
     /// through such a handle would reason about one database (an old STRICT table with a BINARY collation) and
     /// query another (a non-STRICT replacement, or a NOCASE collation), and a predicate pushed down on the
     /// strength of the stale metadata would drop rows the local re-filtering never sees.
-    auto read_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
+    auto read_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, SQLiteOpenMode::ReadOnly);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
@@ -675,7 +674,7 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
     /// remote table or schema itself, so a freshly created empty database could not satisfy the insert
     /// anyway - the file would be left behind as junk after the `INSERT` fails with "no such table".
     /// Fail closed on a missing file, exactly like the read path and the `sqlite` table function.
-    auto write_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
+    auto write_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, SQLiteOpenMode::ReadWrite);
 
     /// Last-resort repair for a path that reaches `write` without the pre-snapshot metadata hook. The snapshot
     /// passed to this call is already frozen, so this cannot repair the current pipeline, but it prevents the
@@ -740,7 +739,7 @@ void registerStorageSQLite(StorageFactory & factory)
         /// Only a genuine `CREATE` with an explicitly declared column list may materialize a missing database
         /// file. An `ATTACH` (or a server restart replaying the stored definition) must not create it as a side
         /// effect: the table has to come up without touching the file, so that a later read fails closed while
-        /// the file is unavailable (`read`/`write` open their connections with `allow_create = false`) instead
+        /// the file is unavailable (`read`/`write` never create the file when opening their connections) instead
         /// of silently querying a fabricated empty database. A schema-inference `CREATE` (`args.columns.empty()`) must not create it either: the
         /// storage constructor immediately reads the shape of the remote table or query, so a missing file can
         /// never make the statement succeed, and creating the file first would leave an empty database behind in
@@ -749,7 +748,9 @@ void registerStorageSQLite(StorageFactory & factory)
         /// the first read would only fail against it later.
         const bool is_create = args.mode <= LoadingStrictnessLevel::CREATE;
         const bool allow_create = is_create && !args.columns.empty() && !table_or_query.isQuery();
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create, allow_create);
+        /// Otherwise the connection only infers the schema and reclassifies generated columns, so it is read-only.
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create,
+                                      allow_create ? SQLiteOpenMode::ReadWriteCreate : SQLiteOpenMode::ReadOnly);
 
         ColumnsDescription columns = args.columns;
         /// An `ATTACH TABLE ... ENGINE = SQLite(...)` without a column list has to infer the schema immediately.
@@ -757,7 +758,7 @@ void registerStorageSQLite(StorageFactory & factory)
         /// null connection to `getTableStructureFromData` would dereference it while preparing the table or query.
         /// Re-open in throwing mode to surface `PATH_ACCESS_DENIED` for an unavailable file.
         if (columns.empty() && !sqlite_db)
-            sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ true, /* allow_create */ false);
+            sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ true, SQLiteOpenMode::ReadOnly);
 
         /// Re-apply the generated-column classification from the remote schema for an explicitly declared
         /// column list (an explicit `CREATE`, an `ATTACH` replaying the stored definition, or a `SHOW CREATE`
