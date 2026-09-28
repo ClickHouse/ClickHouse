@@ -63,6 +63,25 @@ namespace
     }
 }
 
+AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
+    const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace)
+{
+    auto connection_params = backup_connection_params;
+
+    /// A connection string already names the storage account; only a URL can be replaced.
+    if (!std::holds_alternative<AzureBlobStorage::ConnectionString>(connection_params.auth_method))
+        connection_params.endpoint.storage_account_url = endpoint;
+
+    const auto slash_pos = blob_namespace.find('/');
+    connection_params.endpoint.container_name = blob_namespace.substr(0, slash_pos);
+    connection_params.endpoint.prefix = (slash_pos == String::npos) ? "" : blob_namespace.substr(slash_pos + 1);
+
+    /// The snapshot was taken from this container, so it exists; the existence check is also a
+    /// container-level request.
+    connection_params.endpoint.container_already_exists = true;
+    return connection_params;
+}
+
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & blob_path_,

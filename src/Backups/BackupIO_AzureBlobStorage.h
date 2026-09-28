@@ -10,6 +10,15 @@
 namespace DB
 {
 
+/// Connection params for reading the objects a lightweight snapshot references, built from the endpoint
+/// and object namespace its manifest records for the source disk. For Azure that namespace is `<container>`
+/// or `<container>/<prefix>` when the disk endpoint has a path below the container
+/// (`AzureObjectStorage::getObjectsNamespace`), while the recorded object keys are relative to the prefix, so
+/// it is split back into a container and a blob prefix: used as a container name, `<container>/<prefix>`
+/// gives every container-level request extra path segments, which Azure rejects with `400 InvalidUri`.
+AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
+    const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace);
+
 /// Represents a backup stored to Azure
 class BackupReaderAzureBlobStorage : public BackupReaderDefault
 {
