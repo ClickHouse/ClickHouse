@@ -492,6 +492,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
+## Join tables {#join-tables}
+
+A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered, and `CREATE ROW POLICY` on such a table is rejected with `BAD_ARGUMENTS`. A policy that still applies to a `Join` table, because it is a database-wide `ON db.*` policy or was created before the table, filters a direct `SELECT` from the table, but `JOIN` and `joinGet` queries against the table fail with `NOT_IMPLEMENTED`.
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl). This is also the convenient way to create the policy on the local tables of every server of the cluster.
