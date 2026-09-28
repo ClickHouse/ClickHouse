@@ -44,6 +44,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -299,16 +301,27 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// `_block_offset` virtual columns of the table itself; a projection keeps its own policy for them
     /// (in a `commit_order` projection these columns are the sorting key, so a min-max index over them
     /// would only duplicate the primary key).
+    ///
+    /// `name = DEFAULT` in `WITH SETTINGS` is kept in `ASTSetQuery::default_settings`, not in `changes`:
+    /// it sets the projection's own default explicitly, so such a setting is not inherited either.
     if (parent_metadata)
     {
-        const auto inherit = [&](const auto & setting, bool parent_value)
+        const auto inherit = [&](const auto & setting, std::string_view name, bool parent_value)
         {
-            if (!(*merge_tree_settings)[setting].changed)
-                (*merge_tree_settings)[setting] = parent_value;
+            if ((*merge_tree_settings)[setting].changed)
+                return;
+            if (projection_definition->with_settings
+                && std::ranges::find(projection_definition->with_settings->default_settings, name)
+                    != projection_definition->with_settings->default_settings.end())
+                return;
+            (*merge_tree_settings)[setting] = parent_value;
         };
-        inherit(MergeTreeSetting::add_minmax_index_for_numeric_columns, parent_metadata->add_minmax_index_for_numeric_columns);
-        inherit(MergeTreeSetting::add_minmax_index_for_string_columns, parent_metadata->add_minmax_index_for_string_columns);
-        inherit(MergeTreeSetting::add_minmax_index_for_temporal_columns, parent_metadata->add_minmax_index_for_temporal_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_numeric_columns, "add_minmax_index_for_numeric_columns",
+            parent_metadata->add_minmax_index_for_numeric_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_string_columns, "add_minmax_index_for_string_columns",
+            parent_metadata->add_minmax_index_for_string_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_temporal_columns, "add_minmax_index_for_temporal_columns",
+            parent_metadata->add_minmax_index_for_temporal_columns);
     }
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -374,6 +387,16 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         {
             if (!ALLOWED_PROJECTION_SETTINGS.contains(change.name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
+        }
+
+        /// `name = DEFAULT` does not reach `settings_changes`, so it is checked separately.
+        if (projection_definition->with_settings)
+        {
+            for (const auto & name : projection_definition->with_settings->default_settings)
+            {
+                if (!ALLOWED_PROJECTION_SETTINGS.contains(name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", name);
+            }
         }
 
         /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
