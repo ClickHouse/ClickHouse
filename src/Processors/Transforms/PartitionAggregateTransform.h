@@ -19,7 +19,8 @@ class PartitionAggregateTransform final : public IAccumulatingTransform
 public:
     struct SpillSettings
     {
-        /// Spill when the buffered rows exceed this, 0 to never spill.
+        /// Spill the buffered rows when they, together with the keys and the aggregate states, exceed this,
+        /// 0 to never spill.
         size_t max_bytes_before_external = 0;
         /// And the query uses more memory than this, 0 for no condition.
         size_t max_query_bytes_before_external = 0;

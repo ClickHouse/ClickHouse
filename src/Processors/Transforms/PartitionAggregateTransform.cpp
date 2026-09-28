@@ -128,7 +128,11 @@ void PartitionAggregateTransform::consume(Chunk chunk)
     chunks.emplace_back(std::move(columns), num_rows);
     chunks_bytes += chunks.back().allocatedBytes();
 
-    if (spill_settings.max_bytes_before_external && chunks_bytes > spill_settings.max_bytes_before_external
+    /// The keys and the aggregate states cannot be spilled, but they count towards the threshold, so that
+    /// the buffered rows are spilled earlier when the partitions take most of the memory.
+    const size_t footprint = chunks_bytes + arena.allocatedBytes() + key_to_group.getBufferSizeInBytes()
+        + places.allocated_bytes() + row_places.allocated_bytes();
+    if (spill_settings.max_bytes_before_external && footprint > spill_settings.max_bytes_before_external
         && (!spill_settings.max_query_bytes_before_external
             || getCurrentQueryMemoryUsage() > static_cast<Int64>(spill_settings.max_query_bytes_before_external)))
         spill();
