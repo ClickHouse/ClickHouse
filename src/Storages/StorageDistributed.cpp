@@ -1290,21 +1290,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         new_query->reset(new_query->table_function);
     }
 
-    /// With `parallel_distributed_insert_select = 2` the forwarded INSERT was retargeted at the shard's own
-    /// local table just above, so a row stays on whichever shard happened to read it. For a `Distributed`
-    /// source that is sound — the rows a shard reads are already the rows placed there — but a cluster table
-    /// function hands out files by rendezvous hashing over their paths, which has nothing to do with the
-    /// destination's sharding key. A sharding key that is fixed within a query states where a row must live,
-    /// and `optimize_skip_unused_shards` later prunes shards by it, so scattering rows against it would
-    /// silently produce wrong results. Skip the distributed execution and let the ordinary
-    /// `INSERT ... SELECT` place the rows through `DistributedSink`; the `SELECT` still reads the source
-    /// cluster in parallel.
-    ///
-    /// The check is `isDeterministicInScopeOfQuery` rather than `isDeterministic` on purpose: a `dictGet`
-    /// sharding key is not deterministic across queries, yet it does state where a row belongs and
-    /// `allow_nondeterministic_optimize_skip_unused_shards` lets reads prune by it. Only a key that is not
-    /// even fixed within one query (`rand()`) describes no placement at all, and for those the fast path
-    /// stays.
+    /// A `*Cluster` source hands files to shards by hashing their paths, so the rows a shard reads cannot
+    /// satisfy the destination's sharding key - and with `parallel_distributed_insert_select = 2` the
+    /// forwarded INSERT writes straight into the shard's local table, bypassing the key entirely.
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
         && hasShardingKeyForReads() && sharding_key_is_deterministic_in_scope_of_query)
     {
@@ -1323,19 +1311,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     chassert(select_to_send.list_of_selects->children.size() == 1);
     auto & source_to_send = select_to_send.list_of_selects->children.at(0);
 
-    /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
-    /// function (`url`, `s3`, ...), while the query text still names that plain function. A shard that runs the
-    /// forwarded query as a secondary query does not convert it again: it creates a plain storage that expands
-    /// the globs and reads every file on its own instead of taking its share of the read tasks from the
-    /// initiator, so N shards insert the data N times. Rewrite the source into its `*Cluster` variant, the same
-    /// way `IStorageCluster::read` does for a `SELECT`.
-    ///
-    /// The cluster to name in the rewritten function is this `Distributed` table's own cluster, because its
-    /// shards are the ones that run the forwarded query and consume the read tasks — the source's
-    /// `cluster_for_parallel_replicas` plays no part in this fan-out and need not even exist on those shards.
-    /// A `remote()` / `cluster()` destination owns an ad-hoc cluster that is absent from `remote_servers`
-    /// (`cluster_name` is empty), so there is no name a shard could resolve; skip the distributed execution
-    /// altogether rather than forward a query that every shard would answer with the whole source.
+    /// Replace `url()` / `s3()` / ... in the forwarded query text with its `*Cluster()` variant, named with
+    /// this `Distributed` table's cluster: its shards are the ones that run the forwarded query, and they
+    /// take their share of the files from the initiator's task iterator rather than reading all of them.
+    /// A `remote()` / `cluster()` destination has an ad-hoc cluster with no name to put there, so skip the
+    /// distributed execution instead of forwarding a query that every shard would answer with the whole
+    /// source.
     const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
     const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
     if (needs_cluster_function && cluster_name.empty())

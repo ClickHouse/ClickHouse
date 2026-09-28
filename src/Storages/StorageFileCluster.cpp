@@ -127,10 +127,10 @@ void StorageFileCluster::updateQueryToSendIfNeeded(
 
     /// `fileCluster` has no plain counterpart that `parallel_replicas_for_cluster_engines` could convert, so
     /// the function is always already the `*Cluster` variant and carries a cluster name the user wrote.
-    /// Replace it with the cluster whose nodes will actually run the query: the two differ when the
-    /// destination drives the fan-out (`INSERT INTO <Distributed table> SELECT`), and the nodes reject a name
-    /// their own `remote_servers` does not define (`ITableFunctionCluster::parseArgumentsImpl`) even though
-    /// they never dispatch by it - they take their share of the work from the initiator's task iterator.
+    /// Replace it with the cluster whose nodes will actually run the query - the two differ when the
+    /// destination drives the fan-out (`INSERT INTO <Distributed table> SELECT`), and those nodes reject a
+    /// name their own `remote_servers` does not define even though they take their share of the work from
+    /// the initiator rather than dispatching by it.
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());

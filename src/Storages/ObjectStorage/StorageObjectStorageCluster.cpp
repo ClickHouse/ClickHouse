@@ -370,11 +370,11 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
     else
     {
-        /// The function is already the `*Cluster` variant, so it carries a cluster name the user wrote. Replace
-        /// it with the cluster whose nodes will actually run the query: the two differ when the destination
-        /// drives the fan-out (`INSERT INTO <Distributed table> SELECT`), and the nodes reject a name their
-        /// own `remote_servers` does not define (`ITableFunctionCluster::parseArgumentsImpl`) even though they
-        /// never dispatch by it - they take their share of the work from the initiator's task iterator.
+        /// The function is already the `*Cluster` variant, so it carries a cluster name the user wrote.
+        /// Replace it with the cluster whose nodes will actually run the query - the two differ when the
+        /// destination drives the fan-out, and those nodes reject a name their own `remote_servers` does not
+        /// define even though they take their share of the work from the initiator rather than dispatching
+        /// by it.
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
