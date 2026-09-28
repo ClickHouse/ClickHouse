@@ -1217,7 +1217,7 @@ Keys for server/client settings:
 ```
 
 ## placement {#placement}
-The cloud availability zone and region the server runs in. The availability zone is used by the ZooKeeper client to prefer hosts in the same zone (`prefer_local_availability_zone` in the [zookeeper](#zookeeper) section), and by ClickHouse Keeper, which publishes it in the `/keeper/availability_zone` node.
+The cloud availability zone and region the server runs in. The availability zone is used by the ZooKeeper client to prefer hosts in the same zone (`prefer_local_availability_zone` in the [zookeeper](#zookeeper) section), and by ClickHouse Keeper, which publishes it in the `/keeper/availability_zone` node. Keeper creates this node only when the availability zone is not empty.
 
 If the `placement` section is absent, the availability zone and region are empty.
 
