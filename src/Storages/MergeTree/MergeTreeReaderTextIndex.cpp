@@ -32,6 +32,7 @@ namespace ProfileEvents
     extern const Event TextIndexPhraseCandidates;
     extern const Event TextIndexPhraseSearches;
     extern const Event TextIndexPhraseFallbacks;
+    extern const Event TextIndexPostingsIntersectionsReused;
 }
 
 namespace DB
@@ -726,6 +727,8 @@ PostingList MergeTreeReaderTextIndex::intersectPostingsInContainer(
             return {};
 
         reuse = reuse && step < steps.size() && steps[step].window_begin == window_begin && steps[step].blocks == read_blocks;
+        if (reuse && step == 0)
+            ProfileEvents::increment(ProfileEvents::TextIndexPostingsIntersectionsReused);
         if (!reuse)
         {
             if (!window)
