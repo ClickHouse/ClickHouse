@@ -426,7 +426,6 @@ private:
 };
 
 /// Sets an alias parsed by `ParserAlias` on `node`, replacing a previous alias of either kind.
-/// An alias written as a query parameter is kept as `parametrised_alias` until the parameter is resolved.
 void setParsedAlias(ASTWithAlias & node, const ASTPtr & alias);
 
 
