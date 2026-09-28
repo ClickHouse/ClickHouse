@@ -8,9 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The plan of a sealed view (`SQL SECURITY DEFINER` or `NONE`) runs with the view's privileges and may hold
 # values folded from data the invoker cannot read: a scalar subquery over a private table, a key derived on
-# the other side of a JOIN. EXPLAIN shows the plan to a user who could have created the same view (the definer,
-# a user with `SET DEFINER` on the definer, a user with `ALLOW SQL SECURITY NONE` for a `NONE` view) and to a
-# user who may display secrets (the server setting `display_secrets_in_show_and_select`, the session setting
+# the other side of a JOIN. EXPLAIN shows the plan to the definer, to a user who could have created the same view
+# (`SET DEFINER` on the definer or `ALLOW SQL SECURITY NONE` for a `NONE` view, together with the privileges to read
+# whatever a view may read: `SELECT`, `dictGet`, `READ`, `CREATE TEMPORARY TABLE` and `NAMED COLLECTION` on
+# everything) and to a user who may display secrets (the server setting `display_secrets_in_show_and_select`, the session setting
 # `format_display_secrets_in_show_and_select` and the `displaySecretsInShowAndSelect` privilege together);
 # everyone else sees the `ReadFromSealedView` step alone. The test server keeps the server setting off, so the
 # secrets path is not covered here. The plans are not dumped into the reference: only the presence of the
@@ -78,23 +79,28 @@ for view in definer_view none_view; do
     ${CLICKHOUSE_CLIENT} --user "$reader" --query "SELECT count() FROM $db.$view"
 done
 
-echo "-- the default user may create views with any definer and SQL SECURITY NONE views, so it sees both plans"
+echo "-- the default user holds every privilege, so it sees both plans"
 echo "$(explain_counts "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
 echo "$(explain_counts "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 echo "-- definer_view for its definer: the plan is shown, with the value folded from the private table"
 echo "$(explain_counts "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
 echo "$(explain_counts "$definer" "" "EXPLAIN PIPELINE header = 1 SELECT * FROM $db.definer_view")"
-echo "-- none_view for the same user: no definer to match, and no privilege to create such a view"
+echo "-- none_view for the same user: no definer to match"
 echo "$(explain_counts "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
-echo "-- a user who may create views with this definer sees the plan"
+echo "-- a user with SET DEFINER on the definer but without SELECT on the private table does not see the plan"
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $definer TO $reader"
 echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
 echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
-echo "-- a user who may create SQL SECURITY NONE views sees the plan"
+echo "-- nor does a user with ALLOW SQL SECURITY NONE"
 ${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $reader"
+echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+
+echo "-- with the privileges to read everything, the same user sees both plans"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT, dictGet, READ, CREATE TEMPORARY TABLE, NAMED COLLECTION ON *.* TO $reader"
+echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
 echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 ${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.definer_view; DROP VIEW $db.none_view; DROP TABLE $db.private_table; DROP USER $definer, $reader"

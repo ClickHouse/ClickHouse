@@ -24,16 +24,19 @@ EXPLAIN ESTIMATE: 0 0 0
 0 0 1
 -- none_view: the reader still queries it
 0
--- the default user may create views with any definer and SQL SECURITY NONE views, so it sees both plans
+-- the default user holds every privilege, so it sees both plans
 1 1 0
 1 1 0
 -- definer_view for its definer: the plan is shown, with the value folded from the private table
 1 1 0
 0 1 0
--- none_view for the same user: no definer to match, and no privilege to create such a view
+-- none_view for the same user: no definer to match
 0 0 1
--- a user who may create views with this definer sees the plan
+-- a user with SET DEFINER on the definer but without SELECT on the private table does not see the plan
+0 0 1
+0 0 1
+-- nor does a user with ALLOW SQL SECURITY NONE
+0 0 1
+-- with the privileges to read everything, the same user sees both plans
 1 1 0
-0 0 1
--- a user who may create SQL SECURITY NONE views sees the plan
 1 1 0

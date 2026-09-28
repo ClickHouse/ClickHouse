@@ -429,17 +429,32 @@ private:
     bool show_plan;
 };
 
-/// Whether the user could have created the view themselves. Then its plan, which runs with the view's
-/// privileges, holds nothing new to them.
-bool canCreateSuchView(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+/// Whether the plan of the view, which runs with the view's privileges, holds nothing new to the user.
+/// That is the case for the definer, and for a user who could have created the same view: `SET DEFINER` on the
+/// definer (or `ALLOW SQL SECURITY NONE` for a `NONE` view) is not enough for that, because `CREATE VIEW` also
+/// checks the access of the creator to everything the query of the view reads. So the user must also be able
+/// to read whatever any query can read: tables, dictionaries, table functions and named collections.
+bool canSeeViewPlan(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
 {
+    const auto access = context->getAccess();
+
     if (metadata.sql_security_type == SQLSecurityType::NONE)
-        return context->getAccess()->isGranted(AccessType::ALLOW_SQL_SECURITY_NONE);
+    {
+        if (!access->isGranted(AccessType::ALLOW_SQL_SECURITY_NONE))
+            return false;
+    }
+    else
+    {
+        if (!metadata.definer)
+            return false;
+        if (*metadata.definer == context->getUserName())
+            return true;
+        if (!access->isGranted(AccessType::SET_DEFINER, *metadata.definer))
+            return false;
+    }
 
-    if (!metadata.definer)
-        return false;
-
-    return *metadata.definer == context->getUserName() || context->getAccess()->isGranted(AccessType::SET_DEFINER, *metadata.definer);
+    return access->isGranted(AccessFlags(AccessType::SELECT) | AccessType::dictGet | AccessType::READ | AccessType::CREATE_TEMPORARY_TABLE
+                             | AccessType::NAMED_COLLECTION);
 }
 
 }
@@ -711,7 +726,7 @@ void StorageView::readImpl(
 
     if (sealed)
     {
-        const bool show_plan = canCreateSuchView(*storage_snapshot->metadata, context) || canDisplaySecrets(context);
+        const bool show_plan = canSeeViewPlan(*storage_snapshot->metadata, context) || canDisplaySecrets(context);
 
         auto read_from_sealed_view = std::make_unique<ReadFromSealedViewStep>(std::move(query_plan), view_context, show_plan);
         read_from_sealed_view->setStepDescription(
