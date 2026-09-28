@@ -5,12 +5,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_off_est; DROP TABLE IF EXISTS t_off_real;
     CREATE TABLE t_off_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_off_real AS t_off_est;
     ALTER TABLE t_off_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
     ALTER TABLE t_off_real ADD PROJECTION p_ix INDEX b TYPE basic;

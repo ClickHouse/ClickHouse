@@ -5,13 +5,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 # count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real;
     CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real AS t_est;
     ALTER TABLE t_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
     INSERT INTO t_est SELECT number, number % 100, number FROM numbers(1000);
@@ -41,7 +43,7 @@ alias_user="u3_05141_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_alias;
     CREATE TABLE t_alias (a UInt64, b UInt64, d UInt64, c UInt64 ALIAS b + 1) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_alias (a, b, d) SELECT number, number % 100, number FROM numbers(1000);
     DROP USER IF EXISTS ${alias_user};
     CREATE USER ${alias_user} NOT IDENTIFIED;
@@ -62,7 +64,7 @@ echo "--- a _part_offset predicate does not engage a projection ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_off; DROP TABLE IF EXISTS t_off_plain;
     CREATE TABLE t_off (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_off_plain AS t_off;
     ALTER TABLE t_off ADD PROJECTION p_b INDEX b TYPE basic;
     INSERT INTO t_off SELECT number, number % 100, number FROM numbers(1000);
@@ -80,7 +82,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_co;
     CREATE TABLE t_co (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
-                 allow_commit_order_projection = 1, enable_block_number_column = 1, enable_block_offset_column = 1;
+                 allow_commit_order_projection = 1, enable_block_number_column = 1, enable_block_offset_column = 1, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_co SELECT number, number % 100, number FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_co ON t_co INDEX b TYPE commit_order;
     EXPLAIN WHATIF SELECT count() FROM t_co WHERE b = 42 SETTINGS ${PIN};
@@ -98,7 +100,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_bn;
     CREATE TABLE t_bn (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
-                 allow_commit_order_projection = 1, enable_block_number_column = 1;
+                 allow_commit_order_projection = 1, enable_block_number_column = 1, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_bn SELECT number, number % 100, number FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_bn ON t_bn (SELECT a, b, v, _block_number ORDER BY b);
     EXPLAIN WHATIF SELECT a, v FROM t_bn WHERE b = 42 SETTINGS ${PIN};
@@ -111,7 +113,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_uw;
     CREATE TABLE t_uw (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 8192, index_granularity_bytes = '16Ki', min_bytes_for_wide_part = 0,
-                 use_const_adaptive_granularity = 0;
+                 use_const_adaptive_granularity = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_uw SELECT number, number, if(intDiv(number, 250) % 2 = 1, repeat('y', 500), repeat('x', 20)) FROM numbers(1000);
     INSERT INTO t_uw SELECT number + 1000, number + 1000, if(intDiv(number, 250) % 2 = 1, repeat('y', 500), repeat('x', 20)) FROM numbers(1000);
     OPTIMIZE TABLE t_uw FINAL;
@@ -126,7 +128,7 @@ echo "--- an array join decides by where it sits relative to the read ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_aj; DROP TABLE IF EXISTS t_real_aj;
     CREATE TABLE t_aj (a UInt64, b UInt64, arr Array(UInt64)) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_aj AS t_aj;
     ALTER TABLE t_real_aj ADD PROJECTION p_aj (SELECT a, b, arr ORDER BY b);
     INSERT INTO t_aj SELECT number, number % 100, [number] FROM numbers(1000);
@@ -177,7 +179,7 @@ echo "--- a query that reads no parts gets no verdict, the optimizer ignores pro
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_pruned;
     CREATE TABLE t_pruned (d Date, a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_pruned SELECT toDate('2020-01-01'), number, number % 100 FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_all ON t_pruned (SELECT d, a, b ORDER BY b);
     EXPLAIN WHATIF SELECT count() FROM t_pruned WHERE d = '2030-05-05' AND b = 42 SETTINGS ${PIN};
@@ -209,7 +211,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lim;
     CREATE TABLE t_lim (a UInt64, b UInt64, v UInt64, PROJECTION p_real (SELECT a, b, v ORDER BY b))
         ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_lim SELECT number, number % 100, number FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_h ON t_lim (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT b, v FROM t_lim WHERE a < 500 AND b >= 15 SETTINGS ${PIN}, max_rows_to_read = 300;

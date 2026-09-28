@@ -6,6 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 # count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
 
@@ -32,7 +34,7 @@ echo "--- a row count that is not a multiple of the granule ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_r; DROP TABLE IF EXISTS t_real_r;
     CREATE TABLE t_est_r (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_r AS t_est_r;
     ALTER TABLE t_real_r ADD PROJECTION p_r (SELECT a, b, v ORDER BY b);
     INSERT INTO t_est_r SELECT number, number % 25, number FROM numbers(250);
@@ -49,7 +51,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;
     CREATE TABLE t_est_c (id UInt64, b UInt64, v UInt64, payload String) ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity = 8192, index_granularity_bytes = 10000, use_const_adaptive_granularity = 0,
-                 min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 0;
+                 min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_c AS t_est_c;
     ALTER TABLE t_real_c ADD PROJECTION p_c (SELECT id, b, v ORDER BY b);
     -- 2050 rows leave a remainder below half a granule, which the compact writer folds into the previous mark
@@ -64,7 +66,7 @@ echo "--- a sort key over a subcolumn ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;
     CREATE TABLE t_est_s (t Tuple(x UInt64, y UInt64), v UInt64) ENGINE = MergeTree ORDER BY v
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_s AS t_est_s;
     ALTER TABLE t_real_s ADD PROJECTION p_s (SELECT t, v ORDER BY t.x);
     INSERT INTO t_est_s SELECT (number % 100, number), number FROM numbers(1000);
@@ -77,7 +79,7 @@ echo "--- a byte-driven projection index counts the parent offset it stores ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_i; DROP TABLE IF EXISTS t_real_i;
     CREATE TABLE t_est_i (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_i AS t_est_i;
     ALTER TABLE t_real_i ADD PROJECTION p_i INDEX b TYPE basic;
     INSERT INTO t_est_i SELECT number, intDiv(number, 100), number FROM numbers(5000);
@@ -94,7 +96,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_est_w (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 8192, index_granularity_bytes = '128Ki', min_bytes_for_wide_part = 0,
                  merge_max_block_size = 8192, merge_max_block_size_bytes = '10Mi',
-                 use_const_adaptive_granularity = 0;
+                 use_const_adaptive_granularity = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_w AS t_est_w;
     ALTER TABLE t_real_w ADD PROJECTION p_w (SELECT a, b, s ORDER BY b);
     -- narrow rows carry the low part of the key, wide rows the high part
@@ -126,7 +128,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;
     CREATE TABLE t_est_d (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
-                 lightweight_mutation_projection_mode = 'rebuild';
+                 lightweight_mutation_projection_mode = 'rebuild', add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_d AS t_est_d;
     ALTER TABLE t_real_d ADD PROJECTION p_d (SELECT a, b, v ORDER BY b);
     INSERT INTO t_est_d SELECT number, number % 100, number FROM numbers(1000);
@@ -145,7 +147,7 @@ echo "--- a full projection scan that is cheaper than the base read ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_n; DROP TABLE IF EXISTS t_real_n;
     CREATE TABLE t_est_n (a UInt64, b UInt64, pad String) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 8192, index_granularity_bytes = '16Ki', min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '16Ki', min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_n AS t_est_n;
     ALTER TABLE t_real_n ADD PROJECTION p_n (SELECT a, b ORDER BY b);
     INSERT INTO t_est_n SELECT number, number % 1000, repeat('x', 500) FROM numbers(5000);

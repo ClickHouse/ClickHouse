@@ -6,6 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 # count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
 
@@ -16,7 +18,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;
     CREATE TABLE t_est_m (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 1000, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0,
-                 min_rows_for_wide_part = 0, use_const_adaptive_granularity = 0, merge_max_block_size = 100;
+                 min_rows_for_wide_part = 0, use_const_adaptive_granularity = 0, merge_max_block_size = 100, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_m AS t_est_m;
     ALTER TABLE t_real_m ADD PROJECTION p_m (SELECT a, b, v ORDER BY b);
     SYSTEM STOP MERGES t_est_m; SYSTEM STOP MERGES t_real_m;
