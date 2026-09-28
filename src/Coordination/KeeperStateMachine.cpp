@@ -371,6 +371,7 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::FilteredList:
         case OpNum::FilteredListWithStatsAndData:
         case OpNum::ListRecursive:
+        case OpNum::ListWithOptions:
         case OpNum::Check:
         case OpNum::CheckNotExists:
         case OpNum::CheckStat:
@@ -380,12 +381,19 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             /// `RemoveRecursive` walks and deletes the whole subtree (and compares its size against
             /// `remove_nodes_limit`), `ListRecursive` returns every descendant, and `Reconfig` rewrites
             /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
-            /// subtree anywhere below them changes the outcome. Everything else in this group resolves
-            /// the node itself and at most its direct children.
-            const auto kind = request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
+            /// subtree anywhere below them changes the outcome. `ListWithOptions` can be recursive
+            /// depending on its options. Everything else in this group resolves the node itself and at
+            /// most its direct children.
+            auto kind = request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
                     || request.getOpNum() == OpNum::Reconfig
                 ? RequestPathKind::Subtree
                 : RequestPathKind::NodeAndChildren;
+            if (request.getOpNum() == OpNum::ListWithOptions)
+            {
+                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                if (lwo.options.recursive)
+                    kind = RequestPathKind::Subtree;
+            }
             f(path, kind);
 
             /// A sequential create does not touch the path it carries: the storage appends a zero-padded
