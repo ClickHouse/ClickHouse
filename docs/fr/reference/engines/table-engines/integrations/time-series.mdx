@@ -35,7 +35,7 @@ metric_name2[...] = ...
   un tel service.
 </Note>
 
-## Syntaxe
+## Syntaxe {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
@@ -51,7 +51,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   La définition d&#39;une table d&#39;une [version](#schema-versioning) antérieure à 4 est écrite avec `METRICS`, afin qu&#39;un serveur plus ancien puisse la lire.
 </Note>
 
-## Utilisation
+## Utilisation {#usage}
 
 Il est plus facile de commencer en laissant tous les paramètres par défaut (il est possible de créer une table `TimeSeries` sans préciser de liste de colonnes) :
 
@@ -64,19 +64,19 @@ Cette table peut ensuite être utilisée avec les protocoles suivants (un port d
 * [prometheus remote-write](/fr/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/fr/concepts/features/interfaces/prometheus#remote-read)
 
-### Colonnes externes
+### Colonnes externes {#outer-columns}
 
-Les colonnes d’une table TimeSeries sont générées automatiquement. Ce sont des colonnes externes : elles ne stockent aucune donnée et servent uniquement d’interface pour SELECT/INSERT. Les données réelles sont stockées dans les [tables cibles](#target-tables). Voici la liste des colonnes externes :
+Les colonnes d’une table TimeSeries sont générées automatiquement. Ce sont des colonnes externes : elles ne stockent aucune donnée et servent uniquement d’interface pour SELECT/INSERT. Les données réelles sont stockées dans les [target tables](#target-tables). Voici la liste des colonnes externes :
 
-| Name            | Type                                              | Description                                                                                                                                                                                                                                                                                                                                                                          |
-| --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `metric_name`   | `String`                                          | Le nom de la métrique                                                                                                                                                                                                                                                                                                                                                                |
-| `tags`          | `Map(String, String)`                             | Map de tags (labels) pour la série temporelle                                                                                                                                                                                                                                                                                                                                        |
-| `samples`       | `Array(Tuple(DateTime64(3), Float64))` par défaut | Tableau de paires (horodatage, valeur) pour une série temporelle. Les types d’élément de l’horodatage et du scalaire du tuple peuvent être déduits de la déclaration `INNER COLUMNS` des échantillons (voir [Spécification des colonnes externes](#specifying-outer-columns)). La colonne est nommée `time_series` dans les tables de [version](#schema-versioning) 2 et antérieures |
-| `metric_family` | `String`                                          | Le nom de la famille de métriques (pour les métadonnées de métriques)                                                                                                                                                                                                                                                                                                                |
-| `type`          | `String`                                          | Le type de la métrique (par ex. &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                                                                                                                                              |
-| `unit`          | `String`                                          | L’unité de la métrique                                                                                                                                                                                                                                                                                                                                                               |
-| `help`          | `String`                                          | La description de la métrique                                                                                                                                                                                                                                                                                                                                                        |
+| Name            | Type                                              | Description                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                          | Le nom de la métrique                                                                                                                                                                                                                                                                                                                                                                 |
+| `tags`          | `Map(String, String)`                             | Map de tags (labels) pour la série temporelle                                                                                                                                                                                                                                                                                                                                         |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))` par défaut | Tableau de paires (horodatage, valeur) pour une série temporelle. Les types d’élément de l’horodatage et de la valeur du tuple peuvent être déduits de la déclaration `INNER COLUMNS` des échantillons (voir [Spécification des colonnes externes](#specifying-outer-columns)). La colonne est nommée `time_series` dans les tables de [version](#schema-versioning) 2 et antérieures |
+| `metric_family` | `String`                                          | Le nom de la famille de métriques (pour les métadonnées de métriques)                                                                                                                                                                                                                                                                                                                 |
+| `type`          | `String`                                          | Le type de la métrique (par ex. &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                                                                                                                                               |
+| `unit`          | `String`                                          | L’unité de la métrique                                                                                                                                                                                                                                                                                                                                                                |
+| `help`          | `String`                                          | La description de la métrique                                                                                                                                                                                                                                                                                                                                                         |
 
 Exemple :
 
@@ -102,9 +102,9 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-### Spécification des colonnes externes
+### Spécification des colonnes externes {#specifying-outer-columns}
 
-La colonne externe `samples` peut être déclarée explicitement dans une instruction `CREATE TABLE` afin de remplacer son type par défaut `Array(Tuple(DateTime64(3), Float64))` (son ancien nom `time_series` est également accepté). ClickHouse extrait du tuple le type d’horodatage et le type scalaire, puis les propage à la table samples interne :
+La colonne externe `samples` peut être déclarée explicitement dans une instruction `CREATE TABLE` afin de remplacer son type par défaut `Array(Tuple(DateTime64(3), Float64))` (son ancien nom `time_series` est également accepté). ClickHouse extrait du tuple le type d’horodatage et le type de valeur, puis les propage à la table samples interne :
 
 ```sql
 CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -119,7 +119,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 Si les deux formes sont utilisées dans la même instruction `CREATE TABLE`, les types déclarés doivent être identiques.
 
-## Tables cibles
+## Tables cibles {#target-tables}
 
 Une table `TimeSeries` ne possède pas ses propres données : tout est stocké dans ses tables cibles.
 Son fonctionnement est similaire à celui d’une [vue matérialisée](/fr/reference/statements/create/view#materialized-view),
@@ -135,7 +135,7 @@ Les lignes insérées dans une table `TimeSeries` sont transformées, découpée
 
 Les tables cibles sont les suivantes :
 
-### Table *samples*
+### Table *samples* {#samples-table}
 
 La table *samples* contient des séries temporelles associées à un certain identifiant.
 
@@ -153,7 +153,7 @@ compressent très peu avec des codecs génériques et peuvent sinon représenter
 Le moteur active `ALP` pour ses tables internes *samples* et *recent samples* sans qu&#39;il soit nécessaire de définir `enable_alp_codec`.
 Voir aussi [Ajustement des types de colonnes](#adjusting-column-types).
 
-### Table des échantillons récents
+### Table des échantillons récents {#recent-samples-table}
 
 La table des *échantillons récents* est facultative et activée par défaut (voir le paramètre [recent&#95;samples&#95;ttl&#95;seconds](#settings) ; définir sa valeur sur zéro désactive la table). Elle contient une copie des échantillons dont l’ancienneté est inférieure à la TTL définie par ce paramètre et doit comporter les mêmes colonnes que la table [samples](#samples-table).
 La colonne générée `timestamp` utilise `CODEC(Delta, T64, ZSTD(3))`,
@@ -165,7 +165,7 @@ car elle est bien plus petite (ce comportement peut être désactivé à l’aid
 
 La TTL de la table interne des échantillons récents est toujours dérivée du paramètre [recent&#95;samples&#95;ttl&#95;seconds](#settings).
 
-### Table des tags
+### Table des tags {#tags-table}
 
 La table *tags* contient des identifiants calculés pour chaque combinaison d&#39;un nom de métrique et de tags.
 
@@ -188,21 +188,21 @@ aux labels manquants et n&#39;utilisent pas cet index.
 Les index explicites déclarés dans `TAGS INNER COLUMNS` remplacent l&#39;index par défaut. Les tables existantes et les tables de tags
 externes conservent leurs index ; ajoutez et matérialisez l&#39;index sur leur table de tags cible pour l&#39;activer.
 
-### Table *familles de métriques*
+### Table *familles de métriques* {#metric-families-table}
 
 La table *familles de métriques* contient des informations sur les familles de métriques collectées, leurs types et leurs descriptions.
 Une famille de métriques est un groupe de métriques portant le même nom (le tag `__name__`) et ayant le même type. Par exemple, un histogramme est une famille de métriques composée de plusieurs métriques.
 
-La table *familles de métriques* doit comporter les colonnes suivantes :
+La table *familles de métriques* doit comporter les colonnes suivantes :
 
-| Nom                  | Obligatoire ? | Type par défaut          | Types possibles                      | Description                                                                                                                 |
-| -------------------- | ------------- | ------------------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `metric_family_name` | [x]           | `String`                 | `String` ou `LowCardinality(String)` | Le nom d’une famille de métriques                                                                                           |
-| `type`               | [x]           | `LowCardinality(String)` | `String` ou `LowCardinality(String)` | Le type d’une famille de métriques : « counter », « gauge », « summary », « stateset », « histogram » ou « gaugehistogram » |
-| `unit`               | [x]           | `LowCardinality(String)` | `String` ou `LowCardinality(String)` | L’unité utilisée pour une métrique                                                                                          |
-| `help`               | [x]           | `String`                 | `String` ou `LowCardinality(String)` | La description d’une métrique                                                                                               |
+| Nom             | Obligatoire ? | Type par défaut          | Types possibles                      | Description                                                                                                                                                                                 |
+| --------------- | ------------- | ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_family` | [x]           | `String`                 | `String` ou `LowCardinality(String)` | Le nom d’une famille de métriques. Dans les tables des versions antérieures à la version 6, cette colonne s’appelle `metric_family_name` (voir [Historique des versions](#version-history)) |
+| `type`          | [x]           | `LowCardinality(String)` | `String` ou `LowCardinality(String)` | Le type d’une famille de métriques : « counter », « gauge », « summary », « stateset », « histogram » ou « gaugehistogram »                                                                 |
+| `unit`          | [x]           | `LowCardinality(String)` | `String` ou `LowCardinality(String)` | L’unité utilisée pour une métrique                                                                                                                                                          |
+| `help`          | [x]           | `String`                 | `String` ou `LowCardinality(String)` | La description d’une métrique                                                                                                                                                               |
 
-## Création
+## Création {#creation}
 
 Il existe plusieurs façons de créer une table avec le moteur de table `TimeSeries`.
 L&#39;instruction la plus simple
@@ -225,7 +225,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 5, recent_samples_ttl_seconds = 345600
+SETTINGS version = 6, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -252,23 +252,23 @@ TAGS INNER COLUMNS
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
-Les colonnes ont donc été générées automatiquement, et il existe également quatre tables cibles internes, chacune avec ses propres définitions de colonnes
+Les colonnes ont donc été générées automatiquement, et il existe également quatre target tables internes, chacune avec ses propres définitions de colonnes
 stockées dans les clauses `INNER COLUMNS`. Le paramètre `recent_samples_ttl_seconds` a été écrit dans la clause `SETTINGS`
 avec sa valeur par défaut : il définit le TTL de la table des échantillons récents, et sa valeur effective est donc fixée lors de la création.
 De plus, la dernière version du schéma a été fixée dans le paramètre `version` (voir [Versionnement du schéma](#schema-versioning)).
 
-Les tables cibles internes portent des noms tels que `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+Les target tables internes portent des noms tels que `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-et chaque table cible possède son propre ensemble de colonnes :
+et chaque target table possède son propre ensemble de colonnes :
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
@@ -315,17 +315,17 @@ SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```sql
 CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
-ORDER BY metric_family_name
+ORDER BY metric_family
 SETTINGS index_granularity = 8192
 ```
 
-## Créer une table AS une table existante
+## Créer une table AS une table existante {#create-as}
 
 L&#39;instruction `CREATE TABLE new_table AS existing_table` crée une table `TimeSeries` configurée comme `existing_table`,
 qui doit elle-même être une table `TimeSeries`. Les cibles externes d&#39;`existing_table` ne sont pas copiées : l&#39;instruction doit déclarer
@@ -346,9 +346,10 @@ Les types des colonnes `id`, timestamp et valeur, ainsi que le type de replicati
 La liste des colonnes externes est régénérée et non copiée.
 
 Une table créée par une version plus ancienne de ClickHouse peut servir d&#39;`existing_table` : la nouvelle table adopte la
-structure actuelle, par exemple le type `id` actuel et l&#39;expression d&#39;identifiant par défaut.
+structure actuelle, par exemple le type `id` actuel et l&#39;expression d&#39;identifiant par défaut, et les éléments personnalisés repris
+d&#39;`existing_table` y sont adaptés.
 
-## Ajustement des types de colonnes
+## Ajustement des types de colonnes {#adjusting-column-types}
 
 Vous pouvez modifier le type des colonnes dans les tables cibles internes à l’aide de la clause `INNER COLUMNS`. Par exemple, pour stocker les horodatages en microsecondes et les valeurs en `Float32`, utilisez :
 
@@ -364,7 +365,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-## La colonne `id`
+## La colonne `id` {#id-column}
 
 La colonne `id` contient des identifiants ; chacun d’eux est calculé à partir d’une combinaison d’un nom de métrique et de tags.
 Le type et l’expression `DEFAULT` utilisés pour générérer les identifiants peuvent être personnalisés via la clause `TAGS INNER COLUMNS` :
@@ -399,7 +400,7 @@ SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
 Lorsque le paramètre `id_generator` est défini, le paramètre `id_type` est enregistré automatiquement au moment du `CREATE`,
 de sorte que la définition conserve le type pour lequel l’expression a été écrite.
 
-## La colonne `tags`
+## La colonne `tags` {#tags-column}
 
 La colonne `tags` contient tous les tags d’une série temporelle, y compris le tag `__name__` avec le nom d’une métrique.
 
@@ -421,7 +422,7 @@ Les valeurs des tags `instance` et `job` seront stockées à la fois dans ces co
   avec tous les tags à l’exception du nom de la métrique.
 </Note>
 
-## Moteurs des tables cibles internes
+## Moteurs des tables cibles internes {#inner-table-engines}
 
 Par défaut, les tables cibles internes utilisent les moteurs de table suivants :
 
@@ -460,7 +461,7 @@ lignes qu’une fusion en arrière-plan regroupe partagent les mêmes valeurs. L
 moteur est spécifié en intégré comme ci-dessus, `TimeSeries` y définit automatiquement `allow_dimensions_outside_sorting_key = 1` ;
 pour une table de tags d’agrégation [externe](#external-target-tables) créée manuellement, vous devez le définir vous-même.
 
-## Tables cibles externes
+## Tables cibles externes {#external-target-tables}
 
 Il est possible de faire en sorte qu&#39;une table `TimeSeries` utilise une table créée manuellement :
 
@@ -489,7 +490,7 @@ Les types de colonnes des tables externes (`id`, `timestamp`, `value` et les `<t
 
 Le type de la colonne `id` d&#39;une table tags externe et l&#39;expression générant les identifiants sont enregistrés dans les paramètres [`id_type`](#settings) et [`id_generator`](#settings) lors de `CREATE` (à partir de la [version](#schema-versioning) 2), de sorte que la définition de la table `TimeSeries` les conserve : par exemple, `CREATE TABLE ... AS my_table` lit le type de `id` depuis la définition de `my_table` sans lire ses tables cibles externes. Si le paramètre `id_generator` n&#39;est pas spécifié, il prend la valeur `DEFAULT` déclarée sur la colonne `id` de la table externe (le cas échéant), sinon celle du générateur canonique dérivé du type de `id`. L&#39;expression enregistrée est utilisée pour générer `id` même si la valeur `DEFAULT` de la table externe change par la suite — voir [la colonne `id`](#id-column) pour plus de détails.
 
-## Modifier les paramètres
+## Modifier les paramètres {#altering-settings}
 
 Deux paramètres peuvent être modifiés après `CREATE` :
 
@@ -507,7 +508,7 @@ Notez que la modification de `id_generator` alors que des données sont déjà p
 Les autres paramètres ne peuvent pas être modifiés avec `ALTER ... MODIFY SETTING` : la plupart sont figés dans le schéma des tables internes au moment du `CREATE`,
 et le paramètre `version` est fixé automatiquement au moment du `CREATE` et identifie le schéma lui-même (voir [versionnement du schéma](#schema-versioning)).
 
-## Paramètres
+## Paramètres {#settings}
 
 Voici la liste des paramètres qui peuvent être spécifiés lors de la définition d&#39;une table `TimeSeries` :
 
@@ -525,14 +526,14 @@ Voici la liste des paramètres qui peuvent être spécifiés lors de la définit
 | `recent_samples_partition_by`        | Expression      | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Clé de partition de la table interne `échantillon récent`, par exemple `toStartOfHour(timestamp)`. Lorsqu&#39;elle est définie explicitement, elle surcharge la clé de partition de la déclaration du moteur ; si aucune des deux n&#39;est définie, une partition par tranche de 5 heures est utilisée. Ignoré pour une table externe échantillon récent. Nécessite que `recent_samples_ttl_seconds` soit différent de zéro                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `recent_samples_index_granularity`   | UInt64          | 8192                                                          | Définit `index_granularity` de la table interne `échantillon récent`. Lorsqu&#39;il est défini explicitement, il surcharge `index_granularity` de la déclaration du moteur. Ignoré pour une table externe échantillon récent et un moteur autre que MergeTree. Nécessite que `recent_samples_ttl_seconds` soit différent de zéro                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `tags_index_granularity`             | UInt64          | 8192                                                          | Définit `index_granularity` de la table interne [tags](#tags-table). Lorsqu&#39;il est défini explicitement, il surcharge `index_granularity` de la déclaration du moteur. Ignoré pour une table tags externe et un moteur autre que MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `version`                            | UInt64          | 5                                                             | La version de la table : elle identifie l&#39;ensemble des tables cibles et leur structure. La version est figée automatiquement lors de la création d&#39;une table et ne peut pas être modifiée ensuite ; normalement, elle doit être omise dans la requête `CREATE TABLE` (voir [Versionnement du schéma](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `version`                            | UInt64          | 6                                                             | La version de la table : elle identifie l&#39;ensemble des tables cibles et leur structure. La version est figée automatiquement lors de la création d&#39;une table et ne peut pas être modifiée ensuite ; normalement, elle doit être omise dans la requête `CREATE TABLE` (voir [Versionnement du schéma](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-## versionnement du schéma
+## versionnement du schéma {#schema-versioning}
 
 Le moteur de table `TimeSeries` et la couche d&#39;exécution PromQL sont en cours de développement actif :
 l&#39;ensemble des tables cibles et leur structure peuvent évoluer d&#39;une version de ClickHouse à l&#39;autre.
 Afin de détecter ces changements, chaque table `TimeSeries` stocke sa version dans le paramètre [version](#settings).
-La version est automatiquement inscrite dans la requête `CREATE` lors de la création d&#39;une table ; sa valeur correspond à la dernière version connue du serveur (actuellement 5), elle est
+La version est automatiquement inscrite dans la requête `CREATE` lors de la création d&#39;une table ; sa valeur correspond à la dernière version connue du serveur (actuellement 6), elle est
 conservée dans les métadonnées de la table et ne peut pas être modifiée par `ALTER`. Les tables créées avant l&#39;introduction du paramètre sont considérées comme étant en version 0.
 En règle générale, il suffit d&#39;omettre le paramètre dans la requête `CREATE TABLE` : la table reçoit alors la dernière version.
 Une `version` explicite est acceptée si le serveur la prend en charge ; la table est alors définie selon les règles de cette version (voir [Historique des versions](#version-history)).
@@ -549,18 +550,19 @@ dialecte `promql` et l&#39;API HTTP de requêtes de Prometheus) :
 * Si la version est trop ancienne pour permettre l&#39;écriture, les requêtes `INSERT` et le protocole remote-write de Prometheus sont rejetés, tandis que les requêtes `SELECT` continuent de fonctionner.
 * Si la version est trop ancienne pour le serveur, toute requête sur la table (à l&#39;exception de `SHOW CREATE TABLE`, `DETACH` et `DROP`) est rejetée.
 
-### Historique des versions
+### Historique des versions {#version-history}
 
-| Version | Changements                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Tables créées avant l&#39;introduction du paramètre `version`, y compris les tables « prealpha » (qui déclaraient les colonnes des tables cibles comme [colonnes externes](#outer-columns)) et les tables dépourvues de la table [échantillon récent](#recent-samples-table)                                                                                                                                                                                               |
-| 1       | Introduction du paramètre `version`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 2       | Introduction du paramètre [`id_type`](#settings) : une table associée à une table des tags externe enregistre le type de la colonne `id` dans `id_type` et l&#39;expression générant les identifiants dans [`id_generator`](#settings), de sorte que sa définition ne dépend pas de la table externe. `id_type` est également enregistré lorsque `id_generator` est défini (voir [La colonne `id`](#id-column))                                                                |
-| 3       | La colonne externe `time_series` a été renommée `samples` (voir [Colonnes externes](#outer-columns)). Les tables des versions antérieures conservent l&#39;ancien nom de la colonne, et les fonctions de table [prometheusQuery](/fr/reference/functions/table-functions/prometheusQuery) et [prometheusQueryRange](/fr/reference/functions/table-functions/prometheusQueryRange) renvoient la colonne sous le nom utilisé par la table. Les données stockées restent inchangées |
-| 4       | La target table `metrics` a été renommée `famille de métriques` : la table interne est nommée `.inner_id.metricfamilies.<uuid>` au lieu de `.inner_id.metrics.<uuid>`, et la définition utilise le mot-clé `METRIC FAMILIES` au lieu de `METRICS`. Les données stockées restent inchangées                                                                                                                                                                                      |
-| 5       | Les nouvelles tables internes de tags utilisant un moteur de la famille `MergeTree` reçoivent par défaut un index de texte `keyValuePairs` sur la map `tags` (voir [Table des tags](#tags-table))                                                                                                                                                                                                                                                                          |
+| Version | Changements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | Tables créées avant l&#39;introduction du paramètre `version`, y compris les tables « prealpha » (qui déclaraient les colonnes des tables cibles comme [colonnes externes](#outer-columns)) et les tables dépourvues de la table [échantillon récent](#recent-samples-table)                                                                                                                                                                                                                                                                            |
+| 1       | Introduction du paramètre `version`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 2       | Introduction du paramètre [`id_type`](#settings) : une table associée à une table des tags externe enregistre le type de la colonne `id` dans `id_type` et l&#39;expression générant les identifiants dans [`id_generator`](#settings), de sorte que sa définition ne dépend pas de la table externe. `id_type` est également enregistré lorsque `id_generator` est défini (voir [La colonne `id`](#id-column))                                                                                                                                         |
+| 3       | La colonne externe `time_series` a été renommée `samples` (voir [Colonnes externes](#outer-columns)). Les tables des versions antérieures conservent l&#39;ancien nom de la colonne, et les fonctions de table [prometheusQuery](/fr/reference/functions/table-functions/prometheusQuery) et [prometheusQueryRange](/fr/reference/functions/table-functions/prometheusQueryRange) renvoient la colonne sous le nom utilisé par la table. Les données stockées restent inchangées                                                                              |
+| 4       | La target table `metrics` a été renommée `famille de métriques` : la table interne est nommée `.inner_id.metricfamilies.<uuid>` au lieu de `.inner_id.metrics.<uuid>`, et la définition utilise le mot-clé `METRIC FAMILIES` au lieu de `METRICS`. Les données stockées restent inchangées                                                                                                                                                                                                                                                              |
+| 5       | Les nouvelles tables internes de tags utilisant un moteur de la famille `MergeTree` reçoivent par défaut un index de texte `keyValuePairs` sur la map `tags` (voir [Table des tags](#tags-table))                                                                                                                                                                                                                                                                                                                                                       |
+| 6       | La colonne `metric_family_name` de la table [famille de métriques](#metric-families-table) a été renommée `metric_family`, soit le nom de la colonne externe correspondante. Les tables des versions antérieures conservent l&#39;ancien nom de la colonne, et la fonction de table [timeSeriesMetricFamilies](/fr/reference/functions/table-functions/timeSeriesMetricFamilies) renvoie la colonne sous le nom utilisé par la table. Une table externe de familles de métriques doit nommer la colonne conformément à la version de la table `TimeSeries` |
 
-# Fonctions
+# Fonctions {#functions}
 
 Voici une liste de fonctions qui acceptent une table `TimeSeries` comme argument :
 

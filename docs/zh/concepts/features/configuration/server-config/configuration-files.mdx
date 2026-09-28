@@ -27,7 +27,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 在 YAML 配置文件中，`clickhouse:` 是可选的；如果省略，解析器会自动插入它。
 
 <div id="merging">
-  ## 合并配置
+  ## 合并配置 {#merging}
 </div>
 
 两个配置文件 (通常是主配置文件和来自 `config.d/` 的另一个配置文件) 会按如下方式合并：
@@ -83,7 +83,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="from_env_zk">
-  ### 通过环境变量和 ZooKeeper 节点进行替换
+  ### 通过环境变量和 ZooKeeper 节点进行替换 {#from_env_zk}
 </div>
 
 若要指定将某个元素的值替换为环境变量的值，可以使用属性 `from_env`。
@@ -136,8 +136,31 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 </clickhouse>
 ```
 
+#### 值的解释方式 {#value-interpretation}
+
+`from_env` 和 `from_zk` 对替换值的解释方式不同：
+
+* 通过 `from_env` 直接替换的值会被视为字面文本。`&`、`<` 和 `>` 等 XML 特殊字符会自动转义，因此环境变量可以包含任何 XML 可表示的值，例如 `a&b<c>d`，而不会破坏配置 (参见下文关于 XML 非法控制字符的说明) 。直接替换的值绝不会被解释为 XML，即使它看起来像 XML 片段：`<a>1</a>` 替换后仍是字面文本 `<a>1</a>`。将该属性直接放在 `<profiles from_env="…"/>` 这样的普通容器元素上时也是如此：现有的 XML 子树替换必须迁移为 `<profiles><include from_env="…"/></profiles>`。为保持向后兼容，`<include from_env="…"/>` 的行为有所不同：它会将环境变量解析为 XML 片段，并将其子元素插入父元素。
+* 通过 `from_zk` 替换的值如何解释，取决于它是否以 `<` 开头。以 `<` 开头的值始终会被解析为 XML 片段：无论是结构性的 `<include from_zk="…"/>`，还是 `<profiles from_zk="…"/>` 这样的普通容器元素，都可以通过这种方式将子树插入元素。保留这一行为是为了向后兼容，因为早期版本始终将 `from_zk` 的值解释为 XML。不以 `<` 开头的值，只有显式使用 `<include from_zk="…" yaml="true"/>` 时才会被解析为 YAML 子树；如果 YAML 格式有误，配置将被拒绝。凡是使用通用的 `<include>` 形式，`yaml="true"` 属性都会启用 YAML 解析，包括在叶元素内使用时，因此不要将其用于需要保留字面文本的配置项或机密信息。没有 `yaml="true"` 时，不以 `<` 开头的值会被视为字面文本，即使通过通用的叶元素替换形式 `<password><include from_zk="/secret"/></password>` 使用也是如此。这样，即使值恰好包含 YAML 语法或不是有效的 YAML，例如 `abc # rotated` 或 `[1`，也能保留。对于这种形式，只有 `<include>` 与周围内容紧接、没有空白文本节点时，才能保留原始字节；对于原始字节必须保持不变的机密信息和叶元素配置项，建议使用直接形式 `<password from_zk="…"/>`。在任何其他元素上，无论是 `<some_setting from_zk="…"/>` 或 `<password from_zk="…"/>` 这样的叶元素替换，还是 `<profiles from_zk="…"/>` 这样的普通容器元素，不以 `<` 开头的值也会按原始字节保留为字面文本 (XML 特殊字符会像 `from_env` 一样自动转义) 。因此，`abc: def` 这样的值仍是字面文本 `abc: def`，而不会变成 `<abc>def</abc>` 子元素。若要将子树插入普通元素 (而非结构性的 `<include>`) ，请提供以 `<` 开头的 XML 片段。
+
+<Note>
+  **字面值必须是有效的 XML 1.0 文本**
+
+  对于 XML 1.0 可表示为文本的每个字符，字面值替换 (`from_env`，或不以 `<` 开头的叶元素 `from_zk` 值) 都会保留该值的原始字节。XML 1.0 中非法的控制字符——`0x00`–`0x08`、`0x0B`、`0x0C` 和 `0x0E`–`0x1F`——完全无法通过 XML 配置传递 (XML 规范甚至禁止以 `&#1;` 这样的数字字符引用形式使用它们) ；如果值中包含此类字符，处理替换时就会拒绝该值。制表符 (`\t`) 、换行符 (`\n`) 和回车符 (`\r`) 是合法的，往返读写后可逐字节保持不变。
+</Note>
+
+<Note>
+  **升级后实体编码的叶元素值如何变化**
+
+  早期版本会将每个直接通过 `from_env` 获取的值重新解析为 XML，因此未经编码的 `&`、`<` 或 `>` 会因不符合 XML 格式要求而被拒绝。要包含这些字符，只能使用 XML 实体编码：环境变量设为 `a&amp;b` 时会解码为 `a&b`，`&lt;a&gt;1&lt;/a&gt;` 会解码为 `<a>1</a>`，`&#13;` 会解码为回车符。现在，直接通过 `from_env` 获取的值会被视为字面文本，因此上述环境变量值会分别得到原样的 `a&amp;b`、`&lt;a&gt;1&lt;/a&gt;` 和 `&#13;`。这意味着，只有*纯文本*值的含义保持不变：如果环境变量值曾为适配旧的 XML 解析方式而使用实体编码，现在必须改为设置未经编码的文本 (例如设置为 `a&b`；旧版会拒绝该值，新版则会将其作为字面文本 `a&b` 接受) 。
+
+  早期版本会将每个通过 `from_zk` 获取的叶元素值重新解析为 XML，因此未经编码的 `&`、`<` 或 `>` 会因不符合 XML 格式要求而被拒绝。要包含这些字符，只能使用 XML 实体编码：存储为 `a&amp;b` 的值会解码为 `a&b`，`&lt;a&gt;1&lt;/a&gt;` 会解码为 `<a>1</a>`，`&#13;` 会解码为回车符。现在，不以 `<` 开头的叶元素值会保留其原始字节，因此上述节点值现在会分别得到原样的 `a&amp;b`、`&lt;a&gt;1&lt;/a&gt;` 和 `&#13;`。这意味着，只有*纯文本*标量的含义保持不变：如果叶元素值曾为适配旧的 XML 解析方式而使用实体编码，现在必须改为存储未经编码的文本 (例如存储为 `a&b`；旧版会拒绝该值，新版则会将其作为字面文本 `a&b` 接受) 。
+
+  同样的变化也适用于通过叶元素配置项或机密信息中的内联 `<include from_zk="…"/>` 替换的纯文本标量，例如 `<password><include from_zk="/secret"/></password>`：此处的标量现在也会保留其原始字节，因此 `/secret = a&amp;b` (以前会解码为 `a&b`) 现在会得到原样的 `a&amp;b`，必须改为存储未经编码的 `a&b`。使用这种形式时，不要在其周围添加空白字符，因为这些空白字符也会成为最终配置值的一部分；如果需要确保字节完全一致，优先使用直接指定 `<password from_zk="…"/>` 的形式。 (以 `<` 开头的 `from_zk` 值，以及通过 `<include from_zk="…" yaml="true"/>` 引用的 YAML 子树不受影响——只有未标记且不以 `<` 开头的值会按原样保留。) 
+</Note>
+
 <div id="default-values">
-  #### 默认值
+  #### 默认值 {#default-values}
 </div>
 
 带有 `from_env` 或 `from_zk` 属性的元素还可以额外指定 `replace="1"` 属性 (后者必须出现在 `from_env`/`from_zk` 之前) 。
@@ -169,7 +192,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="substitution-with-file-content">
-  ## 使用文件内容进行替换
+  ## 使用文件内容进行替换 {#substitution-with-file-content}
 </div>
 
 也可以用文件内容替换配置中的部分内容。这可以通过两种方式实现：
@@ -199,7 +222,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 如果你想将替换内容与现有配置合并，而不是追加，可以使用 `merge="true"` 属性。例如：`<include from_zk="/some_path" merge="true">`。在这种情况下，现有配置会与替换内容合并，且现有配置中的设置会被替换内容中的值覆盖。
 
 <div id="encryption">
-  ## 加密并隐藏配置
+  ## 加密并隐藏配置 {#encryption}
 </div>
 
 你可以使用对称加密来加密配置元素，例如明文密码或私钥。
@@ -321,7 +344,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="user-settings">
-  ## 用户设置
+  ## 用户设置 {#user-settings}
 </div>
 
 `config.xml` 文件可以指定一个单独的配置文件，其中包含用户设置、profile 和 quotas。该配置的相对路径在 `users_config` 元素中设置。默认值为 `users.xml`。如果省略 `users_config`，则用户设置、profile 和 quotas 直接在 `config.xml` 中指定。
@@ -334,7 +357,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 请注意，配置文件会先在考虑相关设置的情况下进行[合并](#merging)，之后才会处理 include。
 
 <div id="example">
-  ## XML 示例
+  ## XML 示例 {#example}
 </div>
 
 例如，你可以像下面这样为每个用户分别创建一个配置文件：
@@ -474,7 +497,7 @@ map_key:
 ```
 
 <div id="implementation-details">
-  ## 实现细节
+  ## 实现细节 {#implementation-details}
 </div>
 
 对于每个配置文件，服务器在启动时还会生成 `file-preprocessed.xml` 文件。这些文件包含所有已完成的替换和覆盖，仅供参考使用。如果配置文件中使用了 ZooKeeper 替换，但在服务器启动时 ZooKeeper 不可用，则服务器会从预处理文件中加载配置。

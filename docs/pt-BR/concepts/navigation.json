@@ -89,6 +89,7 @@
               "pages": [
                 "pt-BR/concepts/features/operations/insert/inserting-data",
                 "pt-BR/concepts/features/operations/insert/asyncinserts",
+                "pt-BR/concepts/features/operations/insert/async-insert-select",
                 "pt-BR/concepts/features/operations/insert/bulkinserts",
                 "pt-BR/concepts/features/operations/insert/deduplication",
                 "pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries",

@@ -1266,6 +1266,33 @@ SSL 支持由 `libpoco` 库提供。可用的配置选项请参见 [SSLManager.h
 </openSSL>
 ```
 
+## placement {#placement}
+
+服务器运行所在的云可用区和区域。ZooKeeper 客户端根据可用区信息优先选择同一可用区内的主机 (参见 [zookeeper](#zookeeper) 部分中的 `prefer_local_availability_zone`) ；ClickHouse Keeper 则将该信息发布到 `/keeper/availability_zone` 节点。
+
+如果未配置 `placement` 部分，可用区和区域均为空。
+
+可配置以下设置：
+
+| 设置                            | 说明                                                       | 默认值                                  |
+| ----------------------------- | -------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | 从云提供商的实例元数据服务获取可用区：先尝试 AWS，再尝试 GCP。启用后，其他所有设置均会被忽略，区域为空。 | `false`                              |
+| `availability_zone`           | 可用区。                                                     | 空                                    |
+| `availability_zone_from_file` | 当 `availability_zone` 为空时，从该文件读取可用区。如果文件不存在，可用区为空。       | `/run/instance-metadata/node-zone`   |
+| `region`                      | 区域。                                                      | 空                                    |
+| `region_from_file`            | 当 `region` 为空时，从该文件读取区域。如果文件不存在，区域为空。                    | `/run/instance-metadata/node-region` |
+
+部署位置信息仅在服务器启动时读取一次。
+
+**示例**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## part_log {#part_log}
 
 记录与 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 相关的日志事件，例如添加或合并数据。你可以使用这些日志来模拟合并算法并比较其特性，还可以将合并过程可视化。

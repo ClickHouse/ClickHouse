@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -23,7 +23,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يمكن تحديد عدة خوارزميات، وتُختار الخوارزمية المناسبة لكل استعلام بحسب kind/صرامة ومحرك الجدول.
 
-لا يُعدّ تحديد ما إذا كانت خوارزمية قائمة على hash ستكتب إلى القرص جزءًا من هذا الاختيار: إذ إن [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) هما عتبة الكتابة إلى القرص لجميعها (وبمجرد أن تصبح إحدى القيمتين غير صفرية، يمكن لـ `enable_adaptive_memory_spill_scheduler` كتابة join إلى القرص في وقت أبكر عند ضغط الذاكرة)، بينما يُعدّ [`max_rows_in_join`](/ar/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join) حدًا صارمًا لجميعها، ما لم يُعد `legacy_join_size_limits_trigger_spilling` الحدين إلى كونهما محفزين للكتابة إلى القرص. تحدد القيمة التي تختارها كيفية كتابة join إلى القرص: إذ يقسم `grace_hash` الجدول الأيمن بدءًا من الكتلة الأولى، بينما يجمعه `hash` و`parallel_hash` في الذاكرة ويتحولان إلى الكتابة إلى القرص عند تجاوز العتبة.
+تُضبط الكتابة للخوارزميات القائمة على التجزئة بمعزل عن `join_algorithm`. تستخدم جميع الخوارزميات القائمة على التجزئة [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) و[`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) بوصفهما عتبتين للكتابة.
 
 تؤثر معظم الخوارزميات في الاستعلام فقط عندما تكون هي الخوارزمية المحددة له. لكن بعضها يغيّر التخطيط بمجرد إدراجه، حتى لو كان خيارًا احتياطيًا منخفض الأولوية لا يُختار في النهاية، لأن القرار يُتخذ قبل اختيار الخوارزمية. ويوجد تأثيران من هذا النوع:
 
@@ -37,8 +37,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * grace&#95;hash
 
 تُستخدم [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). توفّر Grace hash خيار خوارزمية يتيح تنفيذ joins معقدة بكفاءة مع الحد من استهلاك الذاكرة.
+يُقصد من اختيار `grace_hash` صراحةً استخدامه أساسًا لأغراض التشخيص. لتمكين الكتابة لـ join، اضبط [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) بدلًا من ذلك.
 
-يكون `grace_hash` خارجيًا بدءًا من الكتلة الأولى: إذ يُقسَّم الجدول الأيمن فورًا، بينما يجمعه `hash` و`parallel_hash` في الذاكرة أولًا ولا يقسمانه إلا بعد تجاوز عتبة الكتابة إلى القرص. اختره عندما تعرف مسبقًا أن الجانب الأيمن لن يتسع في الذاكرة وتريد تجاوز المرحلة داخل الذاكرة. عتبة الكتابة إلى القرص نفسها هي التي تستخدمها كل خوارزمية hash، وهي [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)، ويجب أن تكون إحدى القيمتين غير صفرية ما لم يكن `legacy_join_size_limits_trigger_spilling` مفعّلًا. دون عتبة، يُتجاوز `grace_hash` إلى الخوارزمية التالية في القائمة، ويُرفض إذا كان الخوارزمية الوحيدة.
+يكون `grace_hash` خارجيًا بدءًا من الكتلة الأولى: إذ يُقسَّم الجدول الأيمن فورًا، بينما يجمعه `hash` و`parallel_hash` في الذاكرة أولًا ولا يقسمانه إلا بعد تجاوز عتبة الكتابة. اختره عندما تعرف مسبقًا أن الجانب الأيمن لن يتسع في الذاكرة وتريد تجاوز المرحلة داخل الذاكرة. عتبة الكتابة نفسها هي التي تستخدمها كل خوارزمية hash، وهي [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)، ويجب أن تكون إحدى القيمتين غير صفرية ما لم يكن `legacy_join_size_limits_trigger_spilling` مفعّلًا. دون عتبة، يُتجاوز `grace_hash` إلى الخوارزمية التالية في القائمة، ويُرفض إذا كان الخوارزمية الوحيدة.
 
 تقرأ المرحلة الأولى من grace join الجدول الأيمن وتقسّمه إلى N حاوية بحسب قيمة hash لأعمدة المفتاح (يكون N في البداية `grace_hash_join_initial_buckets`). ويتم ذلك بطريقة تضمن إمكانية معالجة كل حاوية بشكل مستقل. تُضاف rows من الحاوية الأولى إلى hash جدول في الذاكرة بينما تُحفظ البقية على القرص. وإذا تجاوز حجم hash جدول عتبة الإفراغ على القرص، يزداد عدد الحاويات مع إعادة تعيين الحاوية المخصصة لكل row. وأي rows لا تنتمي إلى الحاوية الحالية تُفرَّغ ويُعاد تعيينها.
 
@@ -110,7 +111,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 قيمة قديمة، يُرجى عدم استخدامها بعد الآن.
 مماثلة لـ `direct,hash`، أي محاولة استخدام direct join ثم hash join (بهذا الترتيب).
 
-## join_any_take_last_row
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +134,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [محرك الجدول Join](/ar/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ar/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +147,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `ASOF` — لربط التسلسلات ذات المطابقة غير المؤكدة.
 * `Empty string` — إذا لم يتم تحديد `ALL` أو `ANY` في الاستعلام، يطرح ClickHouse استثناء.
 
-## join_on_disk_max_files_to_merge
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +159,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * أي عدد صحيح موجب يبدأ من 2.
 
-## join_output_by_rowlist_perkey_rows_threshold
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +167,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأدنى لمتوسط عدد الصفوف لكل مفتاح في الجدول الأيمن، لتحديد ما إذا كان سيتم إخراج النتائج وفق قائمة الصفوف في hash join.
 
-## join_overflow_mode
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +197,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [عبارة JOIN](/ar/reference/statements/select/join)
 * [محرك الجدول Join](/ar/reference/engines/table-engines/special/join)
 
-## join_use_nulls
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

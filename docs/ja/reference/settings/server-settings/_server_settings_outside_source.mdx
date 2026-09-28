@@ -1265,6 +1265,33 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
 </openSSL>
 ```
 
+## placement {#placement}
+
+サーバーが稼働するクラウドのアベイラビリティゾーンとリージョンを指定します。アベイラビリティゾーンは、ZooKeeper クライアントが同じゾーン内のホストを優先するために使用します ([zookeeper](#zookeeper) セクションの `prefer_local_availability_zone`) 。ClickHouse Keeper もこの情報を使用し、`/keeper/availability_zone` ノードで公開します。
+
+`placement` セクションがない場合、アベイラビリティゾーンとリージョンは空になります。
+
+以下の設定を使用できます。
+
+| 設定                            | 説明                                                                                                | デフォルト値                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | クラウドプロバイダーのインスタンスメタデータサービスからアベイラビリティゾーンを取得します。AWS、GCP の順に試行します。有効にすると、ほかの設定はすべて無視され、リージョンは空になります。 | `false`                              |
+| `availability_zone`           | アベイラビリティゾーン。                                                                                      | 空                                    |
+| `availability_zone_from_file` | `availability_zone` が空の場合に、アベイラビリティゾーンを読み取る元のファイル。ファイルが存在しない場合、アベイラビリティゾーンは空になります。                | `/run/instance-metadata/node-zone`   |
+| `region`                      | リージョン。                                                                                            | 空                                    |
+| `region_from_file`            | `region` が空の場合に、リージョンを読み取る元のファイル。ファイルが存在しない場合、リージョンは空になります。                                       | `/run/instance-metadata/node-region` |
+
+配置先の情報は、サーバーの起動時に一度だけ読み取られます。
+
+**例**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## part_log {#part_log}
 
 [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) に関連するイベントを記録するログです。たとえば、データの追加やマージなどがあります。このログを使うと、マージアルゴリズムをシミュレートして、その特性を比較できます。マージ処理を可視化することも可能です。

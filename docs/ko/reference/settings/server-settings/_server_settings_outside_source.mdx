@@ -1266,6 +1266,33 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </openSSL>
 ```
 
+## placement {#placement}
+
+서버가 실행되는 클라우드 가용 영역(availability zone)과 리전입니다. 가용 영역은 ZooKeeper 클라이언트가 동일한 영역의 호스트를 우선 선택하는 데 사용되며([zookeeper](#zookeeper) 섹션의 `prefer_local_availability_zone`), ClickHouse Keeper에서도 사용되어 `/keeper/availability_zone` 노드에 게시됩니다.
+
+`placement` 섹션이 없으면 가용 영역과 리전은 빈 값이 됩니다.
+
+다음 설정을 사용할 수 있습니다.
+
+| 설정                            | 설명                                                                                                     | 기본값                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| `use_imds`                    | 클라우드 제공업체의 인스턴스 메타데이터 서비스에서 가용 영역을 가져옵니다. AWS를 먼저 시도한 후 GCP를 시도합니다. 활성화하면 다른 모든 설정은 무시되며 리전은 빈 값이 됩니다. | `false`                              |
+| `availability_zone`           | 가용 영역입니다.                                                                                              | 빈 값                                  |
+| `availability_zone_from_file` | `availability_zone`이 비어 있을 때 가용 영역을 읽어올 파일입니다. 파일이 없으면 가용 영역은 빈 값이 됩니다.                                | `/run/instance-metadata/node-zone`   |
+| `region`                      | 리전입니다.                                                                                                 | 빈 값                                  |
+| `region_from_file`            | `region`이 비어 있을 때 리전을 읽어올 파일입니다. 파일이 없으면 리전은 빈 값이 됩니다.                                                 | `/run/instance-metadata/node-region` |
+
+placement 설정은 서버 시작 시 한 번만 읽습니다.
+
+**예시**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## part_log {#part_log}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)와 관련된 이벤트를 로깅합니다. 예를 들어 데이터 추가나 머지와 같은 작업입니다. 이 로그를 사용하면 머지 알고리즘을 시뮬레이션하고 그 특성을 비교할 수 있습니다. 또한 머지 과정을 시각화할 수도 있습니다.

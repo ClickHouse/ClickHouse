@@ -16,24 +16,30 @@ Exemplos de uso:
 * Use em testes para preencher uma tabela grande de forma reproduzível.
 * Gere dados de entrada aleatórios para testes de fuzzing.
 
-<div id="usage-in-clickhouse-server">
-  ## Uso no servidor ClickHouse
-</div>
+## Uso no servidor ClickHouse {#usage-in-clickhouse-server}
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
-Os parâmetros `max_array_length` e `max_string_length` especificam, respectivamente, o comprimento máximo de todas as
-colunas de array ou map e das strings nos dados gerados.
+Os parâmetros `max_array_length` e `max_string_length` especificam, respectivamente, o comprimento máximo de todas
+as colunas de array ou map e das strings nos dados gerados.
+
+A cláusula `SETTINGS` controla como os valores `Nullable`, `Variant`, `Dynamic` e `JSON` são gerados:
+`null_ratio` (padrão `0.0625`) é a probabilidade de um valor ser `NULL` e a probabilidade base
+de uma chave `JSON` estar ausente de uma linha — uma minoria de chaves esparsas fica ausente com frequência várias vezes
+maior; `max_json_depth` (padrão `3`) limita a profundidade de aninhamento dos objetos `JSON` gerados;
+e `max_json_keys_per_object` (padrão `8`) limita o número de chaves geradas em cada nível de um
+objeto. A função de tabela [`generateRandom`](/pt-BR/reference/functions/table-functions/generate) aceita
+as mesmas configurações.
 
 O motor de tabela Generate oferece suporte apenas a consultas `SELECT`.
 
-Ele oferece suporte a todos os [Tipos de dados](/pt-BR/reference/data-types/index) que podem ser armazenados em uma tabela, exceto `AggregateFunction`.
+Ele oferece suporte a todos os [DataTypes](/pt-BR/reference/data-types/index) que podem ser armazenados em uma tabela,
+exceto `AggregateFunction`, `Interval`, `Nothing` e `QBit`.
 
-<div id="example">
-  ## Exemplo
-</div>
+## Exemplo {#example}
 
 **1.** Configure a tabela `generate_engine_table`:
 
@@ -55,9 +61,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-<div id="details-of-implementation">
-  ## Detalhes da implementação
-</div>
+## Detalhes da implementação {#details-of-implementation}
 
 * Não há suporte para:
   * `ALTER`

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="table_disk">
-  ## table_disk
-</div>
+## table_disk {#table_disk}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,24 +25,33 @@ Pris en charge pour les disques de stockage d’objets dont les métadonnées r�
 chiffrées sont prises en charge uniquement avec les disques s3&#95;plain / s3&#95;plain&#95;rewritable inscriptibles, et non
 avec les disques web / web&#95;index en lecture seule.
 
-<div id="table_readonly">
-  ## table_readonly
-</div>
+## table_readonly {#table_readonly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre permettant de marquer la table en lecture seule, afin d’empêcher les insertions et les modifications"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre permettant de mettre une table en lecture seule et d’empêcher les insertions et les modifications"}]}]} />
 
-Si elle est définie sur true, la table est en mode lecture seule et n’effectue aucune modification sur le disque.
+Si ce paramètre est défini sur true, la table est en mode lecture seule.
 
-Toutes les opérations au premier plan qui modifieraient la table sont rejetées : insertions, mutations, `OPTIMIZE` et les commandes de partition qui modifient les données
-(`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, ainsi que `MOVE PARTITION ... TO TABLE` ciblant cette table). Les opérations
-qui ne modifient pas les données de la table, telles que `FREEZE`/`UNFREEZE` et `FORGET PARTITION`, restent autorisées.
+Toutes les opérations au premier plan susceptibles de modifier la table sont rejetées : les insertions, les mutations, `OPTIMIZE` et les commandes de partition qui modifient les données
+(`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, ainsi que `MOVE PARTITION ... TO TABLE` lorsque cette table est la cible). Les opérations
+qui ne modifient pas les données de la table, comme `FREEZE`/`UNFREEZE` et `FORGET PARTITION`, restent autorisées.
 
-Aucun travail en arrière-plan n’est non plus planifié : les merges réguliers, les merges TTL (`DELETE`/`MOVE`/recompression), les merges de recompression, les mutations en arrière-plan,
-et les déplacements de parts en arrière-plan sont tous désactivés. Par conséquent, une table avec un TTL ne récupère plus et ne déplace plus ses données expirées tant que ce paramètre
-est activé.
+Les tâches en arrière-plan qui modifient les données de la table ne sont plus planifiées : les fusions régulières, les fusions liées au TTL (`DELETE`/`MOVE`/recompression), les fusions de recompression, les mutations en arrière-plan
+et les déplacements de parts en arrière-plan sont tous interrompus. Par conséquent, une table dotée d’un TTL ne supprime plus ni ne déplace ses données expirées tant que ce paramètre
+est activé. Le nettoyage s’arrête une fois l’itération en cours terminée. Le chargement asynchrone des parts obsolètes (inactives) effectué après le démarrage par une
+table accessible en écriture est suspendu s’il est encore en attente : aucune autre part n’est chargée, y compris celles dont le chargement était déjà en file d’attente
+mais n’avait pas commencé. Les parts encore non chargées le sont dès que le paramètre est désactivé. Les workers en arrière-plan sont désactivés
+avant la validation de l’instruction `ALTER` qui active le paramètre : aucun nettoyage ni chargement de part ne démarre ainsi sur une table déjà passée durablement en lecture seule. Les autres
+opérations en cours, notamment les chargements de parts déjà commencés, peuvent se terminer.
 
-Le paramètre peut toujours être rétabli avec `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (ou `RESET SETTING`). Il n’est pas pris en charge pour `ReplicatedMergeTree`.
+Le cache des statistiques en mémoire continue d’être rafraîchi périodiquement. Définissez `refresh_statistics_interval = 0` pour désactiver également cette tâche en arrière-plan.
+Les lectures en flux (`SELECT ... STREAM`) continuent de fonctionner : la tâche en arrière-plan qui gère leurs abonnements se contente de lire les parts et s’exécute également sur les tables en lecture seule.
+
+Le paramètre peut toujours être désactivé avec `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (ou `RESET SETTING`). Les workers en arrière-plan
+qui n’avaient pas démarré pour la table en lecture seule démarrent alors : les fusions, les mutations, les déplacements, le TTL et le nettoyage reprennent sans redémarrage du serveur.
+Les parts obsolètes (inactives) sont chargées avant que le nettoyage puisse supprimer les parts vides qui les recouvrent. La table reste en lecture seule pour les requêtes concurrentes pendant
+toute la durée de cette instruction `ALTER` : elle n’accepte de nouveau les écritures qu’une fois le statement terminé, et non dès la validation de ses métadonnées.
+Ce paramètre n’est pas pris en charge pour `ReplicatedMergeTree`.
 
 {/*AUTOGENERATED_END*/}

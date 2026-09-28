@@ -15,9 +15,7 @@ import S3Settings from '/snippets/es/_s3_settings.mdx';
 > descripción más detallada de cada método de copia de seguridad, consulta las páginas de cada método específico
 > en la barra lateral.
 
-<div id="introduction">
-  ## Introducción
-</div>
+## Introducción {#introduction}
 
 Aunque la [replicación](/es/reference/engines/table-engines/mergetree-family/replication) ofrece protección frente a fallos de hardware, no
 protege contra errores humanos: eliminación accidental de datos, eliminación de la
@@ -70,9 +68,7 @@ Las copias de seguridad pueden:
 * estar protegidas con contraseña
 * hacerse de [tablas del sistema, tablas de registro o tablas de gestión de acceso](#system-backups)
 
-<div id="backup-types">
-  ## Tipos de copias de seguridad
-</div>
+## Tipos de copias de seguridad {#backup-types}
 
 Las copias de seguridad pueden ser completas o incrementales. Las copias de seguridad completas son una copia íntegra de los datos, mientras que las incrementales contienen únicamente los cambios realizados desde la última copia de seguridad completa.
 
@@ -84,18 +80,14 @@ Según sus necesidades, puede que le convenga usar:
 * **Copias de seguridad incrementales** para bases de datos más grandes o cuando sea necesario realizar copias de seguridad con frecuencia y de forma rentable.
 * **Ambas**; por ejemplo, copias de seguridad completas semanales y copias de seguridad incrementales diarias.
 
-<div id="synchronous-vs-asynchronous">
-  ## Copias de seguridad síncronas vs. asíncronas
-</div>
+## Copias de seguridad síncronas vs. asíncronas {#synchronous-vs-asynchronous}
 
 Los comandos `BACKUP` y `RESTORE` también se pueden marcar como `ASYNC`. En este caso, el
 comando de copia de seguridad devuelve el control de inmediato y el proceso de copia de seguridad se ejecuta en segundo plano.
 Si los comandos no se marcan como `ASYNC`, el proceso de copia de seguridad es síncrono y
 el comando queda bloqueado hasta que se completa la copia de seguridad.
 
-<div id="concurrent-vs-non-concurrent">
-  ## Copias de seguridad concurrentes y no concurrentes
-</div>
+## Copias de seguridad concurrentes y no concurrentes {#concurrent-vs-non-concurrent}
 
 De forma predeterminada, ClickHouse permite realizar copias de seguridad y restauraciones de forma concurrente. Esto significa que
 puede iniciar varias operaciones de copia de seguridad o restauración simultáneamente. Sin embargo,
@@ -119,9 +111,7 @@ El valor predeterminado de ambos es true, por lo que, por defecto, se permiten
 las copias de seguridad/restauraciones concurrentes. Cuando estas configuraciones están en false en un clúster, solo se permite que una única copia de seguridad/restauración
 se ejecute en un clúster a la vez.
 
-<div id="compressed-vs-uncompressed">
-  ## Copias de seguridad comprimidas y sin comprimir
-</div>
+## Copias de seguridad comprimidas y sin comprimir {#compressed-vs-uncompressed}
 
 Las copias de seguridad de ClickHouse admiten compresión mediante la configuración `compression_method` y `compression_level`.
 
@@ -133,9 +123,7 @@ BACKUP TABLE test.table
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="using-named-collections">
-  ## Uso de colecciones con nombre
-</div>
+## Uso de colecciones con nombre {#using-named-collections}
 
 Las colecciones con nombre le permiten almacenar pares clave-valor (como credenciales de S3, endpoints y opciones de configuración) que pueden reutilizarse en operaciones de copia de seguridad y restauración.
 Ayudan a:
@@ -147,9 +135,7 @@ Ayudan a:
 
 Consulte [&quot;colecciones con nombre&quot;](/es/concepts/features/configuration/server-config/named-collections) para obtener más información.
 
-<div id="system-backups">
-  ## Copia de seguridad de tablas del sistema, de registro o de gestión de acceso
-</div>
+## Copia de seguridad de tablas del sistema, de registro o de gestión de acceso {#system-backups}
 
 Las tablas del sistema también pueden incluirse en los flujos de trabajo de copia de seguridad y restauración, pero su
 inclusión depende de su caso de uso específico.
@@ -176,42 +162,109 @@ Esta funcionalidad solo funciona para configuraciones gestionadas mediante coman
 Las configuraciones de acceso definidas en los archivos de configuración del ClickHouse server (p. ej. `users.xml`)
 no se incluyen en las copias de seguridad y no pueden restaurarse mediante este método.
 
-<div id="syntax">
-  ## Sintaxis general
-</div>
+## Sintaxis general {#syntax}
 
 <Syntax />
 
-<div id="command-summary">
-  ### Resumen de comandos
-</div>
+### Resumen de comandos {#command-summary}
 
 A continuación, se detallan cada uno de los comandos anteriores:
 
-| **Comando**                                                            | **Descripción**                                                                                                                                                                  |   |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
-| `BACKUP`                                                               | Crea una copia de seguridad de los objetos especificados                                                                                                                         |   |
-| `RESTORE`                                                              | Restaura objetos desde una copia de seguridad                                                                                                                                    |   |
-| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Hace una copia de seguridad de una tabla específica o la restaura (se puede cambiar de nombre)                                                                                   |   |
-| `[PARTITION[S] partition_expr [,...]]`                                 | Solo hace una copia de seguridad de particiones específicas de la tabla o las restaura                                                                                           |   |
-| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Hace una copia de seguridad de un objeto Diccionario o lo restaura                                                                                                               |   |
-| `DATABASE database_name [AS database_name_in_backup]`                  | Hace una copia de seguridad de una base de datos completa o la restaura (se puede cambiar de nombre)                                                                             |   |
-| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Hace una copia de seguridad de una tabla temporal o la restaura (se puede cambiar de nombre)                                                                                     |   |
-| `VIEW view_name [AS view_name_in_backup]`                              | Hace una copia de seguridad de una vista o la restaura (se puede cambiar de nombre)                                                                                              |   |
-| `[EXCEPT TABLES ...]`                                                  | Excluye tablas específicas al hacer una copia de seguridad de una base de datos                                                                                                  |   |
-| `ALL`                                                                  | Hace una copia de seguridad de todo o lo restaura (todas las bases de datos, tablas, etc.). Antes de la versión 23.4 de ClickHouse, `ALL` solo se aplicaba al comando `RESTORE`. |   |
-| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Excluye tablas o bases de datos específicas al usar `ALL`                                                                                                                        |   |
-| `[ON CLUSTER 'cluster_name']`                                          | Ejecuta la copia de seguridad o la restauración en un clúster de ClickHouse                                                                                                      |   |
-| `TO\|FROM`                                                             | Dirección: `TO` para el destino de la copia de seguridad, `FROM` para el origen de la restauración                                                                               |   |
-| `File('<path>/<filename>')`                                            | Almacena en el sistema de archivos local o restaura desde él                                                                                                                     |   |
-| `Disk('<disk_name>', '<path>/')`                                       | Almacena en un disco configurado o restaura desde él                                                                                                                             |   |
-| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Almacena en Amazon S3 o almacenamiento compatible con S3, o restaura desde ellos                                                                                                 |   |
-| `[SETTINGS ...]`                                                       | Consulta a continuación la lista completa de opciones de configuración                                                                                                           |   |
-| `[ASYNC]`                                                              | Hace que la operación se ejecute de forma asíncrona (devuelve inmediatamente un ID que puedes supervisar)                                                                        |   |
+| **Comando**                                                            | **Descripción**                                                                                                                                                                                                                                                                                                  |   |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | Crea una copia de seguridad de los objetos especificados                                                                                                                                                                                                                                                         |   |
+| `RESTORE`                                                              | Restaura objetos desde una copia de seguridad                                                                                                                                                                                                                                                                    |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Hace una copia de seguridad de una tabla específica o la restaura (se puede cambiar de nombre)                                                                                                                                                                                                                   |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | Solo hace una copia de seguridad de particiones específicas de la tabla o las restaura                                                                                                                                                                                                                           |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Hace una copia de seguridad de un objeto Diccionario o lo restaura                                                                                                                                                                                                                                               |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | Hace una copia de seguridad de una base de datos completa o la restaura (se puede cambiar de nombre)                                                                                                                                                                                                             |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Hace una copia de seguridad de una tabla temporal o la restaura (se puede cambiar de nombre)                                                                                                                                                                                                                     |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | Hace una copia de seguridad de una vista o la restaura (se puede cambiar de nombre)                                                                                                                                                                                                                              |   |
+| `[EXCEPT TABLES ...]`                                                  | Excluye tablas específicas al hacer una copia de seguridad de una base de datos                                                                                                                                                                                                                                  |   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               | **(Solo BACKUP)** Hace una copia de seguridad de la definición de una tabla sin sus filas. A diferencia de `EXCEPT TABLES`, no excluye la tabla por completo. Solo se aplica al elemento en el que se especifica: consulta [Cómo hacer una copia de seguridad de una tabla sin sus datos](#backup-without-data). |   |
+| `ALL`                                                                  | Hace una copia de seguridad de todo o lo restaura (todas las bases de datos, tablas, etc.). Antes de la versión 23.4 de ClickHouse, `ALL` solo se aplicaba al comando `RESTORE`.                                                                                                                                 |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Excluye tablas o bases de datos específicas al usar `ALL`                                                                                                                                                                                                                                                        |   |
+| `[ON CLUSTER 'cluster_name']`                                          | Ejecuta la copia de seguridad o la restauración en un clúster de ClickHouse                                                                                                                                                                                                                                      |   |
+| `TO\|FROM`                                                             | Dirección: `TO` para el destino de la copia de seguridad, `FROM` para el origen de la restauración                                                                                                                                                                                                               |   |
+| `File('<path>/<filename>')`                                            | Almacena en el sistema de archivos local o restaura desde él                                                                                                                                                                                                                                                     |   |
+| `Disk('<disk_name>', '<path>/')`                                       | Almacena en un disco configurado o restaura desde él                                                                                                                                                                                                                                                             |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Almacena en Amazon S3 o almacenamiento compatible con S3, o restaura desde ellos                                                                                                                                                                                                                                 |   |
+| `[SETTINGS ...]`                                                       | Consulta a continuación la lista completa de opciones de configuración                                                                                                                                                                                                                                           |   |
+| `[ASYNC]`                                                              | Hace que la operación se ejecute de forma asíncrona (devuelve inmediatamente un ID que puedes supervisar)                                                                                                                                                                                                        |   |
 
-<div id="settings">
-  ### Configuración
-</div>
+### Copia de seguridad de una tabla sin sus datos {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` incluye la definición de una tabla en la copia de seguridad, pero no sus filas. Resulta útil
+para tablas cuyo contenido puede regenerarse después de una restauración, por ejemplo, las tablas de destino de vistas
+materializadas.
+
+La cláusula determina lo que escribe `BACKUP`; no cambia lo que `RESTORE` puede hacer con el resultado. En
+el caso de una tabla que `RESTORE` puede volver a crear, una definición sin filas se restaura como una tabla vacía. Sin embargo, no hace
+restaurable una tabla que de otro modo no lo sería: que una definición de la copia de seguridad pueda convertirse de nuevo
+en una tabla depende del motor, y algunos motores directamente no lo permiten; consulte
+[Motores que `RESTORE` no puede volver a crear](#engines-restore-cannot-recreate).
+
+El alcance de la cláusula se limita al elemento en el que se especifica:
+
+* En un elemento `DATABASE` o `ALL`, puede indicar cualquier tabla incluida en la copia de seguridad de ese elemento:
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+* En un elemento que hace referencia a un solo objeto (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`), solo
+  el objeto de ese elemento está dentro del ámbito, por lo que la cláusula debe especificar ese objeto y ningún otro. Defina un elemento y
+  una cláusula propios para cada tabla:
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+Si una tabla se menciona tanto en un elemento propio como en la cláusula `EXCEPT DATA FROM` de un elemento más amplio,
+sus datos **sí** se incluyen en la copia de seguridad: al especificar una tabla en un elemento, también se solicitan sus datos. Lo mismo ocurre con `EXCEPT TABLES`,
+donde una tabla mencionada explícitamente se incluye en la copia de seguridad aunque un elemento más amplio la excluya.
+
+Los datos de la tabla interna de una vista materializada (o de las tablas internas de una tabla `TimeSeries`) se
+excluyen mediante el nombre del objeto externo; la cláusula no acepta los nombres de las tablas internas.
+
+`EXCEPT DATA FROM {TABLE|TABLES}` solo es válida para `BACKUP`. `RESTORE` la rechaza en lugar de aceptarla
+sin que tenga efecto.
+
+#### Motores que `RESTORE` no puede recrear {#engines-restore-cannot-recreate}
+
+Algunos motores no se pueden recrear con `RESTORE` bajo ninguna circunstancia, se use o no `EXCEPT DATA FROM {TABLE|TABLES}`. En esas tablas, la cláusula sigue determinando el tamaño de la copia de seguridad, pero no permite restaurar una tabla vacía: no se restaura ninguna tabla porque `RESTORE` se niega a crearla.
+
+El caso más importante es el de una tabla `MaterializedPostgreSQL` independiente. En cuanto se creara, empezaría a replicar datos desde la fuente PostgreSQL activa y mezclaría la instantánea de la copia de seguridad con el estado actual de la fuente remota. Por eso, `RESTORE` rechaza su creación en la fábrica de almacenamiento, antes de que se cree la tabla, con `NOT_IMPLEMENTED`. Esta limitación es propia del motor y también se aplica a una copia de seguridad completa convencional.
+
+El procedimiento admitido consiste en restaurar la tabla con otro nombre en una tabla `ReplacingMergeTree` creada previamente con la estructura de la tabla anidada (incluidas las columnas `_sign` y `_version`):
+
+```sql
+-- Back up the definition without the rows: they are replicated from PostgreSQL and can be replicated again
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLE mydb.pg_table TO Disk('backups', 'mydb/')
+
+CREATE TABLE mydb.plain_target
+(
+    key Int32,
+    value Int32,
+    _sign Int8 MATERIALIZED 1,
+    _version UInt64 MATERIALIZED 1
+)
+ENGINE = ReplacingMergeTree(_version) ORDER BY key
+
+-- Succeeds, and leaves `mydb.plain_target` empty because the backup carries no rows for `mydb.pg_table`
+RESTORE TABLE mydb.pg_table AS mydb.plain_target FROM Disk('backups', 'mydb/')
+SETTINGS allow_different_table_def = 1
+```
+
+`allow_different_table_def` es necesario porque la definición almacenada en la copia de seguridad utiliza el
+motor `MaterializedPostgreSQL`, que se restaura deliberadamente como un `ReplacingMergeTree` estándar.
+Sin `EXCEPT DATA FROM TABLE`, el mismo `RESTORE` transfiere también las filas.
+
+### Configuración {#settings}
 
 **Configuración general de copia de seguridad y restauración**
 
@@ -225,9 +278,7 @@ A continuación, se detallan cada uno de los comandos anteriores:
 
 <AzureSettings />
 
-<div id="check-the-status-of-backups">
-  ## Administración y resolución de problemas
-</div>
+## Administración y resolución de problemas {#check-the-status-of-backups}
 
 El comando de copia de seguridad devuelve un `id` y un `status`, y ese `id` puede usarse para
 obtener el estado de la copia de seguridad. Esto es muy útil para comprobar el progreso de copias de seguridad

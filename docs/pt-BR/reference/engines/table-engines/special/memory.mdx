@@ -21,6 +21,8 @@ O motor Memory armazena dados na RAM, em formato não comprimido. Os dados são 
 O acesso concorrente aos dados é sincronizado. Os bloqueios são curtos: operações de leitura e gravação não bloqueiam umas às outras.
 Índices não são suportados. A leitura é paralelizada.
 
+As leituras suportam `PREWHERE`, incluindo a movimentação automática de condições `WHERE` controlada pela configuração [`optimize_move_to_prewhere`](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere): primeiro, apenas as colunas das condições são lidas, e as colunas restantes são lidas somente para os blocos em que alguma linha passa no filtro, e apenas para as linhas que passam. Isso é especialmente vantajoso em conjunto com `compress = true`, pois, com uma condição seletiva, a maioria das colunas nunca chega a ser descomprimida. `SELECT count() FROM table` sem filtro é respondido a partir dos metadados, sem ler os dados.
+
 A produtividade máxima (mais de 10 GB/s) é alcançada em consultas simples, porque não há leitura de disco, descompressão nem desserialização de dados. (Vale observar que, em muitos casos, a produtividade do motor MergeTree é quase tão alta.)
 Ao reiniciar o servidor, os dados desaparecem da tabela e ela fica vazia.
 Normalmente, o uso desse motor de tabela não se justifica. No entanto, ele pode ser usado para testes e para tarefas em que a velocidade máxima é necessária com um número relativamente pequeno de linhas (até aproximadamente 100.000.000).
@@ -29,9 +31,7 @@ O motor Memory é usado pelo sistema para tabelas temporárias com dados externo
 
 É possível especificar limites superior e inferior para limitar o tamanho da tabela do motor Memory, permitindo efetivamente que ela atue como um buffer circular (consulte [Parâmetros do motor](#engine-parameters)).
 
-<div id="engine-parameters">
-  ## Parâmetros do motor
-</div>
+## Parâmetros do motor {#engine-parameters}
 
 * `min_bytes_to_keep` — Quantidade mínima de bytes a manter quando a tabela Memory estiver sujeita a limite de tamanho.
   * Valor padrão: `0`
@@ -46,9 +46,7 @@ O motor Memory é usado pelo sistema para tabelas temporárias com dados externo
 * `compress` - Indica se os dados devem ser compactados na memória.
   * Valor padrão: `false`
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 **Inicialize as configurações**
 
@@ -64,9 +62,7 @@ ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 100
 
 **Observação:** Os parâmetros de limite de `bytes` e `rows` podem ser definidos ao mesmo tempo; no entanto, serão respeitados os menores limites de `max` e `min`.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 ```sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;

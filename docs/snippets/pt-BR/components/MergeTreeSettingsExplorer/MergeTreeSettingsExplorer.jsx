@@ -499,7 +499,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 9,
+      count: 10,
       settings: [
         { name: "min_absolute_delay_to_close", path: "/min#min_absolute_delay_to_close", default: "0" },
         { name: "min_columns_to_activate_adaptive_write_buffer", path: "/min#min_columns_to_activate_adaptive_write_buffer", default: "500" },
@@ -509,7 +509,8 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "min_merge_bytes_to_use_direct_io", path: "/min#min_merge_bytes_to_use_direct_io", default: "10737418240" },
         { name: "min_partition_age_to_force_merge_seconds", path: "/min#min_partition_age_to_force_merge_seconds", default: "0" },
         { name: "min_parts_to_merge_at_once", path: "/min#min_parts_to_merge_at_once", default: "0" },
-        { name: "min_replicated_logs_to_keep", path: "/min#min_replicated_logs_to_keep", default: "10" }
+        { name: "min_replicated_logs_to_keep", path: "/min#min_replicated_logs_to_keep", default: "10" },
+        { name: "min_unreserved_disk_space_for_merge", path: "/min#min_unreserved_disk_space_for_merge", default: "0" }
       ],
       children: []
     },

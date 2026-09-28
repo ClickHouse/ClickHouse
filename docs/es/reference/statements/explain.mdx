@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## Tipos de EXPLAIN
+## Tipos de EXPLAIN {#explain-types}
 
 * `AST` — Árbol de sintaxis abstracta.
 * `SYNTAX` — Texto de la consulta tras las optimizaciones a nivel de AST.
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — Número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta.
 * `TABLE OVERRIDE` — Resultado validado de una sobrescritura de tabla sobre el esquema de una función de tabla.
 
-### EXPLAIN AST
+### EXPLAIN AST {#explain-ast}
 
 Muestra el AST de la consulta. Admite todo tipo de consultas, no solo `SELECT`.
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX
+### EXPLAIN SYNTAX {#explain-syntax}
 
 Muestra el árbol de sintaxis abstracta (AST) de una consulta tras el análisis sintáctico.
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 Configuración:
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN
+### EXPLAIN PLAN {#explain-plan}
 
 Muestra los pasos del plan de consulta.
 
@@ -663,7 +663,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 Configuración:
 
@@ -703,7 +703,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE
+### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` sí ejecuta la consulta, descarta las filas del resultado y muestra el mismo árbol del plan que `EXPLAIN PLAN`, con cada paso anotado con lo que realmente ocurrió en tiempo de ejecución.
 
@@ -723,6 +723,7 @@ Configuración:
 * `pretty` — consulte la sección [EXPLAIN PLAN](#explain-plan). Valor predeterminado: 1.
 * `processors` — En `EXPLAIN ANALYZE`, muestra una línea adicional por etapa con la distribución del tiempo transcurrido por procesador: `min`, `median`, `max` y `sum`. Es útil para detectar desequilibrios de carga entre procesadores paralelos. Valor predeterminado: 0.
 * `matches` — En `EXPLAIN ANALYZE`, hace que los pasos de join realicen el registro adicional necesario para las métricas `matched`, `match rate` y `fanout` en los casos en que esos valores no puedan derivarse de lo que produce el join. Cuando pueden derivarse, se informan sin esta opción. Consulte [Pasos de join](#explain-analyze-join-steps). Valor predeterminado: 0.
+* `time` — En `EXPLAIN ANALYZE`, muestra líneas `Time` y `Concurrency` por paso con el tiempo de reloj y el nivel de concurrencia del paso y de su rama. Consulte [Tiempo de reloj y niveles de concurrencia de pasos y ramas](#explain-analyze-concurrency). Valor predeterminado: 1.
 
 <Note>
   Como `EXPLAIN ANALYZE` realmente ejecuta la consulta encapsulada, se comporta como esa
@@ -749,29 +750,38 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
-  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
-  Peak memory: 28.98 KiB
+  Time:        22.65 ms (planning 7.98 ms · execution 14.66 ms)
+  Execution:   in steps 3.46 ms (23.60%) · outside steps 16.60 us (0.11%) · idle 11.19 ms (76.29%)
+  Read:        1.00 million rows, 8.00 MB (68.20 million rows/s., 545.59 MB/s.)
+  Peak memory: 16.00 KiB
 
 Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
 │  I/O: rows 10 → 10 · 90 B → 90 B
-│    time 21.82 us (0.5%) · parallelism 0.98/1
+│  Time: step 12.09 us (0.08%) · branch 3.46 ms (23.60%)
+│  Concurrency: step 1.00/16 · branch 4.96/16
+│    time 12.36 us (0.08%) · parallelism 0.98/1
 └──Aggregating
    │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
    │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
-   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
-   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   │  Time: step 2.03 ms (13.85%) · branch 3.45 ms (23.52%)
+   │  Concurrency: step 5.93/16 · branch 4.97/16
+   │    Stage (partial aggregation): time 1.69 ms (11.50%) · parallelism 1.80/15
+   │    Stage (final aggregation): time 351.39 us (2.40%) · parallelism 1.10/16
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
-      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      │  Time: step 2.02 ms (13.78%) · branch 2.76 ms (18.81%)
+      │  Concurrency: step 7.13/16 · branch 5.87/16
+      │    time 2.02 ms (13.81%) · parallelism 2.26/11
       └──ReadFromSystemNumbers
             Output: number
             I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
-              time 993.94 us (23.3%) · parallelism 7.52/15
+            Time: step 2.58 ms (17.57%) · branch 2.58 ms (17.57%)
+            Concurrency: step 5.98/16 · branch 5.98/16
+              time 2.58 ms (17.58%) · parallelism 3.55/15
 ```
 
 Veamos la salida. Primero, veamos el encabezado.
@@ -779,11 +789,13 @@ Veamos la salida. Primero, veamos el encabezado.
 ```txt
    Query summary:
      Time:        <total> (planning <planning> · execution <execution>)
+     Execution:   in steps <t> (<share>%) · outside steps <t> (<share>%) · idle <t> (<share>%)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
 * `Time` — tiempo total dividido en las fases de planificación (es decir, creación del plan + optimización del plan + construcción de la canalización) y ejecución (ejecución de la canalización).
+* `Execution` — no se muestra cuando `time = 0`. Desglosa el tiempo de ejecución en `in steps`, `outside steps` e `idle`. La suma de estas partes equivale a `execution`. Consulte [Tiempo de reloj y niveles de concurrencia de los pasos y las ramas](#explain-analyze-concurrency).
 * `Read` — filas y bytes sin comprimir leídos de las tablas, junto con el rendimiento: los mismos valores que el pie de la consulta normal muestra como &quot;Processed&quot;.
 * `Peak memory` — memoria máxima utilizada por la consulta.
 
@@ -799,11 +811,11 @@ Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). E
 * `rows <in> → <out>` — filas que entraron y salieron del paso; (`<selectivity>`%) muestra cuánto filtró (`out/in`) o expandió los datos el paso; se oculta cuando las filas de entrada son iguales a las de salida y cuando las filas de entrada son iguales a `0`.
 * `<bytes_in> → <bytes_out>` — bytes en memoria sin comprimir que fluyen por el paso (se omite cuando ambos son cero).
 * `time <t> (<share>%)` — tiempo de reloj durante el que la etapa estuvo activa y su proporción del tiempo de ejecución de la consulta (es decir, sin incluir el tiempo de build). Tenga en cuenta que las proporciones pueden sumar más del 100% porque las etapas y los pasos se ejecutan de forma concurrente.
-* `parallelism <avg>/<max>` — número medio de hilos de CPU trabajando a la vez dentro de esta etapa, sobre el máximo que podía usar. Un valor cercano al máximo significa que la etapa estuvo bien paralelizada; un valor cercano a 1 significa que se ejecutó casi siempre en serie.
+* `parallelism <avg>/<max>` — número medio de hilos de CPU trabajando a la vez dentro de esta etapa, sobre el máximo que podía usar. Esta métrica se limita a la etapa: no cuenta los hilos que trabajan al mismo tiempo en otros pasos de la consulta. Un valor cercano al máximo significa que la etapa estuvo bien paralelizada; un valor cercano a 1 significa que se ejecutó casi siempre en serie.
 * `Stage (<stage>)` — el nombre de la etapa. Un paso con una sola etapa imprime la línea de tiempo directamente, sin una etiqueta `Stage (...)`. Los pasos con varias etapas imprimen una línea etiquetada por etapa; por ejemplo, `Aggregating` muestra `Stage (partial aggregation)` y `Stage (final aggregation)`, y un hash join muestra `Stage (build)` y `Stage (probe)`.
 
 <Note>
-  ClickHouse paraleliza no solo la ejecución de tareas dentro de un paso del plan, sino también la ejecución de los propios pasos del plan. La métrica `parallelism` refleja solo el trabajo de este paso. Otros pasos pueden ejecutarse de forma concurrente, por lo que este valor no muestra cómo se compara el paralelismo del paso con el de toda la consulta.
+  ClickHouse paraleliza no solo la ejecución de tareas dentro de un paso del plan, sino también la ejecución de los propios pasos del plan. La métrica `parallelism` refleja solo el trabajo de este paso. Otros pasos pueden ejecutarse de forma concurrente, por lo que este valor no muestra cómo se compara el paralelismo del paso con el de toda la consulta. Para ver la concurrencia de toda la consulta, consulte la métrica `Concurrency` que se muestra con `time = 1` ([Tiempo de reloj y niveles de concurrencia de pasos y ramas](#explain-analyze-concurrency)).
 </Note>
 
 <Note>
@@ -813,7 +825,7 @@ Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). E
   2. el número máximo de hilos de procesamiento de consultas configurado en `max_threads`.
 </Note>
 
-#### Pasos de join
+#### Pasos de join {#explain-analyze-join-steps}
 
 En un paso de join, `EXPLAIN ANALYZE` muestra líneas que comparan las estimaciones del optimizador de orden de join con lo que ocurrió realmente (consulte [Métricas de join estimadas frente a reales](#explain-analyze-join-estimation)) y líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación del join. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las dos implementaciones que esta configuración no puede seleccionar: un join `CROSS` o `COMMA`, cualquier sección `ON` sin igualdad de clave y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
 
@@ -834,7 +846,7 @@ Para cada lado, `EXPLAIN ANALYZE` informa de lo siguiente:
 
 Un valor que no puede calcularse con exactitud se informa como `not collected` en lugar de `0`. `match rate` y `fanout` se derivan de `matched`, por lo que, si un lado no dispone de este valor, los tres se informan como `not collected`.
 
-#### Métricas estimadas frente a reales del join
+#### Métricas estimadas frente a reales del join {#explain-analyze-join-estimation}
 
 Un paso de join incluye las estimaciones del optimizador de orden de join —las mismas que muestra `EXPLAIN PLAN` (consulta la sección [EXPLAIN PLAN](#explain-plan))— y `EXPLAIN ANALYZE` imprime cada una de ellas junto al valor medido:
 
@@ -872,7 +884,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### Fanout
+#### Fanout {#explain-analyze-fanout}
 
 `fanout` mide la multiplicación de filas:
 
@@ -887,7 +899,7 @@ Un `outer join` genera una fila de salida rellenada con `NULL` por cada fila del
 * `fanout = 1` — un join 1:1 sin duplicados; cada fila coincidente generó exactamente una fila de salida.
 * `fanout > 1` — un join 1:N; las claves duplicadas del otro lado multiplicaron las filas. Un valor alto en ambos lados a la vez indica una explosión cartesiana no intencionada.
 
-#### Cuándo los números requieren `matches = 1`
+#### Cuándo los números requieren `matches = 1` {#explain-analyze-matches}
 
 La mayoría de estos números se obtienen de datos que el join ya genera de todos modos y se muestran con un `EXPLAIN ANALYZE` normal. El resto requiere un seguimiento que el join no realizaría de otro modo, por lo que solo se muestra con `EXPLAIN ANALYZE matches = 1`. Cuáles son depende del algoritmo; en la familia hash hay dos casos:
 
@@ -934,7 +946,7 @@ El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sig
 
 Cuando ambos algoritmos informan un número, los resultados coinciden. Los algoritmos de fusión simplemente disponen de más información; no difieren en cuanto a lo que constituye una coincidencia.
 
-#### Líneas específicas del algoritmo
+#### Líneas específicas del algoritmo {#explain-analyze-join-algorithm-lines}
 
 Veamos las líneas que añade cada implementación de JOIN además de las anteriores.
 
@@ -991,7 +1003,7 @@ Ambos lados informan `matched not collected` aquí: un predicado constante empar
 
 Para un join con el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join), se muestran ambos lados, junto con la línea `Hash table:`, que describe la tabla preconstruida. El lado derecho cuenta las filas almacenadas en el motor, no las filas de una compilación específica de cada consulta.
 
-#### Tiempos por procesador
+#### Tiempos por procesador {#explain-analyze-processors}
 
 Con `processors = 1`, se imprime una línea adicional debajo de cada etapa que muestra la distribución del tiempo transcurrido entre los procesadores de la etapa:
 
@@ -1001,7 +1013,35 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` es el número de procesadores de la etapa. Una gran diferencia entre `median` y `max` apunta a un desequilibrio de carga entre los procesadores paralelos.
 
-### EXPLAIN ESTIMATE
+#### Tiempo de reloj y niveles de concurrencia por paso y rama {#explain-analyze-concurrency}
+
+Salvo que `time = 0`, se imprimen dos líneas adicionales por cada paso del plan de consulta:
+
+```txt
+Time: step <t> (<share>%) · branch <t> (<share>%)
+Concurrency: step <n>/<m> · branch <n>/<m>
+```
+
+Aquí `step` se refiere al paso en sí. `branch` se refiere al subárbol que tiene ese paso como raíz: el propio paso y todos los que están por debajo de él en el plan.
+
+* `Time` — el tiempo de reloj durante el cual al menos un thread trabajó en el paso (`step`) o en cualquier paso del subárbol (`branch`). `<share>` expresa ese tiempo como porcentaje del tiempo de ejecución de la consulta.
+* `Concurrency` — el número medio de threads ocupados en *cualquier* paso de la consulta —no solo en este— mientras el paso (`step`) o su subárbol (`branch`) estaban activos. `<m>` es el número máximo de threads que podía utilizar la consulta. Los pasos sin procesadores propios, como `Union` cuando sus entradas ya tienen el mismo encabezado, muestran `Unknown` para `step`: no hay trabajo que medir. El valor de `branch` sí se muestra.
+
+Ambas métricas se calculan a partir de intervalos de trabajo. Cada vez que un thread termina una tarea, el ejecutor registra un intervalo: la hora de inicio, la hora de finalización y el paso al que corresponde el trabajo.
+
+El valor de `Time` de un paso es la duración de la unión de sus intervalos. Los huecos, durante los cuales ningún thread trabajó en el paso, no se cuentan. Para calcular el valor de `Time` de una rama, primero se unen los intervalos de todos los pasos del subárbol.
+
+El `branch` del paso raíz abarca todo el plan, pero su porcentaje suele ser inferior al 100 %. La línea `Execution` del resumen de la consulta muestra en qué se empleó el resto del tiempo de ejecución (consulte el resumen de la consulta en el ejemplo anterior):
+
+* `in steps` — la unión de los intervalos de todos los pasos del plan. Equivale al tiempo de `branch` del paso raíz, y su porcentaje es el mismo.
+* `outside steps` — el tiempo durante el cual al menos un thread ejecutó un procesador, pero ninguno de los procesadores en ejecución pertenecía a un paso de este plan: el sumidero de salida, `Resize`, las transformaciones de conversión y los pasos de planes a los que no se puede llegar desde este.
+* `idle` — el tiempo durante el cual ningún thread ejecutó un procesador: el arranque y la detención del ejecutor, así como los momentos en que todos los threads estaban esperando.
+
+Los porcentajes de `Time`, los porcentajes de `time` por etapa y los porcentajes de `Execution` utilizan el mismo denominador, por lo que pueden compararse entre sí.
+
+`Concurrency` es el tiempo total de actividad de todos los threads de la consulta dentro de esa unión, dividido entre la duración de la unión. Cuenta los threads ocupados en *cualquier* paso de la consulta, a diferencia de la métrica `parallelism` por etapa, que solo cuenta los threads de esa etapa. Responde a la pregunta: &quot;mientras este paso (o esta rama) estaba activo, ¿hasta qué punto estuvo ocupada la consulta en su conjunto?&quot; Un valor cercano a `<m>` significa que la consulta mantuvo el paralelismo máximo durante la duración de ese paso. Un valor cercano a `1` significa que, durante ese tiempo, el trabajo de la consulta se ejecutó en serie: en el caso de `step`, el único thread ocupado trabajaba en el propio paso, lo que lo convierte en un punto de serialización; en el caso de `branch`, el thread trabajaba en algún lugar del subárbol, no necesariamente en este paso. Un paso serializado solo constituye un verdadero cuello de botella si su porcentaje de `Time` también es significativo.
+
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 Muestra el número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta. Funciona con tablas de la familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1025,11 +1065,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF
+### EXPLAIN WHATIF {#explain-whatif}
 
-Estima el beneficio que tendría un índice de omisión hipotético en una consulta `SELECT`, *sin* materializar el índice en disco. Defina uno o más candidatos con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y luego ejecute `EXPLAIN WHATIF SELECT ...` para ver, para cada candidato, si aplica, las marcas estimadas leídas, los bytes estimados y la tasa de omisión.
+Estima el beneficio que tendría un índice de omisión hipotético en una consulta `SELECT`, *sin* materializar el índice en disco. Defina uno o más candidatos con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y, a continuación, ejecute `EXPLAIN WHATIF SELECT ...` para ver, para cada candidato, su aplicabilidad, las marcas leídas estimadas, los bytes estimados y la proporción de omisión.
 
-Las proyecciones hipotéticas definidas con [`CREATE HYPOTHETICAL PROJECTION`](/es/reference/statements/hypothetical-projection#create-hypothetical-projection) también se listan como candidatas, pero su beneficio aún no se estima: cada una se informa con `status: not_applicable`. Una proyección cuya definición ya no es aplicable a la tabla —una columna eliminada o un cambio de configuración que deshabilita las funcionalidades que necesita— se informa con ese motivo en su lugar.
+Las proyecciones hipotéticas definidas con [`CREATE HYPOTHETICAL PROJECTION`](/es/reference/statements/hypothetical-projection#create-hypothetical-projection) también son candidatas. Una proyección normal se estima construyendo su índice primario en memoria sobre las partes que leería la consulta y podándolo del mismo modo en que se podaría una proyección materializada. El informe indica las marcas y filas que abarcaría la lectura de la proyección, un `read_ratio` respecto a la lectura de la tabla base (por debajo de `1x` significa menos trabajo; por encima, más) y un `verdict` con el motivo correspondiente, según la regla del optimizador: la proyección gana cuando lee menos marcas que la tabla base, o el mismo número si además resuelve un `ORDER BY` externo. Se muestran como `status: not_applicable` y todavía no se estiman: las proyecciones de agregación, las proyecciones con una cláusula `WHERE` o con índices de omisión propios (`WITH SETTINGS add_minmax_index_*`), las proyecciones ordenadas por orden de commit (`TYPE commit_order` y su forma de consulta `_block_number, _block_offset`), las proyecciones cuya clave de ordenación no figura entre las columnas que almacenan (por ejemplo, `ORDER BY _part_offset`), las proyecciones que almacenan `_block_number` (el escritor solo las construye cuando se fusiona una parte) y las proyecciones que no proporcionan todas las columnas que lee la consulta. Se ignoran `force_optimize_projection`, `force_optimize_projection_name` y `preferred_optimize_projection_name`. El número de marcas se modela dimensionando los gránulos igual que lo hace el escritor, con un tamaño de gránulo por cada bloque que recibe. Cuáles son esos bloques depende de la ruta que escribe la parte de la proyección (un único bloque combinado en una inserción o una materialización; series de `merge_max_block_size` en una fusión), y una parte no registra nada de ello, por lo que la estimación se calcula para cada una de esas disposiciones. Si los resultados no coinciden al compararlos con la lectura base, el informe muestra el rango y `verdict: too close to call` en lugar de una decisión. Si la definición de una proyección ya no se ajusta a la tabla, se notifica indicando ese motivo.
 
 **Sintaxis**
 
@@ -1039,7 +1079,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Configuración**
 
-* `empirical` — `1` (predeterminado) ejecuta el índice en memoria sobre los gránulos podados por la línea base para medir la tasa de descarte (un límite superior). `0` omite ese paso. En cualquier caso, si `empirical` no produce un resultado (porque está deshabilitado o porque el índice no puede evaluarse en memoria), el estimador recurre a las [estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) y, por último, a un resumen únicamente de aplicabilidad si ninguna de las dos está disponible.
+* `empirical` — `1` (valor predeterminado) evalúa el índice en memoria sobre los gránulos podados por la línea base para medir la proporción de gránulos que se pueden omitir (un límite superior). `0` omite este procedimiento. Si la evaluación empírica no produce un resultado (porque está deshabilitada o porque el índice no puede evaluarse en memoria), el estimador recurre a las [estadísticas](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) de columna. Si tampoco están disponibles, ofrece un resumen que solo indica si el índice es aplicable.
 
 **Salida**
 
@@ -1048,6 +1088,7 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
@@ -1079,9 +1120,9 @@ Si no hay índices hipotéticos ni proyecciones hipotéticas definidos para la t
 
 **Fila combinada (múltiples candidatos)**
 
-Cuando se evalúan dos o más candidatos de forma empírica, `EXPLAIN WHATIF` añade un bloque adicional llamado `(combined: idx_a, idx_b, ...)` después de las filas por candidato. Este informa el beneficio conjunto de tener *todos* esos índices a la vez: una lectura real conserva un gránulo solo si sobrevive a *cada* índice de omisión, por lo que la estimación combinada es la intersección de los gránulos supervivientes de los candidatos. Por lo tanto, su `skip_ratio` es al menos tan alto como el del mejor candidato individual: los índices complementarios podan más en conjunto, mientras que los redundantes lo dejan sin cambios.
+Cuando se evalúan empíricamente dos o más candidatos, `EXPLAIN WHATIF` añade un bloque adicional llamado `(combined: idx_a, idx_b, ...)` después de las filas de cada candidato. Muestra el beneficio conjunto de disponer de *todos* esos índices a la vez: una lectura real conserva un gránulo solo si no lo descarta *ninguno* de los índices de omisión. Por tanto, la estimación combinada se basa en la intersección de los gránulos que conserva cada candidato. Su `skip_ratio` es, como mínimo, tan alto como el del mejor candidato individual: los índices complementarios podan más gránulos en conjunto, mientras que los redundantes no modifican la tasa.
 
-Solo contribuyen los candidatos con `source: empirical`, porque la fila combinada se construye al intersectar sus conjuntos de supervivencia por gránulo. Los candidatos estimados como `statistical` o `applicability_only` no tienen datos por gránulo y se excluyen; en consecuencia, el bloque combinado aparece solo cuando al menos dos candidatos produjeron una estimación empírica y, en caso contrario, se omite (por ejemplo, con `empirical = 0`). Sus campos de estimación se leen igual que los de un bloque empírico por candidato, excepto que `elapsed_us` es `0` — la estimación combinada se deriva de los escaneos por candidato, no de un escaneo nuevo. El nombre sintético `(combined: ...)` es solo una etiqueta del informe y no puede usarse con `force_data_skipping_indices`.
+Solo contribuyen los candidatos con `source: empirical`, porque la fila combinada se construye mediante la intersección de los conjuntos de gránulos que conserva cada uno. Los candidatos estimados como `statistical` o `applicability_only` no tienen datos por gránulo y quedan excluidos; por tanto, el bloque combinado solo aparece cuando al menos dos candidatos han producido una estimación empírica y se omite en caso contrario (por ejemplo, con `empirical = 0`). Sus campos de estimación se interpretan igual que los de un bloque empírico por candidato, excepto que `elapsed_us` es `0`: la estimación combinada se deriva de los escaneos de cada candidato, no de un escaneo adicional. El nombre sintético `(combined: ...)` es solo una etiqueta del informe y no puede usarse con `force_data_skipping_indices`.
 
 **Ejemplo empírico**
 
@@ -1101,6 +1142,7 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
@@ -1116,7 +1158,7 @@ Estimation:
   sampled_marks:    100 / 100
 ```
 
-El `minmax` hipotético podaría de 100 marcas a 1 — `skip_ratio: 99.0%`. (`est_bytes` es una estimación basada en el tamaño promedio de la fila, por lo que la cifra exacta puede variar.)
+El índice hipotético `minmax` podaría las marcas de 100 a 1, con un `skip_ratio: 99.0%`. (`est_bytes` se estima a partir del tamaño medio de fila, por lo que la cifra exacta puede variar).
 
 **Ejemplo estadístico**
 
@@ -1149,7 +1191,44 @@ El número proviene de la selectividad de las estadísticas de columna para `b <
 
 Si ninguna de las dos vías está disponible (p. ej., `empirical = 0` y no hay estadísticas de columna definidas), el estimador informa `source: applicability_only` y un `skip_ratio: 0.0%` conservador.
 
-### EXPLAIN TABLE OVERRIDE
+**Proyecciones hipotéticas**
+
+Una proyección normal se estima del mismo modo, a partir de las partes que leería la consulta después de la poda por clave primaria y por partición:
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t SELECT number, number % 100, number FROM numbers(10000);
+CREATE HYPOTHETICAL PROJECTION p_b ON t (SELECT a, b, v ORDER BY b);
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  rows:        10000
+  est_bytes:   80.79 KiB
+
+With p_b (normal projection, hypothetical):
+  status:       applicable
+  marks:        2
+  rows:         200
+  read_ratio:   0.02x
+  verdict:      chosen
+  reason:       2 marks would be read instead of 100 from the base table
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       1126
+```
+
+`marks` y `rows` indican las marcas y filas que leería la propia proyección, no una parte de la lectura de la tabla base, ya que un gránulo de la proyección contiene filas distintas de las de un gránulo de la tabla base. `read_ratio` es la relación entre esas marcas y las de la tabla base: `0.02x` equivale a cincuenta veces menos trabajo y `15x`, a quince veces más. `verdict` aplica la regla del propio optimizador —menos marcas que la tabla base, o el mismo número si la proyección satisface el `ORDER BY` de la consulta—, por lo que un candidato puede ser `applicable` y aun así no resultar elegido.
+
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Muestra el resultado de una sobrescritura de tabla aplicada al esquema de una tabla a la que se accede mediante una función de tabla.
 También realiza ciertas validaciones y genera una excepción si la sobrescritura hubiera provocado algún tipo de fallo.

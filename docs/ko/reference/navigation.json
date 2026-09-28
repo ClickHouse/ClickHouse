@@ -420,6 +420,7 @@
             "ko/reference/engines/database-engines/index",
             "ko/reference/engines/database-engines/atomic",
             "ko/reference/engines/database-engines/backup",
+            "ko/reference/engines/database-engines/cluster",
             "ko/reference/engines/database-engines/datalake",
             "ko/reference/engines/database-engines/dictionary",
             "ko/reference/engines/database-engines/filesystem",

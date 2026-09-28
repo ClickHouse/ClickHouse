@@ -35,7 +35,7 @@ metric_name2[...] = ...
   таком сервисе.
 </Note>
 
-## Синтаксис
+## Синтаксис {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
@@ -51,7 +51,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   Определение таблицы [версии](#schema-versioning) ниже 4 записывается с `METRICS`, чтобы его мог прочитать более старый сервер.
 </Note>
 
-## Использование
+## Использование {#usage}
 
 Проще начать с параметров по умолчанию (таблицу `TimeSeries` можно создать, не указывая список столбцов):
 
@@ -64,19 +64,19 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [prometheus remote-write](/ru/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/ru/concepts/features/interfaces/prometheus#remote-read)
 
-### Внешние столбцы
+### Внешние столбцы {#outer-columns}
 
 Столбцы таблицы TimeSeries создаются автоматически. Это внешние столбцы: они не хранят данные, а лишь предоставляют интерфейс для SELECT/INSERT. Сами данные хранятся в [целевых таблицах](#target-tables). Вот список внешних столбцов:
 
-| Имя             | Тип                                                 | Описание                                                                                                                                                                                                                                                                                                                            |
-| --------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metric_name`   | `String`                                            | Имя метрики                                                                                                                                                                                                                                                                                                                         |
-| `tags`          | `Map(String, String)`                               | Карта тегов (меток) для временного ряда                                                                                                                                                                                                                                                                                             |
-| `samples`       | `Array(Tuple(DateTime64(3), Float64))` по умолчанию | Массив пар (временная метка, значение) для временного ряда. Тип временной метки в кортеже и тип его скалярного элемента можно определить по объявлению `INNER COLUMNS` для samples (см. [Указание внешних столбцов](#specifying-outer-columns)). В таблицах [версии](#schema-versioning) 2 и ранее столбец называется `time_series` |
-| `metric_family` | `String`                                            | Имя семейства метрик (для метаданных метрик)                                                                                                                                                                                                                                                                                        |
-| `type`          | `String`                                            | Тип метрики (например, &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                                                                                                      |
-| `unit`          | `String`                                            | Единица измерения метрики                                                                                                                                                                                                                                                                                                           |
-| `help`          | `String`                                            | Описание метрики                                                                                                                                                                                                                                                                                                                    |
+| Имя             | Тип                                                 | Описание                                                                                                                                                                                                                                                                                                                      |
+| --------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                            | Имя метрики                                                                                                                                                                                                                                                                                                                   |
+| `tags`          | `Map(String, String)`                               | Карта тегов (меток) для временного ряда                                                                                                                                                                                                                                                                                       |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))` по умолчанию | Массив пар (временная метка, значение) для временного ряда. Типы элементов кортежа — временной метки и значения — можно определить по объявлению `INNER COLUMNS` для samples (см. [Указание внешних столбцов](#specifying-outer-columns)). В таблицах [версии](#schema-versioning) 2 и ранее столбец называется `time_series` |
+| `metric_family` | `String`                                            | Имя семейства метрик (для метаданных метрик)                                                                                                                                                                                                                                                                                  |
+| `type`          | `String`                                            | Тип метрики (например, &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                                                                                                |
+| `unit`          | `String`                                            | Единица измерения метрики                                                                                                                                                                                                                                                                                                     |
+| `help`          | `String`                                            | Описание метрики                                                                                                                                                                                                                                                                                                              |
 
 Пример:
 
@@ -102,9 +102,9 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-### Указание внешних столбцов
+### Указание внешних столбцов {#specifying-outer-columns}
 
-Внешний столбец `samples` можно явно указать в операторе `CREATE TABLE`, чтобы переопределить его тип по умолчанию `Array(Tuple(DateTime64(3), Float64))` (его прежнее имя `time_series` также допускается). ClickHouse извлекает из кортежа тип временной метки и скалярный тип и использует их во внутренней таблице samples:
+Внешний столбец `samples` можно явно указать в операторе `CREATE TABLE`, чтобы переопределить его тип по умолчанию `Array(Tuple(DateTime64(3), Float64))` (его прежнее имя `time_series` также допускается). ClickHouse извлекает из кортежа тип временной метки и тип значения и использует их во внутренней таблице samples:
 
 ```sql
 CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -119,7 +119,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 Если обе формы используются в одном операторе `CREATE TABLE`, объявленные типы должны совпадать.
 
-## Целевые таблицы
+## Целевые таблицы {#target-tables}
 
 У таблицы `TimeSeries` нет собственных данных — всё хранится в её целевых таблицах.
 Это похоже на то, как работает [materialized view](/ru/reference/statements/create/view#materialized-view),
@@ -135,7 +135,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 Целевые таблицы бывают следующими:
 
-### Таблица *samples*
+### Таблица *samples* {#samples-table}
 
 Таблица *samples* содержит временные ряды, связанные с определённым идентификатором.
 
@@ -153,7 +153,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 Движок включает `ALP` для своих внутренних таблиц samples и recent samples, не требуя установки `enable_alp_codec`.
 См. также [Настройка типов столбцов](#adjusting-column-types).
 
-### Таблица recent samples
+### Таблица recent samples {#recent-samples-table}
 
 Таблица *recent samples* необязательна и включена по умолчанию (см. настройку [recent&#95;samples&#95;ttl&#95;seconds](#settings);
 при установке значения `0` таблица отключается). Она содержит копию образцов, возраст которых меньше TTL, заданного этой настройкой,
@@ -167,7 +167,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 TTL внутренней таблицы recent samples всегда определяется настройкой [recent&#95;samples&#95;ttl&#95;seconds](#settings).
 
-### Таблица tags
+### Таблица tags {#tags-table}
 
 Таблица *tags* содержит идентификаторы, вычисляемые для каждой комбинации имени метрики и тегов.
 
@@ -190,21 +190,21 @@ TTL внутренней таблицы recent samples всегда опреде
 Явные индексы, объявленные в `TAGS INNER COLUMNS`, заменяют индекс по умолчанию. Существующие таблицы и внешние
 таблицы tags сохраняют свои индексы; чтобы включить индекс, добавьте и материализуйте его в их целевой таблице tags.
 
-### Таблица metric families
+### Таблица metric families {#metric-families-table}
 
 Таблица *metric families* содержит информацию о собираемых семействах метрик, их типах и описаниях.
 Семейство метрик — это группа метрик с одинаковым именем (тег `__name__`) и одинаковым типом; например, histogram — это семейство метрик, состоящее из нескольких метрик.
 
 Таблица *metric families* должна иметь следующие столбцы:
 
-| Имя                  | Обязательный? | Тип по умолчанию         | Возможные типы                        | Описание                                                                                                                                                           |
-| -------------------- | ------------- | ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `metric_family_name` | [x]           | `String`                 | `String` или `LowCardinality(String)` | Имя семейства метрик                                                                                                                                               |
-| `type`               | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Тип семейства метрик: один из &quot;counter&quot;, &quot;gauge&quot;, &quot;summary&quot;, &quot;stateset&quot;, &quot;histogram&quot;, &quot;gaugehistogram&quot; |
-| `unit`               | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Единица измерения, используемая в метрике                                                                                                                          |
-| `help`               | [x]           | `String`                 | `String` или `LowCardinality(String)` | Описание метрики                                                                                                                                                   |
+| Имя             | Обязательный? | Тип по умолчанию         | Возможные типы                        | Описание                                                                                                                                                           |
+| --------------- | ------------- | ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `metric_family` | [x]           | `String`                 | `String` или `LowCardinality(String)` | Имя семейства метрик. В таблицах версий до 6 этот столбец называется `metric_family_name` (см. [История версий](#version-history))                                 |
+| `type`          | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Тип семейства метрик: один из &quot;counter&quot;, &quot;gauge&quot;, &quot;summary&quot;, &quot;stateset&quot;, &quot;histogram&quot;, &quot;gaugehistogram&quot; |
+| `unit`          | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Единица измерения, используемая в метрике                                                                                                                          |
+| `help`          | [x]           | `String`                 | `String` или `LowCardinality(String)` | Описание метрики                                                                                                                                                   |
 
-## Создание
+## Создание {#creation}
 
 Существует несколько способов создать таблицу с движком `TimeSeries`.
 Самый простой оператор
@@ -227,7 +227,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 5, recent_samples_ttl_seconds = 345600
+SETTINGS version = 6, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -254,16 +254,16 @@ TAGS INNER COLUMNS
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
 Столбцы были созданы автоматически, а также имеются четыре внутренних целевых таблицы с собственными определениями столбцов,
-хранящимися в конструкциях `INNER COLUMNS`. Настройка `recent_samples_ttl_seconds` была записана в конструкцию `SETTINGS`
+хранящимися в предложениях `INNER COLUMNS`. Настройка `recent_samples_ttl_seconds` была записана в предложение `SETTINGS`
 со значением по умолчанию: эта настройка определяет TTL таблицы recent samples, поэтому её фактическое значение фиксируется при создании.
 Также последняя версия схемы была зафиксирована в настройке `version` (см. [Версионирование схемы](#schema-versioning)).
 
@@ -317,17 +317,17 @@ SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```sql
 CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
-ORDER BY metric_family_name
+ORDER BY metric_family
 SETTINGS index_granularity = 8192
 ```
 
-## Создание таблицы AS на основе существующей таблицы
+## Создание таблицы AS на основе существующей таблицы {#create-as}
 
 Оператор `CREATE TABLE new_table AS existing_table` создаёт таблицу `TimeSeries` с той же конфигурацией, что и у `existing_table`,
 которая должна быть таблицей `TimeSeries`. Внешние целевые таблицы (external targets) `existing_table` не копируются: оператор должен
@@ -348,9 +348,10 @@ SETTINGS index_granularity = 8192
 Список внешних столбцов генерируется заново, а не копируется.
 
 В качестве `existing_table` можно использовать таблицу, созданную более старой версией ClickHouse: новая таблица получит текущую
-структуру, например текущий тип `id` и выражение идентификатора по умолчанию.
+структуру, например текущий тип `id` и выражение идентификатора по умолчанию, а изменённые вручную части, скопированные из
+`existing_table`, будут приведены в соответствие с ней.
 
-## Настройка типов столбцов
+## Настройка типов столбцов {#adjusting-column-types}
 
 Вы можете настраивать типы столбцов во внутренних целевых таблицах с помощью предложения `INNER COLUMNS`. Например, чтобы хранить временные метки в микросекундах, а значения — как `Float32`, используйте:
 
@@ -366,7 +367,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-## Столбец `id`
+## Столбец `id` {#id-column}
 
 Столбец `id` содержит идентификаторы; каждый из них вычисляется для комбинации имени метрики и тегов.
 Тип и выражение `DEFAULT`, используемое для генерации идентификаторов, можно настроить с помощью предложения `TAGS INNER COLUMNS`:
@@ -401,7 +402,7 @@ SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
 Если параметр `id_generator` задан, параметр `id_type` записывается автоматически при выполнении `CREATE`,
 поэтому в определении сохраняется тип, для которого было написано выражение.
 
-## Столбец `tags`
+## Столбец `tags` {#tags-column}
 
 Столбец `tags` содержит все теги временного ряда, включая тег `__name__` с именем метрики.
 
@@ -423,7 +424,7 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   всеми тегами, кроме имени метрики.
 </Note>
 
-## Движки внутренних целевых таблиц
+## Движки внутренних целевых таблиц {#inner-table-engines}
 
 По умолчанию внутренние целевые таблицы используют следующие движки таблиц:
 
@@ -462,7 +463,7 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 движок задаётся непосредственно, как показано выше, `TimeSeries` автоматически устанавливает для неё `allow_dimensions_outside_sorting_key = 1`;
 для созданной вручную агрегирующей [внешней](#external-target-tables) таблицы tags вы должны установить этот параметр самостоятельно.
 
-## Внешние целевые таблицы
+## Внешние целевые таблицы {#external-target-tables}
 
 Таблицу `TimeSeries` можно настроить так, чтобы она использовала таблицу, созданную вручную:
 
@@ -491,7 +492,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 
 Тип столбца `id` внешней таблицы tags и выражение, генерирующее идентификаторы, записываются в настройки [`id_type`](#settings) и [`id_generator`](#settings) во время `CREATE` (начиная с [версии](#schema-versioning) 2), поэтому определение таблицы `TimeSeries` сохраняет их: например, `CREATE TABLE ... AS my_table` считывает тип `id` из определения `my_table`, не обращаясь к её внешним целевым таблицам. Если настройка `id_generator` не задана, ей присваивается значение `DEFAULT`, объявленное для столбца `id` внешней таблицы (если оно есть), в противном случае — канонический генератор, определяемый типом `id`. Записанное выражение используется для генерации `id`, даже если `DEFAULT` внешней таблицы впоследствии изменится — подробности см. в разделе [Столбец `id`](#id-column).
 
-## Изменение настроек
+## Изменение настроек {#altering-settings}
 
 После `CREATE` можно изменить две настройки:
 
@@ -509,7 +510,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 Другие настройки нельзя изменить с помощью `ALTER ... MODIFY SETTING`: большинство из них закладываются в схему внутренних таблиц во время `CREATE`,
 а настройка `version` фиксируется автоматически во время `CREATE` и идентифицирует саму схему (см. [Версионирование схемы](#schema-versioning)).
 
-## Настройки
+## Настройки {#settings}
 
 Ниже приведён список настроек, которые можно указать при определении таблицы `TimeSeries`:
 
@@ -527,14 +528,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Ключ партиционирования внутренней таблицы `recent samples`, например `toStartOfHour(timestamp)`. При явной установке переопределяет ключ партиционирования из объявления движка; если не задано ни то ни другое, используется одна партиция на каждые 5 часов. Игнорируется для внешней таблицы recent samples. Требует, чтобы `recent_samples_ttl_seconds` не был равен нулю                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `recent_samples_index_granularity`   | UInt64     | 8192                                                          | Устанавливает `index_granularity` внутренней таблицы `recent samples`. При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы recent samples и движка, не относящегося к MergeTree. Требует, чтобы `recent_samples_ttl_seconds` не был равен нулю                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `tags_index_granularity`             | UInt64     | 8192                                                          | Устанавливает `index_granularity` внутренней таблицы [tags](#tags-table). При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы tags и движка, не относящегося к MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `version`                            | UInt64     | 5                                                             | Версия таблицы: определяет набор целевых таблиц и их структуру. Версия фиксируется автоматически при создании таблицы и не может быть изменена впоследствии; обычно её следует опускать в запросе `CREATE TABLE` (см. [Версионирование схемы](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `version`                            | UInt64     | 6                                                             | Версия таблицы: определяет набор целевых таблиц и их структуру. Версия фиксируется автоматически при создании таблицы и не может быть изменена впоследствии; обычно её следует опускать в запросе `CREATE TABLE` (см. [Версионирование схемы](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-## Версионирование схемы
+## Версионирование схемы {#schema-versioning}
 
 Движок таблицы `TimeSeries` и слой выполнения PromQL активно развиваются:
 набор целевых таблиц и их структура могут меняться от версии к версии ClickHouse.
 Чтобы такие изменения можно было отследить, каждая таблица `TimeSeries` хранит свою версию в настройке [version](#settings).
-Версия автоматически фиксируется в запросе `CREATE` при создании таблицы — её значением становится последняя версия, известная серверу (сейчас 5), —
+Версия автоматически фиксируется в запросе `CREATE` при создании таблицы — её значением становится последняя версия, известная серверу (сейчас 6), —
 сохраняется в метаданных таблицы и не может быть изменена с помощью `ALTER`. Таблицы, созданные до появления этой настройки, считаются таблицами версии 0.
 Обычно эту настройку достаточно просто не указывать в запросе `CREATE TABLE` — тогда таблица получит последнюю версию.
 Явно заданное значение `version` принимается, если сервер поддерживает эту версию; в этом случае таблица определяется так, как это делает соответствующая версия (см. [История версий](#version-history)).
@@ -551,18 +552,19 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 * Если версия слишком старая для записи, запросы `INSERT` и протокол Prometheus remote-write отклоняются, при этом запросы `SELECT` продолжают работать.
 * Если версия слишком старая для сервера в принципе, отклоняется любой запрос к таблице (кроме `SHOW CREATE TABLE`, `DETACH` и `DROP`).
 
-### История версий
+### История версий {#version-history}
 
-| Версия | Изменения                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0      | Таблицы, созданные до появления настройки `version`, включая «prealpha»-таблицы (в которых столбцы целевых таблиц объявлялись как [внешние столбцы](#outer-columns)) и таблицы без таблицы [recent samples](#recent-samples-table)                                                                                                                                                                                                              |
-| 1      | Появилась настройка `version`                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| 2      | Появилась настройка [`id_type`](#settings): таблица с внешней таблицей tags записывает тип столбца `id` в `id_type`, а выражение, генерирующее идентификаторы, — в [`id_generator`](#settings), поэтому её определение не зависит от внешней таблицы. `id_type` также записывается, когда задан `id_generator` (см. [Столбец `id`](#id-column))                                                                                                 |
-| 3      | Внешний столбец `time_series` переименован в `samples` (см. [внешние столбцы](#outer-columns)). В таблицах более ранних версий сохраняется прежнее имя столбца, а табличные функции [prometheusQuery](/ru/reference/functions/table-functions/prometheusQuery) и [prometheusQueryRange](/ru/reference/functions/table-functions/prometheusQueryRange) возвращают столбец под тем именем, которое использует таблица. Сохранённые данные не изменились |
-| 4      | Целевая таблица `metrics` переименована в `metric families`: внутренняя таблица называется `.inner_id.metricfamilies.<uuid>` вместо `.inner_id.metrics.<uuid>`, а определение записывается с ключевым словом `METRIC FAMILIES` вместо `METRICS`. Сохранённые данные не изменились                                                                                                                                                               |
-| 5      | Новые внутренние таблицы tags с движком семейства `MergeTree` по умолчанию получают текстовый индекс `keyValuePairs` по map `tags` (см. [таблица tags](#tags-table))                                                                                                                                                                                                                                                                            |
+| Версия | Изменения                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | Таблицы, созданные до появления настройки `version`, включая «prealpha»-таблицы (в которых столбцы целевых таблиц объявлялись как [внешние столбцы](#outer-columns)) и таблицы без таблицы [recent samples](#recent-samples-table)                                                                                                                                                                                                                                                                                            |
+| 1      | Появилась настройка `version`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2      | Появилась настройка [`id_type`](#settings): таблица с внешней таблицей tags записывает тип столбца `id` в `id_type`, а выражение, генерирующее идентификаторы, — в [`id_generator`](#settings), поэтому её определение не зависит от внешней таблицы. `id_type` также записывается, когда задан `id_generator` (см. [Столбец `id`](#id-column))                                                                                                                                                                               |
+| 3      | Внешний столбец `time_series` переименован в `samples` (см. [внешние столбцы](#outer-columns)). В таблицах более ранних версий сохраняется прежнее имя столбца, а табличные функции [prometheusQuery](/ru/reference/functions/table-functions/prometheusQuery) и [prometheusQueryRange](/ru/reference/functions/table-functions/prometheusQueryRange) возвращают столбец под тем именем, которое использует таблица. Сохранённые данные не изменились                                                                               |
+| 4      | Целевая таблица `metrics` переименована в `metric families`: внутренняя таблица называется `.inner_id.metricfamilies.<uuid>` вместо `.inner_id.metrics.<uuid>`, а определение записывается с ключевым словом `METRIC FAMILIES` вместо `METRICS`. Сохранённые данные не изменились                                                                                                                                                                                                                                             |
+| 5      | Новые внутренние таблицы tags с движком семейства `MergeTree` по умолчанию получают текстовый индекс `keyValuePairs` по map `tags` (см. [таблица tags](#tags-table))                                                                                                                                                                                                                                                                                                                                                          |
+| 6      | Столбец `metric_family_name` таблицы [metric families](#metric-families-table) переименован в `metric_family` — так называется соответствующий внешний столбец. В таблицах более ранних версий сохраняется прежнее имя столбца, а табличная функция [timeSeriesMetricFamilies](/ru/reference/functions/table-functions/timeSeriesMetricFamilies) возвращает столбец под тем именем, которое использует таблица. Во внешней таблице metric families столбец должен называться так, как предусмотрено версией таблицы `TimeSeries` |
 
-# Функции
+# Функции {#functions}
 
 Ниже приведён список функций, поддерживающих таблицу `TimeSeries` в качестве аргумента:
 

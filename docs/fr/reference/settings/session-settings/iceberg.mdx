@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [fichier source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Indique s’il faut ou non supprimer tous les fichiers Iceberg lors d’un drop.
 
-## iceberg_file_entries_queue_size
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,23 +34,48 @@ Les tâches de décodage se mettent en pause dès que la file d&#39;attente est 
 
 Doit être supérieure à zéro.
 
-## iceberg_manifest_decode_concurrency
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases** : `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "Nouveau paramètre limitant le nombre de fichiers manifest Iceberg décodés simultanément, aussi bien pour les manifestes de suppression que pour ceux de données. Il remplace `iceberg_delete_manifest_decode_concurrency` (conservé comme alias). La valeur `2` se rapproche du data path antérieur à la 26.9, qui décodait un manifeste à la fois, le fetch du suivant étant déjà en cours ; avec `compatibility` fixé à 26.8 ou moins, le décodage des suppressions s'exécute donc lui aussi à 2 plutôt qu'à sa valeur par défaut publiée de 4, ce qui préserve l'ancienne enveloppe mémoire du data path au prix d'un moindre recouvrement du décodage des suppressions."}]}]} />
+<VersionHistory
+  rows={[
+{
+  id: "row-1",
+  items: [
+    { label: "26.9" },
+    { label: "4" },
+    {
+      label:
+        "Nouveau paramètre limitant le nombre de fichiers manifest Iceberg décodés simultanément, aussi bien pour les manifestes de suppression que pour ceux de données. Il remplace `iceberg_delete_manifest_decode_concurrency` (conservé comme alias). La valeur `2` se rapproche du data path antérieur à la 26.9, qui décodait un manifeste à la fois, la récupération du suivant étant déjà en cours ; avec `compatibility` fixé à 26.8 ou moins, le décodage des suppressions s'exécute donc lui aussi à 2 plutôt qu'à sa valeur par défaut publiée de 4, ce qui préserve l'ancienne enveloppe mémoire du data path au prix d'un moindre recouvrement du décodage des suppressions."
+    }
+  ]
+},
+{
+  id: "row-2",
+  items: [
+    { label: "26.8" },
+    { label: "4" },
+    {
+      label:
+        "Nouveau paramètre limitant le nombre de fichiers manifest de suppression Iceberg décodés simultanément avant la lecture de la première ligne. Avant la 26.8, les manifestes étaient décodés un par un, la récupération du suivant étant déjà en cours ; la valeur `2` est donc l'équivalent le plus proche de l'ancien comportement, qui plaçait la somme de leurs allers-retours vers le stockage d’objet sur le chemin critique avant la première ligne. Ce paramètre s'appelait alors `iceberg_delete_manifest_decode_concurrency`, nom désormais conservé comme alias."
+    }
+  ]
+}
+]}
+/>
 
 Nombre maximal de fichiers manifest Iceberg décodés simultanément lors de la lecture d&#39;une table.
 
-Les manifestes de suppression sont tous décodés avant la lecture du moindre fichier de données ; les manifestes de données, eux, sont décodés pendant la production de la liste des fichiers de données de la requête, et de nouveaux ne sont décodés qu&#39;à mesure que la requête consomme les entrées déjà décodées. Décoder plusieurs manifestes à la fois permet de recouvrir les allers-retours vers l&#39;object storage et le travail de pruning effectué pour chaque entrée.
+Les manifestes de suppression sont tous décodés avant la lecture du moindre fichier de données ; les manifestes de données, eux, sont décodés pendant la production de la liste des fichiers de données de la requête, et de nouveaux ne sont décodés qu&#39;à mesure que la requête consomme les entrées déjà décodées. Décoder plusieurs manifestes à la fois permet de recouvrir les allers-retours vers le stockage d’objet et le travail de pruning effectué pour chaque entrée.
 
 Des valeurs plus élevées augmentent le pic de mémoire lorsque le cache des Iceberg metadata files est désactivé ou plein, car chaque manifeste in-flight conserve alors son propre contenu décodé.
 
 Doit être supérieur à zéro ; `1` décode les manifestes un par un.
 
-## iceberg_manifest_min_count_to_compact
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -65,7 +90,7 @@ Nécessite que allow&#95;experimental&#95;iceberg&#95;compaction soit activé.
 La valeur par défaut reprend la valeur par défaut documentée de la propriété de table Iceberg `commit.manifest.min-count-to-merge` (100),
 voir https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_max_number_datafiles_to_compact
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +98,7 @@ voir https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Seuil des fichiers de données de compaction dans Iceberg.
 
-## iceberg_orphan_files_older_than_seconds
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -83,7 +108,7 @@ Seuil des fichiers de données de compaction dans Iceberg.
 
 Seuil d’ancienneté par défaut, en secondes, pour la suppression des fichiers orphelins dans les tables Iceberg. Les fichiers plus récents que ce seuil ne sont pas considérés comme orphelins. Utilisé lorsque l’argument older&#95;than est omis de l’appel à la procédure remove&#95;orphan&#95;files(). La valeur par défaut est 259200 (3 jours).
 
-## iceberg_snapshot_id
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +116,7 @@ Seuil d’ancienneté par défaut, en secondes, pour la suppression des fichiers
 
 Interrogez une table Iceberg à l’aide de l’identifiant de snapshot spécifié.
 
-## iceberg_timestamp_ms
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +124,7 @@ Interrogez une table Iceberg à l’aide de l’identifiant de snapshot spécifi
 
 Interroge une table Iceberg en utilisant le snapshot correspondant à un horodatage donné.
 
-## iceberg_tolerate_conflicting_manifest_schemas
+## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

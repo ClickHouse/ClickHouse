@@ -13,17 +13,17 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Se añadió `ie_join` a la lista predeterminada, por lo que un join cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con IEJoin en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' quedó obsoleto en favor de algoritmos join especificados explícitamente; además, ahora se prefiere parallel_hash a hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Se añadió `ie_join` a la lista predeterminada, por lo que un join cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con IEJoin en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' quedó obsoleto en favor de algoritmos de join especificados explícitamente; además, ahora se prefiere parallel_hash a hash"}]}]} />
 
 Especifica qué algoritmo [JOIN](/es/reference/statements/select/join) se utiliza.
 
 Se pueden especificar varios algoritmos, y se elegirá uno disponible para una consulta concreta en función de tipo/estrictez y del motor de tabla.
 
-Que un algoritmo basado en hash vuelque a disco no forma parte de esta elección: [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) son el umbral de volcado para todos ellos (y una vez que uno de los dos es distinto de cero, `enable_adaptive_memory_spill_scheduler` puede volcar el join incluso antes, bajo memory pressure), y [`max_rows_in_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join) un límite estricto para todos ellos, salvo que `legacy_join_size_limits_trigger_spilling` convierta de nuevo ambos límites en disparadores de volcado a disco. El valor que elija determina cómo vuelca un join: `grace_hash` particiona la tabla derecha desde el primer bloque, mientras que `hash` y `parallel_hash` la recopilan en memoria y cambian de estrategia una vez superado el umbral.
+El volcado a disco de los algoritmos basados en hash se configura por separado de `join_algorithm`. Todos los algoritmos basados en hash utilizan [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) y [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) como umbrales de volcado.
 
 La mayoría de los algoritmos afectan a una consulta solo cuando son los seleccionados para ella. Sin embargo, algunos cambian la planificación simplemente por estar incluidos —incluso como alternativa de menor prioridad que finalmente no se selecciona—, porque la decisión se toma antes de elegir el algoritmo. Hay dos efectos de este tipo:
 
@@ -37,6 +37,7 @@ Valores posibles:
 * grace&#95;hash
 
 Se utiliza [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). Grace hash ofrece una opción de algoritmo que permite realizar joins complejos con buen rendimiento y limitar el uso de memoria.
+Seleccionar `grace_hash` explícitamente está pensado principalmente para fines de diagnóstico. Para habilitar el volcado a disco del join, configure en su lugar [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) o [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
 
 `grace_hash` es externo desde el primer bloque: la tabla derecha se particiona de inmediato, mientras que `hash` y `parallel_hash` la recopilan primero en memoria y solo la particionan cuando supera el umbral de volcado. Elíjalo cuando ya sepa que el lado derecho no cabrá en memoria y quiera omitir la fase en memoria. El umbral de volcado es el mismo que utiliza cualquier algoritmo hash, [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), y uno de los dos debe ser distinto de cero salvo que `legacy_join_size_limits_trigger_spilling` esté activado. Sin un umbral, `grace_hash` se omite en favor del siguiente algoritmo de la lista, y se rechaza si es el único.
 
@@ -110,7 +111,7 @@ ClickHouse siempre intenta usar el join `partial_merge` si es posible; de lo con
 Valor heredado; no lo utilice más.
 Igual que `direct,hash`, es decir, intenta usar un direct join y un hash join (en este orden).
 
-## join_any_take_last_row
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +134,7 @@ Véase también:
 * [motor de tabla Join](/es/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/es/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +147,7 @@ Valores posibles:
 * `ASOF` — Para combinar secuencias con una coincidencia incierta.
 * `Cadena vacía` — Si no se especifica `ALL` o `ANY` en la consulta, ClickHouse lanza una excepción.
 
-## join_on_disk_max_files_to_merge
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +159,7 @@ Valores posibles:
 
 * Cualquier entero positivo a partir de 2.
 
-## join_output_by_rowlist_perkey_rows_threshold
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +167,7 @@ Valores posibles:
 
 El límite inferior del promedio de filas por clave en la tabla de la derecha para determinar si la salida debe generarse como una lista de filas en hash join.
 
-## join_overflow_mode
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +197,7 @@ Valor predeterminado: `THROW`.
 * [cláusula JOIN](/es/reference/statements/select/join)
 * [motor de tabla Join](/es/reference/engines/table-engines/special/join)
 
-## join_use_nulls
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

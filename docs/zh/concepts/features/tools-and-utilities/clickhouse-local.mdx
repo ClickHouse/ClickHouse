@@ -241,7 +241,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.console` — 输出到控制台。
 * `--logger.log` — 日志文件名。
 * `--logger.level` — 日志级别。
-* `--ignore-error` — 查询失败时不中止处理。
+* `--ignore-error` — 查询失败时不中止处理：错误会报告到 `stderr`，然后继续处理下一个查询。由于错误会被忽略，即使部分查询失败，进程仍会以成功状态码退出。
 * `-c`, `--config-file` — 配置文件路径，其格式与 ClickHouse 服务器 相同；默认配置为空。
 * `--no-system-tables` — 不加载系统表。
 * `--help` — `clickhouse-local` 的参数参考。

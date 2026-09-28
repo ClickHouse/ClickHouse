@@ -13,27 +13,43 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## 기능
+  ## 기능 {#features}
 </div>
 
-<div id="initial-load">
-  ### 초기 적재
-</div>
+### 초기 적재 {#initial-load}
 
-BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigquery/docs/datasets-intro)에서 선택한 테이블을 한 번의 배치 작업으로 ClickHouse 대상 테이블에 적재합니다. 수집 작업이 완료되면 ClickPipe는 자동으로 중지됩니다. 초기 적재 과정에는 스테이징용으로 사용자 제공 Google Cloud Storage(GCS) 버킷이 필요합니다. 앞으로는 이 중간 버킷을 ClickPipes에서 제공하고 관리할 예정입니다.
+초기 적재는 BigQuery [데이터셋](https://docs.cloud.google.com/bigquery/docs/datasets-intro)에서 선택한 테이블을 ClickHouse로 복사합니다. 초기 적재만 실행할 수도 있고, 완료 후 지속적 복제를 이어갈 수도 있습니다. 적재할 때는 제공한 Google Cloud Storage(GCS) 버킷을 스테이징 공간으로 사용합니다. 초기 적재 전용 ClickPipe는 적재가 완료되면 중지됩니다.
 
 <Note>
-  ClickPipes는 BigQuery에서 스테이징 GCS 버킷으로 데이터를 가져오기 위해 배치 추출 작업을 사용합니다. 이 작업에는 BigQuery의 **처리 요금이 부과되지 않습니다**.
+  ClickPipes는 BigQuery의 [`EXPORT DATA`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/export-statements) 쿼리를 사용해 데이터를 스테이징 버킷으로 복사합니다. 이 쿼리를 실행하면 BigQuery 요금이 부과되며, GCS 스토리지 요금도 발생합니다.
 </Note>
 
-<div id="cdc">
-  ### CDC (변경 데이터 캡처)
-</div>
+### 지속적 복제 {#cdc}
 
-현재 비공개 프리뷰에서는 CDC가 **지원되지 않지만**, 향후 지원될 예정입니다. 그전까지는 초기 적재가 완료된 후 [Google Cloud Storage ClickPipe](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview)를 사용해 BigQuery 데이터 내보내기를 ClickHouse Cloud에 지속적으로 동기화하는 것을 권장합니다.
+초기 적재가 끝나면 BigQuery ClickPipe가 새 데이터를 폴링하여 ClickHouse에 반영할 수 있습니다. 초기 적재 없이 지속적 복제를 시작할 수도 있습니다. 원본 테이블의 데이터가 변경되는 방식에 따라 복제 방식을 선택하세요. 다음 예시는 쿼리의 형태를 보여 줍니다. ClickPipes는 설정된 컬럼과 이벤트 메타데이터를 선택합니다.
+
+| 방식                                                                                                            | 사용 조건                                                   | ClickPipes가 복제하는 데이터                                            | 예시 쿼리                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 쿼리 기반                                                                                                         | 삽입되거나 UPDATE된 각 행에 변경 시마다 값이 갱신되는 `TIMESTAMP` 컬럼이 있습니다. | 워터마크 값이 마지막으로 복제된 값보다 최신인 행입니다. 삭제는 감지하지 못합니다.                  | `SELECT * FROM dataset.orders WHERE TIMESTAMP(updated_at) > @start AND TIMESTAMP(updated_at) <= @end`                                                           |
+| [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) | 테이블에 새로 추가된 행만 복제하면 됩니다.                                | `MERGE`를 통한 삽입을 포함해 테이블에 삽입되거나 추가된 행입니다. UPDATE와 삭제는 복제되지 않습니다. | [`SELECT * FROM APPENDS(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) |
+| [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) | 삽입, UPDATE, 삭제를 ClickHouse에 반영해야 합니다.                   | `MERGE`와 테이블 비우기에 따른 변경을 포함해 BigQuery 변경 이력에 기록된 변경 사항입니다.      | [`SELECT * FROM CHANGES(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) |
+
+쿼리 기반 복제를 사용하려면 테이블마다 워터마크 컬럼을 선택하세요. 이 컬럼은 `TIMESTAMP` 컬럼이어야 하며 복제 대상 컬럼에도 포함되어야 합니다. 행을 삽입하거나 UPDATE할 때 워터마크 값을 설정하세요. 행이 변경되어도 워터마크 값이 더 최신으로 갱신되지 않으면 ClickPipes는 해당 변경 사항을 가져오지 않습니다. 삭제도 복제해야 한다면 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)를 사용하세요.
+
+두 이벤트 기반 방식 모두 일반 BigQuery 테이블이 필요합니다. [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends)를 사용할 때는 변경 이력을 활성화하지 않아도 됩니다. [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)를 사용하려면 ClickPipe를 생성하기 전에 각 원본 테이블에서 변경 이력을 활성화하세요:
+
+```sql
+ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
+```
+
+[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)를 사용하려면 대상 테이블에 BigQuery 기본 키(primary key) 또는 사용자 정의 정렬 키(sorting key)가 설정되어 있어야 합니다. ClickPipes가 정확한 행에 업데이트와 삭제를 적용할 수 있도록 각 행을 식별하는 컬럼을 선택하세요. BigQuery는 기본 키 제약 조건을 강제하지 않으므로 소스 데이터에서 해당 값이 중복되지 않도록 해야 합니다.
+
+<Note>
+  [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends)와 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)는 [BigQuery 타임 트래블 기간](https://docs.cloud.google.com/bigquery/docs/time-travel) 내의 원본 테이블 변경 사항만 읽을 수 있습니다. 이 기간은 기본적으로 7일이며 2일까지 단축할 수 있습니다. 복제가 이 기간을 초과해 지연되면 초기 적재를 새로 실행하여 전체 데이터 사본을 복원하세요. BigQuery는 세 가지 방식 모두에서 실행하는 쿼리에 요금을 부과합니다. [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)를 위해 변경 이력을 활성화하면 BigQuery 저장소 비용도 추가됩니다.
+</Note>
 
 <div id="data-type-mapping">
-  ## 데이터 타입 매핑
+  ## 데이터 타입 매핑 {#data-type-mapping}
 </div>
 
 [BigQuery 데이터 타입](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -60,33 +76,31 @@ BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigq
 | `STRUCT` (RECORD) | `String`          |                                                 |
 
 <div id="access-control">
-  ## 접근 제어
+  ## 접근 제어 {#access-control}
 </div>
 
 <div id="authentication">
-  ### 인증
+  ### 인증 {#authentication}
 </div>
 
-<div id="service-account-credentials">
-  #### 서비스 계정 자격 증명
-</div>
+#### 서비스 계정 자격 증명 {#service-account-credentials}
 
 ClickPipes는 [서비스 계정 키](https://docs.cloud.google.com/iam/docs/keys-create-delete)를 사용해 Google Cloud 프로젝트에 인증합니다. ClickPipes가 BigQuery에서 데이터를 내보내고, 이를 스테이징 GCS 버킷에 적재한 뒤 ClickHouse에서 읽을 수 있도록, 필요한 최소한의 [권한](#permissions)만 부여된 전용 서비스 계정을 생성하는 것을 권장합니다.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery 및 Cloud Storage 권한이 있는 서비스 계정 키 생성" size="lg" border />
 
 <div id="permissions">
-  ### 권한
+  ### 권한 {#permissions}
 </div>
 
-<div id="bigquery">
-  #### BigQuery
-</div>
+#### BigQuery {#bigquery}
 
-서비스 계정에는 다음 BigQuery 역할이 있어야 합니다.
+서비스 계정에는 다음 BigQuery 역할이 필요합니다.
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+지속적 복제를 사용하려면 Google Cloud 프로젝트에 [`roles/bigquery.readSessionUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.readSessionUser) 역할도 부여하세요. ClickPipes는 [BigQuery Storage Read API](https://docs.cloud.google.com/bigquery/docs/reference/storage#permissions)를 사용해 읽기 세션을 생성하고 CDC 쿼리 결과를 읽습니다. 이 역할은 데이터셋 수준에서 부여할 수 없습니다. 서비스 계정이 데이터를 읽을 수 있도록 소스 데이터셋이나 테이블에 `roles/bigquery.dataViewer` 역할을 유지하세요.
 
 액세스 범위를 더 구체적으로 제한하려면 [IAM 조건](https://docs.cloud.google.com/bigquery/docs/conditions)을 사용해 해당 역할이 액세스할 수 있는 리소스를 제한하는 것을 권장합니다. 예를 들어, `dataViewer` 역할을 동기화하려는 테이블이 포함된 특정 데이터셋으로 제한할 수 있습니다.
 
@@ -95,7 +109,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 서비스 계정에는 다음 Cloud Storage 역할이 있어야 합니다.

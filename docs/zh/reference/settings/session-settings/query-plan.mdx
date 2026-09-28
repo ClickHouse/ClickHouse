@@ -18,7 +18,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新增设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
 
 切换一项查询计划级别的优化：当最终聚合的输出经由带有 `LIMIT n` 的 `ORDER BY` 排序，且计划能够证明每个桶的选择结果准确时，该优化会在聚合的最终转换过程中，仅按此顺序物化每个两级桶中排名前 n 的组。结果准确无误：未进入所在桶前 n 名的组，在全局范围内至少有 n 个组排在它之前，因此不可能进入全局前 n 名。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
@@ -420,7 +420,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
 
 对从对象存储 (包括 Iceberg 表) 读取 Parquet 文件时使用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅对经 `LIMIT` 保留的 `n` 行读取排序和筛选不需要的列。仅当启用 `query_plan_optimize_lazy_materialization` 时生效。
 
@@ -580,7 +580,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。这同样适用于别名 `optimize_read_in_window_order`。"}]}]} />
 
 切换一项查询计划级别的优化，在对窗口函数进行排序时复用存储排序。
 仅在设置 [`query_plan_enable_optimizations`](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。

@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 KILLステートメントには 2 種類あります。クエリを強制終了するものと、ミューテーション を強制終了するものです
 
-<div id="kill-query">
-  ## KILL QUERY
-</div>
+## KILL QUERY {#kill-query}
 
 ```sql
 KILL QUERY [ON CLUSTER cluster]
@@ -59,10 +57,10 @@ SELECT
 クエリを強制終了します。
 
 ```sql
--- 指定されたquery_idを持つすべてのクエリを強制終了します:
+-- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
--- 'username'が実行しているすべてのクエリを同期的に終了します:
+-- Synchronously terminates all queries run by 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
@@ -71,6 +69,12 @@ KILL QUERY WHERE user='username' SYNC
 </Tip>
 
 読み取り専用ユーザーは、自分自身のクエリしか停止できません。
+
+`system.processes` に対する `SELECT` 権限が付与されていないユーザーでも、クエリ ID を指定すれば自分自身のクエリを停止できます。
+`KILL QUERY WHERE query_id = '<id>'`。その権限も `KILL QUERY` 権限も持たないユーザーが、自分が実行していない
+クエリの ID を指定した場合、クエリは停止されず、エラーも報告されず、結果の行も返されません。一方、
+`KILL QUERY` 権限を持つユーザーが自分のクエリではない ID を指定すると、通常どおりエラーが発生します。その他の `WHERE` 条件と
+`ON CLUSTER` には、引き続き上記の権限が必要です。
 
 デフォルトでは、クエリの非同期バージョン (`ASYNC`) が使用され、クエリが停止したことの確認は待機しません。
 
@@ -83,9 +87,7 @@ KILL QUERY WHERE user='username' SYNC
 
 テストクエリ (`TEST`) は、ユーザーの権限を確認し、停止対象のクエリの一覧を表示するだけです。
 
-<div id="kill-mutation">
-  ## KILL MUTATION
-</div>
+## KILL MUTATION {#kill-mutation}
 
 長時間実行されている、または完了していない ミューテーション がある場合、ClickHouseサービスの動作状態が悪化している可能性があります。ミューテーション は非同期で実行されるため、システム上の利用可能なリソースをすべて消費してしまうことがあります。必要に応じて、次のいずれかを行ってください。
 

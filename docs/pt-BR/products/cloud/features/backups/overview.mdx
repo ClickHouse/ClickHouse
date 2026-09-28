@@ -13,12 +13,14 @@ import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatu
 Os backups do banco de dados foram projetados para permitir que você restaure um serviço a um estado anterior com base no último backup bem-sucedido.
 
 <div id="backups">
-  ## Backups
+  ## Backups {#backups}
 </div>
 
 ### Como os backups funcionam no ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 Os backups do ClickHouse Cloud são uma combinação de backups &quot;completos&quot; e &quot;incrementais&quot; que formam uma cadeia de backups. A cadeia começa com um backup completo, e os backups incrementais são feitos ao longo dos períodos programados seguintes para criar uma sequência de backups. Quando uma cadeia de backups atinge determinado tamanho, uma nova cadeia é iniciada. Toda essa cadeia de backups pode então ser usada para restaurar dados em um novo serviço, se necessário. Quando todos os backups incluídos em uma determinada cadeia ultrapassam o período de retenção definido para o serviço (mais sobre retenção abaixo), a cadeia é descartada.
+
+O número de pontos de restauração não é igual ao número de objetos físicos de backup. O backup completo e os backups incrementais dos quais um ponto de restauração depende são mantidos juntos, como uma cadeia.
 
 Na captura de tela abaixo, os quadrados com linha contínua mostram os backups completos, e os quadrados com linha pontilhada mostram os backups incrementais que fazem parte da cadeia.
 
@@ -43,6 +45,8 @@ O ClickHouse Cloud permite configurar o agendamento dos seus backups para servi�
 * **Frequência**: A frequência permite definir o intervalo de tempo entre backups consecutivos. Por exemplo, uma frequência de &quot;a cada 12 horas&quot; significa que os backups terão um intervalo de 12 horas entre si. A frequência pode variar de &quot;a cada 6 horas&quot; a &quot;a cada 48 horas&quot;, com os seguintes incrementos em horas: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
 * **Horário de início**: O horário em que você deseja que os backups sejam agendados todos os dias. Especificar um horário de início implica que a &quot;Frequência&quot; do backup será, por padrão, de uma vez a cada 24 horas. O ClickHouse Cloud iniciará o backup dentro de uma hora do horário de início especificado.
 
+A retenção controla por quanto tempo os dados de backup são mantidos; a frequência determina a idade do ponto de restauração mais recente e, portanto, o objetivo de ponto de recuperação (RPO). Por exemplo, com retenção de 1 dia e frequência de &quot;a cada 48 horas&quot;, normalmente há pelo menos um backup restaurável. O backup restaurável mais recente pode ter sido feito há quase 48 horas, e o serviço pode ter um ou dois pontos de restauração, preservando a cadeia de backups necessária para restaurá-los.
+
 <Note>
   O agendamento personalizado substituirá a política de backup padrão do ClickHouse Cloud para o serviço em questão.
 
@@ -52,7 +56,7 @@ O ClickHouse Cloud permite configurar o agendamento dos seus backups para servi�
 Consulte [&quot;Configurar agendamentos de backup&quot;](/pt-BR/products/cloud/guides/backups/configurable-backups) para ver as etapas de configuração dos seus backups.
 
 <div id="byob">
-  ## Backups com seu próprio bucket (BYOB)
+  ## Backups com seu próprio bucket (BYOB) {#byob}
 </div>
 
 O ClickHouse Cloud permite exportar backups para o armazenamento na conta do seu provedor de serviços em nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).

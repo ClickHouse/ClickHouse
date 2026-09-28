@@ -15,9 +15,7 @@ import S3Settings from '/snippets/fr/_s3_settings.mdx';
 > description plus détaillée de chaque méthode de sauvegarde, consultez les pages consacrées aux méthodes spécifiques
 > dans la barre latérale.
 
-<div id="introduction">
-  ## Introduction
-</div>
+## Introduction {#introduction}
 
 Bien que la [réplication](/fr/reference/engines/table-engines/mergetree-family/replication) offre une protection contre les pannes matérielles, elle ne
 protège pas contre les erreurs humaines : suppression accidentelle de données, suppression de la mauvaise
@@ -70,9 +68,7 @@ Les sauvegardes peuvent :
 * être protégées par mot de passe
 * porter sur des [tables système, tables de journalisation ou tables de gestion des accès](#system-backups)
 
-<div id="backup-types">
-  ## Types de sauvegarde
-</div>
+## Types de sauvegarde {#backup-types}
 
 Les sauvegardes peuvent être complètes ou incrémentielles. Les sauvegardes complètes constituent une copie intégrale des
 données, tandis que les sauvegardes incrémentielles ne contiennent que les modifications apportées depuis la dernière sauvegarde complète.
@@ -89,18 +85,14 @@ Selon vos besoins, vous pouvez privilégier :
 * **Les sauvegardes incrémentielles** pour les grandes bases de données ou lorsque les sauvegardes doivent être effectuées fréquemment et à moindre coût.
 * **Les deux**, par exemple des sauvegardes complètes hebdomadaires et des sauvegardes incrémentielles quotidiennes.
 
-<div id="synchronous-vs-asynchronous">
-  ## Sauvegardes synchrones et asynchrones
-</div>
+## Sauvegardes synchrones et asynchrones {#synchronous-vs-asynchronous}
 
 Les commandes `BACKUP` et `RESTORE` peuvent également être marquées `ASYNC`. Dans ce cas, la
 commande de sauvegarde renvoie immédiatement, et le processus de sauvegarde s&#39;exécute en arrière-plan.
 Si les commandes ne sont pas marquées `ASYNC`, le processus de sauvegarde est synchrone et
 la commande reste bloquée jusqu&#39;à ce que la sauvegarde soit terminée.
 
-<div id="concurrent-vs-non-concurrent">
-  ## Sauvegardes concurrentes ou non concurrentes
-</div>
+## Sauvegardes concurrentes ou non concurrentes {#concurrent-vs-non-concurrent}
 
 Par défaut, ClickHouse autorise les sauvegardes et les restaurations
 concurrentes. Cela signifie que vous
@@ -125,9 +117,7 @@ La valeur par défaut des deux est true ; par défaut, les sauvegardes/restaurat
 autorisées. Lorsque ces paramètres sont définis sur false sur un cluster, une seule sauvegarde/restauration
 peut être exécutée sur un cluster à la fois.
 
-<div id="compressed-vs-uncompressed">
-  ## Sauvegardes compressées ou non compressées
-</div>
+## Sauvegardes compressées ou non compressées {#compressed-vs-uncompressed}
 
 Les sauvegardes ClickHouse prennent en charge la compression via les paramètres `compression_method` et `compression_level`.
 
@@ -139,9 +129,7 @@ BACKUP TABLE test.table
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="using-named-collections">
-  ## Utilisation des collections nommées
-</div>
+## Utilisation des collections nommées {#using-named-collections}
 
 Les collections nommées vous permettent de stocker des paires clé-valeur (comme des identifiants S3, des endpoints et des paramètres) réutilisables dans les opérations de sauvegarde/restauration.
 Elles permettent de :
@@ -153,9 +141,7 @@ Elles permettent de :
 
 Voir [« collections nommées »](/fr/concepts/features/configuration/server-config/named-collections) pour plus de détails.
 
-<div id="system-backups">
-  ## Sauvegarde des tables système, de journalisation ou de gestion des accès
-</div>
+## Sauvegarde des tables système, de journalisation ou de gestion des accès {#system-backups}
 
 Les tables système peuvent également être incluses dans vos workflows de sauvegarde et de restauration, mais leur
 prise en compte dépend de votre cas d’usage.
@@ -182,42 +168,115 @@ Cette fonctionnalité ne fonctionne que pour les configurations gérées au moye
 Les configurations d’accès définies dans les fichiers de configuration du serveur ClickHouse (par ex. `users.xml`)
 ne sont pas incluses dans les sauvegardes et ne peuvent pas être restaurées par cette méthode.
 
-<div id="syntax">
-  ## Syntaxe générale
-</div>
+## Syntaxe générale {#syntax}
 
 <Syntax />
 
-<div id="command-summary">
-  ### Résumé des commandes
-</div>
+### Résumé des commandes {#command-summary}
 
 Chacune des commandes ci-dessus est détaillée ci-dessous :
 
-| **Commande**                                                           | **Description**                                                                                                                                              |   |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | - |
-| `BACKUP`                                                               | Crée une sauvegarde des objets spécifiés                                                                                                                     |   |
-| `RESTORE`                                                              | Restaure des objets à partir d’une sauvegarde                                                                                                                |   |
-| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Sauvegarde/restaure une table spécifique (peut être renommée)                                                                                                |   |
-| `[PARTITION[S] partition_expr [,...]]`                                 | Sauvegarde/restaure uniquement certaines partitions de la table                                                                                              |   |
-| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Sauvegarde/restaure un dictionnaire                                                                                                                          |   |
-| `DATABASE database_name [AS database_name_in_backup]`                  | Sauvegarde/restaure une base de données entière (peut être renommée)                                                                                         |   |
-| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Sauvegarde/restaure une table temporaire (peut être renommée)                                                                                                |   |
-| `VIEW view_name [AS view_name_in_backup]`                              | Sauvegarde/restaure une vue (peut être renommée)                                                                                                             |   |
-| `[EXCEPT TABLES ...]`                                                  | Exclut certaines tables lors de la sauvegarde d’une base de données                                                                                          |   |
-| `ALL`                                                                  | Sauvegarde/restaure tout (toutes les bases de données, tables, etc.). Avant la version 23.4 de ClickHouse, `ALL` ne s’appliquait qu’à la commande `RESTORE`. |   |
-| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclut certaines tables ou bases de données lors de l’utilisation de `ALL`                                                                                   |   |
-| `[ON CLUSTER 'cluster_name']`                                          | Exécute la sauvegarde/restauration sur l’ensemble d’un cluster ClickHouse                                                                                    |   |
-| `TO\|FROM`                                                             | Direction : `TO` pour la destination de sauvegarde, `FROM` pour la source de restauration                                                                    |   |
-| `File('<path>/<filename>')`                                            | Stocke dans/restaure depuis le système de fichiers local                                                                                                     |   |
-| `Disk('<disk_name>', '<path>/')`                                       | Stocke sur/restaure depuis un disque configuré                                                                                                               |   |
-| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Stocke sur/restaure depuis Amazon S3 ou un stockage compatible S3                                                                                            |   |
-| `[SETTINGS ...]`                                                       | Voir ci-dessous pour la liste complète des paramètres                                                                                                        |   |
-| `[ASYNC]`                                                              | Exécute l’opération de manière asynchrone (renvoie immédiatement un ID que vous pouvez surveiller)                                                           |   |
+| **Commande**                                                           | **Description**                                                                                                                                                                                                                                                                                   |   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | Crée une sauvegarde des objets spécifiés                                                                                                                                                                                                                                                          |   |
+| `RESTORE`                                                              | Restaure des objets à partir d’une sauvegarde                                                                                                                                                                                                                                                     |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Sauvegarde/restaure une table spécifique (peut être renommée)                                                                                                                                                                                                                                     |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | Sauvegarde/restaure uniquement certaines partitions de la table                                                                                                                                                                                                                                   |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Sauvegarde/restaure un dictionnaire                                                                                                                                                                                                                                                               |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | Sauvegarde/restaure une base de données entière (peut être renommée)                                                                                                                                                                                                                              |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Sauvegarde/restaure une table temporaire (peut être renommée)                                                                                                                                                                                                                                     |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | Sauvegarde/restaure une vue (peut être renommée)                                                                                                                                                                                                                                                  |   |
+| `[EXCEPT TABLES ...]`                                                  | Exclut certaines tables lors de la sauvegarde d’une base de données                                                                                                                                                                                                                               |   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               | **(`BACKUP` uniquement)** Sauvegarde la définition d’une table sans ses lignes. Contrairement à `EXCEPT TABLES`, cette option n’exclut pas entièrement la table. Elle s’applique à l’élément sur lequel elle est spécifiée : voir [Sauvegarder une table sans ses données](#backup-without-data). |   |
+| `ALL`                                                                  | Sauvegarde/restaure tout (toutes les bases de données, tables, etc.). Avant la version 23.4 de ClickHouse, `ALL` ne s’appliquait qu’à la commande `RESTORE`.                                                                                                                                      |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclut certaines tables ou bases de données lors de l’utilisation de `ALL`                                                                                                                                                                                                                        |   |
+| `[ON CLUSTER 'cluster_name']`                                          | Exécute la sauvegarde/restauration sur l’ensemble d’un cluster ClickHouse                                                                                                                                                                                                                         |   |
+| `TO\|FROM`                                                             | Direction : `TO` pour la destination de sauvegarde, `FROM` pour la source de restauration                                                                                                                                                                                                         |   |
+| `File('<path>/<filename>')`                                            | Stocke dans/restaure depuis le système de fichiers local                                                                                                                                                                                                                                          |   |
+| `Disk('<disk_name>', '<path>/')`                                       | Stocke sur/restaure depuis un disque configuré                                                                                                                                                                                                                                                    |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Stocke sur/restaure depuis Amazon S3 ou un stockage compatible S3                                                                                                                                                                                                                                 |   |
+| `[SETTINGS ...]`                                                       | Voir ci-dessous pour la liste complète des paramètres                                                                                                                                                                                                                                             |   |
+| `[ASYNC]`                                                              | Exécute l’opération de manière asynchrone (renvoie immédiatement un ID que vous pouvez surveiller)                                                                                                                                                                                                |   |
 
-<div id="settings">
-  ### Paramètres
-</div>
+### Sauvegarder une table sans ses données {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` inclut la définition d&#39;une table dans la sauvegarde, mais pas ses lignes. Cette clause est utile
+pour les tables dont les données peuvent être régénérées après une restauration, comme les tables cibles des
+vues matérialisées.
+
+La clause détermine ce que `BACKUP` écrit dans la sauvegarde ; elle ne change pas ce que `RESTORE` peut faire avec celle-ci. Si
+`RESTORE` peut recréer une table, la restauration de sa définition sans ses lignes produit une table vide. La clause ne permet pas pour autant
+de restaurer une table qui ne pourrait pas l’être autrement : la possibilité de recréer une table à partir de sa définition
+sauvegardée dépend du moteur, et certains moteurs ne le permettent pas du tout. Voir
+[Moteurs que `RESTORE` ne peut pas recréer](#engines-restore-cannot-recreate).
+
+La portée de la clause se limite à l’élément auquel elle s’applique :
+
+* Sur un élément `DATABASE` ou `ALL`, elle peut désigner n’importe quelle table sauvegardée par cet élément :
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+* Pour un élément portant sur un seul objet (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`), seul l&#39;objet de cet élément
+  est pris en compte : la clause doit donc désigner cet objet, et aucun autre. Définissez un élément et
+  une clause distincts pour chaque table :
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+Si une table est désignée à la fois par un élément qui lui est propre et par la clause `EXCEPT DATA FROM` d’un élément plus large,
+ses données **sont** sauvegardées : désigner une table revient à demander la sauvegarde de ses données. C’est également le cas avec `EXCEPT TABLES`,
+où une table désignée explicitement est sauvegardée même si un élément plus large l’exclut.
+
+Les données de la table interne d’une vue matérialisée (ou des tables internes d’une table `TimeSeries`) sont
+exclues en indiquant le nom de l’objet externe&#39;s name; inner table names are not accepted by the clause.
+
+`EXCEPT DATA FROM {TABLE|TABLES}` n’est valide que pour `BACKUP`. `RESTORE` le rejette au lieu de l’accepter
+comme une opération sans effet.
+
+#### Moteurs que `RESTORE` ne peut pas recréer {#engines-restore-cannot-recreate}
+
+Certains moteurs ne peuvent pas être recréés par `RESTORE`, que l’option `EXCEPT DATA FROM {TABLE|TABLES}` soit utilisée ou non. Pour
+ces tables, la clause détermine toujours la taille de la sauvegarde, mais elle ne permet pas de restaurer une table
+vide : aucune table n’est restaurée à sa place, car `RESTORE` refuse de la créer.
+
+Le cas à retenir est celui d’une table `MaterializedPostgreSQL` autonome. Dès sa création, elle commencerait à répliquer les données depuis la
+source PostgreSQL active, mêlant ainsi le snapshot de la sauvegarde à l’état actuel de la source distante. C’est pourquoi
+`RESTORE` la rejette au niveau de la fabrique de stockage, avant même la création de la table, avec l’erreur `NOT_IMPLEMENTED`. Cette
+limitation est propre au moteur et s’applique aussi à une sauvegarde complète ordinaire.
+
+La procédure prise en charge consiste à restaurer les données sous un autre nom, dans une table `ReplacingMergeTree` créée
+au préalable avec la structure de la table imbriquée (y compris les colonnes `_sign` et `_version`) :
+
+```sql
+-- Back up the definition without the rows: they are replicated from PostgreSQL and can be replicated again
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLE mydb.pg_table TO Disk('backups', 'mydb/')
+
+CREATE TABLE mydb.plain_target
+(
+    key Int32,
+    value Int32,
+    _sign Int8 MATERIALIZED 1,
+    _version UInt64 MATERIALIZED 1
+)
+ENGINE = ReplacingMergeTree(_version) ORDER BY key
+
+-- Succeeds, and leaves `mydb.plain_target` empty because the backup carries no rows for `mydb.pg_table`
+RESTORE TABLE mydb.pg_table AS mydb.plain_target FROM Disk('backups', 'mydb/')
+SETTINGS allow_different_table_def = 1
+```
+
+`allow_different_table_def` est nécessaire, car la définition enregistrée dans la sauvegarde utilise le moteur
+`MaterializedPostgreSQL`, alors que la restauration cible volontairement un simple `ReplacingMergeTree`.
+Sans `EXCEPT DATA FROM TABLE`, la même commande `RESTORE` restaure aussi les lignes.
+
+### Paramètres {#settings}
 
 **Paramètres génériques de sauvegarde/restauration**
 
@@ -231,9 +290,7 @@ Chacune des commandes ci-dessus est détaillée ci-dessous :
 
 <AzureSettings />
 
-<div id="check-the-status-of-backups">
-  ## Administration et dépannage
-</div>
+## Administration et dépannage {#check-the-status-of-backups}
 
 La commande de sauvegarde renvoie un `id` et un `status`, et cet `id` peut être utilisé pour
 obtenir l’état de la sauvegarde. C’est très utile pour suivre l’avancement de

@@ -14,17 +14,17 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## reader_executor_block_size
+## reader_executor_block_size {#reader_executor_block_size}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1048576"},{"label": "Nova configuração experimental do ReaderExecutor: tamanho do fragmento de buffer para leituras da fonte."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1048576"},{"label": "Nova configuração experimental do ReaderExecutor: tamanho do fragmento de buffer para leituras da origem."}]}]} />
 
-Tamanho do fragmento de buffer para o `ReaderExecutor` experimental: as leituras da fonte preenchem nós com, no máximo, esse tamanho. Deve ser de pelo menos 128 KiB.
+Tamanho do fragmento de buffer para o `ReaderExecutor` experimental: as leituras da origem preenchem nós com, no máximo, esse tamanho. Deve estar entre 128 KiB e 40 MiB, a faixa comum a todos os tamanhos do `ReaderExecutor`.
 
-## reader_executor_max_tail_for_drain
+## reader_executor_max_tail_for_drain {#reader_executor_max_tail_for_drain}
 
 <ExperimentalBadge />
 
@@ -34,7 +34,7 @@ Tamanho do fragmento de buffer para o `ReaderExecutor` experimental: as leituras
 
 Limite de drenagem para o `ReaderExecutor` experimental: uma conexão longa de origem descartada a essa quantidade de bytes de seu limite final é lida até esse limite primeiro, para que seja concluída e volte reutilizável ao pool de conexões, em vez de ser contabilizada como uma conexão incompleta.
 
-## reader_executor_min_bytes_for_seek
+## reader_executor_min_bytes_for_seek {#reader_executor_min_bytes_for_seek}
 
 <ExperimentalBadge />
 
@@ -44,7 +44,17 @@ Limite de drenagem para o `ReaderExecutor` experimental: uma conexão longa de o
 
 Limite de lacuna à frente para o `ReaderExecutor` experimental: uma lacuna de até esse valor é ignorada na conexão de origem aberta (bridged / read through), em vez de emitir uma leitura separada da origem ou reabrir a conexão. Defina-o próximo ao ponto de equilíbrio entre largura de banda e custo por request, para que o bridging continue sendo vantajoso em termos de custo.
 
-## reader_executor_use_long_connections
+## reader_executor_plan_look_ahead {#reader_executor_plan_look_ahead}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="16777216" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "16777216"},{"label": "Nova configuração experimental do ReaderExecutor: até que distância à frente a residência em cache é resolvida no plano de leitura mantido."}]}]} />
+
+Define até que distância à frente o `ReaderExecutor` experimental resolve a residência em cache no plano de leitura que mantém (uma sondagem barata, não uma leitura), de modo que uma única resolução atenda a várias janelas. O plano fixa cada célula de cache resolvida até que o cursor passe por ela; assim, esse intervalo determina quanta memória e quanto cache não despejável cada leitor concorrente mantém. Não é um limite exato: uma fixação abrange um segmento ou bloco de cache inteiro, então uma célula que ultrapassa qualquer uma das extremidades do intervalo é mantida por completo, o que acrescenta até uma delas por camada de cache em cada extremidade. Deve estar entre 128 KiB e 40 MiB, a faixa comum a todos os tamanhos do `ReaderExecutor`, e ser no mínimo igual a `reader_executor_block_size`.
+
+## reader_executor_use_long_connections {#reader_executor_use_long_connections}
 
 <ExperimentalBadge />
 
@@ -54,7 +64,7 @@ Limite de lacuna à frente para o `ReaderExecutor` experimental: uma lacuna de a
 
 Reutiliza uma conexão longa e delimitada de origem entre janelas no `ReaderExecutor` experimental. Uma conexão longa é aquela cujo intervalo excede a janela de leitura atual; quando desativada, o executor não consome orçamento do pool de conexões, e cada janela abre uma conexão temporária de uso único (o caminho sem estado).
 
-## reader_executor_window_size
+## reader_executor_window_size {#reader_executor_window_size}
 
 <ExperimentalBadge />
 
@@ -62,6 +72,6 @@ Reutiliza uma conexão longa e delimitada de origem entre janelas no `ReaderExec
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "8388608"},{"label": "Aumentou a janela de leitura padrão do `ReaderExecutor` experimental de 4 MiB para 8 MiB. Sob pressão de memória, a janela é reduzida a partir dessa base, com piso de 128 KiB."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nova configuração experimental do ReaderExecutor: bytes fornecidos por janela de leitura."}]}]} />
 
-Bytes fornecidos por janela de leitura pelo `ReaderExecutor` experimental (a unidade retornada por uma operação de leitura). Deve ser de pelo menos 128 KiB.
+Bytes fornecidos por janela de leitura pelo `ReaderExecutor` experimental (a unidade retornada por uma operação de leitura). Deve estar entre 128 KiB e 40 MiB, a faixa compartilhada por todos os tamanhos do `ReaderExecutor`.
 
 {/*AUTOGENERATED_END*/}

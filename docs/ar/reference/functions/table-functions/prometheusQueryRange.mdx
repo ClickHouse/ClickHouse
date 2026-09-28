@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 يُقيِّم استعلام Prometheus باستخدام بيانات من جدول TimeSeries عبر نطاق من أزمنة التقييم.
 
-## البنية
+## البنية {#syntax}
 
 ```sql
 prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
@@ -18,52 +18,58 @@ prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_
 prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
 ```
 
-## المعاملات
+## المعاملات {#arguments}
 
 * `db_name` - اسم قاعدة البيانات التي يوجد فيها جدول TimeSeries.
 * `time_series_table` - اسم جدول TimeSeries.
 * `promql_query` - استعلام مكتوب [بصياغة PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
-* `start_time` - وقت بداية نطاق التقييم.
-* `end_time` - وقت نهاية نطاق التقييم.
+* `start_time` - وقت بداية نطاق التقييم، بدقة المللي ثانية أو أدق.
+* `end_time` - وقت نهاية نطاق التقييم، بدقة المللي ثانية أو أدق.
 * `step` - الخطوة المستخدَمة للتنقّل عبر وقت التقييم من `start_time` إلى `end_time` (شاملاً).
 
-## القيمة المُعادة
+## قيمة معادة {#returned-value}
 
-يمكن أن تُرجِع الدالة أعمدة مختلفة بناءً على نوع نتيجة الاستعلام المُمرَّر إلى المَعلمة `promql_query`:
+تُعيد الدالة أعمدة مختلفة تبعًا لنوع نتيجة الاستعلام المُمرَّر عبر المعلمة `promql_query`:
 
-| نوع النتيجة | أعمدة النتيجة                                                                     | مثال                                                |
-| ----------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector      | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix      | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar      | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string      | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| نوع النتيجة | أعمدة النتيجة                                                                       | مثال                                                |
+| ----------- | ----------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector      | tags Array(Tuple(String, String)), timestamp DateTime64(S, TZ), value Float64       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix      | tags Array(Tuple(String, String)), samples Array(Tuple(DateTime64(S, TZ), Float64)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar      | timestamp DateTime64(S, TZ), value Float64                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string      | timestamp DateTime64(S, TZ), value String                                           | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
 
-يُسمّى العمود `samples` باسم `time_series` إذا كان جدول `TimeSeries` من [version](/ar/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 أو أقدم.
+تكون القيم دائمًا من النوع `Float64`، بغضّ النظر عن نوعها في جدول TimeSeries. وتطابق دقة الطوابع الزمنية `S` دقتها في الجدول،
+على ألا تقل عن 3 (مللي ثانية). أما المنطقة الزمنية `TZ`، فتطابق المنطقة الزمنية لـ`start_time` و`end_time` إذا كانا من النوع `DateTime`
+أو `DateTime64` ولهما المنطقة الزمنية نفسها؛ وإلا فتطابق المنطقة الزمنية للطوابع الزمنية في الجدول.
 
-## الميزات المدعومة في PromQL
+يكون اسم العمود `samples` هو `time_series` إذا كان [إصدار](/ar/reference/engines/table-engines/integrations/time-series#schema-versioning) جدول `TimeSeries` هو 2 أو أقدم.
 
-### المحددات
+## الميزات المدعومة في PromQL {#supported-promql-features}
+
+### المحددات {#selectors}
 
 المحددات اللحظية، ومحددات النطاق، ومطابقات الوسوم (`=`, `!=`, `=~`, `!~`)، ومُعدِّلات الإزاحة، ومُعدِّلات الطابع الزمني `@`، والاستعلامات الفرعية.
 
-### الدوال
+### الدوال {#functions}
 
-| الفئة          | الدوال                                                                                                                                                                                                                                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| النطاق         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
-| الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`                                                                                                                                                                                        |
-| حساب المثلثات  | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                                                                                                                                                                                                       |
-| DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                                                                                                                                                                                                                     |
-| الوسم          | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                        |
-| نوع            | `scalar`, `vector`                                                                                                                                                                                                                                                                                                   |
-| مُدرَّج تكراري | `histogram_quantile`                                                                                                                                                                                                                                                                                                 |
-| أخرى           | `time`, `pi`, `absent`                                                                                                                                                                                                                                                                                               |
+| الفئة          | الدوال                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| النطاق         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `first_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `predict_linear` |
+| الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`, `min_of`, `max_of`                                                                                                                                                                                                                                                                                                 |
+| حساب المثلثات  | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                                                                                                                                                                                                                                                                                                                                    |
+| DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                                                                                                                                                                                                                                                                                                                                                  |
+| الوسم          | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| نوع            | `scalar`, `vector`                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| مُدرَّج تكراري | `histogram_quantile`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| أخرى           | `time`, `pi`, `absent`                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 **ملاحظة**: تستخدم `histogram_quantile` الاستيفاء الخطي على حاويات المُدرَّج التكراري التقليدية (التي يحدّدها الوسم `le`). المُدرَّجات التكرارية الأصلية غير مدعومة. يجب أن تكون قيمة الوسيط `phi` (مستوى الكوانتايل) قيمة `scalar` ثابتة. تُرفَض التعبيرات التي تتغيّر في كل خطوة، مثل `histogram_quantile(time() / 1000, ...)`، مع ظهور استثناء `NOT_IMPLEMENTED`.
 
-**ملاحظة**: الدالتان `ts_of_min_over_time` و`ts_of_max_over_time` تجريبيتان في Prometheus (تُفعَّلان هناك باستخدام `--enable-feature=promql-experimental-functions`)؛ ويقيّمهما ClickHouse دون اشتراط هذا الخيار.
+**ملاحظة**: تُرجع `min_of(a, b)` و`max_of(a, b)` القيمة الأصغر أو الأكبر، على التوالي، من بين قيمتين من النوع `scalar`. يجب أن يكون كلا الوسيطين من النوع `scalar`.
 
-### العوامل
+**ملاحظة**: الدوال `min_of` و`max_of` و`ts_of_min_over_time` و`ts_of_max_over_time` و`ts_of_last_over_time` و`first_over_time` و`ts_of_first_over_time` و`mad_over_time` تجريبية في Prometheus (تُفعَّل هناك باستخدام `--enable-feature=promql-experimental-functions`)؛ ويقيّمها ClickHouse دون اشتراط هذا الخيار.
+
+### العوامل {#operators}
 
 العوامل الثنائية الحسابية (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) وعوامل المقارنة (`==`, `!=`, `<`, `>`, `<=`, `>=` مع `bool` اختياري)، مع المعدِّلات `on()`/`ignoring()` و`group_left()`/`group_right()`.
 
@@ -71,15 +77,11 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 العاملان الأحاديان `+` و`-`.
 
-### عوامل التجميع
+### عوامل التجميع {#aggregation-operators}
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — مع معدِّلات اختيارية `by()` أو `without()`.
 
-### غير مدعوم حاليًا
-
-* دوال النطاق `stddev_over_time`، `stdvar_over_time`، `mad_over_time`، `first_over_time`، `ts_of_last_over_time`، `ts_of_first_over_time`
-
-## مثال
+## مثال {#example}
 
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)

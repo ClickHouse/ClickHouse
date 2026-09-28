@@ -17,7 +17,7 @@ No momento, o ClickHouse Cloud não oferece suporte a failover automático nem �
 </Tip>
 
 <div id="definitions">
-  ## Definições
+  ## Definições {#definitions}
 </div>
 
 Antes, é útil revisar algumas definições.
@@ -28,11 +28,9 @@ Antes, é útil revisar algumas definições.
 
 **Backups e snapshots de banco de dados**: Os backups fornecem armazenamento durável de longo prazo com uma cópia separada dos dados. Os snapshots não criam uma cópia adicional dos dados, geralmente são mais rápidos e proporcionam RPOs melhores.
 
-<div id="database-backups">
-  ## Backups de banco de dados
-</div>
+## Backups de banco de dados {#database-backups}
 
-Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisisponibilidade do serviço primário.
+Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisponibilidade do serviço primário.
 O ClickHouse Cloud oferece os seguintes recursos de backup.
 
 1. **Backups padrão**
@@ -56,11 +54,13 @@ Haverá cobrança por transferência de dados para backups entre regiões e entr
 Os clientes podem [configurar backups](/pt-BR/products/cloud/guides/backups/configurable-backups) para serem realizados com maior frequência, até a cada 6 horas, para melhorar o RPO.
 Os clientes também podem configurar um período de retenção maior.
 
+A frequência dos backups determina a idade máxima do ponto de restauração mais recente e, portanto, o RPO. A retenção controla por quanto tempo os dados de backup são mantidos; ela não reduz a idade do ponto de restauração mais recente. Por exemplo, em um serviço configurado com retenção de 1 dia e frequência de 48 horas, o ponto de restauração mais recente pode ter quase 48 horas.
+
 Os backups atualmente disponíveis para o serviço estão listados na página “backups” do console do ClickHouse Cloud.
 Esta seção também mostra o status de sucesso/falha de cada backup.
 
 <div id="restoring-from-a-backup">
-  ## Restauração a partir de um backup
+  ## Restauração a partir de um backup {#restoring-from-a-backup}
 </div>
 
 1. Os backups padrão, no bucket do ClickHouse Cloud, podem ser restaurados em um novo serviço na mesma região.
@@ -82,13 +82,13 @@ Como a duração depende muito dos seus dados, schema e configuração de backup
 </Note>
 
 <div id="recovery-process">
-  ## Processo de recuperação
+  ## Processo de recuperação {#recovery-process}
 </div>
 
 Esta seção explica as várias opções de recuperação e o procedimento a ser seguido em cada caso.
 
 <div id="primary-service-data-corruption">
-  ### Corrupção de dados do serviço primário
+  ### Corrupção de dados do serviço primário {#primary-service-data-corruption}
 </div>
 
 Nesse caso, os dados [podem ser restaurados](/pt-BR/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a partir do backup em outro serviço na mesma região.
@@ -105,7 +105,7 @@ Para restaurar a partir de um backup existente
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de um backup" />
 
 <div id="primary-region-downtime">
-  ### Indisponibilidade da região primária
+  ### Indisponibilidade da região primária {#primary-region-downtime}
 </div>
 
 Você pode [exportar backups](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para um bucket no seu próprio provedor de cloud.
@@ -125,7 +125,7 @@ Isso pode envolver:
 </Note>
 
 <div id="additional-options">
-  ## Opções adicionais
+  ## Opções adicionais {#additional-options}
 </div>
 
 Há algumas opções adicionais a considerar.

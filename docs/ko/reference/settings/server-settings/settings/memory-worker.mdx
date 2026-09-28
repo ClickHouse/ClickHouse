@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-메모리 워커가 jemalloc 및 cgroups와 같은 외부 소스의 정보를 바탕으로 내부 메모리 트래커를 보정할지 여부입니다
+메모리 워커가 매 틱마다 프로세스가 실제로 사용하는 메모리의 외부 측정값을 기준으로 전역 메모리 트래커(memory tracker)를 보정할지 여부를 지정합니다. 측정값으로는 cgroup을 사용할 수 있으면 cgroup 메모리 사용량(`memory_worker_use_cgroup` 참조)을, 그렇지 않으면 jemalloc의 `stats.resident`를 사용합니다.
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+전역 메모리 트래커는 카운터로, 메모리를 할당하면 값이 증가하고 메모리 할당을 해제하면 값이 감소합니다. 이 값을 낮추는 다른 요인이 없으므로 집계상의 비대칭은 프로세스가 종료될 때까지 그대로 남으며, 값이 위로 벗어난 편차는 절대 해소되지 않습니다. 해당 편차에 해당하는 메모리는 이미 해제된 상태이기 때문입니다. 편차만으로 `max_server_memory_usage`를 초과하면 연결 시작 시의 0바이트 검사까지 포함해 모든 메모리 할당이 실패하며, 서버는 한도의 일부만 사용하고 있는데도 모든 쿼리를 거부합니다. 측정값을 기준으로 보정하면 이러한 편차가 지속되는 기간이 워커의 1틱(`memory_worker_period_ms`, 기본값은 cgroup에서 읽을 때 50 ms, jemalloc에서 읽을 때 100 ms) 이내로 제한됩니다.
+
+보정한다고 해서 편차가 가려지지는 않습니다. `MemoryTrackingUncorrected`에는 보정을 전혀 적용하지 않았을 경우의 메모리 트래커 값(워커의 매 틱마다 갱신되는 단순 카운터의 스냅샷)이 유지되므로, `MemoryTrackingUncorrected - MemoryTracking`으로 지금까지 누적된 편차를 확인할 수 있습니다.
+
+이 설정을 `0`으로 지정하면 이전 버전의 동작으로 돌아갑니다. 즉, 메모리 트래커는 워커의 첫 번째 틱과 값이 음수가 될 때에만 보정됩니다.
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 메모리 압박 상태가 지속될 때 jemalloc의 `dirty_decay_ms`를 동적으로 조정하기 전까지 경과해야 하는 시간(밀리초)입니다. 메모리 사용량이 이 기간 동안 계속 purge 임계값을 초과하면 메모리를 적극적으로 회수하기 위해 자동 dirty page decay가 비활성화됩니다(`dirty_decay_ms=0`). 사용량이 이 기간 동안 계속 임계값 아래에 머물면 기본 decay 동작이 복원됩니다. 동적 조정을 비활성화하고 jemalloc의 기본 decay 설정을 사용하려면 0으로 설정하세요.
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -40,33 +40,25 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 `max_server_memory_usage_to_ram_ratio`가 `0`이면 이 설정은 아무런 영향을 미치지 않습니다.
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 메모리 트래커가 기록한 메모리 사용량을 보정하고, 메모리 사용량이 높을 때 사용되지 않는 페이지를 정리하는 메모리 워커의 틱 주기입니다. 0으로 설정하면 메모리 사용량의 출처에 따라 기본값이 사용됩니다
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />
 
 ClickHouse 서버에서 사용할 수 있는 메모리를 기준으로 한 jemalloc 더티 페이지(dirty pages)의 임계값 비율입니다. 더티 페이지 크기가 이 비율을 초과하면 메모리 워커가 더티 페이지 purge를 강제로 수행합니다. 0으로 설정하면 더티 페이지 비율 기준의 강제 purge가 비활성화됩니다.
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 ClickHouse 서버에서 사용 가능한 메모리 대비 jemalloc purge를 수행하는 임계값 비율입니다. 전체 메모리 사용량이 이 비율을 초과하면 메모리 워커가 dirty pages를 강제로 purge합니다. 0으로 설정하면 전체 메모리를 기준으로 하는 강제 purge가 비활성화됩니다.
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
 
@@ -86,9 +78,7 @@ ClickHouse 서버에서 사용 가능한 메모리 대비 jemalloc purge를 수�
 `resident - tracked` 간극이 tracker의 bookkeeping 지연보다 새니타이저의 shadow /
 런타임 오버헤드의 영향을 더 크게 받기 때문입니다.
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />현재 cgroup의 메모리 사용량 정보를 사용해 메모리 추적을 보정합니다.
 

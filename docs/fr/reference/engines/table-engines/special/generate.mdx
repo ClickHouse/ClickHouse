@@ -16,24 +16,30 @@ Exemples d&#39;utilisation :
 * À utiliser lors de tests pour alimenter de grandes tables reproductibles.
 * Générer des données d&#39;entrée aléatoires pour des tests de fuzzing.
 
-<div id="usage-in-clickhouse-server">
-  ## Utilisation sur le serveur ClickHouse
-</div>
+## Utilisation dans le serveur ClickHouse {#usage-in-clickhouse-server}
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
-Les paramètres `max_array_length` et `max_string_length` spécifient respectivement la longueur maximale de tous les
-tableaux ou colonnes de type map, ainsi que des chaînes, dans les données générées.
+Les paramètres `max_array_length` et `max_string_length` définissent respectivement la longueur maximale de toutes
+les colonnes de type array ou map et des chaînes de caractères dans les données générées.
 
-Le moteur de table Generate prend uniquement en charge les requêtes `SELECT`.
+La clause `SETTINGS` contrôle la manière dont les valeurs `Nullable`, `Variant`, `Dynamic` et `JSON` sont générées :
+`null_ratio` (par défaut `0.0625`) correspond à la probabilité qu&#39;une valeur soit `NULL`, ainsi qu&#39;à la probabilité de base
+qu&#39;une clé `JSON` soit absente d&#39;une ligne — une minorité de clés éparses sont absentes plusieurs fois plus
+souvent ; `max_json_depth` (par défaut `3`) limite la profondeur d&#39;imbrication des objets `JSON` générés,
+et `max_json_keys_per_object` (par défaut `8`) limite le nombre de clés générées à un même niveau d&#39;un
+objet. La fonction de table [`generateRandom`](/fr/reference/functions/table-functions/generate) accepte
+les mêmes paramètres.
 
-Il prend en charge tous les [types de données](/fr/reference/data-types/index) pouvant être stockés dans une table, à l&#39;exception de `AggregateFunction`.
+Le table engine Generate ne prend en charge que les requêtes `SELECT`.
 
-<div id="example">
-  ## Exemple
-</div>
+Il prend en charge tous les [DataTypes](/fr/reference/data-types/index) pouvant être stockés dans une table,
+à l&#39;exception de `AggregateFunction`, `Interval`, `Nothing` et `QBit`.
+
+## Exemple {#example}
 
 **1.** Configurez la table `generate_engine_table` :
 
@@ -55,9 +61,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-<div id="details-of-implementation">
-  ## Détails de l’implémentation
-</div>
+## Détails de l’implémentation {#details-of-implementation}
 
 * Non pris en charge :
   * `ALTER`

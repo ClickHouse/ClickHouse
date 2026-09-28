@@ -17,9 +17,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * [خدمة ClickHouse Cloud](/ar/get-started/setup/cloud) قيد التشغيل
 * بيئة التطوير المتكاملة (IDE) أو أداة التطوير المعتمدة على الوكلاء التي تفضّلها
 
-<div id="enable-remote-mcp-server">
-  ## تمكين خادم MCP البعيد لـ Cloud
-</div>
+## تمكين خادم MCP البعيد لـ Cloud {#enable-remote-mcp-server}
 
 اتصل بخدمة ClickHouse Cloud التي تريد تمكين خادم MCP البعيد لها.
 في القائمة الجانبية اليسرى، انقر على **Connect**. ستُفتح نافذة تتضمن تفاصيل الاتصال.
@@ -28,7 +26,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="اختر MCP في نافذة Connect" size="md" />
 
-بدّل الزر إلى وضع التشغيل لتمكين MCP لهذه الخدمة:
+بدّل الزر إلى وضع التشغيل لتمكين MCP لهذه الخدمة. يتطلب تمكين MCP أو تعطيله امتلاك الصلاحية `control-plane:service:manage-mcp` (راجع [أدوار وصلاحيات Console](/ar/products/cloud/reference/security/console-roles#console-permissions)):
 
 <Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="تمكين خادم MCP" size="md" />
 
@@ -39,13 +37,13 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## إعداد Remote MCP للتطوير
+  ## إعداد Remote MCP للتطوير {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 اختر بيئة التطوير المتكاملة أو الأداة المناسبة أدناه، ثم اتبع تعليمات الإعداد المقابلة.
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 من دليل العمل الحالي، شغِّل الأمر التالي لإضافة تكوين ClickHouse Cloud MCP Server إلى Claude Code:
@@ -69,7 +67,7 @@ claude
 حدِّد `clickhouse-cloud` وسجِّل الدخول عبر OAuth باستخدام بيانات الاعتماد الخاصة بك في ClickHouse Cloud.
 
 <div id="claude-web">
-  ### واجهة الويب لـ Claude
+  ### واجهة الويب لـ Claude {#claude-web}
 </div>
 
 1. انتقل إلى **Customize** &gt; **Connectors**
@@ -79,7 +77,7 @@ claude
 5. أكمِل المصادقة باستخدام بيانات اعتماد ClickHouse Cloud عبر OAuth
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. تصفّح خوادم MCP وثبّتها من [متجر Cursor](https://cursor.com/marketplace).
@@ -87,7 +85,7 @@ claude
 3. أكمل المصادقة باستخدام OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 أضِف الإعداد التالي إلى `.vscode/mcp.json`:
@@ -106,7 +104,7 @@ claude
 لمزيد من التفاصيل، راجع [وثائق Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 حرِّر ملف `mcp_config.json` باستخدام التكوين التالي:
@@ -125,7 +123,7 @@ claude
 لمزيد من التفاصيل، اطّلع على [وثائق Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 أضِف ClickHouse كخادم مخصّص.
@@ -145,7 +143,7 @@ claude
 لمزيد من التفاصيل، راجع [وثائق Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 نفّذ الأمر التالي لإضافة خادم MCP الخاص بـ ClickHouse Cloud عبر CLI:
@@ -155,7 +153,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## مثال على الاستخدام
+  ## مثال على الاستخدام {#example-usage}
 </div>
 
 بمجرد الاتصال، يمكنك التفاعل مع ClickHouse Cloud عبر مطالبات باللغة الطبيعية.
@@ -163,7 +161,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 للاطلاع على قائمة كاملة بالأدوات المتاحة، راجع [مرجع الأدوات](/ar/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### استكشاف بياناتك
+  ### استكشاف بياناتك {#exploring-data}
 </div>
 
 ابدأ بالتعرّف على المتاح:
@@ -176,7 +174,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;اعرض جميع الجداول التي تبدأ أسماؤها بـ `events_`&quot; | `list_tables` (باستخدام عامل التصفية `like`) |
 
 <div id="running-queries">
-  ### تشغيل الاستعلامات التحليلية
+  ### تشغيل الاستعلامات التحليلية {#running-queries}
 </div>
 
 اطرح أسئلة بلغة طبيعية، وسيتولى الوكيل ترجمتها إلى SQL:
@@ -190,7 +188,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 لا تتيح الأداة `run_select_query` سوى عبارات `SELECT`. جميع الاستعلامات للقراءة فقط.
 
 <div id="managing-services">
-  ### إدارة الخدمات والبنية التحتية
+  ### إدارة الخدمات والبنية التحتية {#managing-services}
 </div>
 
 اطّلع على موارد ClickHouse Cloud لديك:
@@ -204,7 +202,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;ما هي ClickPipes المُعدّة على هذه الخدمة؟&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### تكاليف المراقبة
+  ### تكاليف المراقبة {#monitoring-costs}
 </div>
 
 | الموجّه                                                    | الأداة المستخدم                                    |
@@ -213,7 +211,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;اعرض لي التكاليف اليومية من 1 مارس إلى 15 مارس&quot; | `get_organization_cost` (مع `from_date` و `to_date`) |
 
 <div id="related-content">
-  ## محتوى ذو صلة
+  ## محتوى ذو صلة {#related-content}
 </div>
 
 * [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

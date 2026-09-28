@@ -17,9 +17,7 @@ Esta guía muestra cómo habilitar el servidor MCP remoto de ClickHouse Cloud y 
 * Un [servicio de ClickHouse Cloud](/es/get-started/setup/cloud) en ejecución
 * El IDE o la herramienta de desarrollo con agentes que prefiera
 
-<div id="enable-remote-mcp-server">
-  ## Habilitar el servidor MCP remoto en Cloud
-</div>
+## Habilitar el servidor MCP remoto en Cloud {#enable-remote-mcp-server}
 
 Conéctese al servicio de ClickHouse Cloud en el que desea habilitar el servidor MCP remoto.
 En el menú de la izquierda, haga clic en **Conectar**. Se abrirá una ventana con los detalles de conexión.
@@ -28,7 +26,7 @@ Seleccione **Conectar with MCP**:
 
 <Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Seleccione MCP en la ventana modal Conectar" size="md" />
 
-Active el botón para habilitar MCP en el servicio:
+Active el botón para habilitar MCP en el servicio. Para habilitar o deshabilitar MCP se necesita el permiso `control-plane:service:manage-mcp` (consulte [Roles y permisos de la consola](/es/products/cloud/reference/security/console-roles#console-permissions)):
 
 <Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Habilitar el servidor MCP" size="md" />
 
@@ -39,13 +37,13 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## Configura un MCP remoto para desarrollo
+  ## Configura un MCP remoto para desarrollo {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 Elige tu IDE o herramienta a continuación y sigue las instrucciones de configuración correspondientes.
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 Desde tu directorio de trabajo, ejecuta el siguiente comando para agregar la configuración del MCP Server de ClickHouse Cloud a Claude Code:
@@ -69,7 +67,7 @@ Ejecute el siguiente comando para ver la lista de servidores MCP:
 Selecciona `clickhouse-cloud` y autentícate con OAuth usando tus credenciales de ClickHouse Cloud.
 
 <div id="claude-web">
-  ### Interfaz web de Claude
+  ### Interfaz web de Claude {#claude-web}
 </div>
 
 1. Ve a **Personalizar** &gt; **Conectores**
@@ -79,7 +77,7 @@ Selecciona `clickhouse-cloud` y autentícate con OAuth usando tus credenciales d
 5. Autentícate con tus credenciales de ClickHouse Cloud mediante OAuth
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. Explora e instala servidores MCP desde el [Marketplace de Cursor](https://cursor.com/marketplace).
@@ -87,7 +85,7 @@ Selecciona `clickhouse-cloud` y autentícate con OAuth usando tus credenciales d
 3. Autentícate con OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 Añade la siguiente configuración a tu `.vscode/mcp.json`:
@@ -106,7 +104,7 @@ Añade la siguiente configuración a tu `.vscode/mcp.json`:
 Para obtener más información, consulta la [documentación de Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 Edita el archivo `mcp_config.json` con la siguiente configuración:
@@ -125,7 +123,7 @@ Edita el archivo `mcp_config.json` con la siguiente configuración:
 Para más detalles, consulta la [documentación de Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 Añade ClickHouse como un servidor personalizado.
@@ -145,7 +143,7 @@ Zed debería solicitarte que te autentiques mediante OAuth cuando se conecte por
 Para obtener más información, consulta la [documentación de Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 Ejecute el siguiente comando para agregar el servidor MCP de ClickHouse Cloud desde la CLI:
@@ -155,7 +153,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## Ejemplo de uso
+  ## Ejemplo de uso {#example-usage}
 </div>
 
 Una vez conectado, puedes interactuar con ClickHouse Cloud mediante prompts en lenguaje natural.
@@ -163,7 +161,7 @@ A continuación, se muestran algunos flujos de trabajo habituales y las herramie
 Para consultar la lista completa de herramientas disponibles, consulta la [referencia de herramientas](/es/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### Explorar tus datos
+  ### Explorar tus datos {#exploring-data}
 </div>
 
 Comienza por descubrir qué hay disponible:
@@ -176,7 +174,7 @@ Comienza por descubrir qué hay disponible:
 | &quot;Enumera todas las tablas cuyos nombres empiezan por `events_`&quot; | `list_tables` (con el filtro `like`) |
 
 <div id="running-queries">
-  ### Ejecutar consultas analíticas
+  ### Ejecutar consultas analíticas {#running-queries}
 </div>
 
 Haz preguntas en lenguaje natural y el agente las traducirá a SQL:
@@ -190,7 +188,7 @@ Haz preguntas en lenguaje natural y el agente las traducirá a SQL:
 La herramienta `run_select_query` solo permite sentencias `SELECT`. Todas las consultas son de solo lectura.
 
 <div id="managing-services">
-  ### Gestión de servicios e infraestructura
+  ### Gestión de servicios e infraestructura {#managing-services}
 </div>
 
 Consulta tus recursos de ClickHouse Cloud:
@@ -204,7 +202,7 @@ Consulta tus recursos de ClickHouse Cloud:
 | &quot;¿Qué ClickPipes están configurados en este servicio?&quot;              | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### Costos de monitoreo
+  ### Costos de monitoreo {#monitoring-costs}
 </div>
 
 | Prompt                                                              | Herramienta invocada                                  |
@@ -213,7 +211,7 @@ Consulta tus recursos de ClickHouse Cloud:
 | &quot;Muéstrame los costos diarios del 1 al 15 de marzo&quot;       | `get_organization_cost` (con `from_date` y `to_date`) |
 
 <div id="related-content">
-  ## Contenido relacionado
+  ## Contenido relacionado {#related-content}
 </div>
 
 * [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

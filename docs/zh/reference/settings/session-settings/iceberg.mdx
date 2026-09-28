@@ -40,7 +40,32 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "新增设置，用于限制并发解码的 Iceberg manifest 文件数量，对 delete manifest 和 data manifest 同样适用。它取代了 `iceberg_delete_manifest_decode_concurrency`（保留为别名）。取值 `2` 近似于 26.9 之前的数据路径行为：一次解码一个 manifest，同时下一个 manifest 的拉取已在进行中；因此当 `compatibility` 为 26.8 或更低时，delete 解码也会以 2 而非其发布默认值 4 运行，从而保持旧数据路径的内存占用规模，代价是损失部分 delete 解码的重叠执行。"}]}]} />
+<VersionHistory
+  rows={[
+{
+  id: "row-1",
+  items: [
+    { label: "26.9" },
+    { label: "4" },
+    {
+      label:
+        "新增设置，用于限制并发解码的 Iceberg manifest 文件数量，对 delete manifest 和 data manifest 同样适用。它取代了 `iceberg_delete_manifest_decode_concurrency`（保留为别名）。取值 `2` 近似于 26.9 之前的数据路径行为：一次解码一个 manifest，同时下一个 manifest 的拉取已在进行中；因此当 `compatibility` 为 26.8 或更低时，delete 解码也会以 2 而非其发布默认值 4 运行，从而保持旧数据路径的内存占用规模，代价是损失部分 delete 解码的重叠执行。"
+    }
+  ]
+},
+{
+  id: "row-2",
+  items: [
+    { label: "26.8" },
+    { label: "4" },
+    {
+      label:
+        "新增设置，用于限制在读取第一行之前并发解码的 Iceberg delete manifest 文件数量。在 26.8 之前，一次只解码一个 manifest，同时下一个 manifest 的拉取已在进行中，因此 `2` 最接近之前的行为；在之前的行为下，这些 manifest 的对象存储往返耗时总和都落在读取第一行之前的关键路径上。当时该设置名为 `iceberg_delete_manifest_decode_concurrency`，现已成为该设置的别名。"
+    }
+  ]
+}
+]}
+/>
 
 读取表时并发解码的 Iceberg manifest 文件的最大数量。
 

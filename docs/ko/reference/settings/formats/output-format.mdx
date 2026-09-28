@@ -129,7 +129,7 @@ ClickHouse는 읽는 쪽에서 이미 해당 타입을 알고 있는 경우, 즉
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Arrow 딕셔너리에서 64비트 인덱스 유형 사용을 허용합니다"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "0"},{"label": "Arrow 딕셔너리에서 64비트 인덱스 유형 사용을 허용합니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Arrow 딕셔너리에서 64비트 인덱스 유형 사용을 허용합니다"}]}]} />
 
 Arrow 형식의 딕셔너리 인덱스에는 항상 64비트 정수를 사용합니다
 
@@ -470,7 +470,7 @@ JSON* 포맷으로 출력할 때 64비트 [부동소수점 값](/ko/reference/da
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "기본적으로 JSON에서 64비트 정수에 따옴표를 붙이지 않도록 설정합니다"}]}]} />
 
 [JSON](/ko/reference/formats/JSON/JSON) 포맷으로 출력할 때 64비트 이상 [정수](/ko/reference/data-types/int-uint)(예: `UInt64`, `Int128`)에 따옴표를 붙일지 제어합니다.
-이러한 정수는 기본적으로 따옴표로 묶여 출력됩니다. 이 동작은 대부분의 JavaScript 구현과 호환됩니다.
+이러한 정수는 기본적으로 따옴표 없이 출력됩니다. 이 설정을 활성화하면 정수가 따옴표로 묶여 출력되며, 이는 대부분의 JavaScript 구현과 호환됩니다.
 
 가능한 값:
 
@@ -1034,6 +1034,25 @@ Pretty 형식에 표시할 값의 최대 너비입니다. 이보다 크면 잘�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Pretty 형식에서 이름이 지정된 Tuple을 JSON 객체로 출력할지 제어하는 새로운 설정"}]}]} />
 
 Pretty 형식에서 이름이 지정된 Tuple을 가독성 좋게 포맷된 JSON 객체로 출력할지 제어합니다.
+
+이 설정은 named tuple이 하나의 셀 안에 렌더링되는 경우에 적용됩니다. 결과의 컬럼 자체가 named tuple이고 `output_format_pretty_named_tuples_as_subcolumns`가 활성화되어 있으면, 해당 컬럼은 대신 서브컬럼으로 분할되어 표시됩니다.
+
+## output_format_pretty_named_tuples_as_subcolumns {#output_format_pretty_named_tuples_as_subcolumns}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Pretty 형식에서 이름이 지정된 Tuple 컬럼을 서브컬럼으로 분할하여 표시하고, 원소 이름을 추가 헤더 줄에 표시하는 새로운 설정입니다."}]}]} />
+
+Pretty 형식에서 이름이 지정된 Tuple 컬럼을 서브컬럼으로 분할하여 표시하고, 원소 이름은 추가 헤더 줄에 표시합니다. 예를 들어 `SELECT 'hello' AS x, (1 AS a, 'world' AS b) AS t`는 다음과 같이 표시됩니다.
+
+```
+   ┌─x─────┬─t─────────┐
+   ├───────┼─a─┬─b─────┤
+1. │ hello │ 1 │ world │
+   └───────┴───┴───────┘
+```
+
+중첩된 이름이 지정된 Tuple은 중첩 수준마다 헤더 행이 하나씩 추가됩니다. 이 설정은 결과 컬럼 중 타입이 다른 타입으로 감싸지지 않은 이름이 지정된 `Tuple`인 컬럼에만 적용됩니다. 다른 타입 내부에 중첩된 이름이 지정된 Tuple(예: `Array` 내부 또는 `enable_nullable_tuple_type`으로 허용되는 `Nullable` 내부)이나 사용자 정의 타입 이름으로 감춰진 이름이 지정된 Tuple은 `output_format_pretty_named_tuples_as_json`에 따라 단일 셀 안에 렌더링됩니다. 특히 `Nullable(Tuple(...))` 컬럼은 계속 단일 셀로 렌더링되므로 `NULL` 튜플과 `NULL` 원소로 이루어진 튜플을 구분할 수 있습니다.
 
 ## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
 

@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: 'Seguridad'
 title: 'Seguridad'
-description: 'Características de seguridad de ClickHouse Managed Postgres, incluida la inclusión de IP en listas de permitidos, el cifrado y Private Link'
-keywords: ['seguridad de Postgres', 'inclusión de IP en listas de permitidos', 'cifrado', 'tls', 'ssl', 'private link', 'retención de copias de seguridad']
+description: 'Características de seguridad de ClickHouse Managed Postgres, incluida la inclusión de IP en listas de permitidos, el cifrado, AWS PrivateLink y GCP Private Service Connect'
+keywords: ['seguridad de Postgres', 'inclusión de IP en listas de permitidos', 'cifrado', 'tls', 'ssl', 'private link', 'private service connect', 'psc', 'retención de copias de seguridad']
 doc_type: 'guide'
 ---
 
@@ -21,7 +21,7 @@ Los filtros IP determinan qué direcciones IP de origen pueden conectarse a su i
 <Image img="/images/managed-postgres/ip-filters.webp" alt="Configuración de la lista de acceso IP" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### Configuración de filtros IP
+  ### Configuración de filtros IP {#configuring-ip-filters}
 </div>
 
 Para configurar los filtros IP:
@@ -58,7 +58,7 @@ ClickHouse Managed Postgres cifra sus datos tanto en reposo como en tránsito pa
 Todos los datos almacenados por ClickHouse Managed Postgres están cifrados en reposo para protegerlos frente al acceso no autorizado a la infraestructura de almacenamiento subyacente.
 
 <div id="nvme-encryption">
-  #### Cifrado del almacenamiento NVMe
+  #### Cifrado del almacenamiento NVMe {#nvme-encryption}
 </div>
 
 Los archivos de la base de datos, los logs de transacciones y los archivos temporales almacenados en unidades NVMe se cifran mediante algoritmos de cifrado estándar del sector. Este cifrado es transparente para las aplicaciones y no requiere ninguna configuración.
@@ -82,7 +82,7 @@ Todos los datos de las copias de seguridad se almacenan en buckets de almacenami
 Todas las conexiones de red a ClickHouse Managed Postgres están protegidas con TLS (Transport Layer Security) para proteger los datos mientras se transfieren entre sus aplicaciones y la base de datos.
 
 <div id="tls-ssl">
-  #### Configuración de TLS/SSL
+  #### Configuración de TLS/SSL {#tls-ssl}
 </div>
 
 De forma predeterminada, las conexiones usan cifrado TLS sin verificación de certificados. Para las cargas de trabajo de producción, recomendamos conectarse mediante TLS con verificación de certificados para garantizar que se está comunicando con el servidor correcto.
@@ -121,16 +121,58 @@ Para habilitar AWS PrivateLink para tu instancia de ClickHouse Managed Postgres:
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-Private Service Connect permite la conectividad privada entre tu instancia de ClickHouse Managed Postgres y tu nube privada virtual (VPC) de GCP, sin exponer el tráfico a la Internet pública.
+GCP Private Service Connect (PSC) permite establecer conectividad privada entre su instancia de ClickHouse Managed Postgres y su nube privada virtual (VPC) de Google Cloud sin exponer el tráfico a internet pública. Esto aporta una capa adicional de aislamiento y seguridad de red.
 
-Para habilitar Private Service Connect en tu instancia de ClickHouse Managed Postgres, ponte en contacto con el soporte de ClickHouse creando un ticket de soporte.
+<Info>
+  **Requiere configuración manual**
+
+  GCP Private Service Connect está disponible, pero debe configurarlo manualmente el soporte de ClickHouse. Esta funcionalidad resulta ideal para clientes empresariales con requisitos estrictos de aislamiento de red.
+</Info>
+
+### Solicitud de configuración de GCP Private Service Connect {#requesting-gcp-private-service-connect}
+
+El acceso se concede por endpoint de Private Service Connect, no por proyecto de GCP. Solo se aceptará el endpoint que cree y comunique al soporte de ClickHouse. Por eso, la configuración requiere dos intercambios con el equipo de soporte.
+
+Para habilitar GCP Private Service Connect para su instancia de ClickHouse Managed Postgres:
+
+1. **Póngase en contacto con el soporte de ClickHouse** mediante un ticket de soporte
+
+2. **Proporcione la siguiente información**:
+   * El ID de su organización de ClickHouse
+   * El ID o nombre del host del servicio de Postgres
+
+3. **El soporte de ClickHouse**:
+   * Aprovisionará la asociación de servicio de Private Service Connect para ClickHouse Managed Postgres
+   * Le proporcionará el ID de la asociación de servicio para que pueda crear un endpoint.
+
+4. **Cree su endpoint de Private Service Connect**:
+   * Cree el endpoint de Private Service Connect en su VPC, en la misma región que el servicio de Postgres, con el ID de la asociación de servicio proporcionado por el soporte de ClickHouse. Los endpoints de Private Service Connect son regionales, por lo que no se admiten conexiones entre regiones.
+
+   * La conexión aparecerá como «Pending» en la consola de GCP. Permanecerá en ese estado hasta que el soporte de ClickHouse la acepte.
+
+   * Localice el **ID de conexión de PSC** del endpoint. Puede consultarlo en los detalles del endpoint en la consola de GCP o ejecutar:
+
+     ```bash
+     gcloud compute forwarding-rules describe <endpoint-name> --region <region> --format='value(pscConnectionId)'
+     ```
+
+   * Envíe el ID de conexión de PSC al soporte de ClickHouse en el mismo ticket de soporte.
+
+5. **El soporte de ClickHouse**:
+   * Añadirá su endpoint a la lista de permitidos de la asociación de servicio. La conexión pasará de «Pending» a «Accepted».
+
+6. **Conéctese a su instancia de ClickHouse Managed Postgres**:
+   * Una vez que el endpoint esté en estado «Accepted», podrá conectarse a la instancia mediante la IP del endpoint por el puerto `5432` (conexión directa) o `6432` (agrupador de conexiones).
+   * La IP del endpoint no tiene un nombre DNS que coincida con el nombre del host de Postgres. Use `sslmode=require` o, si desea usar `sslmode=verify-full`, añada un registro privado en Cloud DNS que asocie el nombre del host de Postgres con la IP del endpoint.
+
+Para conectar otro endpoint a la misma instancia, por ejemplo, desde otra VPC o tras volver a crear un endpoint, repita los pasos 4 y 5: cree el endpoint con el mismo ID de la asociación de servicio y envíe su ID de conexión de PSC al soporte de ClickHouse. Para revocar el acceso de un endpoint, solicite al soporte de ClickHouse que lo retire de la lista de permitidos.
 
 ## Retención de copias de seguridad {#backup-retention}
 
 ClickHouse Managed Postgres realiza copias de seguridad de sus datos automáticamente para protegerlos frente a la eliminación accidental, la corrupción y otros escenarios de pérdida de datos.
 
 <div id="retention-policy">
-  ### Política de retención
+  ### Política de retención {#retention-policy}
 </div>
 
 * **Período de retención predeterminado**: 7 días

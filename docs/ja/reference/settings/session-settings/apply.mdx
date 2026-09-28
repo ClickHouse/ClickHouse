@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 論理削除された行を除外するフィルタリングを有効にします。無効にすると、クエリでそれらの行も読み取れるようになります。これは、デバッグや「削除取り消し」のシナリオで役立ちます
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true の場合、data part にまだ反映されていない mutations (UPDATE と DELETE) は、SELECT 時に適用されます。
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,38 @@ true の場合、data part にまだ反映されていない mutations (UPDATE �
 有効にすると、ReplacingMergeTree および類似のエンジンで、PREWHERE 条件が FINAL 処理の後に適用されます。
 これは、PREWHERE が重複する行ごとに値が異なる可能性のあるカラムを参照しており、
 フィルタリング前に FINAL で採用される行を確定させたい場合に役立ちます。無効な場合、PREWHERE は読み取り時に適用されます。
-注: apply&#95;row&#95;level&#95;security&#95;after&#95;final が有効で、かつ行ポリシーがソートキー以外のカラムを使用している場合、正しい実行順序を維持するため、PREWHERE も
-遅延されます (行ポリシーは PREWHERE より前に適用する必要があります) 。
+注: 行ポリシーは PREWHERE より前に適用する必要があるため、`apply_row_policy_after_final` によって行ポリシーの適用が遅延される場合は、
+この設定に関係なく PREWHERE も遅延されます。これは、ポリシー式が非決定論的である場合、ORDER BY に含まれないカラムを読み取る場合、
+または浮動小数点型である(あるいは浮動小数点型を含む)型を持つ ORDER BY カラムを読み取る場合に発生します。
 
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
+設定可能な値:
+
+* 0 — PREWHERE は FINAL の前に適用されます。ただし、遅延された行ポリシーによって PREWHERE も遅延される場合を除きます (デフォルト) 。
+* 1 — PREWHERE は FINAL の後に適用されます。
+
+## apply_row_policy_after_final {#apply_row_policy_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "この設定は、#87303 後に発生した、行ポリシーと PREWHERE が FINAL より前に適用されていたリグレッションを修正するために追加されました。PR #91065 でこの設定が導入され、PR #97279 で正しさを優先する true がデフォルトになりました。互換性設定によって修正前の false の動作に戻らないよう、{true, true} として記録されます。"}]}]} />
 
-有効にすると、*MergeTree テーブルでは、行ポリシーと PREWHERE は FINAL の処理後に適用されます。 (特に ReplacingMergeTree)
+有効にすると、*MergeTree テーブルでは、行ポリシーは FINAL の処理後に適用されます。 (特に ReplacingMergeTree)
+このようにポリシーの適用を遅延させる場合、ポリシーが引き続き先に適用されるよう、PREWHERE も併せて遅延されます
+(PREWHERE を無条件に遅延させるには `apply_prewhere_after_final` を参照してください)。
 無効にすると、行ポリシーは FINAL の前に適用されるため、ポリシーによって
 ReplacingMergeTree や同様のエンジンで重複排除に使われるべき行が除外される場合、結果が異なる可能性があります。
 
-行ポリシーの式が ORDER BY 内のカラムのみに依存している場合は、最適化のため、引き続き FINAL の前に適用されます。
-そのようなフィルタリングは重複排除の結果に影響しないためです。
+行ポリシーの式が決定論的であり、かつ ORDER BY 内の浮動小数点型以外のカラムのみに依存している場合は、最適化のため、引き続き
+FINAL の前に適用されます。そのようなフィルタリングは重複排除の結果に影響しないためです。浮動小数点型のカラム、
+または浮動小数点型を含むカラム (`Tuple(Float64, ...)`、`Array(Float64)`、`Nullable(Float64)` など) は
+対象外です。`-0.0` と `0.0` は重複排除では同一のキーとして扱われる一方、ポリシーの条件ではこれらを区別できるためです。
 
 設定可能な値:
 
-* 0 — 行ポリシーと PREWHERE は FINAL の前に適用されます (デフォルト) 。
-* 1 — 行ポリシーと PREWHERE は FINAL の後に適用されます。
+* 0 — 行ポリシーは FINAL の前に適用されます。
+* 1 — 行ポリシーは FINAL の後に適用されます (デフォルト) 。
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

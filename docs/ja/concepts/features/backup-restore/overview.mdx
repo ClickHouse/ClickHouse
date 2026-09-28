@@ -14,9 +14,7 @@ import S3Settings from '/snippets/ja/_s3_settings.mdx';
 > このセクションでは、ClickHouse におけるバックアップと復元の概要を説明します。各バックアップ方法のより
 > 詳細な説明については、サイドバーにある各方法のページを参照してください。
 
-<div id="introduction">
-  ## はじめに
-</div>
+## はじめに {#introduction}
 
 [レプリケーション](/ja/reference/engines/table-engines/mergetree-family/replication) はハードウェア障害に対する保護を提供しますが、人的ミスまでは防げません。たとえば、データの誤削除、誤った
 テーブルの削除、誤ったクラスター上のテーブルの削除、さらに不正な
@@ -67,9 +65,7 @@ PB のデータには通用しない可能性があります。考えられる�
 * パスワードで保護
 * [システムテーブル、ログテーブル、または アクセス管理テーブル](#system-backups) のバックアップを取得
 
-<div id="backup-types">
-  ## バックアップの種類
-</div>
+## バックアップの種類 {#backup-types}
 
 バックアップには、フルバックアップと増分バックアップがあります。フルバックアップはデータの完全なコピーであり、増分バックアップは直近のフルバックアップ以降に変更されたデータの差分です。
 
@@ -81,18 +77,14 @@ PB のデータには通用しない可能性があります。考えられる�
 * **増分バックアップ**: 大規模なデータベース向け、またはバックアップを高頻度かつコスト効率よく実行する必要がある場合。
 * **両方**: たとえば、毎週フルバックアップを実行し、毎日増分バックアップを実行します。
 
-<div id="synchronous-vs-asynchronous">
-  ## 同期バックアップと非同期バックアップ
-</div>
+## 同期バックアップと非同期バックアップ {#synchronous-vs-asynchronous}
 
 `BACKUP` コマンドと `RESTORE` コマンドには、`ASYNC` を指定することもできます。この場合、
 バックアップコマンドはすぐに制御を返し、バックアップ処理はバックグラウンドで実行されます。
 コマンドに `ASYNC` を指定しない場合、バックアップ処理は同期的に実行され、
 バックアップが完了するまでコマンドは待機します。
 
-<div id="concurrent-vs-non-concurrent">
-  ## 同時実行バックアップと非同時実行バックアップ
-</div>
+## 同時実行バックアップと非同時実行バックアップ {#concurrent-vs-non-concurrent}
 
 デフォルトでは、ClickHouse はバックアップと復元の同時実行を許可しています。つまり、
 複数のバックアップまたは復元操作を同時に開始できます。ただし、この動作を
@@ -115,9 +107,7 @@ PB のデータには通用しない可能性があります。考えられる�
 許可されています。クラスターでこれらの設定が false の場合、そのクラスターでは一度に
 実行できるバックアップ/復元は 1 つだけです。
 
-<div id="compressed-vs-uncompressed">
-  ## 圧縮バックアップと非圧縮バックアップ
-</div>
+## 圧縮バックアップと非圧縮バックアップ {#compressed-vs-uncompressed}
 
 ClickHouse のバックアップでは、`compression_method` および `compression_level` 設定により圧縮を利用できます。
 
@@ -129,9 +119,7 @@ BACKUP TABLE test.table
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="using-named-collections">
-  ## named collections の使用
-</div>
+## named collections の使用 {#using-named-collections}
 
 named collections を使用すると、バックアップ/復元操作で再利用できるキー・バリューの組 (S3 の認証情報、エンドポイント、設定など) を保存できます。
 これにより、次のことが可能になります。
@@ -143,9 +131,7 @@ named collections を使用すると、バックアップ/復元操作で再利�
 
 詳細については、[&quot;named collections&quot;](/ja/concepts/features/configuration/server-config/named-collections) を参照してください。
 
-<div id="system-backups">
-  ## システム、ログ、またはアクセス管理テーブルのバックアップ
-</div>
+## システム、ログ、またはアクセス管理テーブルのバックアップ {#system-backups}
 
 システムテーブルもバックアップおよび復元のワークフローに含めることができますが、
 含めるかどうかは、具体的なユースケースによって異なります。
@@ -174,42 +160,114 @@ ClickHouse クラスターのアクセス制御設定を、
 ClickHouse server の設定ファイル (例: `users.xml`) で定義されたアクセス設定は
 バックアップに含まれず、この方法では復元できません。
 
-<div id="syntax">
-  ## 基本構文
-</div>
+## 基本構文 {#syntax}
 
 <Syntax />
 
-<div id="command-summary">
-  ### コマンド概要
-</div>
+### コマンド概要 {#command-summary}
 
 上記の各コマンドの詳細は以下のとおりです。
 
-| **Command**                                                            | **Description**                                                                                       |   |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | - |
-| `BACKUP`                                                               | 指定したオブジェクトのバックアップを作成します                                                                               |   |
-| `RESTORE`                                                              | バックアップからオブジェクトを復元します                                                                                  |   |
-| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 特定のテーブルをバックアップまたは復元します (名前の変更可)                                                                       |   |
-| `[PARTITION[S] partition_expr [,...]]`                                 | テーブルの特定のパーティションのみをバックアップまたは復元します                                                                      |   |
-| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Dictionaryオブジェクトをバックアップまたは復元します                                                                       |   |
-| `DATABASE database_name [AS database_name_in_backup]`                  | データベース全体をバックアップまたは復元します (名前の変更可)                                                                      |   |
-| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 一時テーブルをバックアップまたは復元します (名前の変更可)                                                                        |   |
-| `VIEW view_name [AS view_name_in_backup]`                              | ビューをバックアップまたは復元します (名前の変更可)                                                                           |   |
-| `[EXCEPT TABLES ...]`                                                  | データベースのバックアップ時に特定のテーブルを除外します                                                                          |   |
-| `ALL`                                                                  | すべて (すべてのデータベース、テーブルなど) をバックアップまたは復元します。ClickHouse バージョン 23.4 より前では、`ALL` は `RESTORE` コマンドでのみ使用可能でした。 |   |
-| `[EXCEPT {TABLES\|DATABASES}...]`                                      | `ALL` 使用時に特定のテーブルまたはデータベースを除外します                                                                      |   |
-| `[ON CLUSTER 'cluster_name']`                                          | ClickHouse クラスター全体でバックアップまたは復元を実行します                                                                  |   |
-| `TO\|FROM`                                                             | 方向：バックアップの宛先には `TO`、復元元には `FROM` を使用します                                                               |   |
-| `File('<path>/<filename>')`                                            | ローカルファイルシステムに保存、またはローカルファイルシステムから復元します                                                                |   |
-| `Disk('<disk_name>', '<path>/')`                                       | 設定済みディスクに保存、または設定済みディスクから復元します                                                                        |   |
-| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Amazon S3 または S3-compatible ストレージに保存、またはそこから復元します                                                     |   |
-| `[SETTINGS ...]`                                                       | Settings の完全な一覧は以下を参照してください                                                                           |   |
-| `[ASYNC]`                                                              | 操作を非同期で実行します (すぐに制御が返り、監視可能な ID が返されます)                                                               |   |
+| **Command**                                                            | **Description**                                                                                                                                           |   |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | 指定したオブジェクトのバックアップを作成します                                                                                                                                   |   |
+| `RESTORE`                                                              | バックアップからオブジェクトを復元します                                                                                                                                      |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 特定のテーブルをバックアップまたは復元します (名前の変更可)                                                                                                                           |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | テーブルの特定のパーティションのみをバックアップまたは復元します                                                                                                                          |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Dictionaryオブジェクトをバックアップまたは復元します                                                                                                                           |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | データベース全体をバックアップまたは復元します (名前の変更可)                                                                                                                          |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 一時テーブルをバックアップまたは復元します (名前の変更可)                                                                                                                            |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | ビューをバックアップまたは復元します (名前の変更可)                                                                                                                               |   |
+| `[EXCEPT TABLES ...]`                                                  | データベースのバックアップ時に特定のテーブルを除外します                                                                                                                              |   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               | **(BACKUP のみ)** テーブルの行を含めずに定義をバックアップします。テーブル全体を除外する `EXCEPT TABLES` とは異なり、この句を記述した要素にのみ適用されます。詳しくは[データを含めずにテーブルをバックアップする](#backup-without-data)を参照してください。 |   |
+| `ALL`                                                                  | すべて (すべてのデータベース、テーブルなど) をバックアップまたは復元します。ClickHouse バージョン 23.4 より前では、`ALL` は `RESTORE` コマンドでのみ使用可能でした。                                                     |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | `ALL` 使用時に特定のテーブルまたはデータベースを除外します                                                                                                                          |   |
+| `[ON CLUSTER 'cluster_name']`                                          | ClickHouse クラスター全体でバックアップまたは復元を実行します                                                                                                                      |   |
+| `TO\|FROM`                                                             | 方向：バックアップの宛先には `TO`、復元元には `FROM` を使用します                                                                                                                   |   |
+| `File('<path>/<filename>')`                                            | ローカルファイルシステムに保存、またはローカルファイルシステムから復元します                                                                                                                    |   |
+| `Disk('<disk_name>', '<path>/')`                                       | 設定済みディスクに保存、または設定済みディスクから復元します                                                                                                                            |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Amazon S3 または S3-compatible ストレージに保存、またはそこから復元します                                                                                                         |   |
+| `[SETTINGS ...]`                                                       | Settings の完全な一覧は以下を参照してください                                                                                                                               |   |
+| `[ASYNC]`                                                              | 操作を非同期で実行します (すぐに制御が返り、監視可能な ID が返されます)                                                                                                                   |   |
 
-<div id="settings">
-  ### 設定
-</div>
+### データを含めずにテーブルをバックアップする {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` を指定すると、テーブルの行を含めず、定義だけをバックアップに保存します。
+マテリアライズドビューのターゲットテーブルなど、復元後に内容を再生成できるテーブルに便利です。
+
+この句で指定するのは `BACKUP` が書き込む内容であり、そのバックアップに対して `RESTORE` ができることは変わりません。
+`RESTORE` で再作成できるテーブルなら、行を含まない定義から空のテーブルが復元されます。一方、この句を指定しても、
+もともと復元できないテーブルが復元可能になるわけではありません。バックアップ内の定義からテーブルを再作成できるかどうかは
+エンジンによって異なり、再作成を一切認めないエンジンもあります。詳しくは
+[`RESTORE` で再作成できないエンジン](#engines-restore-cannot-recreate)を参照してください。
+
+この句の適用範囲は、句を記述した要素に限られます。
+
+* `DATABASE` または `ALL` 要素に指定する場合は、その要素がバックアップするテーブルを指定できます。
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+* 単一オブジェクトを対象とする要素 (`TABLE`、`DICTIONARY`、`VIEW`、`TEMPORARY TABLE`) では、その要素が指定するオブジェクトだけが
+  対象となるため、句にはそのオブジェクトのみを指定してください。各テーブルに対して個別の要素と
+  句を用意してください。
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+テーブルが、テーブル自体を指定する要素と、より広い範囲を指定する要素の `EXCEPT DATA FROM` 句の両方で指定されている場合、
+そのデータは**バックアップされます**。テーブルを指定する要素は、そのデータもバックアップ対象に含めるためです。これは `EXCEPT TABLES` と同じ動作です。
+より広い範囲を指定する要素で除外されていても、明示的に指定されたテーブルはバックアップされます。
+
+materialized view の内部テーブル (または `TimeSeries` テーブルの内部テーブル) のデータは、
+外側のオブジェクトの名前を指定して除外します。この句に内部テーブルの名前を指定することはできません。
+
+`EXCEPT DATA FROM {TABLE|TABLES}` は `BACKUP` でのみ有効です。`RESTORE` では、何もしない操作として扱われるのではなく、
+エラーになります。
+
+#### `RESTORE` で再作成できないエンジン {#engines-restore-cannot-recreate}
+
+一部のエンジンは、`EXCEPT DATA FROM {TABLE|TABLES}` の有無にかかわらず、`RESTORE` で再作成することがまったくできません。
+こうしたテーブルでも、この句によってバックアップのサイズは制御されますが、テーブルが空の状態で復元されるわけではありません。
+`RESTORE` がテーブルの作成を拒否するため、何も復元されないのです。
+
+特に注意が必要なのは、スタンドアロンの `MaterializedPostgreSQL` テーブルです。このテーブルは作成された時点で、稼働中の PostgreSQL ソースからのレプリケーションを開始してしまい、
+バックアップのスナップショットと現在のリモートの状態が混在することになります。そのため
+`RESTORE` は、テーブルが作成される前のストレージファクトリーの段階で、`NOT_IMPLEMENTED` としてこれを拒否します。これはエンジン固有の
+性質であり、通常のフルバックアップでも同様です。
+
+サポートされている手順は、入れ子テーブルの構造 (`_sign` カラムと `_version` カラムを含む) に合わせて事前に作成しておいた
+`ReplacingMergeTree` に、別の名前で復元するというものです。
+
+```sql
+-- Back up the definition without the rows: they are replicated from PostgreSQL and can be replicated again
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLE mydb.pg_table TO Disk('backups', 'mydb/')
+
+CREATE TABLE mydb.plain_target
+(
+    key Int32,
+    value Int32,
+    _sign Int8 MATERIALIZED 1,
+    _version UInt64 MATERIALIZED 1
+)
+ENGINE = ReplacingMergeTree(_version) ORDER BY key
+
+-- Succeeds, and leaves `mydb.plain_target` empty because the backup carries no rows for `mydb.pg_table`
+RESTORE TABLE mydb.pg_table AS mydb.plain_target FROM Disk('backups', 'mydb/')
+SETTINGS allow_different_table_def = 1
+```
+
+バックアップに保存された定義では
+`MaterializedPostgreSQL` エンジンが使用されていますが、ここでは意図的に通常の `ReplacingMergeTree` として復元するため、`allow_different_table_def` が必要です。
+`EXCEPT DATA FROM TABLE` を指定しない場合は、同じ `RESTORE` で行も復元されます。
+
+### 設定 {#settings}
 
 **共通のバックアップ／復元設定**
 
@@ -223,9 +281,7 @@ ClickHouse server の設定ファイル (例: `users.xml`) で定義されたア
 
 <AzureSettings />
 
-<div id="check-the-status-of-backups">
-  ## 管理とトラブルシューティング
-</div>
+## 管理とトラブルシューティング {#check-the-status-of-backups}
 
 backup コマンドは `id` と `status` を返し、その `id` を使って
 バックアップのステータスを取得できます。これは、長時間かかる

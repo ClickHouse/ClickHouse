@@ -17,9 +17,7 @@ Ce guide explique comment activer le ClickHouse Cloud Remote MCP Server et le co
 * Un [service ClickHouse Cloud](/fr/get-started/setup/cloud) actif
 * Votre IDE ou l’outil de développement agentique de votre choix
 
-<div id="enable-remote-mcp-server">
-  ## Activer le serveur MCP distant dans Cloud
-</div>
+## Activer le serveur MCP distant dans Cloud {#enable-remote-mcp-server}
 
 Connectez-vous au service ClickHouse Cloud pour lequel vous souhaitez activer le serveur MCP distant.
 Dans le menu de gauche, cliquez sur **Connect**. Une fenêtre contenant les informations de connexion s’ouvre.
@@ -28,7 +26,7 @@ Sélectionnez **Connect with MCP** :
 
 <Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Sélectionner MCP dans la fenêtre modale Connect" size="md" />
 
-Activez le bouton pour activer MCP sur le service :
+Activez le bouton pour activer MCP sur le service. L’activation ou la désactivation de MCP nécessite la permission `control-plane:service:manage-mcp` (voir [Console roles and permissions](/fr/products/cloud/reference/security/console-roles#console-permissions)) :
 
 <Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Activer le serveur MCP" size="md" />
 
@@ -39,13 +37,13 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## Configurer MCP distant pour le développement
+  ## Configurer MCP distant pour le développement {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 Choisissez votre IDE ou votre outil ci-dessous, puis suivez les instructions de configuration correspondantes.
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 Depuis votre répertoire de travail, exécutez la commande suivante pour ajouter la configuration du MCP Server de ClickHouse Cloud à Claude Code :
@@ -69,7 +67,7 @@ Exécutez la commande suivante pour afficher la liste des serveurs MCP :
 Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identifiants ClickHouse Cloud.
 
 <div id="claude-web">
-  ### Claude web UI
+  ### Claude web UI {#claude-web}
 </div>
 
 1. Accédez à **Customize** &gt; **Connectors**
@@ -79,7 +77,7 @@ Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identif
 5. Authentifiez-vous avec vos identifiants ClickHouse Cloud via OAuth
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. Parcourez et installez des serveurs MCP depuis le [Marketplace de Cursor](https://cursor.com/marketplace).
@@ -87,7 +85,7 @@ Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identif
 3. Authentifiez-vous avec OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
@@ -106,7 +104,7 @@ Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
 Pour plus d’informations, consultez la [documentation de Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 Modifiez votre fichier `mcp_config.json` comme suit :
@@ -125,7 +123,7 @@ Modifiez votre fichier `mcp_config.json` comme suit :
 Pour en savoir plus, consultez la [documentation Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 Ajoutez ClickHouse comme serveur personnalisé.
@@ -145,7 +143,7 @@ Zed devrait alors vous demander de vous authentifier via OAuth lors de sa premi�
 Pour plus de détails, consultez la [documentation de Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 Exécutez la commande suivante pour ajouter le serveur MCP ClickHouse Cloud via le CLI :
@@ -155,7 +153,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## Exemple d’utilisation
+  ## Exemple d’utilisation {#example-usage}
 </div>
 
 Une fois connecté, vous pouvez interagir avec ClickHouse Cloud à l’aide de prompts en langage naturel.
@@ -163,7 +161,7 @@ Vous trouverez ci-dessous quelques workflows courants, ainsi que les outils que 
 Pour obtenir la liste complète des outils disponibles, consultez la [référence des outils](/fr/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### Explorer vos données
+  ### Explorer vos données {#exploring-data}
 </div>
 
 Commencez par découvrir ce qui est disponible :
@@ -176,7 +174,7 @@ Commencez par découvrir ce qui est disponible :
 | &quot;Liste toutes les tables dont le nom commence par `events_`&quot;  | `list_tables` (avec le filtre `like`) |
 
 <div id="running-queries">
-  ### Exécuter des requêtes analytiques
+  ### Exécuter des requêtes analytiques {#running-queries}
 </div>
 
 Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
@@ -190,7 +188,7 @@ Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
 L&#39;outil `run_select_query` n&#39;autorise que les instructions `SELECT`. Toutes les requêtes sont en lecture seule.
 
 <div id="managing-services">
-  ### Gérer les services et l’infrastructure
+  ### Gérer les services et l’infrastructure {#managing-services}
 </div>
 
 Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
@@ -204,7 +202,7 @@ Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
 | &quot;Quels ClickPipes sont configurés sur ce service ?&quot;        | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### Suivi des coûts
+  ### Suivi des coûts {#monitoring-costs}
 </div>
 
 | Prompt                                                                   | Outil invoqué                                           |
@@ -213,7 +211,7 @@ Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
 | &quot;Affiche-moi les coûts quotidiens du 1er mars au 15 mars&quot;      | `get_organization_cost` (avec `from_date` et `to_date`) |
 
 <div id="related-content">
-  ## Contenu connexe
+  ## Contenu connexe {#related-content}
 </div>
 
 * [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

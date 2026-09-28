@@ -33,7 +33,7 @@ metric_name2[...] = ...
   没有此配置，且您无法自行在此类服务上启用该引擎。
 </Note>
 
-## 语法
+## 语法 {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
@@ -49,7 +49,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   [版本](#schema-versioning)低于 4 的表定义使用 `METRICS` 写入，以便较旧的 server 能够读取它。
 </Note>
 
-## 用法
+## 用法 {#usage}
 
 一开始先使用默认设置会更简单 (可以在不指定列列表的情况下创建 `TimeSeries` 表) ：
 
@@ -62,19 +62,19 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [Prometheus remote-write](/zh/concepts/features/interfaces/prometheus#remote-write)
 * [Prometheus remote-read](/zh/concepts/features/interfaces/prometheus#remote-read)
 
-### 外部列
+### 外部列 {#outer-columns}
 
 TimeSeries 表的列会自动生成。这些列属于外部列，不存储任何数据，只为 SELECT/INSERT 提供接口。实际数据存储在[目标端表](#target-tables)中。以下是外部列列表：
 
-| Name            | Type                                        | Description                                                                                                                                                                                           |
-| --------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metric_name`   | `String`                                    | 指标名称                                                                                                                                                                                                  |
-| `tags`          | `Map(String, String)`                       | 时间序列的标签映射 (标记)                                                                                                                                                                                        |
-| `samples`       | `Array(Tuple(DateTime64(3), Float64))` (默认) | 时间序列的 (timestamp, value) 对数组。该 Tuple 的 timestamp 和 scalar 元素类型可从 samples `INNER COLUMNS` 声明中推导得出 (参见[指定外部列](#specifying-outer-columns))。在 [version](#schema-versioning) 2 及更早版本的表中，该列名为 `time_series` |
-| `metric_family` | `String`                                    | 指标族名称 (用于指标元数据)                                                                                                                                                                                       |
-| `type`          | `String`                                    | 指标类型 (例如 &quot;counter&quot;、&quot;gauge&quot;)                                                                                                                                                       |
-| `unit`          | `String`                                    | 指标单位                                                                                                                                                                                                  |
-| `help`          | `String`                                    | 指标说明                                                                                                                                                                                                  |
+| Name            | Type                                        | Description                                                                                                                                                                                          |
+| --------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                    | 指标名称                                                                                                                                                                                                 |
+| `tags`          | `Map(String, String)`                       | 时间序列的标签映射 (标记)                                                                                                                                                                                       |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))` (默认) | 时间序列的 (timestamp, value) 对数组。该 Tuple 的 timestamp 和 value 元素类型可从 samples `INNER COLUMNS` 声明中推导得出 (参见[指定外部列](#specifying-outer-columns))。在 [version](#schema-versioning) 2 及更早版本的表中，该列名为 `time_series` |
+| `metric_family` | `String`                                    | 指标族名称 (用于指标元数据)                                                                                                                                                                                      |
+| `type`          | `String`                                    | 指标类型 (例如 &quot;counter&quot;、&quot;gauge&quot;)                                                                                                                                                      |
+| `unit`          | `String`                                    | 指标单位                                                                                                                                                                                                 |
+| `help`          | `String`                                    | 指标说明                                                                                                                                                                                                 |
 
 示例：
 
@@ -100,9 +100,9 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-### 指定外部列
+### 指定外部列 {#specifying-outer-columns}
 
-可以在 `CREATE TABLE` 语句中显式列出外部 `samples` 列，以覆盖其默认的 `Array(Tuple(DateTime64(3), Float64))` 类型 (其旧名称 `time_series` 同样可用) 。ClickHouse 会从该元组中提取时间戳类型和 scalar 类型，并将它们传递到内部samples表：
+可以在 `CREATE TABLE` 语句中显式列出外部 `samples` 列，以覆盖其默认的 `Array(Tuple(DateTime64(3), Float64))` 类型 (其旧名称 `time_series` 同样可用) 。ClickHouse 会从该元组中提取时间戳类型和值类型，并将它们传递到内部samples表：
 
 ```sql
 CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -117,7 +117,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 如果在同一条 `CREATE TABLE` 语句中同时使用这两种形式，则声明的类型必须一致。
 
-## 目标端表
+## 目标端表 {#target-tables}
 
 `TimeSeries` 表本身不存储数据，所有数据都保存在其目标端表中。
 这与 [materialized view](/zh/reference/statements/create/view#materialized-view) 的工作方式类似，
@@ -133,7 +133,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 目标端表如下：
 
-### 样本表
+### 样本表 {#samples-table}
 
 *样本* 表包含与某个标识符关联的时间序列。
 
@@ -151,7 +151,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 引擎会为其内部样本表和最近样本表启用 `ALP`，无需设置 `enable_alp_codec`。
 另请参阅[调整列的类型](#adjusting-column-types)。
 
-### 最近样本表
+### 最近样本表 {#recent-samples-table}
 
 &#95;最近样本&#95;表是可选的，默认启用 (请参阅 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置；将其设为零可禁用该表) 。该表包含 TTL 未超过该设置所定义时长的样本副本，并且必须与[样本](#samples-table)表具有相同的列。
 生成的 `timestamp` 列使用 `CODEC(Delta, T64, ZSTD(3))`，
@@ -163,7 +163,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 内部最近样本表的 TTL 始终由 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置决定。
 
-### 标签表
+### 标签表 {#tags-table}
 
 *tags* 表包含针对每种指标名称与标签组合计算出的标识符。
 
@@ -184,21 +184,21 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 在 `TAGS INNER COLUMNS` 中显式声明的索引会替换默认索引。已有的表以及外部 tags 表会保留其原有索引；可在其 tags target table 上添加并 materialize 该索引以启用它。
 
-### 指标族表
+### 指标族表 {#metric-families-table}
 
 *指标族* 表包含有关正在采集的指标族、这些指标族的类型及其描述的信息。
 指标族是一组名称相同 (`__name__` 标签) 且类型相同的指标，例如，直方图就是一个由多个指标组成的指标族。
 
 *指标族* 表必须包含以下列：
 
-| 名称                   | 必需？ | 默认类型                     | 可能的类型                               | 描述                                                                                                                                           |
-| -------------------- | --- | ------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metric_family_name` | [x] | `String`                 | `String` 或 `LowCardinality(String)` | 指标族的名称                                                                                                                                       |
-| `type`               | [x] | `LowCardinality(String)` | `String` 或 `LowCardinality(String)` | 指标族的类型，可为 &quot;counter&quot;、&quot;gauge&quot;、&quot;summary&quot;、&quot;stateset&quot;、&quot;histogram&quot;、&quot;gaugehistogram&quot; 之一 |
-| `unit`               | [x] | `LowCardinality(String)` | `String` 或 `LowCardinality(String)` | 指标使用的单位                                                                                                                                      |
-| `help`               | [x] | `String`                 | `String` 或 `LowCardinality(String)` | 指标的描述                                                                                                                                        |
+| 名称              | 必需？ | 默认类型                     | 可能的类型                               | 描述                                                                                                                                           |
+| --------------- | --- | ------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_family` | [x] | `String`                 | `String` 或 `LowCardinality(String)` | 指标族的名称。在版本 6 之前的表中，该列名为 `metric_family_name` (参见[版本历史](#version-history))                                                                    |
+| `type`          | [x] | `LowCardinality(String)` | `String` 或 `LowCardinality(String)` | 指标族的类型，可为 &quot;counter&quot;、&quot;gauge&quot;、&quot;summary&quot;、&quot;stateset&quot;、&quot;histogram&quot;、&quot;gaugehistogram&quot; 之一 |
+| `unit`          | [x] | `LowCardinality(String)` | `String` 或 `LowCardinality(String)` | 指标使用的单位                                                                                                                                      |
+| `help`          | [x] | `String`                 | `String` 或 `LowCardinality(String)` | 指标的描述                                                                                                                                        |
 
-## 创建
+## 创建 {#creation}
 
 可以通过多种方式创建使用 `TimeSeries` 表引擎的表。
 最简单的语句是
@@ -221,7 +221,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 5, recent_samples_ttl_seconds = 345600
+SETTINGS version = 6, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -248,22 +248,22 @@ TAGS INNER COLUMNS
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
-因此，列会自动生成。此外，还有四个内部目标表，各自的列定义存储在 `INNER COLUMNS` 子句中。
+因此，列会自动生成。此外，还有四个内部目标端表，各自的列定义存储在 `INNER COLUMNS` 子句中。
 `recent_samples_ttl_seconds` 设置以其默认值写入 `SETTINGS` 子句：该设置定义最近样本表的 TTL，因此其有效值在创建时便已固定。
 此外，最新的 schema 版本已固定写入 `version` 设置中 (参见 [Schema 版本控制](#schema-versioning)) 。
 
-内部目标表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+内部目标端表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，
-并且每个目标表都有各自的一组列：
+并且每个目标端表都有各自的一组列：
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
@@ -310,17 +310,17 @@ SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```sql
 CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
-ORDER BY metric_family_name
+ORDER BY metric_family
 SETTINGS index_granularity = 8192
 ```
 
-## 基于现有表创建表
+## 基于现有表创建表 {#create-as}
 
 语句 `CREATE TABLE new_table AS existing_table` 会创建一个配置与 `existing_table` 相同的 `TimeSeries` 表，
 其中 `existing_table` 必须是 `TimeSeries` 表。`existing_table` 的外部目标不会被复制：该语句必须自行声明
@@ -331,7 +331,7 @@ SETTINGS index_granularity = 8192
 * `SETTINGS` 子句，但不包括 `version`：新表始终使用最新版本。语句中
   指定的设置会按名称与复制的设置合并，因此语句中指定的设置优先于复制的设置，而 `name = DEFAULT`
   会将复制的设置重置为默认值；
-* 每个内部表的 `INNER COLUMNS` 和 `INNER ENGINE` 子句。会保留自定义列 (例如额外列、带有 codec 或 DEFAULT 表达式的列)
+* 每个内部表的 `INNER COLUMNS` 和 `INNER ENGINE` 子句。会保留自定义列 (例如额外列、带有编解码器或 DEFAULT 表达式的列)
   和自定义引擎部分 (例如带参数的引擎、自定义排序键
   或引擎设置) ；其他列和引擎部分会根据新表的设置进行调整，因此
   例如语句中指定的 `tags_to_columns`、`aggregate_min_time_and_max_time` 或 `tags_index_granularity` 会生效。
@@ -341,9 +341,10 @@ SETTINGS index_granularity = 8192
 外部列列表会重新生成，不会被复制。
 
 由较早版本的 ClickHouse 创建的表可以用作 `existing_table`：新表会采用当前的
-结构，例如当前的 `id` 类型和默认标识符表达式。
+结构，例如当前的 `id` 类型和默认标识符表达式，而从
+`existing_table` 复制的自定义部分也会随之调整。
 
-## 调整列类型
+## 调整列类型 {#adjusting-column-types}
 
 你可以使用 `INNER COLUMNS` 子句来调整内部目标表中各列的类型。例如，要将时间戳以微秒存储，并将值存储为 `Float32`，请使用：
 
@@ -359,7 +360,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-## `id` 列
+## `id` 列 {#id-column}
 
 `id` 列包含标识符；每个标识符都是根据某个指标名称与标签的组合计算得出的。
 用于生成标识符的类型和 `DEFAULT` 表达式可通过 `TAGS INNER COLUMNS` 子句自定义：
@@ -394,7 +395,7 @@ SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
 设置了 `id_generator` 时，`id_type` 设置会在 `CREATE` 时自动记录，
 因此该定义会保留此表达式所针对的类型。
 
-## `tags` 列
+## `tags` 列 {#tags-column}
 
 `tags` 列包含时间序列的所有标签，其中包括带有指标名称的 `__name__` 标签。
 
@@ -416,7 +417,7 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   除指标名称外的所有标签。
 </Note>
 
-## 内部目标端表的表引擎
+## 内部目标端表的表引擎 {#inner-table-engines}
 
 默认情况下，内部目标端表使用以下表引擎：
 
@@ -454,7 +455,7 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 `TimeSeries` 会自动为其设置 `allow_dimensions_outside_sorting_key = 1`；
 对于手动创建的[外部](#external-target-tables)聚合 标签 表，则必须自行设置。
 
-## 外部目标端表
+## 外部目标端表 {#external-target-tables}
 
 可以让 `TimeSeries` 表使用手动创建的目标表：
 
@@ -483,7 +484,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 
 外部标签表的 `id` 列类型以及生成标识符的表达式会在 `CREATE` 时记录到 [`id_type`](#settings) 和 [`id_generator`](#settings) 设置中 (从 [version](#schema-versioning) 2 开始) ，因此 `TimeSeries` 表的定义会保留它们：例如，`CREATE TABLE ... AS my_table` 会从 `my_table` 的定义中读取 `id` 类型，而无需读取其外部目标端表。如果未指定 `id_generator` 设置，则会将其设置为外部表 `id` 列上声明的 `DEFAULT` (如果有) ，否则设置为根据 `id` 类型派生出的规范生成器。即使外部表的 `DEFAULT` 之后发生变化，也仍会使用已记录的表达式来生成 `id`——详见 [`id` 列](#id-column)。
 
-## 修改设置
+## 修改设置 {#altering-settings}
 
 执行 `CREATE` 后，可更改以下两个设置：
 
@@ -501,7 +502,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 其他设置不能通过 `ALTER ... MODIFY SETTING` 更改：其中大多数在 `CREATE` 时就已经固化在内部表的 schema 中，
 而 `version` 设置会在 `CREATE` 时自动固定，并用于标识 schema 本身 (参见 [Schema 版本控制](#schema-versioning)) 。
 
-## 设置
+## 设置 {#settings}
 
 以下列出了在定义 `TimeSeries` 表时可指定的设置：
 
@@ -519,14 +520,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `最近样本` 表的分区键，例如 `toStartOfHour(timestamp)`。显式设置时，会覆盖引擎声明中的分区键；如果两者均未设置，则每 5 小时使用一个分区。对于外部最近样本表，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                   |
 | `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 设置内部 `最近样本` 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部最近样本表和非 MergeTree 引擎，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                     |
 | `tags_index_granularity`             | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                               |
-| `version`                            | UInt64 | 5                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
+| `version`                            | UInt64 | 6                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
 
-## Schema 版本控制
+## Schema 版本控制 {#schema-versioning}
 
 `TimeSeries` 表引擎与 PromQL 执行层仍处于活跃开发阶段：
 目标端表的集合及其结构可能在不同 ClickHouse 版本之间发生变化。
 为了让此类变化可被检测，每个 `TimeSeries` 表都会将自身版本记录在 [version](#settings) 设置中。
-建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 5) ——
+建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 6) ——
 并持久化在表的元数据中，且无法通过 `ALTER` 修改。在该设置引入之前创建的表被视为版本 0。
 通常在 `CREATE TABLE` 查询中省略该设置即可——此时表会自动采用最新版本。
 如果服务器支持所指定的版本，也可以显式指定 `version`；此时该表会按照该版本的方式来定义 (请参阅[版本历史](#version-history)) 。
@@ -543,7 +544,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 * 如果版本过旧而无法写入，则 `INSERT` 查询和 Prometheus 远程写入协议会被拒绝，但 `SELECT` 查询仍可正常工作。
 * 如果版本对服务器而言完全过旧，则针对该表的所有查询 (`SHOW CREATE TABLE`、`DETACH` 和 `DROP` 除外) 都会被拒绝。
 
-### 版本历史
+### 版本历史 {#version-history}
 
 | 版本 | 变更                                                                                                                                                                                                                                                                 |
 | -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -553,8 +554,9 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | 3  | 外部列 `time_series` 更名为 `samples` (参见[外部列](#outer-columns)) 。早期版本的表仍沿用该列的旧名称，[prometheusQuery](/zh/reference/functions/table-functions/prometheusQuery) 与 [prometheusQueryRange](/zh/reference/functions/table-functions/prometheusQueryRange) 表函数也会按表所使用的名称返回该列。存储的数据没有变化 |
 | 4  | `metrics` 目标端表更名为 `metric families`：内部表命名为 `.inner_id.metricfamilies.<uuid>`，而非 `.inner_id.metrics.<uuid>`，并且定义使用关键字 `METRIC FAMILIES` 而非 `METRICS` 编写。存储的数据没有变化                                                                                                   |
 | 5  | 使用 `MergeTree` 家族引擎的新建内部标签表，默认会在 `tags` map 上创建 `keyValuePairs` 文本索引 (参见 [Tags table](#tags-table))                                                                                                                                                                |
+| 6  | [指标族](#metric-families-table)表中的 `metric_family_name` 列更名为 `metric_family`，与对应外部列的名称保持一致。早期版本的表仍沿用该列的旧名称，[timeSeriesMetricFamilies](/zh/reference/functions/table-functions/timeSeriesMetricFamilies) 表函数也会按表所使用的名称返回该列。外部指标族表中该列的命名必须与 `TimeSeries` 表所属版本的命名方式一致     |
 
-# 函数
+# 函数 {#functions}
 
 以下列出了支持将 `TimeSeries` 表作为参数的函数：
 

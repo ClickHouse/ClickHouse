@@ -18,9 +18,7 @@ MCP, 즉 Model Context Protocol은 LLM 기반 AI 애플리케이션이 구조화
 
 따라서 에이전트형 도구가 ClickHouse에 더 쉽게 연결되어 분석, 요약, 코드 생성, 탐색 등 다양한 목적에 필요한 데이터를 가져올 수 있습니다.
 
-<div id="remote-vs-oss">
-  ## 원격 MCP 서버와 오픈소스 MCP 서버 비교
-</div>
+## 원격 MCP 서버와 오픈소스 MCP 서버 비교 {#remote-vs-oss}
 
 ClickHouse는 두 가지 MCP 서버를 제공합니다.
 
@@ -36,17 +34,14 @@ ClickHouse는 두 가지 MCP 서버를 제공합니다.
 원격 MCP 서버는 관리할 인프라 없이 서비스 관리, 백업 모니터링, ClickPipe 확인, 청구 데이터 등을 포함해 ClickHouse Cloud와 가장 폭넓게 통합됩니다.
 자체 호스팅 ClickHouse 인스턴스의 경우 [오픈소스 MCP 서버 가이드](/ko/guides/use-cases/ai-ml/MCP/index)를 참조하십시오.
 
-<div id="enabling">
-  ## 원격 MCP 서버 활성화
-</div>
+## 원격 MCP 서버 활성화 {#enabling}
 
 원격 MCP 서버가 연결을 수락하려면 각 서비스에서 먼저 활성화되어 있어야 합니다.
 ClickHouse Cloud 콘솔에서 서비스를 연 다음 **Connect** 버튼을 클릭하고 **MCP**를 선택한 후 활성화하세요.
+원격 MCP 서버를 활성화하거나 비활성화하려면 `control-plane:service:manage-mcp` 권한이 필요합니다([콘솔 역할 및 권한](/ko/products/cloud/reference/security/console-roles#console-permissions) 참조).
 스크린샷이 포함된 자세한 단계는 [설정 가이드](/ko/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)를 참조하세요.
 
-<div id="endpoint">
-  ## 엔드포인트
-</div>
+## 엔드포인트 {#endpoint}
 
 활성화되면 다음 주소에서 원격 MCP 서버를 사용할 수 있습니다:
 
@@ -54,29 +49,21 @@ ClickHouse Cloud 콘솔에서 서비스를 연 다음 **Connect** 버튼을 클�
 https://mcp.clickhouse.cloud/mcp
 ```
 
-<div id="authentication">
-  ## 인증
-</div>
+## 인증 {#authentication}
 
 원격 MCP 서버에 대한 모든 액세스는 OAuth 2.0으로 인증됩니다.
 MCP client가 처음 연결되면 OAuth 흐름이 시작되어, 사용자가 ClickHouse Cloud 자격 증명으로 로그인할 수 있도록 브라우저 창이 열립니다.
 액세스 범위는 인증된 사용자가 접근 권한을 가진 조직과 서비스로 한정됩니다. 추가 API Key 구성은 필요하지 않습니다.
 
-<div id="safety">
-  ## 안전
-</div>
+## 안전 {#safety}
 
 원격 MCP 서버를 통해 제공되는 모든 도구는 **읽기 전용**입니다. 각 도구의 MCP 메타데이터에는 `readOnlyHint: true`가 명시되어 있습니다. 어떤 도구도 데이터를 수정하거나, 서비스 구성을 변경하거나, 파괴적인 작업을 수행할 수 없습니다.
 
-<div id="available-tools">
-  ## 사용 가능한 도구
-</div>
+## 사용 가능한 도구 {#available-tools}
 
 원격 MCP 서버는 다음 범주로 나뉜 13개의 도구를 제공합니다.
 
-<div id="query-and-schema">
-  ### 쿼리 및 스키마 탐색
-</div>
+### 쿼리 및 스키마 탐색 {#query-and-schema}
 
 이러한 도구를 사용하면 에이전트가 어떤 데이터를 사용할 수 있는지 확인하고 분석 쿼리를 실행할 수 있습니다.
 
@@ -86,27 +73,21 @@ MCP client가 처음 연결되면 OAuth 흐름이 시작되어, 사용자가 Cli
 | `list_databases`   | ClickHouse 서비스에서 사용할 수 있는 모든 데이터베이스를 나열합니다. | `serviceId`                                                                    |
 | `list_tables`      | 데이터베이스의 모든 테이블을 컬럼 정의와 함께 나열합니다.            | `serviceId`; `database`; 선택적으로 `like` 또는 `notLike` (테이블 이름을 필터링하는 SQL LIKE 패턴) |
 
-<div id="organizations">
-  ### 조직
-</div>
+### 조직 {#organizations}
 
 | Tool                       | 설명                                               | 매개변수             |
 | -------------------------- | ------------------------------------------------ | ---------------- |
 | `get_organizations`        | 인증된 사용자가 사용할 수 있는 모든 ClickHouse Cloud 조직을 조회합니다. | 없음               |
 | `get_organization_details` | 단일 조직의 세부 정보를 반환합니다.                             | `organizationId` |
 
-<div id="services">
-  ### 서비스
-</div>
+### 서비스 {#services}
 
 | Tool                  | Description                         | 매개변수                          |
 | --------------------- | ----------------------------------- | ----------------------------- |
 | `get_services_list`   | ClickHouse Cloud 조직의 모든 서비스를 조회합니다. | `organizationId`              |
 | `get_service_details` | 특정 서비스의 상세 정보를 반환합니다.               | `organizationId`; `serviceId` |
 
-<div id="backups">
-  ### 백업
-</div>
+### 백업 {#backups}
 
 | 도구                                 | 설명                             | 매개변수                                      |
 | ---------------------------------- | ------------------------------ | ----------------------------------------- |
@@ -114,25 +95,19 @@ MCP client가 처음 연결되면 OAuth 흐름이 시작되어, 사용자가 Cli
 | `get_service_backup_details`       | 개별 백업의 세부 정보를 반환합니다.           | `organizationId`; `serviceId`; `backupId` |
 | `get_service_backup_configuration` | 서비스의 백업 구성(일정 및 보존 설정)을 반환합니다. | `organizationId`; `serviceId`             |
 
-<div id="clickpipes">
-  ### ClickPipes
-</div>
+### ClickPipes {#clickpipes}
 
 | 도구                | 설명                             | 매개변수                                         |
 | ----------------- | ------------------------------ | -------------------------------------------- |
 | `list_clickpipes` | 서비스에 구성된 모든 ClickPipes를 표시합니다. | `organizationId`; `serviceId`                |
 | `get_clickpipe`   | 특정 ClickPipe의 세부 정보를 반환합니다.    | `organizationId`; `serviceId`; `clickPipeId` |
 
-<div id="billing">
-  ### 청구
-</div>
+### 청구 {#billing}
 
 | Tool                    | 설명                                                    | 매개변수                                                                    |
 | ----------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
 | `get_organization_cost` | 조직의 청구 및 사용 비용 데이터를 조회합니다. 총액과 엔터티별 일별 비용 레코드를 반환합니다. | `organizationId`; 선택적으로 `from_date` 및 `to_date` (YYYY-MM-DD, 최대 31일 범위) |
 
-<div id="getting-started">
-  ## 시작하기
-</div>
+## 시작하기 {#getting-started}
 
 원격 MCP 서버를 활성화하고 MCP client에 연결하는 단계별 안내는 [설정 가이드](/ko/products/cloud/features/ai-ml/mcp/remote-mcp)를 참조하십시오.

@@ -57,7 +57,7 @@ La clause facultative `ON CLUSTER` s’applique à l’ensemble de l’instructi
 
 `CREATE ROW POLICY` requiert le privilège [CREATE ROW POLICY](/fr/reference/statements/grant#access-management) sur la table sur laquelle la politique est créée. `OR REPLACE` supprime une politique existante portant le même nom, y compris les rôles auxquels elle s’applique ; il requiert donc en plus le privilège [DROP ROW POLICY](/fr/reference/statements/grant#access-management) sur cette table. Le privilège `DROP ROW POLICY` est requis que la politique existe déjà ou non, de sorte que l’instruction ne peut pas servir à découvrir quelles politiques existent.
 
-## Plusieurs noms et tables
+## Plusieurs noms et tables {#multiple-names-and-tables}
 
 Valide :
 
@@ -94,11 +94,11 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## Clause USING
+## Clause USING {#using-clause}
 
 Permet de spécifier une condition pour filtrer les lignes. Un utilisateur voit une ligne si la condition, appliquée à cette ligne, renvoie une valeur non nulle.
 
-## Clause TO
+## Clause TO {#to-clause}
 
 Dans la section `TO`, vous pouvez indiquer une liste d’utilisateurs et de rôles auxquels cette politique doit s’appliquer. Par exemple, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
@@ -106,7 +106,7 @@ Le mot-clé `ALL` désigne tous les utilisateurs ClickHouse, y compris l’utili
 
 Les rôles indiqués dans la section `TO`, y compris ceux après `ALL EXCEPT`, sont comparés aux rôles activés de l’utilisateur courant ([`system.enabled_roles`](/fr/reference/system-tables/enabled_roles)), et non à tous les rôles accordés à l’utilisateur. Par conséquent, [`SET ROLE`](/fr/reference/statements/set-role) peut modifier les politiques qui s’appliquent.
 
-## Clause AS
+## Clause AS {#as-clause}
 
 Il est possible d&#39;avoir plusieurs politiques activées sur la même table pour un même utilisateur en même temps. Il faut donc un moyen de combiner les conditions de plusieurs politiques.
 
@@ -153,7 +153,13 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 permettre à l&#39;utilisateur `peter` de voir les lignes de table1 uniquement si `b=1` AND `c=2`, bien que
 pour toute autre table de mydb, seule la politique `b=1` s&#39;appliquerait à l&#39;utilisateur.
 
-## Tables Distributed et tables s&#39;appuyant sur des serveurs distants
+## Tables qui lisent les données d&#39;autres tables {#tables-that-read-from-other-tables}
+
+Une politique de ligne filtre les lignes au point où les données sont effectivement lues. Une table `Alias` renvoie les lignes de sa table cible comme si elles lui appartenaient. Les politiques de ligne de la table cible s&#39;appliquent donc aussi aux lectures effectuées via l&#39;alias, conjointement avec celles de l&#39;alias lui-même, selon un `AND` logique. Une table `Merge` applique les politiques des tables qu&#39;elle lit. Il existe toutefois une exception : lorsqu&#39;une table correspondante lit des données à distance, comme une table `Distributed`, le serveur distant traite la requête avant que la politique ne soit appliquée, car celle-ci intervient au-dessus de l&#39;opération de lecture de la table, et non au point où les données sont lues. Une telle requête peut échouer si elle agrège les données sans sélectionner les colonnes utilisées par la politique. Elle peut aussi renvoyer moins de lignes que la politique ne l&#39;autorise si le serveur distant applique un `ORDER BY ... LIMIT` à des lignes que la politique aurait masquées. Définissez plutôt la politique sur les tables locales sous-jacentes de chaque serveur distant.
+
+Ce comportement ne s&#39;applique pas à toutes les tables qui lisent les données d&#39;une autre table. Une table `Buffer` et une vue matérialisée qui lisent les données par l&#39;intermédiaire de leur table de destination ou de leur table cible n&#39;héritent **pas** des politiques de ligne de cette table : la politique est définie à partir du schéma de la table cible et, dans le cas d&#39;une vue avec `SQL SECURITY DEFINER`, elle est évaluée pour un autre utilisateur que celui qui effectue la lecture. Dans ces cas, définissez la politique sur la table que les utilisateurs interrogent réellement.
+
+## Tables Distributed et tables s&#39;appuyant sur des serveurs distants {#distributed-and-remote-backed-tables}
 
 Une politique de ligne filtre les lignes là où les données de la table sont effectivement lues. Une table qui délègue la lecture à des serveurs distants, telle qu&#39;une table [Distributed](/fr/reference/engines/table-engines/special/distributed) ou un wrapper qui s&#39;appuie sur une telle table (par exemple, une vue matérialisée avec une cible `Distributed`), ne transmet que le texte de la requête aux serveurs distants et ne peut pas appliquer le filtre de la politique à la lecture distante. Pour éviter que le filtre soit ignoré silencieusement, les requêtes vers une telle table effectuées par les utilisateurs auxquels la politique s&#39;applique sont rejetées avec une erreur `ILLEGAL_PREWHERE`.
 
@@ -168,11 +174,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   Cela fonctionne tant que la requête est transmise sous forme de texte, ce qui est le comportement par défaut. Avec [`serialize_query_plan = 1`](/fr/reference/settings/session-settings/serialize#serialize_query_plan), l’initiateur transmet à la place un plan de lecture déjà construit. Un serveur distant qui exécute un tel plan n’applique pas ses propres politiques de ligne : la lecture d’une table `Distributed` via `local_table` renvoie donc des lignes non filtrées. Conservez `serialize_query_plan = 0` pour les utilisateurs dont les politiques de ligne doivent être appliquées. Consultez l’[issue n° 112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
-## Clause ON CLUSTER
+## Clause ON CLUSTER {#on-cluster-clause}
 
 Permet de créer des politiques sur un cluster, voir [DDL distribué](/fr/reference/statements/distributed-ddl). C&#39;est également une méthode pratique pour créer la politique sur les tables locales de chaque serveur du cluster.
 
-## Exemples
+## Exemples {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

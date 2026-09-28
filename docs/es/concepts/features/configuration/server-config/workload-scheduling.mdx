@@ -52,7 +52,7 @@ Los recursos se clasifican según el modo de compartición:
 
 ## Jerarquía de cargas de trabajo {#workloads}
 
-ClickHouse proporciona una sintaxis SQL práctica para definir la jerarquía de planificación. Todos los recursos se distribuyen en una jerarquía común de WORKLOAD. Las reglas de distribución pueden modificarse en algunos aspectos para recursos concretos, pero la jerarquía es la misma. Cada WORKLOAD mantiene los nodos de planificación necesarios para cada recurso. Se puede crear una carga de trabajo hija dentro de cualquier carga de trabajo para formar la jerarquía. ClickHouse no impone ninguna estructura específica ni predefinida para la jerarquía de cargas de trabajo.
+ClickHouse proporciona una sintaxis SQL práctica para definir la jerarquía de planificación. Todos los recursos se distribuyen en una jerarquía común de WORKLOAD. Las reglas de distribución pueden modificarse en algunos aspectos para recursos concretos, pero la jerarquía es la misma. Cada WORKLOAD mantiene los nodos de planificación necesarios para cada recurso. Se puede crear una carga de trabajo hija dentro de cualquier carga de trabajo para formar la jerarquía. ClickHouse no impone ninguna estructura específica ni predefinida para la jerarquía de cargas de trabajo. Una carga de trabajo sin padre (sin cláusula `IN`) es una carga de trabajo raíz, y la jerarquía puede contener cualquier número de ellas; por ejemplo, un árbol definido mediante SQL y otro cargado desde la configuración. Todas las cargas de trabajo raíz son hijas de una raíz anónima implícita (que se muestra en la ruta `/` en `system.scheduler`), por lo que se planifican unas respecto a otras según su configuración de `weight`, `priority` y `precedence`, igual que las cargas de trabajo hermanas dentro de un árbol.
 
 A continuación se muestra un ejemplo de una jerarquía que divide todos los recursos entre las cargas de trabajo &quot;user&quot; y &quot;system&quot; con una garantía del 90 % y del 10 %, respectivamente. Ten en cuenta que los pesos definidos para las cargas de trabajo se usan para la equidad max-min y, por lo tanto, solo proporcionan una garantía de mejor esfuerzo como mínimo (no un límite ni una cuota como máximo). Toda la planificación se realiza en cada host de forma independiente y, por lo tanto, los límites definidos por la configuración `max_*` son por host. La carga de trabajo &quot;user&quot; subdivide sus recursos entre las cargas de trabajo &quot;development&quot; y &quot;production&quot;, donde &quot;production&quot; tiene 3 veces más recursos que &quot;development&quot;:
 
@@ -102,13 +102,13 @@ graph LR
   oth --> all
 ```
 
-El nombre de una carga de trabajo hoja sin cargas hijas se puede usar en la configuración de la consulta `SETTINGS workload = 'name'`. Consulta [Workload markup](#workload-markup) para obtener más detalles.
+El nombre de una carga de trabajo hoja sin cargas hijas se puede usar en el ajuste de consulta `SETTINGS workload = 'name'`. Consulta [Workload markup](#workload-markup) para obtener más detalles.
 
 Para personalizar la carga de trabajo, se pueden usar las siguientes opciones de configuración:
 
-* `priority` - (solo de tiempo compartido) las cargas de trabajo hermanas se atienden según valores de prioridad estáticos (un valor menor significa una prioridad más alta). Determina la apropiación.
-* `precedence` - (solo de espacio compartido) las cargas de trabajo hermanas se admiten según valores estáticos de precedencia (un valor menor significa una precedencia más alta). Determina la expulsión y la admisión.
-* `weight` - las cargas de trabajo hermanas con la misma prioridad o precedencia estática comparten los recursos según sus pesos de manera justa. Afecta a la apropiación, la expulsión y la admisión.
+* `priority` - (solo de tiempo compartido) las cargas de trabajo hermanas se atienden según valores de prioridad estáticos (un valor menor significa una prioridad más alta). Determina la preempción.
+* `precedence` - (solo de espacio compartido) las cargas de trabajo hermanas se admiten según valores estáticos de precedencia (un valor menor significa una precedencia más alta). Determina el desalojo y la admisión.
+* `weight` - las cargas de trabajo hermanas con la misma prioridad o precedencia estática comparten los recursos según sus pesos de manera justa. Afecta a la preempción, el desalojo y la admisión.
 * `max_io_requests` - el límite del número de solicitudes de E/S concurrentes en esta carga de trabajo.
 * `max_bytes_inflight` - el límite del total de bytes en curso para las solicitudes concurrentes en esta carga de trabajo.
 * `max_bytes_per_second` - el límite de la tasa de lectura o escritura de bytes de esta carga de trabajo.
@@ -120,9 +120,9 @@ Para personalizar la carga de trabajo, se pueden usar las siguientes opciones de
 * `max_burst_cpu_seconds` - el número máximo de segundos de CPU que la carga de trabajo puede consumir sin que se limite su tasa debido a `max_cpus`.
 * `max_memory` - el límite de la memoria total reservada para esta carga de trabajo.
 
-Todos los límites especificados mediante la configuración de la carga de trabajo son independientes para cada recurso. Por ejemplo, una carga de trabajo con `max_bytes_per_second = '10Mi'` tendrá un límite de ancho de banda de 10 MB/s para cada recurso de lectura y escritura, de forma independiente. Si se requiere un límite común para lectura y escritura, considere usar el mismo recurso para el acceso READ y WRITE.
+Todos los límites especificados mediante la configuración de la carga de trabajo son independientes para cada recurso. Por ejemplo, una carga de trabajo con `max_bytes_per_second = '10Mi'` tendrá un límite de ancho de banda de 10 MB/s para cada recurso de lectura y escritura por separado. Si se necesita un límite común para la lectura y la escritura, considera usar el mismo recurso para el acceso READ y WRITE.
 
-No hay forma de especificar distintas jerarquías de cargas de trabajo para diferentes recursos. Pero sí hay una manera de especificar un valor distinto de configuración de la carga de trabajo para un recurso específico:
+No es posible especificar jerarquías de cargas de trabajo diferentes para distintos recursos. Sin embargo, sí se puede especificar un valor distinto de una configuración de la carga de trabajo para un recurso concreto:
 
 ```sql
 CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write

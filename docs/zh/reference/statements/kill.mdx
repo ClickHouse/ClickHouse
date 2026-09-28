@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 KILL 语句有两种：终止查询和终止变更。
 
-<div id="kill-query">
-  ## KILL QUERY
-</div>
+## KILL QUERY {#kill-query}
 
 ```sql
 KILL QUERY [ON CLUSTER cluster]
@@ -59,10 +57,10 @@ SELECT
 终止查询：
 
 ```sql
--- 强制终止所有具有指定 query_id 的查询：
+-- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
--- 同步终止 'username' 运行的所有查询：
+-- Synchronously terminates all queries run by 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
@@ -71,6 +69,12 @@ KILL QUERY WHERE user='username' SYNC
 </Tip>
 
 只读用户只能停止自己的查询。
+
+未获得 `system.processes` 上 `SELECT` 授权的用户，仍可通过指定查询 ID 取消自己的查询：
+`KILL QUERY WHERE query_id = '<id>'`。对于既没有该授权也没有 `KILL QUERY` 权限的用户，如果指定的 ID 不属于其正在运行的查询，
+则不会取消任何查询，也不会返回任何行，且不会报错；拥有
+`KILL QUERY` 权限的用户指定不属于自己的查询 ID 时，则会收到通常的错误。其他任何 `WHERE` 条件以及
+`ON CLUSTER` 仍要求具备上述授权。
 
 默认使用的是查询的异步版本 (`ASYNC`) ，不会等待查询已停止的确认。
 
@@ -83,9 +87,7 @@ KILL QUERY WHERE user='username' SYNC
 
 测试查询 (`TEST`) 仅检查用户权限，并显示将要停止的查询列表。
 
-<div id="kill-mutation">
-  ## KILL MUTATION
-</div>
+## KILL MUTATION {#kill-mutation}
 
 存在长时间运行或未完成的变更，通常说明 ClickHouse 服务运行状态不佳。由于变更是异步执行的，它们可能会耗尽系统中的所有可用资源。你可能需要采取以下措施之一：
 

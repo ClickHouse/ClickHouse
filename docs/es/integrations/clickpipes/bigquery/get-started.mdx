@@ -12,71 +12,83 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 <IntroClickPipe />
 
-<div id="pre-requisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#pre-requisites}
 
 * Debe tener privilegios para administrar [cuentas de servicio](https://docs.cloud.google.com/iam/docs/service-account-overview) y [roles de IAM](https://docs.cloud.google.com/iam/docs/roles-overview) en su proyecto de GCP, o contar con la ayuda de un administrador. Recomendamos crear una cuenta de servicio dedicada con el conjunto mínimo de [permisos](/es/integrations/clickpipes/bigquery/overview#permissions) necesarios, siguiendo la [documentación oficial](https://docs.cloud.google.com/iam/docs/service-accounts-create).
 
-* El proceso de carga inicial requiere un bucket de Google Cloud Storage (GCS) proporcionado por el usuario para el almacenamiento temporal. Recomendamos crear un bucket dedicado para su ClickPipe siguiendo la [documentación oficial](https://docs.cloud.google.com/storage/docs/creating-buckets). En el futuro, ClickPipes proporcionará y administrará el bucket intermedio.
+* Una carga inicial requiere un bucket de Google Cloud Storage (GCS) para el almacenamiento temporal. Recomendamos crear un bucket dedicado para su ClickPipe siguiendo las [instrucciones de Google Cloud](https://docs.cloud.google.com/storage/docs/creating-buckets).
+
+* Para la replicación continua, otorgue a la cuenta de servicio el [rol BigQuery Read Session User](/es/integrations/clickpipes/bigquery/overview#bigquery) en el proyecto. Consulte los [requisitos de su método de replicación](/es/integrations/clickpipes/bigquery/overview#cdc) antes de seleccionar las tablas.
 
 <Steps>
-  <Step title="Selecciona la fuente de datos" id="1-select-the-data-source">
-    **1.** En ClickHouse Cloud, selecciona **Data sources** en el menú principal de navegación y haz clic en **Create ClickPipe**.
+  <Step title="Seleccione la fuente de datos" id="1-select-the-data-source">
+    **1.** En ClickHouse Cloud, seleccione **Fuentes de datos** en el menú de navegación principal y haga clic en **Crear ClickPipe**.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
 
-    **2.** Haz clic en el tile de **BigQuery**.
+    **2.** Haga clic en la tarjeta **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Seleccionar el tile de BigQuery" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Seleccionar la tarjeta de BigQuery" size="lg" border />
   </Step>
 
-  <Step title="Configura tu conexión de ClickPipe" id="2-setup-your-clickpipe-connection">
-    Para configurar un nuevo ClickPipe, debes indicar cómo conectarte y autenticarte con tu data warehouse de BigQuery, así como un bucket de Google Cloud Storage (GCS) de almacenamiento temporal.
+  <Step title="Configura la conexión de tu ClickPipe" id="2-setup-your-clickpipe-connection">
+    Proporcione los datos de conexión de su proyecto de BigQuery. Si va a realizar una carga inicial, indique un bucket de GCS para el almacenamiento temporal.
 
-    **1.** Sube la key `.json` de la cuenta de servicio que creaste para ClickPipes. Asegúrate de que la cuenta de servicio tenga el conjunto mínimo de [permisos](/es/integrations/clickpipes/bigquery/overview#permissions) requerido.
+    **1.** Cargue el archivo de clave `.json` de la cuenta de servicio que creó para ClickPipes. Asegúrese de que la cuenta de servicio tenga los [permisos](/es/integrations/clickpipes/bigquery/overview#permissions) mínimos necesarios.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Subir la key de la cuenta de servicio" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Cargar la clave de la cuenta de servicio" size="lg" border />
 
-    **2.** Selecciona el **método de replicación**. En Private Preview, la única opción compatible es [**solo carga inicial**](/es/integrations/clickpipes/bigquery/overview#initial-load).
+    **2.** Seleccione el **modo de replicación**: [solo carga inicial](/es/integrations/clickpipes/bigquery/overview#initial-load), **carga inicial + CDC** o **solo CDC**. Si selecciona un modo de CDC, elija un [método basado en consultas o en eventos](/es/integrations/clickpipes/bigquery/overview#cdc).
 
-    **3.** Indica la path al bucket de Google Cloud Storage (GCS) para almacenar temporalmente los datos durante la carga inicial.
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="Opciones del modo de replicación de BigQuery: solo carga inicial, carga inicial más CDC y solo CDC" size="lg" border />
 
-    **4.** Haz clic en **Next** para validar.
+    **3.** Si va a realizar una carga inicial, proporcione la ruta del bucket de GCS que usará para almacenar temporalmente los datos.
+
+    **4.** Haga clic en **Siguiente** para validar.
   </Step>
 
-  <Step title="Configura tu ClickPipe" id="3-configure-your-clickpipe">
-    Según el tamaño de tu dataset de BigQuery o el tamaño total de las tablas que quieres sincronizar, puede que necesites ajustar la configuración predeterminada de ingestión del ClickPipe.
+  <Step title="Configure su ClickPipe" id="3-configure-your-clickpipe">
+    Establezca los siguientes valores para las fases seleccionadas. La configuración de la carga inicial solo se aplica cuando ClickPipe importa los datos existentes; la configuración de CDC solo se aplica cuando continúa replicando los cambios.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="Configuración de BigQuery ClickPipe para el intervalo de sincronización, la carga inicial y CDC" size="lg" border />
+
+    | Configuración                                    | Qué controla                                                                                                                                                                                                                                                                                                                                               |
+    | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | Intervalo de sincronización (segundos)           | Frecuencia con la que ClickPipes comprueba si hay cambios nuevos en cada tabla de origen.                                                                                                                                                                                                                                                                  |
+    | Threads en paralelo para la carga inicial        | Número máximo de partes de una misma tabla que ClickPipes carga a la vez.                                                                                                                                                                                                                                                                                  |
+    | Número de filas por partición de la instantánea  | Número objetivo de filas en cada parte de la carga inicial. ClickPipes puede ajustar este valor para tablas grandes.                                                                                                                                                                                                                                       |
+    | Número de tablas en paralelo de la instantánea   | Número máximo de tablas de origen que ClickPipes carga a la vez.                                                                                                                                                                                                                                                                                           |
+    | Número de tablas en paralelo para CDC            | Número máximo de tablas que ClickPipes lee y envía a ClickHouse simultáneamente.                                                                                                                                                                                                                                                                           |
+    | Búfer de seguridad de CDC (segundos)             | Tiempo de retraso con respecto a la hora actual de BigQuery hasta el que ClickPipes consulta los cambios en cada consulta de CDC. Así, las escrituras recientes tienen tiempo de estar disponibles antes de que ClickPipes las lea.                                                                                                                        |
+    | Ventana máxima de una consulta de CDC (segundos) | Rango de tiempo máximo que abarca una consulta de CDC. ClickPipes divide los períodos más largos en consultas independientes. Para la replicación basada en eventos, mantenga este valor en 86 400 segundos o menos, conforme al [límite de un día](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions) de BigQuery. |
   </Step>
 
-  <Step title="Configura las tablas" id="4-configure-tables">
-    **1.** Selecciona la base de datos de ClickHouse en la que quieres replicar las tablas de BigQuery. Puedes seleccionar una base de datos existente o crear una nueva.
+  <Step title="Configurar tablas" id="4-configure-tables">
+    **1.** Seleccione la base de datos en ClickHouse en la que desea replicar las tablas de BigQuery. Puede elegir una base de datos existente o crear una nueva.
 
-    **2.** Selecciona las tablas y, opcionalmente, las columnas que quieres replicar. Solo aparecerán los datasets a los que tenga acceso la cuenta de servicio proporcionada.
+    **2.** Seleccione las tablas de origen. En **Configuración de columnas**, puede cambiar el nombre de cada tabla de destino y elegir qué columnas replicar. En la lista solo aparecen los conjuntos de datos a los que tiene acceso la cuenta de servicio.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Permisos" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="Seleccione una tabla de origen de BigQuery y configure el nombre de destino, la columna de marca de agua de CDC, la clave de ordenación y la configuración avanzada" size="lg" border />
 
-    **3.** Para cada tabla seleccionada, asegúrate de definir una clave de ordenación personalizada en **Advanced settings** &gt; **Use a custom sorting key**. En el futuro, la clave de ordenación se inferirá automáticamente a partir de las claves de clustering o partición existentes en la base de datos de origen.
+    **3.** Configure la opción de CDC de cada tabla. La captura de pantalla muestra la configuración basada en consultas. Seleccione una **columna de marca de agua de CDC** de tipo `TIMESTAMP`, inclúyala entre las columnas replicadas y actualice su valor cada vez que cambie la fila. Si utiliza la replicación basada en eventos, seleccione [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) o [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes). [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) requiere `enable_change_history = TRUE` en la tabla de origen.
 
-    <Warning>
-      **Debes** definir una [clave de ordenación](/es/concepts/best-practices/choosing-a-primary-key) para las tablas replicadas con el fin de optimizar el rendimiento de las consultas en ClickHouse. De lo contrario, la clave de ordenación se establecerá como `tuple()`, lo que significa que no se creará ningún índice primario y ClickHouse realizará escaneos completos de la tabla en todas las consultas sobre ella.
-    </Warning>
+    **4.** Revise la **Clave de ordenación**. Si las filas pueden actualizarse o eliminarse, elija columnas estables que identifiquen cada fila. Para usar [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes), la tabla de origen debe tener una clave primaria; de lo contrario, debe definir aquí una clave de ordenación. ClickHouse utiliza la clave de ordenación para organizar los datos y facilitar las consultas; si no se define, utiliza `tuple()` y no dispone de índice primario.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permisos" size="lg" border />
+    **5.** Abra **Configuración avanzada** para elegir el **Motor** de la tabla de ClickHouse o una clave de particionamiento opcional para la carga inicial. Esta clave de particionamiento no define la expresión `PARTITION BY` de la tabla de destino.
   </Step>
 
-  <Step title="Configura los permisos" id="6-configure-permissions">
-    Por último, puedes configurar los permisos para el usuario interno de ClickPipes.
+  <Step title="Configurar permisos" id="6-configure-permissions">
+    Por último, puede configurar los permisos del usuario interno de ClickPipes.
 
-    **Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puedes seleccionar un rol para este usuario interno mediante un rol personalizado o uno de los roles predefinidos:
+    **Permisos:** ClickPipes creará un usuario específico para escribir datos en una tabla de destino. Puede asignar a este usuario interno un rol personalizado o uno de los roles predefinidos:
 
-    * `Full access`: acceso completo al cluster. Es necesario si usas vistas materializadas o un diccionario con la tabla de destino.
-    * `Only destination`: permisos de inserción únicamente en la tabla de destino.
+    * `Full access`: acceso completo al cluster. Es necesario si utiliza vistas materializadas o un diccionario con la tabla de destino.
+    * `Only destination`: permisos para insertar datos únicamente en la tabla de destino.
   </Step>
 
-  <Step title="Completa la configuración" id="7-complete-setup">
-    Haz clic en **Create ClickPipe** para completar la configuración. Se te redirigirá a la página de resumen, donde podrás ver el progreso de la carga inicial y acceder a los detalles de tus ClickPipes de BigQuery.
+  <Step title="Complete la configuración" id="7-complete-setup">
+    Haz clic en **Create ClickPipe** para completar la configuración. Se te redirigirá a la página de resumen, donde podrás seguir el progreso de la carga inicial y consultar los detalles de tus ClickPipes de BigQuery.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permisos" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permissions" size="lg" border />
   </Step>
 </Steps>

@@ -15,61 +15,53 @@ DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE 
 
 이는 비용이 큰 작업인 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 명령과 구분하기 위해 &quot;경량 DELETE&quot;라고 부릅니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 ```sql
 -- `hits` 테이블에서 `Title` 컬럼에 `hello` 텍스트가 포함된 모든 행을 삭제합니다
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## 경량 DELETE는 데이터를 즉시 삭제하지 않습니다
-</div>
+## 경량 DELETE는 데이터를 즉시 삭제하지 않습니다 {#lightweight-delete-does-not-delete-data-immediately}
 
-경량 DELETE는 행을 삭제된 것으로 표시하지만 즉시 물리적으로 삭제하지 않는 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+경량 `DELETE`는 행을 삭제된 것으로 표시하지만 스토리지에서 즉시 제거하지는 않습니다. 기본적으로 [뮤테이션](/ko/reference/statements/alter/index#mutations)을 사용합니다. [`lightweight_delete_mode`](#lightweight-delete-mode) 설정에 따라 패치 파트를 사용할 수도 있습니다.
 
-기본적으로 `DELETE` SQL 문은 행을 삭제된 것으로 표시하는 작업이 완료될 때까지 기다린 후 반환됩니다. 데이터 양이 많으면 이 작업에 오랜 시간이 걸릴 수 있습니다. 또는 [`lightweight_deletes_sync`](/ko/reference/settings/session-settings/lightweight#lightweight_deletes_sync) 설정을 사용해 백그라운드에서 비동기적으로 실행할 수 있습니다. 이 옵션을 비활성화하면 `DELETE` SQL 문은 즉시 반환되지만, 백그라운드 뮤테이션이 완료될 때까지 데이터가 여전히 쿼리에서 보일 수 있습니다.
+기본 뮤테이션 기반 모드에서는 `DELETE` SQL 문은 행을 삭제된 것으로 표시하는 작업이 완료될 때까지 기다린 후 반환됩니다. 데이터 양이 많으면 이 작업에 오랜 시간이 걸릴 수 있습니다. 또는 [`lightweight_deletes_sync`](/ko/reference/settings/session-settings/lightweight#lightweight_deletes_sync) 설정을 사용해 백그라운드에서 비동기적으로 실행할 수 있습니다. 이 옵션을 비활성화하면 `DELETE` SQL 문은 즉시 반환되지만, 백그라운드 뮤테이션이 완료될 때까지 데이터가 여전히 쿼리에서 보일 수 있습니다.
 
-이 뮤테이션은 삭제된 것으로 표시된 행을 물리적으로 삭제하지 않으며, 이는 다음 머지 시에만 수행됩니다. 따라서 일정 기간 동안 데이터가 실제로는 스토리지에서 삭제되지 않고 삭제된 것으로만 표시될 수 있습니다.
+두 모드 모두 삭제된 행은 정리될 때까지 스토리지에 남아 있습니다. 일반적으로 백그라운드 머지를 통해 영향을 받은 데이터 파트에서 삭제된 행이 제거됩니다. 삭제 마스크를 명시적으로 적용하려면 무거운 뮤테이션을 수행하는 [`ALTER TABLE ... APPLY DELETED MASK`](/ko/reference/statements/alter/apply-deleted-mask)를 사용하십시오.
 
 예측 가능한 시간 안에 데이터가 스토리지에서 삭제되도록 보장해야 한다면 테이블 설정 [`min_age_to_force_merge_seconds`](/ko/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds) 사용을 고려하십시오. 또는 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 명령을 사용할 수 있습니다. `ALTER TABLE ... DELETE`를 사용해 데이터를 삭제하면 영향을 받는 모든 파트를 다시 생성하므로 상당한 리소스를 사용할 수 있다는 점에 유의하십시오.
 
-<div id="deleting-large-amounts-of-data">
-  ## 대량의 데이터 삭제
-</div>
+## 삭제 모드 선택 {#lightweight-delete-mode}
+
+[`lightweight_delete_mode`](/ko/reference/settings/session-settings/lightweight#lightweight_delete_mode) 설정에서는 뮤테이션 기반 삭제(기본값)와 삭제된 행의 `_row_exists = 0` 값을 담은 패치 파트를 기록하는 경량 업데이트 중 하나를 선택할 수 있습니다. 쿼리에서는 실제로 데이터가 정리되기 전에 이러한 패치를 적용합니다.
+
+사용 가능한 모드는 설정 참고 문서를, 사전 요구 사항은 [경량 업데이트 요구 사항](/ko/reference/statements/update#lightweight-update-requirements)을 참조하십시오. 패치 파트를 사용하면 `lightweight_deletes_sync`는 다른 레플리카의 처리를 기다리지 않습니다. `ReplicatedMergeTree`에서는 다른 레플리카가 패치를 수신하기 전까지 삭제된 행을 반환할 수 있습니다.
+
+## 대량의 데이터 삭제 {#deleting-large-amounts-of-data}
 
 대량 삭제는 ClickHouse 성능에 부정적인 영향을 줄 수 있습니다. 테이블의 모든 행을 삭제하려는 경우 [`TRUNCATE TABLE`](/ko/reference/statements/truncate) 명령 사용을 고려해 보십시오.
 
 삭제가 자주 필요할 것으로 예상된다면 [사용자 지정 파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)를 사용하는 것이 좋습니다. 그러면 [`ALTER TABLE ... DROP PARTITION`](/ko/reference/statements/alter/partition#drop-partitionpart) 명령을 사용해 해당 파티션에 속한 모든 행을 빠르게 삭제할 수 있습니다.
 
-<div id="limitations-of-lightweight-delete">
-  ## 경량 `DELETE`의 제한 사항
-</div>
+## 경량 `DELETE`의 제한 사항 {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### 프로젝션이 있는 테이블에서의 경량 `DELETE`
-</div>
+### 프로젝션이 있는 테이블에서의 경량 `DELETE` {#lightweight-deletes-with-projections}
 
 기본적으로 프로젝션이 있는 테이블에서는 `DELETE`가 작동하지 않습니다. 이는 프로젝션의 행이 `DELETE` 작업의 영향을 받을 수 있기 때문입니다. 하지만 이 동작을 변경하는 [MergeTree 설정](/ko/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode`가 있습니다.
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## 경량 `DELETE` 사용 시 성능 고려 사항
-</div>
+## 경량 `DELETE` 사용 시 성능 고려 사항 {#performance-considerations-when-using-lightweight-delete}
 
 **경량 `DELETE` 문으로 대량의 데이터를 삭제하면 SELECT 쿼리 성능에 악영향을 줄 수 있습니다.**
 
 다음과 같은 요인도 경량 `DELETE` 성능에 부정적인 영향을 줄 수 있습니다:
 
 * `DELETE` 쿼리의 `WHERE` 조건이 복잡한 경우.
-* 뮤테이션 큐에 다른 뮤테이션이 많이 쌓여 있으면, 테이블의 모든 뮤테이션이 순차적으로 실행되므로 성능 문제가 발생할 수 있습니다.
+* 뮤테이션 기반 삭제에서 뮤테이션 큐에 작업이 많이 쌓인 경우. 테이블의 뮤테이션은 순차적으로 실행됩니다.
 * 영향을 받는 테이블에 데이터 파트가 매우 많은 경우.
-* 컴팩트 파트(Compact 파트)에 데이터가 많은 경우. Compact 파트에서는 모든 컬럼이 하나의 파일에 저장됩니다.
+* 뮤테이션 기반 삭제를 사용할 때 컴팩트 파트(Compact 파트)에 데이터가 많은 경우. Compact 파트에서는 모든 컬럼이 하나의 파일에 저장되므로 함께 재작성해야 합니다.
 
-<div id="delete-permissions">
-  ## DELETE 권한
-</div>
+## DELETE 권한 {#delete-permissions}
 
 `DELETE`를 사용하려면 `ALTER DELETE` 권한이 필요합니다. 특정 사용자가 특정 테이블에서 `DELETE` SQL 문을 실행할 수 있도록 하려면 다음 명령을 실행하십시오:
 
@@ -77,13 +69,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## ClickHouse에서 경량 DELETE가 내부적으로 작동하는 방식
-</div>
+## ClickHouse에서 경량 DELETE가 내부적으로 작동하는 방식 {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **영향을 받는 행에 &quot;마스크&quot;가 적용됩니다**
 
-   `DELETE FROM table ...` 쿼리가 실행되면 ClickHouse는 각 행을 &quot;존재&quot; 또는 &quot;삭제됨&quot;으로 표시하는 마스크를 저장합니다. 이렇게 표시된 &quot;삭제된&quot; 행은 이후 쿼리 결과에서 제외됩니다. 하지만 행 자체가 실제로 제거되는 것은 이후 머지 과정에서입니다. 이 마스크를 기록하는 작업은 `ALTER TABLE ... DELETE` 쿼리에서 수행하는 작업보다 훨씬 가볍습니다.
+   `DELETE FROM table ...` 쿼리가 실행되면 ClickHouse는 각 행을 &quot;존재&quot; 또는 &quot;삭제됨&quot;으로 표시하는 마스크를 저장합니다. 이렇게 표시된 &quot;삭제된&quot; 행은 이후 쿼리 결과에서 제외됩니다. 하지만 행은 나중에, 일반적으로 백그라운드 머지 과정에서 물리적으로 제거됩니다. 이 마스크를 기록하는 작업은 `ALTER TABLE ... DELETE` 쿼리에서 수행하는 작업보다 훨씬 가볍습니다.
 
    이 마스크는 표시 가능한 모든 행에 `True`를, 삭제된 행에 `False`를 저장하는 숨겨진 `_row_exists` 시스템 컬럼으로 구현됩니다. 이 컬럼은 해당 파트에서 일부 행이 삭제된 경우에만 존재합니다. 파트의 모든 값이 `True`이면 이 컬럼은 존재하지 않습니다.
 
@@ -97,9 +87,11 @@ GRANT ALTER DELETE ON db.table to username;
 
    실행 시에는 `_row_exists` 컬럼을 읽어 반환하면 안 되는 행을 판별합니다. 삭제된 행이 많으면 ClickHouse는 나머지 컬럼을 읽을 때 어떤 그래뉼을 완전히 건너뛸 수 있는지도 판단할 수 있습니다.
 
-3. **`DELETE` 쿼리는 `ALTER TABLE ... UPDATE` 쿼리로 변환됩니다**
+3. **`DELETE` 쿼리는 선택한 모드를 사용하여 마스크를 업데이트합니다**
 
-   `DELETE FROM table WHERE condition`은 `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` 뮤테이션으로 변환됩니다.
+   패치 파트를 사용하는 경우 `DELETE FROM table WHERE condition`은 `UPDATE table SET _row_exists = 0 WHERE condition`으로 변환됩니다. 생성된 패치 파트에는 삭제된 행의 마스크 변경 사항이 저장되며, 데이터를 읽고 머지할 때 적용됩니다.
+
+   기본 `alter_update` 모드에서는 `DELETE FROM table WHERE condition`이 `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` 뮤테이션으로 변환됩니다.
 
    내부적으로 이 뮤테이션은 두 단계로 실행됩니다:
 
@@ -109,8 +101,8 @@ GRANT ALTER DELETE ON db.table to username;
 
    위 단계에서 알 수 있듯이, 마스킹 기법을 사용하는 경량 `DELETE`는 영향을 받는 파트의 모든 컬럼 파일을 다시 기록하지 않으므로 기존 `ALTER TABLE ... DELETE`보다 성능이 더 좋습니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 업데이트 및 삭제 처리하기](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+
+- 블로그: [경량한 삭제가 이제 한층 더 가벼워졌습니다](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#lightweight-deletes-are-now-even-lighter)

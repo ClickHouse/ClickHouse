@@ -17,9 +17,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Запущенный [сервис ClickHouse Cloud](/ru/get-started/setup/cloud)
 * IDE или выбранный вами инструмент для агентной разработки
 
-<div id="enable-remote-mcp-server">
-  ## Включение удалённого MCP-сервера для Cloud
-</div>
+## Включение удалённого MCP-сервера для Cloud {#enable-remote-mcp-server}
 
 Подключитесь к сервису ClickHouse Cloud, для которого нужно включить удалённый MCP-сервер.
 В меню слева нажмите **Connect**. Откроется окно со сведениями о подключении.
@@ -28,9 +26,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Выберите MCP в окне Connect" size="md" />
 
-Включите переключатель, чтобы активировать MCP для сервиса:
+Включите переключатель, чтобы активировать MCP для сервиса. Чтобы включить или отключить MCP, требуется разрешение `control-plane:service:manage-mcp` (см. [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles#console-permissions)):
 
-<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Включить MCP Server" size="md" />
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Включить MCP-сервер" size="md" />
 
 Скопируйте отображаемый URL — он совпадает с приведённым ниже:
 
@@ -39,13 +37,13 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## Настройка удалённого MCP для разработки
+  ## Настройка удалённого MCP для разработки {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 Выберите ниже IDE или инструмент и следуйте соответствующим инструкциям по настройке.
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 В рабочем каталоге выполните следующую команду, чтобы добавить в Claude Code конфигурацию MCP Server для ClickHouse Cloud:
@@ -69,7 +67,7 @@ claude
 Выберите `clickhouse-cloud` и авторизуйтесь через OAuth, используя свои учетные данные ClickHouse Cloud.
 
 <div id="claude-web">
-  ### Веб-интерфейс Claude
+  ### Веб-интерфейс Claude {#claude-web}
 </div>
 
 1. Перейдите в **Customize** &gt; **Connectors**
@@ -79,7 +77,7 @@ claude
 5. Пройдите аутентификацию через OAuth, используя свои учетные данные ClickHouse Cloud
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. Откройте [маркетплейс Cursor](https://cursor.com/marketplace), найдите и установите MCP-серверы.
@@ -87,7 +85,7 @@ claude
 3. Пройдите аутентификацию через OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 Добавьте в `.vscode/mcp.json` следующую конфигурацию:
@@ -106,7 +104,7 @@ claude
 Подробнее см. в [документации по Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 Отредактируйте файл `mcp_config.json`, указав следующую конфигурацию:
@@ -125,7 +123,7 @@ claude
 Подробнее см. в [документации Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 Добавьте ClickHouse как пользовательский сервер.
@@ -145,7 +143,7 @@ claude
 Подробнее см. в [документации Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 Выполните следующую команду, чтобы добавить MCP-сервер ClickHouse Cloud через CLI:
@@ -155,7 +153,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## Пример использования
+  ## Пример использования {#example-usage}
 </div>
 
 После подключения вы сможете взаимодействовать с ClickHouse Cloud с помощью промптов на естественном языке.
@@ -163,7 +161,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 Полный список доступных инструментов см. в [справочнике по инструментам](/ru/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### Изучение ваших данных
+  ### Изучение ваших данных {#exploring-data}
 </div>
 
 Для начала посмотрите, что доступно:
@@ -176,7 +174,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;Выведи все таблицы, имена которых начинаются с `events_`&quot; | `list_tables` (с фильтром `like`) |
 
 <div id="running-queries">
-  ### Выполнение аналитических запросов
+  ### Выполнение аналитических запросов {#running-queries}
 </div>
 
 Задавайте вопросы на естественном языке, и агент переведет их в SQL:
@@ -190,7 +188,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 Инструмент `run_select_query` позволяет выполнять только команды `SELECT`. Все запросы — только для чтения.
 
 <div id="managing-services">
-  ### Управление сервисами и инфраструктурой
+  ### Управление сервисами и инфраструктурой {#managing-services}
 </div>
 
 Получите обзор ресурсов ClickHouse Cloud:
@@ -204,7 +202,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;Какие ClickPipes настроены для этого сервиса?&quot;              | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### Отслеживание затрат
+  ### Отслеживание затрат {#monitoring-costs}
 </div>
 
 | Промпт                                                              | Вызываемый инструмент                               |
@@ -213,7 +211,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;Покажи ежедневные расходы с 1 по 15 марта&quot;               | `get_organization_cost` (с `from_date` и `to_date`) |
 
 <div id="related-content">
-  ## См. также
+  ## См. также {#related-content}
 </div>
 
 * [Навыки для агентов ClickHouse](https://github.com/ClickHouse/agent-skills)

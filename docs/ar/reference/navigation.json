@@ -420,6 +420,7 @@
             "ar/reference/engines/database-engines/index",
             "ar/reference/engines/database-engines/atomic",
             "ar/reference/engines/database-engines/backup",
+            "ar/reference/engines/database-engines/cluster",
             "ar/reference/engines/database-engines/datalake",
             "ar/reference/engines/database-engines/dictionary",
             "ar/reference/engines/database-engines/filesystem",

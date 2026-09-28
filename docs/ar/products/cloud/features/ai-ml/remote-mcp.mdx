@@ -18,9 +18,7 @@ doc_type: 'reference'
 
 وهذا يسهّل على الأدوات القائمة على الوكلاء التكامل مع ClickHouse واسترجاع البيانات التي تحتاج إليها، سواء للتحليل أو التلخيص أو توليد الشيفرة أو الاستكشاف.
 
-<div id="remote-vs-oss">
-  ## خادم MCP البعيد مقابل خادم MCP مفتوح المصدر
-</div>
+## خادم MCP البعيد مقابل خادم MCP مفتوح المصدر {#remote-vs-oss}
 
 توفّر ClickHouse خادمين لـMCP.
 
@@ -36,17 +34,14 @@ doc_type: 'reference'
 يوفّر خادم MCP البعيد أوسع تكامل مع ClickHouse Cloud، بما في ذلك إدارة الخدمة، ومراقبة النسخ الاحتياطية، وإتاحة رؤية ClickPipe، وبيانات الفوترة، من دون أي بنية تحتية تحتاج إلى إدارتها.
 بالنسبة إلى مثيلات ClickHouse المستضافة ذاتيًا، راجع [أدلة خادم MCP مفتوح المصدر](/ar/guides/use-cases/ai-ml/MCP/index).
 
-<div id="enabling">
-  ## تمكين خادم MCP البعيد
-</div>
+## تمكين خادم MCP البعيد {#enabling}
 
 يجب تمكين خادم MCP البعيد على مستوى كل خدمة قبل أن يتمكن من قبول الاتصالات.
 في وحدة تحكم ClickHouse Cloud، افتح خدمتك، وانقر على زر **Connect**، ثم اختر **MCP** وقم بتمكينه.
+يتطلب تمكين خادم MCP البعيد أو تعطيله امتلاك الإذن `control-plane:service:manage-mcp` (راجع [أدوار وأذونات وحدة التحكم](/ar/products/cloud/reference/security/console-roles#console-permissions)).
 للاطلاع على خطوات مفصلة مع لقطات شاشة، راجع [دليل الإعداد](/ar/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
 
-<div id="endpoint">
-  ## نقطة النهاية
-</div>
+## نقطة النهاية {#endpoint}
 
 بمجرد تفعيله، يصبح خادم MCP البعيد متاحًا على:
 
@@ -54,29 +49,21 @@ doc_type: 'reference'
 https://mcp.clickhouse.cloud/mcp
 ```
 
-<div id="authentication">
-  ## المصادقة
-</div>
+## المصادقة {#authentication}
 
 تتم مصادقة جميع عمليات الوصول إلى خادم MCP البعيد عبر OAuth 2.0.
 عند اتصال عميل MCP للمرة الأولى، يبدأ تدفق OAuth يفتح نافذة متصفح ليتمكن المستخدم من تسجيل الدخول باستخدام بيانات اعتماد ClickHouse Cloud الخاصة به.
 يقتصر الوصول على المؤسسات والخدمات التي يملك المستخدم المصادَق عليه إذنًا بالوصول إليها. ولا يلزم أي إعداد إضافي لمفتاح API.
 
-<div id="safety">
-  ## الأمان
-</div>
+## الأمان {#safety}
 
 جميع الأدوات التي يتيحها خادم MCP البعيد هي **للقراءة فقط**. تُوسَم كل أداة بالتعليمة `readOnlyHint: true` في البيانات الوصفية الخاصة بها في MCP. ولا يمكن لأي أداة تعديل البيانات أو تغيير إعدادات الخدمة أو تنفيذ أي عملية مدمّرة.
 
-<div id="available-tools">
-  ## الأدوات المتاحة
-</div>
+## الأدوات المتاحة {#available-tools}
 
 يوفّر خادم MCP البعيد 13 أداة مُصنَّفة ضمن الفئات التالية.
 
-<div id="query-and-schema">
-  ### استكشاف الاستعلامات والمخطط
-</div>
+### استكشاف الاستعلامات والمخطط {#query-and-schema}
 
 تمكّن هذه الأدوات الوكلاء من اكتشاف البيانات المتاحة وتشغيل استعلامات تحليلية.
 
@@ -86,27 +73,21 @@ https://mcp.clickhouse.cloud/mcp
 | `list_databases`   | اعرض جميع قواعد البيانات المتاحة في خدمة ClickHouse.           | `serviceId`                                                                                  |
 | `list_tables`      | اعرض جميع الجداول في قاعدة بيانات، بما في ذلك تعريفات الأعمدة. | `serviceId`; `database`; اختياريًا `like` أو `notLike` (أنماط SQL LIKE لتصفية أسماء الجداول) |
 
-<div id="organizations">
-  ### المؤسسات
-</div>
+### المؤسسات {#organizations}
 
 | الأداة                     | الوصف                                                                                | المعلمات         |
 | -------------------------- | ------------------------------------------------------------------------------------ | ---------------- |
 | `get_organizations`        | استرداد جميع مؤسسات ClickHouse Cloud التي يمكن للمستخدم المُصادَق عليه الوصول إليها. | لا شيء           |
 | `get_organization_details` | إرجاع تفاصيل مؤسسة واحدة.                                                            | `organizationId` |
 
-<div id="services">
-  ### الخدمات
-</div>
+### الخدمات {#services}
 
 | Tool                  | الوصف                                            | Parameters                    |
 | --------------------- | ------------------------------------------------ | ----------------------------- |
 | `get_services_list`   | يسرد جميع الخدمات في مؤسسة ضمن ClickHouse Cloud. | `organizationId`              |
 | `get_service_details` | يعرض تفاصيل خدمة محددة.                          | `organizationId`; `serviceId` |
 
-<div id="backups">
-  ### النسخ الاحتياطية
-</div>
+### النسخ الاحتياطية {#backups}
 
 | الأداة                             | الوصف                                                           | المعلمات                                  |
 | ---------------------------------- | --------------------------------------------------------------- | ----------------------------------------- |
@@ -114,25 +95,19 @@ https://mcp.clickhouse.cloud/mcp
 | `get_service_backup_details`       | يعيد تفاصيل نسخة احتياطية واحدة.                                | `organizationId`; `serviceId`; `backupId` |
 | `get_service_backup_configuration` | يعيد إعدادات النسخ الاحتياطي لخدمة (إعدادات الجدولة والاحتفاظ). | `organizationId`; `serviceId`             |
 
-<div id="clickpipes">
-  ### ClickPipes
-</div>
+### ClickPipes {#clickpipes}
 
 | Tool              | Description                           | Parameters                                   |
 | ----------------- | ------------------------------------- | -------------------------------------------- |
 | `list_clickpipes` | اعرض جميع ClickPipes المُهيّأة لخدمة. | `organizationId`; `serviceId`                |
 | `get_clickpipe`   | أعد تفاصيل ClickPipe محدد.            | `organizationId`; `serviceId`; `clickPipeId` |
 
-<div id="billing">
-  ### الفوترة
-</div>
+### الفوترة {#billing}
 
 | الأداة                  | الوصف                                                                                               | المعلمات                                                                                        |
 | ----------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `get_organization_cost` | يجلب بيانات تكاليف الفوترة والاستخدام لمؤسسة ما. ويُرجع إجماليًا عامًا وسجلات يومية لتكلفة كل كيان. | `organizationId`; واختياريًا `from_date` و`to_date` ‏(YYYY-MM-DD، بحد أقصى لنطاق قدره 31 يومًا) |
 
-<div id="getting-started">
-  ## البدء
-</div>
+## البدء {#getting-started}
 
 راجع [دليل الإعداد](/ar/products/cloud/features/ai-ml/mcp/remote-mcp) للحصول على تعليمات مفصلة خطوة بخطوة حول تمكين خادم MCP البعيد وربطه بعميل MCP.

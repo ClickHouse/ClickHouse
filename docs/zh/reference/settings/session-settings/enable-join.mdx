@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 启用此功能：在键为单个整数且取值范围较小时，将用于 JOIN 的哈希表转换为扁平数组。
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 对于结果绝不会包含右侧行中值的 JOIN，使用仅存储连接键而不引用右侧行的哈希表：`LEFT ANTI`，以及未选择右侧列时的 `LEFT SEMI`。此类表的单元更小，并且可丢弃右侧块而无需存储。
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在运行时，根据从右侧收集到的一组 JOIN 连接键对左侧进行过滤。
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN 运行时过滤器已成为 Production 层级功能。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "用于通过动态索引分析启用 join 筛选的新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN 运行时过滤器成为 Production 层级功能。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置：通过动态索引分析启用连接过滤"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "利用从 JOIN 构建侧（右侧）收集的运行时过滤器，对探测侧（左侧）的粒度进行剪枝。"}]}]} />
 
-执行第二轮索引分析 (通过 use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) ，以对 join 左侧的粒度进行剪枝。
+利用从 JOIN 构建侧收集的运行时过滤器，对探测侧的粒度进行剪枝；参见 `enable_join_runtime_filters`。
+仅当 `use_skip_indexes_on_data_read = 1` 时生效。
+只有当连接键是探测侧的主键列，或被 `minmax`、`set` 或 `bloom_filter` 跳过索引覆盖时，才能进行剪枝。
+如果运行时过滤器保留了精确的键值，就使用由这些值组成的 `IN` 集合作为剪枝谓词；否则使用键值的最小值到最大值范围，剪枝效果较弱。
 
-## enable_join_transitive_predicates
+此设置仅在本地读取连接的探测侧时生效。优化查询计划时，驱动剪枝的描述符会附加到读取步骤；如果为远程执行重新构建该步骤，描述符就不会保留。因此，使用并行副本 (`enable_parallel_replicas = 1`) 或分布式查询计划 (`make_distributed_plan = 1`) 时，不会进行粒度剪枝。在这些模式下，此设置相当于空操作：查询结果不变，JOIN 运行时过滤器本身的行为也与禁用此设置时完全相同，只是不会进行粒度剪枝。
+
+如果探测侧使用 `FINAL` 读取，也会跳过粒度剪枝 (`FINAL` 读取尚不支持剪枝，而且 `optimizeLazyFinal` 会在不保留描述符的情况下重新构建此类读取) 。对于存在待处理数据、`ALTER` 变更或补丁分区片段的表，同样会跳过粒度剪枝。这些情况也相当于空操作。
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

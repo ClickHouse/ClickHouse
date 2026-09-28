@@ -11,9 +11,7 @@ doc_type: 'reference'
 يُمكّن محرك جدول ArrowFlight في ClickHouse من القراءة من مجموعات البيانات البعيدة والكتابة إليها عبر بروتوكول [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
 ويتيح هذا التكامل لـ ClickHouse التفاعل مع الخوادم الخارجية الداعمة لـ Flight بتنسيق Arrow عمودي وبأداء عالٍ.
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
@@ -31,9 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 قائمة الأعمدة اختيارية — إذا لم تُحدَّد، فسيُستنتج المخطط من خادم Arrow Flight البعيد عبر `GetSchema`.
 
-<div id="named-collections">
-  ## المجموعات المُسمّاة
-</div>
+## المجموعات المُسمّاة {#named-collections}
 
 يدعم المحرّك [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) لتخزين معلمات الاتصال:
 
@@ -56,15 +52,12 @@ CREATE TABLE remote_flight_data
 | `ssl_ca`                   | لا                       | `""`      | مسار ملف شهادة CA المستخدمة للتحقق عبر TLS.                 |
 | `ssl_override_hostname`    | لا                       | `""`      | تجاوز اسم المضيف الذي يجري التحقق منه أثناء التحقق عبر TLS. |
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 * `arrow_flight_request_descriptor_type` — يتحكّم في كيفية إرسال اسم مجموعة البيانات إلى خادم Flight. القيم المحتملة: `path` (الافتراضي، ويُرسَل على هيئة واصف PATH) أو `command` (ويُرسَل على هيئة واصف CMD مع `SELECT * FROM <dataset>`). استخدم `command` مع خوادم Flight التي تتوقع أوامر SQL (مثل Dremio).
+* `arrow_flight_request_timeout_sec` — مهلة الانتظار بالثواني لطلب Arrow Flight واحد، والقيمة الافتراضية `300`. تسري هذه المهلة على الطلب بأكمله: ففي حالة `SELECT` تشمل دفق النتائج كاملًا، لا مجرد انتظار أول دفعة من السجلات. تعني القيمة `0` عدم وجود مهلة، وفي هذه الحالة إذا قَبِل خادم Flight الطلب ثم لم يستجب أبدًا، يظل الاستعلام معلّقًا إلى أن يُغلَق الاتصال.
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 قراءة البيانات من خادم Arrow Flight بعيد:
 
@@ -93,18 +86,14 @@ SELECT * FROM remote_flight_data ORDER BY id;
 INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 ```
 
-<div id="notes">
-  ## ملاحظات
-</div>
+## ملاحظات {#notes}
 
 * إذا جرى تحديد الأعمدة في عبارة `CREATE TABLE`، فيجب أن تتطابق مع المخطط الذي يعيده خادم Flight.
 * إذا لم تُحدَّد الأعمدة، فسيُستنتَج المخطط تلقائيًا من الخادم البعيد.
 * كلٌّ من القراءة (`SELECT`) والكتابة (`INSERT`) مدعومان.
 * يتحكم الإعداد `arrow_flight_request_descriptor_type` في ما إذا كان اسم مجموعة البيانات يُرسَل كواصف PATH أو كواصف CMD يتضمّن استعلام `SELECT *`.
 
-<div id="see-also">
-  ## انظر أيضًا
-</div>
+## انظر أيضًا {#see-also}
 
 * [الدالة الجدولية arrowFlight](/ar/reference/functions/table-functions/arrowflight)
 * [واجهة Arrow Flight](/ar/concepts/features/interfaces/arrowflight)

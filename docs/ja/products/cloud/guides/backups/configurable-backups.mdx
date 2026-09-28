@@ -26,6 +26,8 @@ import ConfigurableBackupsCLI from "/snippets/ja/cloud/backups/_configurable_bac
 
     クリックすると右側にタブが開き、バックアップ保持期間、頻度、開始時刻を選択できます。設定を反映するには、選択した内容を保存する必要があります。
 
+    バックアップ頻度は、最新の復元ポイントが最悪の場合どれだけ古くなり得るか (RPO) を決定します。保持期間はバックアップデータをどれだけ長く保持するかを制御するもので、最新の復元ポイントをより新しくするものではありません。例えば、保持期間が 1 日で頻度が 48 時間ごとの場合、最新の復元ポイントは最大で 48 時間近く前のものになる可能性があります。
+
     <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="バックアップ保持期間と頻度を選択する" border />
 
     <Note>
