@@ -1297,7 +1297,10 @@ size_t estimateValueSize(
     }
 }
 
-ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const GenerateRandomContext & ctx)
+/// The recursive worker behind the entry point below. The attribute belongs here rather than only
+/// on that wrapper: this is the function that generates the values, and Date32 in particular is
+/// produced by wrapping a day number below the epoch offset into the negative range.
+ColumnPtr NO_SANITIZE_UNSIGNED_OVERFLOW fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const GenerateRandomContext & ctx)
 {
     pcg64 & rng = ctx.rng;
     const UInt64 max_array_length = ctx.options.max_array_length;
