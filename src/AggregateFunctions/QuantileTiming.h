@@ -324,20 +324,23 @@ namespace detail
             count = common::addIgnoreOverflow(count, weight);
 
             if (x < SMALL_THRESHOLD)
-                count_small[x] += weight;
+                count_small[x] = common::addIgnoreOverflow(count_small[x], weight);
             else if (x < BIG_THRESHOLD)
-                count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION] += weight;
+            {
+                UInt64 & bucket = count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+                bucket = common::addIgnoreOverflow(bucket, weight);
+            }
         }
 
         void merge(const QuantileTimingLarge & rhs) noexcept
         {
-            count += rhs.count;
+            count = common::addIgnoreOverflow(count, rhs.count);
 
             for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
-                count_small[i] += rhs.count_small[i];
+                count_small[i] = common::addIgnoreOverflow(count_small[i], rhs.count_small[i]);
 
             for (size_t i = 0; i < BIG_SIZE; ++i)
-                count_big[i] += rhs.count_big[i];
+                count_big[i] = common::addIgnoreOverflow(count_big[i], rhs.count_big[i]);
         }
 
         void serialize(WriteBuffer & buf) const

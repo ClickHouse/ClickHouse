@@ -129,8 +129,9 @@ make_unsigned_t<T> NO_SANITIZE_UNSIGNED_OVERFLOW magnitude(T x)
         return static_cast<U>(x);
 }
 
+/// Both branches take the difference in the unsigned type on purpose, exactly as `magnitude` above.
 template <typename T>
-bool differenceFitsNative(T lo, T hi)
+bool NO_SANITIZE_UNSIGNED_OVERFLOW differenceFitsNative(T lo, T hi)
 {
     using U = make_unsigned_t<T>;
     constexpr U highest = static_cast<U>(std::numeric_limits<T>::max());

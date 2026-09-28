@@ -57,13 +57,16 @@ struct QuantileInterpolatedWeighted
             ++map[x];
     }
 
-    void add(const Value & x, Weight weight)
+    /// The weight comes straight from the caller's column, so a negative one arrives as a huge
+    /// `UInt64` and the per-value sums are modular. Annotated rather than rewritten so the hash
+    /// map is still looked up once per row.
+    void NO_SANITIZE_UNSIGNED_OVERFLOW add(const Value & x, Weight weight)
     {
         if (!isNaN(x))
             map[x] += weight;
     }
 
-    void merge(const QuantileInterpolatedWeighted & rhs)
+    void NO_SANITIZE_UNSIGNED_OVERFLOW merge(const QuantileInterpolatedWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
             map[pair.getKey()] += pair.getMapped();
