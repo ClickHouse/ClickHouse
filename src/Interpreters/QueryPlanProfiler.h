@@ -37,7 +37,7 @@ public:
     void instrument(QueryPipeline & pipeline);
 
     /// Serializes the sub-plan and hands it to the profiler.
-    void finish(const QueryPipeline & pipeline);
+    void finish(QueryPipeline & pipeline);
 
 private:
     friend class QueryPlanProfiler;
@@ -80,9 +80,9 @@ public:
     /// a reference.
     QueryPlan & captureQueryPlan(QueryPlan plan_);
 
-    /// Records what the pipeline measured. Does not keep the pipeline obejct, but extracts
+    /// Records what the pipeline measured. Does not keep the pipeline object, but extracts
     /// the statistics out of it.
-    void captureStatistics(const QueryPipeline & pipeline);
+    void captureStatistics(QueryPipeline & pipeline);
 
     /// Ends profiling, drops every object kept while the query was being executed,
     /// and keeps only objects about the execution and query structure. Idempotent: a query that
@@ -103,7 +103,7 @@ private:
 
     /// The body shared by `captureStatistics` and `finish`: the pipeline is what the statistics
     /// come from, and there is none when a query failed before finishing.
-    void capture(const QueryPipeline * pipeline);
+    void capture(QueryPipeline * pipeline);
 
     /// Takes a finished sub-plan. Safe to call concurrently.
     void addSubPlan(CapturedSubPlan sub_plan);

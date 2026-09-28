@@ -352,7 +352,7 @@ void SubPlanCapture::instrument(QueryPipeline & pipeline)
     }
 }
 
-void SubPlanCapture::finish(const QueryPipeline & pipeline)
+void SubPlanCapture::finish(QueryPipeline & pipeline)
 {
     if (!profiler)
         return;
@@ -410,7 +410,7 @@ void QueryPlanProfiler::addSubPlan(CapturedSubPlan sub_plan)
     running.sub_plans.push_back(std::move(sub_plan));
 }
 
-void QueryPlanProfiler::captureStatistics(const QueryPipeline & pipeline)
+void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
 {
     /// Otherwise there is nothing for the statistics to be about, and the pipeline that produced
     /// them was built from a plan this profiler never saw.
@@ -433,7 +433,7 @@ void QueryPlanProfiler::finish()
     finished = true;
 }
 
-void QueryPlanProfiler::capture(const QueryPipeline * pipeline)
+void QueryPlanProfiler::capture(QueryPipeline * pipeline)
 {
     if (captured || !canCapture())
         return;
