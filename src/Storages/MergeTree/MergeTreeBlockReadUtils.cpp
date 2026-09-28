@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -536,13 +537,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     auto isLegacyStringSize = [&](const String & name, const String & parent_name)
     {
+        /// Nullable preserves the String size subcolumn, wrapping its UInt64 type.
+        /// Only unwrap for classification; keep the original columns and null maps when reading.
         auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
         if (!column_in_storage || !column_in_storage->isSubcolumn()
-            || column_in_storage->type->getTypeId() != TypeIndex::UInt64)
+            || removeNullable(column_in_storage->type)->getTypeId() != TypeIndex::UInt64)
             return false;
 
         auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
-        if (!parent_column || parent_column->type->getTypeId() != TypeIndex::String)
+        if (!parent_column || removeNullable(parent_column->type)->getTypeId() != TypeIndex::String)
             return false;
 
         auto name_in_part = column_in_storage->getNameInStorage();
