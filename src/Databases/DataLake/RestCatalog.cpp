@@ -553,6 +553,8 @@ void RestCatalog::applySettingsChangesToState(
     }
 }
 
+/// OneLake can report a namespace location without a scheme, as `<workspace>/<path>`. The workspace is the
+/// container, and the account is the first label of the catalog host (`onelake` for `onelake.table.fabric.microsoft.com`).
 std::optional<std::string> OneLakeCatalog::getDefaultTableLocation(
     const std::string & namespace_name,
     const std::string & table_name) const
@@ -1989,13 +1991,13 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     catch (const DB::HTTPException & ex)
     {
-        /// A catalog that registers tables from object storage (e.g. Fabric discovers them in
-        /// the lakehouse) has already picked up the initial metadata written just before this
-        /// call, so it reports the identifier as taken. Accept the conflict only if the
-        /// registered table is the one we have just written; anything else is a real name
-        /// collision, and returning from it would report a successful `CREATE TABLE` while
-        /// the catalog keeps pointing at someone else's table.
-        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        /// Fabric registers tables it discovers in the lakehouse, so it has already picked up the
+        /// initial metadata written just before this call and reports the identifier as taken.
+        /// Accept the conflict only there, and only if the registered table is the one we have
+        /// just written; anything else is a real name collision, and returning from it would
+        /// report a successful `CREATE TABLE` while the catalog keeps pointing at someone else's table.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT
+            && getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
         {
             TableMetadata existing_table;
             existing_table.withDataLakeSpecificProperties();
