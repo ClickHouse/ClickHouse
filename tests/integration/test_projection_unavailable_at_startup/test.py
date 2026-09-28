@@ -943,3 +943,73 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         ).strip()
         == "4950"
     )
+
+
+def test_unavailable_projection_order_by_matcher_keeps_sorting_key(started_cluster):
+    node.query("DROP DATABASE IF EXISTS order_matcher SYNC")
+    node.query("CREATE DATABASE order_matcher")
+    node.query("CREATE TABLE order_matcher.src (id UInt64, value UInt64) ENGINE = Memory")
+    dictionary_ddl = (
+        "CREATE DICTIONARY order_matcher.lookup (id UInt64, value UInt64 DEFAULT 0) "
+        "PRIMARY KEY id SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'order_matcher' TABLE 'src')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    node.query(dictionary_ddl)
+
+    for table in ("regex_guard", "regex_safe"):
+        node.query(
+            f"CREATE TABLE order_matcher.{table} "
+            "(a UInt64, b UInt64, c UInt64, "
+            "PROJECTION p (SELECT *, dictGet('order_matcher.lookup', 'value', c) AS d "
+            "ORDER BY COLUMNS('^(a|b)$'))) ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node.query(f"INSERT INTO order_matcher.{table} VALUES (1, 2, 3)")
+
+    node.query(
+        "CREATE TABLE order_matcher.star_guard "
+        "(a UInt64, b UInt64, c UInt64, "
+        "PROJECTION p (SELECT *, dictGet('order_matcher.lookup', 'value', a) AS d "
+        "ORDER BY *)) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query("INSERT INTO order_matcher.star_guard VALUES (1, 2, 3)")
+
+    def sorting_key(table):
+        return node.query(
+            "SELECT sorting_key FROM system.projections "
+            f"WHERE database = 'order_matcher' AND table = '{table}' AND name = 'p'"
+        ).strip()
+
+    assert sorting_key("regex_guard") == "['b']"
+    assert sorting_key("regex_safe") == "['b']"
+    assert sorting_key("star_guard") == "['c']"
+
+    # Removing a dictionary with dependency checks disabled simulates an upgrade that can no
+    # longer analyze the projection. The table and its stored declaration still load.
+    node.query("DROP DICTIONARY order_matcher.lookup SETTINGS check_table_dependencies = 0")
+    node.restart_clickhouse()
+    for table in ("regex_guard", "regex_safe", "star_guard"):
+        assert sorting_key(table) == ""
+        assert "PROJECTION p" in node.query(f"SHOW CREATE TABLE order_matcher.{table}")
+
+    error = node.query_and_get_error("ALTER TABLE order_matcher.regex_guard DROP COLUMN b")
+    assert "ORDER BY matcher" in error and "different sorting key" in error
+    error = node.query_and_get_error("ALTER TABLE order_matcher.star_guard DROP COLUMN c")
+    assert "ORDER BY matcher" in error and "different sorting key" in error
+
+    # Losing a non-key match leaves the last expanded ORDER BY expression unchanged.
+    node.query(
+        "ALTER TABLE order_matcher.regex_safe DROP COLUMN a",
+        settings={"mutations_sync": 2},
+    )
+    assert "PROJECTION p" in node.query("SHOW CREATE TABLE order_matcher.regex_safe")
+
+    node.query(dictionary_ddl)
+    node.restart_clickhouse()
+    assert sorting_key("regex_guard") == "['b']"
+    assert sorting_key("regex_safe") == "['b']"
+    assert sorting_key("star_guard") == "['c']"
+    for table in ("regex_guard", "star_guard"):
+        assert node.query(
+            "SELECT count() FROM system.projection_parts "
+            f"WHERE database = 'order_matcher' AND table = '{table}' AND active"
+        ).strip() == "1"

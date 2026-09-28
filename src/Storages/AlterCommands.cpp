@@ -627,6 +627,27 @@ bool projectionGroupByPositionChangesOutput(
     return false;
 }
 
+/// A direct ORDER BY matcher contributes its last expanded expression as the projection's sorting
+/// key. Unlike a direct SELECT matcher, it cannot shed that expression while the projection is
+/// unavailable: reanalyzing the stored declaration would silently change the key.
+bool projectionOrderByMatcherChangesKey(
+    const ASTProjectionDeclaration & declaration,
+    const ColumnsDescription & old_columns, const ColumnsDescription & new_columns)
+{
+    const auto * query = declaration.query ? declaration.query->as<ASTProjectionSelectQuery>() : nullptr;
+    if (!query || !query->orderBy())
+        return false;
+
+    const auto old_outputs = expandProjectionMatcher(*query->orderBy(), old_columns);
+    if (!old_outputs)
+        return false;
+
+    const auto new_outputs = expandProjectionMatcher(*query->orderBy(), new_columns);
+    return !new_outputs || old_outputs->empty() || new_outputs->empty()
+        || old_outputs->back()->getTreeHash(/*ignore_aliases=*/false)
+            != new_outputs->back()->getTreeHash(/*ignore_aliases=*/false);
+}
+
 bool projectionTupleElementReferencesSubcolumn(
     const IAST & ast, const String & source_column, const String & subcolumn_name,
     const ColumnsDescription & columns, const ColumnsDescription & new_columns,
@@ -2740,6 +2761,13 @@ void AlterCommands::apply(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot change columns because projection {} has a positional GROUP BY reference "
                     "that would resolve to a different SELECT output",
+                    backQuote(declaration.name));
+
+            if (projectionOrderByMatcherChangesKey(declaration, metadata.columns, metadata_copy.columns))
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Cannot change columns because projection {} has an ORDER BY matcher "
+                    "that would resolve to a different sorting key",
                     backQuote(declaration.name));
         };
 
