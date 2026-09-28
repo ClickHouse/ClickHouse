@@ -1309,6 +1309,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
     }
 
+    const Tables external_tables = ClusterProxy::getExternalTablesUsedInQuery(query_to_send, local_context);
+
     String query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1413,7 +1415,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             query_context,
             /*throttler=*/nullptr,
             Scalars{},
-            Tables{},
+            external_tables,
             QueryProcessingStage::Complete,
             RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
         remote_query_executor->setLogger(logger);

@@ -334,6 +334,18 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
     removeSettingsFromQuery(query, initiator_only_setting_names);
 }
 
+Tables getExternalTablesUsedInQuery(const ASTPtr & query, const ContextPtr & context)
+{
+    Tables external_tables = context->getExternalTables();
+    if (external_tables.empty())
+        return external_tables;
+
+    IdentifierNameSet names;
+    query->collectIdentifierNames(names);
+    std::erase_if(external_tables, [&](const auto & table) { return !names.contains(table.first); });
+    return external_tables;
+}
+
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
