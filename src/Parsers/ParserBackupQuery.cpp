@@ -470,8 +470,7 @@ namespace
         ASTPtr cluster_host_ids;
     };
 
-    /// True if a change carries a `{name:Type}` substitution as its value, which ParserSubstitution wraps
-    /// into a Field the same way `disk(...)` is wrapped.
+    /// True if a change has a `{name:Type}` substitution as its value (wrapped into a Field like `disk(...)`).
     bool hasQueryParameterValue(const SettingsChanges & changes)
     {
         for (const auto & change : changes)
@@ -486,23 +485,20 @@ namespace
         return false;
     }
 
-    /// A comma at `pos` means ParserList stopped in the middle of the list (it rewinds to before a
-    /// separator that is not followed by a parsable item). Nothing that may follow a BACKUP/RESTORE
-    /// SETTINGS clause starts with a comma, so this distinguishes "read the whole clause" from
-    /// "gave up part way through it".
+    /// A comma here means ParserList stopped mid-list: nothing that may follow a BACKUP/RESTORE SETTINGS
+    /// clause starts with one.
     bool isAtListSeparator(IParser::Pos pos)
     {
         return pos->type == TokenType::Comma;
     }
 
-    /// `default_aware` selects the pair parser: the plain one, which rejects `name = DEFAULT`, or the one
-    /// that also understands `name = DEFAULT` and `param_x = value`.
+    /// `default_aware` selects the pair parser that also accepts `name = DEFAULT` and `param_x = value`.
     bool parseSettingsList(IParser::Pos & pos, Expected & expected, ParsedSettings & res, bool default_aware)
     {
         auto parse_setting = [&]
         {
-            /// A backup name may be a bare identifier, `DEFAULT` included. In this grammar such an item is a
-            /// reset, so the sub-setting parsers stand aside and `resolveDefaultedSubSettings` clears the field.
+            /// A backup name may be the bare identifier `DEFAULT`; here such an item is a reset, which
+            /// `resolveDefaultedSubSettings` applies.
             const bool defaulted = default_aware && isDefaultedSetting(pos, expected);
 
             if (!defaulted && !res.base_backup_name && parseBaseBackupSetting(pos, expected, res.base_backup_name))
@@ -524,8 +520,7 @@ namespace
 
             String name_of_default_setting;
             ParserSetQuery::Parameter parameter;
-            /// Shorthand (`SETTINGS name` standing for `name = true`) stays with the plain grammar: the
-            /// BACKUP grammar never accepted it, and today's fallback handles it.
+            /// No shorthand (`SETTINGS name` for `name = true`): the BACKUP grammar never accepted it.
             if (!ParserSetQuery::parseNameValuePairWithParameterOrDefault(
                     setting, name_of_default_setting, parameter, pos, expected, /* enable_shorthand_syntax= */ false))
                 return false;
@@ -543,13 +538,11 @@ namespace
         return ParserList::parseUtil(pos, expected, parse_setting, false);
     }
 
-    /// `base_backup` and `cluster_host_ids` are not stored in `changes` but in their own AST fields, so
-    /// their `= DEFAULT` form is resolved here rather than by the Backups layer: the default of both is
-    /// "absent", so clear the field and drop the name.
+    /// `base_backup` and `cluster_host_ids` are AST fields, not `changes`, so their reset is resolved here:
+    /// clear the field, drop the name.
     void resolveDefaultedSubSettings(ParsedSettings & res)
     {
-        /// Both names reach the field through a keyword, which is case-insensitive, so the reset that clears
-        /// it has to be matched the same way or a locator survives the reset naming it.
+        /// Both fields are set through case-insensitive keywords, so their resets are matched the same way.
         auto is_base_backup = [](const String & name) { return equalsCaseInsensitive(name, "base_backup"); };
         auto is_cluster_host_ids = [](const String & name) { return equalsCaseInsensitive(name, "cluster_host_ids"); };
 
@@ -590,10 +583,8 @@ namespace
 
             const auto list_begin = pos;
 
-            /// Which grammar reads the clause is decided by running both, never by predicting which items
-            /// the plain one rejects: `param_x = 1` is an ordinary change to it, a `{name:Type}` value is
-            /// not, and either can appear in any position. The plain grammar wins whenever it reads the
-            /// clause to the end, so every form accepted today keeps its exact current meaning.
+            /// Run both grammars rather than predict which items the plain one rejects; the plain one wins if
+            /// it reads the whole clause.
             ParsedSettings plain;
             const bool plain_ok = parseSettingsList(pos, expected, plain, /* default_aware= */ false);
             const auto plain_end = pos;
@@ -604,11 +595,8 @@ namespace
                 ParsedSettings with_default;
                 const bool with_default_ok = parseSettingsList(pos, expected, with_default, /* default_aware= */ true);
 
-                /// Accept the DEFAULT-aware reading only if it is strictly better: it must read the clause
-                /// to the end, and it must not have reinterpreted an item the plain grammar reads
-                /// differently (a `param_x` query parameter, or a substitution as a value). Otherwise leave
-                /// the clause to the caller exactly as before, so a later unparsable item is still a syntax
-                /// error and a first unparsable item still falls through to ParserQueryWithOutput.
+                /// Take the DEFAULT-aware reading only if it reads the whole clause and reinterprets no
+                /// `param_x` or substitution value.
                 if (with_default_ok && !isAtListSeparator(pos) && !with_default.has_parameter
                     && !hasQueryParameterValue(with_default.changes))
                 {

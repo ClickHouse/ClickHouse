@@ -18,8 +18,7 @@ struct SettingsWithDefaultsResolved
     /// setting keeps its default value.
     SettingsChanges changes;
 
-    /// The defaulted names that are not BACKUP/RESTORE-specific. They are core (or unknown) settings, so
-    /// resolving them means resetting them on the query context rather than dropping a `changes` entry.
+    /// The defaulted core (or unknown) names, to be reset on the query context.
     std::vector<String> core_default_names;
 };
 
@@ -29,43 +28,37 @@ struct CoreSettingsFromQuery
     /// The core overrides to apply.
     SettingsChanges changes;
 
-    /// The core settings to reset to their default value. A name may appear here and in `changes` at the
-    /// same time, and then the reset wins, which is what a `SET X = 1, X = DEFAULT` does.
+    /// The core settings to reset. A name may also be in `changes`, and then the reset wins, as in
+    /// `SET X = 1, X = DEFAULT`.
     std::vector<String> default_names;
 };
 
-/// Maps a setting name to the name of the field it addresses, so that an alias and its canonical
-/// spelling resolve as one setting. Returns the name unchanged if it is already canonical.
+/// Maps an alias to the canonical name of the setting it addresses; returns a canonical name unchanged.
 using CanonicalSettingNameFn = std::string_view (*)(std::string_view);
 
-/// `specific_names` lists the canonical names of the BACKUP/RESTORE-specific settings; everything else is
-/// treated as a core setting, which is also how an unknown name is treated today.
+/// `specific_names` are the canonical BACKUP/RESTORE-specific names; any other name, unknown ones included,
+/// is a core setting.
 ///
-/// A defaulted name is matched against `changes` irrespective of textual order, because the two carriers
-/// are separate vectors: `ParserSetQuery` appends to `changes` and to `default_settings` independently, so
-/// `X = 1, X = DEFAULT` and `X = DEFAULT, X = 1` are the same AST modulo vector order. Both must end at
-/// the default, which is what `SET` does.
+/// The two carriers are separate vectors, so a reset matches a change in either textual order, and both
+/// orders end at the default.
 SettingsWithDefaultsResolved resolveDefaultedSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
-/// The core part of the clause: the changes `resolveDefaultedSettings` left that are not
-/// BACKUP/RESTORE-specific, plus the defaulted names it classified as core.
+/// The core part of the clause: the core changes `resolveDefaultedSettings` left, and the defaulted core
+/// names.
 CoreSettingsFromQuery extractCoreSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
-/// Append each core name of `default_names` to `changes` as an ordinary `name = value` change carrying the
-/// setting's declared default, which is the value resetting it produces. For rebuilding a SETTINGS clause
-/// that has to survive a re-parse by another host: see `BackupSettings::copySettingsToQuery`.
+/// Appends each name of `default_names` to `changes` as `name = <declared default>`, for a clause that
+/// another host re-parses as text.
 ///
-/// Appended after the existing changes on purpose. A name may appear in both carriers, and then the reset
-/// wins, exactly as it wins on the host that parsed the clause, where the reset is applied after every
-/// override. Order is what decides that, so this holds for an alias spelling of the same field too.
+/// Appended last on purpose: the receiver applies changes in order, so the reset wins over an override of
+/// the same setting.
 ///
 /// A name with no declared default has its overrides dropped instead, which is the same end state.
 ///
-/// The default travels as its textual form whenever the setting's `operator Field` is not invertible, so
-/// that a default the `Field` cannot express - `max_threads`, whose default is `auto(N)` for the host's
-/// own N - still resets on the receiving host instead of pinning it to this host's resolved value.
+/// A default whose `Field` form is lossy, like `auto(N)` of `max_threads`, travels as text, so that each
+/// host resolves its own value.
 void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<String> & default_names);
 
 }

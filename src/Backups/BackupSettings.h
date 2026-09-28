@@ -154,8 +154,7 @@ struct BackupSettings
 
     static bool isAsync(const ASTBackupQuery & query);
 
-    /// Returns only the non-backup-specific settings from a `BACKUP` query, both the overrides and the
-    /// names to reset (`name = DEFAULT`).
+    /// Returns only the non-backup-specific settings from a `BACKUP` query.
     /// In contrast to `fromBackupQuery`, this helper does not touch the
     /// `base_backup_name` AST node, so it is safe to call before
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.

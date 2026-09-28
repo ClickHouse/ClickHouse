@@ -25,16 +25,11 @@ ASTBackupQuery * parseBackupQuery(ASTPtr & holder, const String & query)
 
 }
 
-/// `copySettingsToQuery` runs only from `BackupsWorker` on the non-internal ON CLUSTER path, which
-/// stateless tests cannot reach: their configs offer a single-host cluster only, and
-/// `BACKUP/RESTORE ON CLUSTER` coverage lives in integration tests.
+/// `copySettingsToQuery` runs only on the ON CLUSTER path, which stateless tests cannot reach, hence unit
+/// tests.
 ///
-/// The rebuild emits the RESOLVED effective state, so only a CORE `name = DEFAULT` may ride along, and
-/// only as an ordinary change carrying the declared default: the clause reaches the other hosts as SQL
-/// text, which each of them re-parses, so a `= DEFAULT` in it would break a cluster that is
-/// mid-rolling-upgrade. A backup-specific one must not ride along in any form: `backup_uuid` is empty at
-/// parse time, generated later by `BackupsWorker` and emitted as a change here, so a surviving
-/// `backup_uuid = DEFAULT` would reset it away on every receiving host.
+/// It sends a core reset as its default, since older hosts reject `= DEFAULT`, and drops a backup-specific
+/// one (`backup_uuid`).
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
@@ -53,8 +48,7 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
     const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
     EXPECT_TRUE(rebuilt.default_settings.empty())
         << "the per-host text must contain no `= DEFAULT`, got: " << backup_query->formatWithSecretsOneLine();
-    /// The exact text every receiving host parses, produced by the same call `executeDDLQueryOnCluster`
-    /// makes. This is the cross-version property, not just the AST shape.
+    /// The exact text the other hosts parse, from the same call `executeDDLQueryOnCluster` makes.
     EXPECT_EQ(String::npos, backup_query->formatWithSecretsOneLine().find("DEFAULT"))
         << "a parser without this fix rejects a `= DEFAULT` item that follows a comma";
 
@@ -69,10 +63,8 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryCarriesOnlyCoreDefaults)
         << "the generated backup_uuid was discarded";
 }
 
-/// A core name written in BOTH carriers. On the host that parsed the clause the reset wins, because it is
-/// applied after every override, so the forwarded clause must resolve the same way. The receiver applies
-/// the changes in order, so what pins it is that the declared default is the LAST change for that name -
-/// dropping the reset here would ship the pre-reset value and silently diverge the hosts.
+/// A core name in both carriers: the default must be the last change for the name, since the receiver
+/// applies changes in order.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryResolvesANameInBothCarriers)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
@@ -99,12 +91,8 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryResolvesANameInBothCarriers
         << "the last value the receiver applies is not the declared default, so the reset lost";
 }
 
-/// `max_threads` defaults to `auto(N)`, where N is the host's own core count, and
-/// `SettingFieldMaxThreads::operator Field` yields only the resolved N, dropping `is_auto`. Forwarding
-/// that `Field` would pin every receiving host to the INITIATOR's core count, while the reset it stands
-/// for leaves each host on its own auto value. The declared default's text carries `is_auto` across,
-/// because `stringToMaxThreads` reads back the `auto(...)` form as auto. The same field type backs
-/// `max_insert_threads`, `max_final_threads` and `max_parsing_threads`.
+/// `max_threads` defaults to `auto(N)`, and its `Field` form loses `auto`; the default's text keeps it, so
+/// each host keeps its own N.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryKeepsAnAutoDefaultAuto)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = DEFAULT";
@@ -128,9 +116,8 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryKeepsAnAutoDefaultAuto)
         << backup_query->formatWithSecretsOneLine();
 }
 
-/// A name with no declared default cannot be forwarded as a value, so the rebuild drops its overrides
-/// instead: a setting the reset removed on the host that parsed the clause must not arrive set on any
-/// other host. The unrelated override pins that only the reset name is dropped.
+/// A name with no declared default is not sent as a value, so its overrides are dropped; the unrelated
+/// override is the control.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsAResetCustomSetting)
 {
     const String query = "BACKUP TABLE t TO Disk('d', 'b') "
@@ -153,14 +140,12 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsAResetCustomSetting)
     EXPECT_EQ(Field(UInt64{4}), *kept);
 }
 
-/// A `merge_tree_`-prefixed setting is stored under the exact name that wrote it, and a reset clears what
-/// every one of its names wrote (`Context::resetSettingsToDefaultValue`), so the rebuild has to drop the
-/// overrides of all of them: a surviving one arrives set on hosts that never saw the reset.
+/// A `merge_tree_` setting is stored under the name that wrote it and a reset clears all its names, so all
+/// their overrides are dropped.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsEveryNameOfAResetMergeTreeSetting)
 {
-    /// `merge_tree_enable_block_number_column` and `merge_tree_allow_experimental_block_number_column` are
-    /// the two names of one setting (`DECLARE_WITH_ALIAS`); `merge_tree_enable_block_offset_column` is a
-    /// separate setting and the control.
+    /// The first two names are one setting (`DECLARE_WITH_ALIAS`); `merge_tree_enable_block_offset_column`
+    /// is the control.
     const String query = "BACKUP TABLE t TO Disk('d', 'b') SETTINGS "
                          "merge_tree_enable_block_number_column = 1, merge_tree_enable_block_offset_column = 1, "
                          "merge_tree_allow_experimental_block_number_column = DEFAULT";
@@ -185,9 +170,7 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsEveryNameOfAResetMerge
     EXPECT_EQ(Field(UInt64{1}), *kept);
 }
 
-/// The RESTORE twin of the case above. `restore_uuid` is generated after parsing exactly like
-/// `backup_uuid` and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop, so the same defect is
-/// possible on this side and is pinned the same way.
+/// The RESTORE twin: `restore_uuid` is generated after parsing like `backup_uuid`.
 TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
 {
     const String query = "RESTORE TABLE t FROM Disk('d', 'b') "
@@ -220,9 +203,8 @@ TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
         << "the generated restore_uuid was discarded";
 }
 
-/// `isAsync` decides whether the client waits in `InterpreterBackupQuery::execute` while
-/// `fromBackupQuery` decides the operation's effective `async`. They read the same clause separately, so
-/// they must agree on it, over duplicates and over value spellings alike.
+/// `isAsync` decides whether the client waits and `fromBackupQuery` the effective `async`, so they must
+/// agree on every spelling.
 TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
 {
     struct Case
@@ -231,8 +213,8 @@ TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
         bool expected;
     };
 
-    /// A repeated setting takes its last value, as `SET` does; a string value converts as the Bool field
-    /// does. The `= DEFAULT` forms resolve to the field's default, which is false.
+    /// The last value wins, as in `SET`; a string converts as the Bool field does; `= DEFAULT` gives the
+    /// default, false.
     const Case cases[] = {
         {"async = 0, async = 1", true},
         {"async = 1, async = 0", false},

@@ -37,9 +37,8 @@ SettingsWithDefaultsResolved resolveDefaultedSettings(
             res.core_default_names.push_back(name);
     }
 
-    /// Dropping the change is what makes the setting take its default value: the fields of
-    /// BackupSettings/RestoreSettings are default-initialized and only a `changes` entry overrides one.
-    /// Erase every match, not just the first, since one name may appear repeatedly.
+    /// Dropping the change leaves the field at its default. Erase every match: one name may appear several
+    /// times.
     std::erase_if(
         res.changes,
         [&](const SettingChange & change)
@@ -68,16 +67,13 @@ void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<St
     if (default_names.empty())
         return;
 
-    /// The value a reset produces: `Context::resetSettingsToDefaultValue` assigns the declared default, and
-    /// `SettingsConstraints::checkResetToDefault` checks a reset as an assignment of that same value.
+    /// A reset assigns the declared default, so that is the value to send.
     const Settings declared_defaults;
 
     for (const auto & name : default_names)
     {
-        /// A name that is not a built-in setting has no declared default to send, so dropping every
-        /// override of it is what leaves the receiver where the reset leaves the initiator: with the
-        /// setting absent. A `merge_tree_` setting is stored under the exact name that wrote it, so an
-        /// override written through any of that setting's names is an override of it.
+        /// A non-built-in name has no declared default to send, so drop its overrides under every name of
+        /// the setting, as a reset does.
         if (!Settings::hasBuiltin(name))
         {
             const Strings & equivalent_names = settingEquivalentNames(name);
@@ -93,14 +89,8 @@ void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<St
 
         Field default_value = declared_defaults.get(name);
 
-        /// `operator Field` is not invertible for every setting type, and then the `Field` does not carry
-        /// the reset. `SettingFieldMaxThreads::operator Field` drops `is_auto` and yields the resolved
-        /// thread count, so shipping it would pin every receiving host to this host's number instead of
-        /// letting each recompute its own auto value (`max_insert_threads`, `max_final_threads` and
-        /// `max_parsing_threads` are the same field type). Reconstructing the field from that `Field` and
-        /// comparing its text to the default's text detects exactly the types where this happens; there
-        /// the default's own text is what resets the setting, because `parseFromString` restores the auto
-        /// form (see `stringToMaxThreads`).
+        /// `operator Field` is lossy for some types (`max_threads` loses `auto`); for them send the default's
+        /// text, which restores the auto form.
         const String default_string = declared_defaults.getDefaultValueString(name);
         if (Settings::valueToStringUtil(name, default_value) != default_string)
             default_value = default_string;

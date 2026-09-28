@@ -1823,17 +1823,12 @@ TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
     }
 }
 
-/// `rewriteSettingsWithoutOnCluster` is not reachable from a stateless test, hence a unit test: it runs
-/// only via `ASTBackupQuery::getRewrittenASTWithoutOnCluster`, whose reachable callers are `DDLTask.cpp`
-/// and `removeOnClusterClauseIfNeeded.cpp` (whose predicate list excludes `ASTBackupQuery`). Stateless
-/// configs offer a single-host cluster only; `BACKUP ON CLUSTER` lives in integration tests.
-/// The `copySettingsToQuery` rebuilds are pinned in `src/Backups/tests/gtest_backup_settings_default.cpp`.
+/// `rewriteSettingsWithoutOnCluster` runs only for ON CLUSTER, which stateless tests cannot reach, hence a
+/// unit test.
 TEST(BackupSettingsDefault, OnClusterRebuildCarriesDefaultedNames)
 {
-    /// The rewrite injects `internal`, `async` and `host_id`, so each must be gone from BOTH carriers:
-    /// a surviving `name = DEFAULT` would reset the injected value on the receiving host. All three are
-    /// defaulted in the input so that every stripped name is discriminated; `foo` and `structure_only`
-    /// are the unrelated control in either carrier.
+    /// The rewrite injects `internal`, `async` and `host_id`, so it strips them from both carriers; `foo`
+    /// and `structure_only` are the controls.
     const String query = "BACKUP TABLE t ON CLUSTER 'c' TO Disk('d', 'b') "
                          "SETTINGS foo = DEFAULT, async = DEFAULT, internal = DEFAULT, host_id = DEFAULT, "
                          "structure_only = 1";
@@ -1843,8 +1838,7 @@ TEST(BackupSettingsDefault, OnClusterRebuildCarriesDefaultedNames)
 
     auto * backup_query = ast->as<ASTBackupQuery>();
     ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
-    /// Sanity: all four names really are in `default_settings` before the rewrite - without this the
-    /// assertions below could pass on names that were never there.
+    /// All four names are in `default_settings` before the rewrite, so the checks below are not vacuous.
     ASSERT_NE(nullptr, backup_query->settings);
     const auto & parsed = backup_query->settings->as<const ASTSetQuery &>();
     ASSERT_EQ(4u, parsed.default_settings.size()) << "query: " << query;

@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
-# A `SETTINGS <name> = DEFAULT` item of a BACKUP/RESTORE query is resolved by setting class: a
-# BACKUP/RESTORE-specific name loses its override in the settings layer, while a core name is reset on the
-# query context. The reset is a settings change like any other, so it must pass the same constraint check
-# that `SET <name> = DEFAULT` and `SELECT ... SETTINGS <name> = DEFAULT` pass, and the specific names must
-# stay unaffected by a constraint on a core setting.
+# A core `name = DEFAULT` in a BACKUP/RESTORE clause is checked as `SET name = DEFAULT` is; a specific
+# one is not.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,8 +24,7 @@ GRANT ALL ON *.* TO $user;
 # The backup the RESTORE cases read, made by the unconstrained test user.
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE src TO Disk('backups', '${uniq}_src') FORMAT Null"
 
-# `rejected` only for a constraint violation: any other failure is reported with its code, so a query that
-# breaks for an unrelated reason cannot be mistaken for the constraint doing its job.
+# `rejected` only for a constraint violation; any other failure prints its code.
 run_as_constrained_user() {
     local out
     out=$(${CLICKHOUSE_CLIENT} --user "$user" --query "$1" 2>&1)

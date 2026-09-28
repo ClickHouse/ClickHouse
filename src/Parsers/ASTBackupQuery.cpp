@@ -243,8 +243,8 @@ namespace
             out_settings->default_settings = original.default_settings;
         }
 
-        /// The three values injected below describe this rewrite, so they win over whatever the query
-        /// carried - in either carrier, or a surviving `name = DEFAULT` would reset one of them.
+        /// The values injected below win over the query's own, so strip them from both carriers: a
+        /// surviving `name = DEFAULT` would reset one.
         static constexpr std::string_view names_to_strip[] = {"internal", "async", "host_id"};
         stripNamesFromSetQuery(*out_settings, names_to_strip);
 
@@ -850,9 +850,8 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     settings = r.readChildOfType<ASTSetQuery>("settings");
     if (settings)
     {
-        /// `base_backup` and `cluster_host_ids` are parser-owned fields, not settings: `ParserBackupQuery`
-        /// resolves a `= DEFAULT` naming either one by clearing the field and dropping the name. Such an
-        /// entry would format as a `<field> = ..., <field> = DEFAULT` pair that reparses without the field.
+        /// `base_backup` and `cluster_host_ids` are fields, not settings: the parser never keeps them
+        /// here, and such an entry would not round-trip.
         for (const auto & name : settings->as<const ASTSetQuery &>().default_settings)
             if (equalsCaseInsensitive(name, "base_backup") || equalsCaseInsensitive(name, "cluster_host_ids"))
                 throw Exception(
