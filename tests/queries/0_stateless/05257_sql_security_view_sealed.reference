@@ -10,6 +10,16 @@ visible
 --- nor on a remote server
 visible
 visible
+--- nor through a `Distributed` table, with the plan shipped to the shard or built there
+visible
+visible
+visible
+visible
+--- nor in a parameterized view
+visible
+--- nor in a distributed query plan, which is built for the view's plan on its own
+visible
+1
 --- an outer predicate does not skip data by the values of the hidden rows
 0
 0
@@ -40,4 +50,5 @@ none_view: 1
 invoker_view: 0
 projection_view: 0
 policy_view: 1
+param_view: 1
 view_policy_view for the user with the policy: 1
