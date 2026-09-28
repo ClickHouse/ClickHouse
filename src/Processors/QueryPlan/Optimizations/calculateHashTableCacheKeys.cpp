@@ -65,6 +65,13 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
     /// function subtree (its name and resolved arguments), otherwise e.g. numbers(1) and
     /// numbers(1e6) would share a stats entry.
+    ///
+    /// Unlike the actions DAGs below, the arguments are hashed with their values whatever their size:
+    /// they are the identity of what is read (a path, a URL, a format, a structure), so leaving out a
+    /// string would merge reads of different files. Their size is that of the query text the server
+    /// already parsed, since a folded expression argument such as `numbers(length(...))` is stored as
+    /// its result. The exception is a scalar subquery passed directly as an argument, whose whole
+    /// result is hashed here.
     if (const auto & table_expression = read.getQueryInfo().table_expression)
     {
         if (table_expression->as<TableFunctionNode>())
