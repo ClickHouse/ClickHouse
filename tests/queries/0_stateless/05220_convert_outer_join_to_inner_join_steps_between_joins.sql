@@ -75,10 +75,18 @@ SELECT trim(explain) FROM (
     SELECT count() FROM (SELECT m.id AS id, max(m.val) AS mv FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id GROUP BY m.id) AS g INNER JOIN small AS s ON g.mv = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
-SELECT '-- GROUPING SETS does not allow converting.';
+SELECT '-- A GROUPING SETS key that some set omits does not allow converting.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM (SELECT m.val AS val FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id GROUP BY GROUPING SETS ((m.val), (m.id))) AS g INNER JOIN small AS s ON g.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
+SELECT '-- A GROUPING SETS key that every set uses allows converting.';
+SELECT count() FROM (SELECT m.val AS val FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id GROUP BY GROUPING SETS ((m.val), (m.val, m.id))) AS g INNER JOIN small AS s ON g.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM (SELECT m.val AS val FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id GROUP BY GROUPING SETS ((m.val), (m.val, m.id))) AS g INNER JOIN small AS s ON g.val = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- ARRAY JOIN of another column allows converting.';

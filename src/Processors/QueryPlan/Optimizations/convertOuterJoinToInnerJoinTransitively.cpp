@@ -343,6 +343,9 @@ void visit(QueryPlan::Node & root)
 
             auto [left, right] = splitNullRejectedColumnsOnJoin(*join, null_rejected_columns);
 
+            if (join->getJoinOperator().strictness == JoinStrictness::Asof)
+                right.clear();
+
             convertJoinKind(*join, node, left, right);
 
             /// NULLs on a side this join can still null-extend may be introduced here, so a constraint
@@ -399,18 +402,25 @@ void visit(QueryPlan::Node & root)
         /// of the conditions in `tryPushDownFilter` in `filterPushDown.cpp`.
 
         /// Only the grouping keys, because a constraint on them deletes the whole group.
-        /// `GROUPING SETS` and `group_by_use_nulls` make the step emit NULL keys.
+        /// Under `GROUPING SETS` only the keys every set uses, because the others are emitted as NULL.
+        auto groupingKeys = [&](const Names & keys, const GroupingSetsParamsList & grouping_sets)
+        {
+            auto result = filterNullRejectedColumnsBy(keys);
+            for (const auto & grouping_set : grouping_sets)
+                std::erase_if(result, [&](const auto & name) { return std::ranges::find(grouping_set.used_keys, name) == grouping_set.used_keys.end(); });
+            return result;
+        };
+
         if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
         {
-            bool emits_null_keys = aggregating->isGroupingSets() || aggregating->isGroupByUseNulls();
-            stack.push_back({node.children.front(), emits_null_keys ? NameSet{} : filterNullRejectedColumnsBy(aggregating->getParams().keys)});
+            auto keys = aggregating->isGroupByUseNulls() ? NameSet{} : groupingKeys(aggregating->getParams().keys, aggregating->getGroupingSetsParamsList());
+            stack.push_back({node.children.front(), std::move(keys)});
             continue;
         }
 
         if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(&step))
         {
-            bool emits_null_keys = merging_aggregated->isGroupingSets();
-            stack.push_back({node.children.front(), emits_null_keys ? NameSet{} : filterNullRejectedColumnsBy(merging_aggregated->getParams().keys)});
+            stack.push_back({node.children.front(), groupingKeys(merging_aggregated->getParams().keys, merging_aggregated->getGroupingSetsParamsList())});
             continue;
         }
 

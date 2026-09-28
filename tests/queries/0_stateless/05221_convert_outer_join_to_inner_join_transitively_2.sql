@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS mid;
 DROP TABLE IF EXISTS mid_nullable;
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS other;
+DROP TABLE IF EXISTS asof;
 DROP TABLE IF EXISTS storage_join;
 
 CREATE TABLE fact (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT number % 20, number FROM numbers(100);
@@ -24,6 +25,7 @@ CREATE TABLE mid (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY tuple() AS 
 CREATE TABLE mid_nullable (id UInt64, val Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple() AS SELECT number, if(number % 2 = 0, NULL, number % 5) FROM numbers(10);
 CREATE TABLE small (val UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT 2 * number + 1 FROM numbers(2);
 CREATE TABLE other (id UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT number FROM numbers(20);
+CREATE TABLE asof (val UInt64, t UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT 2 * number + 1, number FROM numbers(2);
 CREATE TABLE storage_join (val UInt64, s Nullable(String)) ENGINE = Join(ALL, LEFT, val);
 
 INSERT INTO storage_join VALUES (1, 'a'), (3, 'b');
@@ -68,6 +70,15 @@ SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER 
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
+SELECT '-- An enclosing ASOF join does not allow converting on its right side.';
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM asof AS a
+    ASOF JOIN (SELECT m.val AS val, m.id AS id FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id) AS g
+        ON a.val = g.val AND a.t <= g.id
+    INNER JOIN small AS s ON g.val = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An enclosing LEFT SEMI join allows converting.';

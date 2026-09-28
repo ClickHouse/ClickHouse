@@ -26,9 +26,13 @@ Type: INNER
 -- An aggregate result does not allow converting.
 Type: INNER
 Type: LEFT
--- GROUPING SETS does not allow converting.
+-- A GROUPING SETS key that some set omits does not allow converting.
 Type: INNER
 Type: LEFT
+-- A GROUPING SETS key that every set uses allows converting.
+6
+Type: INNER
+Type: INNER
 -- ARRAY JOIN of another column allows converting.
 40	60
 Type: INNER

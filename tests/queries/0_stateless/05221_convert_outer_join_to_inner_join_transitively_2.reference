@@ -18,6 +18,10 @@ Type: INNER
 2	4
 Type: INNER
 Type: INNER
+-- An enclosing ASOF join does not allow converting on its right side.
+Type: INNER
+Type: INNER
+Type: LEFT
 -- An enclosing LEFT SEMI join allows converting.
 20	890
 Type: LEFT
