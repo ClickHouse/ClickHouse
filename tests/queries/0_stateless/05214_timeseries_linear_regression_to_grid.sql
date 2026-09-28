@@ -18,7 +18,7 @@ FROM (SELECT arrayJoin([(100, 10.), (110, 20.), (120, 30.)]) AS sample, toDateTi
 WITH [100, 110, 120]::Array(DateTime) AS timestamps, [10, 20, 30]::Array(Float64) AS values
 SELECT timeSeriesLinearRegressionToGrid(100, 120, 10, 30)(arrayZip(timestamps, values));
 
-SELECT '-- the slope is per second regardless of the timestamp precision, and the result follows the value type';
+SELECT '-- the slope is per second regardless of the timestamp precision, and the result is Float64 regardless of the value type';
 WITH [100, 110, 120]::Array(DateTime64(3)) AS timestamps, [10, 20, 30]::Array(Float32) AS values
 SELECT timeSeriesLinearRegressionToGrid(100, 120, 10, 30)(timestamps, values) AS regression, toTypeName(regression) SETTINGS print_pretty_type_names = 0;
 

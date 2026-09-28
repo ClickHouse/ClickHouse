@@ -27,7 +27,18 @@ def started_cluster():
 
 
 def test_it(started_cluster):
-    if node.is_built_with_sanitizer():
+    # The injected faults apply to this query too. They start at the end of the server
+    # startup, so a query sent right after the start usually, but not always, escapes them.
+    for attempt in range(100):
+        try:
+            is_sanitizer_build = node.is_built_with_sanitizer()
+            break
+        except Exception as ex:
+            if "Cannot schedule a task" not in str(ex):
+                raise
+    else:
+        raise AssertionError("Every attempt to read build options hit the injected fault")
+    if is_sanitizer_build:
         # Sanitizer builds might be too slow to run even 100 queries in a reasonable time.
         pytest.skip("Disabled for sanitizers")
 

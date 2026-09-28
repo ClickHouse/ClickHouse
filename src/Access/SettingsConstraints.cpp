@@ -64,10 +64,10 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
 }
 
 /// The analyzer became mandatory in v26.9: `enable_analyzer` (canonically
-/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the old
-/// query analysis is not supported anymore. Unlike the other obsolete settings, a change of this one
-/// is refused rather than ignored: the value decides how a query is analyzed, so accepting it and
-/// running the query the other way would silently return a different result.
+/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the query
+/// analysis it used to switch to has been removed. A change that would disable it is accepted and
+/// rewritten to `1`, so that queries, sessions, settings profiles, clients and drivers that still
+/// carry `enable_analyzer = 0` keep working after an upgrade instead of failing.
 bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & new_value)
 {
     return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;
@@ -87,6 +87,10 @@ bool isAlwaysChangeableInReadonly(std::string_view name)
 {
     /// HTTP routing / session.
     if (name == "database" || name == "default_format")
+        return true;
+    /// Selects which of `output_format` / `default_format` the `X-ClickHouse-Format` header aliases;
+    /// both targets are changeable here, so the switch between them must be too.
+    if (name == "http_x_clickhouse_format_overrides_output_format")
         return true;
     /// Output format selection and response compression.
     if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
@@ -460,18 +464,11 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
 
     if (isChangeDisablingTheAnalyzer(setting_name, new_value))
     {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception(
-                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-                "Setting '{}' cannot be disabled: the analyzer is mandatory since v26.9 and the old query analysis is no longer "
-                "supported. Remove '{} = 0' from the query, the session, the settings profile and the client configuration. "
-                "To compare with the old query analysis, use a ClickHouse version older than v26.9",
-                change.name, change.name);
-        /// Not on the clamp paths. They are reached for a query that another server sent to this one,
-        /// and the analyzer is still turned off for a whole query by a few remaining internal code
-        /// paths on the initiator (`EXPLAIN AST`, a view read by the old interpreter); the servers of a
-        /// cluster have to keep agreeing on how such a query is analyzed. Dropping the change instead
-        /// would make the initiator and this server disagree.
+        /// Store the only supported value instead of the requested one. Other constraints are not
+        /// consulted: the value that ends up stored is the default one. `executeQuery` normalizes the
+        /// setting again for the paths that do not consult the constraints at all (a settings profile
+        /// from the server configuration, `clickhouse-local` on the command line, a secondary query).
+        change.value = Field(true);
         return true;
     }
 

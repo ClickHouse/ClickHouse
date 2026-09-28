@@ -141,15 +141,20 @@ private:
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
+    void traceLargeAllocation(Int64 size) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
 
-    /// helper fields for analyzing MemoryTracker
-    /// amount which is not corrected by external source like RSS
+    /// Helper fields for analyzing the global memory tracker. Both are touched only by the
+    /// background memory worker (see `updateAllocated` and `updateUncorrected`), so they need
+    /// no synchronization.
+    /// The value `amount` would have had with no corrections from a measurement applied:
+    /// a plain counter of allocations, as of the last tick of the worker.
     int64_t uncorrected_amount = 0;
-    /// last corrected amount we set to memory tracker
+    /// The value of `amount` right after the last tick of the worker, either the corrected
+    /// value it was set to or the value it had when the tick just took a snapshot of it.
     int64_t last_corrected_amount = 0;
 
     /// allocImpl(...) and free(...) should not be used directly
@@ -345,6 +350,20 @@ public:
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
+    /// Refresh `MemoryTrackingUncorrected` from the current value of the global tracker without
+    /// correcting it. The background memory worker calls this on the ticks that do not call
+    /// `updateAllocated`, so the metric is a snapshot of the plain counter that is at most one
+    /// tick old no matter whether the correction is enabled.
+    static void updateUncorrected();
+
+    /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
+    /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not
+    /// necessarily one allocation. 0 disables; coerced to 0 when no TraceCollector is running.
+    static void setMinAllocationSizeToLogStackTrace(UInt64 value);
+    static UInt64 getMinAllocationSizeToLogStackTrace();
+
+    /// Resets the budget for the traces above. Called once per TraceCollector, see its constructor.
+    static void resetLargeAllocationTraceBudget();
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
