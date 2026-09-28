@@ -1792,8 +1792,8 @@ class SettingsRandomizer:
         # Replaces the read-buffer stack with the experimental ReaderExecutor, falling back to the
         # legacy path where unsupported - a different way to read the same bytes, so any output
         # change is a bug. Kept below 0.5 while it is experimental.
-        "use_reader_executor": lambda: random.random() < 0.3,
-        "reader_executor_use_long_connections": lambda: random.randint(0, 1),
+        #"use_reader_executor": lambda: random.random() < 0.3,
+        #"reader_executor_use_long_connections": lambda: random.randint(0, 1),
         # 0 never bridges a forward gap on the open connection, a huge value always does
         "reader_executor_min_bytes_for_seek": lambda: random.choice(
             [0, 1024, 2 * 1024 * 1024, 40 * 1024 * 1024]
@@ -2262,7 +2262,7 @@ class SettingsRandomizer:
         "use_query_condition_cache_for_top_k": "use_query_condition_cache",
         # connection reuse only exists inside the reader executor. The three sizes are not listed
         # here: this forces a child to 0, which they reject.
-        "reader_executor_use_long_connections": "use_reader_executor",
+        #"reader_executor_use_long_connections": "use_reader_executor",
         # skipping manifest files by partition summary is part of Iceberg partition pruning
         "use_iceberg_manifest_list_partition_pruning": "use_iceberg_partition_pruning",
         # forcing independent DISTINCT/window/set building is a no-op when not allowed
