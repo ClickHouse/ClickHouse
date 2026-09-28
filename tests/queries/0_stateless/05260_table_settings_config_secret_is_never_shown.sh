@@ -56,4 +56,13 @@ CREATE TABLE address_stated (a UInt64) ENGINE = RabbitMQ
 SELECT table, name, value, is_masked, source FROM system.table_settings
 WHERE name IN ('nats_password', 'rabbitmq_address') ORDER BY table, name;" -- --message_queue_disable_insertion=1
 
+echo "-- a secret a table states without a macro stays visible, even where the engine reformats it"
+# The engine reports the server list it parsed, `a:1,b:2`, not the stated text; what decides is whether a macro
+# supplied any of it, which none did here.
+$CLICKHOUSE_LOCAL --config-file "$CONFIG" --format_display_secrets_in_show_and_select 1 -q "
+ATTACH TABLE list_stated UUID '05260000-0000-4000-8000-000000000004' (a UInt64) ENGINE = NATS
+    SETTINGS nats_server_list = 'a:1, b:2', nats_subjects = 's', nats_format = 'CSV';
+SELECT table, name, value, is_masked, source FROM system.table_settings
+WHERE table = 'list_stated' AND name = 'nats_server_list';" -- --message_queue_disable_insertion=1
+
 rm -f "$CONFIG"

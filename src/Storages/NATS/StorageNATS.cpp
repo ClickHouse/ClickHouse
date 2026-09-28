@@ -1313,15 +1313,28 @@ void registerStorageNATS(StorageFactory & factory)
         /// same macro-expanded values that `StorageNATS` passes to `libnats`. In particular, an
         /// empty macro must not turn a non-empty query credential into an empty replacement after
         /// the check that prevents dropping credentials from a named collection.
+        ///
+        /// Only where a macro changes the value, and through the field's value alone: assigning the field would mark
+        /// a setting nobody stated as changed - reported then as a value the engine chose - and would not say which
+        /// values the server's macros supplied, which `NATSSettings::expanded_from_macros` records.
         auto macros = args.getContext()->getMacros();
-        (*nats_settings)[NATSSetting::nats_username] = macros->expand((*nats_settings)[NATSSetting::nats_username]);
-        (*nats_settings)[NATSSetting::nats_password] = macros->expand((*nats_settings)[NATSSetting::nats_password]);
-        (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
-        (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
-        (*nats_settings)[NATSSetting::nats_ca_file] = macros->expand((*nats_settings)[NATSSetting::nats_ca_file]);
-        (*nats_settings)[NATSSetting::nats_client_cert_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
-        (*nats_settings)[NATSSetting::nats_client_key_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
+        auto expand_in_place = [&](auto setting)
+        {
+            auto & field = (*nats_settings)[setting];
+            String expanded = macros->expand(field.value);
+            if (expanded == field.value)
+                return;
+            field.value = std::move(expanded);
+            nats_settings->expanded_from_macros.emplace(NATSSettings::nameAtOffset(setting.offset));
+        };
+        expand_in_place(NATSSetting::nats_username);
+        expand_in_place(NATSSetting::nats_password);
+        expand_in_place(NATSSetting::nats_token);
+        expand_in_place(NATSSetting::nats_credential_file);
+        expand_in_place(NATSSetting::nats_credentials);
+        expand_in_place(NATSSetting::nats_ca_file);
+        expand_in_place(NATSSetting::nats_client_cert_file);
+        expand_in_place(NATSSetting::nats_client_key_file);
 
         const bool authentication_determined_by_table = resolveCredentialSource(
             *nats_settings,
@@ -1692,7 +1705,7 @@ For the recommended materialized-view consumption path (the acknowledgement is s
             .related = {"Kafka", "RabbitMQ", "FileLog"}});
 }
 
-SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */) const
 {
     /// The settings object, whose traits record origins, records what a named collection supplied, as
     /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
@@ -1716,9 +1729,15 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) cons
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_token, (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_credential_file, (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
 
-    /// The factory expands macros from the server configuration into the credentials in place, and the constructor
-    /// into the URL and the server list, so a secret the definition states as `'{nats_pw}'` is the server's here.
-    markSecretsExpandedFromServerConfiguration(settings, getSettingsStatedInDefinition(getStorageID(), query_context));
+    /// What macros from the server configuration supplied is the server's: the factory records which credentials it
+    /// expanded them into, in place, and the constructor expands them into the URL and the server list, whose own
+    /// settings still hold what was stated.
+    NameSet expanded_from_macros = nats_settings->expanded_from_macros;
+    const auto macros = getContext()->getMacros();
+    for (const auto setting : {NATSSetting::nats_url, NATSSetting::nats_server_list})
+        if (const auto & stated = (*nats_settings)[setting].value; macros->expand(stated) != stated)
+            expanded_from_macros.emplace(NATSSettings::nameAtOffset(setting.offset));
+    markSecretsFromServerConfiguration(settings, expanded_from_macros);
     return settings;
 }
 

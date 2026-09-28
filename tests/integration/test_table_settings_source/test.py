@@ -33,7 +33,7 @@ node_compat = cluster.add_instance(
 # `display_secrets_in_show_and_select`, so `05243` can only assert that values stay hidden there.
 node_secrets = cluster.add_instance(
     "node_secrets",
-    main_configs=["configs/display_secrets.xml"],
+    main_configs=["configs/display_secrets.xml", "configs/macros_and_queues.xml"],
     # `default` has to be able to make the collection and to grant what the reader is given.
     user_configs=["configs/named_collection_admin.xml"],
 )
@@ -277,5 +277,45 @@ def test_named_collection_values_need_access_to_that_collection(started_cluster)
             ["kafka_group_name", "secret_group"],
             ["kafka_topic_list", "secret_topic"],
         ]
+    finally:
+        cleanup()
+
+
+def test_macro_in_a_named_collection_secret_is_never_shown(started_cluster):
+    """A macro from the server configuration expanded into a secret a named collection states is the server's.
+
+    `system.named_collections` shows a reader of the collection the macro, `{nats_pw}`, not what it holds, and
+    `system.table_settings` must not show that value either - to a reader with every grant, who does see the
+    collection's other values. A named collection's own rule would otherwise decide, and show it.
+    """
+    def cleanup():
+        node_secrets.query("DROP TABLE IF EXISTS n_macro SYNC")
+        node_secrets.query("DROP NAMED COLLECTION IF EXISTS nc_macro")
+
+    cleanup()
+    try:
+        node_secrets.query(
+            "CREATE NAMED COLLECTION nc_macro AS nats_url = '127.0.0.1:1', nats_subjects = 's', "
+            "nats_format = 'CSV', nats_username = 'u', nats_password = '{nats_pw}'"
+        )
+        node_secrets.query("CREATE TABLE n_macro (a UInt64) ENGINE = NATS(nc_macro)")
+
+        display = {"format_display_secrets_in_show_and_select": 1}
+        assert (
+            node_secrets.query(
+                "SELECT collection['nats_password'] FROM system.named_collections WHERE name = 'nc_macro'",
+                settings=display,
+            ).strip()
+            == "{nats_pw}"
+        )
+        assert node_secrets.query(
+            "SELECT name, value, is_masked, source FROM system.table_settings "
+            "WHERE database = currentDatabase() AND table = 'n_macro' AND name IN ('nats_password', 'nats_username') "
+            "ORDER BY name",
+            settings=display,
+        ) == (
+            "nats_password\t[HIDDEN]\t1\tnamed_collection\n"
+            "nats_username\tu\t0\tnamed_collection\n"
+        )
     finally:
         cleanup()

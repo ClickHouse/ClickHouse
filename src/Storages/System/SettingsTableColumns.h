@@ -57,14 +57,16 @@ public:
         /// name - a broker address or a database name says as much as a password does about where a table points.
         /// The question is asked of the collection that supplied it, because that is what a grant names; a row
         /// whose collection was not recorded cannot be checked, and so is not shown.
-        if (setting.origin == SettingOrigin::NamedCollection)
-            return !may_show_named_collection || !may_show_named_collection(setting.named_collection);
         /// A secret the server's configuration supplied - the password of its `nats` or `rabbitmq` section, which a
-        /// table that states no authentication of its own uses, or a macro expanded into one the table states -
-        /// belongs to whoever runs the server, not to a query's author: `SHOW CREATE TABLE` never printed it, and
-        /// `displaySecretsInShowAndSelect`, which governs the secrets a query states, does not reach it.
+        /// table that states no authentication of its own uses, or a macro expanded into one the table or a named
+        /// collection states - belongs to whoever runs the server, not to a query's author: `SHOW CREATE TABLE` never
+        /// printed it, `system.named_collections` shows the macro rather than its value, and
+        /// `displaySecretsInShowAndSelect`, which governs the secrets a query states, does not reach it. So it is
+        /// asked first, before a collection's own rule could show it to a reader of that collection.
         if (setting.origin == SettingOrigin::Config || setting.from_server_configuration)
             return !setting.masked_value.empty();
+        if (setting.origin == SettingOrigin::NamedCollection)
+            return !may_show_named_collection || !may_show_named_collection(setting.named_collection);
         return !show_secrets && !setting.masked_value.empty();
     }
 

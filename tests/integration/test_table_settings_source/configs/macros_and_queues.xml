@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- A macro a named collection's secret refers to: the value is the server's, which no reader may see. -->
+    <macros>
+        <nats_pw>leak_macro_pw</nats_pw>
+    </macros>
+    <!-- So that a `NATS` table can be created with no broker to connect to. -->
+    <message_queue_disable_insertion>1</message_queue_disable_insertion>
+</clickhouse>

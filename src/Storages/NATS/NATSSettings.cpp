@@ -65,7 +65,9 @@ NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {
 }
 
-NATSSettings::NATSSettings(const NATSSettings & settings) : impl(std::make_unique<NATSSettingsImpl>(*settings.impl))
+NATSSettings::NATSSettings(const NATSSettings & settings)
+    : expanded_from_macros(settings.expanded_from_macros)
+    , impl(std::make_unique<NATSSettingsImpl>(*settings.impl))
 {
 }
 

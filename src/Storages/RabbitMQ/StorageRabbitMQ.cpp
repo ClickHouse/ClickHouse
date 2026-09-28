@@ -1828,7 +1828,7 @@ For the recommended materialized-view consumption path (the acknowledgement is s
             .related = {"Kafka", "NATS", "FileLog"}});
 }
 
-SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr /* query_context */) const
 {
     /// The settings object, whose traits record origins, records what a named collection supplied, as
     /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
@@ -1857,9 +1857,13 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
         setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_password, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
     }
 
-    /// The constructor expands macros from the server configuration into the address, so a credential the
-    /// definition states through a macro is the server's here.
-    markSecretsExpandedFromServerConfiguration(settings, getSettingsStatedInDefinition(getStorageID(), query_context));
+    /// The constructor expands macros from the server configuration into the address, while the setting still holds
+    /// what was stated - from the clause or a named collection alike: where they differ, a macro supplied part of
+    /// it, which is the server's.
+    NameSet expanded_from_macros;
+    if (configuration.connection_string != (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].value)
+        expanded_from_macros.emplace(RabbitMQSettings::nameAtOffset(RabbitMQSetting::rabbitmq_address.offset));
+    markSecretsFromServerConfiguration(settings, expanded_from_macros);
     return settings;
 }
 

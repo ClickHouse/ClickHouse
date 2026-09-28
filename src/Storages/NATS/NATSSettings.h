@@ -3,6 +3,7 @@
 #include <Storages/SettingDescription.h>
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/Names.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
@@ -65,6 +66,11 @@ struct NATSSettings
 
     static bool hasBuiltin(std::string_view name);
     SettingDescriptions enumerateSettings() const;
+
+    /// The settings whose value the table factory changed by expanding macros from the server configuration into
+    /// it, in place. What a macro supplied is the server's, so `StorageNATS::getTableSettings` never shows it - and
+    /// once expanded in place, the value no longer says so itself.
+    NameSet expanded_from_macros;
 
 private:
     std::unique_ptr<NATSSettingsImpl> impl;
