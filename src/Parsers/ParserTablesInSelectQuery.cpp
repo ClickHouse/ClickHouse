@@ -299,12 +299,16 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
-        /// `LATERAL` is only a keyword when it is followed by a parenthesized subquery, the only supported lateral shape.
-        /// Otherwise it is left to `ParserTableExpression`, so a table or view named `lateral` still parses.
+        /// `LATERAL` is only a keyword when it is followed by a subquery, the only supported lateral shape.
+        /// Otherwise it is left to `ParserTableExpression`, so a table, view or table function named `lateral`
+        /// (`JOIN lateral ON ...`, `JOIN lateral(...) ON ...`) still parses.
         Pos before_lateral = pos;
-        bool is_lateral = ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::OpeningRoundBracket;
-        if (!is_lateral)
-            pos = before_lateral;
+        bool is_lateral = false;
+        if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::OpeningRoundBracket)
+        {
+            is_lateral = ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected)
+                && res->table_expression->as<ASTTableExpression &>().subquery;
+        }
 
         if (is_lateral)
         {
@@ -313,9 +317,13 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             if (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Comma)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "LATERAL is not supported with {} JOIN", toString(table_join->kind));
         }
-
-        if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
-            return false;
+        else
+        {
+            pos = before_lateral;
+            res->table_expression = nullptr;
+            if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
+                return false;
+        }
 
         if (table_join->kind != JoinKind::Comma
             && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
