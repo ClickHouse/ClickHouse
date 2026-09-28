@@ -924,6 +924,9 @@ public:
     /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
+    /// Sets the Open Policy Agent authorization config. An absent section turns the feature off.
+    void setOpaConfiguration(const Poco::Util::AbstractConfiguration & config);
+
     /// Creates GSSAcceptorContext instance based on external authenticator params.
     std::unique_ptr<GSSAcceptorContext> makeGSSAcceptorContext() const;
 

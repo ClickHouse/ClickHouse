@@ -2210,6 +2210,12 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
     shared->access_control->setExternalAuthenticatorsConfig(config);
 }
 
+void Context::setOpaConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->access_control->setOpaConfiguration(config);
+}
+
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
 {
     SharedLockGuard lock(shared->mutex);
