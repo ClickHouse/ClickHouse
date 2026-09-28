@@ -1,5 +1,6 @@
--- Tags: no-fasttest, no-parallel-replicas, no-replicated-database
+-- Tags: no-fasttest, no-parallel, no-parallel-replicas, no-replicated-database
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-parallel: concurrent copies use `SYSTEM CLEAR QUERY CACHE TAG` with the same global tag.
 -- Tag no-parallel-replicas: this test must exercise the local native plan.
 -- Tag no-replicated-database: deferred drops of `TimeSeries` inner tables are incompatible with replicated databases.
 
