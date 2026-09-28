@@ -2,7 +2,6 @@
 #include <Storages/Utils.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageProxy.h>
 
 
 namespace CurrentMetrics
@@ -26,8 +25,8 @@ namespace DB
         {
             return {CurrentMetrics::AttachedDictionary};
         }
-        /// Asked while attaching, so this must not load a lazy table.
-        if (castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Skip))
+        /// NOLINT(storage-cast): runs under the database lock, and attach and detach must count a proxy alike.
+        if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
         {
             return {CurrentMetrics::AttachedTable, CurrentMetrics::AttachedReplicatedTable};
         }
