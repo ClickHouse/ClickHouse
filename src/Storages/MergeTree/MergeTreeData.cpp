@@ -1219,10 +1219,14 @@ void MergeTreeData::checkProperties(
                                 "You can add expressions that use only the newly added columns",
                                 backQuoteIfNeed(col));
 
-            if (new_metadata.columns.getDefaults().contains(col))
+            /// A subcolumn (for example, an element of a Tuple) has the default expression of its storage column.
+            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
+            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+
+            if (const auto column_default = new_metadata.columns.getDefault(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Newly added column {} has a default expression, so adding expressions that use "
-                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
+                                "Newly added column {} has a {} expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(name_in_storage), toString(column_default->kind));
         }
     }
 
@@ -13975,7 +13979,8 @@ ReservationPtr MergeTreeData::balancedReservation(
     MergeTreeData::DataPartsVector covered_parts,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
     const IMergeTreeDataPart::TTLInfos * ttl_infos,
-    bool is_insert)
+    bool is_insert,
+    time_t time_of_move)
 {
     ReservationPtr reserved_space;
     auto min_bytes_to_rebalance_partition_over_jbod = (*getSettings())[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod];
@@ -14098,7 +14103,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         metadata_snapshot,
                         part_size,
                         *ttl_infos,
-                        time(nullptr),
+                        time_of_move ? time_of_move : time(nullptr),
                         max_volume_index,
                         is_insert,
                         getStoragePolicy()->getDiskByName(selected_disk_name));

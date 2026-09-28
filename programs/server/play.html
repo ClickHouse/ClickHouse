@@ -15775,13 +15775,19 @@ query_area.addEventListener('input', updateFormatButtonPosition);
 document.getElementById('query_div').addEventListener('mouseenter', updateFormatButtonPosition);
 new ResizeObserver(updateFormatButtonPosition).observe(query_area);
 
-format_button.addEventListener('click', async () => {
+format_button.addEventListener('click', async (e) => {
     if (format_button.classList.contains('busy')) return;
 
     const original = query_area.value;
     if (!original.trim()) return;
 
+    /// Like the other user actions that can race startup, keep reconciliation from activating
+    /// another tab or restoring the saved editor contents while the request is in flight: that would
+    /// make the result below look stale and silently drop the user's formatting.
+    markBootstrapDirty(e);
+
     const tab_id = activeTabId;
+    const generation = connectionGeneration;
     const body = new FormData();
     body.append('query', 'SELECT formatQuery({q:String}) AS formatted');
     /// The server reads the value of a query parameter in the escaped (`TabSeparated`) form, where
@@ -15792,9 +15798,13 @@ format_button.addEventListener('click', async () => {
     /// An error (e.g. a syntax error in the query) is shown in the result pane, as for the other queries.
     format_button.classList.add('busy');
     const json = await auxiliaryQuery(url_elem.value, user_elem.value, password_elem.value, body,
-        '', false, connectionGeneration);
+        '', false, generation);
     format_button.classList.remove('busy');
     if (!json) return;
+
+    /// `auxiliaryQuery` still returns the payload of a request made for a previous server or user;
+    /// the text formatted there must not replace the editor's contents.
+    if (generation !== connectionGeneration) return;
 
     /// The user could have edited the query or switched to another tab while the request was in
     /// flight; the result then belongs to a text that is no longer in the editor.
