@@ -57,6 +57,8 @@ public:
     String getQueryResourceName() override;
     String getMemoryReservationResourceName() override;
 
+    void setServerLimitsEnabled(bool respect_cpu_limit, bool respect_memory_limit) override;
+
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const override;
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) override;
 
@@ -163,6 +165,12 @@ private:
     String worker_thread_resource; /// current resource name for master threads
     String query_resource; /// current resource name for queries
     String memory_reservation_resource; /// current resource name for memory reservations
+
+    /// Whether the server-limit workload features are enabled (set from the server-settings reload).
+    /// When enabled and the operator declared no matching resource, the resource-name getters fall
+    /// back to the implicit server-synthesized resource name.
+    bool server_respect_cpu_limit = false;
+    bool server_respect_memory_limit = false;
 
     // Chain of storages
     std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)

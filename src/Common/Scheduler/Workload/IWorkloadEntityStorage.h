@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <base/scope_guard.h>
 
+#include <string_view>
+
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -25,6 +27,15 @@ enum class WorkloadEntityType : uint8_t
 
     MAX
 };
+
+/// Names of the server-synthesized (implicit) resources created by `WorkloadResourceManager` when
+/// the corresponding `workloads_respect_server_*_limit` setting is enabled and the operator declared
+/// no matching resource. They are internal: never persisted, never exposed as user entities, and
+/// chosen with reserved-style delimiters so an ordinary `CREATE RESOURCE` name is unlikely to collide.
+/// The manager (which creates the resource) and the storage (which resolves the resource name for the
+/// execution paths) share these constants so both refer to the same resource.
+inline constexpr std::string_view IMPLICIT_CPU_RESOURCE_NAME = "__server_cpu__";
+inline constexpr std::string_view IMPLICIT_MEMORY_RESOURCE_NAME = "__server_memory__";
 
 /// Interface for a storage of workload entities (WORKLOAD and RESOURCE).
 class IWorkloadEntityStorage
@@ -100,6 +111,12 @@ public:
 
     /// Returns the name of resource used for memory reservation
     virtual String getMemoryReservationResourceName() = 0;
+
+    /// Records whether the server-limit workload features are enabled. When enabled and the operator
+    /// declared no matching resource, the resource-name getters above resolve to the implicit
+    /// server-synthesized resource (`IMPLICIT_CPU_RESOURCE_NAME` / `IMPLICIT_MEMORY_RESOURCE_NAME`)
+    /// that `WorkloadResourceManager` creates, so the execution paths route through it.
+    virtual void setServerLimitsEnabled(bool /*respect_cpu_limit*/, bool /*respect_memory_limit*/) {}
 
     /// Makes backup entries to back up all the workload entities of the specified type.
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const = 0;

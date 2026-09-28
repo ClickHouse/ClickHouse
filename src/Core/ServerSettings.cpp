@@ -1281,6 +1281,42 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, workloads_respect_server_cpu_limit, false, R"(
+When enabled, the server-wide CPU concurrency limit is applied through the workload scheduler. A CPU resource (for `MASTER THREAD` and `WORKER THREAD`) is created implicitly if none is defined, and the implicit root workload's `max_concurrent_threads` is derived from `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`, so every workload shares one CPU-slot budget taken from those settings. CPU scheduling then goes through the workload scheduler instead of the built-in concurrency control. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<workloads_respect_server_cpu_limit>true</workloads_respect_server_cpu_limit>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
+    DECLARE(Bool, workloads_respect_server_memory_limit, false, R"(
+When enabled, the server-wide memory limit is applied through the workload scheduler as a memory-reservation budget. A `MEMORY RESERVATION` resource is created implicitly if none is defined, and the implicit root workload's `max_memory` is derived from `max_server_memory_usage` (and its RAM ratio), so every workload shares one memory-reservation budget taken from that setting. This is a reservation-admission budget and does not replace the process-wide memory limit, which continues to apply. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<workloads_respect_server_memory_limit>true</workloads_respect_server_memory_limit>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
+    DECLARE(Bool, implicit_default_workload, false, R"(
+When enabled, a `default` workload is created implicitly if one is not defined explicitly, so that queries using the default `workload` setting are scheduled. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 

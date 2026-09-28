@@ -635,12 +635,18 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
 String WorkloadEntityStorageBase::getMasterThreadResourceName()
 {
     std::lock_guard lock{mutex};
+    // An operator-declared CPU resource takes precedence; otherwise, when the feature is enabled,
+    // route master threads through the implicit combined CPU resource created by the manager.
+    if (master_thread_resource.empty() && server_respect_cpu_limit)
+        return String(IMPLICIT_CPU_RESOURCE_NAME);
     return master_thread_resource;
 }
 
 String WorkloadEntityStorageBase::getWorkerThreadResourceName()
 {
     std::lock_guard lock{mutex};
+    if (worker_thread_resource.empty() && server_respect_cpu_limit)
+        return String(IMPLICIT_CPU_RESOURCE_NAME);
     return worker_thread_resource;
 }
 
@@ -653,7 +659,18 @@ String WorkloadEntityStorageBase::getQueryResourceName()
 String WorkloadEntityStorageBase::getMemoryReservationResourceName()
 {
     std::lock_guard lock{mutex};
+    // An operator-declared memory-reservation resource takes precedence; otherwise, when the feature
+    // is enabled, route reservations through the implicit resource created by the manager.
+    if (memory_reservation_resource.empty() && server_respect_memory_limit)
+        return String(IMPLICIT_MEMORY_RESOURCE_NAME);
     return memory_reservation_resource;
+}
+
+void WorkloadEntityStorageBase::setServerLimitsEnabled(bool respect_cpu_limit, bool respect_memory_limit)
+{
+    std::lock_guard lock{mutex};
+    server_respect_cpu_limit = respect_cpu_limit;
+    server_respect_memory_limit = respect_memory_limit;
 }
 
 void WorkloadEntityStorageBase::unlockAndNotify(
