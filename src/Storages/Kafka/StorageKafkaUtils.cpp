@@ -1199,7 +1199,7 @@ namespace DB::StorageKafkaUtils
 /// name, the expanded topics, the brokers, the group, the format, the schema and the generated client id - is
 /// private to each storage, and neither exposes all of it.
 template <typename KafkaStorage>
-SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr /* query_context */)
+SettingDescriptions getTableSettings(const KafkaStorage & storage)
 {
     /// Three things set a `Kafka` table's settings, in this order, and the settings object records each: a named
     /// collection given in the engine arguments, as `loadSettingsFromNamedCollection` loads it; the table's own
@@ -1220,7 +1220,7 @@ SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr /*
     return settings;
 }
 
-template SettingDescriptions getTableSettings<StorageKafka>(const StorageKafka & storage, ContextPtr query_context);
-template SettingDescriptions getTableSettings<StorageKafka2>(const StorageKafka2 & storage, ContextPtr query_context);
+template SettingDescriptions getTableSettings<StorageKafka>(const StorageKafka & storage);
+template SettingDescriptions getTableSettings<StorageKafka2>(const StorageKafka2 & storage);
 
 }

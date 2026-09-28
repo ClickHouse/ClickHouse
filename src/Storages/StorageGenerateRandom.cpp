@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
-#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/GenerateRandomSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>

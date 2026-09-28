@@ -43,7 +43,6 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <boost/algorithm/string/join.hpp>
 
 namespace CurrentMetrics
 {
@@ -231,9 +230,9 @@ StorageKafka::StorageKafka(
     });
 }
 
-SettingDescriptions StorageKafka::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageKafka::getTableSettings(ContextPtr /* query_context */) const
 {
-    return StorageKafkaUtils::getTableSettings(*this, query_context);
+    return StorageKafkaUtils::getTableSettings(*this);
 }
 
 StorageKafka::~StorageKafka()

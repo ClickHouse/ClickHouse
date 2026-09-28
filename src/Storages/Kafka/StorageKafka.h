@@ -37,7 +37,7 @@ namespace StorageKafkaUtils
 {
 /// `system.table_settings` for a table of either `Kafka` storage - see the definition.
 template <typename KafkaStorage>
-SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
+SettingDescriptions getTableSettings(const KafkaStorage & storage);
 }
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
@@ -48,7 +48,7 @@ class StorageKafka final : public IStreamingStorage, WithContext
     using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
     friend KafkaInterceptors;
     template <typename KafkaStorage>
-    friend SettingDescriptions StorageKafkaUtils::getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
+    friend SettingDescriptions StorageKafkaUtils::getTableSettings(const KafkaStorage & storage);
 
 public:
     StorageKafka(

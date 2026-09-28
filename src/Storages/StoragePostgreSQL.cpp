@@ -8,7 +8,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 

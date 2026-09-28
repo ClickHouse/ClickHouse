@@ -17,6 +17,17 @@
 namespace DB
 {
 
+namespace
+{
+
+/// The engine the query names - the name it is registered under, which `IStorage::getName` need not be: an
+/// `AzureBlobStorage` table calls itself `Azure` - and the `SETTINGS` clause. Both empty in the same cases.
+struct EngineStatedInDefinition
+{
+    String engine;
+    SettingsChanges settings;
+};
+
 /// The stored `CREATE` query rather than `StorageInMemoryMetadata::settings_changes`: it is what
 /// `SHOW CREATE TABLE` renders and the only source every engine keeps, while `settings_changes` is populated
 /// by a few engines only. `ALTER ... MODIFY SETTING` writes back into the `CREATE` query, so this stays current.
@@ -42,14 +53,6 @@ EngineStatedInDefinition getEngineStatedInDefinition(const StorageID & table_id,
         .settings = create.storage->settings->as<const ASTSetQuery &>().changes,
     };
 }
-
-SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
-{
-    return getEngineStatedInDefinition(table_id, context).settings;
-}
-
-namespace
-{
 
 /// An engine's settings as `system.engine_settings` describes them, less the values: name, default, type,
 /// description, tier and aliases, with an index over the name and every alias.
@@ -107,6 +110,11 @@ const EngineSettingsMetadata & engineSettingsMetadata(const String & engine_name
     return cache.emplace(engine_name, std::move(metadata)).first->second;
 }
 
+}
+
+SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
+{
+    return getEngineStatedInDefinition(table_id, context).settings;
 }
 
 /// What a table's own `SETTINGS` clause states, which is all a storage without settings of its own can say.

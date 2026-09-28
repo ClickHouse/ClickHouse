@@ -42,15 +42,6 @@ using NameSetWithViewLookup
 /// the catalog does not know the table, as for a table function's storage.
 SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context);
 
-/// The same, with the engine the query names: the name the engine is registered under, which `IStorage::getName`
-/// need not be - an `AzureBlobStorage` table calls itself `Azure`. Both empty in the same cases.
-struct EngineStatedInDefinition
-{
-    String engine;
-    SettingsChanges settings;
-};
-EngineStatedInDefinition getEngineStatedInDefinition(const StorageID & table_id, ContextPtr context);
-
 /// What a table's own `SETTINGS` clause states, described with the metadata the engine's registered settings give
 /// each stated setting. The base `IStorage::getTableSettings` is this, for a storage that keeps no settings of its
 /// own; an override that does keep them reports those instead.

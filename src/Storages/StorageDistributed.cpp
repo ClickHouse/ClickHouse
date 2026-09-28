@@ -159,11 +159,7 @@ namespace Setting
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsBool distributed_background_insert_batch;
     extern const SettingsUInt64 distributed_background_insert_timeout;
-    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
-    extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
-    extern const SettingsBool distributed_background_insert_split_batch_on_failure;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsUInt64 distributed_push_down_limit;

@@ -225,13 +225,13 @@ StorageKafka2::StorageKafka2(
     activating_task->deactivate();
 }
 
-SettingDescriptions StorageKafka2::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageKafka2::getTableSettings(ContextPtr /* query_context */) const
 {
     /// This storage holds the same settings as `StorageKafka` and derives the same working values from them, so it
     /// reports them the same way. `kafka_keeper_path` and `kafka_replica_name` need nothing more: the factory
     /// expands their macros in the settings object before constructing the storage, and writes both into the
     /// stored `SETTINGS` clause.
-    return StorageKafkaUtils::getTableSettings(*this, query_context);
+    return StorageKafkaUtils::getTableSettings(*this);
 }
 
 StorageKafka2::~StorageKafka2()
