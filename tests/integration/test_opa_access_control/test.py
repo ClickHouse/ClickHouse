@@ -90,6 +90,10 @@ def started_cluster():
         node.query("GRANT analysts TO analyst")
         node.query("GRANT SELECT ON plain.* TO analyst")
 
+        # Granted only two of the three columns, to show what an expression may reach.
+        node.query("CREATE USER narrow IDENTIFIED WITH no_password")
+        node.query("GRANT SELECT(id, amount) ON plain.orders TO narrow")
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -626,3 +630,23 @@ def test_a_mask_is_fetched_once_per_table():
     ]
     # The masks for every column arrive together, so one request mentions the whole column list.
     assert mask_requests
+
+
+def test_a_row_filter_may_read_a_column_the_user_cannot_select():
+    """A row filter is administrator-defined, like a native `ROW POLICY`, so it is not subject to the
+    querying user's column grants. This is why no identity override is needed to write one."""
+    enable_row_filters()
+    set_row_filters('{"result": [{"expression": "customer_email = \'a@x.com\'"}]}')
+
+    assert (
+        node.query("SELECT id FROM plain.orders", user="narrow").strip() == "1"
+    )
+
+
+def test_a_mask_may_read_a_column_the_user_cannot_select():
+    enable_column_masking()
+    set_column_masks(
+        '{"result": [{"column": "amount", "expression": "length(customer_email)"}]}'
+    )
+
+    assert node.query("SELECT amount FROM plain.orders ORDER BY id", user="narrow") == "7\n7\n"
