@@ -69,6 +69,27 @@ SELECT (8., 5., 0.)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 SELECT (8., 5., -1.)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 SELECT (8., 5., toFloat64('nan'))::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 
+-- A tuple explicitly carrying the old internal field names is not a public
+-- constructor. Reject it instead of routing it through the former
+-- (sign, signed_unit_time, decay_length) parsing logic.
+WITH CAST(
+    (1., 123., 3.),
+    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS internal_value
+SELECT internal_value::ExponentialTimeDecaying(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+
+WITH CAST(
+    (1., 123., 3.),
+    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS internal_value
+SELECT internal_value::ExponentialTimeDecaying; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+
+-- The same rejection applies when the old internal tuple is nested; container
+-- conversion must not make the representation public again.
+SELECT CAST(
+    [CAST(
+        (1., 123., 3.),
+        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)')],
+    'Array(ExponentialTimeDecaying(3))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+
 -- The parameterless spelling is inference-only. A standalone type declaration
 -- still needs a concrete decay length because column types are static.
 CREATE TEMPORARY TABLE time_decay_unparameterized_type_rejected
