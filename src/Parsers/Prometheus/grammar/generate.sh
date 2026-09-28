@@ -19,7 +19,7 @@ python3 -m venv "${ANTLR4_TOOLS_ENV_DIR}"
 "${ANTLR4_TOOLS_ENV_DIR}/bin/pip3" install antlr4-tools
 
 # Use the ANTLR tool to generate header and source files in folder ./generated
-(cd "${SCRIPT_DIR}/../antlr4-grammars/promql" && "${ANTLR4_TOOLS_ENV_DIR}/bin/antlr4" -o "${ANTLR4_GRAMMARS_OUTDIR}" -Dlanguage=Cpp -visitor PromQLParser.g4 PromQLLexer.g4 -package antlr4_grammars)
+(cd "${SCRIPT_DIR}" && "${ANTLR4_TOOLS_ENV_DIR}/bin/antlr4" -o "${ANTLR4_GRAMMARS_OUTDIR}" -Dlanguage=Cpp -visitor PromQLParser.g4 PromQLLexer.g4 -package antlr4_grammars)
 
 # Remove the temporary directory.
 rm -rf "${ANTLR4_TOOLS_ENV_DIR}"
