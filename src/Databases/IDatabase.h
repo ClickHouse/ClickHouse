@@ -287,8 +287,7 @@ public:
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
 
-    /// Whether an `ATTACH` with a full definition may take the name of a detached table.
-    /// If not, the name is checked with `checkMetadataFilenameAvailability` before the storage is built, as for `CREATE`.
+    /// Whether a full-definition `ATTACH` may take a detached table's name, i.e. skip `checkMetadataFilenameAvailability`.
     virtual bool canReattachTableWithFullDefinition() const { return true; }
 
     /// Check if the table name exceeds the max allowed length
