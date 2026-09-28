@@ -1,4 +1,4 @@
--- In a `Memory` database the name of a detached table stays reserved: `CREATE`, `CREATE OR REPLACE` and a full `ATTACH` are refused, and a short `ATTACH` restores the original definition.
+-- In a `Memory` database the name of a detached table, view or dictionary stays reserved: `CREATE`, `CREATE OR REPLACE` and a full `ATTACH` are refused before anything is built, and a short `ATTACH` restores the original definition.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
@@ -23,10 +23,26 @@ ATTACH TABLE mv;
 ALTER TABLE mv MODIFY COMMENT 'c';
 SHOW CREATE TABLE mv;
 
+CREATE VIEW w AS SELECT 1 AS a;
+DETACH TABLE w;
+ATTACH TABLE w (x UInt64) ENGINE = MergeTree ORDER BY x; -- { serverError TABLE_ALREADY_EXISTS }
+ATTACH TABLE w;
+DROP TABLE w;
+CREATE TABLE w (x UInt64) ENGINE = MergeTree ORDER BY x;
+DROP TABLE w;
+
 CREATE TABLE u (a Int32) ENGINE = Null;
 DETACH TABLE u;
 ATTACH TABLE u (b String) ENGINE = Null; -- { serverError TABLE_ALREADY_EXISTS }
+ATTACH TABLE IF NOT EXISTS u (b String) ENGINE = Null;
 ATTACH TABLE u;
 SHOW CREATE TABLE u;
+
+CREATE DICTIONARY dict (k UInt64, v String) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+DETACH DICTIONARY dict;
+CREATE DICTIONARY dict (k UInt64, v2 String) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0); -- { serverError TABLE_ALREADY_EXISTS }
+CREATE DICTIONARY IF NOT EXISTS dict (k UInt64, v2 String) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+ATTACH DICTIONARY dict;
+SHOW CREATE DICTIONARY dict;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

@@ -42,14 +42,6 @@ void DatabaseMemory::createTable(
 {
     ensurePopulated();
     std::lock_guard lock{mutex};
-
-    /// A detached table keeps its definition and dependencies under its name, only a short `ATTACH` may reuse it.
-    const auto * create_query = query ? query->as<ASTCreateQuery>() : nullptr;
-    if (snapshot_detached_tables.contains(table_name) && !(create_query && create_query->attach_short_syntax))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                        "Table {}.{} already exists (detached). To attach it back you need to use short ATTACH syntax (ATTACH TABLE {}.{};)",
-                        backQuote(database_name), backQuote(table_name), backQuote(database_name), backQuote(table_name));
-
     attachTableUnlocked(table_name, table);
 
     /// Clean the query from temporary flags.

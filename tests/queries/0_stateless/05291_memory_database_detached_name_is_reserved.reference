@@ -1,3 +1,4 @@
 CREATE VIEW default_1.v\n(\n    `a` UInt8\n)\nAS SELECT 1 AS a
 CREATE MATERIALIZED VIEW default_1.mv TO default_1.dst\n(\n    `x` UInt64\n)\nCOMMENT \'c\'\nAS SELECT x\nFROM default_1.src
 CREATE TABLE default_1.u\n(\n    `a` Int32\n)\nENGINE = `Null`
+CREATE DICTIONARY default_1.dict\n(\n    `k` UInt64,\n    `v` String\n)\nPRIMARY KEY k\nSOURCE(NULL())\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(FLAT())
