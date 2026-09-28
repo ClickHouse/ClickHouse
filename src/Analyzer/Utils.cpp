@@ -1171,8 +1171,12 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    auto aggregate_function = resolveAggregateFunction(function_node, function_name);
-    function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+    /// A node that keeps its window definition must stay a window function: one that reports both
+    /// aggregate and window is collected by both the aggregation and the window analysis.
+    if (function_node.hasWindow())
+        function_node.resolveAsWindowFunction(resolveWindowFunction(function_node, function_name));
+    else
+        function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
 }
 
 /// TODO(Michicosun): Move this to the window function factory.
