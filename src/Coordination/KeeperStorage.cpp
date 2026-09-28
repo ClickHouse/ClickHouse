@@ -205,7 +205,6 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
     }
     notify(path, event_type);
 
-    /// `CHANGED` does not trigger the child watches of the parent.
     if (event_type == Coordination::Event::CREATED || event_type == Coordination::Event::DELETED)
     {
         auto parent_path = Coordination::parentNodePath(path);
