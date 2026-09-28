@@ -25,13 +25,16 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE}
 
 # Rewrite the transform in the latest metadata file to a value that
 # parseTransformAndArgument cannot handle ('bucket' with a non-numeric
-# argument returns std::nullopt).
+# argument returns std::nullopt). use_iceberg_metadata_files_cache is disabled
+# on the reads so the rewritten metadata.json is really re-parsed instead of
+# being served from the cache (the cache key does not change on an in-place
+# rewrite of the same file).
 LATEST=$(ls "${TABLE_PATH}metadata"/v*.metadata.json | sort -V | tail -1)
 sed -i 's/"truncate\[3\]"/"bucket[xyz]"/' "${LATEST}"
 
 # Reading the table must still work without the sorted-read optimization,
 # and must not kill the server.
-${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0"
 
 # The server must still be alive.
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
@@ -40,7 +43,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 # ('bucket]' has no '[' and raises BAD_ARGUMENTS) must also be dropped instead
 # of rejecting the table.
 sed -i 's/"bucket\[xyz\]"/"bucket]"/' "${LATEST}"
-${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0"
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
