@@ -53,6 +53,8 @@ FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'smd_tbl' AND name = 'keeper_path'"
 
 echo "-- a setting the queue does not keep there is still attributed normally"
+# `parallel_inserts` reports `default` because of https://github.com/ClickHouse/ClickHouse/issues/119018: the
+# table metadata declares it but never writes or reads it. Fixing that changes this row of the reference.
 $CLICKHOUSE_CLIENT -q "
 SELECT name, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'smd_tbl'
