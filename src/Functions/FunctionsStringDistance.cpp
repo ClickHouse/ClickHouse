@@ -1267,6 +1267,7 @@ Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
 
     FunctionDocumentation::Description description_jaro = R"(
 Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+Returns `0` if either string is empty.
 )";
     FunctionDocumentation::Syntax syntax_jaro = "jaroSimilarity(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaro = {
@@ -1290,6 +1291,7 @@ Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Wink
 
     FunctionDocumentation::Description description_jaro_winkler = R"(
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
+Returns `0` if either string is empty.
 )";
     FunctionDocumentation::Syntax syntax_jaro_winkler = "jaroWinklerSimilarity(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaro_winkler = {
