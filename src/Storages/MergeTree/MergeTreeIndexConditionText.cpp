@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1877,6 +1878,11 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
         return false;
 
+    /// The result on the default value decides for every row without the key, so no function in the expression
+    /// may return another value on each evaluation.
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(dag_node))
+        return false;
+
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
     auto required_columns = subdag.getRequiredColumns();
     const auto & outputs = subdag.getOutputs();
@@ -2127,6 +2133,9 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     const auto * dag_node = function_node.getDAGNode();
     if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
         || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+        return false;
+
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(dag_node))
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);

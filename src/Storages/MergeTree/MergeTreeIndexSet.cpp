@@ -743,6 +743,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return nullptr;
 
+    /// The condition is computed on the values the index stores rather than on the rows, so it cannot use a
+    /// function that can return another value on each evaluation, such as `rand`.
+    if (!node.function_base->isDeterministicInScopeOfQuery())
+        return nullptr;
+
     const auto & arguments = node.children;
     size_t arguments_size = arguments.size();
 
@@ -886,6 +891,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         }
         if (function_name == "not")
             return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
+        if (!node.function_base->isDeterministicInScopeOfQuery())
+            return true;
         return std::any_of(
             arguments.begin(),
             arguments.end(),
