@@ -60,8 +60,12 @@
     "source": "/concepts/features/interfaces/postgresql"
   },
   {
-    "destination": "/concepts/features/connect-to-clickhouse/protocols/experimental/ssh",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/ssh",
     "source": "/concepts/features/interfaces/ssh"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/ssh",
+    "source": "/concepts/features/connect-to-clickhouse/protocols/experimental/ssh"
   },
   {
     "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
@@ -6040,7 +6044,7 @@
     "source": "/interfaces/specs/NativeProtocol"
   },
   {
-    "destination": "/concepts/features/interfaces/ssh",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/ssh",
     "source": "/interfaces/ssh"
   },
   {

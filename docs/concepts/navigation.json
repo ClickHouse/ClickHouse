@@ -249,12 +249,7 @@
                     "concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql"
                   ]
                 },
-                {
-                  "group": "Experimental",
-                  "pages": [
-                    "concepts/features/connect-to-clickhouse/protocols/experimental/ssh"
-                  ]
-                }
+                "concepts/features/connect-to-clickhouse/protocols/ssh"
               ]
             },
             {
