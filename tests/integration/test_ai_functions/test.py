@@ -72,7 +72,6 @@ def get_profile_events(query_id, query_type="QueryFinish"):
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
             ProfileEvents['AIRowsSkipped'] AS rows_skipped,
             ProfileEvents['AIInputRows'] AS input_rows,
-            ProfileEvents['AIOutputRows'] AS output_rows,
             ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
             ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens,
             ProfileEvents['AIRequestMicroseconds'] AS request_us,
@@ -361,7 +360,6 @@ def test_ai_metrics_cache_and_latency(
     assert int(events["cache_read_tokens"]) == 60
     assert int(events["cache_write_tokens"]) == write_tokens
     assert int(events["input_rows"]) == 1
-    assert int(events["output_rows"]) == (0 if throws else 1)
     assert int(events["rows_processed"]) == (1 if mode == "cached" else 0)
     assert int(events["request_us"]) >= 20000
     assert int(events["execution_us"]) >= int(events["request_us"])
@@ -400,7 +398,6 @@ def test_ai_metrics_anthropic_cache_counts_towards_quota(metrics_collection):
     assert int(events["cache_read_tokens"]) == 60
     assert int(events["cache_write_tokens"]) == 30
     assert int(events["input_rows"]) == 3
-    assert int(events["output_rows"]) == 3
     assert int(events["rows_processed"]) == 1
     assert int(events["rows_skipped"]) == 2
 
@@ -422,7 +419,6 @@ def test_ai_metrics_rows_and_batches(started_cluster, expression, calls, process
     )
     events = get_profile_events(qid)
     assert int(events["input_rows"]) == 5
-    assert int(events["output_rows"]) == 5
     assert int(events["rows_processed"]) == processed
     assert int(events["rows_skipped"]) == 0
     assert int(events["api_calls"]) == calls
@@ -448,7 +444,6 @@ def test_ai_metrics_multiple_blocks(started_cluster, expression, rows):
     )
     events = get_profile_events(qid)
     assert int(events["input_rows"]) == rows
-    assert int(events["output_rows"]) == rows
     assert int(events["rows_processed"]) == rows
     if rows == 0:
         assert int(events["api_calls"]) == 0
@@ -483,7 +478,6 @@ def test_ai_metrics_retry_latency(started_cluster, expression, throw_on_error):
     )
     assert int(events["api_calls"]) == 3
     assert int(events["input_rows"]) == 1
-    assert int(events["output_rows"]) == (0 if throw_on_error else 1)
     assert int(events["input_tokens"]) == 0
     assert int(events["cache_read_tokens"]) == 0
     assert int(events["request_us"]) > 0

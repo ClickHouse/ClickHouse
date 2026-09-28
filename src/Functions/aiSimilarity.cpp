@@ -32,7 +32,6 @@ namespace ProfileEvents
 {
     extern const Event AIExecutionMicroseconds;
     extern const Event AIInputRows;
-    extern const Event AIOutputRows;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -248,9 +247,7 @@ public:
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
-        auto result = ColumnNullable::create(std::move(score_col), std::move(null_map_col));
-        ProfileEvents::increment(ProfileEvents::AIOutputRows, input_rows_count);
-        return result;
+        return ColumnNullable::create(std::move(score_col), std::move(null_map_col));
     }
 
 private:

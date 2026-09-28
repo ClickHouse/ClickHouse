@@ -159,7 +159,6 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | `AIRequestMicroseconds` | Total time in provider requests, including failed attempts and response parsing, excluding retry backoff. |
 | `AIExecutionMicroseconds` | Total time executing AI functions, including request preparation, retry backoff, and result processing. |
 | `AIInputRows` | Rows passed to each AI function, including `NULL` and empty inputs. Retries do not add rows. |
-| `AIOutputRows` | Rows returned by completed AI function executions, including `NULL` and default results. An execution that throws contributes no output rows. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
 
@@ -167,10 +166,10 @@ Times are summed across executions and threads, so they can exceed query wall-cl
 Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
 These counters do not provide per-request latency percentiles.
 
-Row counts describe function inputs and returned columns, rather than HTTP requests or final query rows.
+`AIInputRows` counts function inputs, rather than HTTP requests or final query rows.
 For example, `aiEmbed` can send several rows in one request, and `aiSimilarity` embeds two operands per row.
-If a query calls multiple AI functions, their counts are added together. `AIOutputRows` includes defaults;
-use `AIRowsProcessed` to count successful AI results.
+If a query calls multiple AI functions, their counts are added together.
+Use `AIRowsProcessed` to count successful AI results and `AIRowsSkipped` for quota or error defaults.
 
 Cache counters are subsets of `AIInputTokens`, not additional tokens. OpenAI-compatible chat responses report
 cache reads in `usage.prompt_tokens_details.cached_tokens`. Anthropic reports cache reads and writes in
@@ -191,7 +190,8 @@ SELECT
     request_ms / nullIf(api_calls, 0) AS mean_request_ms,
     ProfileEvents['AIExecutionMicroseconds'] / 1000 AS execution_ms,
     ProfileEvents['AIInputRows'] AS input_rows,
-    ProfileEvents['AIOutputRows'] AS output_rows,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
     ProfileEvents['AIOutputTokens'] AS output_tokens,
     ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,

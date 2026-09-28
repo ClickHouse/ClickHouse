@@ -71,7 +71,7 @@ build/programs/clickhouse client --query_id ai-metrics-smoke --query "
 Inspect the result with the query in the
 [AI observability documentation](../../../docs/reference/functions/regular-functions/ai-functions.mdx#observability),
 using `ai-metrics-smoke` as the query ID. Expect one API call, one input row,
-one output row, and positive request time. Cache tokens may be zero for a short
+one processed row, and positive request time. Cache tokens may be zero for a short
 or cold prompt; the deterministic tests above verify nonzero cache accounting.
 To exercise the native Anthropic usage format, use a separate collection with
 `provider = 'anthropic'` and the local gateway's `/v1/messages` endpoint.

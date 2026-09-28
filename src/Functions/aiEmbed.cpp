@@ -33,7 +33,6 @@ namespace ProfileEvents
 {
     extern const Event AIExecutionMicroseconds;
     extern const Event AIInputRows;
-    extern const Event AIOutputRows;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -205,9 +204,7 @@ public:
         for (; cursor < input_rows_count; ++cursor)
             offsets_vec.push_back(current_offset);
 
-        auto result = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        ProfileEvents::increment(ProfileEvents::AIOutputRows, input_rows_count);
-        return result;
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
 private:

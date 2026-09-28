@@ -37,7 +37,6 @@ namespace ProfileEvents
     extern const Event AIRequestMicroseconds;
     extern const Event AIExecutionMicroseconds;
     extern const Event AIInputRows;
-    extern const Event AIOutputRows;
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
@@ -661,9 +660,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     {
         if (!null_map_col)
             null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-        result_col = ColumnNullable::create(std::move(result_col), std::move(null_map_col));
+        return ColumnNullable::create(std::move(result_col), std::move(null_map_col));
     }
-    ProfileEvents::increment(ProfileEvents::AIOutputRows, input_rows_count);
     return result_col;
 }
 
