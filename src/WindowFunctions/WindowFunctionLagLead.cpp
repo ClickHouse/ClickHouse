@@ -112,12 +112,12 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
             }
         }
 
-        const auto [target_row, offset_left] = transform->moveRowNumber(
+        const auto target_row = transform->moveRowNumber(
             transform->current_row, offset * (is_lead ? 1 : -1));
 
-        if (offset_left != 0
-            || target_row < transform->frame_start
-            || transform->frame_end <= target_row)
+        if (!target_row
+            || *target_row < transform->frame_start
+            || transform->frame_end <= *target_row)
         {
             // Offset is outside the frame.
             if (argument_types.size() > 2)
@@ -135,9 +135,9 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
+            to.insertFrom(*transform->blockAt(*target_row).input_columns[
                     workspace.argument_column_indices[0]],
-                target_row.row);
+                target_row->row);
         }
     }
 };

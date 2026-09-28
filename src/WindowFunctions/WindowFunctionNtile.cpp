@@ -23,10 +23,10 @@ namespace
 
 struct NtileState
 {
-    UInt64 buckets = 0;
+    Int64 buckets = 0;
     RowNumber start_row;
-    UInt64 current_partition_rows = 0;
-    UInt64 current_partition_inserted_row = 0;
+    Int64 current_partition_rows = 0;
+    Int64 current_partition_inserted_row = 0;
 
     void windowInsertResultInto(
         const WindowTransform * transform,

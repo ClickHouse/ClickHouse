@@ -16,14 +16,14 @@ namespace
 struct CumeDistState
 {
     RowNumber start_row;
-    UInt64 current_partition_rows = 0;
+    Int64 current_partition_rows = 0;
 
     // The peer-group-end row number is identical for every row in a peer group, so we compute it
     // once (by scanning forward to the last peer) when entering a new peer group and reuse it for
     // the rest of the group. Without this the per-row scan is O(k^2) for a peer group of size k.
     // 0 for not cached is safe because the first row in a partition is always peer group 1.
-    UInt64 cached_peer_group_number = 0;
-    UInt64 cached_peer_group_end_row_number = 0;
+    Int64 cached_peer_group_number = 0;
+    Int64 cached_peer_group_end_row_number = 0;
 };
 
 struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistState>
@@ -75,7 +75,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             return;
         }
 
-        UInt64 remaining_rows = state.current_partition_rows;
+        Int64 remaining_rows = state.current_partition_rows;
         Float64 cume_dist_denominator = static_cast<Float64>(remaining_rows);
 
         while (remaining_rows > 0)
@@ -86,7 +86,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             {
                 auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
-                for (size_t i = state.start_row.row; i < block_rows_number; ++i)
+                for (Int64 i = state.start_row.row; i < block_rows_number; ++i)
                     data[i] = data[i] / cume_dist_denominator;
 
                 state.start_row.block++;
@@ -97,7 +97,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             {
                 auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
-                for (size_t i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
+                for (Int64 i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
                 {
                     data[i] = data[i] / cume_dist_denominator;
                 }
@@ -121,7 +121,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
         // cached value. This turns the per-peer-group cost from O(k^2) into O(k).
         if (state.cached_peer_group_number != transform->peer_group_number)
         {
-            UInt64 peer_group_end_row_number = transform->current_row_number;
+            Int64 peer_group_end_row_number = transform->current_row_number;
             RowNumber check_row = transform->current_row;
 
             // Advance through all rows that are peers with the current row
