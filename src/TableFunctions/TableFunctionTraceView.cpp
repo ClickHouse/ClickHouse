@@ -677,6 +677,7 @@ String spanLogSource(const TraceViewArguments & arguments, ContextMutablePtr con
             /* relative_data_path */ String{},
             DistributedSettings{},
             LoadingStrictnessLevel::CREATE,
+            /* is_fresh_definition = */ false,
             span_log_replicas);
         storage->startup();
         return storage;
