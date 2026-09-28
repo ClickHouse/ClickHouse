@@ -15,8 +15,15 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Storages/KeyDescription.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+
+#include <queue>
 
 namespace DB
 {
@@ -612,6 +619,279 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
 
         for (auto * child : node->children)
             stack.push(child);
+    }
+}
+
+
+/// Follows a join input down to the MergeTree read it consumes, through the steps which keep every row in
+/// its stream and keep the join key columns, so that the output ports of the read reach the join as they
+/// are. On success `dag` maps the columns of the read to the columns of the join input.
+static ReadFromMergeTree * findReadingForJoinByPartitions(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
+{
+    if (auto * reading = findReadingStep(node))
+    {
+        /// Already split into primary-key layers by `optimizeJoinByShards`.
+        if (const auto & analysis = reading->getAnalyzedResult(); analysis && !analysis->split_parts.layers.empty())
+            return nullptr;
+
+        /// These reads do not read by layers: a distributed worker reads its bucket of marks, a streaming
+        /// read groups the parts itself (and the parts it reads later would not be in any layer).
+        if (reading->getDistributedReadBucketCount() > 0 || reading->getQueryInfo().isStream())
+            return nullptr;
+
+        dag = makeSourceDAG(*reading);
+        return reading;
+    }
+
+    if (node.children.size() != 1)
+        return nullptr;
+
+    const auto * step = node.step.get();
+    bool is_expression = typeid_cast<const ExpressionStep *>(step) || typeid_cast<const FilterStep *>(step);
+    /// Only collects the keys of every stream into the runtime filter, the rows pass through.
+    bool is_passthrough = typeid_cast<const BuildRuntimeFilterStep *>(step);
+    if (!is_expression && !is_passthrough)
+        return nullptr;
+
+    auto * reading = findReadingForJoinByPartitions(*node.children.front(), dag);
+    if (reading && is_expression)
+        updateDAG(node, *dag);
+    return reading;
+}
+
+/// The column of the read which the join key passes through unchanged, or nullptr.
+static const ActionsDAG::Node * findReadColumnOfKey(const ActionsDAG & dag, const String & key_name)
+{
+    const auto * node = dag.tryFindInOutputs(key_name);
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node && node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
+}
+
+static bool hasImplicitTimeZone(const IDataType & type)
+{
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&type))
+        return !date_time->hasExplicitTimeZone();
+    if (const auto * date_time_64 = typeid_cast<const DataTypeDateTime64 *>(&type))
+        return !date_time_64->hasExplicitTimeZone();
+    return false;
+}
+
+/// Whether the partition key computes a value in a `DateTime` without an explicit time zone. Such a type
+/// takes the time zone in effect when the table was created or loaded, which is not visible in its name,
+/// so two tables with the same expression can put the same value into different partitions.
+static bool partitionKeyDependsOnImplicitTimeZone(const KeyDescription & partition_key)
+{
+    for (const auto & node : partition_key.expression->getActionsDAG().getNodes())
+    {
+        bool found = hasImplicitTimeZone(*node.result_type);
+        node.result_type->forEachChild([&](const IDataType & child) { found = found || hasImplicitTimeZone(child); });
+        if (found)
+            return true;
+    }
+    return false;
+}
+
+/// Returns the partition key expression of one join side with every column replaced by a placeholder
+/// naming the position and the type of the join key equal to that column, or nullptr if the partition
+/// key uses a column which is not a join key. If both sides give the same expression, rows with equal
+/// join keys have equal partition values, hence equal partition IDs, in both tables.
+///
+/// The types are part of the placeholder because the same expression can map equal values of different
+/// types to different partitions, e.g. `toYYYYMM` of a `DateTime` in different time zones.
+static ASTPtr canonicalizePartitionKey(
+    const KeyDescription & partition_key, const ActionsDAG & dag, const Names & key_names, std::vector<size_t> & used_keys)
+{
+    if (partition_key.column_names.empty() || !partition_key.expression_list_ast
+        || partitionKeyDependsOnImplicitTimeZone(partition_key))
+        return nullptr;
+
+    const auto storage_columns = partition_key.expression->getRequiredColumnsWithTypes();
+
+    std::unordered_map<String, std::pair<size_t, String>> key_of_column;
+    for (size_t i = 0; i < key_names.size(); ++i)
+    {
+        const auto * column = findReadColumnOfKey(dag, key_names[i]);
+        if (!column)
+            continue;
+
+        /// The read must return the column in the type the partition value was computed from on insert.
+        auto storage_column = storage_columns.tryGetByName(column->result_name);
+        if (!storage_column || storage_column->type->getName() != column->result_type->getName())
+            continue;
+
+        key_of_column.emplace(column->result_name, std::pair{i, fmt::format("__join_key_{}_{}", i, column->result_type->getName())});
+    }
+
+    auto ast = partition_key.expression_list_ast->clone();
+    bool all_columns_are_keys = true;
+    std::function<void(IAST &)> replace_columns = [&](IAST & node)
+    {
+        if (auto * identifier = node.as<ASTIdentifier>())
+        {
+            auto it = key_of_column.find(identifier->name());
+            if (it == key_of_column.end())
+            {
+                all_columns_are_keys = false;
+                return;
+            }
+
+            identifier->setShortName(it->second.second);
+            used_keys.push_back(it->second.first);
+            return;
+        }
+
+        for (const auto & child : node.children)
+            replace_columns(*child);
+    };
+    replace_columns(*ast);
+
+    if (!all_columns_are_keys)
+        return nullptr;
+
+    return ast;
+}
+
+static void tryJoinByPartitions(QueryPlan::Node & node, JoinStep & join_step)
+{
+    const auto & join = join_step.getJoin();
+    if (!typeid_cast<const HashJoin *>(join.get()) && !typeid_cast<const ConcurrentHashJoin *>(join.get()))
+        return;
+
+    if (join->hasDelayedBlocks() || !join->isCloneSupported())
+        return;
+
+    const auto & table_join = join->getTableJoin();
+    auto kind = table_join.kind();
+    if (!(isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind))
+        || table_join.strictness() == JoinStrictness::Asof
+        || table_join.getClauses().size() != 1)
+        return;
+
+    const auto & clause = table_join.getClauses().front();
+
+    /// The inputs in the order of the sides of `table_join`.
+    size_t left_input = join_step.areInputsSwapped() ? 1 : 0;
+    std::optional<ActionsDAG> left_dag;
+    std::optional<ActionsDAG> right_dag;
+    auto * left_reading = findReadingForJoinByPartitions(*node.children[left_input], left_dag);
+    auto * right_reading = findReadingForJoinByPartitions(*node.children[1 - left_input], right_dag);
+    if (!left_reading || !right_reading)
+        return;
+
+    std::vector<size_t> used_keys;
+    std::vector<size_t> right_used_keys;
+    auto left_partition_key = canonicalizePartitionKey(
+        left_reading->getStorageMetadata()->getPartitionKey(), *left_dag, clause.key_names_left, used_keys);
+    auto right_partition_key = canonicalizePartitionKey(
+        right_reading->getStorageMetadata()->getPartitionKey(), *right_dag, clause.key_names_right, right_used_keys);
+    if (!left_partition_key || !right_partition_key || used_keys.empty()
+        || left_partition_key->getTreeHash(/*ignore_aliases=*/ true) != right_partition_key->getTreeHash(/*ignore_aliases=*/ true))
+        return;
+
+    auto get_analysis = [](ReadFromMergeTree & reading)
+    {
+        auto analysis = reading.getAnalyzedResult();
+        return analysis ? analysis : reading.selectRangesToRead();
+    };
+    auto left_analysis = get_analysis(*left_reading);
+    auto right_analysis = get_analysis(*right_reading);
+
+    auto marks_by_partition = [](const ReadFromMergeTree::AnalysisResult & analysis)
+    {
+        std::map<String, size_t> marks;
+        for (const auto & part : analysis.parts_with_ranges)
+            marks[part.data_part->info.getPartitionId()] += part.getMarksCount();
+        return marks;
+    };
+    auto left_partitions = marks_by_partition(*left_analysis);
+    auto right_partitions = marks_by_partition(*right_analysis);
+
+    /// A partition read by one side only has no rows to match, it is needed only for the non-matched
+    /// rows of that side.
+    std::map<String, size_t> partitions;
+    for (const auto & [partition_id, marks] : left_partitions)
+        if (isLeftOrFull(kind) || right_partitions.contains(partition_id))
+            partitions[partition_id] += marks;
+    for (const auto & [partition_id, marks] : right_partitions)
+        if (isRightOrFull(kind) || left_partitions.contains(partition_id))
+            partitions[partition_id] += marks;
+
+    size_t num_layers = std::min(partitions.size(), left_reading->getNumStreams());
+    if (num_layers < 2)
+        return;
+
+    /// Balance the layers: the heaviest partition goes to the least loaded layer first.
+    std::vector<std::pair<size_t, String>> partitions_by_marks;
+    for (const auto & [partition_id, marks] : partitions)
+        partitions_by_marks.emplace_back(marks, partition_id);
+    std::ranges::sort(partitions_by_marks, std::greater{});
+
+    using LayerLoad = std::pair<size_t, size_t>;
+    std::priority_queue<LayerLoad, std::vector<LayerLoad>, std::greater<>> layer_loads;
+    for (size_t layer = 0; layer < num_layers; ++layer)
+        layer_loads.emplace(0, layer);
+
+    std::unordered_map<String, size_t> layer_of_partition;
+    for (const auto & [marks, partition_id] : partitions_by_marks)
+    {
+        auto [load, layer] = layer_loads.top();
+        layer_loads.pop();
+        layer_of_partition.emplace(partition_id, layer);
+        layer_loads.emplace(load + marks, layer);
+    }
+
+    /// Both reads output one port per layer, and port `i` of both carries the same partitions.
+    /// A layer without parts on one side still occupies its port (see `getNumStreamsWhenNothingToRead`).
+    auto split_by_layers = [&](ReadFromMergeTree & reading, const ReadFromMergeTree::AnalysisResult & analysis)
+    {
+        /// A copy, the analysis result may be shared with another read of the same table.
+        auto result = std::make_shared<ReadFromMergeTree::AnalysisResult>(analysis);
+        result->split_parts = {};
+        result->split_parts.layers.resize(num_layers);
+        for (const auto & part : result->parts_with_ranges)
+            if (auto it = layer_of_partition.find(part.data_part->info.getPartitionId()); it != layer_of_partition.end())
+                result->split_parts.layers[it->second].push_back(part);
+        reading.setAnalyzedResult(std::move(result));
+    };
+    split_by_layers(*left_reading, *left_analysis);
+    split_by_layers(*right_reading, *right_analysis);
+
+    std::ranges::sort(used_keys);
+    used_keys.erase(std::ranges::unique(used_keys).begin(), used_keys.end());
+    JoinStep::PrimaryKeySharding sharding;
+    for (size_t key : used_keys)
+        sharding.emplace_back(clause.key_names_left[key], clause.key_names_right[key]);
+    join_step.enableJoinByLayers(std::move(sharding));
+}
+
+/// Execute a hash join of two MergeTree reads partition by partition.
+///
+/// If both tables are partitioned by the same function of the join keys (e.g. both are
+/// `PARTITION BY toYYYYMM(date)` and joined `ON l.date = r.date`), a row of a partition of one table can
+/// match only the rows of the partition with the same ID in the other table. The partitions both sides
+/// read are split into groups, each read creates one output port per group, and the join is executed
+/// port by port with a small independent hash table per group (`JoinStep::enableJoinByLayers` ->
+/// `joinPipelinesByShards`). The rows are not scattered by the hash of the keys, and the partitions which
+/// cannot produce output rows are not read.
+///
+/// Unlike `optimizeJoinByShards`, it applies to a single join whose inputs read MergeTree tables directly.
+void optimizeJoinByPartitions(QueryPlan::Node & root)
+{
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(&root);
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+            stack.push(child);
+
+        auto * join_step = typeid_cast<JoinStep *>(node->step.get());
+        if (join_step && node->children.size() == 2 && !join_step->isJoinByLayersEnabled())
+            tryJoinByPartitions(*node, *join_step);
     }
 }
 

@@ -3030,6 +3030,11 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 )", 0, \
         {"25.4", false, false, "New setting"}) \
     \
+    DECLARE(Bool, query_plan_join_shard_by_partitions, false, R"(
+Execute a JOIN of two `MergeTree` tables partition by partition if both tables are partitioned by the same function of the join keys, for example both are `PARTITION BY toYYYYMM(date)` and joined `ON l.date = r.date`. Rows with equal join keys are then in the partitions with the same ID in both tables, so each group of partitions is joined with its own small hash table in its own stream, without scattering the rows by the hash of the keys. Partitions which cannot produce result rows are not read, for example for `INNER JOIN` the partitions present in only one table. Supported for `hash` and `parallel_hash` algorithms and `INNER`, `LEFT`, `RIGHT` and `FULL` joins with a single disjunct of equality conditions. Not applied to a join which may spill to disk, see `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join`.
+)", 0, \
+        {"26.10", false, false, "New setting"}) \
+    \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0, \

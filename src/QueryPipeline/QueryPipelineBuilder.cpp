@@ -826,7 +826,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     VectorWithMemoryTracking<JoinPtr> joins;
     right->addSimpleTransform([&](const SharedHeader & header)
     {
-        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
+        /// Each shard's hash table holds only the rows of its shard, it must not be published as the
+        /// runtime filter of the whole right side: the probe side of the other shards would lose rows.
+        auto shard_table_join = std::make_shared<TableJoin>(join->getTableJoin());
+        shard_table_join->clearSharedRuntimeFilterDescriptors();
+        joins.push_back(join->cloneNoParallel(shard_table_join, left->getSharedHeader(), header));
         auto finish_counter = std::make_shared<FinishCounter>(1);
         return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter);
     });
