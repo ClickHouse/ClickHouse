@@ -107,6 +107,8 @@ SELECT k, sum(k) FROM t3448 GROUP BY (hasAny(letters, ['a']) OR id = 3 OR hasAny
 SELECT k, sum(k) FROM t3448 GROUP BY (hasAny(letters, ['a']) OR hasAny(letters, ['i'])) AS k ORDER BY ALL;
 SELECT '-- the same for an expression from WITH used in a subquery';
 WITH hasAny(letters, ['a']) OR id = 3 OR hasAny(letters, ['i']) AS k SELECT k, count() FROM t3448 WHERE id IN (SELECT id FROM t3448 WHERE k) GROUP BY k ORDER BY ALL;
+SELECT '-- the same when only the subquery enables the optimization';
+WITH hasAny(letters, ['a']) OR id = 3 OR hasAny(letters, ['i']) AS k SELECT k, count() FROM t3448 WHERE id IN (SELECT id FROM t3448 WHERE k SETTINGS optimize_or_has_any_chain = 1) GROUP BY k ORDER BY ALL SETTINGS optimize_or_has_any_chain = 0;
 SELECT '-- an expression shared by an alias without aggregation is rewritten';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT hasAny(letters, ['a']) OR id = 3 OR hasAny(letters, ['i']) AS k FROM t3448 WHERE k;
 SELECT id, hasAny(letters, ['a']) OR id = 3 OR hasAny(letters, ['i']) AS k FROM t3448 WHERE k ORDER BY id;
@@ -120,6 +122,13 @@ SELECT hasAny(dates, [toDate('2020-01-01')]) OR hasAny(dates, [toDate('2020-01-0
 SELECT sum(hasAny(v, [CAST('a', 'Variant(UInt8, String)')]) OR hasAny(v, [CAST(1, 'Variant(UInt8, String)')])) FROM remote('127.0.0.{1,2}', view(SELECT [CAST(toUInt8(number), 'Variant(UInt8, String)')] AS v FROM numbers(4)));
 SELECT n, hasAny(v, [CAST('a', 'Variant(UInt8, String)')]) OR hasAny(v, [CAST(1, 'Variant(UInt8, String)')]) FROM remote('127.0.0.{1,2}', view(SELECT number AS n, [CAST(toUInt8(number), 'Variant(UInt8, String)')] AS v FROM numbers(4))) ORDER BY ALL;
 SELECT sum(hasAny(j, ['{"a":2}'::JSON]) OR hasAny(j, ['{"a":1}'::JSON, '{"a":2}'::JSON])) FROM remote('127.0.0.{1,2}', view(SELECT [('{"a":' || toString(number) || '}')::JSON] AS j FROM numbers(4)));
+
+SELECT '-- the setting is taken from the scope of each subquery';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM (SELECT id, letters FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 1) WHERE hasAny(letters, ['u']) OR hasAny(letters, ['z']) SETTINGS optimize_or_has_any_chain = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM (SELECT id, letters FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 0) WHERE hasAny(letters, ['u']) OR hasAny(letters, ['z']) SETTINGS optimize_or_has_any_chain = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM t3448 WHERE id IN (SELECT id FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 1) SETTINGS optimize_or_has_any_chain = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT id FROM (SELECT id FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 1) SETTINGS compatibility = '26.9';
+SELECT groupArray(id) FROM (SELECT id FROM t3448 WHERE id IN (SELECT id FROM t3448 WHERE hasAny(letters, ['a']) OR hasAny(letters, ['i']) SETTINGS optimize_or_has_any_chain = 1) ORDER BY id) SETTINGS optimize_or_has_any_chain = 0;
 
 SELECT '-- constants whose value has no common type of the elements are sent to remote servers with a cast';
 SELECT m, toTypeName(m) FROM (SELECT map('a', 1::Variant(UInt8, String), 'b', 'x'::Variant(UInt8, String)) AS m);

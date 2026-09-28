@@ -109,11 +109,6 @@ public:
     {
     }
 
-    bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
-    {
-        return isEnabled();
-    }
-
     /// In a query with aggregation, the expressions after aggregation (e.g. in `SELECT`, `HAVING` and `ORDER BY`)
     /// may use only the `GROUP BY` keys and aggregate functions, and are matched with the keys by structure.
     /// Neither is rewritten: in `SELECT hasAny(a, [1]) OR hasAny(a, [2]) ... GROUP BY hasAny(a, [1]), hasAny(a, [2])`
@@ -124,12 +119,11 @@ public:
     /// the `WHERE` and the `GROUP BY` key are the same node. Rewriting it (or anything below it) from `WHERE` would also
     /// rewrite the key, so the nodes that are reachable from the expressions after aggregation are not rewritten
     /// wherever they are reached from.
+    /// The setting is checked in the context of each subquery, which may enable the optimization when the outer query
+    /// disables it, so the whole tree is visited. The nodes after aggregation are collected in every query regardless
+    /// of the setting, so that the check of the enclosing queries in `isPostAggregationNode` does not depend on their settings.
     void enterImpl(QueryTreeNodePtr & node)
     {
-        /// The context, and so the setting, is the same when the node is left, so `leaveImpl` skips the node as well.
-        if (!isEnabled())
-            return;
-
         bool can_rewrite = can_rewrite_stack.empty() || can_rewrite_stack.back();
         if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
             can_rewrite = true;
@@ -151,15 +145,12 @@ public:
             }
         }
 
-        if (can_rewrite)
+        if (can_rewrite && isEnabled())
             rewriteOrChain(node);
     }
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (!isEnabled())
-            return;
-
         can_rewrite_stack.pop_back();
 
         if (node->getNodeType() == QueryTreeNodeType::QUERY)

@@ -92,6 +92,8 @@ SELECT count() AS `count()`\nFROM default.t3448 AS __table1\nHAVING in(count(), 
 1	5
 -- the same for an expression from WITH used in a subquery
 1	6
+-- the same when only the subquery enables the optimization
+1	6
 -- an expression shared by an alias without aggregation is rewritten
 SELECT or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(__table1.id, 3)) AS k\nFROM default.t3448 AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), equals(__table1.id, 3))
 1	1
@@ -133,6 +135,12 @@ SELECT or(hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\')), eq
 3	0
 3	0
 4
+-- the setting is taken from the scope of each subquery
+SELECT __table1.id AS id\nFROM\n(\n    SELECT\n        __table2.id AS id,\n        __table2.letters AS letters\n    FROM default.t3448 AS __table2\n    WHERE hasAny(__table2.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n) AS __table1\nWHERE or(hasAny(__table1.letters, _CAST([\'u\'], \'Array(String)\')), hasAny(__table1.letters, _CAST([\'z\'], \'Array(String)\')))\nSETTINGS optimize_or_has_any_chain = 0
+SELECT __table1.id AS id\nFROM\n(\n    SELECT\n        __table2.id AS id,\n        __table2.letters AS letters\n    FROM default.t3448 AS __table2\n    WHERE or(hasAny(__table2.letters, _CAST([\'a\'], \'Array(String)\')), hasAny(__table2.letters, _CAST([\'i\'], \'Array(String)\')))\n    SETTINGS optimize_or_has_any_chain = 0\n) AS __table1\nWHERE hasAny(__table1.letters, _CAST([\'u\', \'z\'], \'Array(String)\'))\nSETTINGS optimize_or_has_any_chain = 1
+SELECT __table1.id AS id\nFROM default.t3448 AS __table1\nWHERE in(__table1.id, (\n    SELECT __table1.id AS id\n    FROM default.t3448 AS __table1\n    WHERE hasAny(__table1.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n))\nSETTINGS optimize_or_has_any_chain = 0
+SELECT __table1.id AS id\nFROM\n(\n    SELECT __table2.id AS id\n    FROM default.t3448 AS __table2\n    WHERE hasAny(__table2.letters, _CAST([\'a\', \'i\'], \'Array(String)\'))\n    SETTINGS optimize_or_has_any_chain = 1\n) AS __table1\nSETTINGS compatibility = \'26.9\'
+[1,2,6,7,9]
 -- constants whose value has no common type of the elements are sent to remote servers with a cast
 {'a':1,'b':'x'}	Map(String, Variant(String, UInt8))
 [1,'a']	Variant(Array(Variant(String, UInt8)), UInt8)
