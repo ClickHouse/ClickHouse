@@ -948,6 +948,10 @@ Possible values:
 - 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
 )", 0, \
         {"25.11", "path", "path", "New setting. Type of descriptor to use for Arrow Flight requests: 'path' or 'command'. Dremio requires 'command'."}) \
+    DECLARE(UInt64, arrow_flight_request_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
+Timeout in seconds for a single Arrow Flight request. It bounds the whole request: for a read that is the entire result stream, not just the wait for the first record batch. Zero means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
+)", 0, \
+        {"26.10", 0, 300, "New setting bounding a single Arrow Flight request. No timeout was set before, so a Flight server that accepted a request and never answered blocked the query indefinitely; 0 restores that behavior."}) \
     DECLARE(UInt64, hsts_max_age, 0, R"(
 Expired time for HSTS. 0 means disable HSTS.
 )", 0) \
@@ -7380,7 +7384,7 @@ This is an expert-level setting which should only be used for debugging by devel
 </Note>
 )", 0, \
         {"26.9", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."}) \
-    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+    DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
 Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
@@ -7388,6 +7392,7 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
 )", 0, \
+        {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
