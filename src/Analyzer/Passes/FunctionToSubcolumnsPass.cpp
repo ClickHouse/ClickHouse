@@ -1195,8 +1195,7 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-/// Wrapper storages answer both predicates by traversing what they wrap (StorageMerge walks
-/// every child table), so each answer is memoized for the lifetime of one visitor.
+/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
 struct SubcolumnSupportAnswers
 {
     bool all_transformers;
@@ -1529,7 +1528,6 @@ private:
     CorrelatedColumnsStack correlated_columns;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
-    /// Memoizes the storage subcolumn support predicates for the lifetime of this visitor.
     SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
@@ -1656,8 +1654,6 @@ private:
     std::vector<bool> in_where_prewhere_stack;
 
     CorrelatedColumnsStack correlated_columns;
-
-    /// Memoizes the storage subcolumn support predicates for the lifetime of this visitor.
     SubcolumnSupportCache subcolumn_support_cache;
 
 public:
