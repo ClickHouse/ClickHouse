@@ -15,6 +15,13 @@
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Compression/CompressionInfo.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Common/logger_useful.h>
+#include <base/unaligned.h>
+#include <city.h>
 
 namespace DB
 {
@@ -27,6 +34,9 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int CORRUPTED_DATA;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
@@ -127,7 +137,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isPointReadColumn(pos))
             continue;
 
         try
@@ -164,6 +174,16 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
+        /// Rows that point-read columns produce in this call: the same row range the other columns read.
+        size_t point_read_rows = 0;
+        if (!point_read_columns.empty())
+        {
+            if (!continue_reading)
+                point_read_current_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+            size_t total_rows = data_part_info_for_read->getRowCount();
+            point_read_rows = point_read_current_row < total_rows ? std::min(max_rows_to_read, total_rows - point_read_current_row) : 0;
+        }
+
         prefetchForAllColumns(Priority{}, num_columns, from_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark);
 
@@ -182,6 +202,23 @@ size_t MergeTreeReaderWide::readRows(
             auto & column = res_columns[pos];
             if (!column)
                 column = column_to_read.type->createColumn(*serializations[pos]);
+
+            if (isPointReadColumn(pos))
+            {
+                try
+                {
+                    readPointRows(*point_read_columns[pos], *column, point_read_current_row, point_read_rows);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("(while point-reading column " + column_to_read.name + ")");
+                    throw;
+                }
+                read_rows = std::max(read_rows, point_read_rows);
+                if (column->empty() && max_rows_to_read > 0)
+                    res_columns[pos] = nullptr;
+                continue;
+            }
 
             try
             {
@@ -217,6 +254,7 @@ size_t MergeTreeReaderWide::readRows(
 
         streams.clearPrefetched();
         caches.clear();
+        point_read_current_row += point_read_rows;
 
         /// NOTE: positions for all streams must be kept in sync.
         /// In particular, even if for some streams there are no rows to be read,
@@ -545,7 +583,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isPointReadColumn(pos))
                 continue;
 
             try
@@ -782,6 +820,179 @@ std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColum
     }
 
     return column_to_streams;
+}
+
+
+namespace
+{
+
+constexpr size_t POINT_READ_CHECKSUM_SIZE = sizeof(CityHash_v1_0_2::uint128);
+constexpr size_t POINT_READ_BLOCK_OVERHEAD = POINT_READ_CHECKSUM_SIZE + COMPRESSED_BLOCK_HEADER_SIZE;
+
+}
+
+std::unique_ptr<MergeTreeReaderWide::PointReadColumn> MergeTreeReaderWide::tryCreatePointReadColumn(size_t pos) const
+{
+    static const bool disabled = std::getenv("CLICKHOUSE_LAZY_POINT_READ_DISABLE") != nullptr; // NOLINT(concurrency-mt-unsafe)
+    if (disabled)
+        return nullptr;
+
+    if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        return nullptr;
+
+    const auto & column = columns_to_read[pos];
+    if (column.isSubcolumn())
+        return nullptr;
+
+    /// Only `Quantized` columns: their serialization rejects any vector whose length differs from the declared
+    /// dimension, so every row of a part written through it has exactly `dimensions` elements.
+    const auto * serialization_quantized = typeid_cast<const SerializationQuantizedVector *>(serializations[pos].get());
+    if (!serialization_quantized)
+        return nullptr;
+
+    const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
+    const auto * serialization_array = typeid_cast<const SerializationArray *>(serialization_quantized->getNested().get());
+    if (!array_type || !serialization_array)
+        return nullptr;
+
+    const auto & checksums = data_part_info_for_read->getChecksums();
+
+    std::optional<String> elements_stream;
+    std::optional<String> codes_stream;
+    serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        /// The elements stream is `[ArrayElements, Regular]`, the codes stream is `[QuantizedCodes]`.
+        if (substream_path[0].type == ISerialization::Substream::ArrayElements)
+            elements_stream = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage_settings);
+        else if (substream_path[0].type == ISerialization::Substream::QuantizedCodes)
+            codes_stream = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage_settings);
+    });
+
+    /// A part without the codes stream was written before the column got the codec, so its vector lengths were never checked.
+    if (!elements_stream || !codes_stream || !checksums.files.contains(*codes_stream + DATA_FILE_EXTENSION))
+        return nullptr;
+
+    const String elements_file = *elements_stream + DATA_FILE_EXTENSION;
+    auto checksum_it = checksums.files.find(elements_file);
+    if (checksum_it == checksums.files.end() || !checksum_it->second.is_compressed)
+        return nullptr;
+
+    const auto & params = serialization_quantized->getParams();
+    const size_t element_size = array_type->getNestedType()->getSizeOfValueInMemory();
+    const size_t row_bytes = params.dimensions * element_size;
+    const size_t rows = data_part_info_for_read->getRowCount();
+
+    /// The part must match the current codec parameters (they may have been changed by `ALTER` after the part was
+    /// written) and must have been written one vector per block (parts written before that layout was introduced).
+    if (rows == 0 || row_bytes == 0
+        || checksum_it->second.uncompressed_size != rows * row_bytes
+        || checksum_it->second.file_size != rows * (row_bytes + POINT_READ_BLOCK_OVERHEAD))
+        return nullptr;
+
+    auto result = std::make_unique<PointReadColumn>();
+    result->row_bytes = row_bytes;
+    result->elements_per_row = params.dimensions;
+    result->nested_serialization = serialization_array->getNestedSerialization();
+    result->block.resize(row_bytes + POINT_READ_BLOCK_OVERHEAD);
+
+    auto storage = data_part_info_for_read->getDataPartStorage();
+    auto read_settings = settings.read_settings.adjustBufferSize(row_bytes + POINT_READ_BLOCK_OVERHEAD);
+    /// Plain `pread` supports positional reads (`readBigAt`), unlike the default `pread_threadpool`.
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    result->buf = storage->readFile(elements_file, read_settings, row_bytes + POINT_READ_BLOCK_OVERHEAD);
+    result->use_read_at = result->buf->supportsReadAt();
+
+    LOG_TEST(getLogger("MergeTreeReaderWide"), "Point read enabled for column {} in part {}: {} bytes per row, read_at: {}",
+        column.name, data_part_info_for_read->getPartName(), row_bytes, result->use_read_at);
+
+    return result;
+}
+
+void MergeTreeReaderWide::setLazyMaterializingRows(const PaddedPODArray<UInt64> * rows)
+{
+    lazy_rows = rows;
+    point_read_columns.clear();
+    if (!lazy_rows)
+        return;
+
+    point_read_columns.resize(columns_to_read.size());
+    bool any = false;
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        point_read_columns[pos] = tryCreatePointReadColumn(pos);
+        any |= point_read_columns[pos] != nullptr;
+    }
+
+    if (!any)
+        point_read_columns.clear();
+}
+
+void MergeTreeReaderWide::readPointRows(PointReadColumn & point_read, IColumn & column, size_t from_row, size_t num_rows)
+{
+    auto & column_array = assert_cast<ColumnArray &>(column);
+    auto & offsets = column_array.getOffsets();
+    auto & data = column_array.getData();
+
+    const size_t block_bytes = point_read.row_bytes + POINT_READ_BLOCK_OVERHEAD;
+    char * block = point_read.block.data();
+
+    offsets.reserve(offsets.size() + num_rows);
+
+    const auto * it = std::lower_bound(lazy_rows->begin(), lazy_rows->end(), from_row);
+    const size_t end_row = from_row + num_rows;
+
+    for (size_t row = from_row; row < end_row; ++row)
+    {
+        if (it != lazy_rows->end() && *it == row)
+        {
+            ++it;
+            const size_t offset_in_file = row * block_bytes;
+
+            if (point_read.use_read_at)
+            {
+                size_t bytes_read = point_read.buf->readBigAt(block, block_bytes, offset_in_file, {});
+                if (bytes_read != block_bytes)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read block of row {} at offset {}: read {} of {} bytes", row, offset_in_file, bytes_read, block_bytes);
+            }
+            else
+            {
+                point_read.buf->seek(offset_in_file, SEEK_SET);
+                point_read.buf->readStrict(block, block_bytes);
+            }
+
+            const char * header = block + POINT_READ_CHECKSUM_SIZE;
+            const UInt8 method = static_cast<UInt8>(header[0]);
+            const UInt32 size_compressed = unalignedLoadLittleEndian<UInt32>(header + 1);
+            const UInt32 size_decompressed = unalignedLoadLittleEndian<UInt32>(header + 5);
+
+            if (method != static_cast<UInt8>(CompressionMethodByte::Quantized)
+                || size_compressed != point_read.row_bytes + COMPRESSED_BLOCK_HEADER_SIZE
+                || size_decompressed != point_read.row_bytes)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Unexpected block header for row {}: method 0x{:x}, compressed size {}, decompressed size {}, expected row size {}",
+                    row, static_cast<unsigned>(method), size_compressed, size_decompressed, point_read.row_bytes);
+
+            if (settings.checksum_on_read)
+            {
+                CityHash_v1_0_2::uint128 expected;
+                expected.low64 = unalignedLoadLittleEndian<UInt64>(block);
+                expected.high64 = unalignedLoadLittleEndian<UInt64>(block + sizeof(UInt64));
+                auto calculated = CityHash_v1_0_2::CityHash128(header, size_compressed);
+                if (expected != calculated)
+                    throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum doesn't match for the block of row {}", row);
+            }
+
+            const size_t data_size_before = data.size();
+            ReadBufferFromMemory payload(header + COMPRESSED_BLOCK_HEADER_SIZE, point_read.row_bytes);
+            point_read.nested_serialization->deserializeBinaryBulk(data, payload, point_read.elements_per_row, 0);
+            if (data.size() != data_size_before + point_read.elements_per_row)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialized {} values instead of {} for row {}",
+                    data.size() - data_size_before, point_read.elements_per_row, row);
+        }
+
+        offsets.push_back(data.size());
+    }
 }
 
 }

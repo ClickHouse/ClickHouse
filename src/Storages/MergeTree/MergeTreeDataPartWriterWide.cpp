@@ -2,6 +2,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecQuantized.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -240,6 +242,17 @@ void MergeTreeDataPartWriterWide::addStreams(
             max_compress_block_size = settings.max_compress_block_size;
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+
+        /// Special handling for Quantized vector columns
+        if (substream_path.size() == 2 && substream_path[0].type == ISerialization::Substream::ArrayElements
+            && substream_path[1].type == ISerialization::Substream::Regular)
+        {
+            if (auto quantized_params = tryExtractQuantizedCodecParams(effective_codec_desc))
+            {
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(name_and_type.type.get()))
+                    max_compress_block_size = quantized_params->dimensions * array_type->getNestedType()->getSizeOfValueInMemory();
+            }
+        }
 
         /// A write buffer is allocated per stream below, and a single column can own thousands of
         /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is

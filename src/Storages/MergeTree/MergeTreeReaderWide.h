@@ -41,6 +41,8 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
+    void setLazyMaterializingRows(const PaddedPODArray<UInt64> * rows) override;
+
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
 
@@ -138,6 +140,27 @@ private:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
     bool read_without_marks = false;
+
+    /// Only the requested rows get data; the other rows are returned as empty arrays and filtered out by the reader chain.
+    struct PointReadColumn
+    {
+        std::unique_ptr<ReadBufferFromFileBase> buf;
+        bool use_read_at = false;
+        size_t row_bytes = 0;
+        size_t elements_per_row = 0;
+        SerializationPtr nested_serialization;
+        PaddedPODArray<char> block;
+    };
+
+    std::unique_ptr<PointReadColumn> tryCreatePointReadColumn(size_t pos) const;
+    void readPointRows(PointReadColumn & point_read, IColumn & column, size_t from_row, size_t num_rows);
+
+    const PaddedPODArray<UInt64> * lazy_rows = nullptr;
+    /// Indexed by column position; nullptr means the column is read in the usual way.
+    std::vector<std::unique_ptr<PointReadColumn>> point_read_columns;
+    size_t point_read_current_row = 0;
+
+    bool isPointReadColumn(size_t pos) const { return pos < point_read_columns.size() && point_read_columns[pos]; }
 };
 
 }
