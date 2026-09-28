@@ -1,0 +1,695 @@
+---
+sidebarTitle: 'chdb_hook'
+description: 'Postgres chdb_hook 模块的完整参考文档'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb_hook'
+title: 'chdb_hook 模块参考文档'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb_hook', 'Parquet', 'CSV', 'TSV']
+---
+
+## 概要 {#synopsis}
+
+```psql
+# LOAD 'chdb_hook';
+LOAD
+
+# CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+CREATE TABLE
+
+# COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+COPY 18
+```
+
+## 说明 {#description}
+
+chdb&#95;hook 模块会挂接 PostgreSQL 的 [COPY](#copy-overloading) 命令，
+使其能够借助 [chDB]，以 [chDB 支持的任意数据格式][formats]将数据复制到 (`TO`) 
+或从 (`FROM`) 本地文件、[AWS S3] 桶、[Google Cloud Storage] 等位置读取。
+该模块同样挂接 [CREATE TABLE]，使表能够从上述任意目标推导其列并加载其行。
+
+## 加载 {#loading}
+
+以 super user 身份，通过以下任一方式加载 chdb&#95;hook。请选择最适合你的用例的方式：
+
+* 通过 [LOAD] 命令显式加载；作用范围为当前 session：
+
+  ```sql
+  LOAD 'chdb_hook';
+  ```
+
+  <Note>
+    ClickHouse Cloud 的 SQL 控制台尚不支持 `LOAD 'chdb_hook'` 命令，但可以通过 psql 或任何其他 database connection 运行该命令。
+    你也可以联系支持代表将其添加到你的 Postgres service 配置中，添加后即可在 SQL 控制台中使用。
+  </Note>
+
+* 对所有 sessions 生效：在 `postgresql.conf` 中设置 [session&#95;preload&#95;libraries]：
+
+  ```ini
+  session_preload_libraries = chdb_hook
+  ```
+
+  或通过 [ALTER SYSTEM]：
+
+  ```sql
+  ALTER SYSTEM SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  该设置也可以通过 [ALTER DATABASE] 针对单个 database 设置：
+
+  ```sql
+  ALTER DATABASE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  或通过 [ALTER ROLE] 针对特定用户和组设置：
+
+  ```sql
+  ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+* 在 server 启动时通过 [shared&#95;preload&#95;libraries] 设置加载，使其始终对所有 sessions 和 databases 可用：
+
+  ```ini
+  shared_preload_libraries = chdb_hook
+  ```
+
+<Warning>
+  请注意，加载 chdb&#95;hook 后，属于 `pg_read_server_files` 或 `pg_write_server_files` roles 的用户可以使用 `COPY` 读写 Postgres server 上的文件以及云存储中的数据。
+</Warning>
+
+## COPY 重载 {#copy-overloading}
+
+在[加载](#loading)时，chdb&#95;hook 会挂接 Postgres 的 [COPY] 命令，从而以 [chDB 支持的任意数据格式][formats]，将数据复制到 (`TO`) 或从 (`FROM`) 本地文件、[AWS S3] 桶、[Google Cloud Storage] 等位置读写。例如，若要从 S3 中的 CSV 文件加载数据到表中，请先创建表，然后使用 `s3://` URL 调用 `COPY`：
+
+```sql
+CREATE TABLE times (
+    id     INT PRIMARY KEY,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv';
+```
+
+### 特权 {#privileges}
+
+chdb&#95;hook 的 `COPY` 所需的特权与它所替换的 [COPY] 相同：`COPY TO` 需要对该 relation 或每个被复制的列具有 `SELECT` 特权，`COPY FROM` 则需要 `INSERT` 特权。`file://` URL 会读取或写入 server 上的文件，因此还需要属于 `pg_read_server_files` 或 `pg_write_server_files` 角色。`COPY FROM` 需要 read-write 事务。
+
+### URL 协议 {#url-schemes}
+
+chdb&#95;hook 仅在 URL 形式的 `COPY` 目标使用以下协议之一时才会执行：
+
+| 协议                             | 目标                                  | chDB 函数                |
+| ------------------------------ | ----------------------------------- | ---------------------- |
+| `file`                         | Postgres 服务器上的绝对路径                  | [`file()`]             |
+| `http`, `https`                | HTTP URL                            | [`url()`]              |
+| `s3`                           | [AWS S3]                            | [`s3()`]               |
+| `gs`, `gcs`, `oss`             | [Google Cloud Storage]              | [`gcs()`]              |
+| `az`, `azure`, `abfss`, `abfs` | [Azure Blob Storage] 或 [Azure ABFS] | [`azureBlobStorage()`] |
+| `hdfs`                         | [Hadoop Distributed File System]    | [`hdfs()`]             |
+
+### URL 格式 {#url-formats}
+
+URL 的格式因目标 (target) 而异。
+
+#### File 表引擎 {#file}
+
+必须是 Postgres 服务器上的绝对路径，使用相对路径会报错。Postgres 用户必须根据实际需要属于 `pg_read_server_files` 或
+`pg_write_server_files` 角色，Postgres 系统用户也必须相应地具备该文件的读或写权限。对于 `COPY TO`，如果该
+路径不存在，chdb&#95;hook 会创建所有缺失的父目录，因此必须具备相应的文件系统权限。示例：
+
+```
+file:///tmp/users.parquet
+```
+
+#### HTTP {#http}
+
+任何常规 HTTP URL，包括位于公有云存储中的 URL。对于 `COPY TO`，
+chdb&#95;hook 会尝试通过 `POST` 将数据发送到该 URL。示例：
+
+```
+https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv
+```
+
+#### S3 {#s3}
+
+S3 URL 可以采用 S3 URI 的形式
+
+```
+s3://{bucket}/{path}
+```
+
+或者采用对象 URL 的形式：
+
+```
+s3://{bucket}.s3.{region}.amazonaws.com/{path}
+```
+
+#### GCS {#GCS}
+
+GCS 的 URL 采用公网 URL 的形式：
+
+```
+gs://storage.googleapis.com/{bucket}/{path}
+```
+
+或者使用 Cloud Storage URI，chdb&#95;hook 会将其转换为公网 URL：
+
+```
+gs://{bucket}/{path}
+```
+
+#### Azure Blob 存储 {#azure-blob-storage}
+
+使用以账户名作为子域名的 `blob.windows.net` URL：
+
+```
+az://{account}.blob.core.windows.net/{container}/{blob}
+```
+
+或者使用其他主机名：
+
+```
+az://{host}/{container}/{blob}
+```
+
+#### Azure ABFS {#azure-abfs}
+
+ABFS URL 必须使用以下格式：
+
+```
+abfs://{container}@{account}.dfs.core.windows.net/{blob}
+```
+
+#### HDFS URL {#hdfs-urls}
+
+HDFS URL 可以采用典型的 HTTP 风格 URL，并可选地附带端口号：
+
+```
+hdfs://{host}/{path}
+hdfs://{host}:{port}/{path}
+```
+
+### 路径通配符 {#path-wildcards}
+
+在 `COPY FROM` 命令中，URL 路径可以包含通配符。文件必须匹配整个路径模式，而不仅仅是后缀或前缀。唯一的例外是：当路径指向一个已存在的目录且未使用通配符时，会隐式在路径末尾添加 `*`，以选中该目录下的所有文件。
+
+支持的通配符：
+
+* `*`：匹配任意多个除 `/` 以外的字符，包括空字符串。
+* `?`：匹配任意单个字符。
+* `{groucho,harpo,chico}`：替换为字符串 &quot;groucho&quot;、&quot;harpo&quot;、&quot;chico&quot; 中的任意一个。这些字符串可以包含 `/`。
+* `{N..M}`：匹配任意 `>= N` 且 `<= M` 的数字。
+* `**`：递归匹配目录下的所有文件。
+
+例如，若要用一条命令加载以下文件中的数据：
+
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv
+
+可以使用 `{some,another}_prefix` 匹配这两个目录名，并使用 `some_file_{1..3}.csv'` 匹配这些文件，如下所示：
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+```
+
+### 选项 {#options}
+
+chdb&#95;hook 的 `COPY` 命令支持以下选项：
+
+#### `format`: {#format}
+
+读取或写入所使用的格式。必须是 [chDB] 支持的 [formats] 之一，包括 TSV、CSV、Parquet、Iceberg、JSON 等。
+若省略该参数或将其设为 `auto`，chDB 会根据 URL 末尾的文件扩展名自动判断格式。
+
+#### `structure` {#structure}
+
+行的 [chDB] 数据结构。由列名、[ClickHouse 数据类型] 和修饰符组成的列表。若省略该选项，chdb&#95;hook 会将 Postgres
+数据类型映射为大体合适的 ClickHouse 类型，详见 [Postgres 到
+chDB](#postgres-to-chdb)。若设置为 `auto`，chDB 会尝试推断类型。
+
+示例：
+
+```sql
+COPY users TO 'file:///tmp/users.parquet' (
+    structure 'id Int64, name String, age Nullable(UInt8), attributes JSON'
+);
+```
+
+#### `access_key` 和 `access_secret` {#access_key-and-access_secret}
+
+AWS 账户用户用于对请求进行身份验证的长期凭据。
+
+* **S3：** AWS [访问密钥 ID 和访问密钥]，通常通过环境变量 `AWS_ACCESS_KEY_ID` 和 `AWS_SECRET_ACCESS_KEY` 指定
+* **GCS：** GCP [HMAC 密钥和密钥]
+* **Azure：** Azure 存储账户名称和 [访问密钥]
+
+#### `session_token` {#session_token}
+
+与 `access_key` 和 `access_secret` 搭配使用的 AWS 会话令牌，通常通过环境变量 `AWS_SESSION_TOKEN` 定义。仅适用于 S3 URL。
+
+#### `compression` {#compression}
+
+文件压缩格式。当无法从文件名推断出压缩格式时使用。支持的值：
+
+* `auto` (默认) 
+* `none`
+* `gzip` 或 `gz`
+* `brotli` 或 `br`
+* `xz` 或 `LZMA`
+* `zstd` 或 `zst`
+* `lz4`
+* `bz2`
+* `snappy`
+
+#### `timeout` {#timeout}
+
+请求超时时间 (毫秒) 。适用于 HTTP、S3、GCS 和 Azure URL。
+默认值为 `30000` (30 秒) 。
+
+### 调试 {#debugging}
+
+出错时，chdb&#95;hook 的 `COPY` 命令会将其尝试执行的 [chDB] 查询包含在错误上下文中：
+
+```
+ERROR:  chdb: error executing chDB query
+DETAIL:  Code: 53. DB::Exception: Requested type of column p doesn't match parquet schema
+CONTEXT:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+chdb&#95;hook 对查询参数使用 `{name:Type}` 形式的占位符，以防范 SQL 注入漏洞，并尽量降低将凭据等敏感数据写入日志的风险。
+
+不过，如果你为排查问题需要查看这些参数的内容，可临时将 Postgres 的 [log&#95;min&#95;messages] GUC 设置为 `DEBUG1` 或更高级别，让 chdb&#95;hook 将查询和参数输出到 Postgres 日志 (绝不会发送给客户端) ，其显示形式如下：
+
+```
+2026-08-08 09:41:06.842 EDT [59940] LOG:  executing chDB query
+2026-08-08 09:41:06.842 EDT [59940] DETAIL:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+2026-08-08 09:41:06.842 EDT [59940] CONTEXT:  params: { path: "/tmp/users.data", format: "Parquet", structure: "user_id Nullable(Int64), username Nullable(String), password Nullable(String)" }
+2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+<Warning>
+  请勿在单次调试会话之外持续将 &#91;log&#95;min&#95;messages&#93; 设为调试级别，
+  以免记录凭据等敏感信息；此外，PostgreSQL 自身也会输出
+  大量调试信息，很快就会把日志占满。
+</Warning>
+
+## CREATE TABLE 重载 {#create-table-overloading}
+
+chdb&#95;hook 同样对 [CREATE TABLE] 进行了挂接，使表能够从 URL 推导出自身的列，并加载其中的行。
+
+若要创建结构由 URL 推导而来的表，请在 `structure_from` 选项中传入该 URL，并将列清单留空：
+
+```sql
+CREATE TABLE reviews () WITH (
+    structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+使用 `copy_from` 同时加载行和列：
+
+```sql
+CREATE TABLE reviews () WITH (
+    copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+仅当语句本身未指定任何列时，`copy_from` 才会推断列。
+列清单、`INHERITS` 子句、`OF` 类型或分区都会定义列，
+此时 `copy_from` 仅会复制：
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
+```
+
+两种方式都支持与 `COPY` 相同的 [URL 协议](#url-schemes)和[选项](#options):credentials、format、压缩、timeout,乃至显式指定的[结构](#structure)均同样适用。Postgres 会保留其余的存储参数:
+
+```sql
+CREATE TABLE users () WITH (
+    copy_from     = 's3://my-bucket/users.csv',
+    access_key    = 'AKIAIOSFODNN7EXAMPLE',
+    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+    format        = 'CSVWithNames',
+    fillfactor    = 90
+);
+```
+
+`structure_from` 和 `copy_from` 均无法与 `IF NOT EXISTS` 搭配使用。请使用
+[COPY] 来加载已有的 relation。
+
+## 限制 {#limitations}
+
+由于一些已知问题以及 Postgres 与 chDB 之间数据类型行为的差异，chdb&#95;hook 存在以下限制：
+
+* 如果关系上存在适用于当前复制角色的 [row-level security] 策略，则无法对其执行 `COPY`。Postgres 会通过将 `COPY TO` 重写为查询来实施此类策略，而 chdb&#95;hook 不支持这种方式。
+* ClickHouse 没有 NULL 数组，因此 `COPY TO` 会将 `NULL` 存储为空数组 (`[]`) 。
+* ClickHouse 将与 `lseg`、`path` 或 `polygon` 等价的类型表示为数组；因此这些类型的 NULL 值经 `COPY TO` 后同样会输出为空数组 (`[]`) 。
+* 若指定的[结构](#structure)未将该列定义为 Nullable，则 NULL 值在输出时会变成其默认值。请始终在[结构](#structure)中显式定义可为空的列，以避免这种转换。
+* 若开放 `path` 的最后一个点与第一个点相同，则会输出为闭合路径。
+* Protobuf 的 repeated 字段中不存在 null，因此数组中的 NULL 值会被省略。
+* chDB 的 [JSON type] 仅支持 JSON 对象；仅当所有值都是 JSON 对象时，才可将 `json` 和 `jsonb` 的默认 `String` 映射覆盖为 `JSON`。 (ClickHouse/ClickHouse#68428) 
+* chDB 的 [JSON type] 会忽略 `null`；值为 NULL 的对象键在输出时会被省略。仅当对象值不为 `null`，或可以接受这些值丢失时，才将 `json` 和 `jsonb` 的默认 `String` 映射覆盖为 `JSON`。 (ClickHouse/ClickHouse#68428) 
+* JSON、JSONCompact 和 JSONColumnsWithMetadata 格式始终会校验 UTF-8，因此输出的 bytea 值中会带有替换字符。
+* `COPY FROM` 会将包含空字符串或零的 Protobuf `Nullable` 字段读取为 `NULL`。 (chdb-io/chdb-core#152) 
+* `COPY TO` 为 Parquet 时，会丢弃 Nullable Tuple 自身 null map 中的 `NULL`。 (ClickHouse/ClickHouse#112427) 
+* Parquet、Arrow、ArrowStream、ORC、Avro、Protobuf、ProtobufList、MsgPack 和 BSONEachRow 格式没有与 Postgres `time` 或 chDB `Time64` 对应的类型。请在显式[结构](#structure)中将 `time` 列配置为 `String`，以保留其值。
+* Protobuf 输出会将 timestamp 值截断到秒。
+* Protobuf 输出不支持早于 1970-01-01 的日期。请在显式[结构](#structure)中将 `time` 列配置为 `String`，以保留其值。 (ClickHouse/ClickHouse#111860) 
+* CSVWithNames 和 CSVWithNamesAndTypes 格式目前无法导入 `NULL` 的 box 或 circle 值。 (ClickHouse/ClickHouse#115523)
+
+## 数据类型 {#data-types}
+
+[COPY](#copy-overloading) 会将 relation 的 Postgres 类型映射为 chDB 类型，
+而 [CREATE TABLE](#create-table-overloading) 则将 URL 的 chDB 类型映射为
+Postgres 类型。
+
+### Postgres 到 chDB {#postgres-to-chdb}
+
+若未显式指定 [structure](#structure) 选项，chdb&#95;hook 会将
+Postgres 类型映射为合理的 chDB 对应类型。如果这些类型不适合你的使用场景，
+可通过 [structure](#structure) 将自动生成的类型覆盖为你所需的类型。
+
+| Postgres    | chDB                                     | 说明                                      |
+| ----------- | ---------------------------------------- | --------------------------------------- |
+| boolean     | Bool                                     |                                         |
+| name        | String                                   |                                         |
+| text        | String                                   |                                         |
+| inet        | String                                   | 如果数据仅包含其中一种，可用 `IPv4` 或 `IPv6` 覆盖。      |
+| cidr        | String                                   |                                         |
+| macaddr     | String                                   |                                         |
+| macaddr8    | String                                   |                                         |
+| interval    | String                                   | 可用 `Interval` 单位 (例如 `IntervalDay`) 覆盖。 |
+| tsvector    | String                                   |                                         |
+| tsquery     | String                                   |                                         |
+| jsonpath    | String                                   |                                         |
+| money       | String                                   |                                         |
+| enum        | String                                   |                                         |
+| varchar     | String                                   |                                         |
+| varbit      | String                                   |                                         |
+| char        | FixedString                              |                                         |
+| bit         | FixedString                              |                                         |
+| bpchar      | String                                   |                                         |
+| int2        | Int16                                    |                                         |
+| int4        | Int32                                    |                                         |
+| int8        | Int64                                    |                                         |
+| oid         | UInt32                                   |                                         |
+| oid8        | UInt64                                   |                                         |
+| xid8        | UInt64                                   |                                         |
+| json        | String                                   | 如果数据仅包含对象，可用 `JSON` 覆盖。                 |
+| jsonb       | String                                   | 如果数据仅包含对象，可用 `JSON` 覆盖。                 |
+| float4      | Float32                                  |                                         |
+| float8      | Float64                                  |                                         |
+| date        | Date32                                   |                                         |
+| time        | Time64(6)                                | 对于不支持时间的格式，可用 `String` 覆盖。              |
+| timetz      | String                                   |                                         |
+| timestamp   | DateTime64(6)                            | 声明为 `UTC` 时区，由会话时区转换而来。                 |
+| timestamptz | DateTime64(6)                            | 声明为 `UTC` 时区。                           |
+| numeric     | Decimal                                  |                                         |
+| uuid        | UUID                                     |                                         |
+| point       | `Point`                                  | 与 Postgres 相同的两个坐标。                     |
+| lseg        | `LineString`                             | 恰好由两个点构成的线。                             |
+| path        | `LineString`                             | 闭合路径会重复其首个点。                            |
+| polygon     | `Ring`                                   | 与多边形一样，环会隐式闭合。                          |
+| box         | `Tuple(high Point, low Point)`           | 两个角点，排序方式与 Postgres 一致。                 |
+| circle      | `Tuple(center Point, radius Float64)`    |                                         |
+| line        | `Tuple(a Float64, b Float64, c Float64)` | 方程 `Ax + By + C = 0`。                   |
+
+数组类型会映射为相应元素类型的 `Array`。ClickHouse 以列为单位约束可空性，
+而 Postgres 以数组为单位约束，因此元素始终为 `Nullable`。
+
+没有任何 Postgres 类型会映射为 `Map` 或 `Tuple`，但可以在 [structure](#structure)
+中指定这两种类型。`Map` 可转换为键值对数组，`Tuple` 可转换为数组。
+若需支持异构数据，请使用 `text[]`。
+
+### 时间戳转换 {#timestamp-conversion}
+
+在纯文本格式 (TSV、CSV 等) 中，`COPY` hook 会以 ISO-8601 格式
+`YYYY-MM-DDThh:mm:ssZ` 输出 DateTime 和 DateTime64 值，且不受当前
+`datestyle` 设置的影响。这样可以保证 timestamptz 值始终保持一致，即使导入这些值的
+source 使用了不同的时区。在 `structure` 输出中改用其他类型，例如
+`Datetime64(3, 'America/Los_Angeles')`，并不会改变输出的偏移量，但会改变
+precision。
+
+Timestamp TZ 示例：
+
+| timestamptz                               | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| ----------------------------------------- | ----------------------------- | -------------------------- |
+| `2026-08-28T12:00:00Z`                    | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `2026-08-28T11:00:00 America/Los_Angeles` | `2026-08-28T18:00:00.000000Z` | `2026-08-28T18:00:00.000Z` |
+| `2026-08-28T10:00:00.723923 Asia/Tokyo`   | `2026-08-28T01:00:00.723923Z` | `2026-08-28T01:00:00.723Z` |
+
+`COPY` hook 还会将 timestamp 值从会话时区转换为 UTC，从而确保输出值以该时区为基准。
+当这些值被加载到新系统中时，新系统应将其转换为自身的本地时区。因此，时区不同则数值不同，
+但按时区差换算后是等价的。
+
+`timezone` 设置对时间戳 `2026-08-28T12:00:00` 的影响示例：
+
+| timezone 设置           | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| --------------------- | ----------------------------- | -------------------------- |
+| `UTC`                 | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `America/Los_Angeles` | `2026-08-28T19:00:00.000000Z` | `2026-08-28T19:00:00.000Z` |
+| `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
+| `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
+
+### chDB 到 Postgres {#chdb-to-postgres}
+
+chdb&#95;hook 会将 [`DESCRIBE`] 返回的 ClickHouse 类型映射为以下 Postgres
+类型：
+
+{/* 由 `make type-table` 生成的 TYPE-TABLE-BEGIN */}
+
+| chDB                | Postgres                    | 备注                      |
+| ------------------- | --------------------------- | ----------------------- |
+| Array(T)            | T[]                         | 每一层嵌套对应一种 PG 数组类型       |
+| BFloat16            | real                        | 写入时丢弃低位尾数比特             |
+| Bool                | boolean                     |                         |
+| Date                | date                        |                         |
+| Date32              | date                        |                         |
+| DateTime            | timestamp with time zone    |                         |
+| DateTime64(P)       | timestamp(P) with time zone | P 超过 6 时按 6 处理          |
+| Decimal(P,S)        | numeric(P,S)                |                         |
+| Decimal32(S)        | numeric(9,S)                |                         |
+| Decimal64(S)        | numeric(18,S)               |                         |
+| Decimal128(S)       | numeric(38,S)               |                         |
+| Decimal256(S)       | numeric(76,S)               |                         |
+| Enum8               | text                        |                         |
+| Enum16              | text                        |                         |
+| FixedString(N)      | text                        | N 在 CH 中按字节计，在 PG 中按字符计 |
+| Float32             | real                        |                         |
+| Float64             | double precision            |                         |
+| IPv4                | inet                        |                         |
+| IPv6                | inet                        |                         |
+| Int8                | smallint                    |                         |
+| Int16               | smallint                    |                         |
+| Int32               | integer                     |                         |
+| Int64               | bigint                      |                         |
+| Int128              | numeric(39,0)               |                         |
+| Int256              | numeric(77,0)               |                         |
+| IntervalDay         | interval                    |                         |
+| IntervalHour        | interval                    |                         |
+| IntervalMicrosecond | interval                    |                         |
+| IntervalMillisecond | interval                    |                         |
+| IntervalMinute      | interval                    |                         |
+| IntervalMonth       | interval                    |                         |
+| IntervalNanosecond  | interval                    | 截断到微秒                   |
+| IntervalQuarter     | interval                    |                         |
+| IntervalSecond      | interval                    |                         |
+| IntervalWeek        | interval                    |                         |
+| IntervalYear        | interval                    |                         |
+| JSON                | jsonb                       |                         |
+| LineString          | path                        |                         |
+| LowCardinality(T)   | T                           |                         |
+| Map(K,V)            | text[][]                    | 每个键值对对应一行文本项            |
+| MultiLineString     | path[]                      |                         |
+| MultiPolygon        | polygon[][]                 |                         |
+| Nullable(T)         | T                           | 将该列设置为可为空               |
+| Point               | point                       |                         |
+| Polygon             | polygon[]                   |                         |
+| Ring                | polygon                     |                         |
+| String              | text                        |                         |
+| Time                | time without time zone      |                         |
+| Time64(P)           | time(P) without time zone   | P 超过 6 时按 6 处理          |
+| Tuple(...)          | text[]                      | 各字段转换为文本项               |
+| UInt8               | smallint                    |                         |
+| UInt16              | integer                     |                         |
+| UInt32              | bigint                      |                         |
+| UInt64              | numeric(20,0)               |                         |
+| UInt128             | numeric(39,0)               |                         |
+| UInt256             | numeric(78,0)               |                         |
+| UUID                | uuid                        |                         |
+
+{/* TYPE-TABLE-END */}
+
+本表中未列出的所有 chDB 类型都会引发错误，其中包括 `Nested`、`Variant` 和 `Dynamic`。可使用将它们映射为 `String` 的[结构](#structure)，从而以文本形式读取。
+
+其中有几种类型，Postgres 支持的取值范围比 chDB 更窄；因此，当 `Time` 或 `Time64` 超过 24 小时，或 `Date32` 超出 Postgres 的日期范围时，复制操作会引发错误。
+
+### 文本编码 {#text-encoding}
+
+chDB 以字节形式读取 `String`、`FixedString`、`Enum` 和 `JSON`，不保证其编码。将此类列复制到 `text` 或任何其他非二进制类型时，会按照数据库编码校验字节，并对无法表示的数据引发错误：
+
+```
+ERROR:  invalid byte sequence for encoding "UTF8": 0x00
+```
+
+所有编码都会拒绝 NUL，因为 Postgres 无法将其存储在 `text` 中。
+
+复制到 `bytea` 可以保留 chDB 写入时的原始字节。请显式为这些列命名，因为 [CREATE TABLE](#create-table-overloading) 会为这些类型推导出 `text`：
+
+```sql
+CREATE TABLE logs (id bigint, payload bytea) WITH (
+    copy_from = 's3://my-bucket/logs.parquet'
+);
+```
+
+`FixedString(N)` 会使用 NUL 字节填充长度不足的值。复制到 `text` 时会去掉尾随的 NUL，而 `bytea` 会保留全部 N 个字节。
+
+## 设置 {#settings}
+
+### `chdb_hook.max_memory` {#chdb_hookmax_memory}
+
+```sql
+SET chdb_hook.max_memory = '1 GB';
+```
+
+定义 chDB 查询可使用的最大内存量，用于设置 chDB 的
+[`max_memory_usage`]。需要 超级用户特权。可使用整数
+表示兆字节数，或使用以下内存单位之一：
+
+* `B` (字节) 
+* `kB` (千字节) 
+* `MB` (兆字节) 
+* `GB` (吉字节) 
+* `TB` (太字节) 
+
+默认为 `0`，即不限制内存。
+
+### `chdb_hook.max_threads` {#chdb_hookmax_threads}
+
+```sql
+SET chdb_hook.max_threads = 4;
+```
+
+chDB 查询的最大查询处理线程数，用于设置 chDB 的 [`max_threads`] 参数。需要 超级用户特权。默认值为 `0`，即由 chDB 自行决定该值。
+
+强烈建议在执行大规模 `COPY` 之前设置 `chdb_hook.max_threads`，以免 chDB 占满 CPU 资源，从而影响 PostgreSQL。
+
+### `chdb_hook.max_parsing_threads` {#chdb_hookmax_parsing_threads}
+
+```sql
+SET chdb_hook.max_parsing_threads = 2;
+```
+
+chDB 在解析支持并行解析的输入格式数据时可使用的最大线程数，用于设置 chDB 的 [`max_parsing_threads`] 设置。需要超级用户特权。默认为 `0`，即由 chDB 自行决定该值。
+
+建议在 `COPY` 大量数据之前先设置 `chdb_hook.max_parsing_threads`，以避免 chDB 占满 CPU 而影响 PostgreSQL。
+
+## 版本策略 {#versioning-policy}
+
+chdb&#95;hook 的公开发行版遵循 [Semantic Versioning]。
+
+* 主版本号在 API 发生变更时递增
+* 次版本号在发生向后兼容的 SQL 变更时递增
+* 补丁版本号在仅涉及二进制文件的变更时递增
+
+安装完成后，可通过 Postgres 18 的
+[`pg_get_loaded_modules()`] 函数在 PostgreSQL 中查看版本。
+
+```sql
+SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
+```
+
+## 作者 {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## 版权 {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - 快速、可靠、可扩展的进程内数据库"
+
+[Semantic Versioning]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"
+
+[COPY]: https://www.postgresql.org/docs/current/sql-copy.html "Postgres 文档：COPY"
+
+[CREATE TABLE]: https://www.postgresql.org/docs/current/sql-createtable.html "Postgres 文档：CREATE TABLE"
+
+[`DESCRIBE`]: https://clickhouse.com/docs/sql-reference/statements/describe-table "ClickHouse 文档：DESCRIBE TABLE"
+
+[formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB 文档：完整格式名称表"
+
+[访问密钥 ID 和访问密钥]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management：管理 IAM 用户的访问密钥"
+
+[HMAC 密钥和密钥]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage：HMAC 密钥"
+
+[访问密钥]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure：管理存储账户访问密钥"
+
+[row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Postgres 文档：行安全策略"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse 文档：JSON 数据类型"
+
+[LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Postgres 文档：LOAD"
+
+[session_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Postgres 文档：`session_preload_libraries`"
+
+[shared_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Postgres 文档：`shared_preload_libraries`"
+
+[ALTER SYSTEM]: https://www.postgresql.org/docs/18/sql-altersystem.html "Postgres 文档：ALTER SYSTEM"
+
+[ALTER DATABASE]: https://www.postgresql.org/docs/current/sql-alterdatabase.html "Postgres 文档：ALTER DATABASE"
+
+[ALTER ROLE]: https://www.postgresql.org/docs/18/sql-alterrole.html "Postgres 文档：ALTER ROLE"
+
+[AWS S3]: https://aws.amazon.com/s3/ "云对象存储 - Amazon S3 - Amazon Web Services"
+
+[Google Cloud Storage]: https://cloud.google.com/storage "云存储 - Google Cloud"
+
+[`file()`]: https://clickhouse.com/docs/sql-reference/table-functions/file "ClickHouse 文档：file 表函数"
+
+[`url()`]: https://clickhouse.com/docs/sql-reference/table-functions/url "ClickHouse 文档：url 表函数"
+
+[`s3()`]: https://clickhouse.com/docs/sql-reference/table-functions/s3 "ClickHouse 文档：s3 表函数"
+
+[`gcs()`]: https://clickhouse.com/docs/sql-reference/table-functions/gcs "ClickHouse 文档：gcs 表函数"
+
+[Azure Blob 存储]: https://azure.microsoft.com/en-us/products/storage/blobs/
+
+[Azure ABFS]: https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri "使用 Azure Data Lake Storage URI (ABFS) - Azure Storage"
+
+[`azureBlobStorage()`]: https://clickhouse.com/docs/sql-reference/table-functions/azureBlobStorage "ClickHouse 文档：azureBlobStorage 表函数"
+
+[Hadoop Distributed File System]: https://en.wikipedia.org/wiki/Apache_Hadoop#Overview "Wikipedia：Apache Hadoop 概览"
+
+[`hdfs()`]: https://clickhouse.com/docs/sql-reference/table-functions/hdfs "ClickHouse 文档：hdfs 表函数"
+
+[ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse 文档：ClickHouse 中的数据类型"
+
+[log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "PostgreSQL 文档：log_min_messages"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia：pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse 文档：max_memory_usage_* 会话设置"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse 文档：max_threads_* 会话设置"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse 文档：max_parsing_threads 会话设置"

@@ -42,10 +42,9 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 16;
 
--- No `distributed_plan_execute_locally` here: only a dispatched fragment gets its own
--- process-list entry, and so its own counters. Either counter can carry the slot depending on
--- the allocator, so the assertion sums them. A zero on the initiator means slots went unmetered
--- server-wide, which no fragment can cause, so the assertion stands aside instead of guessing.
+-- No `distributed_plan_execute_locally` here: measured, both arms log the same five fragment rows, and
+-- `make_distributed_plan` forces this query's `use_concurrency_control = 1` back to 0, so neither counter
+-- reports a slot and the assertion stands aside on its zero-initiator disjunct instead of guessing.
 SELECT '-- dispatched worker fragments arbitrate CPU slots and honor the thread limit';
 -- The stress profile sets `ast_fuzzer_runs = 5`; a fuzzed re-run inherits `log_comment` and would
 -- win the lookup against `system.query_log` below.
