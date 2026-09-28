@@ -1267,8 +1267,14 @@ static NameSet collectFilesToSkip(
 
     /// A rewritten `with_key_columns` Map gets a new `<column>.key_columns.txt` from the writer.
     /// Skip the source file so the hardlink is not overwritten in place.
+    /// The new part's header can name columns the source part does not store
+    /// (`_row_exists`, `_block_number`, a name produced by `RENAME`). No serialization
+    /// means there is no `<column>.key_columns.txt` to skip. `partUsesMapWithKeyColumns`
+    /// throws when the column is absent, so check first.
     for (const auto & column : updated_header.getNamesAndTypesList())
     {
+        if (!source_part->tryGetSerialization(column.name))
+            continue;
         if (!partUsesMapWithKeyColumns(*source_part, column.name))
             continue;
         files_to_skip.insert(getMapKeyColumnsFileName(
@@ -1443,7 +1449,10 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            if (partUsesMapWithKeyColumns(*source_part, command.column_name))
+            /// An older part may not store a column added and then dropped. No serialization
+            /// means there is no `<column>.key_columns.txt` to drop or rename.
+            if (source_part->tryGetSerialization(command.column_name)
+                && partUsesMapWithKeyColumns(*source_part, command.column_name))
             {
                 const auto & storage_settings = *source_part->storage.getSettings();
                 const auto file_from = getMapKeyColumnsFileName(

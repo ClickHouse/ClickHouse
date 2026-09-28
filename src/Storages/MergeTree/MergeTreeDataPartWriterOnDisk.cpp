@@ -658,7 +658,11 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             {
                 if (auto * map_column = typeid_cast<ColumnMap *>(mutable_column.get()))
                 {
-                    if (typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(column.name).get()))
+                    /// `skip_empty_columns_on_insert` can drop an all-default Map from
+                    /// `serializations` while the block still carries the column.
+                    auto serialization_it = serializations.find(column.name);
+                    if (serialization_it != serializations.end()
+                        && typeid_cast<const SerializationMapWithKeyColumns *>(serialization_it->second.get()))
                         map_column->enableKeyCollection();
                 }
                 mutable_column->takeOrCalculateStatisticsFrom({column.column});
