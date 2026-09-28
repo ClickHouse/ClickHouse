@@ -578,17 +578,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         bool has_password_for_default_user = false;
         bool is_default_user_removed = false;
+        /// False if the main config has `user_directories` without `users_xml` and no `users_config`,
+        /// so the server does not read users from any XML file.
+        bool has_users_xml_config = true;
 
         if (!fs::exists(config_d))
         {
             fmt::print("Creating config directory {} that is used for tweaks of main server configuration.\n", config_d.string());
             fs::create_directory(config_d);
-        }
-
-        if (!fs::exists(users_d))
-        {
-            fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
-            fs::create_directory(users_d);
         }
 
         if (!fs::exists(main_config_file))
@@ -699,10 +696,49 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 log_path = fs::path(configuration->getString("logger.log")).remove_filename();
                 fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path.string());
             }
+
+            /// Find the users config the same way as `AccessControl::setupFromMainConfig` does.
+            fs::path configured_users_config = configuration->getString("users_config", "");
+            if (configured_users_config.empty())
+            {
+                if (configuration->has("user_directories.users_xml.path"))
+                    configured_users_config = configuration->getString("user_directories.users_xml.path");
+                else if (configuration->has("user_directories"))
+                    has_users_xml_config = false;
+                else
+                    configured_users_config = main_config_file;
+            }
+
+            if (has_users_xml_config)
+            {
+                if (configured_users_config.is_relative())
+                    configured_users_config = (config_dir / configured_users_config).lexically_normal();
+
+                if (configured_users_config != users_config_file)
+                {
+                    users_config_file = configured_users_config;
+                    users_d = fs::path(users_config_file).replace_extension("d");
+                    fmt::print("{} has {} as users config.\n", main_config_file.string(), users_config_file.string());
+                }
+            }
+            else
+            {
+                fmt::print("{} does not use an XML users config.\n", main_config_file.string());
+            }
+        }
+
+        if (has_users_xml_config && !fs::exists(users_d))
+        {
+            fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
+            fs::create_directories(users_d);
         }
 
 
-        if (!fs::exists(users_config_file))
+        if (!has_users_xml_config)
+        {
+            /// Nothing to create or check: users are not configured in XML files.
+        }
+        else if (!fs::exists(users_config_file))
         {
             std::string_view users_config_content(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
             if (users_config_content.empty())
@@ -826,7 +862,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool can_ask_password = !noninteractive && stdout_is_a_tty;
 
         /// Set up password for default user.
-        if (is_default_user_removed)
+        if (!has_users_xml_config)
+        {
+            fmt::print("{}There is no XML users config in {}. Not setting up a password for the default user.{}\n",
+                start_hilite, main_config_file.string(), end_hilite);
+        }
+        else if (is_default_user_removed)
         {
             fmt::print("{}The default user is removed from {} and {}. Not setting up a password for it.{}\n",
                 start_hilite, users_config_file.string(), users_d.string(), end_hilite);
@@ -943,13 +984,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Subdirectories, so "execute" is needed.
         if (fs::exists(config_d))
             fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-        if (fs::exists(users_d))
+        if (has_users_xml_config && fs::exists(users_d))
             fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
 
         /// Readonly.
         if (fs::exists(main_config_file))
             fs::permissions(main_config_file, fs::perms::owner_read, fs::perm_options::replace);
-        if (fs::exists(users_config_file))
+        if (has_users_xml_config && fs::exists(users_config_file))
             fs::permissions(users_config_file, fs::perms::owner_read, fs::perm_options::replace);
 
 
