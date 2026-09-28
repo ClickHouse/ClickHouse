@@ -63,6 +63,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ProfileEvents.h>
@@ -345,7 +346,7 @@ namespace
     }
 
     /// Replace every literal inside a node with `'[HIDDEN]'`, keeping the expression structure. Only
-    /// for the `encrypt` / `HMAC` key, where the shape is not a secret (a key built as
+    /// for the secret arguments of `encrypt` / `HMAC`, where the shape is not a secret (a key built as
     /// `leftPad('...', 16, '*')` stays readable as such); every other secret slot is hidden whole.
     void hideLiteralsInSubtree(ASTPtr & node)
     {
@@ -356,6 +357,14 @@ namespace
         }
         for (auto & child : node->children)
             hideLiteralsInSubtree(child);
+    }
+
+    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
+    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
+    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    {
+        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
+            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
     }
 
     bool isKeyValueArgument(const IAST & node)
@@ -404,11 +413,11 @@ namespace
     }
 
     /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
-    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead, with
-    /// the same result as the formatter: a secret slot becomes one `'[HIDDEN]'` literal. That includes
-    /// the slots `markSecretArgument` marks because the finder could not inspect them (a url built by
-    /// `concat(...)`, an identifier in a password slot): their expression is part of the secret and
-    /// must not be dumped node by node. All values of a nested map (`headers(...)`,
+    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead. As in the
+    /// formatter, a secret slot becomes one `'[HIDDEN]'` literal; only the `encrypt` / `HMAC` span keeps
+    /// its structure (see `hideLiteralsInSubtree`). That includes the slots the finder could not
+    /// inspect (a url built by `concat(...)`, an identifier in a password slot): their expression is
+    /// part of the secret and must not be dumped node by node. All values of a nested map (`headers(...)`,
     /// `extra_credentials(...)`) are hidden; the formatter keeps the non-secret `extra_credentials`
     /// values, so the dump is stricter.
     struct HideSecretArgumentsMatcher
@@ -470,13 +479,13 @@ namespace
                     continue;
                 }
 
-                /// The unnamed span without a replacement is the `encrypt` / `HMAC` key: keep its
-                /// structure. A `key = value` there is not a key expression but a positional secret
-                /// written as a comparison, so it is hidden whole.
-                if (isKeyValueArgument(*arguments[i]))
-                    hideWholeNode(arguments[i]);
-                else
+                /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
+                /// replacement is a slot the finder could not read, such as the url of `mongodb(concat(...), 'c')`.
+                /// A `key = value` in the span is a positional secret written as a comparison. Both are hidden whole.
+                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
                     hideLiteralsInSubtree(arguments[i]);
+                else
+                    hideWholeNode(arguments[i]);
             }
         }
     };

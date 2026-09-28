@@ -47,6 +47,9 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128
 echo "-- a url the finder cannot read collapses to one node, not to 'Function concat'"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM url(concat('https://user:', 'p@host/f'))"
 
+echo "-- a mongodb url the finder cannot read collapses to one node, not to 'Function concat'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM mongodb(concat('mongodb://user:', password_column, '@host/db'), 'c')"
+
 echo "-- the same url as a named override keeps its key, the value collapses"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM url(creds, url = concat('https://user:', 'p@host/f'))"
 
