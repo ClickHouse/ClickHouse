@@ -21,9 +21,10 @@ using NameSetWithViewLookup
 
 /// Helpers for `IStorage::getTableSettings` overrides. Most engines need none: their settings object records the
 /// source of each value as it is assigned. The rest reconstruct it:
-///   - no settings object - `Join`, `Set`, the `IStorage` base: `withOriginFromDefinition` reads the stored `CREATE`;
-///   - a loader that assigns every setting, from the session or by rebuilding the object - `PostgreSQL`,
-///     `ObjectStorageQueue`: `withOriginByValue`;
+///   - no settings object - `Join`, `Set`, the `Log` family, the `IStorage` base: what the stored `CREATE` states,
+///     through `describeSettingsStatedInDefinition` or `withOriginFromDefinition`;
+///   - a loader or copy that marks every setting changed - `PostgreSQL`, `ObjectStorageQueue`, `Distributed`,
+///     the `Log` family: `withOriginByValue`;
 ///   - a working value derived after loading - an expanded macro, a generated id, a value from a server config
 ///     section: `setEffectiveValue` and `setEffectiveValueWithConfigFallback`.
 
