@@ -170,7 +170,6 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
 
-    /// Each host names the data files it writes, so it needs the initiator's prefix length to match the names in `.backup`.
     /// Only the `checksum` generator uses it, and not sending it otherwise keeps hosts that do not know this setting working.
     if (data_file_name_generator == BackupDataFileNameGeneratorType::Checksum && data_file_name_prefix_length)
         query_settings->changes.emplace_back("data_file_name_prefix_length", Field(static_cast<UInt64>(*data_file_name_prefix_length)));
