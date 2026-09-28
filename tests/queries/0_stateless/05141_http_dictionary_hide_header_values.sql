@@ -20,12 +20,44 @@ LIFETIME(0) LAYOUT(FLAT());
 
 SHOW CREATE DICTIONARY d_05141;
 
-SELECT create_table_query LIKE '%SEKRIT%', create_table_query LIKE '%NAME \'API-KEY\' VALUE \'[HIDDEN]\'%', create_table_query LIKE '%NAME \'X-Other\' VALUE \'[HIDDEN]\'%'
+SELECT create_table_query LIKE concat('%', 'SEKRIT', '%'), create_table_query LIKE '%NAME \'API-KEY\' VALUE \'[HIDDEN]\'%', create_table_query LIKE '%NAME \'X-Other\' VALUE \'[HIDDEN]\'%'
 FROM system.tables WHERE database = currentDatabase() AND name = 'd_05141';
 
 DROP DICTIONARY d_05141;
 
+-- The query is logged before the dictionary source rejects unknown keys, so malformed header
+-- definitions must not leak either: inside `header` only `name` is kept, inside `headers` only
+-- `header(...)` entries are kept.
+CREATE DICTIONARY d_05141_typo (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name 'API-KEY' vaule 'SEKRIT_TYPO'))))
+LIFETIME(0) LAYOUT(FLAT());
+CREATE DICTIONARY d_05141_key (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(secret 'SEKRIT_KEY'))))
+LIFETIME(0) LAYOUT(FLAT());
+CREATE DICTIONARY d_05141_nested (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name(foo 'SEKRIT_NESTED')))))
+LIFETIME(0) LAYOUT(FLAT());
+CREATE DICTIONARY d_05141_nobr (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header 'SEKRIT_NOBR')))
+LIFETIME(0) LAYOUT(FLAT());
+CREATE DICTIONARY d_05141_foo (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(foo 'SEKRIT_FOO')))
+LIFETIME(0) LAYOUT(FLAT());
+CREATE DICTIONARY d_05141_flat (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers 'SEKRIT_HEADERS'))
+LIFETIME(0) LAYOUT(FLAT());
+
+SELECT name, extract(create_table_query, 'HEADERS.*$')
+FROM system.tables WHERE database = currentDatabase() AND name LIKE 'd\\_05141\\_%' ORDER BY name;
+
 SYSTEM FLUSH LOGS query_log;
-SELECT count() > 0, countIf(query LIKE '%SEKRIT%')
+SELECT countIf(query LIKE '%d\\_05141 %'), countIf(query LIKE '%d\\_05141\\_%'), countIf(query LIKE concat('%', 'SEKRIT', '%'))
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query_kind = 'Create' AND query LIKE '%d_05141%' AND event_date >= yesterday();
+WHERE current_database = currentDatabase() AND query_kind = 'Create' AND event_date >= yesterday();
+
+DROP DICTIONARY d_05141_typo;
+DROP DICTIONARY d_05141_key;
+DROP DICTIONARY d_05141_nested;
+DROP DICTIONARY d_05141_nobr;
+DROP DICTIONARY d_05141_foo;
+DROP DICTIONARY d_05141_flat;

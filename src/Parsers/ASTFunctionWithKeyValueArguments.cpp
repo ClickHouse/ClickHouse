@@ -93,23 +93,44 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         maskURIPassword(&temp_buf.str());
         ostr << temp_buf.str();
     }
-    else if (!settings.show_secrets && second_with_brackets && (first == "header"))
+    else if (!settings.show_secrets && (first == "headers" || first == "header"))
     {
         /// Hide the values of HTTP headers in the definition of a dictionary, keeping their names.
         /// They often carry credentials (e.g. API tokens), so all of them are hidden, the same way
         /// as the `url` table function hides header values:
         /// SOURCE(HTTP(url 'http://example.com/' format 'TSV' headers(header(name 'API-KEY' value '[HIDDEN]'))))
-        auto masked = second->clone();
-        for (auto & child : masked->children)
+        /// The query is logged before the dictionary source rejects unknown keys, so a malformed
+        /// definition must not leak either: inside `headers` only `header(...)` entries are kept
+        /// (they hide their own values when formatted), inside `header` only `name` is kept.
+        bool hide_all = !second_with_brackets;
+        ASTPtr masked;
+        if (!hide_all)
         {
-            auto * pair = child->as<ASTPair>();
-            if (pair && pair->first == "value")
+            masked = second->clone();
+            for (auto & child : masked->children)
             {
-                pair->second_with_brackets = false;
-                pair->replace(pair->second, make_intrusive<ASTLiteral>("[HIDDEN]"));
+                auto * pair = child->as<ASTPair>();
+                if (!pair)
+                {
+                    hide_all = true;
+                    break;
+                }
+
+                bool keep = first == "headers"
+                    ? pair->first == "header" && pair->second_with_brackets
+                    : pair->first == "name" && !pair->second_with_brackets;
+                if (!keep)
+                {
+                    pair->second_with_brackets = false;
+                    pair->replace(pair->second, make_intrusive<ASTLiteral>("[HIDDEN]"));
+                }
             }
         }
-        masked->format(ostr, settings, state, frame);
+
+        if (hide_all)
+            ostr << "'[HIDDEN]'";
+        else
+            masked->format(ostr, settings, state, frame);
     }
     else
     {
@@ -123,6 +144,8 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
+    /// `headers` is checked too, not only `header`: a malformed `headers(...)` without any `header(...)`
+    /// entry is still masked when formatted and must be masked in the query logs as well.
     return isSecretKey(first) || first == "headers" || first == "header" || second->hasSecretParts();
 }
 
