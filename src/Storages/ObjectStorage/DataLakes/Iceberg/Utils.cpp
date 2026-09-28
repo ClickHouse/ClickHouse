@@ -412,6 +412,36 @@ VersionHintState readVersionHint(const DB::ObjectStoragePtr & object_storage, co
 
 }
 
+void takeBackVersionHintWithoutETag(
+    const DB::ObjectStoragePtr & object_storage,
+    const std::string & storage_version_hint_path,
+    const std::vector<std::string> & files_to_take_back)
+{
+    if (!object_storage->getObjectMetadata(storage_version_hint_path, /*with_tags=*/ false).etag.empty())
+        return;
+
+    std::vector<std::string> paths{storage_version_hint_path};
+    paths.insert(paths.end(), files_to_take_back.begin(), files_to_take_back.end());
+    for (const auto & path : paths)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "The object storage did not report an ETag for the newly created {}, so later commits could not "
+        "advance it under a compare-and-swap. Refusing to create it: disable `iceberg_use_version_hint` "
+        "for this object storage.",
+        storage_version_hint_path);
+}
+
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -505,6 +535,7 @@ bool writeMetadataFileAndVersionHint(
                 throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
             }
 
+            bool written = false;
             try
             {
                 /// Write just the version number for Spark/spec compatibility.
@@ -515,11 +546,21 @@ bool writeMetadataFileAndVersionHint(
                     context,
                     /* write-if-none-match */ version_hint->exists ? "" : "*",
                     /* write-if-match */ version_hint->etag);
-                break;
+                written = true;
             }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+
+            if (written)
+            {
+                /// A hint this commit has just created must be advanceable by the next one, the
+                /// same rule the pre-check above applies to an existing hint. If it is not, take
+                /// back both files, so the refused commit leaves nothing published.
+                if (!version_hint->exists)
+                    takeBackVersionHintWithoutETag(object_storage, storage_version_hint_path, {storage_metadata_path});
+                break;
             }
         }
         else

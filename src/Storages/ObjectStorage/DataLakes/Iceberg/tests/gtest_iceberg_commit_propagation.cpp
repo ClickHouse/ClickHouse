@@ -164,11 +164,13 @@ public:
     /// which is exactly how a hint appearing in the middle of this commit looks from here. With
     /// `AppearsAfterTheMetadataFileIsWritten` it is absent when the commit looks for it and is there
     /// from the moment the metadata file is published: the commit never asks for it to be created,
-    /// so nothing fails - only a re-read can notice it.
+    /// so nothing fails - only a re-read can notice it. With `CreatedByThisCommit` it is absent and
+    /// nobody else creates it, so the exclusive create of this commit succeeds.
     enum class Race
     {
         None,
         Absent,
+        CreatedByThisCommit,
         CreatedBeforeTheExclusiveCreate,
         AppearsAfterTheMetadataFileIsWritten,
     };
@@ -192,6 +194,12 @@ public:
             object.remote_path,
             write_settings.object_storage_write_if_none_match,
             write_settings.object_storage_write_if_match});
+
+        if (object.remote_path.ends_with(version_hint_name) && race == Race::CreatedByThisCommit)
+        {
+            hint_present = true;
+            return std::make_unique<DiscardingWriteBuffer>(object.remote_path);
+        }
 
         if (object.remote_path.ends_with(version_hint_name) && !hint_present)
         {
@@ -236,7 +244,16 @@ public:
     void startup() override { }
     void shutdown() override { }
 
-    ObjectMetadata getObjectMetadata(const std::string &, bool) const override { unexpected("getObjectMetadata"); }
+    /// Only the read-back of a hint this commit has just created asks for the metadata alone.
+    ObjectMetadata getObjectMetadata(const std::string & path, bool) const override
+    {
+        EXPECT_TRUE(path.ends_with(version_hint_name)) << path;
+        EXPECT_TRUE(hint_present) << path;
+
+        ObjectMetadata metadata;
+        metadata.etag = hint_etag;
+        return metadata;
+    }
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override
     {
         unexpected("tryGetObjectMetadata");
@@ -424,6 +441,49 @@ TEST(IcebergCommitPropagation, WriterThatDoesNotCreateHintsLeavesAnAbsentHintAlo
     const auto & writes = commit.writes();
     ASSERT_EQ(writes.size(), 1u);
     EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintIsKeptWhenItHasAnETag)
+{
+    /// The control for the test below: a hint this commit creates is kept when the backend reports a
+    /// tag for it, because the next commit can advance it under that tag.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    EXPECT_TRUE(commit.run());
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[1].write_if_none_match, "*");
+    EXPECT_TRUE(commit.removed().empty());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagTakesBothFilesBack)
+{
+    /// The exclusive create of the hint succeeds, but the backend reports no tag for it. Keeping it
+    /// would make the table uncommittable: the next commit refuses to advance a hint it cannot
+    /// compare-and-swap. The same "no `ETag`, no hint" rule applies to the create, so the commit
+    /// removes the hint and the metadata file it has published, and fails.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to refuse to keep a version hint without an ETag, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+
+    const auto & removed = commit.removed();
+    ASSERT_EQ(removed.size(), 2u);
+    EXPECT_EQ(removed[0], writes[1].path);
+    EXPECT_EQ(removed[1], writes[0].path);
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
