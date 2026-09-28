@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# An `Alias` table whose target the user may not see. `system.table_settings` reports nothing for it, so as not to
-# expose the target through it, and `SHOW TABLE SETTINGS` - which promises an error rather than an empty result for
-# a table the user may not see - refuses it, rather than answering as if the alias had no settings. Once the target
-# is visible too, the statement answers.
+# An `Alias` table whose target the user may not see. `SHOW TABLE SETTINGS` - which promises an error rather than an
+# empty result for a table the user may not see - refuses it, rather than answering as if the alias had no settings.
+# Once the target is visible too, the statement answers. An alias states no settings of its own, so
+# `system.table_settings` has no rows for it whoever reads it, and its check on the target is only defensive.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,10 +23,7 @@ $CLICKHOUSE_CLIENT -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${USER}"
 $CLICKHOUSE_CLIENT -q "GRANT SHOW TABLES ON ${DB}.alias_of_hidden TO ${USER}"
 
-echo "-- the target is hidden: the system table reports nothing for the alias"
-$CLICKHOUSE_CLIENT --user="${USER}" -q "SELECT count() FROM system.table_settings WHERE database = '${DB}' AND table = 'alias_of_hidden'"
-
-echo "-- and the statement refuses it, as it refuses a table the user may not see"
+echo "-- the target is hidden: the statement refuses the alias, as it refuses a table the user may not see"
 $CLICKHOUSE_CLIENT --user="${USER}" -q "SHOW TABLE SETTINGS FROM ${DB}.alias_of_hidden" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
 echo "-- once the target is visible, the statement answers"

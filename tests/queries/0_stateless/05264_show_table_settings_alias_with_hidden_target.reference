@@ -1,6 +1,4 @@
--- the target is hidden: the system table reports nothing for the alias
-0
--- and the statement refuses it, as it refuses a table the user may not see
+-- the target is hidden: the statement refuses the alias, as it refuses a table the user may not see
 ACCESS_DENIED
 -- once the target is visible, the statement answers
 answered

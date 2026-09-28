@@ -45,11 +45,13 @@ WHERE table = 'own_tmp' AND name = 'max_rows_to_keep';"
 echo "-- a temporary table shadowing a permanent one reports the temporary, not the table it hides"
 # `index_granularity` belongs to the permanent table and no row of it may appear under this name. A
 # `Memory` temporary table has no such setting, so counting it proves which of the two answered - the
-# count is over every database, so a row of the hidden table would be caught wherever it was reported.
+# count covers both names a row of it could be reported under - its own database, and the empty one of a temporary
+# table - and no other database, whose tables would make the test depend on what else is on the server.
 $CLICKHOUSE_CLIENT --user="${USER}" -n -q "
 CREATE TEMPORARY TABLE shadowed (a UInt64) ENGINE = Memory SETTINGS max_rows_to_keep = 13;
 SHOW TABLE SETTINGS FROM shadowed LIKE 'max_rows_to_keep';
-SELECT count() FROM system.table_settings WHERE table = 'shadowed' AND name = 'index_granularity';"
+SELECT count() FROM system.table_settings
+WHERE database IN ('', currentDatabase()) AND table = 'shadowed' AND name = 'index_granularity';"
 
 echo "-- and naming the permanent table itself is still refused"
 $CLICKHOUSE_CLIENT --user="${USER}" -q \
