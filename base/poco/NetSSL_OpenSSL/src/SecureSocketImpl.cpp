@@ -537,9 +537,9 @@ int SecureSocketImpl::completeHandshake()
 
 
 SecureSocketImpl::HandshakeDriver::HandshakeDriver(SecureSocketImpl & impl_)
-	: impl(impl_), waits_here(impl_._pSocket->getBlocking())
+	: impl(impl_), drives(impl_._pSocket->getBlocking() && impl_._pSocket->supportsNonBlocking())
 {
-	if (waits_here)
+	if (drives)
 	{
 		impl._pSocket->setBlocking(false);
 		impl._drivingHandshake = true;
@@ -549,7 +549,7 @@ SecureSocketImpl::HandshakeDriver::HandshakeDriver(SecureSocketImpl & impl_)
 
 SecureSocketImpl::HandshakeDriver::~HandshakeDriver()
 {
-	if (!waits_here)
+	if (!drives)
 		return;
 
 	impl._drivingHandshake = false;
@@ -595,7 +595,7 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 		if (rc <= 0)
 		{
 			rc = handleError(rc, result.sslError, result.socketError, result.errorCode);
-			if (rc < 0 && handshake_driver.waitsHere())
+			if (rc < 0 && waitHere())
 				throw Poco::TimeoutException("SSL handshake timed out");
 			/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
 			/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means

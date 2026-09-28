@@ -264,17 +264,17 @@ namespace Net
         bool waitHere() const { return _drivingHandshake || _pSocket->getBlocking(); }
 
         /// Makes the socket non-blocking for one handshake, so that OpenSSL yields instead of
-        /// reading in its own loop, and restores the mode afterwards.
+        /// reading in its own loop, and restores the mode afterwards. A socket that does its
+        /// own waiting is left alone.
         class HandshakeDriver
         {
         public:
             explicit HandshakeDriver(SecureSocketImpl & impl_);
             ~HandshakeDriver();
-            bool waitsHere() const { return waits_here; }
 
         private:
             SecureSocketImpl & impl;
-            bool waits_here;
+            const bool drives;
         };
 
         int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
