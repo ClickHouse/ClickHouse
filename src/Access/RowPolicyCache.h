@@ -36,21 +36,21 @@ private:
         ASTPtr parsed_filters[static_cast<size_t>(RowPolicyFilterType::MAX)];
     };
 
-    void ensureAllRowPoliciesRead();
-    void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy);
-    void rowPolicyRemoved(const UUID & policy_id);
+    void ensureAllRowPoliciesRead() TSA_REQUIRES(mutex);
+    void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy) TSA_REQUIRES(mutex);
+    void rowPolicyRemoved(const UUID & policy_id) TSA_REQUIRES(mutex);
     void mixFiltersIfNeeded();
-    void mixFilters();
-    void mixFiltersFor(EnabledRowPolicies & enabled);
+    /// Takes no lock and reads only `policies` (not `all_policies`), so it can rebuild on a snapshot
+    /// off the `mutex`. `const` to keep it from mutating cache state off-lock.
+    void mixFiltersFor(EnabledRowPolicies & enabled, const std::unordered_map<UUID, PolicyInfo> & policies, bool users_without_row_policies_can_read_rows) const;
 
     const AccessControl & access_control;
-    std::unordered_map<UUID, PolicyInfo> all_policies;
-    bool all_policies_read = false;
-    /// Set by the per-entity handler; the rebuild is coalesced to once per notification batch.
+    std::unordered_map<UUID, PolicyInfo> all_policies TSA_GUARDED_BY(mutex);
+    bool all_policies_read TSA_GUARDED_BY(mutex) = false;
+    /// Set while applying a batch of changes; the rebuild is coalesced to once per notification batch.
     bool need_mix_filters TSA_GUARDED_BY(mutex) = false;
     scope_guard subscription;
-    scope_guard batch_subscription;
-    std::map<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> enabled_row_policies;
+    std::map<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> enabled_row_policies TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 

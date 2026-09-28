@@ -132,7 +132,8 @@ struct AggregateFunctionWindowFunnelData
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(T) + sizeof(UInt8))));
 
         T timestamp{};
         UInt8 event = 0;
@@ -254,7 +255,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(events_size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(events_size, buf.available() / (sizeof(T) + sizeof(UInt8) + sizeof(UInt64))));
 
         T timestamp{};
         UInt8 event_type = 0;
@@ -570,7 +572,7 @@ public:
             this->data(place).advanceId();
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -670,7 +672,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
+    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {.description = R"DOC(Searches for a chain of events in a sliding time window and returns the maximum number of events from the chain that occurred in order (the length of the longest matching prefix).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

@@ -9,11 +9,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 config_path=$(mktemp "$CUR_DIR/$(basename "${BASH_SOURCE[0]}" ".sh")-XXXXXX.yaml")
 touch $config_path
 
-$CLICKHOUSE_BENCHMARK --config $config_path -q "select 1" -i 1 --secure |& grep -m1 -F -o -e "certificate verify failed" || {
+# Give the TLS handshake a generous budget: the default 10 s connect_timeout /
+# handshake_timeout_ms can fire on slow lanes (amd_tsan, s3, parallel) before
+# certificate verification runs, leaking a SOCKET_TIMEOUT into the output.
+BENCHMARK_TIMEOUTS="--connect_timeout 60 --handshake_timeout_ms 60000"
+
+$CLICKHOUSE_BENCHMARK $BENCHMARK_TIMEOUTS --config $config_path -q "select 1" -i 1 --secure |& grep -m1 -F -o -e "certificate verify failed" || {
   echo "--secure should require --accept-invalid-certificate" >&2
-  $CLICKHOUSE_BENCHMARK --config $config_path -q "select 1" -i 1 --secure >&2
+  $CLICKHOUSE_BENCHMARK $BENCHMARK_TIMEOUTS --config $config_path -q "select 1" -i 1 --secure >&2
 }
-$CLICKHOUSE_BENCHMARK --config $config_path -q "select 1" -i 1 --secure --accept-invalid-certificate |& grep -F -e Exception
+$CLICKHOUSE_BENCHMARK $BENCHMARK_TIMEOUTS --config $config_path -q "select 1" -i 1 --secure --accept-invalid-certificate |& grep -F -e Exception
 
 rm -f "${config_path:?}"
 exit 0

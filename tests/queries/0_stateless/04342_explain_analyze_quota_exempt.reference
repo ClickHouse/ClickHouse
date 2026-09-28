@@ -1,0 +1,5 @@
+read_rows after exempt source:
+0
+exempt query exit code: 0
+read_rows after regular source:
+5

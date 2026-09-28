@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -59,6 +60,17 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
         selected_entry_,
         task_result_callback_)
 {
+}
+
+MergeFromLogEntryTask::~MergeFromLogEntryTask()
+{
+    /// zero_copy_lock's destructor can perform a real ZooKeeper request (releasing the exclusive
+    /// lock's ephemeral node) if the task is destroyed while still holding the lock, e.g. on
+    /// cancellation before the explicit unlock in prepare()/finalize() is reached. That request
+    /// has no component scope by default when this destructor runs from generic background-task
+    /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
+    auto component_guard = Coordination::setCurrentComponent("MergeFromLogEntryTask::~MergeFromLogEntryTask");
+    zero_copy_lock.reset();
 }
 
 
@@ -235,7 +247,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
+    /// Size and place the reservation for the moment the merge itself evaluates TTL at (entry.create_time, passed
+    /// to mergePartsToTemporaryPart below), not for the local clock, which may lag behind the assigning replica's.
+    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true, entry.create_time);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -269,11 +283,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         future_merged_part->part_info,
         future_merged_part->parts,
         &tagger,
-        &ttl_infos);
+        &ttl_infos,
+        /*is_insert=*/false,
+        entry.create_time);
 
     if (!reserved_space)
         reserved_space = storage.reserveSpacePreferringTTLRules(
-            metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
+            metadata_snapshot, estimated_space_for_merge, ttl_infos, entry.create_time, max_volume_index);
 
     future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
@@ -401,6 +417,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 #endif
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
+    part->getDataPartStorage().commitTransaction();
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
     /// not able to remove the part and will throw an exception (because someone holds the pointer).
     ///

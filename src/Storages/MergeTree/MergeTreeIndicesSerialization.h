@@ -25,8 +25,9 @@ inline bool looksLikePackedSkipIndexFile(std::string_view name)
 }
 
 class IMergeTreeIndexCondition;
-class IMergeTreeDataPart;
+class IMergeTreeDataPartInfoForReader;
 struct IMergeTreeIndex;
+struct MarkRanges;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -77,8 +78,10 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    const IMergeTreeDataPart & part;
+    const IMergeTreeDataPartInfoForReader & part_info;
     const IMergeTreeIndex & index;
+    const MarkRanges * readable_ranges;
+    bool skip_postings_deserialization;
 };
 
 }

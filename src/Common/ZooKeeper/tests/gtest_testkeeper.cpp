@@ -1,8 +1,8 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <gtest/gtest.h>
 
@@ -50,6 +50,19 @@ ListResponse list(TestKeeper & keeper, const String & path, ListRequestType list
     keeper.list(path, list_request_type,
         [&](const auto & response) { sink.set_value(std::move(response)); },
         WatchCallbackPtrOrEventPtr(), with_stat, with_data);
+
+    return future.get();
+}
+
+ListWithOptionsResponse listWithOptions(TestKeeper & keeper, const String & path, const ListOptions & options)
+{
+    std::promise<ListWithOptionsResponse> sink;
+    std::future<ListWithOptionsResponse> future = sink.get_future();
+    keeper.listWithOptions(
+        path,
+        options,
+        [&](const auto & response) { sink.set_value(response); },
+        WatchCallbackPtrOrEventPtr());
 
     return future.get();
 }
@@ -109,4 +122,42 @@ TEST(TestKeeperTest, FilteredListWithStatsAndDataIsAligned)
         ASSERT_EQ(response.data.size(), 2u);
         ASSERT_EQ(response.stats.size(), 2u);
     }
+}
+
+TEST(TestKeeperTest, FilteredListWithoutStatsAndData)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/parent", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/ephemeral", "ephemeral_data", /* is_ephemeral */ true);
+    create(keeper, "/parent/persistent", "persistent_data", /* is_ephemeral */ false);
+
+    {
+        ListResponse response = list(keeper, "/parent", ListRequestType::PERSISTENT_ONLY, /* with_stat */ false, /* with_data */ false);
+
+        ASSERT_EQ(response.error, Error::ZOK);
+        ASSERT_EQ(response.names, std::vector<std::string>({"persistent"}));
+
+        EXPECT_TRUE(response.data.empty());
+        EXPECT_TRUE(response.stats.empty());
+    }
+}
+
+TEST(TestKeeperTest, ListWithOptionsShuffleLimitIsTruncated)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/parent", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/a", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/b", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/c", "", /* is_ephemeral */ false);
+
+    ListOptions options;
+    options.max_results = 1;
+    options.shuffle = true;
+    const auto response = listWithOptions(keeper, "/parent", options);
+
+    EXPECT_EQ(response.error, Error::ZOK);
+    EXPECT_EQ(response.names.size(), 1);
+    EXPECT_TRUE(response.truncated);
 }
