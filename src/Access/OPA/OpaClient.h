@@ -38,6 +38,11 @@ public:
     /// table, so a wide table does not turn into one request per column.
     std::vector<OpaColumnMask> getColumnMasks(const OpaRequest & request, const OpaRequestContext & request_context) const;
 
+    /// Asks one question about many resources at once, and returns which of them are allowed as a
+    /// mask parallel to `request.filter_resources`. Used where the server has to discover which of a
+    /// set of objects a user may see, instead of checking one object it already has in hand.
+    std::vector<bool> filterAllowed(const OpaRequest & request, const OpaRequestContext & request_context) const;
+
 private:
     /// Performs the POST, retrying only transport failures. A response that arrived and was
     /// understood is never retried, whichever way it decided.
@@ -52,6 +57,10 @@ private:
 
     /// Extracts a list of per-column masks. An absent or null `result` yields an empty list.
     static std::vector<OpaColumnMask> parseColumnMasks(const Poco::URI & uri, const String & response_body);
+
+    /// Extracts the allowed indices into a flag per resource. An absent or null `result` denies
+    /// everything, which is the same thing an empty list of allowed indices means.
+    static std::vector<bool> parseAllowedIndices(const Poco::URI & uri, const String & response_body, size_t resource_count);
 
     static Poco::JSON::Object::Ptr parseResponseObject(const Poco::URI & uri, const String & response_body);
 

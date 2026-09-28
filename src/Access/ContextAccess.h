@@ -62,6 +62,12 @@ public:
     /// not configured, the table is out of scope, or the policy applies no filter.
     RowPolicyFilterPtr getOpaRowFilter(const ContextPtr & context, const String & database, const String & table_name) const;
 
+    /// Answers in one batched request which of `columns` a policy allows, and records the answers in
+    /// the query's decision cache, so the per-column checks that follow are already decided. Does
+    /// nothing when no batched endpoint is configured.
+    void prefetchOpaColumnDecisions(
+        const ContextPtr & context, const AccessFlags & flags, const String & database, const String & table_name, const Names & columns) const;
+
     /// Returns the masks an Open Policy Agent policy applies to the named columns, keyed by column name.
     std::unordered_map<String, ASTPtr> getOpaColumnMasks(
         const ContextPtr & context, const String & database, const String & table_name, const Names & columns) const;
@@ -276,6 +282,8 @@ public:
     ALWAYS_INLINE RowPolicyFilterPtr getOpaRowFilter(const ContextPtr & query_context, const String & database, const String & table_name) const { return access->getOpaRowFilter(query_context, database, table_name); }
 
     ALWAYS_INLINE std::unordered_map<String, ASTPtr> getOpaColumnMasks(const ContextPtr & query_context, const String & database, const String & table_name, const Names & columns) const { return access->getOpaColumnMasks(query_context, database, table_name, columns); }
+
+    ALWAYS_INLINE void prefetchOpaColumnDecisions(const ContextPtr & query_context, const AccessFlags & flags, const String & database, const String & table_name, const Names & columns) const { access->prefetchOpaColumnDecisions(query_context, flags, database, table_name, columns); }
 
 #if CLICKHOUSE_CLOUD
     ALWAYS_INLINE std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const { return access->getEnabledMaskingPolicies(); }

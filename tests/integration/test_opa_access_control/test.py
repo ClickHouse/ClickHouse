@@ -654,3 +654,107 @@ def test_a_mask_may_read_a_column_the_user_cannot_select():
     )
 
     assert node.query("SELECT amount FROM plain.orders ORDER BY id", user="narrow") == "7\n7\n"
+
+
+
+BATCH_URI = f"http://127.0.0.1:{STUB_PORT}/v1/data/clickhouse/batch"
+
+
+def enable_batch():
+    write_section(extra=f"<batch_uri>{BATCH_URI}</batch_uri>")
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def set_batch_rule(rule):
+    """The rule is evaluated once per resource with `resource` bound to it."""
+    stub_curl("/batch", data=rule)
+
+
+def batch_request_count():
+    return len(
+        [
+            request
+            for request in recorded_requests()
+            if request["input"]["action"].get("filter_resources")
+        ]
+    )
+
+
+def single_column_request_count():
+    return len(
+        [
+            request
+            for request in recorded_requests()
+            if len(request["input"]["action"].get("resource", {}).get("columns", [])) == 1
+        ]
+    )
+
+
+def test_a_batched_endpoint_replaces_the_per_column_questions():
+    """Discovering which columns are readable asks about each column. With a batched endpoint those
+    questions travel together, so a wide table does not turn into one request per column."""
+    enable_batch()
+    set_batch_rule("True")
+
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+
+    assert batch_request_count() == 1
+    # The per-column answers came from the batch, so nothing was asked one column at a time.
+    assert single_column_request_count() == 0
+
+
+def test_an_explicit_column_still_uses_the_single_decision_endpoint():
+    """Batching answers the question "which of these may be read", which the server asks only when it
+    has to discover that. A query that names its columns is one decision about one resource."""
+    enable_batch()
+    set_batch_rule("False")
+    set_rule("True")
+
+    assert (
+        node.query("SELECT customer_email FROM plain.orders ORDER BY id", user="analyst")
+        == "a@x.com\nb@x.com\n"
+    )
+
+
+def test_a_batched_partial_answer_still_finds_a_readable_column():
+    """A trivial query needs one readable column, so denying some columns in the batch must not make
+    the table unreadable."""
+    enable_batch()
+    set_batch_rule("resource.get('columns') != ['customer_email']")
+
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+
+
+def test_an_empty_batch_answer_denies_everything():
+    """Returning no allowed indices is the closed position, so a trivial query finds no readable
+    column."""
+    enable_batch()
+    set_batch_rule("False")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "SELECT count() FROM plain.orders", user="analyst"
+    )
+
+
+def test_a_batch_answer_naming_an_unknown_resource_is_rejected():
+    """An index outside the request cannot be matched to a resource; accepting it would mean acting on
+    an answer that does not describe what was asked."""
+    enable_batch()
+    stub_curl("/batch_body", data='{"result": [99]}')
+
+    assert node.query_and_get_error("SELECT count() FROM plain.orders", user="analyst")
+
+
+def test_batching_is_split_into_chunks():
+    """A list longer than the configured maximum is asked about in several requests, and the answers
+    are concatenated."""
+    write_section(
+        extra=f"<batch_uri>{BATCH_URI}</batch_uri><max_batch_size>2</max_batch_size>"
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+    set_batch_rule("True")
+
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+
+    # Three columns, two per request.
+    assert batch_request_count() == 2

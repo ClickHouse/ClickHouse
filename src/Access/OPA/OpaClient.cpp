@@ -336,6 +336,92 @@ Strings OpaClient::getRowFilters(const OpaRequest & request, const OpaRequestCon
     }
 }
 
+std::vector<bool> OpaClient::parseAllowedIndices(const Poco::URI & uri, const String & response_body, size_t resource_count)
+{
+    const auto object = parseResponseObject(uri, response_body);
+
+    std::vector<bool> allowed(resource_count, false);
+
+    /// An undefined or null answer allows nothing. This is the one place where absence is safe to
+    /// interpret, because "no resource is allowed" is the closed position.
+    if (!object->has("result"))
+        return allowed;
+
+    const auto result = object->get("result");
+    if (result.isEmpty())
+        return allowed;
+
+    if (result.type() != typeid(Poco::JSON::Array::Ptr))
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "Expected the 'result' field in the response of OPA at {} to be an array of the allowed "
+            "resource indices. Response: {}",
+            uri.toString(),
+            response_body);
+    }
+
+    const auto array = result.extract<Poco::JSON::Array::Ptr>();
+
+    for (size_t i = 0; i < array->size(); ++i)
+    {
+        const auto entry = array->get(static_cast<unsigned int>(i));
+
+        Int64 index = 0;
+        try
+        {
+            index = entry.convert<Int64>();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "Expected element {} of the 'result' array in the response of OPA at {} to be a resource "
+                "index. Response: {}",
+                i,
+                uri.toString(),
+                response_body);
+        }
+
+        /// An index outside the request cannot be matched to a resource. Ignoring it would silently
+        /// accept an answer that does not describe what was asked.
+        if (index < 0 || static_cast<size_t>(index) >= resource_count)
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "The response of OPA at {} allows resource index {}, but only {} resources were asked "
+                "about. Response: {}",
+                uri.toString(),
+                index,
+                resource_count,
+                response_body);
+        }
+
+        allowed[static_cast<size_t>(index)] = true;
+    }
+
+    return allowed;
+}
+
+std::vector<bool> OpaClient::filterAllowed(const OpaRequest & request, const OpaRequestContext & request_context) const
+{
+    chassert(configuration->batch_uri.has_value());
+    const Poco::URI & uri = *configuration->batch_uri;
+
+    const String body = request.serialize(request_context);
+
+    ProfileEvents::increment(ProfileEvents::OpaRequests);
+    try
+    {
+        return parseAllowedIndices(uri, send(uri, body), request.filter_resources.size());
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::OpaRequestFailures);
+        throw;
+    }
+}
+
 std::vector<OpaColumnMask> OpaClient::getColumnMasks(const OpaRequest & request, const OpaRequestContext & request_context) const
 {
     chassert(configuration->column_masking_uri.has_value());

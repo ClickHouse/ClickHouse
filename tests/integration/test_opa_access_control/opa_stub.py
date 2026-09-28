@@ -21,6 +21,8 @@ state = {
     "body_override": None,
     "row_filters": "{}",
     "column_masks": "{}",
+    "batch": None,
+    "batch_body": None,
 }
 
 
@@ -56,6 +58,8 @@ class Handler(BaseHTTPRequestHandler):
             state["body_override"] = None
             state["row_filters"] = "{}"
             state["column_masks"] = "{}"
+            state["batch"] = None
+            state["batch_body"] = None
             self._respond(200, {"ok": True})
             return
 
@@ -67,6 +71,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/masks":
             state["column_masks"] = body or "{}"
+            self._respond(200, {"ok": True})
+            return
+
+        if self.path == "/batch_body":
+            state["batch_body"] = body
+            self._respond(200, {"ok": True})
+            return
+
+        if self.path == "/batch":
+            # A Python expression evaluated per resource, with `resource` bound. None means "answer the
+            # batch from the decision rule instead".
+            state["batch"] = body or None
             self._respond(200, {"ok": True})
             return
 
@@ -99,6 +115,24 @@ class Handler(BaseHTTPRequestHandler):
 
         if "columnMask" in self.path:
             self._respond_raw(200, state["column_masks"])
+            return
+
+        if "batch" in self.path:
+            if state["batch_body"] is not None:
+                self._respond_raw(200, state["batch_body"])
+                return
+            resources = parsed.get("input", {}).get("action", {}).get("filter_resources", [])
+            rule = state["batch"] or state["rule"]
+            allowed = []
+            for index, resource in enumerate(resources):
+                try:
+                    keep = bool(eval(rule, {}, {"input": parsed.get("input", {}), "resource": resource}))
+                except Exception as e:  # noqa: BLE001
+                    self._respond(500, {"error": f"batch rule failed: {e!r}"})
+                    return
+                if keep:
+                    allowed.append(index)
+            self._respond(200, {"result": allowed})
             return
 
         if state["status"] != 200:

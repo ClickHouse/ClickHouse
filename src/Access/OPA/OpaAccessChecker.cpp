@@ -154,6 +154,36 @@ RowPolicyFilterPtr OpaAccessChecker::getRowFilter(
     return filter;
 }
 
+std::vector<bool> OpaAccessChecker::filterColumns(
+    const Names & operations,
+    const String & database,
+    const String & table,
+    const Names & columns,
+    const OpaRequestContext & request_context) const
+{
+    std::vector<bool> allowed;
+    allowed.reserve(columns.size());
+
+    /// Chunked so that a very wide table does not become one enormous request. The chunks are
+    /// independent questions, and concatenating their answers is the same as asking about all the
+    /// columns at once.
+    for (size_t offset = 0; offset < columns.size(); offset += configuration->max_batch_size)
+    {
+        const size_t count = std::min(configuration->max_batch_size, columns.size() - offset);
+
+        OpaRequest request;
+        request.operations = operations;
+        request.filter_resources.reserve(count);
+        for (size_t i = 0; i < count; ++i)
+            request.filter_resources.push_back(OpaResource::forTable(database, table, {columns[offset + i]}));
+
+        const auto chunk = client.filterAllowed(request, request_context);
+        allowed.insert(allowed.end(), chunk.begin(), chunk.end());
+    }
+
+    return allowed;
+}
+
 std::unordered_map<String, ASTPtr> OpaAccessChecker::getColumnMasks(
     const String & database,
     const String & table,

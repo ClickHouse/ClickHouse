@@ -41,6 +41,19 @@ public:
         const OpaRequestContext & request_context,
         const OpaDecisionCachePtr & cache) const;
 
+    /// Whether a batched endpoint is available, which decides whether the server may ask about many
+    /// objects at once instead of one at a time.
+    bool hasBatch() const { return configuration->hasBatch(); }
+
+    /// Which of the named columns of a table the policy allows, as a flag per column. Asked in one
+    /// request, split into chunks when the list is longer than the configured maximum.
+    std::vector<bool> filterColumns(
+        const Names & operations,
+        const String & database,
+        const String & table,
+        const Names & columns,
+        const OpaRequestContext & request_context) const;
+
     /// The masks a policy applies to the named columns of a table, keyed by column name. One request
     /// covers the whole table.
     std::unordered_map<String, ASTPtr> getColumnMasks(

@@ -636,6 +636,43 @@ RowPolicyFilterPtr ContextAccess::getOpaRowFilter(const ContextPtr & context, co
     return checker.getRowFilter(database, table_name, request_context, context->getOpaDecisionCache());
 }
 
+void ContextAccess::prefetchOpaColumnDecisions(
+    const ContextPtr & context, const AccessFlags & flags, const String & database, const String & table_name, const Names & columns) const
+{
+    if (params.full_access || columns.empty())
+        return;
+
+    auto opa_configuration = access_control->getOpaConfiguration();
+    if (!opa_configuration || !opa_configuration->hasBatch() || !opa_configuration->isDatabaseInScope(database))
+        return;
+
+    auto cache = context->getOpaDecisionCache();
+    if (!cache)
+        return;
+
+    const String current_user_name = getUserName();
+    if (opa_configuration->isUserExempt(current_user_name))
+        return;
+
+    OpaRequestContext request_context;
+    request_context.user = current_user_name;
+    request_context.query_id = context->getCurrentQueryId();
+    if (auto info = getRolesInfo())
+        request_context.roles = info->getEnabledRolesNames();
+
+    Names operations;
+    for (const auto & keyword : flags.toKeywords())
+        operations.emplace_back(keyword);
+
+    const OpaAccessChecker checker{std::move(opa_configuration)};
+    const auto allowed = checker.filterColumns(operations, database, table_name, columns, request_context);
+
+    /// Written under the same key the single-resource path builds, so the per-column checks that
+    /// follow find these answers instead of asking again.
+    for (size_t i = 0; i < columns.size() && i < allowed.size(); ++i)
+        cache->set(OpaDecisionCache::Key{operations, OpaResource::forTable(database, table_name, {columns[i]})}, allowed[i]);
+}
+
 std::unordered_map<String, ASTPtr> ContextAccess::getOpaColumnMasks(
     const ContextPtr & context, const String & database, const String & table_name, const Names & columns) const
 {
