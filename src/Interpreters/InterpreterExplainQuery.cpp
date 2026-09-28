@@ -414,10 +414,10 @@ namespace
 
     /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
     /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead. As in the
-    /// formatter, a secret slot becomes one `'[HIDDEN]'` literal; only the `encrypt` / `HMAC` span keeps
-    /// its structure (see `hideLiteralsInSubtree`). That includes the slots the finder could not
-    /// inspect (a url built by `concat(...)`, an identifier in a password slot): their expression is
-    /// part of the secret and must not be dumped node by node. All values of a nested map (`headers(...)`,
+    /// formatter, a secret slot becomes one `'[HIDDEN]'` literal. That includes the slots the finder could
+    /// not inspect (a url built by `concat(...)`, an identifier in a password slot): their expression is
+    /// part of the secret and must not be dumped node by node. Only the `encrypt` / `HMAC` span keeps its
+    /// structure (see `hideLiteralsInSubtree`). All values of a nested map (`headers(...)`,
     /// `extra_credentials(...)`) are hidden; the formatter keeps the non-secret `extra_credentials`
     /// values, so the dump is stricter.
     struct HideSecretArgumentsMatcher
@@ -480,8 +480,8 @@ namespace
                 }
 
                 /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
-                /// replacement is a slot the finder could not read, such as the url of `mongodb(concat(...), 'c')`.
-                /// A `key = value` in the span is a positional secret written as a comparison. Both are hidden whole.
+                /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
+                /// `key = value` in the span: it is a positional secret written as a comparison.
                 if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
                     hideLiteralsInSubtree(arguments[i]);
                 else
