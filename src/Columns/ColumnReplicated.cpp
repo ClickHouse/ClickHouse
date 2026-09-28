@@ -191,7 +191,6 @@ ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", row_indexes.getName());
 }
 
-/// Calls `callback(index)` for the rows [start, end) of `row_indexes`.
 template <typename Callback>
 void forEachIndexInRange(const IColumn & row_indexes, size_t start, size_t end, Callback && callback)
 {

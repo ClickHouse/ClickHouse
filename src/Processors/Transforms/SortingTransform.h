@@ -43,8 +43,7 @@ private:
     SortCursorImpl * last_emitted_cursor = nullptr;
     size_t last_emitted_row = 0;
 
-    /// Indexed by the cursor order (the position in the constructor's `chunks_`): the replicated columns whose rows repeat too
-    /// little to share their short rows, and the last merged block they were registered on, see mergeBatchImpl.
+    /// Indexed by the cursor order, i.e. the position in the constructor's `chunks_`, see mergeBatchImpl.
     std::vector<std::vector<size_t>> columns_to_copy_short_rows;
     std::vector<size_t> short_rows_registered_block;
     size_t merged_block_number = 0;
