@@ -184,6 +184,7 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(query_metric_log_delay_collect) \
+    ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(zk_send_thread_request_window_throw) \
     REGULAR(aggregate_function_state_transfer_throw)
 
