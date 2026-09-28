@@ -1,0 +1,8 @@
+index on an unloaded table
+projection on a loaded table
+EXPLAIN WHATIF on an unloaded empty table
+1
+With hi1 (minmax, hypothetical):
+parts: 0
+reason: Table is empty, so there is no data to estimate a benefit
+status: not_applicable
