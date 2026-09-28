@@ -1,7 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/112636
--- `optimize_empty_string_comparisons` renames `s = ''` in a query, while a key or a skip index is matched to the query
--- by the name of its expression as declared, so an index declared on such a comparison was skipped. The declaration
--- now also answers to the rewritten name, wherever the query is matched: locally, through a subquery, on a shard.
+-- `optimize_empty_string_comparisons` rewrites `s = ''` in a query; a key or index declared on it is matched by the declared name.
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
@@ -39,7 +37,7 @@ SELECT count() FROM tab WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_index_
 DROP TABLE tab;
 
 SELECT 'bloom filter on a map built by a lambda';
--- The comparison is typed inside the lambda; the map entry paths of the bloom filter look the map up by name too.
+-- The comparison is typed inside the lambda.
 CREATE TABLE tab (m Map(String, String), INDEX idx mapValues(mapFilter((k, v) -> v != '', m)) TYPE bloom_filter) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 INSERT INTO tab VALUES (map('k', 'abc')), (map('k', 'abc')), (map('k', 'v')), (map('k', ''));
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc') WHERE explain LIKE '%function_name: notEmpty%';
@@ -62,10 +60,10 @@ SELECT count() FROM dist WHERE a = 'abc' SETTINGS force_data_skipping_indices = 
 DROP TABLE dist;
 
 SELECT 'controls';
--- The query is still rewritten; the index answers to both spellings, so the setting no longer decides.
+-- The query is still rewritten; the setting no longer decides.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM tab WHERE a = 'abc') WHERE explain LIKE '%function_name: empty%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a = 'abc' SETTINGS optimize_empty_string_comparisons = 0) WHERE explain LIKE '%Granules:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE if(empty(s), 'abc', s) = 'abc' SETTINGS optimize_empty_string_comparisons = 0) WHERE explain LIKE '%Granules:%';
--- A different expression still does not match: the index answers to its two spellings, not to the table.
+-- A different expression still does not match.
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE if(s = 'x', 'abc', s) = 'abc') WHERE explain LIKE '%Name: idx%';
 DROP TABLE tab;

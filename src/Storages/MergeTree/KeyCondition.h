@@ -82,7 +82,7 @@ public:
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
         bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
-    /// Same as above; a query may also name a key column as `key_column_aliases` maps it, see `getColumnNameAliases`.
+    /// Same as above, with the names a query may use instead, see `getColumnNameAliases`.
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
@@ -691,7 +691,6 @@ private:
 
     /// Query-side name -> declared name of a key column, see `getColumnNameAliases`.
     NameToNameMap key_column_aliases;
-    /// The declared name of the key column a query names `query_side_name`.
     String keyColumnName(const String & query_side_name) const;
 
     /// If query has no filter, rpn will has one element with unknown function.

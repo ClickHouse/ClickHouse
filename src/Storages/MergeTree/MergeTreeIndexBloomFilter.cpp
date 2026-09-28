@@ -228,7 +228,6 @@ struct MapIndexInfo
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(
     const String & map_column_name, const Field & key_field, const Block & header, const NameToNameMap & column_name_aliases)
 {
-    /// The map may be an expression the query names otherwise, see `findIndexColumn`.
     auto find = [&](const String & name)
     {
         if (auto position = header.findPositionByName(name))

@@ -149,7 +149,6 @@ private:
     std::unordered_map<String, DataTypePtr> key_columns;
     /// Query-side name -> declared name, see `getColumnNameAliases`.
     NameToNameMap column_name_aliases;
-    /// The declared name of the index column a query names `query_side_name`.
     const String & keyColumnName(const String & query_side_name) const;
     ExpressionActionsPtr actions;
     String actions_output_column_name;

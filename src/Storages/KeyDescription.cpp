@@ -294,8 +294,7 @@ namespace
 
 using NodeTypes = std::unordered_map<String, DataTypePtr>;
 
-/// The result type of every node of the expression by its name. A lambda body is compiled into its own
-/// `FunctionCapture`, so a comparison written inside one is typed there.
+/// Node types by name, lambda bodies included: a comparison inside one is typed there.
 void collectNodeTypes(const ActionsDAG & dag, NodeTypes & types)
 {
     for (const auto & node : dag.getNodes())
@@ -307,8 +306,7 @@ void collectNodeTypes(const ActionsDAG & dag, NodeTypes & types)
     }
 }
 
-/// Rewrites as `ConvertEmptyStringComparisonToFunctionPass` does: only a `String` or `FixedString` compared with `''`.
-/// The type is looked up by the declared spelling, so it is decided before the children are rewritten.
+/// As `ConvertEmptyStringComparisonToFunctionPass`: only a `String` or `FixedString` compared with `''`, typed before the children are rewritten.
 void rewriteEmptyStringComparisons(ASTPtr & ast, const NodeTypes & types)
 {
     auto * function = ast->as<ASTFunction>();

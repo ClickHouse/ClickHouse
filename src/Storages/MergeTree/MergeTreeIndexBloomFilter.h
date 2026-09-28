@@ -99,7 +99,7 @@ private:
     const NameSet columns_shadowing_map_subcolumns;
     std::vector<RPNElement> rpn;
 
-    /// The position in `header` of the column a query names `name`, as declared or as `column_name_aliases` maps it.
+    /// By declared name or by `column_name_aliases`.
     std::optional<size_t> findIndexColumn(const String & name) const;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;

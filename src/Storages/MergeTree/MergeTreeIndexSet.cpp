@@ -692,7 +692,6 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    /// The granule block holds the declared name, whichever one the query used.
     auto column_name = keyColumnName(tree_node.getColumnName());
     const bool renamed = column_name != tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
