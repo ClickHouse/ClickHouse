@@ -24,6 +24,15 @@
 71428
 71428
 1	1
+-- a condition derived from ON in PREWHERE must not populate the cache
+1
+1
+0
+904
+904
+0
+0
+1
 -- a deterministic PREWHERE must not stop the WHERE filter from populating the cache
 1
 1

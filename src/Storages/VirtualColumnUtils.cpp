@@ -711,6 +711,100 @@ bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
     return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
+static const ActionsDAG::Node & skipAliases(const ActionsDAG::Node & node)
+{
+    const auto * value = &node;
+    while (value->type == ActionsDAG::ActionType::ALIAS)
+        value = value->children.front();
+    return *value;
+}
+
+static void collectConjuncts(const ActionsDAG::Node & node, std::vector<const ActionsDAG::Node *> & conjuncts)
+{
+    const auto & value = skipAliases(node);
+    if (value.type == ActionsDAG::ActionType::FUNCTION && value.function_base->getName() == "and")
+    {
+        for (const auto * child : value.children)
+            collectConjuncts(*child, conjuncts);
+    }
+    else
+        conjuncts.push_back(&value);
+}
+
+/// A function's result name is derived from its arguments, so it is never hashed, not even as an argument
+/// name; alias and column names are, as arguments of a function that may read them.
+static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash)
+{
+    const auto & value = skipAliases(node);
+    if (value.type == ActionsDAG::ActionType::ARRAY_JOIN || value.type == ActionsDAG::ActionType::PLACEHOLDER
+        || !value.isDeterministic())
+        return false;
+
+    hash.update(value.type);
+    hash.update(value.result_type->getName());
+
+    if (value.type != ActionsDAG::ActionType::FUNCTION)
+    {
+        /// Also tells apart constants whose value is not hashed, such as sets.
+        hash.update(value.result_name);
+        if (value.column && !value.is_runtime_filter_id)
+            value.column->updateHashWithValue(0, hash);
+        return true;
+    }
+
+    /// `formatRow*` write the argument names they were built with into the result, and a function outside
+    /// `FunctionFactory` is opaque: a lambda capture's name omits its body, and a user-defined function may read
+    /// its arguments' names.
+    const auto & function_name = value.function_base->getName();
+    if (function_name == "formatRow" || function_name == "formatRowNoNewline" || !FunctionFactory::instance().hasNameOrAlias(function_name))
+        return false;
+    hash.update(function_name);
+
+    const bool name_insensitive = value.function_base->isNameInsensitive();
+    for (const auto * child : value.children)
+    {
+        if (!name_insensitive && child->type != ActionsDAG::ActionType::FUNCTION)
+            hash.update(child->result_name);
+        if (!updateConditionHash(*child, hash))
+            return false;
+    }
+    return true;
+}
+
+static std::optional<UInt64> getConditionHash(const ActionsDAG::Node & node)
+{
+    SipHash hash;
+    if (!updateConditionHash(node, hash))
+        return {};
+    return hash.get64();
+}
+
+bool isCoveredByFilter(const ActionsDAG::Node & condition, const ActionsDAG & filter, bool allow_top_k_filter)
+{
+    if (filter.getOutputs().size() != 1)
+        return false;
+
+    std::vector<const ActionsDAG::Node *> conjuncts;
+    collectConjuncts(*filter.getOutputs().front(), conjuncts);
+    std::unordered_set<UInt64> filter_conjuncts;
+    for (const auto * conjunct : conjuncts)
+        if (auto hash = getConditionHash(*conjunct))
+            filter_conjuncts.insert(*hash);
+
+    conjuncts.clear();
+    collectConjuncts(condition, conjuncts);
+    for (const auto * conjunct : conjuncts)
+    {
+        if (allow_top_k_filter && conjunct->type == ActionsDAG::ActionType::FUNCTION
+            && conjunct->function_base->getName() == "__topKFilter" && isDeterministicAllowingTopKFilter(conjunct))
+            continue;
+        auto hash = getConditionHash(*conjunct);
+        if (!hash || !filter_conjuncts.contains(*hash))
+            return false;
+    }
+    return true;
+}
+
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 {
     for (const auto * child : node->children)

@@ -80,6 +80,11 @@ bool isDeterministic(const ActionsDAG::Node * node);
 /// otherwise their keys diverge.
 bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
 
+/// Whether every conjunct of `condition` is a conjunct of the single output of `filter`, so that a row
+/// matching `filter` also matches `condition`. Aliases are ignored except as argument names of a function
+/// that is not `isNameInsensitive`. With `allow_top_k_filter`, a `__topKFilter` conjunct counts as covered.
+bool isCoveredByFilter(const ActionsDAG::Node & condition, const ActionsDAG & filter, bool allow_top_k_filter);
+
 /// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
