@@ -20,7 +20,7 @@ CREATE TABLE t_ttl_subcolumn_deps
     INDEX idx_key_s (key, s) TYPE minmax GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0,
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1, max_number_of_merges_with_ttl_in_pool = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
 

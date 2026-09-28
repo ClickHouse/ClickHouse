@@ -1,6 +1,6 @@
 -- A source part that does not store a column with TTL has no values of it, so it does not prevent the column
 -- from being dropped as fully expired by a merge with other parts in which it has fully expired.
--- With `ttl_only_drop_parts`, this is the only way such a merge clears the expired values.
+-- With `ttl_only_drop_columns`, this is the only way such a merge clears the expired values.
 -- Background TTL merges are disabled (`max_number_of_merges_with_ttl_in_pool = 0`), `OPTIMIZE` merges instead.
 
 SET optimize_throw_if_noop = 1;
@@ -14,7 +14,7 @@ CREATE TABLE t_ttl_absent_added
     key UInt64
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 SYSTEM STOP MERGES t_ttl_absent_added;
 
@@ -42,7 +42,7 @@ CREATE TABLE t_ttl_absent_dropped
     value String TTL d + INTERVAL 1 DAY
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 INSERT INTO t_ttl_absent_dropped VALUES ('2020-01-01', 1, 'expired');
 OPTIMIZE TABLE t_ttl_absent_dropped FINAL;

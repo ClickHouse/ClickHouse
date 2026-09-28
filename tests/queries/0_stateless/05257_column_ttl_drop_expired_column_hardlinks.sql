@@ -1,6 +1,6 @@
 -- A column whose every value has expired by its TTL is dropped by a merge without reading it. When that is
 -- all a merge of a single part has to do, the files of the other columns are hardlinked instead of rewritten.
--- With `ttl_only_drop_parts`, a column TTL is applied only by dropping such fully expired columns.
+-- With `ttl_only_drop_columns`, a column TTL is applied only by dropping such fully expired columns.
 -- Background TTL merges are disabled (`max_number_of_merges_with_ttl_in_pool = 0`), `OPTIMIZE` merges instead.
 
 SET optimize_throw_if_noop = 1;
@@ -16,7 +16,7 @@ CREATE TABLE t_ttl_hardlink
     INDEX props_paths JSONAllPaths(props) TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0,
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1, max_number_of_merges_with_ttl_in_pool = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
 
@@ -36,7 +36,7 @@ FROM system.part_log WHERE database = currentDatabase() AND table = 't_ttl_hardl
 DROP TABLE t_ttl_hardlink;
 
 -- Several parts: the column is dropped by a regular merge, which stays vertical.
--- A part whose column has not fully expired keeps it with `ttl_only_drop_parts = 1` and clears the expired values with `0`.
+-- A part whose column has not fully expired keeps it with `ttl_only_drop_columns = 1` and clears the expired values with `0`.
 DROP TABLE IF EXISTS t_ttl_multi_0;
 DROP TABLE IF EXISTS t_ttl_multi_1;
 
@@ -47,12 +47,12 @@ CREATE TABLE t_ttl_multi_0
     props JSON TTL d + INTERVAL 1 DAY
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 0, max_number_of_merges_with_ttl_in_pool = 0,
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 0, max_number_of_merges_with_ttl_in_pool = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
 
 CREATE TABLE t_ttl_multi_1 AS t_ttl_multi_0;
-ALTER TABLE t_ttl_multi_1 MODIFY SETTING ttl_only_drop_parts = 1;
+ALTER TABLE t_ttl_multi_1 MODIFY SETTING ttl_only_drop_columns = 1;
 
 SYSTEM STOP MERGES t_ttl_multi_0;
 SYSTEM STOP MERGES t_ttl_multi_1;
@@ -104,7 +104,7 @@ CREATE TABLE t_ttl_replacing
     props JSON TTL d + INTERVAL 1 DAY
 )
 ENGINE = ReplacingMergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0,
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1, max_number_of_merges_with_ttl_in_pool = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
 
@@ -132,7 +132,7 @@ CREATE TABLE t_ttl_recompress
 )
 ENGINE = MergeTree ORDER BY key
 TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1))
-SETTINGS default_compression_codec = 'LZ4', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
+SETTINGS default_compression_codec = 'LZ4', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 INSERT INTO t_ttl_recompress VALUES ('2020-01-01', 1, '{"a" : 1}');
 

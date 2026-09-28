@@ -1,5 +1,5 @@
 -- A merge that applies a patch part does not drop a column fully expired by TTL as a whole, because the patch
--- may change the values of the column. With `ttl_only_drop_parts`, such a merge must still clear the expired
+-- may change the values of the column. With `ttl_only_drop_columns`, such a merge must still clear the expired
 -- values by rewriting the part instead of keeping them.
 
 SET enable_lightweight_update = 1;
@@ -13,7 +13,7 @@ CREATE TABLE t_ttl_expired_patch
     value String TTL d + INTERVAL 1 DAY
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1,
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_columns = 1,
     max_number_of_merges_with_ttl_in_pool = 0, enable_block_number_column = 1, enable_block_offset_column = 1,
     apply_patches_on_merge = 1;
 

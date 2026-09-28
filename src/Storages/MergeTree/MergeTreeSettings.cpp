@@ -2115,15 +2115,31 @@ expired based on their TTL settings are removed.
 When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
 rows in that part have expired according to their `TTL` settings.
 
-For a column `TTL`, the counterpart of dropping a whole part is dropping the
-whole column from a part: when this setting is enabled, a column `TTL` does
-not cause a merge while some values of the column have not expired yet, and the
-column is dropped from the part once all of them have expired. If that is all a
-merge of the part has to do, the files of the other columns are hardlinked
-instead of rewritten. A merge that rewrites the part anyway, for example because
-of a row `TTL`, may also remove the rows and clear the column values that have
-expired in the part.
+This applies only to the TTLs that delete rows. The merges that clear expired
+columns are still assigned when this setting is enabled, see
+`ttl_only_drop_columns`. Such a merge rewrites the part anyway, and therefore
+also removes the rows that have expired in it.
 )", 0) \
+    DECLARE(Bool, ttl_only_drop_columns, false, R"(
+Controls whether a column `TTL` clears the expired values of a column in a
+data part, or only drops the whole column from the part once all of its values
+there have expired. This is the column counterpart of `ttl_only_drop_parts`.
+
+Regardless of this setting, a merge drops a column whose values have all
+expired by its `TTL` in every source part without reading it, and a merge of a
+single part that only has to drop such columns hardlinks the files of the other
+columns instead of rewriting them.
+
+When `ttl_only_drop_columns` is disabled (by default), a column `TTL` also makes
+merges rewrite the part to clear the values that have expired while other
+values of the column have not.
+
+When `ttl_only_drop_columns` is enabled, a column `TTL` does not cause such
+merges, and the column keeps its values until all of them have expired in the
+part. A merge that rewrites the part anyway, for example because of a row
+`TTL`, may still clear the column values that have expired in it.
+)", 0, \
+        {"26.10", false, false, "New setting to apply a column `TTL` only by dropping the whole column from a part once all of its values have expired"}) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL
 )", 0) \

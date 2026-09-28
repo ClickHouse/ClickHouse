@@ -155,6 +155,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsBool ttl_only_drop_columns;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
@@ -1562,12 +1563,12 @@ bool MergeTask::isAnyTTLDue(const GlobalRuntimeContext & global_ctx, const Merge
     if (!global_ctx.metadata_snapshot->hasAnyTTL())
         return false;
 
-    /// With `ttl_only_drop_parts`, a column TTL does not make the merge rewrite the part to clear its values:
+    /// With `ttl_only_drop_columns`, a column TTL does not make the merge rewrite the part to clear its values:
     /// the column is dropped from the part once all of its values have expired (see `getColumnsFullyExpiredByTTL`).
     /// A merge that rewrites the part anyway (e.g. because of a row TTL) still clears the expired values.
     /// A column whose every value has expired, but which the merge does not drop (`ttl_infos` no longer has
     /// the TTLs of the dropped columns), is cleared by rewriting the part, as without the setting.
-    if ((*global_ctx.data_settings)[MergeTreeSetting::ttl_only_drop_parts])
+    if ((*global_ctx.data_settings)[MergeTreeSetting::ttl_only_drop_columns])
     {
         const time_t row_ttl = ttl_infos.getMinimalNonFinishedRowTTL();
         const time_t column_ttl = ttl_infos.getMinimalMaxNonFinishedColumnTTL();
