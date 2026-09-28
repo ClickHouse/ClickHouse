@@ -6,6 +6,8 @@
 #    include <polyglot.h>
 #endif
 
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
@@ -30,29 +32,39 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// unambiguously starts a SET statement is taken from the foreign text, so that the
     /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
     /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...`,
-    /// which the transpiler below can still take as foreign text. A SET that leaves trailing input
-    /// falls through as well: e.g. MySQL `SET SESSION sql_mode = ...` would otherwise be taken as
-    /// the shorthand `SET SESSION` (`SESSION = true`) followed by junk.
+    /// which the transpiler below can still take as foreign text. A SET that stops right after the
+    /// `SET <setting>` shorthand with more input left falls through as well: e.g. MySQL
+    /// `SET SESSION sql_mode = ...` would otherwise be taken as the shorthand `SET SESSION`
+    /// (`SESSION = true`) followed by junk. Any other SET that leaves trailing input, like
+    /// `SET max_threads = 1 garbage` or `SET ROLE NONE garbage`, stays a ClickHouse SET, so the
+    /// caller reports the ordinary syntax error at the trailing token.
     if (isCommittedToSetQuery(pos))
     {
         const auto set_begin = pos;
-        auto consumes_statement = [&]
-        {
-            if (pos->isEnd() || pos->type == TokenType::Semicolon)
-                return true;
-            pos = set_begin;
-            node = nullptr;
-            return false;
-        };
 
         /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
         /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
         ParserSetRoleQuery set_role_p;
-        if (set_role_p.parse(pos, node, expected) && consumes_statement())
+        if (set_role_p.parse(pos, node, expected))
             return true;
+
         ParserSetQuery set_p;
-        if (set_p.parse(pos, node, expected) && consumes_statement())
-            return true;
+        if (set_p.parse(pos, node, expected))
+        {
+            if (pos->isEnd() || pos->type == TokenType::Semicolon)
+                return true;
+
+            auto shorthand_end = set_begin;
+            Expected shorthand_expected;
+            ASTPtr shorthand_name;
+            ParserKeyword(Keyword::SET).ignore(shorthand_end, shorthand_expected);
+            ParserCompoundIdentifier().parse(shorthand_end, shorthand_name, shorthand_expected);
+            if (pos != shorthand_end)
+                return true;
+
+            pos = set_begin;
+            node = nullptr;
+        }
     }
 
     if (!feature_enabled)

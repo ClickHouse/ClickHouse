@@ -60,3 +60,14 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
 # MySQL `SET SESSION sql_mode = ...` must not be taken as the shorthand `SET SESSION` plus trailing junk
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
     -q "SET SESSION sql_mode = 'ANSI_QUOTES'" 2>&1 | grep -cim1 'polyglot'
+
+# Test that a ClickHouse SET which parses but leaves trailing input stays a ClickHouse SET,
+# so the ordinary syntax error is reported instead of a transpiler failure
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads = 1 garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads = 1 garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET ROLE NONE garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET ROLE NONE garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
