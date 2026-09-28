@@ -50,6 +50,9 @@ FROM
         CAST(30 AS Nullable(Int32))]) AS x
 );
 
+SELECT isNaN(mad(x))
+FROM (SELECT CAST(NULL AS Nullable(Int32)) AS x);
+
 SELECT isNull(madOrNull(x))
 FROM (SELECT CAST(NULL AS Nullable(Int32)) AS x);
 

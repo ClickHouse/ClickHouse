@@ -373,7 +373,8 @@ SELECT medianAbsoluteDeviation(number) FROM numbers(10);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("mad", {createAggregateFunctionMedianAbsoluteDeviation, documentation});
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = true};
+    factory.registerFunction("mad", {createAggregateFunctionMedianAbsoluteDeviation, documentation, properties});
     factory.registerAlias("medianAbsoluteDeviation", "mad");
 }
 
