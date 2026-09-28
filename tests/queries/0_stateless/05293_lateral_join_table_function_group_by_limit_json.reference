@@ -20,5 +20,19 @@ SELECT *\nFROM t\nLEFT JOIN LATERAL\n(\n    SELECT 1\n) AS s ON true
 2	20	1
 4	10	1
 4	11	1
+1	10	1
+1	11	1
+2	20	1
+4	10	1
+4	11	1
+-- (2) ORDER BY sort limits
+1	10
+2	20
+3	0
+4	10
+1	10
+2	20
+3	0
+4	10
 -- (3)
 SELECT * FROM t1 INNER JOIN LATERAL (SELECT 1) AS s ON true

@@ -622,6 +622,9 @@ Only the following subset is supported so far; anything else is rejected with an
 - Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
   `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
   [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
+- The `GROUP BY` and `ORDER BY` of the lateral subquery run once over all evaluations together, so the
+  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows of all evaluations,
+  not of one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
 
 **Example**
 

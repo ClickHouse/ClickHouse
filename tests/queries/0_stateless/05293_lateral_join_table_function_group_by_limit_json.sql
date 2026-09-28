@@ -5,7 +5,9 @@
 --
 --  1. `lateral(...)` that is not a subquery is a table function call, not the `LATERAL` keyword.
 --  2. The user's `max_rows_to_group_by` / `group_by_overflow_mode` do not apply to the grouping by
---     the correlated columns that decorrelation adds.
+--     the correlated columns that decorrelation adds. With a user `GROUP BY`, and for `max_rows_to_sort` /
+--     `max_bytes_to_sort` of a correlated `ORDER BY`, they bound the work of all evaluations together:
+--     `throw` is kept, `any` / `break` are rejected.
 --  3. A `clickhouse_json` payload cannot build a `LATERAL` join without `ON`/`USING`.
 
 SELECT '-- (1)';
@@ -44,8 +46,41 @@ SELECT '-- (2) user GROUP BY';
 SELECT o.id, sub.v, sub.cnt
 FROM outer_t AS o
 INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
+ORDER BY o.id, sub.v;
+-- `any` would drop the groups of unrelated outer rows, so it is rejected:
+SELECT o.id, sub.v, sub.cnt
+FROM outer_t AS o
+INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
 ORDER BY o.id, sub.v
-SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
+SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any'; -- { serverError NOT_IMPLEMENTED }
+-- `throw` bounds the groups of all evaluations together:
+SELECT o.id, sub.v, sub.cnt
+FROM outer_t AS o
+INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
+ORDER BY o.id, sub.v
+SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw', max_threads = 1; -- { serverError TOO_MANY_ROWS }
+SELECT o.id, sub.v, sub.cnt
+FROM outer_t AS o
+INNER JOIN LATERAL (SELECT i.v, count() AS cnt FROM inner_t AS i WHERE i.k = o.k GROUP BY i.v) AS sub ON true
+ORDER BY o.id, sub.v
+SETTINGS max_rows_to_group_by = 100, group_by_overflow_mode = 'throw';
+
+SELECT '-- (2) ORDER BY sort limits';
+SELECT o.id, sub.v
+FROM outer_t AS o
+LEFT JOIN LATERAL (SELECT i.v FROM inner_t AS i WHERE i.k = o.k ORDER BY i.v LIMIT 1) AS sub ON true
+ORDER BY o.id;
+-- The sort of the decorrelated plan spans all outer keys, so `break` would truncate unrelated outer rows:
+SELECT o.id, sub.v
+FROM outer_t AS o
+LEFT JOIN LATERAL (SELECT i.v FROM inner_t AS i WHERE i.k = o.k ORDER BY i.v LIMIT 1) AS sub ON true
+ORDER BY o.id
+SETTINGS max_bytes_to_sort = 1000000, sort_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+SELECT o.id, sub.v
+FROM outer_t AS o
+LEFT JOIN LATERAL (SELECT i.v FROM inner_t AS i WHERE i.k = o.k ORDER BY i.v LIMIT 1) AS sub ON true
+ORDER BY o.id
+SETTINGS max_rows_to_sort = 1000, sort_overflow_mode = 'throw';
 
 DROP TABLE outer_t;
 DROP TABLE inner_t;
