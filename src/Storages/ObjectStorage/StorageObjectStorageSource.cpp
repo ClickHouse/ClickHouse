@@ -2092,7 +2092,7 @@ std::vector<String> StorageObjectStorageSource::GlobIterator::resolveListingPref
     /// The directory levels that can be enumerated one by one: from the first globbed segment up to (excluding)
     /// the file name segment or a segment with `**`, which spans an arbitrary number of levels.
     size_t walk_end = first_glob_segment;
-    while (walk_end < file_name_segment && segments[walk_end].find("**") == std::string_view::npos)
+    while (walk_end < file_name_segment && !segments[walk_end].contains("**"))
         ++walk_end;
 
     if (walk_end == first_glob_segment)
