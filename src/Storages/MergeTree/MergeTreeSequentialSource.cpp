@@ -155,6 +155,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
         patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
         patch_join_cache->init(ranges_in_patch_parts);
+
+        /// This source reads all its ranges with one set of readers, so its patch ranges are the maps of the patch readers.
+        auto info = std::make_shared<MergeTreeReadTaskInfo>(*read_task_info);
+        for (const auto & ranges : patch_ranges)
+            info->patch_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
+        read_task_info = std::move(info);
     }
 
     const auto & context = storage.getContext();

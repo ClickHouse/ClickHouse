@@ -340,7 +340,8 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
 void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 {
-    per_part_infos.reserve(parts_ranges.size());
+    std::vector<std::shared_ptr<MergeTreeReadTaskInfo>> infos;
+    infos.reserve(parts_ranges.size());
     is_part_on_remote_disk.reserve(parts_ranges.size());
 
     for (const auto & part_with_ranges : parts_ranges)
@@ -352,11 +353,23 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         if (!read_task_info.patch_parts.empty())
             ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
-        per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
+        infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 
     ranges_in_patch_parts.optimize();
     patch_join_cache->init(ranges_in_patch_parts);
+
+    /// The ranges of `Join` patches depend on all parts of the query, so they are final only after `optimize`.
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        auto & info = *infos[i];
+        if (info.patch_parts.empty())
+            continue;
+        for (auto & ranges : ranges_in_patch_parts.getRanges(parts_ranges[i].data_part, info.patch_parts, parts_ranges[i].ranges))
+            info.patch_request_maps.push_back(std::make_shared<const MarkRanges>(std::move(ranges)));
+    }
+
+    per_part_infos.assign(infos.begin(), infos.end());
 }
 
 RangesInDataPartsDescription MergeTreeReadPoolBase::buildAnnouncementDescriptions() const

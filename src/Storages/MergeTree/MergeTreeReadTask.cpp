@@ -285,6 +285,10 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_patch_reader = [&](size_t part_idx)
     {
+        auto patch_reader_settings = extras.reader_settings;
+        if (!read_info->patch_request_maps.empty())
+            patch_reader_settings.request_map = read_info->patch_request_maps[part_idx];
+
         return createMergeTreeReader(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
@@ -295,7 +299,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
-            extras.reader_settings,
+            patch_reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };

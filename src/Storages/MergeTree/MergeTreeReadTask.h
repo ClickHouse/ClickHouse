@@ -135,6 +135,8 @@ struct MergeTreeReadTaskInfo
     RangesInDataPartReadHints read_hints;
     /// All mark ranges the query reads from this part: the request map of the part's readers.
     MarkRangesPtr request_map;
+    /// The same for each of `patch_parts`: the ranges the patch readers of this part read. Empty = whole patch parts.
+    std::vector<MarkRangesPtr> patch_request_maps;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
