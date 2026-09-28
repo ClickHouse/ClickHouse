@@ -1,0 +1,287 @@
+---
+slug: /use-cases/observability/clickstack/isolating-read-write
+title: 'Isolando workloads de leitura e escrita'
+sidebarTitle: 'Isolando leitura e escrita'
+description: 'Separando os workloads de ingestão e de consulta do ClickStack com warehouses do ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['clickstack', 'warehouses', 'compute-compute separation', 'read-only', 'isolation', 'ingestion', 'scaling']
+---
+
+import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Cargas de trabalho de observabilidade impõem duas demandas bem distintas sobre os mesmos dados. A ingestão é contínua e intensiva em escrita, com mesclagens em segundo plano consumindo CPU e memória muito depois de um insert ser concluído. Já a carga de consultas é irregular: dashboards e buscas atingem o pico durante um incidente, justamente quando uma resposta lenta é menos tolerável.
+
+Com os [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses) do ClickHouse Cloud, ambas as cargas de trabalho podem ser atendidas a partir dos mesmos dados por recursos de processamento separados, de modo que nenhuma delas concorra com a outra por CPU e memória.
+
+<ScalePlanFeatureBadge feature="Compute-compute separation" />
+
+Os warehouses são um recurso do ClickHouse Cloud, portanto a configuração descrita aqui se aplica ao ClickStack executado sobre o ClickHouse Cloud, em que cada lado do split é dimensionado, escalado e colocado em ociosidade de forma independente sobre uma única cópia dos dados.
+
+<Note>
+  **Quando o isolamento vale a pena**
+
+  O isolamento é voltado a implantações grandes com ingestão contínua. Abaixo de aproximadamente 100 TB/mês de dados armazenados, um único serviço de leitura e escrita normalmente absorve as duas cargas de trabalho, e um segundo serviço provavelmente não é necessário. Use o [sizing model](/pt-BR/clickstack/managing/estimating-resources) para estimar seu volume comprimido por mês.
+</Note>
+
+## Por que isolar leituras de gravações {#why-isolate}
+
+* **As gravações deixam de degradar as leituras.** A ingestão contínua do OpenTelemetry — os próprios inserts, somados às mesclagens em segundo plano que vêm depois — compete com as consultas de dashboards e buscas por CPU e memória. A latência de leitura pode piorar de forma perceptível enquanto a ingestão está em execução, e se recupera assim que ela para.
+* **As leituras deixam de atrapalhar as gravações.** A contenção ocorre nos dois sentidos: uma consulta ad-hoc pesada ou a renderização custosa de um dashboard pode esgotar a memória do service e fazer os inserts falharem por completo, e não apenas ficarem mais lentos.
+* **O compute somente leitura fica totalmente dedicado às consultas.** Os read-only services não executam mesclagens em segundo plano fora das system tables. Eles também entram em idle sem atraso, ao contrário dos read-write services, que as mesclagens podem manter ativos.
+* **Cada lado é dimensionado separadamente.** O [sizing model](/pt-BR/clickstack/managing/estimating-resources) estima o compute de ingestão e o compute de consulta separadamente, e um warehouse permite provisionar cada um como um service próprio. Acima do baseline de 1 QPS do modelo, o compute de consulta domina — seu [exemplo prático](/pt-BR/clickstack/managing/estimating-resources#worked-example) a 5 QPS chega a 58 vCPUs para ingestão contra 290 para consultas —, de modo que um service de gravação pequeno pode alimentar um service de leitura muito maior.
+* **Idling e autoscaling são configurados por service.** Cada service tem sua própria contagem de réplicas e suas próprias configurações de autoscaling e auto-idling, de modo que o service de gravação pode permanecer sempre ativo para a ingestão contínua enquanto o service de leitura fica em idle fora do horário de trabalho.
+* **O armazenamento não é duplicado.** Os services em um warehouse compartilham a mesma pasta de armazenamento de objetos e as mesmas tabelas, e [o armazenamento é cobrado apenas uma vez](/pt-BR/products/cloud/features/infrastructure/warehouses#pricing).
+* **O acesso pode ser restringido por endpoint.** As IP access lists são aplicadas por service, portanto o endpoint de gravação pode ficar acessível apenas a partir dos seus collectors e o endpoint de leitura apenas a partir da sua implantação do ClickStack. Consulte nosso guia sobre [Controle de acesso de rede](/pt-BR/products/cloud/features/infrastructure/warehouses#network-access-control).
+
+## Arquitetura {#architecture}
+
+A topologia recomendada é um warehouse contendo um service read-write para ingestão e um service read-only para o ClickStack:
+
+| Service   | Type       | Responsabilidades                                                                 | Clientes                                                                              |
+| --------- | ---------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Primary   | Read-write | Ingestão, background merges, DDL (criação de tabelas, TTL, visões materializadas) | OpenTelemetry collector, ClickPipes, Vector, SQL console / cliente para administração |
+| Secondary | Read-only  | Busca, dashboards, notebooks, avaliação de alertas                                | ClickStack UI (HyperDX)                                                               |
+
+Ao planejar a topologia, tenha em mente:
+
+* O primeiro service de um warehouse é sempre read-write, e o tipo do service é **definido no momento da criação** — para alternar entre read-only e read-write, crie um novo service no warehouse.
+* Todos os services de um warehouse compartilham o mesmo cloud provider, região, versão do ClickHouse e Keeper, além do upgrade schedule do primary service.
+* Use **um** service read-write para ingestão. As mesclagens são distribuídas entre todos os services read-write que compartilham o storage, portanto a mesclagem referente a um insert feito em um service pode ser executada por outro. Se esse outro service também estiver atendendo consultas pesadas, essas consultas vão competir com a mesclagem por CPU e memória no service que a executa — o que atrasa as mesclagens dos inserts do primeiro service e, com elas, o desempenho de insert. Mantenha os workloads de consulta no service read-only e só adicione um segundo service read-write se precisar [separar as mesclagens da ingestão](#separating-merges).
+
+## Configurando uma implantação isolada {#setup}
+
+<Steps>
+  <Step title="Prepare o serviço com acesso de leitura e gravação" id="prepare-read-write-service">
+    Use seu service existente — ou o primary service de um novo warehouse — para a ingestão, dimensionado conforme o compute de ingestão indicado pelo [sizing model](/pt-BR/clickstack/managing/estimating-resources).
+
+    Crie o database e o usuário dedicado de ingestão nesse service. Como todos os services de um warehouse compartilham os access controls, os usuários criados aqui ficam disponíveis em todos os services do warehouse:
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    Gere a senha com uma ferramenta como `openssl rand -base64 24` e armazene-a em um gerenciador de secrets, em vez de em um manifest ou no histórico do shell. Consulte nosso guia sobre [Criação de um usuário de ingestão](/pt-BR/clickstack/ingesting-data/collector#creating-an-ingestion-user) para mais detalhes.
+
+    Se este service já fizer parte de um warehouse, observe que DDL em nível de database pode travar quando outro service do warehouse estiver idled — consulte [Administração e DDL](#administration).
+  </Step>
+
+  <Step title="Adicione um serviço somente de leitura ao warehouse" id="add-read-only-service">
+    No ClickHouse Cloud console, clique no sinal de mais no serviço que você acabou de preparar para criar um segundo serviço que compartilha seus dados. Selecione **read-only** como tipo de serviço e dimensione-o de acordo com o compute de consultas indicado pelo sizing model.
+
+    Para o passo a passo completo, consulte nosso guia [Como configurar um warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses#setup-warehouses).
+  </Step>
+
+  <Step title="Direcione a ingestão para o serviço com acesso de leitura e escrita" id="point-ingestion">
+    Configure seu collector para exportar para o service endpoint **read-write**, autenticando-se como o usuário de ingestão:
+
+    ```shell
+    CLICKHOUSE_ENDPOINT=https://<read-write-service>.clickhouse.cloud:8443
+    CLICKHOUSE_USER=hyperdx_ingest
+    CLICKHOUSE_PASSWORD=<strong-password>
+    HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel
+    ```
+
+    Consulte as [opções de configuração do collector](/pt-BR/clickstack/managing/config#otel-collector) para mais detalhes, ou as configurações equivalentes para o [Vector](/pt-BR/clickstack/ingesting-data/vector) e outros caminhos de ingestão.
+
+    As gravações enviadas ao endpoint read-only são rejeitadas, portanto o collector deve sempre apontar para o service read-write.
+  </Step>
+
+  <Step title="Direcione o ClickStack para o serviço somente de leitura" id="point-clickstack">
+    A ClickStack UI sempre se conecta ao ClickHouse service a partir do qual foi iniciada no ClickHouse Cloud console. Para executá-la em read-only compute:
+
+    1. Selecione o read-only service no ClickHouse Cloud console.
+    2. Selecione **ClickStack** no menu de navegação à esquerda.
+
+    A partir daí, toda consulta feita pela UI é executada nesse read-only compute. Nenhuma configuração dentro do ClickStack é necessária. Consulte nosso guia sobre [Usar o ClickStack com read-only compute](/pt-BR/clickstack/deployment/managed#clickstack-read-only-compute).
+
+    <Warning>
+      **O state do ClickStack tem escopo no service**
+
+      Dashboards, saved searches, alerts e sources pertencem ao service a partir do qual o ClickStack foi iniciado e não acompanham você para outro service no mesmo warehouse — mesmo que ambos os services compartilhem os mesmos dados. Sources que usam o [schema padrão do OpenTelemetry](/pt-BR/clickstack/deployment/managed#adding-data-sources) são detectados automaticamente no novo service, de modo que a busca sobre esses dados já funciona de imediato, mas sources customizados ou configurados manualmente — e todo o restante que você salvou — precisam ser recriados.
+
+      Escolha o service a partir do qual deseja executar o ClickStack antes de construir dashboards. Se você estiver migrando uma implantação já estabelecida, observe que os alerts criados no service anterior continuam sendo avaliados lá — no compute daquele service — até que você os exclua.
+    </Warning>
+  </Step>
+
+  <Step title="Verifique a divisão" id="verify">
+    Execute uma busca ou abra um dashboard no ClickStack e, em seguida, verifique onde as consultas foram executadas. As tabelas `system` são gravadas no node que executou a consulta, portanto um service com mais de uma réplica precisa do [`clusterAllReplicas`](/pt-BR/reference/system-tables/overview#querying-across-nodes) com o nome de cluster `default` para abranger todas elas. No service **read-only**, você deve ver as consultas do ClickStack:
+
+    ```sql
+    SELECT 
+        user, 
+        query_kind, 
+        http_user_agent,
+        count()
+    FROM clusterAllReplicas('default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10) 
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL
+    ORDER BY count() DESC;
+    ```
+
+    Um resultado vazio aqui, por si só, não significa que as consultas foram para outro lugar: a `system.query_log` é gravada periodicamente — a cada 7,5 segundos, por padrão —, então uma consulta executada imediatamente após uma busca pode ainda não vê-la. Aguarde um instante e execute novamente, ou force o flush com [`SYSTEM FLUSH LOGS`](/pt-BR/reference/statements/system#flush-logs) caso você tenha o grant necessário.
+
+    O agrupamento por `user` e `http_user_agent` é o que atribui o tráfego: ele distingue a UI do SQL Console e de qualquer outra coisa que se conecte ao endpoint, independentemente das tabelas para as quais suas sources apontem. Filtrar por `is_initial_query = 1` mantém uma linha por consulta conforme ela foi submetida — consultas secundárias da execução distribuída e as consultas internas que avaliam [visões materializadas](/pt-BR/reference/system-tables/query_views_log) são registradas separadamente, com `is_initial_query = 0`.
+
+    No service **read-write**, a mesma consulta deve mostrar inserts do usuário de ingestão e nenhum tráfego de consultas do ClickStack.
+
+    Executar a consulta em cada service, um por vez, é a verificação confiável, porque o cluster `default` contém apenas as réplicas do service ao qual você está conectado. Para uma visão agregada de todo o warehouse, use o nome de cluster `all_groups.default`:
+
+    ```sql
+    SELECT 
+        hostName() AS host, 
+        query_kind, 
+        count()
+    FROM clusterAllReplicas('all_groups.default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10) 
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL;
+    ```
+
+    Dois pontos a considerar nessa consulta: services que estejam em estado idle não contribuem com linhas, portanto ative-os primeiro caso precise de resultados completos; e `hostName()` identifica uma réplica, e não um service — para atribuir atividade a um service específico, consulte esse service diretamente.
+  </Step>
+</Steps>
+
+## Separando mesclagens da ingestão {#separating-merges}
+
+Em taxas de ingestão sustentadas muito altas, as mesclagens — e não os inserts em si — tornam-se o custo dominante no serviço de ingestão. Como as mesclagens são distribuídas entre todos os read-write services que compartilham o armazenamento, elas também podem acabar recaindo sobre um serviço que você destinou a outra finalidade.
+
+Nessas implantações, as mesclagens podem ser retiradas por completo do serviço de ingestão, resultando em uma topologia de três serviços:
+
+| Serviço   | Tipo                                 | Responsabilidades                                             |
+| --------- | ------------------------------------ | ------------------------------------------------------------- |
+| Ingestão  | Read-write, mesclagens desabilitadas | Aceita apenas inserts                                         |
+| Mesclagem | Read-write                           | Executa todas as background merges and mutations do warehouse |
+| Consulta  | Read-only                            | Atende o ClickStack                                           |
+
+<Info>
+  **Requer uma solicitação ao suporte**
+
+  Desabilitar mesclagens em um read-write service não é configurável pelo Cloud console. [Entre em contato com o suporte](https://clickhouse.com/support/program) para aplicar essa configuração a um serviço.
+</Info>
+
+Vale considerar essa topologia quando a ingestão sozinha satura um serviço ou quando você precisa de dois read-write services porque ambos precisam escrever. Se sua workload de consultas é atendida inteiramente pelo ClickStack — que apenas lê —, a divisão mais simples entre [read-write e read-only](#architecture) atende ao requisito e é o caminho com melhor suporte.
+
+Ao adotar essa topologia, esteja atento ao seguinte:
+
+* **Não conte com o auto-idling em nenhum dos read-write services.** Um serviço com mesclagens desabilitadas ainda processa os eventos de download e remoção de partes gerados por inserts em outros pontos do warehouse, e uma contagem alta de partes não mescladas pode, por si só, impedir o idling. Planeje manter ambos os read-write services continuamente ativos.
+* **Mantenha as consultas fora dos dois read-write services.** Consultas `SELECT` pesadas em um read-write service competem com o trabalho de mesclagem por CPU e memória — justamente o modo de falha que essa topologia existe para evitar. Aponte o ClickStack para o read-only service conforme descrito [acima](#point-clickstack).
+* **As mutações, quando houver, são rastreadas no serviço que as executa.** Mutações são raras em observabilidade — o schema do ClickStack define [`ttl_only_drop_parts = 1`](/pt-BR/clickstack/managing/ttl), de modo que a retenção comum descarta partes expiradas inteiras durante as mesclagens de TTL, em vez de remover linhas por mutação. Se você enviar ao serviço de ingestão um `ALTER` que gere mutação, ele será executado pelo serviço de mesclagem, e seu progresso aparecerá em [`system.mutations`](/pt-BR/reference/system-tables/mutations) nesse serviço, e não no serviço de ingestão.
+
+## Administração e DDL {#administration}
+
+Todas as alterações de schema devem ser executadas no serviço **read-write**, incluindo:
+
+* Criação de tabelas — realizada automaticamente pelo ClickStack collector na primeira ingestão
+* [Como modificar o TTL](/pt-BR/clickstack/managing/ttl#modifying-ttl) para alterar a retenção
+* Criação de [visões materializadas](/pt-BR/clickstack/managing/materialized-views) para acelerar consultas
+* Adição de [skip indexes, projeções e outras otimizações de desempenho](/pt-BR/clickstack/managing/performance-tuning)
+
+Usuários, roles e grants não são alterações de schema — eles são compartilhados por todos os serviços do warehouse, portanto cada um precisa ser criado apenas uma vez, a partir de qualquer serviço. As [etapas de configuração](#prepare-read-write-service) acima criam o usuário de ingestão. Qualquer outro client apontado para o serviço read-only deve se autenticar como um usuário de consulta read-only separado, com as [permissões exigidas pela ClickStack UI](/pt-BR/clickstack/managing/production#user-permissions) — e não com os grants de ingestão mostrados acima.
+
+Conecte-se ao serviço read-write usando o [SQL console ou o clickhouse client](/pt-BR/clickstack/managing/admin). Como o warehouse compartilha armazenamento e controles de acesso, as alterações ficam imediatamente visíveis para o serviço read-only. Se você [separou as mesclagens da ingestão](#separating-merges), as instruções podem ser enviadas a qualquer um dos serviços read-write — mas observe que as mutações são executadas e rastreadas no serviço de mesclagem.
+
+<Warning>
+  **O DDL de banco de dados pode travar quando outro serviço está idled**
+
+  Instruções `CREATE`, `RENAME` e `DROP DATABASE` podem ser bloqueadas por serviços idled ou parados no warehouse, fazendo com que travem. Isso acontece com facilidade nesta topologia, já que serviços read-only entram em idle imediatamente. Execute instruções em nível de banco de dados com [`distributed_ddl_task_timeout=0`](/pt-BR/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout), definido por consulta ou para a session:
+
+  ```sql
+  CREATE DATABASE otel
+  SETTINGS distributed_ddl_task_timeout=0
+  ```
+
+  Um serviço interrompido manualmente precisa ser iniciado novamente antes que consultas possam ser executadas nele.
+</Warning>
+
+Visões materializadas são acionadas pelo insert, portanto são executadas pelo serviço read-write. O serviço read-only consulta suas target tables como qualquer outra tabela, incluindo as visões [registradas em uma fonte do ClickStack](/pt-BR/clickstack/managing/config#materialized-views-settings) para acelerar consultas.
+
+## Isolando workloads agênticos {#agentic-workloads}
+
+Os AI assistants conectados por meio do [servidor MCP do ClickStack](/pt-BR/clickstack/mcp) geram tráfego de leitura como qualquer dashboard, mas com um padrão de carga diferente: um agent que investiga um incidente dispara muitas queries exploratórias em rápida sucessão, sobre intervalos que ninguém escolheu de antemão. Compartilhar um único read-only service entre os agents e a UI faz com que esse pico de carga passe na frente dos dashboards que um engenheiro está consultando durante o mesmo incidente.
+
+O mesmo padrão de warehouse se aplica — dê aos agents seu próprio compute read-only:
+
+<Steps>
+  <Step title="Adicione um segundo read-only service" id="agentic-add-service">
+    Crie outro read-only service no warehouse, exatamente como na [configuração acima](#add-read-only-service). Ele lê as mesmas tabelas que o service que atende a UI, sem nenhum dado para copiar.
+
+    Em seguida, inicie o ClickStack nele uma vez pelo Cloud console, como em [apontar o ClickStack para um read-only service](#point-clickstack). O Cloud MCP precisa de um service com o ClickStack habilitado, além do próprio MCP — consulte os [prerequisites do MCP](/pt-BR/clickstack/mcp#managed-prerequisites).
+
+    Dimensione-o para a carga de queries que você espera dos agents, e não pela QPS de dashboards do sizing model, e mantenha o auto-idling habilitado: o uso agêntico costuma ser intermitente, então o service pode ficar em idle entre as investigations.
+  </Step>
+
+  <Step title="Habilite o MCP nesse service" id="agentic-enable-mcp">
+    Abra o read-only service no ClickHouse Cloud console, clique em **Connect**, selecione **Connect with MCP** e ative a opção. Consulte [habilitar o remote MCP server](/pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
+  </Step>
+
+  <Step title="Aponte os MCP clients para ele" id="agentic-point-clients">
+    O Cloud MCP endpoint é o mesmo para todos os services — as requests são roteadas pelo cabeçalho `x-service-id` e, sem ele, vão para o primeiro ClickStack service usado pela sua conta. Copie sua configuração MCP existente e adicione o cabeçalho com o ID do novo read-only service:
+
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack \
+      --header "x-service-id: <read-only-agent-service-id>"
+    ```
+
+    Qualquer MCP client pode enviar o cabeçalho — consulte [direcionar para um service específico](/pt-BR/clickstack/mcp#managed-service-override) para ver a configuração equivalente no Cursor, no VS Code e em outros.
+  </Step>
+</Steps>
+
+<Warning>
+  **O MCP grava state no service para o qual é direcionado**
+
+  O MCP server pode criar dashboards, alerts e saved searches, além de executar queries, e esse state fica restrito ao service para o qual a request foi roteada, como todo [state do ClickStack](#point-clickstack). Um dashboard criado por um agent no service dos agents não aparecerá na ClickStack UI iniciada a partir do service que atende seus engenheiros, e um alert criado ali é avaliado no compute daquele service — onde um service de agents em idle vai atrasar ou perder as avaliações, como mostrado [abaixo](#isolating-alerts). Direcione para o mesmo service usado pela sua equipe os agents que devem criar artifacts duráveis.
+</Warning>
+
+## Alertas {#alerts}
+
+O ClickStack avalia um alerta no service a partir do qual ele foi criado, portanto os alertas são executados no mesmo compute da UI — o read-only service nesta topologia.
+
+<Note>
+  **Managed ClickStack**
+
+  Para habilitar alertas, pelo menos um usuário com permissões de **Service Admin** precisa fazer login no ClickStack ao menos uma vez. Isso provisiona o database user dedicado que executa as consultas dos alertas, e esse usuário é compartilhado por todos os services do warehouse. Consulte nosso guia sobre [Concessão de acesso ao Managed ClickStack](/pt-BR/clickstack/deployment/managed#configure-access).
+</Note>
+
+A avaliação de alertas é um workload de consultas recorrente. Inclua-o no QPS usado para dimensionar o read-only service — o [sizing model](/pt-BR/clickstack/managing/estimating-resources#refining-sizing-assumptions) trata as consultas de busca, de dashboard e de alertas como um único valor agregado.
+
+### Isolando a avaliação de alertas {#isolating-alerts}
+
+A carga de alertas não pode ser roteada de forma centralizada, porque os alertas são criados pelos usuários: quem adiciona um alerta no ClickStack o adiciona ao service em que está trabalhando, e ele é avaliado no compute desse service. Não existe setting que mova os alertas de um service para outro lugar.
+
+O que você pode isolar são os alertas mantidos centralmente — aqueles que uma equipe de plataforma mantém para toda a organização, que normalmente também são os avaliados com mais frequência. Dê a eles um read-only service próprio no warehouse e crie-os a partir de um ClickStack iniciado ali:
+
+| Service  | Type       | Atende                                                    |
+| -------- | ---------- | --------------------------------------------------------- |
+| Ingestão | Read-write | OpenTelemetry collector                                   |
+| Consulta | Read-only  | ClickStack UI e os alertas que os próprios usuários criam |
+| Alertas  | Read-only  | Alertas comuns mantidos pela equipe de plataforma         |
+
+<Warning>
+  **Desative o auto-idling no service de alertas**
+
+  Ter alertas configurados em um service não o mantém ativo. Avaliações de alertas que chegam a um service idled são atrasadas pela retomada ou falham de imediato, de modo que um service de alertas com auto-idling habilitado pode perder avaliações. Desative o auto-idling nesse service e planeje mantê-lo sempre ativo. O mesmo vale para onde quer que seus alertas sejam avaliados: se eles rodam no service que atende a UI, esse service também não pode ficar em idle.
+</Warning>
+
+Os demais trade-offs decorrem do fato de o state ser por service:
+
+* Os alertas comuns, e quaisquer dashboards associados a eles, existem apenas no service de alertas e não ficam visíveis para os usuários que trabalham no service de consulta. As notificações são entregues aos mesmos [destinos](/pt-BR/clickstack/features/alerts) em qualquer um dos casos, então o que os usuários perdem é a visibilidade das definições, não o alerta em si.
+* As sources no service de alertas são objetos separados. Aquelas que usam o [schema padrão do OpenTelemetry](/pt-BR/clickstack/deployment/managed#adding-data-sources) são detectadas automaticamente, mas sources custom também precisam ser configuradas ali antes que um alerta possa referenciá-las.
+
+Se um único conjunto de alertas for pequeno o bastante para que sua carga de avaliação seja um erro de arredondamento diante do tráfego de dashboards, mantenha tudo em um único read-only service — o custo operacional de manter definições em dois lugares é o maior dos dois.
+
+## Considerações adicionais {#considerations}
+
+**Auto-idling.** A primeira consulta a um serviço somente leitura que entrou em estado idle aguarda a inicialização do serviço, ou seja, o uso intermitente troca um pouco de latência por um gasto menor. Não conte com os alertas para evitar o idling — desative o auto-idling em qualquer serviço do qual você dependa para avaliá-los, conforme descrito [acima](#isolating-alerts). A ingestão contínua realmente mantém o serviço de leitura e escrita ativo, mas, se a sua ingestão for intermitente ou agendada, o primeiro batch após um período de inatividade também fica nessa espera, o que aparece na forma de telemetria atrasada.
+
+**Backups.** Os backups são feitos apenas no serviço primário, o que cobre os dados de todo o warehouse. Restaurar um backup cria um serviço totalmente novo, sem conexão com o warehouse existente.
+
+**Limites de réplicas.** A contagem combinada de réplicas de todos os serviços de um warehouse é limitada por padrão — consulte [limites de uso](/pt-BR/products/cloud/guides/best-practices/usagelimits).
+
+**Isolando o ClickStack de outros workloads.** Se você estiver adicionando o ClickStack a um serviço que já executa outros workloads, como analytics de aplicações em tempo real, o mesmo recurso de warehouse é usado para dar à observabilidade seu próprio compute. Consulte nosso guia sobre [Isolamento de workloads de observabilidade](/pt-BR/clickstack/managing/estimating-resources#isolating-workloads).
+
+Para o conjunto completo de comportamentos e limitações de warehouses, consulte nosso guia sobre [Warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses).
