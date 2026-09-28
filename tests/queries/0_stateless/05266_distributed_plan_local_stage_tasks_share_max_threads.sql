@@ -3,13 +3,19 @@
 -- included, lowered when free memory is short, never above `max_threads`): each runs on
 -- max(1, limit / <tasks in the stage>) threads, and the single `main` task keeps the whole limit. Each query
 -- reports, per task, the pipeline executor threads it ran on (none when it runs single-threaded), and whether
--- the thread pool of a parallel hash join followed the share (one thread, which builds and then clears).
+-- the thread pool of a parallel hash join followed the share (one thread, which builds and then clears). So does
+-- the pool of the aggregator that merges grouping sets in one task.
 
 DROP TABLE IF EXISTS t_share_threads;
 CREATE TABLE t_share_threads (k UInt64, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY k
     SETTINGS index_granularity = 8192, index_granularity_bytes = 0, auto_statistics_types = '', min_bytes_for_wide_part = 0;
 INSERT INTO t_share_threads SELECT number, 1 FROM numbers(100000);
 INSERT INTO t_share_threads SELECT number, 2 FROM numbers(100000);
+
+DROP TABLE IF EXISTS t_share_merge;
+CREATE TABLE t_share_merge (k UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, auto_statistics_types = '', min_bytes_for_wide_part = 0;
+INSERT INTO t_share_merge SELECT number FROM numbers(200000);
 
 -- A fuzzed re-run would inherit `log_comment` and be counted below.
 SET ast_fuzzer_runs = 0;
@@ -57,6 +63,18 @@ SELECT (
 ) FORMAT Null
 SETTINGS make_distributed_plan = 0, max_threads = 8, log_comment = '05266_scoped_low_memory';
 
+-- The merge of the grouping sets runs in one task with the subquery's limit of 2. It gets 200,000 two-level
+-- partial states (a one-stream aggregation goes two-level only with external aggregation enabled), which its
+-- aggregator merges and then converts with two threads each.
+SELECT (
+    SELECT count() FROM (SELECT k, count() FROM t_share_merge GROUP BY GROUPING SETS ((k), ()))
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_default_reader_bucket_count = 8,
+        distributed_plan_default_shuffle_join_bucket_count = 8, max_threads = 2, group_by_two_level_threshold = 1,
+        max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0,
+        optimize_aggregation_in_order = 0
+) FORMAT Null
+SETTINGS make_distributed_plan = 0, max_threads = 8, log_comment = '05266_merge_pool';
+
 -- 8 reading tasks per side and 8 joining tasks get one thread each.
 SELECT count() FROM t_share_threads AS a INNER JOIN t_share_threads AS b ON a.k = b.k FORMAT Null
 SETTINGS enable_cascades_optimizer = 0, join_algorithm = 'parallel_hash', distributed_plan_default_reader_bucket_count = 8,
@@ -98,4 +116,23 @@ GROUP BY log_comment
 ORDER BY log_comment
 SETTINGS make_distributed_plan = 0;
 
+-- The aggregator pool threads of each task of the grouping-sets query that started any.
+SELECT arrayFilter(x -> x > 0, groupArray(agg_threads))
+FROM
+(
+    SELECT countIf(thread_name = 'AggregatorPool') AS agg_threads
+    FROM system.query_thread_log
+    WHERE event_date >= yesterday() AND query_id =
+    (
+        SELECT argMax(query_id, event_time_microseconds)
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+            AND log_comment = '05266_merge_pool' AND NOT match(query, '^(main|stage_\\d+_\\d+)$')
+    )
+    GROUP BY master_thread_id
+    HAVING countIf(thread_name = 'DistQueryTask') = 1
+)
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE t_share_threads;
+DROP TABLE t_share_merge;

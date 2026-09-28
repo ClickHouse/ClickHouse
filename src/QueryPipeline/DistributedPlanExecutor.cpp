@@ -864,15 +864,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
 
-        /// A fragment keeps the thread limit it was stamped with, and so do the thread budgets of its steps (a
-        /// parallel hash join's pool, a union's cap). Without one, the limit comes from the query's settings, and
-        /// so does the concurrency-control flag in any case.
-        if (const size_t stamped_max_threads = query_plan.getMaxThreads())
-        {
-            optimization_settings.max_threads = std::min(optimization_settings.max_threads, stamped_max_threads);
-            pipeline_settings.max_threads = std::min(pipeline_settings.max_threads, stamped_max_threads);
-        }
-        else
+        /// A fragment keeps the thread limit it was stamped with. Without one, the limit comes from the query's
+        /// settings, and so does the concurrency-control flag in any case.
+        if (!query_plan.getMaxThreads())
             query_plan.setMaxThreads(pipeline_settings.max_threads);
         query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
@@ -969,6 +963,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
+    task_context->applySettingsChanges(task.settings_changes);
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
@@ -1054,6 +1049,9 @@ protected:
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+        /// A task's steps read `max_threads` from its context, some while the fragment is deserialized.
+        if (const UInt64 stamped_max_threads = stage.query_plan_fragment.getMaxThreads())
+            task_description.settings_changes.emplace_back("max_threads", stamped_max_threads);
 
         for (const auto & task : stage.tasks)
         {
