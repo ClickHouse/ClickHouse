@@ -11,7 +11,7 @@ SlidingBlock & SlidingBlocks::add(Chunk chunk, const WindowTransformParams & par
 {
     SlidingBlock block{
         .original_input_columns = chunk.getColumns(),
-        .input_columns = chunk.detachColumns(),
+        .input_columns = chunk.getColumns(),
         .output_columns = {},
         .rows_count = static_cast<int64_t>(chunk.getNumRows()),
         .block_number = next_block_number++,
