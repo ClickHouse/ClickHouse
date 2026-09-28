@@ -581,8 +581,10 @@ std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     if (pos == String::npos)
         return std::nullopt;
 
-    /// Static subcolumns only: a dynamic lookup resolves the Map key subcolumn itself.
-    if (columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_name))
+    /// A column or a static subcolumn claims the name, except a subcolumn of an EPHEMERAL column, which is
+    /// not readable. A dynamic lookup would resolve the Map key subcolumn itself.
+    if (columns.has(column_name)
+        || columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withRegularSubcolumns(), column_name))
         return std::nullopt;
 
     auto map_column_name = column_name.substr(0, pos);
