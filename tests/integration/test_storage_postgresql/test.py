@@ -1090,11 +1090,8 @@ def test_postgres_datetime_malformed_suffix(started_cluster):
         "2025-01-02 03:04:05+::30",
         "2025-01-02 03:04:05+",
         "2025-01-02 03:04:05+03:30:15:20",
+        "2025-01-02 03:04:05.",
     ]
-    # `readDateTime64Text` consumes a fractional-seconds separator with no digit after it and pads
-    # the fraction with zeros, on `master` as well, so only the plain `DateTime` reader - which stops
-    # in front of the dot and leaves the check to `assertPostgreSQLDateTimeFullyParsed` - rejects it.
-    malformed_for_datetime_only = ["2025-01-02 03:04:05."]
     accepted = [
         "2025-01-02 03:04:05",
         "2025-01-02 03:04:05.6789",
@@ -1117,12 +1114,6 @@ def test_postgres_datetime_malformed_suffix(started_cluster):
             assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
                 "SELECT ts FROM test_datetime_suffix"
             ), f"{value} accepted for {clickhouse_type}"
-
-    for value in malformed_for_datetime_only:
-        attach(value, "DateTime('UTC')")
-        assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
-            "SELECT ts FROM test_datetime_suffix"
-        ), f"{value} accepted"
 
     for value in accepted:
         attach(value, "DateTime('UTC')")

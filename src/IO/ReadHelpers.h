@@ -1330,12 +1330,48 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
-    if (fraction_prefix.has_fraction || recovered_at_dot || (!buf.eof() && *buf.position() == '.'))
+    /// A fractional separator must be followed by at least one digit: a bare '.', like in '1234.' or
+    /// '2025-01-02 03:04:05.', must not become zero subseconds. When the character after an unconsumed dot
+    /// is available in the buffer and is not a digit, leave the dot unread, so the caller reports it as
+    /// trailing characters, the same as for any other unexpected character after the value.
+    bool has_unconsumed_dot = !fraction_prefix.has_fraction && !recovered_at_dot && !buf.eof() && *buf.position() == '.';
+    bool left_bare_dot = false;
+    if (has_unconsumed_dot && buf.position() + 1 < buf.buffer().end() && !isNumericASCII(buf.position()[1]))
+    {
+        has_unconsumed_dot = false;
+        left_bare_dot = true;
+    }
+    else if (has_unconsumed_dot && buf.position() + 1 == buf.buffer().end())
+    {
+        /// The dot is the last character in the buffer. It has to be consumed to look at the next one.
+        ++buf.position();
+        if (buf.eof() || !isNumericASCII(*buf.position()))
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime64: no digits after the fractional separator");
+            else
+                return ReturnType(false);
+        }
+        /// The dot is consumed now, as if the throwing path recovered at it.
+        has_unconsumed_dot = false;
+        recovered_at_dot = true;
+    }
+
+    if (fraction_prefix.has_fraction || recovered_at_dot || has_unconsumed_dot)
     {
         /// The dot has already been consumed when the fallback pre-read the fraction prefix
         /// or when the throwing path recovered at the dot.
-        if (!fraction_prefix.has_fraction && !recovered_at_dot)
+        if (has_unconsumed_dot)
             ++buf.position();
+
+        /// The fallback consumes the dot while probing for a date, so it may not have seen the next character.
+        if (fraction_prefix.has_fraction && fraction_prefix.count == 0 && (buf.eof() || !isNumericASCII(*buf.position())))
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime64: no digits after the fractional separator");
+            else
+                return ReturnType(false);
+        }
 
         /// Read digits, up to 'scale' positions, starting with the digits that were already consumed
         /// from the buffer while disambiguating the value from a YYYY-MM-DD date.
@@ -1388,7 +1424,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     /// 253402300800 is the time_t value for 10000-01-01 UTC (a bit over the last year supported by DateTime64).
     /// A whole-seconds value at or above it cannot be a date (DateTime64 goes up to 9999), so it is interpreted
     /// as a Unix timestamp with subsecond precision already scaled to an integer.
-    else if (whole >= 253402300800LL)
+    else if (!left_bare_dot && whole >= 253402300800LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         components.fractional =  components.whole % common::exp10_i32(scale);

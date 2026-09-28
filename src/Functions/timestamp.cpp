@@ -22,8 +22,8 @@ namespace
 /// 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]'. The DateTime parser stops at the first character that cannot
 /// continue the value (such as a field delimiter in row-based input), so a malformed argument like
 /// '2024 April 4' would otherwise be silently truncated to the Unix timestamp 2024. Reject any
-/// characters left after the value. The parser also pads a fractional part that consists of a bare
-/// '.' with zeros, so reject a value that ends with '.', like '12:00:00.' or '1234.'.
+/// characters left after the value. The `Time64` parser also pads a fractional part that consists of a
+/// bare '.' with zeros, so reject a value that ends with '.', like '12:00:00.'.
 void assertDateTimeFullyParsed(ReadBufferFromMemory & buf, bool skip_zero_padding)
 {
     const char * value_end = buf.position();
