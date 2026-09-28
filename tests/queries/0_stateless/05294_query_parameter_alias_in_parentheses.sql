@@ -27,3 +27,8 @@ UPDATE t SET b = 2 WHERE (a = 1 AS {p:Identifier}); -- { clientError SYNTAX_ERRO
 CREATE ROW POLICY p ON t USING (a = 1 AS {p:Identifier}); -- { clientError SYNTAX_ERROR }
 DROP ROW POLICY IF EXISTS p ON t;
 DROP TABLE t;
+
+-- `TABLE OVERRIDE` keys reject a top-level alias of either kind and keep a nested one.
+SELECT formatQuery('CREATE DATABASE d ENGINE = MaterializedPostgreSQL(''h:5432'', ''db'', ''u'', ''p'') TABLE OVERRIDE t (PARTITION BY (a AS {p:Identifier}))'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('CREATE DATABASE d ENGINE = MaterializedPostgreSQL(''h:5432'', ''db'', ''u'', ''p'') TABLE OVERRIDE t (ORDER BY (a AS y))'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuerySingleLine('CREATE DATABASE d ENGINE = MaterializedPostgreSQL(''h:5432'', ''db'', ''u'', ''p'') TABLE OVERRIDE t (PARTITION BY (a) ORDER BY ((a AS y) + 1))');
