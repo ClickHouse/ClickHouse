@@ -249,8 +249,7 @@ public:
     /**
      * @brief Undo the `execute` logic:
      *  1. Restore remote_path_from from tmp_remote_path_from, if the source was saved there.
-     *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if the target did not exist. This step runs
-     *     even when the first one cannot complete.
+     *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if the target did not exist.
      *  3. Remove the temporary copies.
      */
     void undo() override;

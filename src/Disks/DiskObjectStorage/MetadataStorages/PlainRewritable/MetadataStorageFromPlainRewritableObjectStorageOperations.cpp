@@ -664,38 +664,29 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
     /// Each stage says where one key has to end up and asks object storage whether it is already there, so it holds
     /// whether the matching step of `execute` never ran, ran, or ran and lost its answer.
-    /// The source is removed only after it was saved, so before that there is nothing to restore. Restoring the target
-    /// does not need the source, so a source that cannot be restored does not stop it; the error is rethrown at the end.
-    std::exception_ptr source_restore_error;
+    /// The source is removed only after it was saved, so before that there is nothing to restore.
     if (source_saved)
     {
-        try
+        undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
         {
-            undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
-            {
-                if (object_storage->exists(StoredObject(remote_path_from)))
-                    return;
+            if (object_storage->exists(StoredObject(remote_path_from)))
+                return;
 
-                if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                        "temporary key '{}' the move copied it to",
-                        path_from,
-                        remote_path_from,
-                        tmp_remote_path_from);
+            if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
+                    "temporary key '{}' the move copied it to",
+                    path_from,
+                    remote_path_from,
+                    tmp_remote_path_from);
 
-                object_storage->copyObject(
-                    /*object_from=*/StoredObject(tmp_remote_path_from),
-                    /*object_to=*/StoredObject(remote_path_from),
-                    read_settings,
-                    write_settings);
-            });
-        }
-        catch (...)
-        {
-            source_restore_error = std::current_exception();
-        }
+            object_storage->copyObject(
+                /*object_from=*/StoredObject(tmp_remote_path_from),
+                /*object_to=*/StoredObject(remote_path_from),
+                read_settings,
+                write_settings);
+        });
     }
 
     undoWithRetries(log, fmt::format("restore the blob of the target file '{}'", path_to), [&]
@@ -728,9 +719,6 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     {
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
     });
-
-    if (source_restore_error)
-        std::rethrow_exception(source_restore_error);
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
