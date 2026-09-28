@@ -55,6 +55,8 @@ public:
 private:
     static constexpr size_t max_batch_rows = (1UL << 31) - 1;
 
+    PlainUploadPipe & plainPipeOrThrow();
+
     void reduceBatchOnDevice();
 
     const GPUElementType element_type;
@@ -62,10 +64,10 @@ private:
     const GPUAggregationKind aggregation;
     const size_t element_size;
     const size_t batch_bytes;
-    const std::optional<GPUCodec> codec;
 
     std::unique_ptr<CudfReduction> reduction;
-    UploadPipe pipe;
+    /// A `CompressedUploadPipe` when there is a codec, a `PlainUploadPipe` otherwise.
+    std::unique_ptr<IUploadPipe> pipe;
 };
 
 
@@ -111,13 +113,21 @@ public:
 
     /// A compressed block of the column at `column_index` - the keys first, then the values, then
     /// the columns of the filter - of the part that `reader` is reading.
-    void addCompressedBlock(size_t reader, size_t column_index, GPUCodec codec, std::string_view payload, size_t decompressed_bytes);
+    ///
+    /// `expected_bytes` is how many more bytes of this column the part will stage, this block
+    /// included. It only sizes a fresh staging buffer: one of the full `compressed_stage_bytes` for
+    /// every column of every reader, and as many again queued, is more pinned memory than the pool
+    /// keeps, and what it cannot keep is unpinned and pinned again for every part. A wrong guess
+    /// costs a reallocation, not correctness.
+    void addCompressedBlock(
+        size_t reader, size_t column_index, GPUCodec codec, std::string_view payload, size_t decompressed_bytes, size_t expected_bytes);
 
     /// Room for up to `max_bytes` of values of the column at `column_index`, expanded on the host,
     /// for the reading thread to write straight into and then `commitRawBytes`; as much as the
     /// staging buffer has, at least one byte. A column of a part comes either this way or as
-    /// compressed blocks, not both.
-    std::span<char> reserveRawBytes(size_t reader, size_t column_index, size_t max_bytes);
+    /// compressed blocks, not both. `expected_bytes` is how many more bytes of values the part
+    /// holds, and sizes the staging buffer as in `addCompressedBlock`.
+    std::span<char> reserveRawBytes(size_t reader, size_t column_index, size_t max_bytes, size_t expected_bytes);
     void commitRawBytes(size_t reader, size_t column_index, size_t bytes);
 
     void finishPart(size_t reader, size_t num_rows);
@@ -222,8 +232,8 @@ private:
     const size_t batch_rows;
     const bool compressed;
 
-    std::vector<UploadPipe> key_pipes;
-    std::vector<UploadPipe> value_pipes;
+    std::vector<PlainUploadPipe> key_pipes;
+    std::vector<PlainUploadPipe> value_pipes;
 
     std::unique_ptr<RecordGroupBy> group_by;
 

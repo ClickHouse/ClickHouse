@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
@@ -45,59 +46,68 @@ GPUAccumulator::GPUAccumulator(
     , aggregation(aggregation_)
     , element_size(sizeOf(element_type))
     , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
-    , codec(codec_)
     , reduction(onDevice(
           [&] { return std::make_unique<CudfReduction>(element_type, result_type, aggregation); },
           "Cannot set up a `{}` of {} on the device",
           aggregationName(aggregation_),
           argument_type.getName()))
-    , pipe(argument_type, std::min(batch_bytes, max_stage_bytes), codec.has_value())
 {
+    const size_t stage_bytes = std::min(batch_bytes, max_stage_bytes);
+    if (codec_)
+        pipe = std::make_unique<CompressedUploadPipe>(argument_type, stage_bytes, *codec_);
+    else
+        pipe = std::make_unique<PlainUploadPipe>(argument_type, stage_bytes);
 }
 
 void GPUAccumulator::add(const IColumn & column)
 {
-    pipe.stage(column);
+    plainPipeOrThrow().stage(column);
 
-    if (pipe.stagedRows() * element_size >= batch_bytes)
+    if (pipe->stagedRows() * element_size >= batch_bytes)
         reduceBatchOnDevice();
 }
 
 std::span<char> GPUAccumulator::reserveRaw(size_t max_bytes)
 {
-    if (codec)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Plain values for an accumulator of compressed blocks");
-
-    return pipe.reserveRaw(max_bytes);
+    return plainPipeOrThrow().reserveRaw(max_bytes);
 }
 
 void GPUAccumulator::commitRaw(size_t bytes)
 {
-    pipe.commitRaw(bytes);
+    plainPipeOrThrow().commitRaw(bytes);
 
-    if (pipe.stagedRows() * element_size >= batch_bytes)
+    if (pipe->stagedRows() * element_size >= batch_bytes)
         reduceBatchOnDevice();
 }
 
 void GPUAccumulator::addBlock(std::string_view payload, size_t decompressed_bytes)
 {
-    if (!codec)
+    auto * compressed_pipe = typeid_cast<CompressedUploadPipe *>(pipe.get());
+    if (!compressed_pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A compressed block for an accumulator of plain values");
 
-    pipe.stageCompressedBlock(*codec, payload, decompressed_bytes);
+    compressed_pipe->stageCompressedBlock(payload, decompressed_bytes);
 
-    if (pipe.stagedRows() * element_size >= batch_bytes)
+    if (pipe->stagedRows() * element_size >= batch_bytes)
         reduceBatchOnDevice();
+}
+
+PlainUploadPipe & GPUAccumulator::plainPipeOrThrow()
+{
+    auto * plain_pipe = typeid_cast<PlainUploadPipe *>(pipe.get());
+    if (!plain_pipe)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Plain values for an accumulator of compressed blocks");
+    return *plain_pipe;
 }
 
 void GPUAccumulator::reduceBatchOnDevice()
 {
-    if (pipe.stagedRows() == 0)
+    if (pipe->stagedRows() == 0)
         return;
 
     Stopwatch watch;
 
-    const DeviceColumnView values = pipe.flush().view();
+    const DeviceColumnView values = pipe->flush().view();
 
     onDevice([&] { reduction->addBatch(values); }, "Cannot reduce {} values by `{}` on a GPU", values.rows, aggregationName(aggregation));
 
@@ -105,18 +115,18 @@ void GPUAccumulator::reduceBatchOnDevice()
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches, 1);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
-    pipe.reset();
+    pipe->reset();
 }
 
 Field GPUAccumulator::finalize()
 {
     reduceBatchOnDevice();
 
-    if (pipe.stagedBytes() != 0)
+    if (pipe->stagedBytes() != 0)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "A column ended with {} bytes of a {}-byte value",
-            pipe.stagedBytes(),
+            pipe->stagedBytes(),
             element_size);
 
     Stopwatch watch;
@@ -182,9 +192,9 @@ size_t rowBytesOf(
     return bytes;
 }
 
-std::vector<UploadPipe> pipesFor(const DataTypes & types, size_t batch_rows, bool compressed)
+std::vector<PlainUploadPipe> pipesFor(const DataTypes & types, size_t batch_rows, bool compressed)
 {
-    std::vector<UploadPipe> pipes;
+    std::vector<PlainUploadPipe> pipes;
     if (compressed)
         return pipes;
 
@@ -343,7 +353,7 @@ void GroupByGPUAccumulator::sendBatchToDevice()
     if (num_rows == 0)
         return;
 
-    const auto flushed = [](std::vector<UploadPipe> & pipes)
+    const auto flushed = [](std::vector<PlainUploadPipe> & pipes)
     {
         std::vector<DeviceColumnView> columns;
         columns.reserve(pipes.size());
@@ -383,7 +393,7 @@ GroupByGPUAccumulator::Reader & GroupByGPUAccumulator::readerOrThrow(size_t read
 }
 
 void GroupByGPUAccumulator::addCompressedBlock(
-    size_t reader_index, size_t column_index, GPUCodec codec, std::string_view payload, size_t decompressed_bytes)
+    size_t reader_index, size_t column_index, GPUCodec codec, std::string_view payload, size_t decompressed_bytes, size_t expected_bytes)
 {
     Reader & reader = readerOrThrow(reader_index);
 
@@ -399,7 +409,7 @@ void GroupByGPUAccumulator::addCompressedBlock(
         handOff(reader_index, column_index);
 
     if (column.blocks.empty())
-        column.staged.reserve(compressed_stage_bytes);
+        column.staged.reserve(std::min(compressed_stage_bytes, std::max(expected_bytes, payload.size())));
 
     column.codec = codec;
     column.blocks.push_back({
@@ -411,7 +421,7 @@ void GroupByGPUAccumulator::addCompressedBlock(
     column.decompressed_bytes += decompressed_bytes;
 }
 
-std::span<char> GroupByGPUAccumulator::reserveRawBytes(size_t reader_index, size_t column_index, size_t max_bytes)
+std::span<char> GroupByGPUAccumulator::reserveRawBytes(size_t reader_index, size_t column_index, size_t max_bytes, size_t expected_bytes)
 {
     Reader & reader = readerOrThrow(reader_index);
 
@@ -427,8 +437,10 @@ std::span<char> GroupByGPUAccumulator::reserveRawBytes(size_t reader_index, size
         handOff(reader_index, column_index);
 
     column.raw = true;
-    column.staged.reserve(compressed_stage_bytes);
-    return {column.staged.data() + column.staged.size(), std::min(max_bytes, compressed_stage_bytes - column.staged.size())};
+    column.staged.reserve(std::min(compressed_stage_bytes, column.staged.size() + std::max<size_t>(expected_bytes, 1)));
+    return {
+        column.staged.data() + column.staged.size(),
+        std::min({max_bytes, compressed_stage_bytes - column.staged.size(), column.staged.available()})};
 }
 
 void GroupByGPUAccumulator::commitRawBytes(size_t reader_index, size_t column_index, size_t bytes)

@@ -44,21 +44,20 @@ void DeviceColumn::dropFront(size_t num_rows)
     std::swap(values, spare);
 }
 
-bool UploadPipe::canUpload(const IDataType & type)
+bool PlainUploadPipe::canUpload(const IDataType & type)
 {
     return elementTypeOf(type).has_value();
 }
 
-UploadPipe::UploadPipe(const IDataType & type, size_t stage_bytes_, bool compressed_)
+PlainUploadPipe::PlainUploadPipe(const IDataType & type, size_t stage_bytes_)
     : element_type(elementTypeOrThrow(type))
     , element_size(sizeOf(element_type))
     , stage_bytes(stage_bytes_)
-    , compressed(compressed_)
     , device(element_type)
 {
 }
 
-UploadPipe::~UploadPipe()
+PlainUploadPipe::~PlainUploadPipe()
 {
     try
     {
@@ -70,7 +69,7 @@ UploadPipe::~UploadPipe()
     }
 }
 
-void UploadPipe::stage(const IColumn & column)
+void PlainUploadPipe::stage(const IColumn & column)
 {
     const size_t num_rows = column.size();
     if (num_rows == 0)
@@ -92,7 +91,7 @@ void UploadPipe::stage(const IColumn & column)
     staged_bytes += raw.size();
 }
 
-std::span<char> UploadPipe::reserveRaw(size_t max_bytes)
+std::span<char> PlainUploadPipe::reserveRaw(size_t max_bytes)
 {
     if (currentSlot().staged.size() >= stage_bytes)
         sendStagedToDevice();
@@ -102,43 +101,18 @@ std::span<char> UploadPipe::reserveRaw(size_t max_bytes)
     return {staged.data() + staged.size(), std::min(max_bytes, stage_bytes - staged.size())};
 }
 
-void UploadPipe::commitRaw(size_t bytes)
+void PlainUploadPipe::commitRaw(size_t bytes)
 {
     currentSlot().staged.grow(bytes);
     staged_bytes += bytes;
 }
 
-void UploadPipe::stageCompressedBlock(GPUCodec block_codec, std::string_view payload, size_t decompressed_bytes)
-{
-    if (!blocks.empty() && (currentSlot().staged.size() + payload.size() > stage_bytes || codec != block_codec))
-        sendStagedToDevice();
-
-    codec = block_codec;
-
-    blocks.push_back({
-        .offset = currentSlot().staged.size(),
-        .compressed_bytes = payload.size(),
-        .decompressed_bytes = decompressed_bytes,
-    });
-
-    currentSlot().staged.append(payload);
-    staged_bytes += decompressed_bytes;
-}
-
-void UploadPipe::sendStagedToDevice()
+void PlainUploadPipe::sendStagedToDevice()
 {
     Slot & slot = currentSlot();
 
     if (slot.staged.empty())
         return;
-
-    if (compressed)
-    {
-        device.appendCompressed(decompressor, *codec, slot.staged.bytes(), blocks);
-        blocks.clear();
-        slot.staged.clear();
-        return;
-    }
 
     device.appendPlain(slot.staged.bytes());
 
@@ -157,13 +131,13 @@ void UploadPipe::sendStagedToDevice()
     next.staged.clear();
 }
 
-const DeviceColumn & UploadPipe::flush()
+const DeviceColumn & PlainUploadPipe::flush()
 {
     sendStagedToDevice();
     return device;
 }
 
-void UploadPipe::waitForUploads()
+void PlainUploadPipe::waitForUploads()
 {
     for (auto & slot : slots)
     {
@@ -175,7 +149,7 @@ void UploadPipe::waitForUploads()
     }
 }
 
-void UploadPipe::reset()
+void PlainUploadPipe::reset()
 {
     for (auto & slot : slots)
     {
@@ -183,8 +157,55 @@ void UploadPipe::reset()
             slot.staged.clear();
     }
 
+    device.dropFront(device.rows());
+    staged_bytes = device.bytes();
+}
+
+
+CompressedUploadPipe::CompressedUploadPipe(const IDataType & type, size_t stage_bytes_, GPUCodec codec_)
+    : element_type(elementTypeOrThrow(type))
+    , element_size(sizeOf(element_type))
+    , stage_bytes(stage_bytes_)
+    , codec(codec_)
+    , device(element_type)
+{
+}
+
+void CompressedUploadPipe::stageCompressedBlock(std::string_view payload, size_t decompressed_bytes)
+{
+    if (!blocks.empty() && staged.size() + payload.size() > stage_bytes)
+        sendStagedToDevice();
+
+    blocks.push_back({
+        .offset = staged.size(),
+        .compressed_bytes = payload.size(),
+        .decompressed_bytes = decompressed_bytes,
+    });
+
+    staged.append(payload);
+    staged_bytes += decompressed_bytes;
+}
+
+void CompressedUploadPipe::sendStagedToDevice()
+{
+    if (blocks.empty())
+        return;
+
+    device.appendCompressed(decompressor, codec, staged.bytes(), blocks);
     blocks.clear();
-    codec.reset();
+    staged.clear();
+}
+
+const DeviceColumn & CompressedUploadPipe::flush()
+{
+    sendStagedToDevice();
+    return device;
+}
+
+void CompressedUploadPipe::reset()
+{
+    staged.clear();
+    blocks.clear();
     device.dropFront(device.rows());
     staged_bytes = device.bytes();
 }

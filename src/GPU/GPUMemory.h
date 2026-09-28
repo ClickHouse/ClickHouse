@@ -37,6 +37,8 @@ public:
     char * data() { return memory; }
     size_t size() const { return used; }
     bool empty() const { return used == 0; }
+    /// Bytes that fit after `size` without growing.
+    size_t available() const { return capacity - used; }
 
 private:
     char * memory = nullptr;

@@ -50,37 +50,65 @@ private:
 };
 
 
-class UploadPipe
+/** Gathers the values of one column on the host and sends them to the device, where they make up
+  * one `DeviceColumn`. What an implementation takes, and how it sends it, is its own; this is what
+  * the user of the column on the device sees.
+  */
+class IUploadPipe
+{
+public:
+    virtual ~IUploadPipe() = default;
+
+    /// The rows taken since the last `reset`, sent or not.
+    virtual size_t stagedRows() const = 0;
+
+    virtual size_t stagedBytes() const = 0;
+
+    /// Sends what is staged and returns the column on the device.
+    virtual const DeviceColumn & flush() = 0;
+
+    /// Drops the rows on the device, keeping its memory for the next batch.
+    virtual void reset() = 0;
+
+protected:
+    IUploadPipe() = default;
+    IUploadPipe(IUploadPipe &&) noexcept = default;
+};
+
+
+/** Takes the values as they are - the column of a block, or bytes written straight into its
+  * staging buffer - and copies them to the device. Two staging slots in pinned memory take turns:
+  * while the copy of one runs, the other is filled.
+  */
+class PlainUploadPipe final : public IUploadPipe
 {
 public:
     static bool canUpload(const IDataType & type);
 
-    UploadPipe(const IDataType & type, size_t stage_bytes_, bool compressed_ = false);
+    PlainUploadPipe(const IDataType & type, size_t stage_bytes_);
 
-    ~UploadPipe();
+    ~PlainUploadPipe() override;
 
-    UploadPipe(UploadPipe &&) noexcept = default;
+    PlainUploadPipe(PlainUploadPipe &&) noexcept = default;
 
-    UploadPipe(const UploadPipe &) = delete;
-    UploadPipe & operator=(const UploadPipe &) = delete;
-    UploadPipe & operator=(UploadPipe &&) = delete;
+    PlainUploadPipe(const PlainUploadPipe &) = delete;
+    PlainUploadPipe & operator=(const PlainUploadPipe &) = delete;
+    PlainUploadPipe & operator=(PlainUploadPipe &&) = delete;
 
     void stage(const IColumn & column);
 
     std::span<char> reserveRaw(size_t max_bytes);
     void commitRaw(size_t bytes);
 
-    void stageCompressedBlock(GPUCodec codec, std::string_view payload, size_t decompressed_bytes);
+    size_t stagedRows() const override { return staged_bytes / element_size; }
 
-    size_t stagedRows() const { return staged_bytes / element_size; }
+    size_t stagedBytes() const override { return staged_bytes; }
 
-    size_t stagedBytes() const { return staged_bytes; }
+    const DeviceColumn & flush() override;
 
-    const DeviceColumn & flush();
+    void reset() override;
 
     void waitForUploads();
-
-    void reset();
 
 private:
     struct Slot
@@ -106,13 +134,51 @@ private:
     const GPUElementType element_type;
     const size_t element_size;
     const size_t stage_bytes;
-    const bool compressed;
-
-    std::optional<GPUCodec> codec;
 
     Slot slots[num_slots];
     size_t current_slot = 0;
 
+    size_t staged_bytes = 0;
+
+    DeviceColumn device;
+};
+
+
+/** Takes the compressed blocks of a column file, all of one codec, and has the device expand
+  * them. Sending is synchronous - it returns once the blocks are expanded - so one staging buffer
+  * is enough.
+  */
+class CompressedUploadPipe final : public IUploadPipe
+{
+public:
+    CompressedUploadPipe(const IDataType & type, size_t stage_bytes_, GPUCodec codec_);
+
+    CompressedUploadPipe(CompressedUploadPipe &&) noexcept = default;
+
+    CompressedUploadPipe(const CompressedUploadPipe &) = delete;
+    CompressedUploadPipe & operator=(const CompressedUploadPipe &) = delete;
+    CompressedUploadPipe & operator=(CompressedUploadPipe &&) = delete;
+
+    void stageCompressedBlock(std::string_view payload, size_t decompressed_bytes);
+
+    /// Counts the values the staged blocks expand to.
+    size_t stagedRows() const override { return staged_bytes / element_size; }
+
+    size_t stagedBytes() const override { return staged_bytes; }
+
+    const DeviceColumn & flush() override;
+
+    void reset() override;
+
+private:
+    void sendStagedToDevice();
+
+    const GPUElementType element_type;
+    const size_t element_size;
+    const size_t stage_bytes;
+    const GPUCodec codec;
+
+    PinnedBuffer staged;
     std::vector<CompressedBlock> blocks;
     Decompressor decompressor;
 

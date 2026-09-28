@@ -7,6 +7,9 @@
 #include <cstring>
 #include <Columns/ColumnsCommon.h>
 
+/// Local build workaround: clang 21 fires -Wpsabi on the 64-byte vector helpers below.
+#pragma clang diagnostic ignored "-Wpsabi"
+
 
 namespace DB
 {

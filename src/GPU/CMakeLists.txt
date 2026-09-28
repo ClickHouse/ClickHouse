@@ -2,6 +2,7 @@ add_library (clickhouse_gpu_cudf STATIC
     Cudf.cu
     CudfReduction.cu
     RecordGroupBy.cu
+    CudfHashJoin.cu
 )
 
 gpu_island_target (clickhouse_gpu_cudf)

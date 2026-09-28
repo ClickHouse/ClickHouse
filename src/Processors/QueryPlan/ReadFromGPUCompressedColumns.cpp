@@ -375,18 +375,29 @@ private:
             : element_size(column.type->getSizeOfValueInMemory())
         {
             if (on_device)
+            {
                 blocks.emplace(part, column, read_settings);
+                expected_bytes = part.getColumnSize(column.name).data_compressed;
+            }
             else
+            {
                 raw = std::make_unique<CompressedReadBufferFromFile>(MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings));
+                expected_bytes = part.rows_count * element_size;
+            }
         }
 
         std::optional<MergeTreeCompressedBlockReader> blocks;
         std::unique_ptr<CompressedReadBufferFromFile> raw;
         size_t element_size;
         size_t bytes_read = 0;
+        /// What the column stages for the device: its compressed file when expanded there, its
+        /// values otherwise. Only sizes the staging buffers - see `addCompressedBlock`.
+        size_t expected_bytes = 0;
+        size_t staged_bytes = 0;
         bool done = false;
 
         size_t rowsRead() const { return bytes_read / element_size; }
+        size_t remainingBytes() const { return expected_bytes > staged_bytes ? expected_bytes - staged_bytes : 0; }
     };
 
     /// Reads the parts on `num_readers` threads, each taking the next part not yet taken. The
@@ -466,7 +477,18 @@ private:
             ColumnReader & column = *readers[behind];
             if (column.raw)
             {
-                const std::span<char> room = accumulator.reserveRawBytes(reader_index, behind, raw_piece_bytes);
+                /// Every value is staged, and the buffer holds exactly them. Growing it only to learn
+                /// that the file has ended would copy it; a byte past the end is counted instead, so
+                /// the check below reports it.
+                if (column.remainingBytes() == 0)
+                {
+                    char past_end;
+                    column.bytes_read += column.raw->readBig(&past_end, 1);
+                    column.done = true;
+                    continue;
+                }
+
+                const std::span<char> room = accumulator.reserveRawBytes(reader_index, behind, raw_piece_bytes, column.remainingBytes());
                 const size_t read = column.raw->readBig(room.data(), room.size());
                 accumulator.commitRawBytes(reader_index, behind, read);
                 if (read == 0)
@@ -476,6 +498,7 @@ private:
                 }
 
                 column.bytes_read += read;
+                column.staged_bytes += read;
             }
             else
             {
@@ -488,8 +511,14 @@ private:
 
                 const GPU::GPUCodec codec = codecOrThrow(*column.blocks->methodByte(), std::to_string(behind), part);
                 accumulator.addCompressedBlock(
-                    reader_index, behind, codec, std::string_view(block->payload, block->compressed_bytes), block->decompressed_bytes);
+                    reader_index,
+                    behind,
+                    codec,
+                    std::string_view(block->payload, block->compressed_bytes),
+                    block->decompressed_bytes,
+                    column.remainingBytes());
                 column.bytes_read += block->decompressed_bytes;
+                column.staged_bytes += block->compressed_bytes;
             }
 
             checkNotCancelled();

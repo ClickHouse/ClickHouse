@@ -138,6 +138,11 @@ void checkNoNulls(const cudf::column_view & column, const std::string & what)
 
 void copyColumnToHost(const cudf::column_view & column, HostColumnView destination, const std::string & what)
 {
+    copyColumnToHost(column, destination, what, StreamRegistry::get().compute);
+}
+
+void copyColumnToHost(const cudf::column_view & column, HostColumnView destination, const std::string & what, cudaStream_t stream)
+{
     checkNoNulls(column, what);
 
     if (column.offset() != 0)
@@ -155,7 +160,7 @@ void copyColumnToHost(const cudf::column_view & column, HostColumnView destinati
             + std::to_string(sizeOf(destination.element_type)) + "-byte ones");
 
     checkCuda(
-        cudaMemcpyAsync(destination.data, column.head<void>(), destination.rows * element_size, cudaMemcpyDeviceToHost, StreamRegistry::get().compute),
+        cudaMemcpyAsync(destination.data, column.head<void>(), destination.rows * element_size, cudaMemcpyDeviceToHost, stream),
         "cannot copy " + what + " back");
 }
 

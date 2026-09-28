@@ -86,4 +86,7 @@ void checkNoNulls(const cudf::column_view & column, const std::string & what);
 /// values of the width and length the destination is sized for. The caller synchronizes.
 void copyColumnToHost(const cudf::column_view & column, HostColumnView destination, const std::string & what);
 
+/// The same, queued on `stream` instead of the compute stream.
+void copyColumnToHost(const cudf::column_view & column, HostColumnView destination, const std::string & what, cudaStream_t stream);
+
 }
