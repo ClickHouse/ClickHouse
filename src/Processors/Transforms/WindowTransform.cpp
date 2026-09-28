@@ -8,12 +8,8 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
@@ -1399,8 +1395,6 @@ void WindowTransform::addInputBlock(Chunk chunk)
     // Initialize output columns.
     for (auto & ws : workspaces)
     {
-        block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
-
         block.output_columns.push_back(ws.aggregate_function->getResultType()
             ->createColumn());
         block.output_columns.back()->reserve(block.rows);
@@ -2645,8 +2639,6 @@ public:
 template <bool is_lead, bool full_partition_default_frame>
 struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 {
-    FunctionBasePtr func_cast = nullptr;
-
     WindowFunctionLagLeadImpl(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
@@ -2680,51 +2672,13 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
                 name, argument_types.size());
         }
 
-        if (argument_types[0]->equals(*argument_types[2]))
-            return;
-
-        const auto supertype = tryGetLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-        if (!supertype)
+        if (!argument_types[0]->equals(*argument_types[2]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "There is no supertype for the argument type '{}' and the default value type '{}'",
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
+                "The default value type '{}' must be the same as the argument type '{}'",
+                argument_types[2]->getName(),
+                argument_types[0]->getName());
         }
-        if (!argument_types[0]->equals(*supertype))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
-                supertype->getName(),
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-        }
-
-        auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
-        {
-            return createInternalCast({from, {}}, to, CastType::accurate, {}, nullptr);
-        };
-
-        func_cast = get_cast_func();
-
-    }
-
-    ColumnPtr castColumn(const Columns & columns, const VectorWithMemoryTracking<size_t> & idx) override
-    {
-        if (!func_cast)
-            return nullptr;
-
-        ColumnsWithTypeAndName arguments
-        {
-            { columns[idx[2]], argument_types[2], "" },
-            {
-                DataTypeString().createColumnConst(columns[idx[2]]->size(), argument_types[0]->getName()),
-                std::make_shared<DataTypeString>(),
-                ""
-            }
-        };
-
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2785,10 +2739,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                const IColumn & default_column =
-                    current_block.cast_columns[function_index] ?
-                        *current_block.cast_columns[function_index].get() :
-                        *current_block.input_columns[workspace.argument_column_indices[2]].get();
+                const IColumn & default_column = *current_block.input_columns[workspace.argument_column_indices[2]];
 
                 to.insert(default_column[transform->current_row.row]);
             }
