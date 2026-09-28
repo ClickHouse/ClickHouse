@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomSliced.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -63,6 +64,9 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
     const auto & part = part_or_projection.isProjectionPart() ? *part_or_projection.getParentPart() : part_or_projection;
 
     if (column_name == RowExistsColumn::name)
+        return 1ULL;
+
+    if (isBloomSlicedVirtualColumn(column_name))
         return 1ULL;
 
     if (column_name == BlockNumberColumn::name)

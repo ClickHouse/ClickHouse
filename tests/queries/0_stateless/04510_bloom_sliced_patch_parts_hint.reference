@@ -1,0 +1,32 @@
+-- hint used before the lightweight update
+1
+-- hint still in the plan while the patch part is pending, results correct
+1
+7	patched
+42	orig
+7	patched
+42	orig
+1
+-- explicit PREWHERE while the patch part is pending, results correct
+7	patched
+42	orig
+-- mark pruning by the index is still active while the patch part is pending
+1
+-- hint fully live again after the patch is materialized, results correct
+1
+7	patched
+42	orig
+-- results correct after merge
+7	patched
+42	orig
+-- MATERIALIZED indexed column: hint still in the plan while the patch part is pending, results correct
+1
+7	patched
+42	plain
+7	patched
+42	plain
+1
+-- MATERIALIZED indexed column: hint fully live again after the patch is materialized, results correct
+1
+7	patched
+42	plain

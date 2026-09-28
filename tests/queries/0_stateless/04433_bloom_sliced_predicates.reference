@@ -1,0 +1,17 @@
+-- hasToken with ngram tokenizer
+1
+1
+-- invalid hasToken needle fails open
+-- like
+1
+1
+-- starts ends
+1
+1
+-- regex
+1
+1
+-- invalid regexp raises exception instead of being silently pruned
+-- unsupported fail open
+1
+0

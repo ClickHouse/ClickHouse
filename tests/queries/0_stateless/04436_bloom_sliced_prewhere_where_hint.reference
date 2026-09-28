@@ -1,0 +1,8 @@
+-- explicit non-token PREWHERE + token WHERE, hint enabled
+1
+47
+-- explicit non-token PREWHERE + token WHERE, hint disabled
+1
+47
+-- the hint is prepended and the user PREWHERE predicate survives
+1

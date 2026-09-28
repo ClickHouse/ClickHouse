@@ -1,0 +1,8 @@
+-- before materialization: correct result, no hint for non-materialized parts
+1
+0
+-- after materialization: correct result, pruning and hint active
+1
+42
+1
+1

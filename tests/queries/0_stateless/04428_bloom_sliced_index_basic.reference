@@ -1,0 +1,30 @@
+-- experimental gate
+-- create and validate
+bloom_sliced	100000000	text
+-- correctness
+1
+1
+51
+1
+-- explain pruning
+1
+1
+1
+-- dense no-prune bypass
+1
+1
+100
+-- unsupported predicates fail open
+1
+0
+0
+1
+1
+-- attach/detach serialization
+1
+1
+1
+-- nullable string support
+1
+1
+-- negative: type and arguments

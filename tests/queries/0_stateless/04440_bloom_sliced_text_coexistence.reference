@@ -1,0 +1,7 @@
+-- correct results with both indexes
+1
+42
+-- text index wins: text virtual column used, bloom_sliced hint not installed
+1
+0
+1

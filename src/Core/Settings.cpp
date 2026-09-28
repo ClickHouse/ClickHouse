@@ -10093,11 +10093,19 @@ If set to true, allow using the text index.
         {"26.2", true, true, "The text index is now GA. This also applies to the alias `allow_experimental_full_text_index`."}, \
         {"25.12", true, false, "Text index was moved to Beta."}, \
         {"24.6", true, false, "Enable experimental text index. At the time the setting was named `allow_experimental_full_text_index`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_bloom_sliced_index, false, R"(
+If set to true, allow using the experimental bloom_sliced skip index.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to allow the experimental `bloom_sliced` skip index."}) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0, \
         {"26.2", true, true, "The text index is now GA"}, \
         {"25.9", true, true, "New setting."}) \
+    DECLARE(Bool, query_plan_direct_read_from_bloom_sliced_index, true, R"(
+Allow adding staged PREWHERE hint filters that read virtual columns from bloom_sliced indexes.
+)", 0, \
+        {"26.10", false, true, "New setting to add staged PREWHERE hints from the `bloom_sliced` skip index. previous_value=false so `compatibility` with versions before 26.7 disables the new plan rewrite."}) \
     DECLARE(Bool, query_plan_optimize_count_from_text_index, true, R"(
 Allow to answer `SELECT count() ... WHERE <text search predicate>` directly from the text index posting-list cardinalities, without materializing the matching rows.
 Only takes effect when `query_plan_direct_read_from_text_index` is enabled.

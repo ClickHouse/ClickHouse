@@ -2204,7 +2204,7 @@ Type castAs(const Field & field, std::string_view argument_name)
 }
 
 template <typename Type>
-std::optional<Type> extractFieldOption(std::unordered_map<String, ASTPtr> & options, const String & option)
+std::optional<Type> extractFieldOption(NamedIndexArgumentsMap & options, const String & option)
 {
     auto it = options.find(option);
     if (it == options.end())
@@ -2217,16 +2217,11 @@ std::optional<Type> extractFieldOption(std::unordered_map<String, ASTPtr> & opti
     return value.safeGet<Type>();
 }
 
-ASTPtr extractASTOption(std::unordered_map<String, ASTPtr> & options, const String & option, bool is_required)
+ASTPtr extractASTOption(NamedIndexArgumentsMap & options, const String & option, bool is_required)
 {
-    auto it = options.find(option);
-
-    if (it != options.end())
-    {
-        ASTPtr ast = it->second;
-        options.erase(it);
+    ASTPtr ast = DB::extractASTOption(options, option);
+    if (ast)
         return ast;
-    }
 
     if (is_required)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is required", option);
@@ -2234,37 +2229,22 @@ ASTPtr extractASTOption(std::unordered_map<String, ASTPtr> & options, const Stri
     return nullptr;
 }
 
-std::pair<String, ASTPtr> parseNamedArgument(const ASTFunction * ast_equal_function)
+NamedIndexArgumentsMap convertArgumentsToOptionsMap(const ASTPtr & arguments)
 {
-    if (!ast_equal_function
-        || ast_equal_function->name != "equals"
-        || ast_equal_function->arguments->children.size() != 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot mix key-value pair and single argument as text index arguments");
-
-    const auto & arguments = ast_equal_function->arguments;
-    const auto * key_identifier = arguments->children[0]->as<ASTIdentifier>();
-
-    if (!key_identifier)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument must be a key-value pair. got {}", ast_equal_function->formatForErrorMessage());
-
-    return {key_identifier->name(), arguments->children[1]};
-}
-
-std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & arguments)
-{
-    std::unordered_map<String, ASTPtr> options;
-    if (!arguments)
-        return options;
-
-    for (const auto & child : arguments->children)
-    {
-        const auto * ast_equal_function = child->as<ASTFunction>();
-        auto [key, ast] = parseNamedArgument(ast_equal_function);
-
-        if (!options.emplace(key, ast).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index '{}' argument is specified more than once", key);
-    }
-    return options;
+    return parseNamedIndexArguments(
+        arguments,
+        [](const ASTPtr &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot mix key-value pair and single argument as text index arguments");
+        },
+        [](const ASTPtr & argument)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument must be a key-value pair. got {}", argument->formatForErrorMessage());
+        },
+        [](std::string_view key)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index '{}' argument is specified more than once", String(key));
+        });
 }
 
 }

@@ -1,0 +1,12 @@
+-- hasToken constant is preprocessed
+1
+1
+-- like constant is preprocessed
+1
+1
+-- ilike with lower preprocessor
+2
+1
+-- hasTokenCaseInsensitive with lower preprocessor
+2
+1

@@ -40,6 +40,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomSliced.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
@@ -49,6 +50,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -59,7 +61,7 @@ namespace
 
 using NodesReplacementMap = absl::flat_hash_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
-struct TextIndexReadInfo
+struct IndexReadInfo
 {
     MergeTreeIndexConditionPtr condition;
     const MergeTreeIndexWithCondition * index = nullptr;
@@ -70,7 +72,10 @@ struct TextIndexReadInfo
     bool has_patched_parts = false;
 };
 
-using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
+using TextIndexReadInfo = IndexReadInfo;
+using IndexReadInfos = absl::flat_hash_map<String, IndexReadInfo>;
+using TextIndexReadInfos = IndexReadInfos;
+using BloomSlicedIndexReadInfos = IndexReadInfos;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
 {
@@ -189,9 +194,13 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
-/// Helper function.
-/// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
-void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+// Shared direct-read/hint helpers.
+
+template <typename IndexCondition>
+void collectIndexReadInfos(
+    const ReadFromMergeTree * read_from_merge_tree_step,
+    IndexReadInfos & index_read_infos,
+    const char * disabled_reason_prefix)
 {
     auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
 
@@ -203,7 +212,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     if (parts_with_ranges.empty())
         return;
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+    auto logger = getLogger("optimizeDirectReadFromIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
     auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
     auto context = read_from_merge_tree_step->getContext();
@@ -213,8 +222,8 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         unique_parts.insert(part.data_part);
 
     /// Compute the union of updated columns only across the parts that will actually be read by this step.
-    /// Using `mutations_snapshot->getAllUpdatedColumns()` directly would include pending updates from
-    /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
+    /// Using `mutations_snapshot->getAllUpdatedColumns` directly would include pending updates from
+    /// other partitions/parts not in `parts_with_ranges`, disabling direct index reads and token hints even when
     /// the queried parts have no on-the-fly updates for the index columns.
     NameSet all_updated_columns;
     bool has_patched_parts = false;
@@ -230,17 +239,18 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         has_patched_parts |= alter_conversions->hasPatches();
     }
 
-    if (has_patched_parts)
-        LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: a part has a pending patch");
+    /// A `bloom_sliced` hint stays correct with patch parts: it is fail-open and always AND-ed with the original predicate.
+    if (has_patched_parts && std::is_same_v<IndexCondition, MergeTreeIndexConditionText>)
+        LOG_TRACE(logger, "{}. Reason: a part has a pending patch", disabled_reason_prefix);
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
-        if (!index.index->isTextIndex())
+        if (!typeid_cast<const IndexCondition *>(index.condition_template->generateUnsubstituted().get()))
             continue;
 
         if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
         {
-            LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
+            LOG_TRACE(logger, "{}. Reason: {}", disabled_reason_prefix, result.error().text);
             continue;
         }
 
@@ -250,7 +260,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
             return !!index.index->getDeserializedFormat(*part, index.index->getFileName());
         });
 
-        text_index_read_infos[index.index->index.name] =
+        index_read_infos[index.index->index.name] =
         {
             .condition = index.condition_template->generateUnsubstituted(),
             .index = &index,
@@ -260,6 +270,40 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         };
     }
 }
+
+void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+{
+    /// Text direct read replaces the predicate with the index virtual column, and the virtual
+    /// column's default expression re-evaluates the search on the (absent) source column, so a
+    /// step polluted by patch system columns drops rows or throws UNKNOWN_IDENTIFIER. Direct read
+    /// is therefore not used when a queried part has patch parts (see `has_patched_parts`).
+    collectIndexReadInfos<MergeTreeIndexConditionText>(
+        read_from_merge_tree_step,
+        text_index_read_infos,
+        "Cannot use direct reading from text index");
+}
+
+void collectBloomSlicedIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, BloomSlicedIndexReadInfos & bloom_sliced_index_read_infos)
+{
+    if (read_from_merge_tree_step->isQueryWithFinal())
+        return;
+
+    /// Unlike text direct read, the bloom_sliced hint keeps the hint step when parts have patch
+    /// parts: this is intentional, per-part fail-open degradation rather than a whole-query
+    /// decline. The hint is only ever a pre-filter AND-ed with the original predicate (see
+    /// `prependBloomSlicedHintToPrewhereInfo`), and its virtual column's default expression is
+    /// the literal 1 (see `buildBloomSlicedHintDAG`). For a part with patch parts, the patch
+    /// system columns turn the hint step into a mixed step that is not dispatched to the index
+    /// reader; the virtual column is then not produced and the reader default-fills it with the
+    /// fail-open literal, so every row passes the hint and the original predicate does the real
+    /// filtering: results stay correct, and the hint keeps pruning in parts without patches.
+    collectIndexReadInfos<MergeTreeIndexConditionBloomSliced>(
+        read_from_merge_tree_step,
+        bloom_sliced_index_read_infos,
+        "Cannot add bloom_sliced token hint");
+}
+
+// Text-index direct-read and preprocessing helpers.
 
 /// Adds an inject-only condition (from the index definition, null predicate) for every text index not already
 /// collected as a direct-read entry, so the rewrite covers all text indexes even without skip-index analysis.
@@ -336,7 +380,6 @@ ASTPtr convertSetColumnToAST(const IColumn & column)
 
     return elements;
 }
-
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
@@ -451,7 +494,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 ///
 /// Also this class processes text index functions (hasToken, hasAllTokens, hasAnyTokens):
 /// applies tokenizer and preprocessors (lower, upper, etc.) for the haystack and needles arguments.
-/// It allows their stadalone executions without the direct read from text index.
+/// It allows their standalone execution without the direct read from text index.
 /// It is required to return the the same results as with the direct read.
 ///
 /// For example, for the index `idx_s (s) type = text(tokenizer = 'splitByNonAlpha', preprocessor = lower(s))`
@@ -579,7 +622,7 @@ private:
         TextSearchQueryPtr search_query;
         String index_name;
         String virtual_column_name;
-        const TextIndexReadInfo * info = nullptr;
+        const IndexReadInfo * info = nullptr;
         /// Whether this predicate participated in skip-index analysis (always true unless `require_index_analyzed_predicate`).
         bool is_index_analyzed = true;
     };
@@ -1142,6 +1185,285 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     return true;
 }
 
+namespace
+{
+
+// bloom_sliced token hint helpers.
+
+struct BloomSlicedHintDAG
+{
+    ActionsDAG actions;
+    String filter_column_name;
+    IndexReadColumns added_columns;
+};
+
+struct BloomSlicedHintPredicate
+{
+    String index_name;
+    String index_column_name;
+    BloomSlicedTokenPredicate predicate;
+};
+
+std::optional<BloomSlicedHintPredicate> tryCreateBloomSlicedTokenPredicate(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    const ActionsDAG::Node & node,
+    const BloomSlicedIndexReadInfos & bloom_sliced_index_read_infos)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function || !node.function_base)
+        return std::nullopt;
+
+    if (!node.result_type->canBeUsedInBooleanContext())
+        return std::nullopt;
+
+    ActionsDAGWithInversionPushDown canonical_dag(&node, read_from_merge_tree_step.getContext(), /* boolean_context */ false);
+    const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : node;
+
+    for (const auto & [_, info] : bloom_sliced_index_read_infos)
+    {
+        if (!info.is_materialized)
+            continue;
+
+        auto & condition = typeid_cast<MergeTreeIndexConditionBloomSliced &>(*info.index->condition_template->generateUnsubstituted());
+        auto predicate = condition.createTokenPredicate(canonical_node, read_from_merge_tree_step.getContext());
+        if (predicate)
+        {
+            return BloomSlicedHintPredicate{
+                .index_name = info.index->index->index.name,
+                .index_column_name = info.index->index->index.column_names.front(),
+                .predicate = std::move(*predicate)};
+        }
+    }
+
+    return std::nullopt;
+}
+
+void collectBloomSlicedHintPredicatesFromConjunction(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    const ActionsDAG::Node & node,
+    const BloomSlicedIndexReadInfos & bloom_sliced_index_read_infos,
+    std::vector<BloomSlicedHintPredicate> & predicates)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.function_base->getName() == "and")
+    {
+        for (const auto * child : node.children)
+            collectBloomSlicedHintPredicatesFromConjunction(read_from_merge_tree_step, *child, bloom_sliced_index_read_infos, predicates);
+        return;
+    }
+
+    if (auto predicate = tryCreateBloomSlicedTokenPredicate(read_from_merge_tree_step, node, bloom_sliced_index_read_infos))
+        predicates.push_back(std::move(*predicate));
+}
+
+std::optional<BloomSlicedHintDAG> buildBloomSlicedHintDAG(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    const std::vector<BloomSlicedHintPredicate> & predicates,
+    const BloomSlicedIndexReadInfos & bloom_sliced_index_read_infos)
+{
+    if (predicates.empty())
+        return std::nullopt;
+
+    BloomSlicedHintDAG result;
+    std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
+    NameSet used_index_columns;
+
+    for (const auto & predicate : predicates)
+    {
+        if (used_index_columns.contains(predicate.index_column_name))
+            continue;
+
+        auto info_it = bloom_sliced_index_read_infos.find(predicate.index_name);
+        if (info_it == bloom_sliced_index_read_infos.end() || !info_it->second.is_materialized)
+            continue;
+
+        auto & condition = typeid_cast<MergeTreeIndexConditionBloomSliced &>(*info_it->second.index->condition_template->generateUnsubstituted());
+        auto virtual_column_name = condition.replaceToVirtualColumn(predicate.predicate, predicate.index_name);
+        if (virtual_column_to_node.contains(virtual_column_name))
+            continue;
+
+        VirtualColumnDescription virtual_column(
+            virtual_column_name,
+            std::make_shared<DataTypeUInt8>(),
+            /*codec=*/ nullptr,
+            predicate.index_name,
+            VirtualsKind::Ephemeral,
+            VirtualsMaterializationPlace::Reader,
+            /*deterministic_=*/ true);
+        /// The fail-open default is load-bearing: whenever the reader does not produce the hint
+        /// virtual column (the index is not materialized in a part, or patch parts turn the hint
+        /// step into a mixed step that is not dispatched to the index reader), the column is
+        /// default-filled with the literal 1 and every row passes the hint. Correctness then
+        /// rests on the original predicate, which is always kept as a conjunct of the hint (see
+        /// `prependBloomSlicedHintToPrewhereInfo` / `makeBloomSlicedHintPrewhereInfo` plus the
+        /// plan-level filter). Do not replace this with an expression over the source column:
+        /// that would re-introduce the text-direct-read patch-parts bug (dropped rows /
+        /// UNKNOWN_IDENTIFIER for MATERIALIZED columns).
+        virtual_column.default_desc.kind = ColumnDefaultKind::Default;
+        virtual_column.default_desc.expression = make_intrusive<ASTLiteral>(Field(1));
+
+        const auto & input = result.actions.addInput(virtual_column_name, std::make_shared<DataTypeUInt8>());
+        virtual_column_to_node.emplace(virtual_column_name, &input);
+        result.added_columns[predicate.index_name].add(std::move(virtual_column));
+        used_index_columns.insert(predicate.index_column_name);
+    }
+
+    if (virtual_column_to_node.empty())
+        return std::nullopt;
+
+    ActionsDAG::NodeRawConstPtrs children;
+    std::vector<String> virtual_column_names;
+    virtual_column_names.reserve(virtual_column_to_node.size());
+    for (const auto & [virtual_column_name, _] : virtual_column_to_node)
+        virtual_column_names.push_back(virtual_column_name);
+    std::ranges::sort(virtual_column_names);
+    children.reserve(virtual_column_names.size());
+    for (const auto & virtual_column_name : virtual_column_names)
+        children.push_back(virtual_column_to_node.at(virtual_column_name));
+
+    const ActionsDAG::Node * filter_node = nullptr;
+    if (children.size() == 1)
+    {
+        filter_node = children.front();
+    }
+    else
+    {
+        auto function_builder = FunctionFactory::instance().get("and", read_from_merge_tree_step.getContext());
+        filter_node = &result.actions.addFunction(function_builder, children, "");
+    }
+
+    result.filter_column_name = filter_node->result_name;
+    result.actions.getOutputs().push_back(filter_node);
+
+    auto logger = getLogger("processAndOptimizeBloomSlicedIndexFunctions");
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, {}));
+
+    return result;
+}
+
+PrewhereInfoPtr makeBloomSlicedHintPrewhereInfo(BloomSlicedHintDAG hint)
+{
+    auto prewhere_info = std::make_shared<PrewhereInfo>();
+    prewhere_info->prewhere_actions = std::move(hint.actions);
+    prewhere_info->prewhere_column_name = std::move(hint.filter_column_name);
+    prewhere_info->remove_prewhere_column = true;
+    prewhere_info->need_filter = true;
+    return prewhere_info;
+}
+
+PrewhereInfoPtr prependBloomSlicedHintToPrewhereInfo(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    BloomSlicedHintDAG hint,
+    const PrewhereInfoPtr & prewhere_info)
+{
+    auto result = std::make_shared<PrewhereInfo>();
+    result->prewhere_actions = std::move(hint.actions);
+    const auto * hint_filter_node = &result->prewhere_actions.findInOutputs(hint.filter_column_name);
+
+    auto cloned_prewhere_info = prewhere_info->clone();
+    const String original_filter_column_name = cloned_prewhere_info.prewhere_column_name;
+    const bool original_remove_prewhere_column = cloned_prewhere_info.remove_prewhere_column;
+
+    ActionsDAG::NodeRawConstPtrs original_outputs_in_combined;
+    result->prewhere_actions.mergeNodes(std::move(cloned_prewhere_info.prewhere_actions), &original_outputs_in_combined);
+
+    const ActionsDAG::Node * original_filter_node = nullptr;
+    for (const auto * node : original_outputs_in_combined)
+    {
+        if (node->result_name == original_filter_column_name)
+        {
+            original_filter_node = node;
+            break;
+        }
+    }
+
+    if (!original_filter_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Original PREWHERE filter column {} not found after adding bloom_sliced hint", original_filter_column_name);
+
+    auto & outputs = result->prewhere_actions.getOutputs();
+    outputs.clear();
+    for (const auto * node : original_outputs_in_combined)
+        if (std::ranges::find(outputs, node) == outputs.end())
+            outputs.push_back(node);
+
+    if (original_remove_prewhere_column)
+        std::erase(outputs, original_filter_node);
+
+    auto function_builder = FunctionFactory::instance().get("and", read_from_merge_tree_step.getContext());
+    const auto * combined_filter_node = &result->prewhere_actions.addFunction(function_builder, {hint_filter_node, original_filter_node}, "");
+    outputs.push_back(combined_filter_node);
+
+    result->prewhere_column_name = combined_filter_node->result_name;
+    result->remove_prewhere_column = true;
+    result->need_filter = prewhere_info->need_filter;
+    return result;
+}
+
+bool addBloomSlicedHintReadTasks(ReadFromMergeTree & read_from_merge_tree_step, const IndexReadColumns & added_columns)
+{
+    if (added_columns.empty())
+        return false;
+
+    const auto & indexes = read_from_merge_tree_step.getIndexes();
+    read_from_merge_tree_step.createReadTasksForTextIndex(indexes->skip_indexes, added_columns, {}, /*is_final=*/ false);
+    return true;
+}
+
+bool processAndOptimizeBloomSlicedIndexFunctionsInPrewhere(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    const PrewhereInfoPtr & prewhere_info,
+    const BloomSlicedIndexReadInfos & bloom_sliced_index_read_infos)
+{
+    const auto & filter_node = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
+    std::vector<BloomSlicedHintPredicate> predicates;
+    collectBloomSlicedHintPredicatesFromConjunction(read_from_merge_tree_step, filter_node, bloom_sliced_index_read_infos, predicates);
+
+    auto hint = buildBloomSlicedHintDAG(read_from_merge_tree_step, predicates, bloom_sliced_index_read_infos);
+    if (!hint)
+        return false;
+
+    auto added_columns = hint->added_columns;
+    auto modified_prewhere_info = prependBloomSlicedHintToPrewhereInfo(read_from_merge_tree_step, std::move(*hint), prewhere_info);
+    addBloomSlicedHintReadTasks(read_from_merge_tree_step, added_columns);
+    read_from_merge_tree_step.updatePrewhereInfo(modified_prewhere_info);
+    return true;
+}
+
+const ActionsDAG::Node * processAndOptimizeBloomSlicedIndexFunctionsInWhere(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    ActionsDAG & filter_dag,
+    const BloomSlicedIndexReadInfos & bloom_sliced_index_read_infos,
+    const String & filter_column_name)
+{
+    const auto & filter_node = filter_dag.findInOutputs(filter_column_name);
+    std::vector<BloomSlicedHintPredicate> predicates;
+    collectBloomSlicedHintPredicatesFromConjunction(read_from_merge_tree_step, filter_node, bloom_sliced_index_read_infos, predicates);
+
+    auto hint = buildBloomSlicedHintDAG(read_from_merge_tree_step, predicates, bloom_sliced_index_read_infos);
+    if (!hint)
+        return nullptr;
+
+    auto added_columns = hint->added_columns;
+
+    /// The read step may already have a PrewhereInfo (e.g. an explicit user PREWHERE
+    /// without token predicates). `updatePrewhereInfo` replaces the existing PrewhereInfo,
+    /// so the hint must be prepended to it instead of overwriting it - otherwise the
+    /// user predicate would be dropped from the plan and wrong rows would be returned.
+    PrewhereInfoPtr hint_prewhere_info;
+    if (auto existing_prewhere_info = read_from_merge_tree_step.getPrewhereInfo())
+        hint_prewhere_info = prependBloomSlicedHintToPrewhereInfo(read_from_merge_tree_step, std::move(*hint), existing_prewhere_info);
+    else
+        hint_prewhere_info = makeBloomSlicedHintPrewhereInfo(std::move(*hint));
+
+    addBloomSlicedHintReadTasks(read_from_merge_tree_step, added_columns);
+    read_from_merge_tree_step.updatePrewhereInfo(hint_prewhere_info);
+
+    return &filter_dag.findInOutputs(filter_column_name);
+}
+
+}
+
+// Generic plan entry point.
+
+/// Applies direct index-read and hint optimizations to the query plan.
 /// Steps that keep the indexed column intact (WindowStep only appends columns), so the injection walk can
 /// traverse past them to reach a projection/filter lifted above them.
 static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
@@ -1167,11 +1489,17 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// require skip-index analysis.
 ///
 /// When `direct_read_from_text_index` is true, also replaces text-search functions
-/// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
+/// with virtual columns for direct text-index reads. When
+/// `direct_read_from_bloom_sliced_index` is true, may add `bloom_sliced` token
+/// hint virtual columns as staged PREWHERE filters.
 ///
-/// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
+/// See `TextIndexDAGReplacer` and the `bloom_sliced` helpers above for more details.
+void processAndOptimizeIndexFunctions(
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    bool direct_read_from_bloom_sliced_index,
+    const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1183,8 +1511,14 @@ void processAndOptimizeTextIndexFunctions(
     /// SELECT list, steps above the scan, and queries that did not run skip-index analysis.
     TextIndexReadInfos text_index_infos;
     collectTextIndexReadInfos(read_from_merge_tree_step, text_index_infos);
+
+    /// A text index usable for direct read wins over a `bloom_sliced` hint.
+    BloomSlicedIndexReadInfos bloom_sliced_index_read_infos;
+    if (direct_read_from_bloom_sliced_index && text_index_infos.empty())
+        collectBloomSlicedIndexReadInfos(read_from_merge_tree_step, bloom_sliced_index_read_infos);
+
     collectTextIndexInjectInfos(read_from_merge_tree_step, text_index_infos);
-    if (text_index_infos.empty())
+    if (text_index_infos.empty() && bloom_sliced_index_read_infos.empty())
         return;
 
     /// This step can be visited by the pass more than once, because a Merge child plan is optimized
@@ -1202,12 +1536,21 @@ void processAndOptimizeTextIndexFunctions(
 
     /// --- PREWHERE ---
     bool prewhere_optimized = false;
+    bool bloom_sliced_prewhere_optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
     {
         /// A PREWHERE deferred after FINAL never runs during reading and is excluded from index analysis, so it gets neither the direct read nor a sibling predicate's preprocessor.
         bool is_deferred_after_final = read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
-        bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !is_deferred_after_final;
-        prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
+        if (!text_index_infos.empty())
+        {
+            bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !is_deferred_after_final;
+            prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
+        }
+
+        /// The hint registers index read tasks, so it must not be added twice to a revisited step.
+        if (!bloom_sliced_index_read_infos.empty() && !already_has_direct_read && !is_deferred_after_final)
+            bloom_sliced_prewhere_optimized = processAndOptimizeBloomSlicedIndexFunctionsInPrewhere(
+                *read_from_merge_tree_step, read_from_merge_tree_step->getPrewhereInfo(), bloom_sliced_index_read_infos);
     }
 
     /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
@@ -1247,9 +1590,21 @@ void processAndOptimizeTextIndexFunctions(
         if (filter_step && it == walk_begin)
         {
             ActionsDAG & filter_dag = filter_step->getExpression();
-            bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
-            const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
+            const ActionsDAG::Node * result_filter_node = nullptr;
+            if (!text_index_infos.empty())
+            {
+                bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
+                result_filter_node = processAndOptimizeTextIndexDAG(
+                    *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
+            }
+
+            if (!bloom_sliced_index_read_infos.empty() && !bloom_sliced_prewhere_optimized && !already_has_direct_read)
+            {
+                const String & current_filter_column_name = result_filter_node ? result_filter_node->result_name : filter_step->getFilterColumnName();
+                if (const auto * hinted_filter_node = processAndOptimizeBloomSlicedIndexFunctionsInWhere(
+                        *read_from_merge_tree_step, filter_dag, bloom_sliced_index_read_infos, current_filter_column_name))
+                    result_filter_node = hinted_filter_node;
+            }
 
             if (!result_filter_node)
                 continue;
