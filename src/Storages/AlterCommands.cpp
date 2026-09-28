@@ -1042,7 +1042,7 @@ void AlterCommand::apply(
         auto index = IndexDescription::getIndexFromAST(
             index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
 
-        checkIndexArgumentsAccess(index, context);
+        checkTextIndexPreAndPostProcessorPermissions(index, context);
 
         metadata.secondary_indices.emplace(insert_it, std::move(index));
     }

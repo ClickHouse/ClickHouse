@@ -61,7 +61,7 @@ void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
 
 }
 
-void checkIndexArgumentsAccess(const IndexDescription & index, const ContextPtr & context)
+void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
 {
     if (index.type != TEXT_INDEX_NAME || !index.arguments)
         return;
@@ -77,14 +77,14 @@ void checkIndexArgumentsAccess(const IndexDescription & index, const ContextPtr 
             continue;
 
         auto expression = func->arguments->children[1]->clone();
-        /// `TreeRewriter` inlines these before the expression is ever resolved, so a privileged
-        /// function hidden inside one must be seen here too.
+        /// Replaces every call of a SQL user-defined function by its body, as `TreeRewriter` does, so
+        /// that a function referenced only from inside a UDF is seen below.
         if (!UserDefinedSQLFunctionFactory::instance().empty())
             UserDefinedSQLFunctionVisitor::visit(expression, context);
 
         /// Resolving a name runs the function's `create`, which is where a grant-checked function
-        /// such as `demangle` performs its `checkAccess`. Only the names are resolved: the types are
-        /// the index validator's business, and checking them here would pre-empt its diagnostics.
+        /// such as `demangle` performs its `checkAccess`. Names only: building the expression would
+        /// also check argument types, reporting those errors from here instead of from the validator.
         resolveFunctionsAsUser(expression, context);
     }
 }

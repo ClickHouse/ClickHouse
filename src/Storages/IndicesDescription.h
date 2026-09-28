@@ -86,11 +86,10 @@ struct IndexDescription
     bool isSimpleSingleColumnIndex() const;
 };
 
-/// Authorises the functions named by the expressions an index carries in its arguments (the text
-/// index `preprocessor`/`postprocessor`) against `context`. Call only where a user declares an
-/// index: those expressions are later resolved under the global full-access context, which
-/// authorises nothing, and revalidating a stored definition would check the wrong user.
-void checkIndexArgumentsAccess(const IndexDescription & index, const ContextPtr & context);
+/// Checks that all functions referenced by the text index preprocessor and postprocessor expressions
+/// are allowed to run within the permissions of the given context. Call only where a user declares an
+/// index: everywhere else these expressions are resolved under the global context, which permits all.
+void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context);
 
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>

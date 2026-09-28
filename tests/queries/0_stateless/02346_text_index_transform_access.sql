@@ -1,6 +1,9 @@
--- A text index `preprocessor`/`postprocessor` must be authorized against the user declaring it.
--- `allow_introspection_functions` and the per-function grant share the gate the bug skipped, so the
--- setting stands in for a second user.
+-- Text index `preprocessor`/`postprocessor` expressions must only use functions the user declaring
+-- the index is permitted to run.
+--
+-- The test needs a function the current user may not run. Introspection functions fit: they are
+-- refused both without the grant and, as here, with `allow_introspection_functions = 0`. Using the
+-- setting keeps the test in plain SQL, with no second user to create.
 
 DROP TABLE IF EXISTS tab;
 

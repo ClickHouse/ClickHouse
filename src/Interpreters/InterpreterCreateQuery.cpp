@@ -1211,9 +1211,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
 
-        /// Same screening, for the expressions an index carries in its arguments.
         for (const auto & index : properties.indices)
-            checkIndexArgumentsAccess(index, getContext());
+            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
