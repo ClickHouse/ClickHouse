@@ -2304,10 +2304,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// Nothing to append. Must check additional_bytes (not new_bytes): when memory
-    /// already holds data and the working buffer is empty, additional_bytes == 0 but
-    /// new_bytes > 0, and in.position() may be null — memcpy(..., nullptr, 0) is UB.
-    /// See https://github.com/ClickHouse/ClickHouse/issues/122626
+    /// No bytes to append (check additional_bytes: empty buffer may have null position).
     if (additional_bytes == 0)
         return;
 
