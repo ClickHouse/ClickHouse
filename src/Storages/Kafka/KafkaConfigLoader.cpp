@@ -18,7 +18,7 @@
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
-#include <librdkafka_sensitive_properties.h>
+#include <chrdkafka_conf_sensitive.h>
 #include <csignal>
 #include <unordered_set>
 
@@ -560,10 +560,15 @@ namespace
 /// server log, but also clients that set `send_logs_level`.
 bool isSensitiveProperty(std::string_view name)
 {
-    /// The exact names librdkafka marks with the _RK_SENSITIVE flag (generated from the vendored
-    /// librdkafka source), plus a substring safety net for properties of future librdkafka versions.
-    static const std::unordered_set<std::string_view> sensitive_properties(
-        std::begin(LIBRDKAFKA_SENSITIVE_PROPERTIES), std::end(LIBRDKAFKA_SENSITIVE_PROPERTIES));
+    /// The properties librdkafka marks with the _RK_SENSITIVE flag, plus a substring safety net
+    /// for properties unknown to the vendored librdkafka version.
+    static const std::unordered_set<std::string_view> sensitive_properties = []
+    {
+        std::unordered_set<std::string_view> res;
+        for (const char * const * prop_name = chrd_kafka_conf_sensitive_properties(); *prop_name; ++prop_name)
+            res.emplace(*prop_name);
+        return res;
+    }();
     return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
 }
 

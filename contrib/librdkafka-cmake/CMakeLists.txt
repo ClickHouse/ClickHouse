@@ -86,6 +86,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_transport.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_txnmgr.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_zstd.c" # WITH_ZSTD
+  "${CMAKE_CURRENT_SOURCE_DIR}/rdkafka_conf_sensitive.c" # ClickHouse addition, see the comment in the file
   "${RDKAFKA_SOURCE_DIR}/rdlist.c"
   "${RDKAFKA_SOURCE_DIR}/rdlog.c"
   "${RDKAFKA_SOURCE_DIR}/rdmap.c"
@@ -151,22 +152,6 @@ target_compile_definitions(_rdkafka PRIVATE -DCJSON_HIDE_SYMBOLS)
 target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include") # for "librdkafka/rdkafka.h"
 target_include_directories(_rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})                 # Because weird logic with "include_next" is used.
 target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/auxdir")  # for "../config.h"
-
-# Generate the list of configuration properties that librdkafka marks with the _RK_SENSITIVE
-# flag. ClickHouse uses it to hide the values of these properties in logs, because the public
-# rd_kafka_conf_dump does not redact them.
-set(RDKAFKA_SENSITIVE_PROPERTIES_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/librdkafka_sensitive_properties.h")
-add_custom_command(
-  OUTPUT "${RDKAFKA_SENSITIVE_PROPERTIES_HEADER}"
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/generate-sensitive-properties.sh"
-          "${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c" "${RDKAFKA_SENSITIVE_PROPERTIES_HEADER}"
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate-sensitive-properties.sh" "${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c"
-  COMMENT "Generating librdkafka_sensitive_properties.h"
-)
-add_custom_target(_rdkafka_sensitive_properties DEPENDS "${RDKAFKA_SENSITIVE_PROPERTIES_HEADER}")
-add_dependencies(_rdkafka _rdkafka_sensitive_properties)
-target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(_rdkafka
   PRIVATE
     ch_contrib::lz4
