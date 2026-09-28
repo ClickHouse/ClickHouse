@@ -820,7 +820,7 @@ FROM (SELECT parseQueryToJSON('CREATE TABLE t ON CLUSTER my_cluster (a UInt64) E
 -- ==========================================================================
 -- 43. ASTDropQuery
 -- Fields: kind(string), database(string), table(string), if_exists(bool),
---         sync(bool), permanently(bool), is_dictionary(bool), is_view(bool)
+--         sync(bool), permanently(bool), detached(bool), is_dictionary(bool), is_view(bool)
 -- ==========================================================================
 
 SELECT 'DropQuery_table' AS t,
@@ -829,6 +829,11 @@ SELECT 'DropQuery_table' AS t,
     JSONExtractString(j, 'table') AS tbl,
     JSONExtractBool(j, 'if_exists') AS ie
 FROM (SELECT parseQueryToJSON('DROP TABLE IF EXISTS t') AS j);
+
+SELECT 'DropQuery_detached' AS t,
+    JSONExtractBool(j, 'detached') AS is_detached,
+    formatQueryFromJSON(j) AS round_trip
+FROM (SELECT parseQueryToJSON('DROP DETACHED TABLE IF EXISTS t SYNC') AS j);
 
 SELECT 'DropQuery_database' AS t,
     JSONExtractString(j, 'kind') AS kind,
