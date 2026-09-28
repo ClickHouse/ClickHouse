@@ -43,7 +43,7 @@ Si su organización restringe la asunción de roles de IAM o las llamadas a la A
 La siguiente sección describe cómo se utiliza la red privada de **Tailscale** para la resolución de problemas y el acceso opcional de administración.
 
 <div id="tailscale-private-network">
-  ## Red privada de Tailscale {#tailscale-private-network}
+  ## Red privada de Tailscale
 </div>
 
 Tailscale proporciona una conexión de red privada de confianza cero entre los servicios de administración de ClickHouse Cloud y su implementación BYOC. Este canal seguro permite a los ingenieros de ClickHouse realizar tareas de resolución de problemas y operaciones de administración sin necesidad de acceso entrante desde la red pública ni de configuraciones de VPN complejas; los propios agentes realizan conexiones únicamente salientes y necesitan acceso saliente a internet para llegar al servicio de coordinación de Tailscale.

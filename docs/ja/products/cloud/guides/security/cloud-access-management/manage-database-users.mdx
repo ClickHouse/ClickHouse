@@ -55,11 +55,11 @@ SQL コンソールのユーザー用のカスタムロールを作成し、そ�
 </Steps>
 
 <div id="database-authentication">
-  ## データベース認証 {#database-authentication}
+  ## データベース認証
 </div>
 
 <div id="database-user-id--password">
-  ### データベースユーザー ID とパスワード {#database-user-id--password}
+  ### データベースユーザー ID とパスワード
 </div>
 
 パスワードを安全に保護するため、[ユーザーアカウントを作成する](/ja/reference/statements/create/user)際は、SHA256&#95;hash 方式を使用してください。ClickHouse のデータベースパスワードは、12 文字以上で、複雑さの要件を満たしている必要があります。つまり、大文字、小文字、数字、特殊文字のうち必要な種類を含める必要があります。
@@ -75,7 +75,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### Secure Shell (SSH) 認証を使用するデータベースユーザー {#database-ssh}
+  ### Secure Shell (SSH) 認証を使用するデータベースユーザー
 </div>
 
 ClickHouse Cloud のデータベースユーザーに SSH 認証を設定するには、次の手順を実行します。
@@ -88,7 +88,7 @@ ClickHouse Cloud のデータベースユーザーに SSH 認証を設定する�
 例を含む詳しい手順については、ナレッジベースの [SSH 鍵を使用して ClickHouse Cloud に接続する方法](/ja/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) を参照してください。
 
 <div id="database-permissions">
-  ## データベース権限 {#database-permissions}
+  ## データベース権限
 </div>
 
 SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用して、サービスおよびデータベースで以下を設定します。
@@ -107,7 +107,7 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="ユーザーに権限を付与するさまざまな方法を示す図" size="md" background="black" />
 
 <div id="initial-settings">
-  ### 初期設定 {#initial-settings}
+  ### 初期設定
 </div>
 
 データベースには `default` というアカウントがあり、サービスの作成時に自動的に追加され、default&#95;role が付与されます。サービスを作成したユーザーには、サービス作成時に `default` アカウントに割り当てられる、自動生成されたランダムなパスワードが表示されます。このパスワードは初期設定後には表示されませんが、後からコンソールで Service Admin 権限を持つユーザーであれば変更できます。また、このアカウント、またはコンソール内で Service Admin 権限を持つアカウントを使用して、追加のデータベースユーザーやロールをいつでも設定できます。

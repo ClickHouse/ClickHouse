@@ -47,7 +47,7 @@ A seção a seguir descreve como a rede privada **Tailscale** é usada para solu
 O Tailscale fornece uma conexão de rede privada de confiança zero entre os serviços de gerenciamento do ClickHouse Cloud e sua implantação BYOC. Esse canal seguro permite que engenheiros do ClickHouse realizem solução de problemas e operações de gerenciamento sem exigir acesso de entrada à rede pública nem configurações complexas de VPN; os próprios agentes fazem conexões somente de saída e precisam de acesso à internet de saída para alcançar o serviço de coordenação do Tailscale.
 
 <div id="tailscale-overview">
-  ### Visão geral {#tailscale-overview}
+  ### Visão geral
 </div>
 
 O Tailscale cria um túnel de rede privado e criptografado entre o plano de controle do ClickHouse (na VPC do ClickHouse) e o plano de dados do seu BYOC (na sua VPC). Essa conexão é usada exclusivamente para:
@@ -78,7 +78,7 @@ Para cada serviço ou endpoint que precisa ser acessado via Tailscale, o ClickHo
    * Encaminha o tráfego para os IPs apropriados dentro do seu cluster do Kubernetes
 
 <div id="tailscale-connection-process">
-  ### Processo de conexão de rede {#tailscale-connection-process}
+  ### Processo de conexão de rede
 </div>
 
 O estabelecimento da conexão no Tailscale segue estas etapas:
@@ -98,7 +98,7 @@ O estabelecimento da conexão no Tailscale segue estas etapas:
    * O tráfego permanece criptografado independentemente de usar o modo direto ou de retransmissão
 
 <div id="tailscale-security">
-  ### Recursos de segurança {#tailscale-security}
+  ### Recursos de segurança
 </div>
 
 **Conexões somente de saída**:
@@ -126,7 +126,7 @@ Por padrão, os serviços de gerenciamento da ClickHouse alcançam seu cluster d
 * Por padrão, o endpoint público é mantido como mecanismo de contingência para necessidades emergenciais de investigação e suporte; após a verificação do acesso privado, ele pode ser totalmente desabilitado em coordenação com a ClickHouse
 
 <div id="tailscale-traffic-flow">
-  ### Fluxo de tráfego de rede {#tailscale-traffic-flow}
+  ### Fluxo de tráfego de rede
 </div>
 
 **Fluxo de conexão do Tailscale**:

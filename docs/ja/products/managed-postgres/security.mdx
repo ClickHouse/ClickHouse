@@ -21,7 +21,7 @@ IP フィルタは、ClickHouse Managed Postgres インスタンスへの接続�
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List の設定" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### IP フィルタの設定 {#configuring-ip-filters}
+  ### IP フィルタの設定
 </div>
 
 IP フィルタを設定するには、次の手順に従います。
@@ -58,7 +58,7 @@ ClickHouse Managed Postgres では、包括的なデータ保護を実現する�
 ClickHouse Managed Postgres に保存されるすべてのデータは、基盤となるストレージインフラストラクチャへの不正アクセスから保護するため、保存時に暗号化されます。
 
 <div id="nvme-encryption">
-  #### NVMe ストレージの暗号化 {#nvme-encryption}
+  #### NVMe ストレージの暗号化
 </div>
 
 NVMe ドライブに保存されるデータベースファイル、トランザクションログ、一時ファイルは、業界標準の暗号化アルゴリズムで暗号化されています。この暗号化はアプリケーションには透過的で、設定は不要です。
@@ -78,13 +78,13 @@ NVMe ドライブに保存されるデータベースファイル、トランザ
 </Info>
 
 <div id="encryption-in-transit">
-  ### 転送時の暗号化 {#encryption-in-transit}
+  ### 転送時の暗号化
 </div>
 
 ClickHouse Managed Postgres へのすべてのネットワーク接続は、アプリケーションとデータベースの間で送受信されるデータを保護するため、TLS (Transport Layer Security) で保護されています。
 
 <div id="tls-ssl">
-  #### TLS/SSL の設定 {#tls-ssl}
+  #### TLS/SSL の設定
 </div>
 
 デフォルトでは、接続に TLS 暗号化が使用されますが、証明書の検証は行われません。本番ワークロードでは、正しいサーバーと通信していることを確実にするため、証明書を検証した TLS で接続することを推奨します。
@@ -132,7 +132,7 @@ ClickHouse Managed Postgres インスタンスで Private Service Connect を有
 ClickHouse Managed Postgres は、誤削除や破損、その他のデータ損失から保護するために、データを自動的にバックアップします。
 
 <div id="retention-policy">
-  ### 保持ポリシー {#retention-policy}
+  ### 保持ポリシー
 </div>
 
 * **デフォルトの保持期間**: 7日間

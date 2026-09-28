@@ -21,7 +21,7 @@ IP 필터는 ClickHouse Managed Postgres 인스턴스에 연결할 수 있는 �
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP 액세스 목록 구성" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### IP 필터 구성 {#configuring-ip-filters}
+  ### IP 필터 구성
 </div>
 
 IP 필터를 구성하려면:
@@ -58,7 +58,7 @@ ClickHouse Managed Postgres는 포괄적인 데이터 보호를 위해 저장 �
 ClickHouse Managed Postgres에 저장되는 모든 데이터는 기반 스토리지 인프라에 대한 무단 액세스를 방지하기 위해 저장 시 암호화됩니다.
 
 <div id="nvme-encryption">
-  #### NVMe 스토리지 암호화 {#nvme-encryption}
+  #### NVMe 스토리지 암호화
 </div>
 
 NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그, 임시 파일은 업계 표준 암호화 알고리즘으로 암호화됩니다. 이 암호화는 애플리케이션에 투명하게 적용되며 별도의 구성이 필요하지 않습니다.
@@ -78,13 +78,13 @@ NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그
 </Info>
 
 <div id="encryption-in-transit">
-  ### 전송 중 암호화 {#encryption-in-transit}
+  ### 전송 중 암호화
 </div>
 
 ClickHouse Managed Postgres에 대한 모든 네트워크 연결은 애플리케이션과 데이터베이스 간에 데이터가 전송되는 동안 이를 보호하기 위해 TLS(Transport Layer Security)로 보호됩니다.
 
 <div id="tls-ssl">
-  #### TLS/SSL 구성 {#tls-ssl}
+  #### TLS/SSL 구성
 </div>
 
 기본적으로 연결은 인증서 검증 없이 TLS로 암호화됩니다. 프로덕션 환경에서는 올바른 서버와 통신하고 있는지 확인할 수 있도록 인증서가 검증된 TLS로 연결하는 것을 권장합니다.
@@ -132,7 +132,7 @@ ClickHouse Managed Postgres 인스턴스에 Private Service Connect를 활성화
 ClickHouse Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 상황으로부터 데이터를 보호하기 위해 자동으로 백업을 수행합니다.
 
 <div id="retention-policy">
-  ### 보존 정책 {#retention-policy}
+  ### 보존 정책
 </div>
 
 * **기본 보존 기간**: 7일

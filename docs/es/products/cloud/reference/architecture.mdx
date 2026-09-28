@@ -29,30 +29,30 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 * Seguro y de alta disponibilidad de forma predeterminada
 
 <div id="administration">
-  ## Administración {#administration}
+  ## Administración
 </div>
 
 * Nos encargamos de la configuración, la monitorización, las copias de seguridad y la facturación.
 * Los controles de costes están habilitados de forma predeterminada y puede ajustarlos desde la consola de Cloud.
 
 <div id="service-isolation">
-  ## Aislamiento del servicio {#service-isolation}
+  ## Aislamiento del servicio
 </div>
 
 <div id="network-isolation">
-  ### Aislamiento de red {#network-isolation}
+  ### Aislamiento de red
 </div>
 
 Todos los servicios están aislados a nivel de red.
 
 <div id="compute-isolation">
-  ### Aislamiento del cómputo {#compute-isolation}
+  ### Aislamiento del cómputo
 </div>
 
 Todos los servicios se implementan en pods separados, dentro de sus respectivos espacios de nombres de Kubernetes, con aislamiento a nivel de red.
 
 <div id="storage-isolation">
-  ### Aislamiento del almacenamiento {#storage-isolation}
+  ### Aislamiento del almacenamiento
 </div>
 
 Todos los servicios usan una subruta independiente dentro de un bucket compartido (AWS, GCP) o de un contenedor de almacenamiento (Azure).
@@ -62,7 +62,7 @@ En AWS, el acceso al almacenamiento se controla mediante AWS IAM, y cada IAM rol
 En GCP y Azure, los servicios cuentan con aislamiento en el almacenamiento de objetos (todos los servicios tienen sus propios buckets o contenedores de almacenamiento).
 
 <div id="compute-compute-separation">
-  ## Cómputo-cómputo separation {#compute-compute-separation}
+  ## Cómputo-cómputo separation
 </div>
 
 [Cómputo-cómputo separation](/es/products/cloud/features/infrastructure/warehouses) te permite crear varios grupos de nodos de cómputo, cada uno con su propia URL de servicio, que utilizan el mismo almacenamiento de objetos compartido. Esto permite aislar el cómputo para distintos casos de uso, como separar las lecturas de las escrituras, aunque compartan los mismos datos. También permite un uso más eficiente de los recursos al escalar de forma independiente los grupos de cómputo según sea necesario.

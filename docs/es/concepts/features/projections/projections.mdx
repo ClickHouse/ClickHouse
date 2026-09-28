@@ -55,7 +55,7 @@ como se muestra en la figura siguiente:
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="Proyecciones en ClickHouse" />
 
 <div id="smarter_storage_with_part_offset">
-  ### Almacenamiento más inteligente con `_part_offset` {#smarter_storage_with_part_offset}
+  ### Almacenamiento más inteligente con `_part_offset`
 </div>
 
 Desde la versión 25.5, ClickHouse admite la columna virtual `_part_offset` en las
@@ -76,7 +76,7 @@ Los enfoques anteriores también pueden combinarse, almacenando algunas columnas
 otras indirectamente mediante `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## ¿Cuándo usar proyecciones? {#when-to-use-projections}
+  ## ¿Cuándo usar proyecciones?
 </div>
 
 Las proyecciones son una funcionalidad atractiva para los usuarios nuevos, ya que se
@@ -114,11 +114,11 @@ Recomendamos usar proyecciones cuando:
   [evalúe la sobrecarga de almacenamiento](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## Ejemplos {#examples}
+  ## Ejemplos
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### Filtrado por columnas que no están en la clave primaria {#filtering-without-using-primary-keys}
+  ### Filtrado por columnas que no están en la clave primaria
 </div>
 
 En este ejemplo, mostraremos cómo agregar una proyección a una tabla.
@@ -419,7 +419,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### Más ejemplos {#further-examples}
+  ### Más ejemplos
 </div>
 
 Los siguientes ejemplos usan el mismo conjunto de datos de precios del Reino Unido y comparan consultas con y sin proyecciones.
@@ -471,7 +471,7 @@ SETTINGS mutations_sync = 1
 Las siguientes consultas muestran el contraste de rendimiento con y sin proyecciones. Para desactivar el uso de proyecciones, usamos la configuración [`optimize_use_projections`](/es/reference/settings/session-settings/optimize-use#optimize_use_projections), que está habilitada de forma predeterminada.
 
 <div id="average-price-projections">
-  #### Consulta 1. Precio medio por año {#average-price-projections}
+  #### Consulta 1. Precio medio por año
 </div>
 
 <RunnableCode>
@@ -503,7 +503,7 @@ Las siguientes consultas muestran el contraste de rendimiento con y sin proyecci
 Los resultados deberían ser los mismos, pero el rendimiento será mejor en este último ejemplo.
 
 <div id="average-price-london-projections">
-  #### Consulta 2. Precio promedio por año en Londres {#average-price-london-projections}
+  #### Consulta 2. Precio promedio por año en Londres
 </div>
 
 <RunnableCode>
@@ -534,7 +534,7 @@ Los resultados deberían ser los mismos, pero el rendimiento será mejor en este
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### Consulta 3. Los barrios más caros {#most-expensive-neighborhoods-projections}
+  #### Consulta 3. Los barrios más caros
 </div>
 
 El filtro para las filas a partir de 2020 hace referencia directamente a la dimensión `year` almacenada en la proyección:
@@ -588,7 +588,7 @@ De nuevo, el resultado es el mismo, pero observa la mejora en el rendimiento de 
 </Note>
 
 <div id="combining-projections">
-  ### Combinar proyecciones en una sola consulta {#combining-projections}
+  ### Combinar proyecciones en una sola consulta
 </div>
 
 A partir de la versión 25.6, y sobre la base del soporte de `_part_offset` introducido en

@@ -25,7 +25,7 @@ ClickHouse Managed Postgres では、さまざまなワークロード特性に�
 <Image img="/images/managed-postgres/instance-types.webp" alt="インスタンスタイプ" size="md" border />
 
 <div id="choosing-instance">
-  ### 適切なインスタンスタイプの選択 {#choosing-instance}
+  ### 適切なインスタンスタイプの選択
 </div>
 
 ワークロードの種類によって、適したリソース構成は異なります。
@@ -47,7 +47,7 @@ ClickHouse Managed Postgres では、さまざまなワークロード特性に�
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="スケーリング設定" size="md" border />
 
 <div id="scaling-process">
-  ### スケーリングプロセス {#scaling-process}
+  ### スケーリングプロセス
 </div>
 
 スケーリングのワークフローでは、バックアップから新しいスタンバイを起動し、制御されたフェイルオーバーを実行します。
@@ -70,7 +70,7 @@ ClickHouse Managed Postgres では、さまざまなワークロード特性に�
 6. **古いインスタンスの廃止**: 元のインスタンスは、フェイルオーバーの完了後に廃止されます
 
 <div id="scaling-duration">
-  ### スケーリングにかかる時間 {#scaling-duration}
+  ### スケーリングにかかる時間
 </div>
 
 スケーリングに必要な総時間は、主にデータベースのサイズと、バックアップからリプレイする必要がある WAL データの量によって決まります。
@@ -110,7 +110,7 @@ ClickHouse Managed Postgres インスタンスをスケールするには、次�
 4. 変更内容を確認し、&quot;Apply changes&quot; をクリックします
 
 <div id="scaling-strategies">
-  ## スケーリング戦略 {#scaling-strategies}
+  ## スケーリング戦略
 </div>
 
 ### 垂直スケーリング {#vertical-scaling}
@@ -122,7 +122,7 @@ ClickHouse Managed Postgres インスタンスをスケールするには、次�
 * **コスト効率**: 過剰なプロビジョニングを避けつつ、必要なリソースに対してのみ料金を支払えます
 
 <div id="read-replicas">
-  ### 水平スケーリング向けの読み取りレプリカ {#read-replicas}
+  ### 水平スケーリング向けの読み取りレプリカ
 </div>
 
 読み取り負荷の高いワークロードでは、読み取り容量を水平にスケールさせるために、[読み取りレプリカ](/ja/products/managed-postgres/read-replicas)の利用を検討してください。
@@ -134,7 +134,7 @@ ClickHouse Managed Postgres インスタンスをスケールするには、次�
 この方法は、レポート用ダッシュボード、分析クエリ、読み取り負荷の高い API エンドポイントなど、読み取り比率の高いアプリケーションに最適です。
 
 <div id="cdc-scaling">
-  ### ClickHouse 連携向け CDC (変更データキャプチャ) のスケーリング {#cdc-scaling}
+  ### ClickHouse 連携向け CDC (変更データキャプチャ) のスケーリング
 </div>
 
 [ClickPipes](/ja/products/managed-postgres/sync-to-clickhouse/clickpipes) を使用して ClickHouse にデータをレプリケーションしている場合は、CDC (変更データキャプチャ) パイプラインを個別にスケールできます。

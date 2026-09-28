@@ -59,7 +59,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
       ClickHouse 실행에 필요한 스토리지 버킷, Kubernetes 클러스터, 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 이러한 항목은 이후 단계에서 프로비저닝됩니다. VPC는 직접 제어하더라도, ClickHouse Cloud는 AWS 계정에서 Kubernetes 클러스터, 서비스 계정용 IAM 역할, S3 버킷 및 기타 필수 리소스를 생성하고 관리할 수 있는 IAM 권한이 여전히 필요합니다.
     </Note>
 
-#### Terraform 모듈 {#terraform-module-aws}
+#### Terraform 모듈
 
     CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
 

@@ -54,7 +54,7 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 ```
 
 <div id="h3getresolution">
-  ## h3GetResolution {#h3getresolution}
+  ## h3GetResolution
 </div>
 
 Определяет разрешение для указанного [H3](#h3-index)-индекса.
@@ -87,7 +87,7 @@ SELECT h3GetResolution(639821929606596015) AS resolution;
 ```
 
 <div id="h3edgeangle">
-  ## h3EdgeAngle {#h3edgeangle}
+  ## h3EdgeAngle
 </div>
 
 Вычисляет среднюю длину ребра [H3](#h3-index)-шестиугольника в градах.
@@ -119,7 +119,7 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 ```
 
 <div id="h3edgelengthm">
-  ## h3EdgeLengthM {#h3edgelengthm}
+  ## h3EdgeLengthM
 </div>
 
 Вычисляет среднюю длину ребра шестиугольника [H3](#h3-index) в метрах.
@@ -151,7 +151,7 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 ```
 
 <div id="h3edgelengthkm">
-  ## h3EdgeLengthKm {#h3edgelengthkm}
+  ## h3EdgeLengthKm
 </div>
 
 Вычисляет среднюю длину ребра [шестиугольника H3](#h3-index) в километрах.
@@ -183,7 +183,7 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 ```
 
 <div id="geotoh3">
-  ## geoToH3 {#geotoh3}
+  ## geoToH3
 </div>
 
 Возвращает индекс точки [H3](#h3-index) `(lat, lon)` с указанным разрешением.
@@ -220,7 +220,7 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 ```
 
 <div id="h3togeo">
-  ## h3ToGeo {#h3togeo}
+  ## h3ToGeo
 </div>
 
 Возвращает широту и долготу центра, соответствующие указанному индексу [H3](#h3-index).
@@ -254,7 +254,7 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 ```
 
 <div id="h3togeoboundary">
-  ## h3ToGeoBoundary {#h3togeoboundary}
+  ## h3ToGeoBoundary
 </div>
 
 Возвращает массив пар `(lat, lon)`, соответствующий границе указанного индекса H3.
@@ -286,7 +286,7 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 ```
 
 <div id="h3kring">
-  ## h3kRing {#h3kring}
+  ## h3kRing
 </div>
 
 Перечисляет все [H3](#h3-index) шестиугольники, расположенные в радиусе `k` от заданного шестиугольника, в случайном порядке.
@@ -413,7 +413,7 @@ SELECT
 ```
 
 <div id="h3getbasecell">
-  ## h3GetBaseCell {#h3getbasecell}
+  ## h3GetBaseCell
 </div>
 
 Возвращает номер базовой ячейки индекса [H3](#h3-index).
@@ -445,7 +445,7 @@ SELECT h3GetBaseCell(612916788725809151) AS basecell;
 ```
 
 <div id="h3hexaream2">
-  ## h3HexAreaM2 {#h3hexaream2}
+  ## h3HexAreaM2
 </div>
 
 Возвращает среднюю площадь шестиугольника в квадратных метрах для заданного разрешения.
@@ -477,7 +477,7 @@ SELECT h3HexAreaM2(13) AS area;
 ```
 
 <div id="h3hexareakm2">
-  ## h3HexAreaKm2 {#h3hexareakm2}
+  ## h3HexAreaKm2
 </div>
 
 Возвращает среднюю площадь шестиугольника в квадратных километрах для заданного разрешения.
@@ -509,7 +509,7 @@ SELECT h3HexAreaKm2(13) AS area;
 ```
 
 <div id="h3indexesareneighbors">
-  ## h3IndexesAreNeighbors {#h3indexesareneighbors}
+  ## h3IndexesAreNeighbors
 </div>
 
 Возвращает, являются ли указанные индексы [H3](#h3-index) соседними.
@@ -543,7 +543,7 @@ SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
 ```
 
 <div id="h3tochildren">
-  ## h3ToChildren {#h3tochildren}
+  ## h3ToChildren
 </div>
 
 Возвращает массив дочерних индексов для заданного индекса [H3](#h3-index).
@@ -576,7 +576,7 @@ SELECT h3ToChildren(599405990164561919, 6) AS children;
 ```
 
 <div id="h3toparent">
-  ## h3ToParent {#h3toparent}
+  ## h3ToParent
 </div>
 
 Возвращает родительский индекс более общего уровня, содержащий указанный индекс [H3](#h3-index).
@@ -609,7 +609,7 @@ SELECT h3ToParent(599405990164561919, 3) AS parent;
 ```
 
 <div id="h3tostring">
-  ## h3ToString {#h3tostring}
+  ## h3ToString
 </div>
 
 Преобразует представление индекса `H3Index` в строковое представление.
@@ -639,7 +639,7 @@ SELECT h3ToString(617420388352917503) AS h3_string;
 ```
 
 <div id="stringtoh3">
-  ## stringToH3 {#stringtoh3}
+  ## stringToH3
 </div>
 
 Преобразует строковое представление в формат `H3Index` (UInt64).
@@ -671,7 +671,7 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 ```
 
 <div id="h3getresolution">
-  ## h3GetResolution {#h3getresolution-1}
+  ## h3GetResolution
 </div>
 
 Возвращает разрешение индекса [H3](#h3-index).
@@ -703,7 +703,7 @@ SELECT h3GetResolution(617420388352917503) AS res;
 ```
 
 <div id="h3isresclassiii">
-  ## h3IsResClassIII {#h3isresclassiii}
+  ## h3IsResClassIII
 </div>
 
 Возвращает, имеет ли [H3](#h3-index) индекс разрешение с ориентацией класса III.
@@ -736,7 +736,7 @@ SELECT h3IsResClassIII(617420388352917503) AS res;
 ```
 
 <div id="h3ispentagon">
-  ## h3IsPentagon {#h3ispentagon}
+  ## h3IsPentagon
 </div>
 
 Возвращает, является ли этот индекс [H3](#h3-index) пятиугольной ячейкой.
@@ -769,7 +769,7 @@ SELECT h3IsPentagon(644721767722457330) AS pentagon;
 ```
 
 <div id="h3getfaces">
-  ## h3GetFaces {#h3getfaces}
+  ## h3GetFaces
 </div>
 
 Возвращает грани икосаэдра, с которыми пересекается указанный индекс [H3](#h3-index).
@@ -801,7 +801,7 @@ SELECT h3GetFaces(599686042433355775) AS faces;
 ```
 
 <div id="h3cellaream2">
-  ## h3CellAreaM2 {#h3cellaream2}
+  ## h3CellAreaM2
 </div>
 
 Возвращает точную площадь конкретной ячейки в квадратных метрах для указанного индекса H3.
@@ -833,7 +833,7 @@ SELECT h3CellAreaM2(579205133326352383) AS area;
 ```
 
 <div id="h3cellarearads2">
-  ## h3CellAreaRads2 {#h3cellarearads2}
+  ## h3CellAreaRads2
 </div>
 
 Возвращает точную площадь заданной ячейки в квадратных радианах для указанного индекса H3.
@@ -865,7 +865,7 @@ SELECT h3CellAreaRads2(579205133326352383) AS area;
 ```
 
 <div id="h3tocenterchild">
-  ## h3ToCenterChild {#h3tocenterchild}
+  ## h3ToCenterChild
 </div>
 
 Возвращает центральный дочерний (более детализированный) [H3](#h3-index) индекс, входящий в заданный [H3](#h3-index), на указанном разрешении.
@@ -988,7 +988,7 @@ SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthR
 ```
 
 <div id="h3numhexagons">
-  ## h3NumHexagons {#h3numhexagons}
+  ## h3NumHexagons
 </div>
 
 Возвращает количество уникальных индексов H3 для заданного разрешения.
@@ -1082,7 +1082,7 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 <div id="h3pointdistrads">
-  ## h3PointDistRads {#h3pointdistrads}
+  ## h3PointDistRads
 </div>
 
 Возвращает расстояние между парами точек GeoCoord (широта/долгота), вычисленное по дуге большого круга или по формуле гаверсинуса, в радианах.
@@ -1115,7 +1115,7 @@ SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
 ```
 
 <div id="h3getres0indexes">
-  ## h3GetRes0Indexes {#h3getres0indexes}
+  ## h3GetRes0Indexes
 </div>
 
 Возвращает массив всех индексов H3 нулевого разрешения.
@@ -1143,7 +1143,7 @@ SELECT h3GetRes0Indexes AS indexes ;
 ```
 
 <div id="h3getpentagonindexes">
-  ## h3GetPentagonIndexes {#h3getpentagonindexes}
+  ## h3GetPentagonIndexes
 </div>
 
 Возвращает все пятиугольные индексы H3 при указанном разрешении.
@@ -1175,7 +1175,7 @@ SELECT h3GetPentagonIndexes(3) AS indexes;
 ```
 
 <div id="h3line">
-  ## h3Line {#h3line}
+  ## h3Line
 </div>
 
 Возвращает линию, соединяющую два указанных индекса.
@@ -1241,7 +1241,7 @@ h3Distance(start,end)
 ```
 
 <div id="h3hexring">
-  ## h3HexRing {#h3hexring}
+  ## h3HexRing
 </div>
 
 Возвращает индексы шестиугольного кольца длины k с центром в указанном исходном h3Index.

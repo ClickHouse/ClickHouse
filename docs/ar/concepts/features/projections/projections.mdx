@@ -55,7 +55,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="الإسقاطات في ClickHouse" />
 
 <div id="smarter_storage_with_part_offset">
-  ### تخزين أكثر ذكاءً باستخدام `_part_offset` {#smarter_storage_with_part_offset}
+  ### تخزين أكثر ذكاءً باستخدام `_part_offset`
 </div>
 
 بدءًا من الإصدار 25.5، يدعم ClickHouse العمود الافتراضي `_part_offset` في
@@ -76,7 +76,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
 الأعمدة الأخرى بشكل غير مباشر عبر `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## متى تستخدم الإسقاطات؟ {#when-to-use-projections}
+  ## متى تستخدم الإسقاطات؟
 </div>
 
 تُعدّ الإسقاطات ميزة جذابة للمستخدمين الجدد لأنها تُصان تلقائيًا
@@ -114,11 +114,11 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
   [قيّم عبء التخزين](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## أمثلة {#examples}
+  ## أمثلة
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### التصفية على أعمدة ليست ضمن المفتاح الأساسي {#filtering-without-using-primary-keys}
+  ### التصفية على أعمدة ليست ضمن المفتاح الأساسي
 </div>
 
 في هذا المثال، سنوضح كيفية إضافة إسقاط إلى جدول.
@@ -420,7 +420,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### أمثلة إضافية {#further-examples}
+  ### أمثلة إضافية
 </div>
 
 تستخدم الأمثلة التالية مجموعة بيانات أسعار المملكة المتحدة نفسها، وتقارن بين الاستعلامات عند استخدام الإسقاطات وعند عدم استخدامها.
@@ -472,7 +472,7 @@ SETTINGS mutations_sync = 1
 تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings/optimize-use#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
 
 <div id="average-price-projections">
-  #### الاستعلام 1. متوسط السعر لكل سنة {#average-price-projections}
+  #### الاستعلام 1. متوسط السعر لكل سنة
 </div>
 
 <RunnableCode>
@@ -504,7 +504,7 @@ SETTINGS mutations_sync = 1
 يُفترض أن تكون النتائج نفسها، لكن الأداء سيكون أفضل في المثال الأخير!
 
 <div id="average-price-london-projections">
-  #### الاستعلام 2. متوسط السعر سنويًا في لندن {#average-price-london-projections}
+  #### الاستعلام 2. متوسط السعر سنويًا في لندن
 </div>
 
 <RunnableCode>
@@ -535,7 +535,7 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### الاستعلام 3. الأحياء الأكثر تكلفة {#most-expensive-neighborhoods-projections}
+  #### الاستعلام 3. الأحياء الأكثر تكلفة
 </div>
 
 يشير عامل التصفية الخاص بالصفوف من عام 2020 فصاعدًا إلى بُعد الإسقاط المخزَّن `year` مباشرةً:
@@ -589,7 +589,7 @@ SETTINGS mutations_sync = 1
 </Note>
 
 <div id="combining-projections">
-  ### دمج الإسقاطات في استعلام واحد {#combining-projections}
+  ### دمج الإسقاطات في استعلام واحد
 </div>
 
 اعتبارًا من الإصدار 25.6، واستنادًا إلى دعم `_part_offset` الذي أُضيف في

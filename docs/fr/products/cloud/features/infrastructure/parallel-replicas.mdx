@@ -252,7 +252,7 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
 </ol>
 
 <div id="managing-cache-locality">
-  ### Gestion de la localité du cache {#managing-cache-locality}
+  ### Gestion de la localité du cache
 </div>
 
 Le dernier problème potentiel concerne la manière de préserver la localité du cache. Si la requête
@@ -305,14 +305,14 @@ systématiquement utilisée pour exécuter certaines tâches. Si `max_parallel_r
 au nombre de répliques, des répliques aléatoires sont alors sélectionnées pour l’exécution des requêtes.
 
 <div id="task-stealing">
-  ### Vol de tâches {#task-stealing}
+  ### Vol de tâches
 </div>
 
 si une réplique traite les tâches plus lentement que les autres, celles-ci essaieront de
 « voler » les tâches qui, en principe, lui sont attribuées par hachage afin de réduire la
 tail latency.
 
-### Limitations {#limitations}
+### Limitations
 
 Cette fonctionnalité présente des limitations connues, dont les principales sont documentées dans
 cette section.
@@ -333,7 +333,7 @@ cette section.
 | Compatibilité avec l’analyseur                                      | L’analyseur peut considérablement ralentir ou accélérer l’exécution des requêtes dans certains scénarios.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 <div id="settings-related-to-parallel-replicas">
-  ## Paramètres liés aux répliques parallèles {#settings-related-to-parallel-replicas}
+  ## Paramètres liés aux répliques parallèles
 </div>
 
 | Paramètre                                          | Description                                                                                                                                                                                                                                                                                                        |
@@ -343,7 +343,7 @@ cette section.
 | `max_parallel_replicas`                            | Nombre maximal de répliques à utiliser pour exécuter la requête sur plusieurs répliques. Si un nombre inférieur au nombre de répliques du cluster est spécifié, les nœuds seront sélectionnés aléatoirement. Cette valeur peut également être surallouée pour tenir compte de la mise à l&#39;échelle horizontale. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Permet de limiter le nombre de répliques utilisées en fonction du nombre de lignes à traiter. Le nombre de répliques utilisées est défini par : <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                                                                |
 
-## Investiguer les problèmes liés aux répliques parallèles {#investigating-issues-with-parallel-replicas}
+## Investiguer les problèmes liés aux répliques parallèles
 
 Vous pouvez vérifier quels paramètres sont utilisés pour chaque requête dans la
 table [`system.query_log`](/fr/reference/system-tables/query_log). Vous pouvez

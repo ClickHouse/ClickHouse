@@ -270,7 +270,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
 </Steps>
 
 <div id="key-takeaways">
-  ## 要点 {#key-takeaways}
+  ## 要点
 </div>
 
 * **`Map(LowCardinality(String), String)`** は OTel の属性に適した定番の型です。キー集合が変化しても柔軟に扱え、`LowCardinality` によってキーの保存効率も高く保てます。
@@ -280,7 +280,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
 * **`-Map` aggregate combinator** (`sumMap`, `avgMap`, `maxMap` など) は、行をまたいで各キーを個別に集計します。キー集合を事前に把握していなくても OTel メトリクスのカウンターを集約するのに最適で、ほかの集約関数コンビネータと組み合わせることもできます (たとえば `sumMapIf`) 。
 
 <div id="next-steps">
-  ## 次のステップ {#next-steps}
+  ## 次のステップ
 </div>
 
 次は、以下のクイックスタートをご覧ください。

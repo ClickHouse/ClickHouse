@@ -347,7 +347,7 @@ doc_type: 'changelog'
 ## 버그 수정 {#bug-fixes}
 
 <Accordion title="모든 버그 수정 사항 (클릭하여 펼치기)">
-  ### JOIN 버그 수정 {#join-fixes}
+  ### JOIN 버그 수정
 
   * 이전 분석기에서 JOIN과 함께 비표준 식별자 별칭(alias)을 사용할 때 컬럼이 누락되던 문제를 수정했습니다. [#95679](https://github.com/ClickHouse/ClickHouse/pull/95679) ([Zhigao Hong](https://github.com/zghong)).
   * 비등가 조인에서 `grace_hash` 알고리즘을 사용할 때, 조인 결과 크기 제한으로 인해 왼쪽 블록을 완전히 처리할 수 없으면 잘못된 결과가 반환되던 문제를 수정했습니다. [#97866](https://github.com/ClickHouse/ClickHouse/pull/97866) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
@@ -367,7 +367,7 @@ doc_type: 'changelog'
   * `grace_hash` 조인 알고리즘과 함께 `ORDER BY`를 사용하는 쿼리에서 행 정렬이 잘못되어, 오류 없이도 잘못된 결과가 반환될 수 있던 문제를 수정했습니다. [#102036](https://github.com/ClickHouse/ClickHouse/pull/102036) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
   * `max_bytes_in_join`이 설정된 경우 `RIGHT JOIN` 및 `FULL JOIN` 쿼리에서 발생할 수 있던 `LOGICAL_ERROR`(예상과 다른 인덱스 유형 크기) 문제를 수정했습니다. [#102042](https://github.com/ClickHouse/ClickHouse/pull/102042) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
 
-  ### 쿼리 및 분석기 수정 사항 {#query-and-analyzer-fixes}
+  ### 쿼리 및 분석기 수정 사항
 
   * 완전히 수식되지 않은 경우 Alias 테이블 대상이 DDL 의존성으로 저장되는 방식을 수정했습니다. 이제 세션 데이터베이스가 아니라 Alias 테이블의 데이터베이스와 함께 저장됩니다. [#95175](https://github.com/ClickHouse/ClickHouse/pull/95175) ([Enric Calabuig](https://github.com/eclbg)).
   * 지연 실행 머티리얼라이즈(Lazy materialization)가 반환한 불필요한 컬럼으로 인해 발생하던 `Block structure mismatch in stream` 오류를 수정했습니다. [#96682](https://github.com/ClickHouse/ClickHouse/pull/96682) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
@@ -447,7 +447,7 @@ doc_type: 'changelog'
   * 새로운 분석기에서 ROW POLICY OR 체인을 `IN`으로 최적화했습니다. [#102915](https://github.com/ClickHouse/ClickHouse/pull/102915) ([Azat Khuzhin](https://github.com/azat)).
   * `N`이 `UInt8`보다 큰 정수(예: `256`, `65535`, `2147483648` 또는 음의 정수)일 때 `MergeTree` 테이블에서 `WHERE x AND toNullable(N)`이 잘못된 결과를 반환하던 문제를 수정했습니다. [#103077](https://github.com/ClickHouse/ClickHouse/pull/103077) ([Groene AI](https://github.com/groeneai)).
 
-  ### MergeTree 및 스토리지 버그 수정 {#mergetree-and-storage-fixes}
+  ### MergeTree 및 스토리지 버그 수정
 
   * detaching과 attaching 사이에 여러 차례 연속된 rename이 있었을 때, MergeTree에서 파트를 ATTACH하는 과정에서 발생하던 logical error를 수정했습니다. [#96351](https://github.com/ClickHouse/ClickHouse/pull/96351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * 여러 압축 코덱을 사용할 때 Compact MergeTree 파트의 `uncompressed_hash`가 비결정적으로 계산되던 문제를 수정했습니다. 이 문제로 인해 중복 제거 동작이 잘못될 수 있었습니다. [#97522](https://github.com/ClickHouse/ClickHouse/pull/97522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -499,7 +499,7 @@ doc_type: 'changelog'
   * 하위 큐 간에 eviction 통계가 공유되고 실패한 후보에 대한 복구 경로가 잘못되어, SLRU 파일 시스템 캐시의 동적 크기 조정 중 `LOGICAL_ERROR` abort가 발생하던 문제를 수정했습니다. [#102396](https://github.com/ClickHouse/ClickHouse/pull/102396) ([Antonio Andelic](https://github.com/antonio2368)).
   * 경량한 삭제 후 `minmax_count_projection` 및 단순 `COUNT(*)` 최적화가 영구적으로 비활성화되던 문제를 수정했습니다. [#102900](https://github.com/ClickHouse/ClickHouse/pull/102900) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### 데이터 타입 및 직렬화(serialization) 버그 수정 {#data-type-and-serialization-fixes}
+  ### 데이터 타입 및 직렬화(serialization) 버그 수정
 
   * ALIAS 컬럼의 서브컬럼을 읽는 과정에서 잘못된 결과가 반환되거나 예외가 발생하던 문제를 수정했습니다. [#95408](https://github.com/ClickHouse/ClickHouse/pull/95408) ([Pavel Kruglov](https://github.com/Avogar)).
   * `Nullable(Tuple)` 도입 이후 `sumCount` 집계 함수가 이전에 직렬화된 상태를 읽지 못하던 문제를 수정했습니다. [#97502](https://github.com/ClickHouse/ClickHouse/pull/97502) ([Nihal Z. Miaji](https://github.com/nihalzp)).
@@ -558,7 +558,7 @@ doc_type: 'changelog'
   * `Nullable(DateTime)`로 `CAST`할 때 `cast_string_to_date_time_mode`가 무시되던 문제를 수정했습니다. [#103035](https://github.com/ClickHouse/ClickHouse/pull/103035) ([Pavel Kruglov](https://github.com/Avogar)).
   * 복제된 컬럼 및 희소 컬럼의 직렬화에서 null 표현이 설정(예: `format_tsv_null_representation`)을 따르도록 했습니다. [#102888](https://github.com/ClickHouse/ClickHouse/pull/102888) ([Hechem Selmi](https://github.com/m-selmi)).
 
-  ### 텍스트 인덱스 및 스킵 인덱스 버그 수정 {#text-index-and-skip-index-fixes}
+  ### 텍스트 인덱스 및 스킵 인덱스 버그 수정
 
   * 텍스트 인덱스를 다른 스킵 인덱스와 함께 사용할 때의 동작이 수정되었습니다. 이전에는 쿼리 filter가 텍스트 인덱스와 다른 일반 스킵 인덱스를 동시에 사용할 경우 &quot;Trying to get non-existing mark&quot;와 같은 logical error가 발생할 수 있었습니다. [#98555](https://github.com/ClickHouse/ClickHouse/pull/98555) ([Anton Popov](https://github.com/CurtizJ)).
   * TTL이 적용된 머지 중 텍스트 인덱스 재구성 문제가 수정되었습니다. [#99107](https://github.com/ClickHouse/ClickHouse/pull/99107) ([Anton Popov](https://github.com/CurtizJ)).
@@ -579,7 +579,7 @@ doc_type: 'changelog'
   * `compatibility` 설정이 26.1보다 이전 버전을 가리키더라도 전문 검색 인덱스 설정(`enable_full_text_index`, `allow_experimental_full_text_index`, `use_skip_indexes_on_data_read`)이 더 이상 비활성화되지 않습니다. [#102422](https://github.com/ClickHouse/ClickHouse/pull/102422) ([Nikita Fomichev](https://github.com/fm4v)).
   * 텍스트 인덱스 직접 읽기 최적화에 `ALIAS` 컬럼 지원을 추가했습니다. [#103037](https://github.com/ClickHouse/ClickHouse/pull/103037) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### 데이터 레이크 버그 수정 {#data-lake-fixes}
+  ### 데이터 레이크 버그 수정
 
   * `DeltaLake` 테이블 엔진에서 스냅샷 버전 변경 시 발생하던 논리적 경쟁 상태를 수정하고, 불필요하게 비용이 큰 스냅샷 재로딩을 제거했습니다. [#96226](https://github.com/ClickHouse/ClickHouse/pull/96226) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 이름에 점이 포함된 구조체 필드가 있는 Delta Lake 테이블에서 컬럼 매핑 &quot;name&quot; 모드 사용 시, 읽기 과정에서 발생하던 `DUPLICATE_COLUMN` 예외와 NULL이 조용히 반환되던 문제를 수정했습니다. [#98013](https://github.com/ClickHouse/ClickHouse/pull/98013) ([Caio Ishizaka Costa](https://github.com/ch-caioishizaka)).
@@ -605,7 +605,7 @@ doc_type: 'changelog'
   * `system.delta_lake_metadata_log` 및 `system.iceberg_metadata_log`에 누락되어 있던 `hostname` 컬럼을 추가했습니다. [#102162](https://github.com/ClickHouse/ClickHouse/pull/102162) ([Michael Russell](https://github.com/Crazybus)).
   * 배열 타입에 대한 CoalescingMergeTree 수정 사항입니다. [#102384](https://github.com/ClickHouse/ClickHouse/pull/102384) ([Konstantin Vedernikov](https://github.com/scanhex12)).
 
-  ### S3/Azure/객체 스토리지 수정 사항 {#s3-azure-object-storage-fixes}
+  ### S3/Azure/객체 스토리지 수정 사항
 
   * `CachedOnDiskReadBufferFromFile::readBigAt`에서 발생하던 예외를 수정했습니다. [#97890](https://github.com/ClickHouse/ClickHouse/pull/97890) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 글롭 패턴(예: `file('dir/**', 'LineAsString')`)으로 파일을 쿼리할 때 디렉터리에 끊어진 심볼릭 링크가 있으면 처리되지 않은 파일 시스템 예외로 인해 크래시가 발생하던 문제를 수정했습니다. 이제 끊어진 심볼릭 링크는 자동으로 건너뜁니다. [#98143](https://github.com/ClickHouse/ClickHouse/pull/98143) ([Mark Andreev](https://github.com/mrk-andreev)).
@@ -622,12 +622,12 @@ doc_type: 'changelog'
   * 재연결 중 host와 port가 올바르게 기록되지 않던 문제를 수정했습니다. [#102280](https://github.com/ClickHouse/ClickHouse/pull/102280) ([Grant Holly](https://github.com/grantholly-clickhouse)).
   * 정적 클러스터(구성에 정의됨)에 일시적으로 활성 노드가 없을 때 ClusterDiscovery에서 서버 예외가 발생하던 문제를 수정했습니다. [#102661](https://github.com/ClickHouse/ClickHouse/pull/102661) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-  ### S3Queue 버그 수정 {#s3queue-fixes}
+  ### S3Queue 버그 수정
 
   * S3Queue: ZooKeeper 연결이 끊어진 후 commit은 성공했지만 assert 실패가 발생하던 문제를 수정했습니다. [#100210](https://github.com/ClickHouse/ClickHouse/pull/100210) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * `system.s3_queue_settings` 및 `system.azure_queue_settings`의 `alterable` 컬럼에 대한 설명 텍스트가 반대로 기재된 문제를 수정했습니다 — 실제 코드 동작과 일치하도록 `0`과 `1`의 의미를 서로 바꿨습니다. [#101703](https://github.com/ClickHouse/ClickHouse/pull/101703) ([ClickGap AI Bot](https://github.com/clickgapai)).
 
-  ### 보안 및 접근 제어 버그 수정 {#security-and-access-control-fixes}
+  ### 보안 및 접근 제어 버그 수정
 
   * `loop` 테이블 함수가 `inner_storage->read()`를 직접 호출하면서, 행 정책, 컬럼 수준 권한, 기타 보안 검사가 적용되는 인터프리터 계층을 우회하던 문제를 수정했습니다. 이로 인해 행 정책으로 제한된 사용자도 `loop(table)`을 통해 모든 행을 읽을 수 있었습니다. [#97682](https://github.com/ClickHouse/ClickHouse/pull/97682) ([pufit](https://github.com/pufit)).
   * 스칼라 `file()` 및 `DESCRIBE TABLE file()`에 대해 `READ ON FILE` 검사를 강제합니다. [#98115](https://github.com/ClickHouse/ClickHouse/pull/98115) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -645,14 +645,14 @@ doc_type: 'changelog'
   * 일부 카탈로그에서는 `SELECT * FROM system.databases`의 `SETTINGS` 섹션에 시크릿이 노출될 수 있었습니다. 이제는 이를 방지했습니다. [#100800](https://github.com/ClickHouse/ClickHouse/pull/100800) ([Konstantin Vedernikov](https://github.com/scanhex12)).
   * 로깅 시 서브 플래너에서 상위 플래너로 행 정책이 전달되지 않아 뷰, 서브쿼리 및 insert-select의 `query_log`에 기록되지 않았습니다. 이제는 로깅을 위해 `QueryAccessInfo` 내에 보관됩니다. [#101044](https://github.com/ClickHouse/ClickHouse/pull/101044) ([Narasimha Pakeer](https://github.com/npakeer)).
 
-  ### Backup 및 복원 버그 수정 {#backup-and-restore-fixes}
+  ### Backup 및 복원 버그 수정
 
   * 백업/복원 작업에 `max_execution_time`이 적용되지 않던 문제를 수정했습니다. [#99205](https://github.com/ClickHouse/ClickHouse/pull/99205) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * zip 아카이브를 사용하는 백업/복원 작업에서 발생하던 `ReadBuffer is canceled. Can't read from it.` 예외를 수정했습니다. [#100400](https://github.com/ClickHouse/ClickHouse/pull/100400) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * `RESTORE` 중 경로 순회, 절대 경로, 빈 이름을 거부하도록 백업 메타데이터의 파일 entry 경로를 검증합니다. [#100483](https://github.com/ClickHouse/ClickHouse/pull/100483) ([Pablo Marcos](https://github.com/pamarcos)).
   * `BACKUP FROM SNAPSHOT` AST 포맷팅 및 복제를 수정했습니다. [#101405](https://github.com/ClickHouse/ClickHouse/pull/101405) ([Pablo Marcos](https://github.com/pamarcos)).
 
-  ### ClickHouse Keeper 버그 수정 {#clickhouse-keeper-fixes}
+  ### ClickHouse Keeper 버그 수정
 
   * ZooKeeper 클라이언트에서 send thread와 receive thread 사이에 발생하던 data race를 수정했습니다. [#97887](https://github.com/ClickHouse/ClickHouse/pull/97887) ([Pablo Marcos](https://github.com/pamarcos)).
   * 로그 저장소용 `s3_plain` metadata와 함께 Azure Blob Storage를 사용할 때 재시작 후 Keeper 데이터가 손실되던 문제를 수정했습니다. [#97987](https://github.com/ClickHouse/ClickHouse/pull/97987) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -670,7 +670,7 @@ doc_type: 'changelog'
   * 주기적 갱신 중 ZooKeeper session이 만료되면 UDF registry가 손실되던 문제를 수정했습니다. 이로 인해 full refresh가 성공할 때까지 모든 사용자 정의 함수를 사용할 수 없게 될 수 있었습니다. [#101891](https://github.com/ClickHouse/ClickHouse/pull/101891) ([Nikita Fomichev](https://github.com/fm4v)).
   * 만료된 오래된 ZooKeeper session을 갱신하지 않은 채 `ZooKeeperRetriesControl`이 재시도하면서 발생하던 UDF 갱신 크래시를 수정했습니다. [#102059](https://github.com/ClickHouse/ClickHouse/pull/102059) ([Nikita Fomichev](https://github.com/fm4v)).
 
-  ### 크래시 및 안정성 수정 {#crash-and-stability-fixes}
+  ### 크래시 및 안정성 수정
 
   * 빈 인수가 제공될 때 Kusto 방언 함수 `bin()`, `bin_at()`, `extract()`, `indexof()`에서 발생하던 크래시를 수정했습니다. [#95736](https://github.com/ClickHouse/ClickHouse/pull/95736) ([NeedmeFordev](https://github.com/spider-yamet)).
   * `tokenbf_v1` 스킵 인덱스와 함께 `mapContainsKey`/`mapContainsKeyLike`를 사용할 때 발생하던 서버 크래시/assert를 수정했습니다. [#97826](https://github.com/ClickHouse/ClickHouse/pull/97826) ([Shankar Iyer](https://github.com/shankar-iyer)).
@@ -729,7 +729,7 @@ doc_type: 'changelog'
   * 스키마 추론 중 `std::length_error`가 발생할 때 debug/sanitizer build에서 발생하던 server 크래시를 수정했습니다. [#102859](https://github.com/ClickHouse/ClickHouse/pull/102859) ([Groene AI](https://github.com/groeneai)).
   * 내부 쿼리가 view metadata와 다른 타입의 컬럼(예: `join_use_nulls`가 적용된 `LEFT JOIN`에서 생성된 `Nullable`)을 생성하는 `WHERE` 절이 있는 view를 사용할 때 발생하던 크래시를 수정했습니다. [#102085](https://github.com/ClickHouse/ClickHouse/pull/102085) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 
-  ### 기타 버그 수정 {#other-bug-fixes}
+  ### 기타 버그 수정
 
   * 동일한 요청에서 `compatibility`와 함께 전송된 명시적 설정의 값이 서버 기본값과 같을 때, 해당 설정이 조용히 무시될 수 있던 버그를 수정했습니다. [#97078](https://github.com/ClickHouse/ClickHouse/pull/97078) ([Raufs Dunamalijevs](https://github.com/rienath)).
   * 병렬 파싱이 적용된 INSERT에서 잘못된 데이터를 만나면 올바른 행 번호가 포함된 실제 파싱 오류 대신 `NETWORK_ERROR`를 보고하던 클라이언트 문제를 수정했습니다. [#97339](https://github.com/ClickHouse/ClickHouse/pull/97339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

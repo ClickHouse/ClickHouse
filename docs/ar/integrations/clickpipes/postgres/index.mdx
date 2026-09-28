@@ -27,7 +27,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     يمكن نشر Postgres ClickPipes وإدارتها يدويًا عبر واجهة ClickPipes، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
-## المتطلبات المسبقة {#prerequisites}
+## المتطلبات المسبقة
 
     للبدء، عليك أولاً التأكد من أن قاعدة بيانات Postgres لديك مُعدّة بشكل صحيح. وبناءً على مثيل Postgres المصدر الذي تستخدمه، يمكنك اتباع أيٍّ من الأدلة التالية:
 
@@ -57,7 +57,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     بمجرد إعداد قاعدة بيانات Postgres المصدر، يمكنك متابعة إنشاء ClickPipe.
 
-## إنشاء ClickPipe الخاص بك {#creating-your-clickpipe}
+## إنشاء ClickPipe الخاص بك
 
     تأكد من تسجيل دخولك إلى حسابك في ClickHouse Cloud. وإذا لم يكن لديك حساب بعد، يمكنك التسجيل [من هنا](https://cloud.clickhouse.com/).
 
@@ -75,7 +75,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="اختر Postgres" size="lg" border />
 
-### إضافة اتصال قاعدة بيانات Postgres المصدر {#adding-your-source-postgres-database-connection}
+### إضافة اتصال قاعدة بيانات Postgres المصدر
 
     4. أدخل تفاصيل الاتصال الخاصة بقاعدة بيانات Postgres المصدر التي هيّأتها في خطوة المتطلبات المسبقة.
 
@@ -86,17 +86,17 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="أدخل تفاصيل الاتصال" size="lg" border />
 
-#### (اختياري) إعداد AWS Private Link {#optional-setting-up-aws-private-link}
+#### (اختياري) إعداد AWS Private Link
 
     يمكنك استخدام AWS Private Link للاتصال بقاعدة بيانات Postgres المصدر إذا كانت مستضافة على AWS. وهذا مفيد إذا كنت
     ترغب في إبقاء نقل البيانات خاصاً.
     يمكنك اتباع [دليل الإعداد لتهيئة الاتصال](/ar/integrations/clickpipes/networking/aws-privatelink).
 
-#### (اختياري) تغيير إعدادات TLS {#optional-changing-tls-settings}
+#### (اختياري) تغيير إعدادات TLS
 
     <ChangingTLSSettings />
 
-#### (اختياري) إعداد SSH tunneling {#optional-setting-up-ssh-tunneling}
+#### (اختياري) إعداد SSH tunneling
 
     يمكنك تحديد تفاصيل SSH tunneling إذا كانت قاعدة بيانات Postgres المصدر غير متاحة للوصول العام.
 
@@ -116,13 +116,13 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     بعد إدخال تفاصيل الاتصال، انقر على &quot;Next&quot;.
 
-### تكوين إعدادات النسخ المتماثل {#configuring-the-replication-settings}
+### تكوين إعدادات النسخ المتماثل
 
     5. تأكد من اختيار فتحة النسخ المتماثل التي أنشأتها في خطوة المتطلبات المسبقة من القائمة المنسدلة.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="اختيار فتحة النسخ المتماثل" size="lg" border />
 
-#### الإعدادات المتقدمة {#advanced-settings}
+#### الإعدادات المتقدمة
 
     يمكنك تهيئة الإعدادات المتقدمة إذا لزم الأمر. وفيما يلي وصف موجز لكل إعداد:
 
@@ -132,7 +132,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     * **Snapshot number of rows per partition**: هذا هو عدد الصفوف التي سيتم جلبها في كل partition أثناء اللقطة الأولية. وهو مفيد عندما يكون لديك عدد كبير من الصفوف في جداولك وترغب في التحكم في عدد الصفوف المجلوبة في كل partition.
     * **Snapshot number of tables in parallel**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. وهو مفيد عندما يكون لديك عدد كبير من الجداول وترغب في التحكم في عدد الجداول المجلوبة بالتوازي.
 
-### تكوين الجداول {#configuring-the-tables}
+### تكوين الجداول
 
     6. هنا يمكنك تحديد قاعدة البيانات الهدف الخاصة بـ ClickPipe لديك. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
 
@@ -146,13 +146,13 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     8. <SettingPartitionBy />
 
-### مراجعة الأذونات وبدء تشغيل ClickPipe {#review-permissions-and-start-the-clickpipe}
+### مراجعة الأذونات وبدء تشغيل ClickPipe
 
     9. حدّد دور &quot;Full access&quot; من قائمة الأذونات المنسدلة ثم انقر على &quot;Complete Setup&quot;.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الصلاحيات" size="lg" border />
 
-## ما الخطوة التالية؟ {#whats-next}
+## ما الخطوة التالية؟
 
     بعد إعداد ClickPipe الخاص بك لنسخ البيانات من PostgreSQL إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء. راجع [دليل الترحيل](/ar/get-started/migrate/postgres/overview) لتقييم الاستراتيجية الأنسب لمتطلباتك، وكذلك صفحتَي [استراتيجيات إزالة التكرار (باستخدام CDC)](/ar/integrations/clickpipes/postgres/deduplication) و[مفاتيح الترتيب](/ar/integrations/clickpipes/postgres/ordering-keys) للاطلاع على أفضل الممارسات المتعلقة بأحمال عمل CDC.
 

@@ -43,7 +43,7 @@ Si votre organisation limite l’utilisation d’un rôle IAM ou les appels aux 
 La section suivante explique comment le réseau privé **Tailscale** est utilisé pour le dépannage et l’accès de gestion facultatif.
 
 <div id="tailscale-private-network">
-  ## Réseau privé Tailscale {#tailscale-private-network}
+  ## Réseau privé Tailscale
 </div>
 
 Tailscale fournit une connexion réseau privée de type zero trust entre les services de gestion de ClickHouse Cloud et votre déploiement BYOC. Ce canal sécurisé permet aux ingénieurs ClickHouse d’effectuer des opérations de dépannage et de gestion sans nécessiter d’accès entrant au réseau public ni de configurations VPN complexes ; les agents eux-mêmes établissent uniquement des connexions sortantes et nécessitent un accès Internet sortant pour atteindre le service de coordination Tailscale.
@@ -80,7 +80,7 @@ Pour chaque service ou point de terminaison qui doit être accessible via Tailsc
    * Achemine le trafic vers les adresses IP appropriées au sein de votre cluster Kubernetes
 
 <div id="tailscale-connection-process">
-  ### Processus de connexion réseau {#tailscale-connection-process}
+  ### Processus de connexion réseau
 </div>
 
 L’établissement de la connexion Tailscale suit les étapes suivantes :

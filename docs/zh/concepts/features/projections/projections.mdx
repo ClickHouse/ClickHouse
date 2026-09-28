@@ -52,7 +52,7 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse 中的投影" />
 
 <div id="smarter_storage_with_part_offset">
-  ### 使用 `_part_offset` 实现更智能的存储 {#smarter_storage_with_part_offset}
+  ### 使用 `_part_offset` 实现更智能的存储
 </div>
 
 从 25.5 版本开始，ClickHouse 在
@@ -73,7 +73,7 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
 `_part_offset` 间接引用其他列。
 
 <div id="when-to-use-projections">
-  ## 何时使用投影？ {#when-to-use-projections}
+  ## 何时使用投影？
 </div>
 
 对于新用户来说，投影是一项很有吸引力的功能，因为它们会在数据插入时自动维护。此外，查询只需发送到
@@ -109,11 +109,11 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
   [评估存储开销](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
 
 <div id="examples">
-  ## 示例 {#examples}
+  ## 示例
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### 对不在主键中的列进行过滤 {#filtering-without-using-primary-keys}
+  ### 对不在主键中的列进行过滤
 </div>
 
 在本示例中，我们将演示如何为表添加投影。
@@ -400,7 +400,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### 更多示例 {#further-examples}
+  ### 更多示例
 </div>
 
 下面的示例使用同一个英国价格数据集，对比了使用投影与不使用投影时的查询。
@@ -451,7 +451,7 @@ SETTINGS mutations_sync = 1
 以下查询对比了使用PROJECTION与不使用PROJECTION时的性能差异。若要禁用PROJECTION的使用，我们使用设置 [`optimize_use_projections`](/zh/reference/settings/session-settings/optimize-use#optimize_use_projections)，该设置默认处于启用状态。
 
 <div id="average-price-projections">
-  #### 查询 1. 每年平均价格 {#average-price-projections}
+  #### 查询 1. 每年平均价格
 </div>
 
 <RunnableCode>
@@ -483,7 +483,7 @@ SETTINGS mutations_sync = 1
 结果应该相同，但后一个示例的性能更好！
 
 <div id="average-price-london-projections">
-  #### 查询 2. 伦敦每年的平均房价 {#average-price-london-projections}
+  #### 查询 2. 伦敦每年的平均房价
 </div>
 
 <RunnableCode>
@@ -514,7 +514,7 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### 查询 3. 最昂贵的街区 {#most-expensive-neighborhoods-projections}
+  #### 查询 3. 最昂贵的街区
 </div>
 
 筛选 2020 年及以后行的过滤条件直接引用了已存储的 PROJECTION 维度 `year`：
@@ -568,7 +568,7 @@ SETTINGS mutations_sync = 1
 </Note>
 
 <div id="combining-projections">
-  ### 在单个查询中组合使用投影 {#combining-projections}
+  ### 在单个查询中组合使用投影
 </div>
 
 从 25.6 版本开始，在前一版本引入的 `_part_offset` 支持基础上，ClickHouse 现在可以使用多个投影来加速带有多个过滤条件的单个查询。

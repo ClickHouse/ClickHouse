@@ -563,7 +563,7 @@ La section `<server>` est utilisée pour les connexions clientes entrantes sur l
 La configuration `<openSSL>` prend en charge plusieurs options pour `<verificationMode>` et `<invalidCertificateHandler>`, qui déterminent la manière dont ClickHouse valide les certificats TLS. Ces paramètres s’appliquent à clickhouse-server, clickhouse-client et à ClickHouse Keeper autonome.
 
 <div id="verification-modes">
-  ### Modes de vérification {#verification-modes}
+  ### Modes de vérification
 </div>
 
 Définissez `<verificationMode>` dans la section `<server>` ou `<client>` de `<openSSL>` :
@@ -576,7 +576,7 @@ Définissez `<verificationMode>` dans la section `<server>` ou `<client>` de `<o
 | `strict`  | Exige le certificat du pair et le vérifie intégralement. La connexion échoue si le certificat est absent, expiré ou non signé par une CA de confiance. Recommandé pour la production. |
 
 <div id="invalid-certificate-handlers">
-  ### Gestionnaires de certificats invalides {#invalid-certificate-handlers}
+  ### Gestionnaires de certificats invalides
 </div>
 
 Définissez `<invalidCertificateHandler>` dans la section `<server>` ou `<client>` de `<openSSL>`. Ce gestionnaire détermine le comportement à adopter lorsque la vérification du certificat échoue. Côté serveur, il contrôle la réponse aux certificats client invalides. Côté client, il contrôle la réponse aux certificats serveur invalides.
@@ -587,7 +587,7 @@ Définissez `<invalidCertificateHandler>` dans la section `<server>` ou `<client
 | `AcceptCertificateHandler` | Accepte la connexion même si le certificat est invalide. À utiliser uniquement pour les tests.                             |
 
 <div id="disabling-certificate-verification">
-  ### Exemple : désactiver la vérification des certificats {#disabling-certificate-verification}
+  ### Exemple : désactiver la vérification des certificats
 </div>
 
 <Warning>
@@ -681,7 +681,7 @@ certificat CA, puis basculez les certificats de node et de client vers ceux émi
 par le nouveau certificat CA uniquement.
 
 <div id="summary">
-  ## Résumé {#summary}
+  ## Résumé
 </div>
 
 Cet article a porté sur la configuration d’un environnement ClickHouse avec TLS. Les paramètres varient selon les exigences des environnements de production ; par exemple, les niveaux de vérification des certificats, les protocoles, les suites de chiffrement, etc. Vous devriez désormais avoir une bonne compréhension des étapes à suivre pour configurer et mettre en œuvre des connexions sécurisées.

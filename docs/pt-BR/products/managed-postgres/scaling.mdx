@@ -25,7 +25,7 @@ O ClickHouse Managed Postgres oferece uma ampla variedade de tipos de instância
 <Image img="/images/managed-postgres/instance-types.webp" alt="Tipos de instância" size="md" border />
 
 <div id="choosing-instance">
-  ### Como escolher o tipo de instância certo {#choosing-instance}
+  ### Como escolher o tipo de instância certo
 </div>
 
 Diferentes cargas de trabalho se beneficiam de diferentes configurações de recursos:
@@ -47,7 +47,7 @@ Quando você altera os tipos de instância, o ClickHouse Managed Postgres realiz
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Configurações de escalonamento" size="md" border />
 
 <div id="scaling-process">
-  ### Processo de escalonamento {#scaling-process}
+  ### Processo de escalonamento
 </div>
 
 O fluxo de escalonamento cria um novo standby a partir de backups e realiza um failover controlado:
@@ -70,7 +70,7 @@ O fluxo de escalonamento cria um novo standby a partir de backups e realiza um f
 6. **Desativação da instância antiga**: A instância original é desativada após a conclusão do failover
 
 <div id="scaling-duration">
-  ### Duração do escalonamento {#scaling-duration}
+  ### Duração do escalonamento
 </div>
 
 O tempo total necessário para o escalonamento depende principalmente do tamanho do seu banco de dados e do volume de dados de WAL que precisam ser reaplicados a partir dos backups:
@@ -110,7 +110,7 @@ Para escalar sua instância do ClickHouse Managed Postgres:
 4. Revise as alterações e clique em &quot;Aplicar alterações&quot;
 
 <div id="scaling-strategies">
-  ## Estratégias de escalonamento {#scaling-strategies}
+  ## Estratégias de escalonamento
 </div>
 
 ### Escalonamento vertical {#vertical-scaling}
@@ -122,7 +122,7 @@ O escalonamento vertical (mudança de tipos de instância) é o principal métod
 * **Eficiência de custo**: Pague apenas pelos recursos de que você precisa, sem provisionar recursos em excesso
 
 <div id="read-replicas">
-  ### Réplicas de leitura para escalabilidade horizontal {#read-replicas}
+  ### Réplicas de leitura para escalabilidade horizontal
 </div>
 
 Para cargas de trabalho com muitas leituras, considere usar [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) para escalar horizontalmente a capacidade de leitura:
@@ -134,7 +134,7 @@ Para cargas de trabalho com muitas leituras, considere usar [réplicas de leitur
 Essa abordagem é ideal para aplicações com alta proporção de leituras em relação a gravações, como painéis de relatórios, consultas analíticas ou endpoints de API com uso intensivo de leitura.
 
 <div id="cdc-scaling">
-  ### Escalonamento de CDC para a integração com o ClickHouse {#cdc-scaling}
+  ### Escalonamento de CDC para a integração com o ClickHouse
 </div>
 
 Se você estiver replicando dados para o ClickHouse usando [ClickPipes](/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes), poderá escalar de forma independente o pipeline de CDC (captura de alterações de dados):

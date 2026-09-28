@@ -55,7 +55,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## 可刷新materialized view 最近一次刷新是在什么时候？ {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## 可刷新materialized view 最近一次刷新是在什么时候？
 </div>
 
 要查看可刷新materialized view 最近一次刷新的时间，可以查询下方所示的 [`system.view_refreshes`](/zh/reference/system-tables/view_refreshes) 系统表：
@@ -74,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## 如何更改刷新频率？ {#how-can-i-change-the-refresh-rate}
+  ## 如何更改刷新频率？
 </div>
 
 要更改可刷新materialized view的刷新频率，请使用 [`ALTER TABLE...MODIFY REFRESH`](/zh/reference/statements/alter/view#alter-table--modify-refresh-statement) 语法。
@@ -93,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## 使用 `APPEND` 添加新行 {#using-append-to-add-new-rows}
+  ## 使用 `APPEND` 添加新行
 </div>
 
 `APPEND` 功能可让你将新行追加到表末尾，而不是替换整个视图。
@@ -199,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## 示例 {#examples}
+  ## 示例
 </div>
 
 下面通过一些示例数据集，来看看如何使用可刷新materialized view。
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 [数据反规范化指南](/zh/guides/clickhouse/data-modelling/denormalization) 介绍了使用 Stack Overflow 数据集进行数据反规范化的多种方法。我们将数据写入以下表：`votes`、`users`、`badges`、`posts` 和 `postlinks`。
@@ -257,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 在 [dbt 和 ClickHouse 集成指南](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index) 中，我们用以下表填充了一个 IMDb 数据集：`actors`、`directors`、`genres`、`movie_directors`、`movies` 和 `roles`。

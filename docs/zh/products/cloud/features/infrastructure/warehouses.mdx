@@ -42,7 +42,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 *图 2 - ClickHouse Cloud 中的计算分离*
 
 <div id="what-is-a-warehouse">
-  ## 什么是仓库？ {#what-is-a-warehouse}
+  ## 什么是仓库？
 </div>
 
 在 ClickHouse Cloud 中，*仓库* 是一组共享同一份数据的**服务**。
@@ -68,7 +68,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 仓库将共享数据的长期运行的 ClickHouse Cloud 服务归为一组，每个服务都拥有专用的 compute 资源和端点。[按需 Compute](/zh/products/cloud/features/infrastructure/on-demand-compute) 通过现有的服务和端点，从托管池中临时为受支持的 workload 分配工作线程。
 
 <div id="access-controls">
-  ## 访问控制 {#access-controls}
+  ## 访问控制
 </div>
 
 ### 数据库凭据 {#database-credentials}
@@ -153,7 +153,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## 局限性 {#limitations}
+  ## 局限性
 </div>
 
 ### 工作负载隔离的限制 {#workload-isolation-limitations}
@@ -186,7 +186,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **主节点空闲**：默认已启用主节点自动进入空闲状态。
 
 <div id="pricing">
-  ## 定价 {#pricing}
+  ## 定价
 </div>
 
 仓库中的所有服务 (主节点和次级) 计算资源价格相同。存储只会计费一次——已包含在第一个 (原始) 服务中。
@@ -194,14 +194,14 @@ SETTINGS distributed_ddl_task_timeout=0
 请参阅 [pricing](https://clickhouse.com/pricing) 页面上的定价计算器，它可以根据您的工作负载规模和所选层级帮助估算成本。Usage Breakdown 表会显示各服务的计算资源成本明细。
 
 <div id="backups">
-  ## 备份 {#backups}
+  ## 备份
 </div>
 
 * 由于同一仓库中的所有服务共享相同的存储，因此只会在主节点 (初始服务) 上执行备份。这样一来，仓库中所有服务的数据都会一并备份。
 * 如果从仓库主节点的备份中执行恢复，系统会将其恢复到一个全新的服务中，而不会连接到现有仓库。恢复完成后，你可以立即向这个新服务添加更多服务。
 
 <div id="setup-warehouses">
-  ## 如何配置仓库 {#setup-warehouses}
+  ## 如何配置仓库
 </div>
 
 ### 创建仓库 {#creating-a-warehouse}
@@ -217,7 +217,7 @@ SETTINGS distributed_ddl_task_timeout=0
 在服务创建页面上，原始服务会在下拉列表中默认选为新服务的数据来源。创建完成后，这两个服务将构成一个仓库。
 
 <div id="renaming-a-warehouse">
-  ### 重命名仓库 {#renaming-a-warehouse}
+  ### 重命名仓库
 </div>
 
 重命名仓库有两种方法：
@@ -226,7 +226,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * 你也可以点击任一服务中的仓库名称，并在该处重命名仓库
 
 <div id="deleting-a-warehouse">
-  ### 删除仓库 {#deleting-a-warehouse}
+  ### 删除仓库
 </div>
 
 删除仓库意味着删除所有计算服务和数据 (表、视图、用户等) 。此操作无法撤销。

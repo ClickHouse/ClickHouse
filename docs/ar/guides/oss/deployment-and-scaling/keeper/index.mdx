@@ -35,7 +35,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 يمكن استخدام ClickHouse Keeper كبديل مستقل لـ ZooKeeper أو كجزء داخلي من ClickHouse server. وفي كلتا الحالتين، تكون التهيئة في ملف `.xml` متطابقة تقريبًا.
 
 <div id="keeper-configuration-settings">
-  #### إعدادات تهيئة Keeper {#keeper-configuration-settings}
+  #### إعدادات تهيئة Keeper
 </div>
 
 وسم التهيئة الرئيسي لـ ClickHouse Keeper هو `<keeper_server>`، ويتضمن المعلمات التالية:
@@ -166,7 +166,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 ```
 
 <div id="how-to-run">
-  ### كيفية التشغيل {#how-to-run}
+  ### كيفية التشغيل
 </div>
 
 يأتي ClickHouse Keeper مضمّنًا في حزمة ClickHouse server؛ ما عليك سوى إضافة إعدادات `<keeper_server>` إلى `/etc/your_path_to_config/clickhouse-server/config.xml` وتشغيل ClickHouse server كالمعتاد. وإذا أردت تشغيل standalone ClickHouse Keeper، فيمكنك تشغيله بطريقة مماثلة باستخدام:
@@ -468,7 +468,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### HTTP control {#http-control}
+  ### HTTP control
 </div>
 
 يوفّر ClickHouse Keeper واجهة HTTP للتحقق مما إذا كانت النسخة المتماثلة جاهزة لاستقبال حركة المرور. ويمكن استخدام ذلك في البيئات السحابية، مثل [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
@@ -489,7 +489,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="feature-flags">
-  ### علامات الميزات {#feature-flags}
+  ### علامات الميزات
 </div>
 
 يتوافق Keeper توافقًا كاملًا مع ZooKeeper وعملائه، لكنه يقدّم أيضًا بعض الميزات وأنواع الطلبات الفريدة التي يمكن لعميل ClickHouse استخدامها.
@@ -526,13 +526,13 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### الترحيل من ZooKeeper {#migration-from-zookeeper}
+  ### الترحيل من ZooKeeper
 </div>
 
 لا يمكن إجراء ترحيل سلس من ZooKeeper إلى ClickHouse Keeper. يجب عليك إيقاف عنقود ZooKeeper، وتحويل البيانات، ثم تشغيل ClickHouse Keeper. تحوّل أداة `clickhouse-keeper-converter` السجلات ولقطات الخاصة بـ ZooKeeper إلى لقطة لـ ClickHouse Keeper. وتتطلب ZooKeeper 3.4 أو إصدارًا أحدث.
 
 <div id="pre-migration-preparation">
-  #### التحضير قبل الترحيل {#pre-migration-preparation}
+  #### التحضير قبل الترحيل
 </div>
 
 يتطلّب الترحيل إيقاف استيعاب البيانات. حدّد فترة صيانة قبل البدء.
@@ -575,7 +575,7 @@ clickhouse-keeper-converter \
 10. استأنف المهام الخلفية، وأعد تشغيل استيعاب البيانات.
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### دمج عدة عناقيد ZooKeeper {#consolidating-multiple-zookeeper-clusters}
+  #### دمج عدة عناقيد ZooKeeper
 </div>
 
 إذا كنت تشغّل عدة عناقيد ZooKeeper — على سبيل المثال، مجموعة واحدة لكل مجموعة shard — فيمكنك دمجها في عنقود ClickHouse Keeper واحد. لا تدعم أداة `clickhouse-keeper-converter` الرسمية سوى التحويلات من واحد إلى واحد (عنقود ZooKeeper واحد إلى لقطة Keeper واحدة)، لذلك يتطلب الدمج تعديل الشيفرة المصدرية للمحوّل لدمج عدة لقطات:
@@ -585,7 +585,7 @@ clickhouse-keeper-converter \
 3. اكتب الناتج المدمج في دليل لقطات ClickHouse Keeper الهدف.
 
 <div id="handling-encryption-and-acls">
-  #### التعامل مع التشفير وقوائم ACL {#handling-encryption-and-acls}
+  #### التعامل مع التشفير وقوائم ACL
 </div>
 
 يدعم ClickHouse Keeper مخططات ACL نفسها التي يدعمها ZooKeeper (`world`, `auth`, `digest`). وتعتمد طريقة التعامل مع قوائم ACL أثناء التحويل على إعداد ZooKeeper لديك:
@@ -594,7 +594,7 @@ clickhouse-keeper-converter \
 * **مشفَّر جزئيًا**: قبل التحويل، امنح حساب مسؤول فائق الصلاحيات وامسح قوائم ACL باستخدام `setAcl -R` على المسارات المتأثرة. حوِّل، ثم أعد تمكين التشفير في ClickHouse Keeper إذا لزم الأمر.
 
 <div id="verifying-the-migration">
-  #### التحقق من الترحيل {#verifying-the-migration}
+  #### التحقق من الترحيل
 </div>
 
 بعد تشغيل ClickHouse Keeper وإعادة تشغيل ClickHouse، قارن المقاييس الرئيسية لديك بخط الأساس السابق للترحيل للتأكد من نجاح الترحيل.
@@ -607,7 +607,7 @@ clickhouse-keeper-converter \
 تجنّب استعراض أشجار ZooKeeper الكبيرة مباشرةً لأغراض المقارنة. وبدلاً من ذلك، اطبع جميع المسارات المحوّلة إلى ملف أثناء التحويل.
 
 <div id="post-migration-tuning">
-  #### الضبط بعد الترحيل {#post-migration-tuning}
+  #### الضبط بعد الترحيل
 </div>
 
 بعد الترحيل، فكّر في ضبط هذه الإعدادات للعناقيد الأكبر أو لتحقيق إنتاجية أعلى:
@@ -623,7 +623,7 @@ clickhouse-keeper-converter \
 تُضبط هذه الإعدادات ضمن `coordination_settings` في [تهيئة Keeper](#internal-coordination-settings).
 
 <div id="recovering-after-losing-quorum">
-  ### الاستعادة بعد فقدان النصاب {#recovering-after-losing-quorum}
+  ### الاستعادة بعد فقدان النصاب
 </div>
 
 نظرًا لأن ClickHouse Keeper يستخدم Raft، فإنه يستطيع تحمّل عدد معيّن من تعطل العُقد بحسب حجم العنقود.
@@ -652,7 +652,7 @@ clickhouse-keeper-converter \
 7. بعد تحقيق النصاب، ستعود عقدة القائد إلى وضع التشغيل العادي، وتبدأ في قبول جميع الطلبات باستخدام Raft — ويمكنك التحقق من ذلك عبر `mntr`، إذ ينبغي أن يعيد `leader` في `zk_server_state`.
 
 <div id="using-disks-with-keeper">
-  ## استخدام الأقراص مع Keeper {#using-disks-with-keeper}
+  ## استخدام الأقراص مع Keeper
 </div>
 
 يدعم Keeper مجموعة فرعية من [الأقراص الخارجية](/ar/concepts/features/configuration/server-config/storing-data) لتخزين اللقطات وملفات السجل وملف الحالة.
@@ -733,7 +733,7 @@ clickhouse-keeper-converter \
 وينطبق المنطق نفسه على اللقطات؛ إذ ستُخزَّن جميع اللقطات ما عدا أحدث اللقطات على `snapshot_s3_plain`، بينما سيُحفَظ أحدث لقطة على القرص `snapshot_local`.
 
 <div id="changing-disk-setup">
-  ### تغيير إعداد الأقراص {#changing-disk-setup}
+  ### تغيير إعداد الأقراص
 </div>
 
 <Warning>
@@ -801,7 +801,7 @@ clickhouse-keeper-converter \
 </Note>
 
 <div id="prometheus">
-  ## Prometheus {#prometheus}
+  ## Prometheus
 </div>
 
 يمكن لـ Keeper كشف بيانات المقاييس ليتمكّن [Prometheus](https://prometheus.io) من سحبها.
@@ -840,7 +840,7 @@ curl 127.0.0.1:9363/metrics
 راجع أيضًا [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus) في ClickHouse Cloud.
 
 <div id="clickhouse-keeper-user-guide">
-  ## دليل المستخدم لـ ClickHouse Keeper {#clickhouse-keeper-user-guide}
+  ## دليل المستخدم لـ ClickHouse Keeper
 </div>
 
 يوفّر هذا الدليل إعدادات بسيطة ومختصرة لتهيئة ClickHouse Keeper، مع مثال يوضّح كيفية اختبار العمليات الموزعة. يُنفَّذ هذا المثال باستخدام 3 عقد على Linux.

@@ -71,7 +71,7 @@ As tabelas abaixo comparam os recursos disponíveis no `dbt-clickhouse` (v1) com
 
 <Badge color="green">compatível</Badge> já funciona · <Badge color="yellow">parcial</Badge> funciona com limitações · <Badge color="red">ainda não</Badge> implementação pendente.
 
-### Materializations {#parity-materializations}
+### Materializations
 
 | Feature                                        | O que faz                                                        | dbt v2                                  | Notas                                                                                                                                          |
 | ---------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ As tabelas abaixo comparam os recursos disponíveis no `dbt-clickhouse` (v1) com
 | `ephemeral`                                    | CTE inline, sem criação de objeto.                               | <Badge color="green">Compatível</Badge> |                                                                                                                                                |
 | `distributed_table`, `distributed_incremental` | Tabelas divididas em shards por trás de um motor Distributed.    | <Badge color="red">Ainda não</Badge>    |                                                                                                                                                |
 
-### Configuração de models {#parity-model-configuration}
+### Configuração de models
 
 | Feature                                           | O que faz                                                         | dbt v2                                  | Notas |
 | ------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------- | ----- |
@@ -97,7 +97,7 @@ As tabelas abaixo comparam os recursos disponíveis no `dbt-clickhouse` (v1) com
 | Evolução de schema em models incrementais         | `on_schema_change` adiciona ou sincroniza colunas.                | <Badge color="green">Compatível</Badge> |       |
 | `codec` e `ttl` de coluna                         | Compressão e expiração por coluna.                                | <Badge color="green">Compatível</Badge> |       |
 
-### Testes e documentação {#parity-testing-and-docs}
+### Testes e documentação
 
 | Recurso                            | O que faz                                           | dbt v2                                  | Observações                                                                                                                                                                                                                                      |
 | ---------------------------------- | --------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -107,7 +107,7 @@ As tabelas abaixo comparam os recursos disponíveis no `dbt-clickhouse` (v1) com
 | Geração de catálogo e documentação | Metadados de colunas para o site de documentação.   | <Badge color="green">Compatível</Badge> |                                                                                                                                                                                                                                                  |
 | Linhagem em nível de coluna        | Rastreia colunas ao longo do DAG.                   | <Badge color="yellow">Parcial</Badge>   | Novidade na v2 por meio do compilador SQL, indisponível na v1. A linhagem na plataforma dbt só é renderizada com a delimitação de identificadores desabilitada em `dbt_project.yml`; a linhagem no lado do motor exige o dialect ClickHouse SQL. |
 
-### Cluster e Cloud {#parity-cluster-and-cloud}
+### Cluster e Cloud
 
 | Recurso                                 | O que faz                                                                             | dbt v2                                  | Notas                                                                                                                                                                                                                                       |
 | --------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -118,7 +118,7 @@ As tabelas abaixo comparam os recursos disponíveis no `dbt-clickhouse` (v1) com
 | Configurações personalizadas de conexão | `custom_settings` no nível do profile.                                                | <Badge color="green">Compatível</Badge> |                                                                                                                                                                                                                                             |
 | Versão do servidor ClickHouse           | Versão mínima do servidor.                                                            | <Badge color="green">Compatível</Badge> | 25.3+ em ambos os motores. A leitura de colunas `UUID` na v2 exige 26.7+ (servidores mais antigos não conseguem converter `UUID` para Arrow).                                                                                               |
 
-### Macros e operações {#parity-macros-and-operations}
+### Macros e operações
 
 | Recurso                             | O que faz                                                                | dbt v2                                  | Observações                                        |
 | ----------------------------------- | ------------------------------------------------------------------------ | --------------------------------------- | -------------------------------------------------- |
@@ -130,7 +130,7 @@ As tabelas abaixo comparam os recursos disponíveis no `dbt-clickhouse` (v1) com
 | `query-comment`                     | Configuração do comentário da consulta.                                  | <Badge color="red">Ainda não</Badge>    | `query-comment: null` ainda não é respeitado.      |
 | Integração com catalog (Iceberg)    | Materializar em external catalogs.                                       | <Badge color="red">Ainda não</Badge>    | Também não havia na v1; alternativas documentadas. |
 
-### Conectividade e autenticação {#parity-connectivity-and-auth}
+### Conectividade e autenticação
 
 | Recurso                      | O que faz                                                                                                     | dbt v2                                  | Notas                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------- |

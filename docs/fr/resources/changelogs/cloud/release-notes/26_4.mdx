@@ -347,7 +347,7 @@ doc_type: 'changelog'
 ## Corrections de bugs {#bug-fixes}
 
 <Accordion title="Tous les correctifs de bugs (cliquer pour afficher)">
-  ### Correctifs JOIN {#join-fixes}
+  ### Correctifs JOIN
 
   * Correction d’une colonne manquante lorsqu’un alias d’identifiant non standard était utilisé dans un JOIN avec l’ancien analyseur. [#95679](https://github.com/ClickHouse/ClickHouse/pull/95679) ([Zhigao Hong](https://github.com/zghong)).
   * Correction d’un résultat incorrect lorsque l’algorithme `grace_hash` était utilisé avec des joins non-équi et que le bloc de gauche ne pouvait pas être traité entièrement en raison de contraintes de taille sur le résultat du JOIN. [#97866](https://github.com/ClickHouse/ClickHouse/pull/97866) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
@@ -367,7 +367,7 @@ doc_type: 'changelog'
   * Correction d’un ordre des lignes incorrect dans les requêtes utilisant `ORDER BY` avec l’algorithme de jointure `grace_hash`, ce qui pouvait produire un résultat incorrect sans avertissement. [#102036](https://github.com/ClickHouse/ClickHouse/pull/102036) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
   * Correction d’une `LOGICAL_ERROR` (taille inattendue du type d’index) qui pouvait se produire dans les requêtes `RIGHT JOIN` et `FULL JOIN` lorsque `max_bytes_in_join` était configuré. [#102042](https://github.com/ClickHouse/ClickHouse/pull/102042) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
 
-  ### Correctifs pour les requêtes et l&#39;analyseur {#query-and-analyzer-fixes}
+  ### Correctifs pour les requêtes et l&#39;analyseur
 
   * Correction de la façon dont la cible d’une table Alias est enregistrée comme dépendance DDL lorsqu’elle n’est pas entièrement qualifiée : elle est désormais enregistrée avec la base de données de la table Alias au lieu de la base de données de session. [#95175](https://github.com/ClickHouse/ClickHouse/pull/95175) ([Enric Calabuig](https://github.com/eclbg)).
   * Correction d’une erreur `Block structure mismatch in stream` causée par des colonnes superflues renvoyées par la matérialisation paresseuse. [#96682](https://github.com/ClickHouse/ClickHouse/pull/96682) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
@@ -447,7 +447,7 @@ doc_type: 'changelog'
   * Optimisation des chaînes de `OR` dans les row policy en `IN` dans le nouvel analyseur. [#102915](https://github.com/ClickHouse/ClickHouse/pull/102915) ([Azat Khuzhin](https://github.com/azat)).
   * Correction de résultats incorrects renvoyés par `WHERE x AND toNullable(N)` sur des tables `MergeTree` lorsque `N` est un entier plus grand que `UInt8` (par ex. `256`, `65535`, `2147483648` ou tout entier négatif). [#103077](https://github.com/ClickHouse/ClickHouse/pull/103077) ([Groene AI](https://github.com/groeneai)).
 
-  ### Correctifs MergeTree et stockage {#mergetree-and-storage-fixes}
+  ### Correctifs MergeTree et stockage
 
   * Correction d’une erreur logique lors de l’attachement d’une part dans MergeTree lorsqu’il y avait plusieurs renommages en chaîne entre le détachement et l’attachement. [#96351](https://github.com/ClickHouse/ClickHouse/pull/96351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * Correction d’un calcul non déterministe de `uncompressed_hash` pour les parts Compact MergeTree lorsque plusieurs codecs de compression sont utilisés, ce qui pouvait entraîner un comportement incorrect de déduplication. [#97522](https://github.com/ClickHouse/ClickHouse/pull/97522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -499,7 +499,7 @@ doc_type: 'changelog'
   * Correction d’un arrêt `LOGICAL_ERROR` lors du redimensionnement dynamique du cache du système de fichiers SLRU, causé par des statistiques d’éviction partagées entre les sous-files d’attente et par un chemin de récupération incorrect pour les candidats en échec. [#102396](https://github.com/ClickHouse/ClickHouse/pull/102396) ([Antonio Andelic](https://github.com/antonio2368)).
   * Correction de la désactivation permanente d’une optimisation `minmax_count_projection` et de l’optimisation triviale de `COUNT(*)` après un lightweight delete. [#102900](https://github.com/ClickHouse/ClickHouse/pull/102900) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### Corrections relatives aux types de données et à la sérialisation {#data-type-and-serialization-fixes}
+  ### Corrections relatives aux types de données et à la sérialisation
 
   * Correction d’un résultat incorrect ou d’une exception lors de la lecture des sous-colonnes de colonnes ALIAS. [#95408](https://github.com/ClickHouse/ClickHouse/pull/95408) ([Pavel Kruglov](https://github.com/Avogar)).
   * Correction du fait que la fonction d’agrégation `sumCount` ne pouvait pas lire d’anciens états sérialisés après l’introduction de `Nullable(Tuple)`. [#97502](https://github.com/ClickHouse/ClickHouse/pull/97502) ([Nihal Z. Miaji](https://github.com/nihalzp)).
@@ -558,7 +558,7 @@ doc_type: 'changelog'
   * Correction du fait que `cast_string_to_date_time_mode` était ignoré pour `CAST` vers `Nullable(DateTime)`. [#103035](https://github.com/ClickHouse/ClickHouse/pull/103035) ([Pavel Kruglov](https://github.com/Avogar)).
   * La représentation de null dans la sérialisation des colonnes répliquées et sparse respecte désormais les paramètres (par ex. `format_tsv_null_representation`). [#102888](https://github.com/ClickHouse/ClickHouse/pull/102888) ([Hechem Selmi](https://github.com/m-selmi)).
 
-  ### Corrections des index de texte et des index de saut {#text-index-and-skip-index-fixes}
+  ### Corrections des index de texte et des index de saut
 
   * Correction de l’utilisation du text index avec d’autres skip indexes. Auparavant, des erreurs logiques telles que &quot;Trying to get non-existing mark&quot; pouvaient être levées lorsqu’un filtre de query utilisait simultanément un text index et d’autres skip indexes classiques. [#98555](https://github.com/ClickHouse/ClickHouse/pull/98555) ([Anton Popov](https://github.com/CurtizJ)).
   * Correction de la reconstruction des text indexes lors des merges avec TTL. [#99107](https://github.com/ClickHouse/ClickHouse/pull/99107) ([Anton Popov](https://github.com/CurtizJ)).
@@ -579,7 +579,7 @@ doc_type: 'changelog'
   * Les paramètres de l&#39;index de texte intégral (`enable_full_text_index`, `allow_experimental_full_text_index`, `use_skip_indexes_on_data_read`) ne sont plus désactivés lorsque le paramètre `compatibility` pointe vers une version antérieure à 26.1. [#102422](https://github.com/ClickHouse/ClickHouse/pull/102422) ([Nikita Fomichev](https://github.com/fm4v)).
   * Ajout de la prise en charge des colonnes `ALIAS` dans l&#39;optimisation de lecture directe depuis l&#39;index de texte. [#103037](https://github.com/ClickHouse/ClickHouse/pull/103037) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### Correctifs du lac de données {#data-lake-fixes}
+  ### Correctifs du lac de données
 
   * Correction d’une condition de concurrence logique lors d’un changement de version de snapshot dans le moteur de table `DeltaLake`, et suppression de rechargements de snapshot lourds et redondants. [#96226](https://github.com/ClickHouse/ClickHouse/pull/96226) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * Correction d’une exception `DUPLICATE_COLUMN` et de valeurs NULL silencieuses lors de la lecture de tables Delta Lake utilisant le mode de mapping de colonnes &quot;name&quot; avec des champs de struct dont les noms contiennent des points. [#98013](https://github.com/ClickHouse/ClickHouse/pull/98013) ([Caio Ishizaka Costa](https://github.com/ch-caioishizaka)).
@@ -605,7 +605,7 @@ doc_type: 'changelog'
   * Ajout de la colonne `hostname` manquante à `system.delta_lake_metadata_log` et `system.iceberg_metadata_log`. [#102162](https://github.com/ClickHouse/ClickHouse/pull/102162) ([Michael Russell](https://github.com/Crazybus)).
   * Correction dans CoalescingMergeTree pour le type Array. [#102384](https://github.com/ClickHouse/ClickHouse/pull/102384) ([Konstantin Vedernikov](https://github.com/scanhex12)).
 
-  ### Correctifs S3/Azure/stockage objet {#s3-azure-object-storage-fixes}
+  ### Correctifs S3/Azure/stockage objet
 
   * Correction d&#39;une exception provenant de `CachedOnDiskReadBufferFromFile::readBigAt`. [#97890](https://github.com/ClickHouse/ClickHouse/pull/97890) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * Correction d&#39;un crash : l&#39;interrogation de fichiers avec un motif glob (par ex. `file('dir/**', 'LineAsString')`) levait une exception du système de fichiers non gérée si le répertoire contenait un lien symbolique orphelin. Les liens symboliques orphelins sont désormais ignorés sans bruit. [#98143](https://github.com/ClickHouse/ClickHouse/pull/98143) ([Mark Andreev](https://github.com/mrk-andreev)).
@@ -622,12 +622,12 @@ doc_type: 'changelog'
   * Correction de l&#39;hôte et du port qui n&#39;étaient pas correctement consignés lors de la reconnexion. [#102280](https://github.com/ClickHouse/ClickHouse/pull/102280) ([Grant Holly](https://github.com/grantholly-clickhouse)).
   * Correction d&#39;une exception côté serveur dans ClusterDiscovery lorsqu&#39;un cluster statique (défini dans la config) n&#39;avait temporairement aucun nœud actif. [#102661](https://github.com/ClickHouse/ClickHouse/pull/102661) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-  ### Correctifs S3Queue {#s3queue-fixes}
+  ### Correctifs S3Queue
 
   * S3Queue : correction d’une assertion en échec après une perte de connexion à ZooKeeper, malgré un commit réussi. [#100210](https://github.com/ClickHouse/ClickHouse/pull/100210) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * Correction de l’inversion du texte de description de la colonne `alterable` dans `system.s3_queue_settings` et `system.azure_queue_settings` — la signification de `0` et `1` a été permutée pour correspondre au comportement réel du code. [#101703](https://github.com/ClickHouse/ClickHouse/pull/101703) ([ClickGap AI Bot](https://github.com/clickgapai)).
 
-  ### Correctifs de sécurité et de contrôle d&#39;accès {#security-and-access-control-fixes}
+  ### Correctifs de sécurité et de contrôle d&#39;accès
 
   * La fonction de table `loop` appelait directement `inner_storage->read()`, en contournant la couche d’interprétation où sont appliquées les row policies, les grants au niveau des colonnes et les autres contrôles de sécurité. Cela permettait à un utilisateur restreint par des row policies de lire toutes les lignes via `loop(table)`. [#97682](https://github.com/ClickHouse/ClickHouse/pull/97682) ([pufit](https://github.com/pufit)).
   * Application des vérifications `READ ON FILE` pour le scalaire `file()` et `DESCRIBE TABLE file()`. [#98115](https://github.com/ClickHouse/ClickHouse/pull/98115) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -645,14 +645,14 @@ doc_type: 'changelog'
   * Certains catalogues pouvaient afficher des secrets dans la section `SETTINGS` de `SELECT * FROM system.databases`. Ce n’est désormais plus possible. [#100800](https://github.com/ClickHouse/ClickHouse/pull/100800) ([Konstantin Vedernikov](https://github.com/scanhex12)).
   * Les politiques au niveau des lignes n’étaient pas propagées des sous-planificateurs vers le planificateur parent pour la journalisation, elles étaient donc absentes de `query_log` pour les vues, les sous-requêtes et les insert-selects. Elles sont désormais conservées dans `QueryAccessInfo` pour la journalisation. [#101044](https://github.com/ClickHouse/ClickHouse/pull/101044) ([Narasimha Pakeer](https://github.com/npakeer)).
 
-  ### Correctifs de sauvegarde et de restauration {#backup-and-restore-fixes}
+  ### Correctifs de sauvegarde et de restauration
 
   * Correction du problème empêchant l’application de `max_execution_time` aux opérations de sauvegarde/restauration. [#99205](https://github.com/ClickHouse/ClickHouse/pull/99205) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * Correction d’une exception `ReadBuffer is canceled. Can't read from it.` dans les opérations de sauvegarde/restauration utilisant des archives zip. [#100400](https://github.com/ClickHouse/ClickHouse/pull/100400) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * Validation des chemins des entrées de fichier dans les métadonnées de sauvegarde afin de rejeter les traversées de répertoires, les chemins absolus et les noms vides lors de `RESTORE`. [#100483](https://github.com/ClickHouse/ClickHouse/pull/100483) ([Pablo Marcos](https://github.com/pamarcos)).
   * Correction de la mise en forme et du clonage de l’AST pour `BACKUP FROM SNAPSHOT`. [#101405](https://github.com/ClickHouse/ClickHouse/pull/101405) ([Pablo Marcos](https://github.com/pamarcos)).
 
-  ### Correctifs ClickHouse Keeper {#clickhouse-keeper-fixes}
+  ### Correctifs ClickHouse Keeper
 
   * Correction d’une data race dans le client ZooKeeper entre le thread d’envoi et le thread de réception. [#97887](https://github.com/ClickHouse/ClickHouse/pull/97887) ([Pablo Marcos](https://github.com/pamarcos)).
   * Correction d’une perte de données dans Keeper après redémarrage lors de l’utilisation d’Azure Blob Storage avec des métadonnées `s3_plain` pour le stockage des logs. [#97987](https://github.com/ClickHouse/ClickHouse/pull/97987) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -670,7 +670,7 @@ doc_type: 'changelog'
   * Correction d’une perte du registry UDF lorsqu’une session ZooKeeper expirait pendant un refresh périodique — toutes les user-defined functions pouvaient devenir indisponibles jusqu’à la réussite d’un full refresh. [#101891](https://github.com/ClickHouse/ClickHouse/pull/101891) ([Nikita Fomichev](https://github.com/fm4v)).
   * Correction d’un plantage lors du refresh des UDF, causé par `ZooKeeperRetriesControl`, qui réessayait sur une session ZooKeeper obsolète (expirée) sans la renouveler. [#102059](https://github.com/ClickHouse/ClickHouse/pull/102059) ([Nikita Fomichev](https://github.com/fm4v)).
 
-  ### Correctifs de crash et de stabilité {#crash-and-stability-fixes}
+  ### Correctifs de crash et de stabilité
 
   * Correction d’un crash dans les fonctions du dialecte Kusto `bin()`, `bin_at()`, `extract()` et `indexof()` lorsque des arguments vides sont fournis. [#95736](https://github.com/ClickHouse/ClickHouse/pull/95736) ([NeedmeFordev](https://github.com/spider-yamet)).
   * Correction d’un crash/assertion du serveur dans `mapContainsKey`/`mapContainsKeyLike` avec un skip index `tokenbf_v1`. [#97826](https://github.com/ClickHouse/ClickHouse/pull/97826) ([Shankar Iyer](https://github.com/shankar-iyer)).
@@ -729,7 +729,7 @@ doc_type: 'changelog'
   * Correction d’un crash dans les builds debug/sanitizer lorsque `std::length_error` est levée pendant l’inférence de schéma. [#102859](https://github.com/ClickHouse/ClickHouse/pull/102859) ([Groene AI](https://github.com/groeneai)).
   * Correction d’un crash lors de l’utilisation d’une vue avec une clause `WHERE` où la requête interne produit des colonnes de types différents de ceux des métadonnées de la vue (par exemple `Nullable` issu d’un `LEFT JOIN` avec `join_use_nulls`). [#102085](https://github.com/ClickHouse/ClickHouse/pull/102085) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 
-  ### Autres corrections de bugs {#other-bug-fixes}
+  ### Autres corrections de bugs
 
   * Correction d’un bug où des paramètres explicites envoyés avec `compatibility` dans la même requête pouvaient être ignorés silencieusement lorsque leur valeur correspondait à la valeur par défaut du serveur. [#97078](https://github.com/ClickHouse/ClickHouse/pull/97078) ([Raufs Dunamalijevs](https://github.com/rienath)).
   * Correction du client qui signalait `NETWORK_ERROR` au lieu de l’erreur d’analyse syntaxique réelle (avec le bon numéro de ligne) lorsqu’un INSERT avec analyse parallèle rencontrait des données invalides. [#97339](https://github.com/ClickHouse/ClickHouse/pull/97339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

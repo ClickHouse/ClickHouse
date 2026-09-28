@@ -55,11 +55,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="database-authentication">
-  ## 数据库身份验证 {#database-authentication}
+  ## 数据库身份验证
 </div>
 
 <div id="database-user-id--password">
-  ### 数据库用户 ID 和密码 {#database-user-id--password}
+  ### 数据库用户 ID 和密码
 </div>
 
 在[创建用户账户](/zh/reference/statements/create/user)时，请使用 SHA256&#95;哈希 方法来保护密码。ClickHouse 数据库密码必须至少包含 12 个字符，并满足复杂度要求：包含大写字母、小写字母、数字和/或特殊字符。
@@ -76,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### 通过安全外壳 (SSH) 进行身份验证的数据库用户 {#database-ssh}
+  ### 通过安全外壳 (SSH) 进行身份验证的数据库用户
 </div>
 
 为 ClickHouse Cloud 数据库用户配置 SSH 身份验证。
@@ -89,7 +89,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 如需查看包含示例的详细操作指南，请参阅我们知识库中的 [如何使用 SSH 密钥连接到 ClickHouse Cloud](/zh/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys)。
 
 <div id="database-permissions">
-  ## 数据库权限 {#database-permissions}
+  ## 数据库权限
 </div>
 
 使用 SQL [GRANT](/zh/reference/statements/grant) 语句在服务和数据库中配置以下权限。
@@ -108,7 +108,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="展示可向用户授予权限的不同方式的示意图" size="md" background="black" />
 
 <div id="initial-settings">
-  ### 初始设置 {#initial-settings}
+  ### 初始设置
 </div>
 
 系统会自动创建一个名为 `default` 的账户，并在服务创建时向其授予 default&#95;role。创建服务的用户会看到系统在服务创建时自动生成并分配给 `default` 账户的随机密码。初始设置完成后，该密码将不再显示，但之后任何在控制台中具有 Service Admin 权限的用户都可以更改它。此账户，或控制台中具有 Service Admin 特权的账户，均可随时设置其他数据库用户和角色。

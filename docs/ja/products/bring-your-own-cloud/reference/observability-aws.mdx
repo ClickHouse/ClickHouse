@@ -37,7 +37,7 @@ BYOC では、Prometheus を使用してメトリクスを収集・可視化す�
 **推奨**: ほとんどのユースケースでは、組み込みのPrometheusスタックとのインテグレーションを推奨します。これは、ClickHouseサーバーのメトリクスだけでなく、BYOCデプロイメント内のすべてのコンポーネント (ClickHouseサービス、Kubernetesクラスター、補助サービス) から包括的なメトリクスを取得できるためです。
 
 <div id="builtin-prometheus-stack">
-  ## 組み込み BYOC Prometheus スタック {#builtin-prometheus-stack}
+  ## 組み込み BYOC Prometheus スタック
 </div>
 
 ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に応じてメトリクスの長期保存用の Thanos を含む、完全な Prometheus 監視スタックを Kubernetes クラスター内にデプロイします。このスタックは、次の対象からメトリクスを収集します。
@@ -68,7 +68,7 @@ ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に�
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### お使いの監視ツールとの統合 {#prometheus-stack-integration}
+  ### お使いの監視ツールとの統合
 </div>
 
 BYOC Prometheus スタックは、監視環境の中でいくつかの方法で活用できます。
@@ -107,7 +107,7 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## ClickHouse service の Prometheus インテグレーション {#direct-prometheus-integration}
+  ## ClickHouse service の Prometheus インテグレーション
 </div>
 
 ClickHouse service は Prometheus 互換のメトリクスエンドポイントを公開しているため、お使いの Prometheus インスタンスから直接スクレイプできます。この方法では ClickHouse 固有のメトリクスは取得できますが、Kubernetes や関連サービスのメトリクスは含まれません。
@@ -135,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### 認証 {#authentication}
+  ### 認証
 </div>
 
 メトリクスエンドポイントへのアクセスには、ClickHouseの認証情報による認証が必要です。`default` ユーザーを使用するか、メトリクスのスクレイピング専用に必要最小限の権限を持つ専用ユーザーを作成することを推奨します。
@@ -193,7 +193,7 @@ scrape_configs:
 * `<username>` と `<password>` をスクレイピングユーザーの認証情報に
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin {#clickhouse-mixin}
+  ## ClickHouse Mixin
 </div>
 
 すぐに使えるダッシュボード群を必要とするチーム向けに、ClickHouse は Prometheus **ClickHouse Mixin** を提供しています。これは、ClickHouse クラスターの監視用に特別に設計された、あらかじめ用意された Grafana ダッシュボードです。

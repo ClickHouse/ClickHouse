@@ -55,11 +55,11 @@ Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un
 </Steps>
 
 <div id="database-authentication">
-  ## Autenticación de la base de datos {#database-authentication}
+  ## Autenticación de la base de datos
 </div>
 
 <div id="database-user-id--password">
-  ### ID y contraseña del usuario de base de datos {#database-user-id--password}
+  ### ID y contraseña del usuario de base de datos
 </div>
 
 Use el método SHA256&#95;hash al [crear cuentas de usuario](/es/reference/statements/create/user) para proteger las contraseñas. Las contraseñas de la base de datos de ClickHouse deben tener un mínimo de 12 caracteres y cumplir los requisitos de complejidad: letras mayúsculas, letras minúsculas, números y/o caracteres especiales.
@@ -76,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### Usuario de base de datos con autenticación SSH {#database-ssh}
+  ### Usuario de base de datos con autenticación SSH
 </div>
 
 Para configurar la autenticación SSH para un usuario de base de datos de ClickHouse Cloud.
@@ -89,7 +89,7 @@ Para configurar la autenticación SSH para un usuario de base de datos de ClickH
 Para obtener una guía detallada con ejemplos, consulta [Cómo conectarse a ClickHouse Cloud usando claves SSH](/es/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) en nuestra base de conocimientos.
 
 <div id="database-permissions">
-  ## Permisos de la base de datos {#database-permissions}
+  ## Permisos de la base de datos
 </div>
 
 Configure lo siguiente en los servicios y las bases de datos mediante la sentencia SQL [GRANT](/es/reference/statements/grant).
@@ -108,7 +108,7 @@ La siguiente ilustración muestra las distintas formas en que se pueden conceder
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Una ilustración que muestra las distintas formas en que se pueden conceder permisos a un usuario" size="md" background="black" />
 
 <div id="initial-settings">
-  ### Configuración inicial {#initial-settings}
+  ### Configuración inicial
 </div>
 
 Las bases de datos tienen una cuenta llamada `default` que se añade automáticamente y recibe `default&#95;role` al crear el servicio. Al usuario que crea el servicio se le muestra la contraseña aleatoria generada automáticamente que se asigna a la cuenta `default` cuando se crea el servicio. La contraseña no vuelve a mostrarse después de la configuración inicial, pero cualquier usuario con permisos de Service Admin en la consola puede cambiarla más adelante. Esta cuenta, o una cuenta con privilegios de Service Admin en la consola, puede configurar usuarios de base de datos y roles adicionales en cualquier momento.

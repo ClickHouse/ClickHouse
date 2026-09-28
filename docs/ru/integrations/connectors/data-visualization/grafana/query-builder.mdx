@@ -91,7 +91,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Пример дополнительных полей в запросе журналов" border />
 
 <div id="time-series">
-  ### Временные ряды {#time-series}
+  ### Временные ряды
 </div>
 
 Тип запроса для временных рядов похож на [таблицу](#table), но ориентирован на данные временных рядов.
@@ -196,7 +196,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### Как создать ссылку на данные {#how-to-make-a-data-link}
+  ### Как создать ссылку на данные
 </div>
 
 Вы можете создать ссылку на данные, выбрав в запросе столбец с именем `traceID`. Для этого имени используется регистронезависимый поиск; также поддерживается добавление символа подчёркивания перед &quot;ID&quot;. Например, `traceId`, `TraceId`, `TRACE_ID` и `tracE_iD` будут корректными вариантами.
@@ -223,7 +223,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 </div>
 
 <div id="macros">
-  ## Макросы {#macros}
+  ## Макросы
 </div>
 
 Макросы — это простой способ добавить в запрос динамический SQL.
@@ -232,7 +232,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Макросы можно использовать в запросах как из редактора SQL, так и из конструктора запросов.
 
 <div id="using-macros">
-  ### Использование макросов {#using-macros}
+  ### Использование макросов
 </div>
 
 Макросы можно использовать в любом месте запроса, при необходимости — несколько раз.
@@ -260,7 +260,7 @@ WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
 Плагин также поддерживает запись с использованием фигурных скобок `{}`. Используйте такую запись, когда внутри [параметров](/ru/reference/syntax#defining-and-using-query-parameters) необходимо использовать запросы.
 
 <div id="list-of-macros">
-  ### Список макросов {#list-of-macros}
+  ### Список макросов
 </div>
 
 Ниже приведён список всех макросов, доступных в плагине:

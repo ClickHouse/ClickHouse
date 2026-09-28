@@ -137,7 +137,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             Si vous n’en avez pas déjà un en cours d’exécution, démarrez un collecteur en suivant les étapes ci-dessous. Si vous avez déjà des collecteurs en place, un exemple de configuration est également fourni.
 
-### Démarrer un collecteur {#start-a-collector-existing}
+### Démarrer un collecteur
 
             La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors-existing)
 
@@ -155,7 +155,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             L’exécution de cette seule commande démarre le collecteur ClickStack avec des endpoints OTLP exposés sur les ports 4317 (gRPC) et 4318 (HTTP). Si vous disposez déjà d’une instrumentation OpenTelemetry et d’agents, vous pouvez immédiatement commencer à envoyer des données de télémétrie vers ces endpoints.
 
-### Configurer des collecteurs existants {#configure-existing-collectors-existing}
+### Configurer des collecteurs existants
 
             Vous pouvez également configurer vos propres OpenTelemetry Collectors existants ou utiliser votre propre distribution du collector.
 
@@ -173,7 +173,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             Pour plus de détails sur la configuration des collecteurs OpenTelemetry, consultez [&quot;Ingestion avec OpenTelemetry.&quot;](/fr/clickstack/ingesting-data/opentelemetry)
 
-### Démarrer l’ingestion (facultatif) {#start-ingestion-existing}
+### Démarrer l’ingestion (facultatif)
 
             Si vous avez déjà des applications ou une infrastructure à instrumenter avec OpenTelemetry, consultez les guides pertinents accessibles depuis &quot;Connecter une application&quot;.
 
@@ -197,7 +197,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             La suite suppose qu’une instance de Vector est en cours d’exécution, préconfigurée avec des pipelines d’ingestion et qu’elle achemine les données.
 
-### Créer une base de données et une table {#create-database-and-tables}
+### Créer une base de données et une table
 
             Vector exige qu’une table et un schéma soient définis avant l’ingestion des données.
 
@@ -286,7 +286,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 </Tabs>
 
 <div id="additional-tasks">
-  ## Tâches supplémentaires {#additional-tasks}
+  ## Tâches supplémentaires
 </div>
 
 ### Accorder l’accès à Managed ClickStack {#configure-access}
@@ -307,13 +307,13 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 </Warning>
 
 <div id="clickstack-read-only-compute">
-  ### Utiliser ClickStack avec des ressources de calcul en lecture seule {#clickstack-read-only-compute}
+  ### Utiliser ClickStack avec des ressources de calcul en lecture seule
 </div>
 
 L&#39;interface utilisateur de ClickStack peut fonctionner entièrement sur un service ClickHouse Cloud en lecture seule. Il s&#39;agit de la configuration recommandée si vous souhaitez isoler les charges de travail d&#39;ingestion et de requête.
 
 <div id="how-clickstack-selects-compute">
-  #### Comment ClickStack sélectionne la ressource de calcul {#how-clickstack-selects-compute}
+  #### Comment ClickStack sélectionne la ressource de calcul
 </div>
 
 L’interface utilisateur de ClickStack se connecte toujours au service ClickHouse depuis lequel il est lancé dans la ClickHouse Cloud Console.
@@ -326,7 +326,7 @@ Cela signifie :
 Aucune configuration supplémentaire dans ClickStack n’est nécessaire pour garantir le mode lecture seule.
 
 <div id="recommended-setup">
-  #### Configuration recommandée {#recommended-setup}
+  #### Configuration recommandée
 </div>
 
 Pour exécuter ClickStack sur des ressources de calcul en lecture seule :
@@ -342,7 +342,7 @@ Notez que les tableaux de bord, les recherches enregistrées, les alertes et les
 Pour la topologie complète — notamment vers où diriger l&#39;ingestion, sur quel service exécuter les requêtes DDL et comment se comportent les alertes — consultez [« Isoler les charges de travail de lecture et d&#39;écriture »](/fr/clickstack/managing/isolating-read-write).
 
 <div id="adding-data-sources">
-  ### Ajouter d’autres sources de données {#adding-data-sources}
+  ### Ajouter d’autres sources de données
 </div>
 
 ClickStack est nativement compatible avec OpenTelemetry, sans lui être exclusif : vous pouvez utiliser vos propres schémas de table si vous le souhaitez.
@@ -370,7 +370,7 @@ Sélectionnez ensuite le type de source requis, puis la table appropriée ; par 
 </Info>
 
 <div id="using-custom-schemas">
-  #### Utiliser des schémas personnalisés {#using-custom-schemas}
+  #### Utiliser des schémas personnalisés
 </div>
 
 Les utilisateurs qui souhaitent connecter ClickStack à un service existant contenant déjà des données peuvent renseigner les paramètres de base de données et de table nécessaires. Les paramètres seront détectés automatiquement si les tables respectent les schémas OpenTelemetry pour ClickHouse.

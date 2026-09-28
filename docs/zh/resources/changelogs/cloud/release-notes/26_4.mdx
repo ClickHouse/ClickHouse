@@ -347,7 +347,7 @@ doc_type: 'changelog'
 ## 缺陷修复 {#bug-fixes}
 
 <Accordion title="全部缺陷修复（点击展开）">
-  ### JOIN 修复 {#join-fixes}
+  ### JOIN 修复
 
   * 修复了在旧版 analyzer 中，当在 JOIN 中使用非标准标识符别名时会缺少一列的问题。[#95679](https://github.com/ClickHouse/ClickHouse/pull/95679) ([Zhigao Hong](https://github.com/zghong)).
   * 修复了在非等值 join 中使用 `grace_hash` 算法时，如果由于 JOIN result 的大小限制导致左侧块无法被完整处理，会返回错误结果的问题。[#97866](https://github.com/ClickHouse/ClickHouse/pull/97866) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
@@ -367,7 +367,7 @@ doc_type: 'changelog'
   * 修复了在查询中结合 `ORDER BY` 与 `grace_hash` Join 算法时出现的行排序错误，该问题可能会在无提示的情况下产生错误输出。[#102036](https://github.com/ClickHouse/ClickHouse/pull/102036) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)) 。
   * 修复了在配置 `max_bytes_in_join` 时，`RIGHT JOIN` 和 `FULL JOIN` 查询中可能发生的 `LOGICAL_ERROR` (索引类型大小异常) 。[#102042](https://github.com/ClickHouse/ClickHouse/pull/102042) ([Jimmy Aguilar Mena](https://github.com/Ergus)) 。
 
-  ### 查询与 analyzer 问题修复 {#query-and-analyzer-fixes}
+  ### 查询与 analyzer 问题修复
 
   * 修复了当别名表目标未使用完全限定名时，其作为 DDL 依赖项的保存方式：现在会保存到别名表所在的数据库，而不是 session 数据库。[#95175](https://github.com/ClickHouse/ClickHouse/pull/95175) ([Enric Calabuig](https://github.com/eclbg)).
   * 修复了因 Lazy materialization 返回了不必要的列而导致的 `Block structure mismatch in stream` 错误。[#96682](https://github.com/ClickHouse/ClickHouse/pull/96682) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
@@ -447,7 +447,7 @@ doc_type: 'changelog'
   * 在新的 analyzer 中，将 ROW POLICY 的 OR 链优化为 `IN`。[#102915](https://github.com/ClickHouse/ClickHouse/pull/102915) ([Azat Khuzhin](https://github.com/azat)).
   * 修复了在 `MergeTree` 表上，当 `N` 是宽于 `UInt8` 的整数 (例如 `256`、`65535`、`2147483648`，或任意负整数) 时，`WHERE x AND toNullable(N)` 返回错误结果的问题。[#103077](https://github.com/ClickHouse/ClickHouse/pull/103077) ([Groene AI](https://github.com/groeneai)).
 
-  ### MergeTree 与存储问题修复 {#mergetree-and-storage-fixes}
+  ### MergeTree 与存储问题修复
 
   * 修复了 MergeTree 中 Attach 一个 part 时的一个逻辑错误：如果在 detaching 和 attaching 之间发生了多次链式 rename，就会触发该问题。[#96351](https://github.com/ClickHouse/ClickHouse/pull/96351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * 修复了在使用多种压缩 codec 时，Compact MergeTree parts 的 `uncompressed_hash` 计算结果不确定的问题，这可能导致错误的去重行为。[#97522](https://github.com/ClickHouse/ClickHouse/pull/97522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -499,7 +499,7 @@ doc_type: 'changelog'
   * 修复了 SLRU 文件系统缓存在动态调整大小期间出现的 `LOGICAL_ERROR` 中止问题，原因是子队列之间共享了淘汰统计信息，以及对失败候选项采用了错误的恢复路径。[#102396](https://github.com/ClickHouse/ClickHouse/pull/102396) ([Antonio Andelic](https://github.com/antonio2368)).
   * 修复了 `minmax_count_projection` 和简单的 `COUNT(*)` 优化在执行轻量级删除后被永久禁用的问题。[#102900](https://github.com/ClickHouse/ClickHouse/pull/102900) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### 数据类型与序列化问题修复 {#data-type-and-serialization-fixes}
+  ### 数据类型与序列化问题修复
 
   * 修复了读取 ALIAS 列的子列时出现错误结果或异常的问题。[#95408](https://github.com/ClickHouse/ClickHouse/pull/95408) ([Pavel Kruglov](https://github.com/Avogar)).
   * 修复了在引入 `Nullable(Tuple)` 后，`sumCount` 聚合函数无法读取旧版已序列化状态的问题。[#97502](https://github.com/ClickHouse/ClickHouse/pull/97502) ([Nihal Z. Miaji](https://github.com/nihalzp)).
@@ -558,7 +558,7 @@ doc_type: 'changelog'
   * 修复了对 `Nullable(DateTime)` 执行 `CAST` 时忽略 `cast_string_to_date_time_mode` 的问题。[#103035](https://github.com/ClickHouse/ClickHouse/pull/103035) ([Pavel Kruglov](https://github.com/Avogar)).
   * 让启用复制的列和稀疏列在序列化时对 null 的表示遵循设置 (例如 `format_tsv_null_representation`) 。[#102888](https://github.com/ClickHouse/ClickHouse/pull/102888) ([Hechem Selmi](https://github.com/m-selmi)).
 
-  ### 全文索引与跳过索引问题修复 {#text-index-and-skip-index-fixes}
+  ### 全文索引与跳过索引问题修复
 
   * 修复了文本索引与其他跳过索引配合使用时的问题。此前，当查询过滤器同时使用文本索引和其他普通跳过索引时，可能会抛出诸如 &quot;Trying to get non-existing mark&quot; 之类的逻辑错误。[#98555](https://github.com/ClickHouse/ClickHouse/pull/98555) ([Anton Popov](https://github.com/CurtizJ)).
   * 修复了在带有生存时间 (TTL) 的合并过程中重建文本索引的问题。[#99107](https://github.com/ClickHouse/ClickHouse/pull/99107) ([Anton Popov](https://github.com/CurtizJ)).
@@ -579,7 +579,7 @@ doc_type: 'changelog'
   * 当 `compatibility` 设置指向低于 26.1 的版本时，全文索引设置 (`enable_full_text_index`、`allow_experimental_full_text_index`、`use_skip_indexes_on_data_read`) 将不再被禁用。[#102422](https://github.com/ClickHouse/ClickHouse/pull/102422) ([Nikita Fomichev](https://github.com/fm4v)).
   * 为文本索引的直接读取优化增加了对 `ALIAS` 列的支持。[#103037](https://github.com/ClickHouse/ClickHouse/pull/103037) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### 数据湖修复 {#data-lake-fixes}
+  ### 数据湖修复
 
   * 修复了 `DeltaLake` 表引擎中快照版本变更时的逻辑竞态问题，并去除了冗余的高开销快照重新加载。[#96226](https://github.com/ClickHouse/ClickHouse/pull/96226) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 修复了在读取使用列映射 &quot;name&quot; 模式、且 `struct` 字段名包含点号的 Delta Lake 表时出现的 `DUPLICATE_COLUMN` 异常和静默产生 NULL 值的问题。[#98013](https://github.com/ClickHouse/ClickHouse/pull/98013) ([Caio Ishizaka Costa](https://github.com/ch-caioishizaka)).
@@ -605,7 +605,7 @@ doc_type: 'changelog'
   * 为 `system.delta_lake_metadata_log` 和 `system.iceberg_metadata_log` 补上了缺失的 `hostname` 列。[#102162](https://github.com/ClickHouse/ClickHouse/pull/102162) ([Michael Russell](https://github.com/Crazybus)).
   * 修复了 CoalescingMergeTree 中 Array 类型的一个问题。[#102384](https://github.com/ClickHouse/ClickHouse/pull/102384) ([Konstantin Vedernikov](https://github.com/scanhex12)).
 
-  ### S3/Azure/对象存储修复 {#s3-azure-object-storage-fixes}
+  ### S3/Azure/对象存储修复
 
   * 修复了 `CachedOnDiskReadBufferFromFile::readBigAt` 抛出的异常。[#97890](https://github.com/ClickHouse/ClickHouse/pull/97890) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 修复了一个崩溃问题：使用 glob pattern 查询文件时 (例如 `file('dir/**', 'LineAsString')`) ，如果目录中包含悬空符号链接，会抛出未处理的 filesystem 异常。现在会静默跳过这类悬空符号链接。[#98143](https://github.com/ClickHouse/ClickHouse/pull/98143) ([Mark Andreev](https://github.com/mrk-andreev)).
@@ -622,12 +622,12 @@ doc_type: 'changelog'
   * 修复了重连期间 host 和 port 未正确记录的问题。[#102280](https://github.com/ClickHouse/ClickHouse/pull/102280) ([Grant Holly](https://github.com/grantholly-clickhouse)).
   * 修复了 ClusterDiscovery 中的一个 server 异常：当静态 cluster (在 config 中定义) 暂时没有存活节点时，会触发该异常。[#102661](https://github.com/ClickHouse/ClickHouse/pull/102661) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-  ### S3Queue 修复 {#s3queue-fixes}
+  ### S3Queue 修复
 
   * S3Queue：修复了在 ZooKeeper 连接丢失但 commit 成功后发生的断言失败问题。 [#100210](https://github.com/ClickHouse/ClickHouse/pull/100210) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 修复了 `system.s3_queue_settings` 和 `system.azure_queue_settings` 中 `alterable` 列说明文本颠倒的问题——对调了 `0` 和 `1` 的含义，使其与实际代码行为一致。 [#101703](https://github.com/ClickHouse/ClickHouse/pull/101703) ([ClickGap AI Bot](https://github.com/clickgapai)).
 
-  ### 安全与访问控制修复 {#security-and-access-control-fixes}
+  ### 安全与访问控制修复
 
   * `loop` 表函数直接调用了 `inner_storage->read()`，绕过了解释器层，而行策略、列级授权及其他安全检查正是在这一层执行的。这使受行策略限制的用户可以通过 `loop(table)` 读取所有行。[#97682](https://github.com/ClickHouse/ClickHouse/pull/97682) ([pufit](https://github.com/pufit)).
   * 对标量 `file()` 和 `DESCRIBE TABLE file()` 强制执行 `READ ON FILE` 检查。[#98115](https://github.com/ClickHouse/ClickHouse/pull/98115) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -645,14 +645,14 @@ doc_type: 'changelog'
   * 某些目录可能会在 `SELECT * FROM system.databases` 的 `SETTINGS` 部分显示敏感信息。这一问题现已修复。[#100800](https://github.com/ClickHouse/ClickHouse/pull/100800) ([Konstantin Vedernikov](https://github.com/scanhex12)).
   * 行策略未从子规划器传递到用于日志记录的父规划器，因此在视图、子查询和 insert-select 语句的 `query_log` 中会缺失。现在它们会保存在 `QueryAccessInfo` 中以供日志记录使用。[#101044](https://github.com/ClickHouse/ClickHouse/pull/101044) ([Narasimha Pakeer](https://github.com/npakeer)).
 
-  ### Backup 和恢复修复 {#backup-and-restore-fixes}
+  ### Backup 和恢复修复
 
   * 修复了 `max_execution_time` 未应用于备份/恢复的问题。[#99205](https://github.com/ClickHouse/ClickHouse/pull/99205) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 修复了在使用 zip 归档进行备份/恢复操作时出现的 `ReadBuffer is canceled. Can't read from it.` 异常。[#100400](https://github.com/ClickHouse/ClickHouse/pull/100400) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * 现在会验证备份元数据中的文件条目路径，在 `RESTORE` 期间拒绝路径遍历、绝对路径和空名称。[#100483](https://github.com/ClickHouse/ClickHouse/pull/100483) ([Pablo Marcos](https://github.com/pamarcos)).
   * 修复了 `BACKUP FROM SNAPSHOT` 的 AST 格式化和克隆问题。[#101405](https://github.com/ClickHouse/ClickHouse/pull/101405) ([Pablo Marcos](https://github.com/pamarcos)).
 
-  ### ClickHouse Keeper 修复 {#clickhouse-keeper-fixes}
+  ### ClickHouse Keeper 修复
 
   * 修复了 ZooKeeper 客户端中发送线程与接收线程之间的数据竞争问题。[#97887](https://github.com/ClickHouse/ClickHouse/pull/97887) ([Pablo Marcos](https://github.com/pamarcos)).
   * 修复了在使用带有 `s3_plain` 元数据的 Azure Blob 存储作为日志存储时，Keeper 重启后发生数据丢失的问题。[#97987](https://github.com/ClickHouse/ClickHouse/pull/97987) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -670,7 +670,7 @@ doc_type: 'changelog'
   * 修复了在 ZooKeeper 会话于周期性 refresh 期间过期时 UDF registry 丢失的问题——在完全刷新成功之前，所有用户自定义函数都可能不可用。[#101891](https://github.com/ClickHouse/ClickHouse/pull/101891) ([Nikita Fomichev](https://github.com/fm4v)).
   * 修复了 UDF refresh 中的一个崩溃问题，该问题由 `ZooKeeperRetriesControl` 在未续订过期 ZooKeeper 会话的情况下，对陈旧会话进行重试所导致。[#102059](https://github.com/ClickHouse/ClickHouse/pull/102059) ([Nikita Fomichev](https://github.com/fm4v)).
 
-  ### 崩溃与稳定性修复 {#crash-and-stability-fixes}
+  ### 崩溃与稳定性修复
 
   * 修复了 Kusto 方言函数 `bin()`、`bin_at()`、`extract()` 和 `indexof()` 在传入空参数时发生崩溃的问题。[#95736](https://github.com/ClickHouse/ClickHouse/pull/95736) ([NeedmeFordev](https://github.com/spider-yamet)).
   * 修复了 `mapContainsKey`/`mapContainsKeyLike` 在使用 `tokenbf_v1` 跳过索引时出现的服务器崩溃/assert 问题。[#97826](https://github.com/ClickHouse/ClickHouse/pull/97826) ([Shankar Iyer](https://github.com/shankar-iyer)).
@@ -729,7 +729,7 @@ doc_type: 'changelog'
   * 修复了在 debug/sanitizer 构建中，schema inference 期间抛出 `std::length_error` 时发生的 server 崩溃问题。[#102859](https://github.com/ClickHouse/ClickHouse/pull/102859) ([Groene AI](https://github.com/groeneai)).
   * 修复了在使用带有 `WHERE` clause 的视图时发生的崩溃问题：当内部查询生成的列类型与视图 metadata 不一致时 (例如启用 `join_use_nulls` 的 `LEFT JOIN` 产生的 `Nullable`) ，会触发该问题。[#102085](https://github.com/ClickHouse/ClickHouse/pull/102085) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 
-  ### 其他缺陷修复 {#other-bug-fixes}
+  ### 其他缺陷修复
 
   * 修复了一个 bug：当同一请求中将显式 settings 与 `compatibility` 一起发送，且其值与 server 默认值相同时，这些 settings 可能会被静默忽略。[#97078](https://github.com/ClickHouse/ClickHouse/pull/97078) ([Raufs Dunamalijevs](https://github.com/rienath)).
   * 修复了这样一个问题：当启用并行 parsing 的 `INSERT` 遇到无效数据时，client 会报告 `NETWORK_ERROR`，而不是真正的 parsing error (含正确的行号) 。[#97339](https://github.com/ClickHouse/ClickHouse/pull/97339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

@@ -55,7 +55,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？ {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？
 </div>
 
 リフレッシャブルmaterialized view が最後にいつリフレッシュされたかを確認するには、以下のように [`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) システムテーブルをクエリします。
@@ -74,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## リフレッシュ間隔を変更するにはどうすればよいですか？ {#how-can-i-change-the-refresh-rate}
+  ## リフレッシュ間隔を変更するにはどうすればよいですか？
 </div>
 
 リフレッシャブルmaterialized viewのリフレッシュ間隔を変更するには、[`ALTER TABLE...MODIFY REFRESH`](/ja/reference/statements/alter/view#alter-table--modify-refresh-statement)構文を使用します。
@@ -93,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## `APPEND` を使用して新しい行を追加する {#using-append-to-add-new-rows}
+  ## `APPEND` を使用して新しい行を追加する
 </div>
 
 `APPEND` 機能を使うと、ビュー全体を置き換えるのではなく、テーブルの末尾に新しい行を追加できます。
@@ -199,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## 例 {#examples}
+  ## 例
 </div>
 
 それでは、いくつかの例となるデータセットを使って、リフレッシャブルmaterialized viewの使い方を見ていきましょう。
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 [データの非正規化ガイド](/ja/guides/clickhouse/data-modelling/denormalization)では、Stack Overflow データセットを使ってデータを非正規化するさまざまな手法を紹介しています。データは次のテーブルに格納します: `votes`、`users`、`badges`、`posts`、`postlinks`。
@@ -257,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 [dbt と ClickHouse のインテグレーションガイド](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index)では、IMDb データセットに `actors`、`directors`、`genres`、`movie_directors`、`movies`、`roles` の各テーブルを取り込みました。

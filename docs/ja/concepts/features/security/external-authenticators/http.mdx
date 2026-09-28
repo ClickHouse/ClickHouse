@@ -93,7 +93,7 @@ HTTP認証サーバーを定義するには、`config.xml` に `http_authenticat
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### SQL を使用した HTTP 認証の有効化 {#enabling-http-auth-using-sql}
+  ### SQL を使用した HTTP 認証の有効化
 </div>
 
 ClickHouse で [SQL ベースの Access Control and Account Management](/ja/concepts/features/security/access-rights#access-control-usage) が有効になっている場合は、HTTP 認証で識別されるユーザーも SQL ステートメントを使って作成できます。
@@ -109,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### セッション設定の受け渡し {#passing-session-settings}
+  ### セッション設定の受け渡し
 </div>
 
 HTTP認証サーバーからのレスポンスボディがJSON形式で、`settings` サブオブジェクトを含んでいる場合、ClickHouseはその key: value ペアを文字列の値としてパースし、認証済みユーザーの現在のセッションのセッション設定として適用を試みます。パースに失敗した場合、サーバーからのレスポンスボディは無視されます。

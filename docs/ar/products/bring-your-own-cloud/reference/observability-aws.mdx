@@ -37,7 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 **التوصية**: بالنسبة إلى معظم حالات الاستخدام، نوصي بالتكامل مع حزمة Prometheus المضمّنة، لأنها توفّر مقاييس شاملة من جميع المكوّنات في نشر BYOC لديك (خدمات ClickHouse، وعنقود Kubernetes، والخدمات الداعمة)، بدلًا من الاكتفاء بمقاييس خادم ClickHouse فقط.
 
 <div id="builtin-prometheus-stack">
-  ## حزمة Prometheus المدمجة في BYOC {#builtin-prometheus-stack}
+  ## حزمة Prometheus المدمجة في BYOC
 </div>
 
 ينشر ClickHouse BYOC حزمة مراقبة Prometheus متكاملة داخل عنقود Kubernetes لديك، بما في ذلك Prometheus وGrafana وAlertManager، وThanos اختياريًا لتخزين المقاييس على المدى الطويل. تجمع هذه الحزمة المقاييس من:
@@ -68,7 +68,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### التكامل مع أدوات المراقبة لديك {#prometheus-stack-integration}
+  ### التكامل مع أدوات المراقبة لديك
 </div>
 
 يمكنك الاستفادة من حزمة Prometheus الخاصة بـ BYOC ضمن بيئة المراقبة لديك بعدة طرق:
@@ -107,7 +107,7 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## تكامل Prometheus مع خدمة ClickHouse {#direct-prometheus-integration}
+  ## تكامل Prometheus مع خدمة ClickHouse
 </div>
 
 توفّر خدمات ClickHouse نقطة نهاية للمقاييس متوافقة مع Prometheus، ويمكنك جمع المقاييس منها مباشرةً باستخدام مثيل Prometheus الخاص بك. يوفّر هذا النهج مقاييس خاصة بـ ClickHouse، لكنه لا يشمل مقاييس Kubernetes أو مقاييس الخدمات المساندة.
@@ -135,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### المصادقة {#authentication}
+  ### المصادقة
 </div>
 
 تتطلب نقطة نهاية المقاييس المصادقة باستخدام بيانات اعتماد ClickHouse. نوصي باستخدام المستخدم `default` أو إنشاء مستخدم مخصص بأقل الأذونات اللازمة خصيصًا لكشط المقاييس.
@@ -193,7 +193,7 @@ scrape_configs:
 * `<username>` و `<password>` ببيانات اعتماد مستخدم scraping الخاص بك
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin {#clickhouse-mixin}
+  ## ClickHouse Mixin
 </div>
 
 للفرق التي تريد مجموعة جاهزة من لوحات المعلومات، يوفّر ClickHouse ‏**ClickHouse Mixin** لـ Prometheus. وهي لوحة معلومات Grafana جاهزة ومصممة خصيصًا لمراقبة عناقيد ClickHouse.

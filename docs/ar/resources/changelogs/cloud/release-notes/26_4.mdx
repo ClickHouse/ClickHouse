@@ -347,7 +347,7 @@ doc_type: 'changelog'
 ## إصلاحات الأخطاء {#bug-fixes}
 
 <Accordion title="كل إصلاحات الأخطاء (انقر للتوسيع)">
-  ### إصلاحات JOIN {#join-fixes}
+  ### إصلاحات JOIN
 
   * تم إصلاح مشكلة عمود مفقود عند استخدام اسم مستعار لمعرّف غير قياسي في `JOIN` مع المحلل القديم. [#95679](https://github.com/ClickHouse/ClickHouse/pull/95679) ([Zhigao Hong](https://github.com/zghong)).
   * تم إصلاح نتيجة غير صحيحة عند استخدام خوارزمية `grace_hash` مع عمليات join غير المتساوية، عندما تعذّرت معالجة الـ block الأيسر بالكامل بسبب قيود الحجم على نتيجة الـ join. [#97866](https://github.com/ClickHouse/ClickHouse/pull/97866) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
@@ -367,7 +367,7 @@ doc_type: 'changelog'
   * تم إصلاح الترتيب غير الصحيح للصفوف في الاستعلامات التي تستخدم `ORDER BY` مع خوارزمية join ‏`grace_hash`، والذي كان قد ينتج عنه مخرجات غير صحيحة بصمت. [#102036](https://github.com/ClickHouse/ClickHouse/pull/102036) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
   * تم إصلاح الخطأ `LOGICAL_ERROR` ‏(Unexpected size of index type) الذي كان يمكن أن يحدث في استعلامات `RIGHT JOIN` و`FULL JOIN` عند تهيئة `max_bytes_in_join`. [#102042](https://github.com/ClickHouse/ClickHouse/pull/102042) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
 
-  ### إصلاحات الاستعلام والمحلِّل {#query-and-analyzer-fixes}
+  ### إصلاحات الاستعلام والمحلِّل
 
   * تم إصلاح طريقة حفظ هدف جدول Alias كتبعية DDL عندما لا يكون مؤهّلًا بالكامل: إذ يُحفَظ الآن مع قاعدة بيانات جدول Alias بدلًا من قاعدة بيانات الجلسة. [#95175](https://github.com/ClickHouse/ClickHouse/pull/95175) ([Enric Calabuig](https://github.com/eclbg)).
   * تم إصلاح الخطأ `Block structure mismatch in stream` الناتج عن إرجاع أعمدة غير ضرورية من Lazy materialization. [#96682](https://github.com/ClickHouse/ClickHouse/pull/96682) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
@@ -447,7 +447,7 @@ doc_type: 'changelog'
   * تم تحسين سلاسل OR في سياسة الصفوف إلى `IN` في المحلل الجديد. [#102915](https://github.com/ClickHouse/ClickHouse/pull/102915) ([Azat Khuzhin](https://github.com/azat)).
   * تم إصلاح النتائج غير الصحيحة التي تُرجعها `WHERE x AND toNullable(N)` على جداول `MergeTree` عندما تكون `N` قيمة صحيحة أوسع من `UInt8` (مثل `256` أو `65535` أو `2147483648` أو أي عدد صحيح سالب). [#103077](https://github.com/ClickHouse/ClickHouse/pull/103077) ([Groene AI](https://github.com/groeneai)).
 
-  ### إصلاحات MergeTree والتخزين {#mergetree-and-storage-fixes}
+  ### إصلاحات MergeTree والتخزين
 
   * تم إصلاح خطأ منطقي عند Attach لجزء في MergeTree إذا وُجدت عدة عمليات إعادة تسمية متسلسلة بين الفصل والإرفاق. [#96351](https://github.com/ClickHouse/ClickHouse/pull/96351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * تم إصلاح احتساب `uncompressed_hash` غير الحتمي لأجزاء Compact في MergeTree عند استخدام عدة compression codecs، مما قد يؤدي إلى سلوك deduplication غير صحيح. [#97522](https://github.com/ClickHouse/ClickHouse/pull/97522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -499,7 +499,7 @@ doc_type: 'changelog'
   * تم إصلاح إيقاف `LOGICAL_ERROR` أثناء تغيير الحجم الديناميكي لذاكرة التخزين المؤقت لنظام الملفات SLRU، وكان سببه مشاركة إحصاءات الإخلاء بين الطوابير الفرعية، إلى جانب مسار recovery غير صحيح للمرشحين الفاشلين. [#102396](https://github.com/ClickHouse/ClickHouse/pull/102396) ([Antonio Andelic](https://github.com/antonio2368)).
   * تم إصلاح تعطيل تحسين `minmax_count_projection` وتحسين `COUNT(*)` البسيط بشكل دائم بعد حذف خفيف الوزن. [#102900](https://github.com/ClickHouse/ClickHouse/pull/102900) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### إصلاحات نوع البيانات والتسلسل {#data-type-and-serialization-fixes}
+  ### إصلاحات نوع البيانات والتسلسل
 
   * تم إصلاح ظهور نتيجة خاطئة أو استثناء أثناء قراءة الأعمدة الفرعية لأعمدة `ALIAS`. [#95408](https://github.com/ClickHouse/ClickHouse/pull/95408) ([Pavel Kruglov](https://github.com/Avogar)).
   * تم إصلاح تعذّر الدالة التجميعية `sumCount` على قراءة الحالات المُسلسلة الأقدم بعد إدخال `Nullable(Tuple)`. [#97502](https://github.com/ClickHouse/ClickHouse/pull/97502) ([Nihal Z. Miaji](https://github.com/nihalzp)).
@@ -558,7 +558,7 @@ doc_type: 'changelog'
   * تم إصلاح تجاهل `cast_string_to_date_time_mode` عند استخدام `CAST` إلى `Nullable(DateTime)`. [#103035](https://github.com/ClickHouse/ClickHouse/pull/103035) ([Pavel Kruglov](https://github.com/Avogar)).
   * أصبح تمثيل null في تسلسل الأعمدة replicated وsparse يراعي الإعدادات (مثل `format_tsv_null_representation`). [#102888](https://github.com/ClickHouse/ClickHouse/pull/102888) ([Hechem Selmi](https://github.com/m-selmi)).
 
-  ### إصلاحات فهرس النص وفهرس التخطي {#text-index-and-skip-index-fixes}
+  ### إصلاحات فهرس النص وفهرس التخطي
 
   * تم إصلاح استخدام فهرس النص مع فهارس التخطي الأخرى. سابقًا، كان يمكن أن تظهر أخطاء منطقية مثل &quot;Trying to get non-existing mark&quot; عندما يستخدم مرشح الاستعلام فهرس نص مع فهارس تخطٍ عادية أخرى في الوقت نفسه. [#98555](https://github.com/ClickHouse/ClickHouse/pull/98555) ([Anton Popov](https://github.com/CurtizJ)).
   * تم إصلاح إعادة بناء فهارس النص أثناء عمليات الدمج مع TTL. [#99107](https://github.com/ClickHouse/ClickHouse/pull/99107) ([Anton Popov](https://github.com/CurtizJ)).
@@ -579,7 +579,7 @@ doc_type: 'changelog'
   * لم تعد إعدادات فهرس النص الكامل (`enable_full_text_index`, `allow_experimental_full_text_index`, `use_skip_indexes_on_data_read`) تُعطَّل عندما يشير الإعداد `compatibility` إلى إصدار أقدم من 26.1. [#102422](https://github.com/ClickHouse/ClickHouse/pull/102422) ([Nikita Fomichev](https://github.com/fm4v)).
   * أُضيف دعم لأعمدة `ALIAS` في تحسين القراءة المباشرة من فهرس النص. [#103037](https://github.com/ClickHouse/ClickHouse/pull/103037) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### إصلاحات مستودع البيانات {#data-lake-fixes}
+  ### إصلاحات مستودع البيانات
 
   * تم إصلاح حالة تسابق منطقية عند تغيير `snapshot version` في محرك الجدول `DeltaLake`، كما أزيلت عمليات إعادة تحميل اللقطات الثقيلة الزائدة عن الحاجة. [#96226](https://github.com/ClickHouse/ClickHouse/pull/96226) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * تم إصلاح استثناء `DUPLICATE_COLUMN` وظهور قيم NULL من دون أي تنبيه عند قراءة جداول Delta Lake التي تستخدم وضع ربط الأعمدة &quot;name&quot; مع حقول struct التي تحتوي أسماؤها على نقاط. [#98013](https://github.com/ClickHouse/ClickHouse/pull/98013) ([Caio Ishizaka Costa](https://github.com/ch-caioishizaka)).
@@ -605,7 +605,7 @@ doc_type: 'changelog'
   * أُضيف العمود `hostname` المفقود إلى `system.delta_lake_metadata_log` و`system.iceberg_metadata_log`. [#102162](https://github.com/ClickHouse/ClickHouse/pull/102162) ([Michael Russell](https://github.com/Crazybus)).
   * إصلاح في CoalescingMergeTree لنوع Array. [#102384](https://github.com/ClickHouse/ClickHouse/pull/102384) ([Konstantin Vedernikov](https://github.com/scanhex12)).
 
-  ### إصلاحات S3/Azure/تخزين الكائنات {#s3-azure-object-storage-fixes}
+  ### إصلاحات S3/Azure/تخزين الكائنات
 
   * تم إصلاح استثناء صادر من `CachedOnDiskReadBufferFromFile::readBigAt`. [#97890](https://github.com/ClickHouse/ClickHouse/pull/97890) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * تم إصلاح تعطل كان يحدث عند الاستعلام عن الملفات باستخدام glob pattern (مثل `file('dir/**', 'LineAsString')`)، إذ كان يُطلق استثناء غير مُعالَج من filesystem إذا كان الدليل يحتوي على رابط رمزي معلّق. وأصبح الآن يتم تجاهل الروابط الرمزية المعلّقة بصمت. [#98143](https://github.com/ClickHouse/ClickHouse/pull/98143) ([Mark Andreev](https://github.com/mrk-andreev)).
@@ -622,12 +622,12 @@ doc_type: 'changelog'
   * تم إصلاح عدم تسجيل المضيف والمنفذ بشكل صحيح أثناء إعادة الاتصال. [#102280](https://github.com/ClickHouse/ClickHouse/pull/102280) ([Grant Holly](https://github.com/grantholly-clickhouse)).
   * تم إصلاح استثناء في server داخل ClusterDiscovery عندما لا يكون لدى cluster ثابتة (مُعرَّفة في config) أي عقد حية مؤقتًا. [#102661](https://github.com/ClickHouse/ClickHouse/pull/102661) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-  ### إصلاحات S3Queue {#s3queue-fixes}
+  ### إصلاحات S3Queue
 
   * ‏S3Queue: تم إصلاح فشل في `assert` بعد انقطاع اتصال ZooKeeper رغم نجاح عملية `commit`. [#100210](https://github.com/ClickHouse/ClickHouse/pull/100210) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * تم إصلاح نص الوصف المعكوس للعمود `alterable` في `system.s3_queue_settings` و`system.azure_queue_settings` — إذ جرى تبديل دلالتي `0` و`1` لتتطابقا مع السلوك الفعلي للكود. [#101703](https://github.com/ClickHouse/ClickHouse/pull/101703) ([ClickGap AI Bot](https://github.com/clickgapai)).
 
-  ### إصلاحات الأمان والتحكم في الوصول {#security-and-access-control-fixes}
+  ### إصلاحات الأمان والتحكم في الوصول
 
   * كانت table function ‏`loop` تستدعي `inner_storage->read()` مباشرةً، متجاوزةً طبقة المفسِّر التي تُطبَّق فيها سياسات الصفوف وامتيازات الأعمدة وغيرها من عمليات التحقق الأمنية. وقد أتاح ذلك لمستخدم مقيَّد بسياسات الصفوف قراءة جميع الصفوف عبر `loop(table)`. [#97682](https://github.com/ClickHouse/ClickHouse/pull/97682) ([pufit](https://github.com/pufit)).
   * فرض عمليات التحقق `READ ON FILE` على `file()` scalar و`DESCRIBE TABLE file()`. [#98115](https://github.com/ClickHouse/ClickHouse/pull/98115) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -645,14 +645,14 @@ doc_type: 'changelog'
   * كان بإمكان بعض الكتالوجات إظهار بيانات سرية في قسم `SETTINGS` ضمن `SELECT * FROM system.databases`. وقد مُنع ذلك الآن. [#100800](https://github.com/ClickHouse/ClickHouse/pull/100800) ([Konstantin Vedernikov](https://github.com/scanhex12)).
   * لم تكن سياسات الصفوف تُمرَّر من المخططات الفرعية إلى المخطط الرئيسي لأغراض التسجيل، لذلك كانت تغيب عن `query_log` في العروض والاستعلامات الفرعية وعمليات insert-select. وهي الآن محفوظة ضمن `QueryAccessInfo` لأغراض التسجيل. [#101044](https://github.com/ClickHouse/ClickHouse/pull/101044) ([Narasimha Pakeer](https://github.com/npakeer)).
 
-  ### إصلاحات النسخ الاحتياطي والاستعادة {#backup-and-restore-fixes}
+  ### إصلاحات النسخ الاحتياطي والاستعادة
 
   * تم إصلاح عدم تطبيق `max_execution_time` على عمليات النسخ الاحتياطي/الاستعادة. [#99205](https://github.com/ClickHouse/ClickHouse/pull/99205) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * تم إصلاح استثناء `ReadBuffer is canceled. Can't read from it.` في عمليات النسخ الاحتياطي/الاستعادة التي تستخدم أرشيفات zip. [#100400](https://github.com/ClickHouse/ClickHouse/pull/100400) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * تمت إضافة التحقق من مسارات إدخالات الملفات في البيانات الوصفية للنسخ الاحتياطي لرفض اجتياز المسارات، والمسارات المطلقة، والأسماء الفارغة أثناء `RESTORE`. [#100483](https://github.com/ClickHouse/ClickHouse/pull/100483) ([Pablo Marcos](https://github.com/pamarcos)).
   * تم إصلاح تنسيق AST واستنساخه في `BACKUP FROM SNAPSHOT`. [#101405](https://github.com/ClickHouse/ClickHouse/pull/101405) ([Pablo Marcos](https://github.com/pamarcos)).
 
-  ### إصلاحات ClickHouse Keeper {#clickhouse-keeper-fixes}
+  ### إصلاحات ClickHouse Keeper
 
   * تم إصلاح حالة data race في عميل ZooKeeper بين خيط الإرسال وخيط الاستقبال. [#97887](https://github.com/ClickHouse/ClickHouse/pull/97887) ([Pablo Marcos](https://github.com/pamarcos)).
   * تم إصلاح فقدان بيانات Keeper بعد إعادة التشغيل عند استخدام Azure Blob Storage مع بيانات `s3_plain` الوصفية لتخزين السجل. [#97987](https://github.com/ClickHouse/ClickHouse/pull/97987) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -670,7 +670,7 @@ doc_type: 'changelog'
   * تم إصلاح فقدان registry الخاصة بـ UDF عند انتهاء صلاحية جلسة ZooKeeper أثناء التحديث الدوري — إذ كان يمكن أن تصبح جميع User-Defined Functions غير متاحة إلى أن ينجح full refresh. [#101891](https://github.com/ClickHouse/ClickHouse/pull/101891) ([Nikita Fomichev](https://github.com/fm4v)).
   * تم إصلاح تعطل في تحديث UDF بسبب قيام `ZooKeeperRetriesControl` بإعادة المحاولة على جلسة ZooKeeper قديمة (منتهية الصلاحية) دون تجديدها. [#102059](https://github.com/ClickHouse/ClickHouse/pull/102059) ([Nikita Fomichev](https://github.com/fm4v)).
 
-  ### إصلاحات الأعطال والاستقرار {#crash-and-stability-fixes}
+  ### إصلاحات الأعطال والاستقرار
 
   * تم إصلاح تعطل في دوال لهجة Kusto ‏`bin()` و`bin_at()` و`extract()` و`indexof()` عند تمرير وسيطات فارغة. [#95736](https://github.com/ClickHouse/ClickHouse/pull/95736) ([NeedmeFordev](https://github.com/spider-yamet)).
   * تم إصلاح تعطل/إخفاق تأكيدي في الخادم في `mapContainsKey`/`mapContainsKeyLike` مع skip index من نوع `tokenbf_v1`. [#97826](https://github.com/ClickHouse/ClickHouse/pull/97826) ([Shankar Iyer](https://github.com/shankar-iyer)).
@@ -729,7 +729,7 @@ doc_type: 'changelog'
   * تم إصلاح تعطل في server في builds الخاصة بالتصحيح/sanitizer عند إطلاق `std::length_error` أثناء schema inference. [#102859](https://github.com/ClickHouse/ClickHouse/pull/102859) ([Groene AI](https://github.com/groeneai)).
   * تم إصلاح تعطل عند استخدام view مع clause `WHERE` حيث يُنتج الاستعلام الداخلي columns بأنواع تختلف عن metadata الخاصة بالـ view (مثل `Nullable` الناتج من `LEFT JOIN` مع `join_use_nulls`). [#102085](https://github.com/ClickHouse/ClickHouse/pull/102085) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 
-  ### إصلاحات أخرى للأخطاء {#other-bug-fixes}
+  ### إصلاحات أخرى للأخطاء
 
   * تم إصلاح خطأ كان قد يؤدي إلى تجاهل الإعدادات الصريحة المُرسلة إلى جانب `compatibility` في الطلب نفسه بصمت عندما كانت قيمتها تطابق القيمة الافتراضية للخادم. [#97078](https://github.com/ClickHouse/ClickHouse/pull/97078) ([Raufs Dunamalijevs](https://github.com/rienath)).
   * تم إصلاح مشكلة كان فيها العميل يُبلغ عن `NETWORK_ERROR` بدلًا من parsing error الفعلي (مع رقم الصف الصحيح) عندما تصادف عملية `INSERT` مع parsing متوازٍ بيانات غير صالحة. [#97339](https://github.com/ClickHouse/ClickHouse/pull/97339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

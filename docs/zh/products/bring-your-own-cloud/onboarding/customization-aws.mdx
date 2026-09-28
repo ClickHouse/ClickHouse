@@ -59,7 +59,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及您 AWS 账户中的其他必要资源。
     </Note>
 
-#### Terraform 模块 {#terraform-module-aws}
+#### Terraform 模块
 
     如果您希望使用 Terraform 而不是 CloudFormation，请使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 模块：
 

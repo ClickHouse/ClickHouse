@@ -57,7 +57,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 سيعرض نوع الاستعلام هذا البيانات في شكل جدول.
 
 <div id="logs">
-  ### السجلات {#logs}
+  ### السجلات
 </div>
 
 يوفّر نوع استعلام السجلات منشئ الاستعلامات الذي يركّز على الاستعلام عن بيانات السجلات.
@@ -164,7 +164,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 سيعرض نوع الاستعلام هذا البيانات باستخدام عرض الجدول في وضع Trace Search، وباستخدام لوحة التتبّع في وضع معرّف التتبّع.
 
 <div id="sql-editor">
-  ## محرر SQL {#sql-editor}
+  ## محرر SQL
 </div>
 
 بالنسبة إلى الاستعلامات شديدة التعقيد التي لا تناسب منشئ الاستعلامات، يمكنك استخدام محرر SQL.
@@ -180,7 +180,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="مثال على استعلام SQL خام" border />
 
 <div id="data-links">
-  ## روابط البيانات {#data-links}
+  ## روابط البيانات
 </div>
 
 يمكن استخدام [روابط البيانات](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
@@ -200,7 +200,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### كيفية إنشاء رابط بيانات {#how-to-make-a-data-link}
+  ### كيفية إنشاء رابط بيانات
 </div>
 
 يمكنك إنشاء رابط بيانات عبر تحديد عمود باسم `traceID` في الاستعلام. هذا الاسم لا يميّز بين الأحرف الكبيرة والصغيرة، كما يدعم إضافة شرطة سفلية قبل &quot;ID&quot;. على سبيل المثال: `traceId` و`TraceId` و`TRACE_ID` و`tracE_iD` كلها صيغ صالحة.
@@ -227,7 +227,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 </div>
 
 <div id="macros">
-  ## وحدات الماكرو {#macros}
+  ## وحدات الماكرو
 </div>
 
 تُعد وحدات الماكرو طريقة بسيطة لإضافة SQL ديناميكي إلى استعلامك.
@@ -236,7 +236,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 يمكن للاستعلامات الواردة من كلٍّ من SQL Editor وQuery Builder استخدام وحدات الماكرو.
 
 <div id="using-macros">
-  ### استخدام وحدات الماكرو {#using-macros}
+  ### استخدام وحدات الماكرو
 </div>
 
 يمكن استخدام وحدات الماكرو في أي مكان داخل الاستعلام، وتكرارها عند الحاجة.
@@ -264,7 +264,7 @@ WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
 يدعم المكوّن الإضافي أيضًا الصياغة باستخدام الأقواس المعقوفة `{}`. استخدم هذه الصياغة عندما تحتاج إلى استعلامات داخل [المعلمات](/ar/reference/syntax#defining-and-using-query-parameters).
 
 <div id="list-of-macros">
-  ### قائمة وحدات الماكرو {#list-of-macros}
+  ### قائمة وحدات الماكرو
 </div>
 
 هذه قائمة بجميع وحدات الماكرو المتاحة في المكوّن الإضافي:

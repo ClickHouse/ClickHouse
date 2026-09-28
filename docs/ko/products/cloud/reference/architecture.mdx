@@ -29,30 +29,30 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 * 기본적으로 보안과 고가용성(HA)이 보장됩니다
 
 <div id="administration">
-  ## 관리 {#administration}
+  ## 관리
 </div>
 
 * Setup, 모니터링, 백업, 청구는 모두 대신 처리됩니다.
 * 비용 제어는 기본적으로 활성화되어 있으며, Cloud Console에서 조정할 수 있습니다.
 
 <div id="service-isolation">
-  ## 서비스 격리 {#service-isolation}
+  ## 서비스 격리
 </div>
 
 <div id="network-isolation">
-  ### 네트워크 격리 {#network-isolation}
+  ### 네트워크 격리
 </div>
 
 모든 서비스는 네트워크 수준에서 격리됩니다.
 
 <div id="compute-isolation">
-  ### 컴퓨트 격리 {#compute-isolation}
+  ### 컴퓨트 격리
 </div>
 
 모든 서비스는 각자의 Kubernetes 공간에서 별도의 파드로 배포되며, 네트워크 수준 격리가 적용됩니다.
 
 <div id="storage-isolation">
-  ### 스토리지 격리 {#storage-isolation}
+  ### 스토리지 격리
 </div>
 
 모든 서비스는 공유 버킷(AWS, GCP) 또는 스토리지 컨테이너(Azure)의 별도 하위 경로를 사용합니다.
@@ -62,7 +62,7 @@ AWS에서는 AWS IAM을 통해 스토리지 접근을 제어하며, 각 IAM role
 GCP와 Azure에서는 서비스별 객체 스토리지 격리가 제공됩니다(모든 서비스는 자체 버킷 또는 스토리지 컨테이너를 사용합니다).
 
 <div id="compute-compute-separation">
-  ## 컴퓨트-컴퓨트 분리 {#compute-compute-separation}
+  ## 컴퓨트-컴퓨트 분리
 </div>
 
 [컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses)를 사용하면 각각 고유한 서비스 URL을 가지면서 동일한 공유 객체 스토리지를 사용하는 여러 컴퓨트 노드 그룹을 생성할 수 있습니다. 이를 통해 동일한 데이터를 공유하더라도 쓰기와 읽기처럼 서로 다른 사용 사례별로 컴퓨트를 격리할 수 있습니다. 또한 필요에 따라 컴퓨트 그룹을 각각 독립적으로 스케일링할 수 있어 리소스를 더 효율적으로 활용할 수 있습니다.

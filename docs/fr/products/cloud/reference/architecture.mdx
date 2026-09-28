@@ -29,30 +29,30 @@ import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge
 * Sécurisé et hautement disponible par défaut
 
 <div id="administration">
-  ## Administration {#administration}
+  ## Administration
 </div>
 
 * La configuration, la supervision, les sauvegardes et la facturation sont entièrement prises en charge.
 * Les contrôles des coûts sont activés par défaut et peuvent être ajustés dans la console Cloud.
 
 <div id="service-isolation">
-  ## Isolation du service {#service-isolation}
+  ## Isolation du service
 </div>
 
 <div id="network-isolation">
-  ### Isolation réseau {#network-isolation}
+  ### Isolation réseau
 </div>
 
 Tous les services sont isolés au niveau du réseau.
 
 <div id="compute-isolation">
-  ### Isolation des ressources de calcul {#compute-isolation}
+  ### Isolation des ressources de calcul
 </div>
 
 Tous les services sont déployés dans des pods distincts au sein de leurs espaces de noms Kubernetes respectifs, avec une isolation au niveau réseau.
 
 <div id="storage-isolation">
-  ### Isolation du stockage {#storage-isolation}
+  ### Isolation du stockage
 </div>
 
 Tous les services utilisent un sous-chemin distinct dans un bucket partagé (AWS, GCP) ou un conteneur de stockage partagé (Azure).
@@ -62,7 +62,7 @@ Pour AWS, l’accès au stockage est contrôlé via AWS IAM, et chaque IAM role 
 Pour GCP et Azure, les services bénéficient d’une isolation du stockage objet (tous les services disposent de leurs propres buckets ou de leur propre conteneur de stockage).
 
 <div id="compute-compute-separation">
-  ## Compute-compute separation {#compute-compute-separation}
+  ## Compute-compute separation
 </div>
 
 [Compute-compute separation](/fr/products/cloud/features/infrastructure/warehouses) vous permet de créer plusieurs groupes de nœuds de calcul, chacun disposant de sa propre URL de service, tout en utilisant le même stockage objet partagé. Cette fonctionnalité permet d’isoler les ressources de calcul selon différents cas d’usage, par exemple en séparant les lectures des écritures, tout en partageant les mêmes données. Elle permet également une utilisation plus efficace des ressources grâce à une mise à l’échelle indépendante des groupes de calcul selon les besoins.

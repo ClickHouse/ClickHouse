@@ -57,7 +57,7 @@ comme illustré dans la figure ci-dessous :
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="Projections dans ClickHouse" />
 
 <div id="smarter_storage_with_part_offset">
-  ### Un stockage plus intelligent avec `_part_offset` {#smarter_storage_with_part_offset}
+  ### Un stockage plus intelligent avec `_part_offset`
 </div>
 
 Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans les projections, ce qui offre une nouvelle façon de définir une projection.
@@ -71,7 +71,7 @@ Il existe désormais deux façons de définir une projection :
 Les approches ci-dessus peuvent également être combinées, en stockant certaines colonnes dans la projection et d’autres indirectement via `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## Quand utiliser les projections ? {#when-to-use-projections}
+  ## Quand utiliser les projections ?
 </div>
 
 Les projections constituent une fonctionnalité intéressante pour les nouveaux utilisateurs, car elles sont automatiquement
@@ -109,11 +109,11 @@ Nous recommandons d&#39;utiliser les projections lorsque :
   [évaluez le surcoût de stockage](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## Exemples {#examples}
+  ## Exemples
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### Filtrage sur des colonnes qui ne font pas partie de la clé primaire {#filtering-without-using-primary-keys}
+  ### Filtrage sur des colonnes qui ne font pas partie de la clé primaire
 </div>
 
 Dans cet exemple, nous allons voir comment ajouter une projection à une table.
@@ -414,7 +414,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### Autres exemples {#further-examples}
+  ### Autres exemples
 </div>
 
 Les exemples suivants utilisent le même jeu de données sur les prix au Royaume-Uni et comparent des requêtes avec et sans projections.
@@ -466,7 +466,7 @@ SETTINGS mutations_sync = 1
 Les requêtes suivantes comparent les performances avec et sans projections. Pour désactiver l’utilisation des projections, nous utilisons le paramètre [`optimize_use_projections`](/fr/reference/settings/session-settings/optimize-use#optimize_use_projections), activé par défaut.
 
 <div id="average-price-projections">
-  #### Requête 1. Prix moyen par année {#average-price-projections}
+  #### Requête 1. Prix moyen par année
 </div>
 
 <RunnableCode>
@@ -498,7 +498,7 @@ Les requêtes suivantes comparent les performances avec et sans projections. Pou
 Les résultats devraient être identiques, mais les performances sont meilleures dans ce dernier exemple !
 
 <div id="average-price-london-projections">
-  #### Requête 2. Prix moyen par année à Londres {#average-price-london-projections}
+  #### Requête 2. Prix moyen par année à Londres
 </div>
 
 <RunnableCode>
@@ -529,7 +529,7 @@ Les résultats devraient être identiques, mais les performances sont meilleures
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### Requête 3. Les quartiers les plus chers {#most-expensive-neighborhoods-projections}
+  #### Requête 3. Les quartiers les plus chers
 </div>
 
 Le filter portant sur les lignes à partir de 2020 référence directement la dimension `year` stockée dans la projection :
@@ -583,7 +583,7 @@ Là encore, le résultat est identique, mais notez l’amélioration des perform
 </Note>
 
 <div id="combining-projections">
-  ### Combiner plusieurs projections dans une même requête {#combining-projections}
+  ### Combiner plusieurs projections dans une même requête
 </div>
 
 À partir de la version 25.6, en s’appuyant sur la prise en charge de `_part_offset` introduite dans

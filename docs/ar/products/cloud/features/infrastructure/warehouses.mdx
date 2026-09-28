@@ -42,7 +42,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 *الشكل 2 - فصل compute في ClickHouse Cloud*
 
 <div id="what-is-a-warehouse">
-  ## ما هو المستودع؟ {#what-is-a-warehouse}
+  ## ما هو المستودع؟
 </div>
 
 في ClickHouse Cloud، يُقصد بـ *المستودع* مجموعة من **الخدمات** التي تتشارك البيانات نفسها.
@@ -68,7 +68,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 تجمع المستودعات خدمات ClickHouse Cloud طويلة الأمد التي تتشارك البيانات، مع موارد حوسبة مخصّصة ونقطة نهاية لكل خدمة. أما [الحوسبة عند الطلب](/ar/products/cloud/features/infrastructure/on-demand-compute) فتُسنِد مؤقتًا عمّالًا من تجمّع مُدار إلى أحمال العمل المدعومة عبر خدمة ونقطة نهاية قائمتين.
 
 <div id="access-controls">
-  ## ضوابط الوصول {#access-controls}
+  ## ضوابط الوصول
 </div>
 
 ### بيانات اعتماد قاعدة البيانات {#database-credentials}
@@ -84,7 +84,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 *الشكل 4 - أُنشئت المستخدمِة أليس في Service 1، لكنها تستطيع استخدام بيانات الاعتماد نفسها للوصول إلى جميع الخدمات التي تشترك في البيانات نفسها*
 
 <div id="network-access-control">
-  ### التحكم في الوصول إلى الشبكة {#network-access-control}
+  ### التحكم في الوصول إلى الشبكة
 </div>
 
 لتقييد الوصول إلى خدمات محددة من قِبل تطبيقات أخرى أو مستخدمين مؤقتين، يمكنك تطبيق قيود على الشبكة.
@@ -104,7 +104,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 يمكن أيضًا تطبيق أدوار ClickHouse والمنح للتحكم في الوصول إلى البيانات عندما تتصل بصفتك فردًا بدلًا من المستخدم *default*.
 
 <div id="read-vs-read-write">
-  ### خدمات للقراءة فقط مقابل خدمات للقراءة والكتابة {#read-vs-read-write}
+  ### خدمات للقراءة فقط مقابل خدمات للقراءة والكتابة
 </div>
 
 يمكن أن تكون الخدمات من أحد النوعين التاليين:
@@ -157,11 +157,11 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## القيود {#limitations}
+  ## القيود
 </div>
 
 <div id="workload-isolation-limitations">
-  ### قيود عزل أعباء العمل {#workload-isolation-limitations}
+  ### قيود عزل أعباء العمل
 </div>
 
 لا يمكن عزل بعض أعباء العمل في خدمات محددة؛ إذ توجد حالات استثنائية قد يؤثر فيها عبء عمل في خدمة ما على خدمة أخرى داخل الـمستودع. وتشمل هذه الحالات:
@@ -192,7 +192,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **خمول الخدمة الأساسية**: يكون الخمول التلقائي للخدمة الأساسية مفعّلًا افتراضيًا.
 
 <div id="pricing">
-  ## التسعير {#pricing}
+  ## التسعير
 </div>
 
 أسعار الحوسبة هي نفسها لجميع الخدمات ضمن مستودع (الأساسية والثانوية). ولا تتم محاسبة Storage إلا مرة واحدة فقط، إذ تكون مضمنة في الخدمة الأولى (الأصلية).
@@ -200,14 +200,14 @@ SETTINGS distributed_ddl_task_timeout=0
 يُرجى الرجوع إلى pricing calculator في صفحة [pricing](https://clickhouse.com/pricing)، إذ سيساعدك في تقدير التكلفة بناءً على حجم workload لديك واختيار tier. وسيعرض لك جدول Usage Breakdown تفاصيل تكاليف الحوسبة عبر الخدمات.
 
 <div id="backups">
-  ## النسخ الاحتياطية {#backups}
+  ## النسخ الاحتياطية
 </div>
 
 * بما أن جميع الخدمات ضمن مستودع واحد تشترك في مساحة التخزين نفسها، فلا تُنشأ النسخ الاحتياطية إلا على الخدمة الأساسية (الأولية). وبهذه الطريقة، تُؤخذ نسخة احتياطية من بيانات جميع الخدمات في المستودع.
 * إذا قمت باستعادة نسخة احتياطية من الخدمة الأساسية في مستودع، فستُستعاد إلى خدمة جديدة تمامًا غير متصلة بالمستودع الحالي. ويمكنك بعد ذلك إضافة المزيد من الخدمات إلى الخدمة الجديدة فور اكتمال عملية الاستعادة.
 
 <div id="setup-warehouses">
-  ## كيفية إعداد مستودع {#setup-warehouses}
+  ## كيفية إعداد مستودع
 </div>
 
 ### إنشاء مستودع {#creating-a-warehouse}
@@ -223,7 +223,7 @@ SETTINGS distributed_ddl_task_timeout=0
 في شاشة إنشاء الخدمة، ستكون الخدمة الأصلية محددة في القائمة المنسدلة باعتبارها مصدر بيانات الخدمة الجديدة. وبمجرد إنشائها، ستشكّل هاتان الخدمتان مستودعًا.
 
 <div id="renaming-a-warehouse">
-  ### إعادة تسمية مستودع {#renaming-a-warehouse}
+  ### إعادة تسمية مستودع
 </div>
 
 هناك طريقتان لإعادة تسمية مستودع:
@@ -232,7 +232,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * يمكنك النقر على اسم المستودع ضمن أي خدمة، ثم إعادة تسميته من هناك
 
 <div id="deleting-a-warehouse">
-  ### حذف مستودع {#deleting-a-warehouse}
+  ### حذف مستودع
 </div>
 
 يعني حذف المستودع حذفَ جميع خدمات الحوسبة والبيانات (الجداول، والعروض، والمستخدمين، وما إلى ذلك). ولا يمكن التراجع عن هذا الإجراء.

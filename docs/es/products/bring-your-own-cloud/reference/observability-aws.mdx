@@ -37,7 +37,7 @@ BYOC ofrece dos formas principales de recopilar y visualizar métricas con Prome
 **Recomendación**: Para la mayoría de los casos de uso, recomendamos integrar el stack de Prometheus integrado, ya que proporciona métricas completas de todos los componentes de tu implementación BYOC (servicios de ClickHouse, clúster de Kubernetes y servicios auxiliares), en lugar de limitarse a las métricas del servidor de ClickHouse.
 
 <div id="builtin-prometheus-stack">
-  ## La stack integrada de Prometheus de BYOC {#builtin-prometheus-stack}
+  ## La stack integrada de Prometheus de BYOC
 </div>
 
 ClickHouse BYOC despliega una stack completa de monitorización de Prometheus dentro de su clúster de Kubernetes, que incluye Prometheus, Grafana, AlertManager y, opcionalmente, Thanos para el almacenamiento de métricas a largo plazo. Esta pila recopila métricas de:
@@ -68,7 +68,7 @@ Los formatos de los endpoints varían según el tipo de conectividad:
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### Integración con sus herramientas de monitorización {#prometheus-stack-integration}
+  ### Integración con sus herramientas de monitorización
 </div>
 
 Puede utilizar la stack de Prometheus de BYOC en su ecosistema de monitorización de varias formas:
@@ -107,7 +107,7 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## Integración de Prometheus para el servicio de ClickHouse {#direct-prometheus-integration}
+  ## Integración de Prometheus para el servicio de ClickHouse
 </div>
 
 Los servicios de ClickHouse exponen un endpoint de métricas compatible con Prometheus que puede recopilar directamente con su propia instancia de Prometheus. Este enfoque proporciona métricas específicas de ClickHouse, pero no incluye métricas de Kubernetes ni de los servicios auxiliares.
@@ -135,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### Autenticación {#authentication}
+  ### Autenticación
 </div>
 
 El endpoint de métricas requiere autenticación mediante credenciales de ClickHouse. Recomendamos usar el usuario `default` o crear un usuario específico con los permisos mínimos necesarios para el scraping de métricas.
@@ -193,7 +193,7 @@ Sustituye:
 * `<username>` y `<password>` por las credenciales de tu usuario de scraping
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin {#clickhouse-mixin}
+  ## ClickHouse Mixin
 </div>
 
 Para los equipos que quieren un conjunto de dashboards listo para usar, ClickHouse ofrece un **ClickHouse Mixin** para Prometheus. Se trata de un dashboard de Grafana preconfigurado, diseñado específicamente para supervisar clústeres de ClickHouse.

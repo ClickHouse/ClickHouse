@@ -223,7 +223,7 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 </ol>
 
 <div id="managing-cache-locality">
-  ### 캐시 지역성 관리 {#managing-cache-locality}
+  ### 캐시 지역성 관리
 </div>
 
 마지막으로 남아 있는 잠재적인 문제는 캐시 지역성을 어떻게 처리할지입니다. 쿼리가
@@ -276,12 +276,12 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 레플리카 수보다 적으면, 쿼리 실행을 위해 무작위 레플리카가 선택됩니다.
 
 <div id="task-stealing">
-  ### 작업 스틸링 {#task-stealing}
+  ### 작업 스틸링
 </div>
 
 일부 레플리카가 다른 레플리카보다 작업을 더 느리게 처리하면, 테일 지연 시간을 줄이기 위해 다른 레플리카가 원칙적으로는 해시에 따라 해당 레플리카에 할당된 작업을 &#39;스틸링&#39;하려고 시도합니다.
 
-### 제한 사항 {#limitations}
+### 제한 사항
 
 이 기능에는 알려진 제한 사항이 있으며, 주요 제한 사항은 이 섹션에
 설명되어 있습니다.
@@ -302,7 +302,7 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 | 분석기와의 호환성                     | 분석기는 특정 시나리오에서 쿼리 실행 속도를 크게 늦추거나 높일 수 있습니다.                                                                                                                                                                                                                                                                           |
 
 <div id="settings-related-to-parallel-replicas">
-  ## 병렬 레플리카 관련 설정 {#settings-related-to-parallel-replicas}
+  ## 병렬 레플리카 관련 설정
 </div>
 
 | Setting                                            | Description                                                                                                                                 |
@@ -312,7 +312,7 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 | `max_parallel_replicas`                            | 여러 레플리카에서 쿼리를 실행할 때 사용할 최대 레플리카 수입니다. 클러스터의 레플리카 수보다 작은 값을 지정하면 노드가 무작위로 선택됩니다. 이 값은 수평 스케일링을 고려해 오버커밋할 수도 있습니다.                            |
 | `parallel_replicas_min_number_of_rows_per_replica` | 처리해야 하는 행 수를 기준으로 사용할 레플리카 수를 제한하는 데 도움이 됩니다. 사용되는 레플리카 수는 다음과 같이 정의됩니다. <br /> `estimated rows to read` / `min_number_of_rows_per_replica` |
 
-## 병렬 레플리카 문제 조사 {#investigating-issues-with-parallel-replicas}
+## 병렬 레플리카 문제 조사
 
 각 쿼리에 어떤 설정이 사용되었는지는
 [`system.query_log`](/ko/reference/system-tables/query_log) 테이블에서 확인할 수 있습니다. 또한

@@ -21,7 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/managed-postgres/ip-filters.webp" alt="تهيئة قائمة الوصول إلى IP" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### تكوين عوامل تصفية IP {#configuring-ip-filters}
+  ### تكوين عوامل تصفية IP
 </div>
 
 لتكوين عوامل تصفية IP:
@@ -58,7 +58,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تُشفَّر جميع البيانات المخزَّنة بواسطة ClickHouse Managed Postgres في التخزين للحماية من الوصول غير المصرَّح به إلى البنية التحتية الأساسية للتخزين.
 
 <div id="nvme-encryption">
-  #### تشفير تخزين NVMe {#nvme-encryption}
+  #### تشفير تخزين NVMe
 </div>
 
 تُشفَّر ملفات قاعدة البيانات، وسجلات المعاملات، والملفات المؤقتة المخزَّنة على أقراص NVMe باستخدام خوارزميات تشفير متوافقة مع معايير الصناعة. ويتم هذا التشفير بشفافية بالنسبة إلى تطبيقاتك، ولا يتطلب أي إعداد.
@@ -82,7 +82,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تُؤمَّن جميع اتصالات الشبكة بـ ClickHouse Managed Postgres باستخدام TLS ‏(أمن طبقة النقل) لحماية البيانات أثناء انتقالها بين تطبيقاتك وقاعدة البيانات.
 
 <div id="tls-ssl">
-  #### إعدادات TLS/SSL {#tls-ssl}
+  #### إعدادات TLS/SSL
 </div>
 
 تستخدم الاتصالات افتراضيًا تشفير TLS من دون التحقق من الشهادة. بالنسبة إلى أعباء العمل في بيئة الإنتاج، نوصي بالاتصال عبر TLS مع التحقق من الشهادة لضمان أنك تتواصل مع الخادم الصحيح.
@@ -100,7 +100,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Info>
 
 <div id="requesting-private-link">
-  ### طلب إعداد AWS PrivateLink {#requesting-private-link}
+  ### طلب إعداد AWS PrivateLink
 </div>
 
 لتمكين AWS PrivateLink لمثيل ClickHouse Managed Postgres لديك:
@@ -128,13 +128,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لتمكين Private Service Connect لمثيل ClickHouse Managed Postgres لديك، تواصل مع ClickHouse Support عبر إنشاء تذكرة دعم.
 
 <div id="backup-retention">
-  ## الاحتفاظ بالنسخ الاحتياطية {#backup-retention}
+  ## الاحتفاظ بالنسخ الاحتياطية
 </div>
 
 يُنشئ ClickHouse Managed Postgres نسخًا احتياطية من بياناتك تلقائيًا للحماية من الحذف غير المقصود أو التلف أو غير ذلك من حالات فقدان البيانات.
 
 <div id="retention-policy">
-  ### سياسة الاحتفاظ {#retention-policy}
+  ### سياسة الاحتفاظ
 </div>
 
 * **فترة الاحتفاظ الافتراضية**: 7 أيام

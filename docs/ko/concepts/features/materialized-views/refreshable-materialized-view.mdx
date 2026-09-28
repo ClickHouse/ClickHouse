@@ -55,7 +55,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## 갱신 가능 구체화 뷰가 마지막으로 갱신된 시점은 언제입니까? {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## 갱신 가능 구체화 뷰가 마지막으로 갱신된 시점은 언제입니까?
 </div>
 
 갱신 가능 구체화 뷰가 마지막으로 언제 갱신되었는지 확인하려면 아래와 같이 [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes) 시스템 테이블(system table)을 쿼리하면 됩니다:
@@ -74,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## 갱신 주기는 어떻게 변경하나요? {#how-can-i-change-the-refresh-rate}
+  ## 갱신 주기는 어떻게 변경하나요?
 </div>
 
 갱신 가능 구체화 뷰의 갱신 주기를 변경하려면 [`ALTER TABLE...MODIFY REFRESH`](/ko/reference/statements/alter/view#alter-table--modify-refresh-statement) 구문을 사용하십시오.
@@ -93,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## 새 행을 추가할 때 `APPEND` 사용하기 {#using-append-to-add-new-rows}
+  ## 새 행을 추가할 때 `APPEND` 사용하기
 </div>
 
 `APPEND` 기능을 사용하면 전체 뷰를 교체하지 않고 테이블 끝에 새 행을 추가할 수 있습니다.
@@ -199,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## 예시 {#examples}
+  ## 예시
 </div>
 
 이제 몇 가지 예시 데이터셋을 사용해 갱신 가능 구체화 뷰를 사용하는 방법을 살펴보겠습니다.
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 [데이터 비정규화 가이드](/ko/guides/clickhouse/data-modelling/denormalization)에서는 Stack Overflow 데이터셋을 사용해 데이터를 비정규화하는 다양한 기법을 소개합니다. 데이터는 다음 테이블에 채워 넣습니다: `votes`, `users`, `badges`, `posts`, `postlinks`.
@@ -257,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 [dbt 및 ClickHouse 통합 가이드](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index)에서는 `actors`, `directors`, `genres`, `movie_directors`, `movies`, `roles` 테이블로 IMDb 데이터셋을 구성했습니다.

@@ -252,7 +252,7 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
 </ol>
 
 <div id="managing-cache-locality">
-  ### Gestión de la localidad de la caché {#managing-cache-locality}
+  ### Gestión de la localidad de la caché
 </div>
 
 El último problema potencial que queda es cómo manejamos la localidad de la caché. Si la consulta
@@ -305,14 +305,14 @@ usa sistemáticamente la misma réplica para ejecutar determinadas tareas. Si `m
 que el número de réplicas, entonces se eligen réplicas aleatorias para la ejecución de consultas.
 
 <div id="task-stealing">
-  ### Robo de tareas {#task-stealing}
+  ### Robo de tareas
 </div>
 
 si una réplica procesa tareas más lentamente que las demás, otras réplicas intentarán
 &#39;robar&#39; tareas que, en principio, pertenecen a esa réplica según el hash para reducir la
 latencia de cola.
 
-### Limitaciones {#limitations}
+### Limitaciones
 
 Esta funcionalidad tiene limitaciones conocidas, y en esta sección se documentan
 las principales.
@@ -333,7 +333,7 @@ las principales.
 | Compatibilidad con el analizador                             | El analizador puede ralentizar o acelerar significativamente la ejecución de consultas en determinados escenarios.                                                                                                                                                                                                                                                                                                                                                                            |
 
 <div id="settings-related-to-parallel-replicas">
-  ## Configuración relacionada con las réplicas paralelas {#settings-related-to-parallel-replicas}
+  ## Configuración relacionada con las réplicas paralelas
 </div>
 
 | Setting                                            | Description                                                                                                                                                                                                                                                                              |
@@ -343,7 +343,7 @@ las principales.
 | `max_parallel_replicas`                            | Número máximo de réplicas que se usarán para ejecutar la consulta en múltiples réplicas; si se especifica un número inferior al de réplicas del clúster, los nodos se seleccionarán aleatoriamente. Este valor también puede sobreasignarse para tener en cuenta el escalado horizontal. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Ayuda a limitar el número de réplicas utilizadas en función del número de filas que deben procesarse; el número de réplicas utilizadas se define mediante: <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                           |
 
-## Investigar problemas con las réplicas paralelas {#investigating-issues-with-parallel-replicas}
+## Investigar problemas con las réplicas paralelas
 
 Puedes comprobar qué configuraciones se están usando para cada consulta en la
 tabla [`system.query_log`](/es/reference/system-tables/query_log). También puedes

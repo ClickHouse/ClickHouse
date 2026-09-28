@@ -21,7 +21,7 @@ Les filtres IP déterminent quelles adresses IP source sont autorisées à se co
 <Image img="/images/managed-postgres/ip-filters.webp" alt="Configuration de la liste d’accès IP" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### Configuration des filtres IP {#configuring-ip-filters}
+  ### Configuration des filtres IP
 </div>
 
 Pour configurer les filtres IP :
@@ -58,7 +58,7 @@ ClickHouse Managed Postgres chiffre vos données au repos comme en transit afin 
 Toutes les données stockées par ClickHouse Managed Postgres sont chiffrées au repos afin de les protéger contre tout accès non autorisé à l’infrastructure de stockage sous-jacente.
 
 <div id="nvme-encryption">
-  #### Chiffrement du stockage NVMe {#nvme-encryption}
+  #### Chiffrement du stockage NVMe
 </div>
 
 Les fichiers de votre base de données, les journaux de transaction et les fichiers temporaires stockés sur des disques NVMe sont chiffrés à l’aide d’algorithmes de chiffrement conformes aux normes du secteur. Ce chiffrement est transparent pour vos applications et ne nécessite aucune configuration.
@@ -82,7 +82,7 @@ Toutes les données de sauvegarde sont stockées dans des buckets de stockage d�
 Toutes les connexions réseau à ClickHouse Managed Postgres sont sécurisées à l’aide de TLS (Transport Layer Security) afin de protéger les données pendant leur transfert entre vos applications et la base de données.
 
 <div id="tls-ssl">
-  #### Configuration TLS/SSL {#tls-ssl}
+  #### Configuration TLS/SSL
 </div>
 
 Par défaut, les connexions utilisent le chiffrement TLS sans vérification du certificat. Pour les charges de travail en production, nous vous recommandons d’utiliser une connexion TLS avec vérification du certificat afin de vous assurer que vous communiquez avec le bon serveur.
@@ -130,7 +130,7 @@ Pour activer Private Service Connect sur votre instance ClickHouse Managed Postg
 ClickHouse Managed Postgres sauvegarde automatiquement vos données pour les protéger contre les suppressions accidentelles, la corruption et d’autres scénarios de perte de données.
 
 <div id="retention-policy">
-  ### Politique de rétention {#retention-policy}
+  ### Politique de rétention
 </div>
 
 * **Période de rétention par défaut** : 7 jours

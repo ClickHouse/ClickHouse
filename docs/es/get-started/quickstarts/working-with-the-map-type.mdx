@@ -270,7 +270,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
 </Steps>
 
 <div id="key-takeaways">
-  ## Puntos clave {#key-takeaways}
+  ## Puntos clave
 </div>
 
 * **`Map(LowCardinality(String), String)`** es el tipo más idiomático para los atributos de OTel: ofrece la flexibilidad necesaria para manejar conjuntos de claves variables, y `LowCardinality` mantiene eficiente el almacenamiento de las claves.
@@ -280,7 +280,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
 * **El combinador de agregación `-Map`** (`sumMap`, `avgMap`, `maxMap`, etc.) agrega cada clave de forma independiente en todas las filas: es ideal para consolidar contadores de métricas de OTel sin necesidad de conocer de antemano el conjunto de claves. También se puede combinar con otros combinadores (por ejemplo, `sumMapIf`).
 
 <div id="next-steps">
-  ## Próximos pasos {#next-steps}
+  ## Próximos pasos
 </div>
 
 A continuación, consulta estas guías de inicio rápido:

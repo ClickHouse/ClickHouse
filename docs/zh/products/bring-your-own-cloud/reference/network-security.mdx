@@ -47,7 +47,7 @@ ClickHouse Cloud 控制平面会维护多种类型的连接，以运行和支持
 Tailscale 在 ClickHouse Cloud 的管理服务与你的 BYOC 部署之间提供零信任的私有网络连接。借助这一安全通道，ClickHouse 工程师无需入站公网访问或复杂的 VPN 配置，即可执行故障排查和管理操作；agent 本身仅发起出站连接，并且需要出站互联网访问权限才能连接到 Tailscale 协调服务。
 
 <div id="tailscale-overview">
-  ### 概述 {#tailscale-overview}
+  ### 概述
 </div>
 
 Tailscale 会在 ClickHouse 控制平面 (位于 ClickHouse 的 VPC 中) 与您的 BYOC 数据平面 (位于您的 VPC 中) 之间建立一条加密的私有网络隧道。此连接仅用于：
@@ -78,7 +78,7 @@ Tailscale 会在 ClickHouse 控制平面 (位于 ClickHouse 的 VPC 中) 与您�
    * 将流量路由到 Kubernetes 集群内相应的 IP 地址
 
 <div id="tailscale-connection-process">
-  ### 网络连接过程 {#tailscale-connection-process}
+  ### 网络连接过程
 </div>
 
 Tailscale 建立连接的过程如下：
@@ -124,7 +124,7 @@ Tailscale 建立连接的过程如下：
 * 默认情况下，会保留公网端点作为紧急调查和支持需求的备用机制；在验证私网访问后，可与 ClickHouse 协调将其完全禁用
 
 <div id="tailscale-traffic-flow">
-  ### 网络流量流向 {#tailscale-traffic-flow}
+  ### 网络流量流向
 </div>
 
 **Tailscale 连接流程**：

@@ -43,7 +43,7 @@ ClickHouse Cloud 컨트롤 플레인은 BYOC 배포를 운영하고 지원하기
 다음 섹션에서는 문제 해결 및 선택적 관리 액세스에 **Tailscale** 프라이빗 네트워크를 사용하는 방법을 설명합니다.
 
 <div id="tailscale-private-network">
-  ## Tailscale 프라이빗 네트워크 {#tailscale-private-network}
+  ## Tailscale 프라이빗 네트워크
 </div>
 
 Tailscale은 ClickHouse Cloud의 관리 서비스와 BYOC 배포 환경 간에 제로 트러스트 기반의 프라이빗 네트워크 연결을 제공합니다. 이 보안 채널을 통해 인바운드 공용 네트워크 액세스나 복잡한 VPN 구성 없이 ClickHouse 엔지니어가 문제 해결 및 관리 작업을 수행할 수 있습니다. 에이전트는 아웃바운드 전용 연결만 설정하며, Tailscale 조정 서비스에 연결하려면 아웃바운드 인터넷 액세스가 필요합니다.
@@ -98,7 +98,7 @@ Tailscale 연결은 다음 단계로 이루어집니다:
    * 직접 모드와 릴레이 모드 중 어느 것을 사용하든 트래픽은 암호화된 상태로 유지됩니다
 
 <div id="tailscale-security">
-  ### 보안 기능 {#tailscale-security}
+  ### 보안 기능
 </div>
 
 **아웃바운드 전용 연결**:

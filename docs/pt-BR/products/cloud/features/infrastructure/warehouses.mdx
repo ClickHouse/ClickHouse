@@ -66,7 +66,7 @@ Todos os serviços em um warehouse compartilham o mesmo:
 Os warehouses agrupam serviços de longa duração do ClickHouse Cloud que compartilham dados, com compute dedicado e um endpoint para cada serviço. O [On-Demand Compute](/pt-BR/products/cloud/features/infrastructure/on-demand-compute) atribui temporariamente workers de um pool gerenciado a cargas de trabalho compatíveis por meio de um serviço e endpoint já existentes.
 
 <div id="access-controls">
-  ## Controles de acesso {#access-controls}
+  ## Controles de acesso
 </div>
 
 ### Credenciais do banco de dados {#database-credentials}
@@ -151,7 +151,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## Limitações {#limitations}
+  ## Limitações
 </div>
 
 ### Limitações do isolamento de cargas de trabalho {#workload-isolation-limitations}
@@ -184,7 +184,7 @@ Se você parar manualmente um serviço, precisará iniciá-lo novamente para que
 * **Modo ocioso do serviço primário**: a entrada automática do serviço primário em modo ocioso é habilitada por padrão.
 
 <div id="pricing">
-  ## Preços {#pricing}
+  ## Preços
 </div>
 
 Os preços de computação são os mesmos para todos os serviços em um warehouse (primário e secundário). O armazenamento é cobrado apenas uma vez — ele está incluído no primeiro serviço (original).
@@ -192,14 +192,14 @@ Os preços de computação são os mesmos para todos os serviços em um warehous
 Consulte a calculadora de preços na página de [preços](https://clickhouse.com/pricing), que ajudará a estimar o custo com base no tamanho da sua carga de trabalho e na seleção de tier. A tabela Usage Breakdown mostrará o detalhamento dos custos de computação entre os serviços.
 
 <div id="backups">
-  ## Backups {#backups}
+  ## Backups
 </div>
 
 * Como todos os serviços de um mesmo warehouse compartilham o mesmo armazenamento, os backups são feitos apenas no serviço primário (inicial). Dessa forma, os dados de todos os serviços do warehouse ficam incluídos no backup.
 * Se você restaurar um backup do serviço primário de um warehouse, ele será restaurado em um serviço totalmente novo, sem conexão com o warehouse existente. Em seguida, você poderá adicionar mais serviços a esse novo serviço assim que a restauração for concluída.
 
 <div id="setup-warehouses">
-  ## Como configurar um warehouse {#setup-warehouses}
+  ## Como configurar um warehouse
 </div>
 
 ### Criando um warehouse {#creating-a-warehouse}
@@ -215,7 +215,7 @@ Para criar um warehouse, você precisa criar um segundo serviço que compartilha
 Na tela de criação do serviço, o serviço original será selecionado no menu suspenso como a origem dos dados do novo serviço. Após a criação, esses dois serviços formarão um warehouse.
 
 <div id="renaming-a-warehouse">
-  ### Renomeando um warehouse {#renaming-a-warehouse}
+  ### Renomeando um warehouse
 </div>
 
 Há duas maneiras de renomear um warehouse:
@@ -224,7 +224,7 @@ Há duas maneiras de renomear um warehouse:
 * Você pode clicar no nome do warehouse em qualquer um dos serviços e renomeá-lo ali
 
 <div id="deleting-a-warehouse">
-  ### Excluindo um warehouse {#deleting-a-warehouse}
+  ### Excluindo um warehouse
 </div>
 
 Excluir um warehouse significa excluir todos os serviços de compute e os dados (tabelas, views, usuários etc.). Essa ação não pode ser desfeita.

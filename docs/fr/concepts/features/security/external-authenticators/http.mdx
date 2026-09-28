@@ -93,7 +93,7 @@ Exemple (à placer dans `users.xml`) :
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### Activer l&#39;authentification HTTP avec SQL {#enabling-http-auth-using-sql}
+  ### Activer l&#39;authentification HTTP avec SQL
 </div>
 
 Lorsque la fonctionnalité de [contrôle d&#39;accès et de gestion des comptes pilotés par SQL](/fr/concepts/features/security/access-rights#access-control-usage) est activée dans ClickHouse, il est également possible de créer, à l&#39;aide d&#39;instructions SQL, des utilisateurs identifiés par authentification HTTP.
@@ -109,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### Transmission des paramètres de session {#passing-session-settings}
+  ### Transmission des paramètres de session
 </div>
 
 Si le corps de la réponse d&#39;un serveur d&#39;authentification HTTP est au format JSON et contient le sous-objet `settings`, ClickHouse essaiera d&#39;interpréter ses paires clé-valeur comme des valeurs de type chaîne et de les appliquer comme paramètres de session à la session en cours de l&#39;utilisateur authentifié. Si l&#39;analyse échoue, le corps de la réponse du serveur sera ignoré.

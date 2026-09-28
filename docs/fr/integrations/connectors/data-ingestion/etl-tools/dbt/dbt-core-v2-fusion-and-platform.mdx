@@ -71,7 +71,7 @@ Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-cli
 
 <Badge color="green">Supported</Badge> déjà fonctionnel · <Badge color="yellow">Partial</Badge> fonctionne avec des limitations · <Badge color="red">Not yet</Badge> implémentation en attente.
 
-### Materializations {#parity-materializations}
+### Materializations
 
 | Fonctionnalité                                 | Rôle                                                                      | dbt v2                                      | Notes                                                                                                                                                        |
 | ---------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -85,7 +85,7 @@ Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-cli
 | `ephemeral`                                    | CTE intégrée, aucun objet créé.                                           | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
 | `distributed_table`, `distributed_incremental` | Tables partitionnées derrière un moteur Distributed.                      | <Badge color="red">Pas encore</Badge>       |                                                                                                                                                              |
 
-### Configuration des modèles {#parity-model-configuration}
+### Configuration des modèles
 
 | Fonctionnalité                                    | Rôle                                                      | dbt v2                                      | Remarques |
 | ------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------- | --------- |
@@ -97,7 +97,7 @@ Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-cli
 | Évolution de schéma sur les modèles incrémentaux  | `on_schema_change` ajoute ou synchronise les colonnes.    | <Badge color="green">Pris en charge</Badge> |           |
 | `codec` et `ttl` de colonne                       | Compression et expiration par colonne.                    | <Badge color="green">Pris en charge</Badge> |           |
 
-### Tests et documentation {#parity-testing-and-docs}
+### Tests et documentation
 
 | Fonctionnalité                                 | Rôle                                                        | dbt v2                                      | Notes                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -107,7 +107,7 @@ Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-cli
 | Génération du catalogue et de la documentation | Métadonnées de colonnes pour le site de documentation.      | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                               |
 | Traçabilité au niveau des colonnes             | Suivre les colonnes à travers le DAG.                       | <Badge color="yellow">Partiel</Badge>       | Nouveauté de la v2 via le compilateur SQL, indisponible en v1. La traçabilité de la plateforme dbt ne s&#39;affiche que si la mise entre guillemets des identifiants est désactivée dans `dbt_project.yml` ; la traçabilité côté moteur nécessite le dialecte ClickHouse SQL. |
 
-### Cluster et Cloud {#parity-cluster-and-cloud}
+### Cluster et Cloud
 
 | Fonctionnalité                        | Rôle                                                                              | dbt v2                                      | Notes                                                                                                                                                                                                                                                                      |
 | ------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -118,7 +118,7 @@ Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-cli
 | Paramètres de connexion personnalisés | `custom_settings` au niveau du profile.                                           | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                            |
 | Version du ClickHouse server          | Version minimale du serveur.                                                      | <Badge color="green">Pris en charge</Badge> | 25.3+ sur les deux engines. La lecture des colonnes `UUID` sur v2 nécessite 26.7+ (les serveurs plus anciens ne peuvent pas convertir `UUID` en Arrow).                                                                                                                    |
 
-### Macros et opérations {#parity-macros-and-operations}
+### Macros et opérations
 
 | Fonctionnalité                              | Rôle                                                                            | dbt v2                                       | Notes                                                      |
 | ------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------- |
@@ -130,7 +130,7 @@ Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-cli
 | `query-comment`                             | Configuration du comment de requête.                                            | <Badge color="red">Pas encore</Badge>        | `query-comment: null` n&#39;est pas encore pris en compte. |
 | Intégration de catalog (Iceberg)            | Materialize vers des external catalogs.                                         | <Badge color="red">Pas encore</Badge>        | Absent de la v1 également ; contournements documentés.     |
 
-### Connectivité et authentification {#parity-connectivity-and-auth}
+### Connectivité et authentification
 
 | Fonctionnalité                             | Rôle                                                                                                          | dbt v2                                 | Notes                                                                  |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |

@@ -59,7 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       حاويات التخزين وعنقود Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse ليست مضمنة في هذا الإعداد الأولي. سيتم توفيرها في خطوة لاحقة. وعلى الرغم من أنك تتحكم في VPC الخاصة بك، لا تزال ClickHouse Cloud بحاجة إلى أذونات IAM لإنشاء عنقود Kubernetes وإدارته، وأدوار IAM لحسابات الخدمة، وS3 buckets، وغيرها من الموارد الأساسية في حساب AWS الخاص بك.
     </Note>
 
-#### وحدة Terraform {#terraform-module-aws}
+#### وحدة Terraform
 
     إذا كنت تفضل استخدام Terraform بدلاً من CloudFormation، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 

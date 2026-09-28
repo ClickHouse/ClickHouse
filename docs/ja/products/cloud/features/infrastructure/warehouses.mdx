@@ -42,7 +42,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 *図 2 - ClickHouse Cloud におけるコンピュート分離*
 
 <div id="what-is-a-warehouse">
-  ## ウェアハウス とは何ですか？ {#what-is-a-warehouse}
+  ## ウェアハウス とは何ですか？
 </div>
 
 ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有する**サービス**の集合です。
@@ -68,7 +68,7 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 ウェアハウス は、データを共有する長期稼働の ClickHouse Cloud サービスをグループ化するもので、各サービスに専用の コンピュート と エンドポイント が割り当てられます。[On-Demand Compute](/ja/products/cloud/features/infrastructure/on-demand-compute) は、既存のサービスと エンドポイント を介して、マネージド pool の worker をサポート対象の ワークロード に一時的に割り当てます。
 
 <div id="access-controls">
-  ## アクセス制御 {#access-controls}
+  ## アクセス制御
 </div>
 
 ### データベース認証情報 {#database-credentials}
@@ -102,7 +102,7 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 また、*default* ユーザーではなく個別のユーザーとして接続する場合は、ClickHouse のロールと grants を適用してデータへのアクセスを制御することもできます。
 
 <div id="read-vs-read-write">
-  ### 読み取り専用サービスと読み書きサービス {#read-vs-read-write}
+  ### 読み取り専用サービスと読み書きサービス
 </div>
 
 サービスの種類は次のいずれかです。
@@ -155,7 +155,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## 制限事項 {#limitations}
+  ## 制限事項
 </div>
 
 ### ワークロード分離の制限事項 {#workload-isolation-limitations}
@@ -187,7 +187,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **プライマリサービスのアイドル化**: プライマリサービスの自動アイドル化はデフォルトで有効になっています。
 
 <div id="pricing">
-  ## 料金 {#pricing}
+  ## 料金
 </div>
 
 コンピュートの価格は、1 つの ウェアハウス 内のすべてのサービス (プライマリおよびセカンダリ) で共通です。ストレージ料金が課金されるのは 1 回のみで、最初の (元の) サービスに含まれます。
@@ -195,18 +195,18 @@ SETTINGS distributed_ddl_task_timeout=0
 ワークロードの規模と選択したティアに基づいてコストを見積もるには、[pricing](https://clickhouse.com/pricing) ページの料金計算ツールを参照してください。Usage Breakdown テーブルには、サービスごとのコンピュートコストの内訳が表示されます。
 
 <div id="backups">
-  ## バックアップ {#backups}
+  ## バックアップ
 </div>
 
 * 1 つの ウェアハウス 内のすべての サービス は同じストレージを共有するため、バックアップはプライマリ (初期) サービス でのみ作成されます。これにより、ウェアハウス 内のすべての サービス のデータがバックアップされます。
 * ウェアハウス のプライマリ サービス からバックアップを復元すると、既存の ウェアハウス には接続されていない、まったく新しい サービス として復元されます。復元が完了したらすぐに、その新しい サービス にさらに サービス を追加できます。
 
 <div id="setup-warehouses">
-  ## ウェアハウス の設定方法 {#setup-warehouses}
+  ## ウェアハウス の設定方法
 </div>
 
 <div id="creating-a-warehouse">
-  ### ウェアハウスの作成 {#creating-a-warehouse}
+  ### ウェアハウスの作成
 </div>
 
 ウェアハウスを作成するには、既存のサービスとデータを共有する 2 つ目のサービスを作成する必要があります。これは、既存のサービスのいずれかにあるプラス記号をクリックして行えます。
@@ -220,7 +220,7 @@ SETTINGS distributed_ddl_task_timeout=0
 サービス作成画面では、新しいサービスのデータ元として、元のサービスがドロップダウンで選択された状態になります。作成後、これら 2 つのサービスで 1 つのウェアハウスが構成されます。
 
 <div id="renaming-a-warehouse">
-  ### ウェアハウス名の変更 {#renaming-a-warehouse}
+  ### ウェアハウス名の変更
 </div>
 
 ウェアハウス名を変更する方法は 2 つあります。
@@ -229,7 +229,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * いずれかのサービスでウェアハウス名をクリックし、そこで名前を変更できます
 
 <div id="deleting-a-warehouse">
-  ### ウェアハウスの削除 {#deleting-a-warehouse}
+  ### ウェアハウスの削除
 </div>
 
 ウェアハウスを削除すると、すべてのコンピュートサービスとデータ (テーブル、ビュー、ユーザーなど) が削除されます。この操作は元に戻せません。

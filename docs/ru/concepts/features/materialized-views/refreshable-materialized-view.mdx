@@ -55,7 +55,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## Когда в последний раз обновлялась refreshable materialized view? {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## Когда в последний раз обновлялась refreshable materialized view?
 </div>
 
 Чтобы узнать, когда refreshable materialized view обновлялась в последний раз, вы можете выполнить запрос к системной таблице [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes), как показано ниже:
@@ -74,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## Как изменить частоту обновления? {#how-can-i-change-the-refresh-rate}
+  ## Как изменить частоту обновления?
 </div>
 
 Чтобы изменить частоту обновления refreshable materialized view, используйте синтаксис [`ALTER TABLE...MODIFY REFRESH`](/ru/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -93,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## Использование `APPEND` для добавления новых строк {#using-append-to-add-new-rows}
+  ## Использование `APPEND` для добавления новых строк
 </div>
 
 Функция `APPEND` позволяет добавлять новые строки в конец таблицы, не заменяя представление целиком.
@@ -199,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## Примеры {#examples}
+  ## Примеры
 </div>
 
 Теперь рассмотрим, как использовать refreshable materialized views на примере нескольких наборов данных.
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 В [руководстве по денормализации данных](/ru/guides/clickhouse/data-modelling/denormalization) показаны различные методы денормализации данных на примере набора данных Stack Overflow. Мы загружаем данные в следующие таблицы: `votes`, `users`, `badges`, `posts` и `postlinks`.
@@ -257,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 В [руководстве по интеграции dbt и ClickHouse](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index) мы заполнили набор данных IMDb следующими таблицами: `actors`, `directors`, `genres`, `movie_directors`, `movies` и `roles`.

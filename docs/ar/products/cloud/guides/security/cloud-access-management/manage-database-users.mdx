@@ -55,11 +55,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="database-authentication">
-  ## مصادقة قاعدة البيانات {#database-authentication}
+  ## مصادقة قاعدة البيانات
 </div>
 
 <div id="database-user-id--password">
-  ### معرّف مستخدم قاعدة البيانات وكلمة المرور {#database-user-id--password}
+  ### معرّف مستخدم قاعدة البيانات وكلمة المرور
 </div>
 
 استخدم أسلوب SHA256&#95;hash عند [إنشاء حسابات المستخدمين](/ar/reference/statements/create/user) لتأمين كلمات المرور. يجب أن تتكوّن كلمات مرور مستخدمي قاعدة بيانات ClickHouse من 12 حرفًا على الأقل، وأن تستوفي متطلبات التعقيد: أحرف كبيرة، وأحرف صغيرة، وأرقام و/أو رموز خاصة.
@@ -76,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### مستخدم قاعدة بيانات مع مصادقة SSH {#database-ssh}
+  ### مستخدم قاعدة بيانات مع مصادقة SSH
 </div>
 
 لإعداد مصادقة SSH لمستخدم قاعدة بيانات في ClickHouse Cloud.
@@ -106,7 +106,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح المستخدم أذونات" size="md" background="black" />
 
 <div id="initial-settings">
-  ### الإعدادات الأولية {#initial-settings}
+  ### الإعدادات الأولية
 </div>
 
 تتضمن قواعد البيانات حسابًا باسم `default` يُضاف تلقائيًا ويُمنَح الدور `default_role` عند إنشاء الخدمة. ويُعرَض للمستخدم الذي ينشئ الخدمة كلمة المرور العشوائية المُولَّدة تلقائيًا والمُعيَّنة لحساب `default` عند إنشاء الخدمة. ولا تظهر كلمة المرور بعد الإعداد الأولي، لكن يمكن لأي مستخدم لديه أذونات Service Admin في Console تغييرها لاحقًا. ويمكن لهذا الحساب، أو لأي حساب لديه امتيازات Service Admin ضمن Console، إعداد مستخدمي قاعدة بيانات إضافيين وأدوار في أي وقت.

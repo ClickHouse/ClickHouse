@@ -29,30 +29,30 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 * デフォルトでセキュアかつ高可用性を確保
 
 <div id="administration">
-  ## 管理 {#administration}
+  ## 管理
 </div>
 
 * セットアップ、監視、バックアップ、請求は当社が行います。
 * コスト管理機能はデフォルトで有効になっており、Cloud Console から調整できます。
 
 <div id="service-isolation">
-  ## サービス分離 {#service-isolation}
+  ## サービス分離
 </div>
 
 <div id="network-isolation">
-  ### ネットワーク分離 {#network-isolation}
+  ### ネットワーク分離
 </div>
 
 すべてのサービスは、ネットワークレイヤーで分離されています。
 
 <div id="compute-isolation">
-  ### コンピュート分離 {#compute-isolation}
+  ### コンピュート分離
 </div>
 
 すべてのサービスは、それぞれの Kubernetes 名前空間内の別々のポッドにデプロイされ、ネットワークレベルで分離されています。
 
 <div id="storage-isolation">
-  ### ストレージ分離 {#storage-isolation}
+  ### ストレージ分離
 </div>
 
 すべてのサービスは、共有バケット (AWS、GCP) またはストレージコンテナー (Azure) 内の個別のサブパスを使用します。
@@ -62,7 +62,7 @@ AWS では、ストレージへのアクセスは AWS IAM によって制御さ�
 GCP と Azure では、サービスごとにオブジェクトストレージレベルで分離されます (すべてのサービスがそれぞれ専用のバケットまたはストレージコンテナーを持ちます) 。
 
 <div id="compute-compute-separation">
-  ## Compute-compute separation {#compute-compute-separation}
+  ## Compute-compute separation
 </div>
 
 [Compute-compute separation](/ja/products/cloud/features/infrastructure/warehouses) を使用すると、共有のオブジェクトストレージを利用しながら、それぞれが独自のサービスURLを持つ複数のコンピュートノードグループを作成できます。これにより、同じデータを共有したまま、書き込みと読み取りのように異なるユースケースごとにコンピュートを分離できます。また、必要に応じて各コンピュートグループを個別にスケーリングできるため、リソースの利用効率も向上します。

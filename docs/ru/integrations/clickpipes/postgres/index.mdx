@@ -27,7 +27,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     ClickPipes для Postgres можно развёртывать и управлять ими вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
-## Предварительные требования {#prerequisites}
+## Предварительные требования
 
     Для начала убедитесь, что ваша база данных Postgres настроена правильно. В зависимости от используемого исходного экземпляра Postgres вы можете воспользоваться одним из следующих руководств:
 
@@ -57,7 +57,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     После настройки исходной базы данных Postgres вы можете перейти к созданию ClickPipe.
 
-## Создание ClickPipe {#creating-your-clickpipe}
+## Создание ClickPipe
 
     Убедитесь, что вы вошли в свой аккаунт ClickHouse Cloud. Если аккаунта ещё нет, вы можете зарегистрироваться [здесь](https://cloud.clickhouse.com/).
 
@@ -75,7 +75,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Выберите Postgres" size="lg" border />
 
-### Добавление подключения к исходной базе данных Postgres {#adding-your-source-postgres-database-connection}
+### Добавление подключения к исходной базе данных Postgres
 
     4. Укажите сведения о подключении к исходной базе данных Postgres, которую вы настроили на шаге с предварительными требованиями.
 
@@ -86,17 +86,17 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Введите сведения о подключении" size="lg" border />
 
-#### (Опционально) Настройка AWS Private Link {#optional-setting-up-aws-private-link}
+#### (Опционально) Настройка AWS Private Link
 
     Если ваша исходная база данных Postgres размещена в AWS, для подключения к ней можно использовать AWS Private Link. Это удобно, если
     вы хотите, чтобы передача данных оставалась приватной.
     Настроить подключение можно по [руководству по настройке](/ru/integrations/clickpipes/networking/aws-privatelink).
 
-#### (Опционально) Изменение настроек TLS {#optional-changing-tls-settings}
+#### (Опционально) Изменение настроек TLS
 
     <ChangingTLSSettings />
 
-#### (Необязательно) Настройка SSH-туннелирования {#optional-setting-up-ssh-tunneling}
+#### (Необязательно) Настройка SSH-туннелирования
 
     Если ваша исходная база данных Postgres недоступна публично, вы можете указать параметры SSH-туннелирования.
 
@@ -116,13 +116,13 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     После заполнения сведений о подключении нажмите &quot;Next&quot;.
 
-### Настройка параметров репликации {#configuring-the-replication-settings}
+### Настройка параметров репликации
 
     5. Обязательно выберите в выпадающем списке слот репликации, созданный вами на шаге предварительных требований.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Выбор слота репликации" size="lg" border />
 
-#### Расширенная настройка {#advanced-settings}
+#### Расширенная настройка
 
     При необходимости вы можете выполнить расширенную настройку. Краткое описание каждой настройки приведено ниже:
 
@@ -132,7 +132,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
     * **Snapshot number of rows per partition**: количество строк, которые будут извлекаться в каждой партиции во время первоначального снимка. Это полезно, когда в ваших таблицах много строк и вы хотите контролировать количество строк, извлекаемых в каждой партиции.
     * **Snapshot number of tables in parallel**: количество таблиц, которые будут извлекаться параллельно во время первоначального снимка. Это полезно, когда у вас много таблиц и вы хотите контролировать количество таблиц, извлекаемых параллельно.
 
-### Настройка таблиц {#configuring-the-tables}
+### Настройка таблиц
 
     6. Здесь вы можете выбрать базу данных назначения для вашего ClickPipe. Можно либо выбрать существующую базу данных, либо создать новую.
 
@@ -146,13 +146,13 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     8. <SettingPartitionBy />
 
-### Проверьте разрешения и запустите ClickPipe {#review-permissions-and-start-the-clickpipe}
+### Проверьте разрешения и запустите ClickPipe
 
     9. Выберите роль &quot;Full access&quot; в выпадающем списке разрешений и нажмите &quot;Complete Setup&quot;.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Проверка разрешений" size="lg" border />
 
-## Что дальше? {#whats-next}
+## Что дальше?
 
     После того как вы настроили ClickPipe для репликации данных из PostgreSQL в ClickHouse Cloud, можно сосредоточиться на том, как выполнять запросы к данным и моделировать их для достижения оптимальной производительности. Обратитесь к [руководству по миграции](/ru/get-started/migrate/postgres/overview), чтобы оценить, какая стратегия лучше всего соответствует вашим требованиям, а также к страницам [Стратегии дедупликации (с использованием CDC)](/ru/integrations/clickpipes/postgres/deduplication) и [Ключи сортировки](/ru/integrations/clickpipes/postgres/ordering-keys), где описаны лучшие практики для рабочих нагрузок CDC.
 

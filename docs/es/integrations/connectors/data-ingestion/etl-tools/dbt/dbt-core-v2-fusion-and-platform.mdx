@@ -71,7 +71,7 @@ Las tablas siguientes comparan las funcionalidades disponibles en `dbt-clickhous
 
 <Badge color="green">compatible</Badge> funciona actualmente · <Badge color="yellow">parcial</Badge> funciona con limitaciones · <Badge color="red">Aún no</Badge> implementación pendiente.
 
-### Materializaciones {#parity-materializations}
+### Materializaciones
 
 | Funcionalidad                                  | Qué hace                                                                                  | dbt v2                                  | Notas                                                                                                                                                   |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ Las tablas siguientes comparan las funcionalidades disponibles en `dbt-clickhous
 | `ephemeral`                                    | CTE en línea; no se crea ningún objeto.                                                   | <Badge color="green">Compatible</Badge> |                                                                                                                                                         |
 | `distributed_table`, `distributed_incremental` | Tablas segmentadas tras un motor Distributed.                                             | <Badge color="red">Aún no</Badge>       |                                                                                                                                                         |
 
-### Configuración del modelo {#parity-model-configuration}
+### Configuración del modelo
 
 | Característica                                   | Qué hace                                                                 | dbt v2                                  | Notas |
 | ------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------- | ----- |
@@ -97,7 +97,7 @@ Las tablas siguientes comparan las funcionalidades disponibles en `dbt-clickhous
 | Evolución del esquema en modelos incrementales   | `on_schema_change` añade o sincroniza columnas.                          | <Badge color="green">Compatible</Badge> |       |
 | `codec` y `ttl` de columna                       | Compresión y expiración por columna.                                     | <Badge color="green">Compatible</Badge> |       |
 
-### Pruebas y documentación {#parity-testing-and-docs}
+### Pruebas y documentación
 
 | Funcionalidad                                 | Qué hace                                               | dbt v2                                  | Notas                                                                                                                                                                                                                                                                  |
 | --------------------------------------------- | ------------------------------------------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -107,7 +107,7 @@ Las tablas siguientes comparan las funcionalidades disponibles en `dbt-clickhous
 | Generación del catálogo y de la documentación | Metadatos de columnas para el sitio de documentación.  | <Badge color="green">Compatible</Badge> |                                                                                                                                                                                                                                                                        |
 | Linaje a nivel de columna                     | Rastrea las columnas a través del DAG.                 | <Badge color="yellow">Parcial</Badge>   | Novedad en v2 mediante el compilador de SQL; no está disponible en v1. El linaje de la plataforma dbt solo se muestra si el entrecomillado de identificadores está desactivado en `dbt_project.yml`; el linaje del lado del motor requiere el dialecto ClickHouse SQL. |
 
-### Cluster y Cloud {#parity-cluster-and-cloud}
+### Cluster y Cloud
 
 | Característica                             | Qué hace                                                                                  | dbt v2                                  | Notas                                                                                                                                                                                                                                                         |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -118,7 +118,7 @@ Las tablas siguientes comparan las funcionalidades disponibles en `dbt-clickhous
 | Configuraciones de conexión personalizadas | `custom_settings` a nivel de profile.                                                     | <Badge color="green">Compatible</Badge> |                                                                                                                                                                                                                                                               |
 | Versión del servidor ClickHouse            | Versión mínima del servidor.                                                              | <Badge color="green">Compatible</Badge> | 25.3+ en ambos motores. Para leer columnas `UUID` en v2 se requiere 26.7+ (los servidores anteriores no pueden convertir `UUID` a Arrow).                                                                                                                     |
 
-### Macros y operaciones {#parity-macros-and-operations}
+### Macros y operaciones
 
 | Funcionalidad                           | Qué hace                                                                    | dbt v2                                  | Notas                                                             |
 | --------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------- |
@@ -130,7 +130,7 @@ Las tablas siguientes comparan las funcionalidades disponibles en `dbt-clickhous
 | `query-comment`                         | Configuración del comentario de la consulta.                                | <Badge color="red">Aún no</Badge>       | Todavía no se respeta `query-comment: null`.                      |
 | Integración con catálogos (Iceberg)     | Materializar en catálogos externos.                                         | <Badge color="red">Aún no</Badge>       | Tampoco está en v1; existen soluciones alternativas documentadas. |
 
-### Conectividad y autenticación {#parity-connectivity-and-auth}
+### Conectividad y autenticación
 
 | Funcionalidad                       | Qué hace                                                                                                      | dbt v2                                  | Notas                                                               |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------- |

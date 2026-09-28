@@ -347,7 +347,7 @@ doc_type: 'changelog'
 ## バグ修正 {#bug-fixes}
 
 <Accordion title="すべてのバグ修正（クリックして展開）">
-  ### JOINの修正 {#join-fixes}
+  ### JOINの修正
 
   * 旧アナライザで、非標準の識別子の別名を使用した JOIN においてカラムが欠落する問題を修正しました。[#95679](https://github.com/ClickHouse/ClickHouse/pull/95679) ([Zhigao Hong](https://github.com/zghong)).
   * 非等値 JOIN で `grace_hash` アルゴリズムを使用し、JOIN結果のサイズ制約により左側のブロックを完全に処理できなかった場合に、誤った結果が返る問題を修正しました。[#97866](https://github.com/ClickHouse/ClickHouse/pull/97866) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
@@ -367,7 +367,7 @@ doc_type: 'changelog'
   * `grace_hash` join algorithm で `ORDER BY` を使用するクエリで、行の並び順が誤る不具合を修正しました。この不具合により、誤った出力が気付かれないまま生成される可能性がありました。[#102036](https://github.com/ClickHouse/ClickHouse/pull/102036) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
   * `max_bytes_in_join` が設定されている場合に、`RIGHT JOIN` および `FULL JOIN` クエリで発生する可能性があった `LOGICAL_ERROR` (Unexpected size of index type) を修正しました。[#102042](https://github.com/ClickHouse/ClickHouse/pull/102042) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
 
-  ### クエリとアナライザの修正 {#query-and-analyzer-fixes}
+  ### クエリとアナライザの修正
 
   * 完全修飾されていない場合に Alias table のターゲットが DDL 依存関係として保存される際、session database ではなく Alias table database に保存されるよう修正しました。[#95175](https://github.com/ClickHouse/ClickHouse/pull/95175) ([Enric Calabuig](https://github.com/eclbg)).
   * 遅延マテリアライゼーションによって返される不要なカラムが原因で発生していた `Block structure mismatch in stream` エラーを修正しました。[#96682](https://github.com/ClickHouse/ClickHouse/pull/96682) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
@@ -447,7 +447,7 @@ doc_type: 'changelog'
   * 新しいアナライザで、ROW POLICY の OR 連鎖を `IN` に最適化しました。[#102915](https://github.com/ClickHouse/ClickHouse/pull/102915) ([Azat Khuzhin](https://github.com/azat)).
   * `N` が `UInt8` より大きい整数型 (例: `256`、`65535`、`2147483648`、または任意の負の整数) である場合に、`MergeTree` テーブル上の `WHERE x AND toNullable(N)` が誤った結果を返す問題を修正しました。[#103077](https://github.com/ClickHouse/ClickHouse/pull/103077) ([Groene AI](https://github.com/groeneai)).
 
-  ### MergeTree とストレージの修正 {#mergetree-and-storage-fixes}
+  ### MergeTree とストレージの修正
 
   * detaching と attaching の間に複数の連続したリネームがある場合に、MergeTree でパーツをアタッチすると論理エラーが発生していた問題を修正しました。 [#96351](https://github.com/ClickHouse/ClickHouse/pull/96351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * 複数の圧縮コーデックを使用した際に、compact な MergeTree パーツで `uncompressed_hash` の計算が非決定論的になり、不正な重複排除動作を引き起こす可能性があった問題を修正しました。 [#97522](https://github.com/ClickHouse/ClickHouse/pull/97522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -499,7 +499,7 @@ doc_type: 'changelog'
   * サブキュー間でエビクション統計が共有されていたことと、失敗した候補に対する誤った復旧パスが原因で、SLRU ファイルシステムキャッシュの動的リサイズ中に `LOGICAL_ERROR` で中断していた問題を修正しました。[#102396](https://github.com/ClickHouse/ClickHouse/pull/102396) ([Antonio Andelic](https://github.com/antonio2368)).
   * 論理削除の後に、`minmax_count_projection` と単純な `COUNT(*)` 最適化が恒久的に無効化される問題を修正しました。[#102900](https://github.com/ClickHouse/ClickHouse/pull/102900) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### データ型とシリアライゼーションの修正 {#data-type-and-serialization-fixes}
+  ### データ型とシリアライゼーションの修正
 
   * ALIAS カラムのサブカラムの読み取り時に、誤った結果が返されたり例外が発生したりする問題を修正しました。[#95408](https://github.com/ClickHouse/ClickHouse/pull/95408) ([Pavel Kruglov](https://github.com/Avogar)).
   * `Nullable(Tuple)` の導入後、`sumCount` 集約関数が古いシリアライズ済み状態を読み取れなくなっていた問題を修正しました。[#97502](https://github.com/ClickHouse/ClickHouse/pull/97502) ([Nihal Z. Miaji](https://github.com/nihalzp)).
@@ -558,7 +558,7 @@ doc_type: 'changelog'
   * `Nullable(DateTime)` への `CAST` で `cast_string_to_date_time_mode` が無視される問題を修正しました。[#103035](https://github.com/ClickHouse/ClickHouse/pull/103035) ([Pavel Kruglov](https://github.com/Avogar)).
   * レプリケートされたカラムおよびスパースカラムのシリアライゼーションにおける null 表現が、設定 (例: `format_tsv_null_representation`) を反映するようにしました。[#102888](https://github.com/ClickHouse/ClickHouse/pull/102888) ([Hechem Selmi](https://github.com/m-selmi)).
 
-  ### テキスト索引とスキップ索引の修正 {#text-index-and-skip-index-fixes}
+  ### テキスト索引とスキップ索引の修正
 
   * テキスト索引を他のスキップ索引と併用した際の不具合を修正しました。以前は、クエリのフィルターでテキスト索引と通常のスキップ索引を同時に使用すると、&quot;Trying to get non-existing mark&quot; のような論理エラーが発生することがありました。[#98555](https://github.com/ClickHouse/ClickHouse/pull/98555) ([Anton Popov](https://github.com/CurtizJ)).
   * 有効期限 (TTL) を伴うマージ時のテキスト索引の再構築を修正しました。[#99107](https://github.com/ClickHouse/ClickHouse/pull/99107) ([Anton Popov](https://github.com/CurtizJ)).
@@ -579,7 +579,7 @@ doc_type: 'changelog'
   * `compatibility` 設定が 26.1 より古いバージョンを指している場合でも、フルテキスト索引の設定 (`enable_full_text_index`、`allow_experimental_full_text_index`、`use_skip_indexes_on_data_read`) が無効化されなくなりました。[#102422](https://github.com/ClickHouse/ClickHouse/pull/102422) ([Nikita Fomichev](https://github.com/fm4v)).
   * テキスト索引の direct read 最適化で、`ALIAS` カラムのサポートを追加しました。[#103037](https://github.com/ClickHouse/ClickHouse/pull/103037) ([Anton Popov](https://github.com/CurtizJ)).
 
-  ### データレイクの修正 {#data-lake-fixes}
+  ### データレイクの修正
 
   * `DeltaLake` テーブルエンジンで、スナップショットのバージョン変更時に発生する競合状態を修正し、不要で高コストなスナップショットの再読み込みを削除しました。 [#96226](https://github.com/ClickHouse/ClickHouse/pull/96226) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * 名前にドットを含む struct フィールドがあり、カラムマッピング &quot;name&quot; モードを使用する Delta Lake テーブルの読み取り時に発生していた `DUPLICATE_COLUMN` 例外と、NULL が黙って返される問題を修正しました。 [#98013](https://github.com/ClickHouse/ClickHouse/pull/98013) ([Caio Ishizaka Costa](https://github.com/ch-caioishizaka)).
@@ -605,7 +605,7 @@ doc_type: 'changelog'
   * `system.delta_lake_metadata_log` および `system.iceberg_metadata_log` に、不足していた `hostname` カラムを追加しました。[#102162](https://github.com/ClickHouse/ClickHouse/pull/102162) ([Michael Russell](https://github.com/Crazybus)) 。
   * Array 型に対する CoalescingMergeTree の不具合を修正しました。[#102384](https://github.com/ClickHouse/ClickHouse/pull/102384) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
 
-  ### S3/Azure/オブジェクトストレージの修正 {#s3-azure-object-storage-fixes}
+  ### S3/Azure/オブジェクトストレージの修正
 
   * `CachedOnDiskReadBufferFromFile::readBigAt` で発生する例外を修正しました。[#97890](https://github.com/ClickHouse/ClickHouse/pull/97890) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * glob パターンを使ってファイルをクエリした際 (例: `file('dir/**', 'LineAsString')`) 、ディレクトリにリンク切れのシンボリックリンクが含まれていると、未処理の filesystem 例外によりクラッシュする問題を修正しました。リンク切れのシンボリックリンクは現在は黙ってスキップされます。[#98143](https://github.com/ClickHouse/ClickHouse/pull/98143) ([Mark Andreev](https://github.com/mrk-andreev)).
@@ -622,12 +622,12 @@ doc_type: 'changelog'
   * 再接続時に host とポート が正しく記録されない問題を修正しました。[#102280](https://github.com/ClickHouse/ClickHouse/pull/102280) ([Grant Holly](https://github.com/grantholly-clickhouse)).
   * 静的クラスター (config で定義) が一時的に稼働中のノードを持たなくなった場合に、ClusterDiscovery で server 例外が発生する問題を修正しました。[#102661](https://github.com/ClickHouse/ClickHouse/pull/102661) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
-  ### S3Queue の修正 {#s3queue-fixes}
+  ### S3Queue の修正
 
   * S3Queue: ZooKeeper 接続が失われた後でも commit が成功した場合に発生していた failed assert を修正しました。[#100210](https://github.com/ClickHouse/ClickHouse/pull/100210) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * `system.s3_queue_settings` と `system.azure_queue_settings` の `alterable` カラムの説明文が逆になっていた問題を修正しました。実際のコードの動作に合わせて、`0` と `1` の意味を入れ替えました。[#101703](https://github.com/ClickHouse/ClickHouse/pull/101703) ([ClickGap AI Bot](https://github.com/clickgapai)).
 
-  ### セキュリティとアクセス制御の修正 {#security-and-access-control-fixes}
+  ### セキュリティとアクセス制御の修正
 
   * `loop` table function が `inner_storage->read()` を直接呼び出し、行ポリシーやカラム単位の権限付与、その他のセキュリティチェックが適用されるインタープリタ層をバイパスしていた問題を修正しました。これにより、行ポリシーで制限されているユーザーでも `loop(table)` を使ってすべての行を読み取ることができていました。 [#97682](https://github.com/ClickHouse/ClickHouse/pull/97682) ([pufit](https://github.com/pufit)).
   * scalar `file()` および `DESCRIBE TABLE file()` に対して `READ ON FILE` チェックを強制するようにしました。 [#98115](https://github.com/ClickHouse/ClickHouse/pull/98115) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -645,14 +645,14 @@ doc_type: 'changelog'
   * 一部のカタログでは、`SELECT * FROM system.databases` の `SETTINGS` セクションにシークレットが表示される可能性がありました。現在は表示されないようになっています。[#100800](https://github.com/ClickHouse/ClickHouse/pull/100800) ([Konstantin Vedernikov](https://github.com/scanhex12)).
   * 行ポリシーがログ出力のためにサブプランナーから親プランナーへ引き継がれていなかったため、ビュー、サブクエリ、insert-select の `query_log` に記録されていませんでした。現在は、ログ出力用に `QueryAccessInfo` 内に保持されるようになりました。[#101044](https://github.com/ClickHouse/ClickHouse/pull/101044) ([Narasimha Pakeer](https://github.com/npakeer)).
 
-  ### バックアップと復元の修正 {#backup-and-restore-fixes}
+  ### バックアップと復元の修正
 
   * バックアップ/リストアで `max_execution_time` が適用されない問題を修正しました。[#99205](https://github.com/ClickHouse/ClickHouse/pull/99205) ([Kseniia Sumarokova](https://github.com/kssenii)).
   * zip アーカイブを使用したバックアップ/リストア操作で発生していた `ReadBuffer is canceled. Can't read from it.` 例外を修正しました。[#100400](https://github.com/ClickHouse/ClickHouse/pull/100400) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
   * バックアップのメタデータ内のファイルエントリのパスを検証し、`RESTORE` 時にパストラバーサル、絶対パス、空の名前を受け付けないようにしました。[#100483](https://github.com/ClickHouse/ClickHouse/pull/100483) ([Pablo Marcos](https://github.com/pamarcos)).
   * `BACKUP FROM SNAPSHOT` の AST のフォーマットとクローン処理を修正しました。[#101405](https://github.com/ClickHouse/ClickHouse/pull/101405) ([Pablo Marcos](https://github.com/pamarcos)).
 
-  ### ClickHouse Keeper の修正 {#clickhouse-keeper-fixes}
+  ### ClickHouse Keeper の修正
 
   * send thread と receive thread の間で発生していた ZooKeeper client の data race を修正しました。[#97887](https://github.com/ClickHouse/ClickHouse/pull/97887) ([Pablo Marcos](https://github.com/pamarcos)).
   * ログストレージに `s3_plain` メタデータを使用している場合に、Azure Blob Storage 利用時の再起動後に Keeper でデータが失われる問題を修正しました。[#97987](https://github.com/ClickHouse/ClickHouse/pull/97987) ([Antonio Andelic](https://github.com/antonio2368)).
@@ -670,7 +670,7 @@ doc_type: 'changelog'
   * 定期的な refresh 中に ZooKeeper session の有効期限が切れた際、UDF registry が失われる問題を修正しました。これにより、full refresh が成功するまで、すべてのユーザー定義関数が利用できなくなる可能性がありました。[#101891](https://github.com/ClickHouse/ClickHouse/pull/101891) ([Nikita Fomichev](https://github.com/fm4v)).
   * 期限切れで古くなった ZooKeeper session を更新せずに `ZooKeeperRetriesControl` が再試行することで、UDF refresh でクラッシュが発生する問題を修正しました。[#102059](https://github.com/ClickHouse/ClickHouse/pull/102059) ([Nikita Fomichev](https://github.com/fm4v)).
 
-  ### クラッシュおよび安定性の修正 {#crash-and-stability-fixes}
+  ### クラッシュおよび安定性の修正
 
   * 空の引数が指定された場合に、Kusto dialect 関数 `bin()`, `bin_at()`, `extract()`, `indexof()` で発生していたクラッシュを修正しました。 [#95736](https://github.com/ClickHouse/ClickHouse/pull/95736) ([NeedmeFordev](https://github.com/spider-yamet)).
   * `tokenbf_v1` スキップ索引を使用した `mapContainsKey`/`mapContainsKeyLike` で発生していたサーバークラッシュ / assert を修正しました。 [#97826](https://github.com/ClickHouse/ClickHouse/pull/97826) ([Shankar Iyer](https://github.com/shankar-iyer)).
@@ -729,7 +729,7 @@ doc_type: 'changelog'
   * schema inference 中に `std::length_error` が throw された場合に、debug/sanitizer builds で発生する server crash を修正しました。 [#102859](https://github.com/ClickHouse/ClickHouse/pull/102859) ([Groene AI](https://github.com/groeneai)).
   * inner query が view のメタデータと異なる型のカラムを生成する場合 (たとえば、`join_use_nulls` を伴う `LEFT JOIN` による `Nullable`) に、`WHERE` clause を持つ view の使用時に発生するクラッシュを修正しました。 [#102085](https://github.com/ClickHouse/ClickHouse/pull/102085) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 
-  ### その他のバグ修正 {#other-bug-fixes}
+  ### その他のバグ修正
 
   * 同じリクエストで `compatibility` と一緒に送信された明示的な設定について、値がサーバーのデフォルト値と一致していると暗黙に無視されることがあった不具合を修正しました。[#97078](https://github.com/ClickHouse/ClickHouse/pull/97078) ([Raufs Dunamalijevs](https://github.com/rienath)).
   * 並列パースを伴う INSERT が無効なデータに遭遇した際、client が実際のパースエラー (正しい行番号付き) ではなく `NETWORK_ERROR` を報告していた不具合を修正しました。[#97339](https://github.com/ClickHouse/ClickHouse/pull/97339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

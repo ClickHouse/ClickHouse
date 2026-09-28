@@ -59,7 +59,7 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
       Les buckets de stockage, le cluster Kubernetes et les ressources de calcul nécessaires à l’exécution de ClickHouse ne sont pas inclus dans cette configuration initiale. Ils seront provisionnés à une étape ultérieure. Même si vous contrôlez votre VPC, ClickHouse Cloud a toujours besoin d’autorisations IAM pour créer et gérer le cluster Kubernetes, les rôles IAM pour les comptes de service, les buckets S3 et d’autres ressources essentielles dans votre compte AWS.
     </Note>
 
-#### Module Terraform {#terraform-module-aws}
+#### Module Terraform
 
     Si vous préférez utiliser Terraform plutôt que CloudFormation, utilisez le module [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
 
