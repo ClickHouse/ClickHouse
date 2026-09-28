@@ -1,4 +1,2 @@
-every worker names the table it read
-1
-and the database, and the columns it read
+every worker of the probe names the table, the database and the column it read
 1

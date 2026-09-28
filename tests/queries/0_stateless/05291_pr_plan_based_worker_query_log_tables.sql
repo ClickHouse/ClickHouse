@@ -21,23 +21,24 @@ SELECT sum(a) FROM t_pr_worker_access FORMAT Null SETTINGS log_comment = 'pr_wor
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'every worker names the table it read';
-SELECT count() > 0 AND countIf(NOT has(tables, currentDatabase() || '.t_pr_worker_access')) = 0
-FROM system.query_log
-WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
-  AND initial_query_id IN (
-      SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND is_initial_query = 1 AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = 'pr_worker_access_probe');
-
 -- The columns are the read step's own list, which is what this node was asked to read.
-SELECT 'and the database, and the columns it read';
-SELECT countIf(NOT has(databases, currentDatabase())) = 0 AND countIf(NOT has(columns, currentDatabase() || '.t_pr_worker_access.a')) = 0
+-- Pinned to the latest probe within a short window, so a run in a reused database never reads the
+-- worker rows of an earlier one.
+SELECT 'every worker of the probe names the table, the database and the column it read';
+WITH (
+    SELECT argMax(query_id, event_time_microseconds)
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND is_initial_query = 1
+      AND event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE
+      AND current_database = currentDatabase() AND log_comment = 'pr_worker_access_probe'
+) AS probe_query_id
+SELECT count() > 0
+   AND countIf(NOT has(tables, currentDatabase() || '.t_pr_worker_access')) = 0
+   AND countIf(NOT has(databases, currentDatabase())) = 0
+   AND countIf(NOT has(columns, currentDatabase() || '.t_pr_worker_access.a')) = 0
 FROM system.query_log
-WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
-  AND initial_query_id IN (
-      SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND is_initial_query = 1 AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = 'pr_worker_access_probe');
+WHERE type = 'QueryFinish' AND is_initial_query = 0
+  AND event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE
+  AND initial_query_id = probe_query_id;
 
 DROP TABLE t_pr_worker_access SYNC;

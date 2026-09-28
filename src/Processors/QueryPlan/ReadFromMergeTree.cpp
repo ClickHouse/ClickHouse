@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Common/quoteString.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -7081,19 +7080,11 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} is not a MergeTree table", table_id.getNameForLogs());
 
-    /// A read that arrives as a shipped plan never goes through the planner, which is what records the
-    /// access info a locally planned read reports (`PlannerJoinTree.cpp`). Without this, the worker's
-    /// `system.query_log` row names nothing it read, so its work cannot be attributed. Only the receiver
-    /// deserializes, so the initiator's own read is not counted twice, and the id comes from the
-    /// resolved storage rather than from the names the plan carried, as the planner does. Recorded
-    /// after the `MergeTree` check, so a read about to be rejected is not reported.
-    ///
-    /// The columns are the ones this step reads. What the node was handed is a plan, and a plan states
-    /// its access in the read step, so that list - not the column set of the query that produced the
-    /// plan - is what this node actually read. It can differ from the initiator's, and for a read
-    /// rewritten before shipping (`replaceVectorColumnWithDistanceColumn`,
-    /// `useVectorSearchWithQuantizedCodes`) it should: the replica really did read `_distance` or the
-    /// quantized subcolumns.
+    /// A shipped plan is executed without the planner, which is what records the access info of a
+    /// locally planned read (`PlannerJoinTree.cpp`), so without this the worker's `system.query_log`
+    /// row names nothing it read. Only the receiver deserializes, so the initiator does not count its
+    /// own read twice. The columns are the read step's own: a plan states its access there, and that
+    /// can legitimately differ from the initiator's, as after `replaceVectorColumnWithDistanceColumn`.
     if (ctx.context->hasQueryContext())
         ctx.context->getQueryContext()->addQueryAccessInfo(storage_ptr->getStorageID(), column_names);
 
