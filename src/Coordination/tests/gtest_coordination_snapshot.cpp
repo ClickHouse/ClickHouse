@@ -2980,6 +2980,61 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesRecursiveRemoveOfHig
     EXPECT_EQ(conflict->subtree_root, "/a/b/missing");
 }
 
+/// Some request forms are rejected by their handlers before the tree is consulted, identically on every
+/// replica: `RemoveRecursive` of `/` or of the internal Keeper path returns `ZBADARGUMENTS`, and so does
+/// a recursive `ListWithOptions` with a watch. They must not block recovery even though their paths are
+/// ancestors of the removed subtree; a valid recursive `ListWithOptions` of the same path still does.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsRejectedRecursiveRequestsInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    auto make_remove_recursive = [](const std::string & path)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
+        request->path = path;
+        request->remove_nodes_limit = 100;
+        return request;
+    };
+    auto make_recursive_list = [](const std::string & path, bool has_watch)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->has_watch = has_watch;
+        request->options.recursive = true;
+        return request;
+    };
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive("/")));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(DB::keeper_system_path)));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ true)));
+    /// Control: the same recursive listing without a watch is valid and walks the pruned subtree.
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ false)));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 6);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::ListWithOptions));
+    EXPECT_EQ(conflict->request_path, "/");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
 /// `Close` carries no path, but the storage removes every ephemeral node the session owns and updates
 /// their parents' stats. When one of those ephemerals was pruned from the snapshot, other replicas
 /// still remove it on `Close` while we have nothing to remove -- the tail must be refused.

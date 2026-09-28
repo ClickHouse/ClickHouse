@@ -375,6 +375,25 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         {
             const auto path = request.getPath();
 
+            /// Some request forms are rejected by their handlers before the tree is consulted, on every
+            /// replica alike, so they change nothing and replay identically after orphan cleanup:
+            ///  - `RemoveRecursive` of `/` or of anything under the internal Keeper path returns
+            ///    `ZBADARGUMENTS` (`preprocess` for `ZooKeeperRemoveRecursiveRequest` in
+            ///    KeeperStorageImpl.cpp);
+            ///  - `ListWithOptions` with an unsupported options version (`ZUNIMPLEMENTED`), or recursive
+            ///    with a watch (`ZBADARGUMENTS`), in its `processLocal`.
+            /// Reporting their paths would turn a harmless tail entry such as `RemoveRecursive("/")` into
+            /// a false conflict with every removed subtree.
+            if (request.getOpNum() == OpNum::RemoveRecursive
+                && (path == "/" || Coordination::matchPath(path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH))
+                return true;
+            if (request.getOpNum() == OpNum::ListWithOptions)
+            {
+                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                if (lwo.options_version != Coordination::ListOptionsVersion::V1 || (lwo.options.recursive && lwo.has_watch))
+                    return true;
+            }
+
             /// `RemoveRecursive` walks and deletes the whole subtree (and compares its size against
             /// `remove_nodes_limit`), `ListRecursive` returns every descendant, and `Reconfig` rewrites
             /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
