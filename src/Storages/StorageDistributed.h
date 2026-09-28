@@ -66,6 +66,9 @@ public:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         LoadingStrictnessLevel mode,
+        /// Whether the sharding key comes from a definition the user supplies now, rather than from
+        /// stored metadata being replayed - see the constructor.
+        bool is_fresh_definition,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {},
         bool is_remote_function_ = false,
@@ -122,7 +125,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void initializeFromDisk();
     void shutdown(bool is_drop) override;
@@ -181,15 +184,7 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result) const;
-
-    ClusterPtr skipUnusedShards(
-        ClusterPtr cluster,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result,
-        const StorageSnapshotPtr & storage_snapshot,
-        ContextPtr context) const;
+        const SelectQueryInfo & query_info) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
         ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
@@ -210,7 +205,6 @@ private:
     ///
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
-    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;

@@ -1,8 +1,6 @@
 -- A parameterized-view parameter must be bound only by a top-level
 -- `identifier = <constant expression>` argument of the view call, identically on the
--- legacy-AST path (`enable_analyzer = 0`, `EXPLAIN SYNTAX`) and on the query-tree path.
--- Every statement pins `enable_analyzer` explicitly, because the `old analyzer` CI jobs
--- link `users.d/analyzer.xml` and would otherwise make the convergence rows vacuous.
+-- AST path that `EXPLAIN SYNTAX` still takes and on the query-tree path.
 
 DROP TABLE IF EXISTS 04648_t;
 DROP VIEW IF EXISTS 04648_pv;
