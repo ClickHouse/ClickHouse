@@ -77,7 +77,7 @@ public:
         ContextPtr context_,
         const Block & header_,
         size_t hash_functions_,
-        NameSet columns_shadowing_map_subcolumns_);
+        StorageMetadataPtr metadata_snapshot_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -94,7 +94,7 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
-    const NameSet columns_shadowing_map_subcolumns;
+    const StorageMetadataPtr metadata_snapshot;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
