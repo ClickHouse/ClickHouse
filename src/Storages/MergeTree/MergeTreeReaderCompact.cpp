@@ -98,7 +98,8 @@ void MergeTreeReaderCompact::fillColumnPositions()
             const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
             const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
             const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
-            if (!type_for_subcolumn->hasSubcolumn(subcolumn_name))
+            if (!part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name)
+                && !type_for_subcolumn->hasSubcolumn(subcolumn_name))
                 position.reset();
         }
 
@@ -300,15 +301,31 @@ void MergeTreeReaderCompact::readData(
                     if (columns_cache_for_subcolumns)
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
+                else if (temp_full_column->size() > rows_to_read)
+                {
+                    /// A full-column request caches the accumulated output. Extract shared paths only from this granule.
+                    temp_full_column = temp_full_column->cut(temp_full_column->size() - rows_to_read, rows_to_read);
+                    columns_cache_for_subcolumns->at(name_in_storage) = temp_full_column;
+                }
 
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
-                column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+                column.insertRangeFrom(*subcolumn, subcolumn->size() - rows_to_read, rows_to_read);
             }
         }
         else
         {
-            const auto & serialization = serializations[column_idx];
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
+            auto full_column = !has_substream_marks ? getFullColumnFromCache(columns_cache_for_subcolumns, name) : nullptr;
+            if (full_column)
+                column.insertRangeFrom(*full_column, full_column->size() - rows_to_read, rows_to_read);
+            else
+            {
+                const auto & serialization = serializations[column_idx];
+                auto & states = !has_substream_marks && !columns_for_offsets[column_idx]
+                    ? deserialize_binary_bulk_state_map_for_subcolumns : deserialize_binary_bulk_state_map;
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, states[name], substreams_cache);
+                if (!has_substream_marks && columns_cache_for_subcolumns)
+                    columns_cache_for_subcolumns->emplace(name, column.getPtr());
+            }
         }
 
         /// Cache the just-read column so other requested columns mapping to the same physical column in this
@@ -394,7 +411,8 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
-            if (column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+            if (part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), columns_to_read[index].name)
+                || column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
             {
                 subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
@@ -466,7 +484,17 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
         };
     }
 
-    if (column.isSubcolumn())
+    if (!has_substream_marks && !columns_for_offsets[column_idx])
+    {
+        /// Full-column and subcolumn requests share the same physical parent in this granule.
+        if (deserialize_binary_bulk_state_map_for_subcolumns.contains(name_in_storage))
+            return;
+
+        const auto & serialization = serializations_of_full_columns.at(name_in_storage);
+        auto & state = deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage];
+        readPrefix(column, serialization, state, buffer_getter, nullptr, check_stream_exists_callback);
+    }
+    else if (column.isSubcolumn())
     {
         if (has_substream_marks)
         {
