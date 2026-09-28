@@ -56,6 +56,20 @@ SELECT name, empty(partition_key) FROM system.tables WHERE database = currentDat
 
 DESCRIBE TABLE azureBlobStorage('http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', partition_strategy = 'none');
 
+-- Cluster queries pass `extra_credentials` on to the replicas, in both argument orders and when parallel replicas
+-- turn `azureBlobStorage` into a cluster query. The replicas then refuse to send its token over plain http.
+SELECT * FROM azureBlobStorageCluster('test_shard_localhost', 'http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', extra_credentials(client_id = 'x', tenant_id = 'y'), partition_strategy = 'none'); -- { serverError STD_EXCEPTION }
+SELECT * FROM azureBlobStorageCluster('test_shard_localhost', 'http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', partition_strategy = 'none', extra_credentials(client_id = 'x', tenant_id = 'y')); -- { serverError STD_EXCEPTION }
+SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', extra_credentials(client_id = 'x', tenant_id = 'y'), partition_strategy = 'none')
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3, parallel_replicas_for_cluster_engines = 1,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'; -- { serverError STD_EXCEPTION }
+SYSTEM FLUSH LOGS query_log;
+SELECT uniqExact(initial_query_id) FROM system.query_log
+WHERE event_date >= yesterday() AND NOT is_initial_query AND query LIKE '%extra_credentials(client_id%'
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query AND query LIKE '%extra_credentials(client_id%');
+
 -- Invalid key-value arguments.
 CREATE TABLE t_bad (id UInt64, v String)
 ENGINE = AzureBlobStorage('http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', format = 'CSV'); -- { serverError BAD_ARGUMENTS }

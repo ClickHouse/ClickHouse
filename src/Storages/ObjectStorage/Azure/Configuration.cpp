@@ -763,7 +763,8 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     }
     else
     {
-        /// The trailing key-value arguments are appended back after the positional ones.
+        /// `extra_credentials(...)` and the trailing key-value arguments are appended back after the positional ones.
+        auto extra_credentials = extractExtraCredentials(args);
         const size_t count = countPositionalArguments(args);
         ASTs key_value_args(args.begin() + count, args.end());
         args.resize(count);
@@ -913,6 +914,8 @@ static void addStructureAndFormatToArgsIfNeededAzure(
         }
 
         args.insert(args.end(), key_value_args.begin(), key_value_args.end());
+        if (extra_credentials)
+            args.push_back(extra_credentials);
     }
 }
 
