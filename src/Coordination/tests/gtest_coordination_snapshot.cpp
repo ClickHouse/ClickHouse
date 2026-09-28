@@ -3581,8 +3581,58 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCheckOfRemovedNodeIn
     EXPECT_EQ(conflict->subtree_root, "/a/missing");
 }
 
-/// `CheckStat` can compare `numChildren` and `cversion`, which do differ on the repaired direct parent,
-/// so unlike `Check` it is still refused there.
+/// A `CheckStat` that compares only fields orphan cleanup never changes (here `version`) replays
+/// identically on the repaired direct parent of a removed subtree, so it must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsVersionOnlyCheckStatOfRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    Coordination::Requests sub_requests;
+    auto check_stat_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_stat_request->path = "/a";
+    /// Only `version` is compared; `numChildren` and `cversion` are left at `-1`.
+    Coordination::Stat stat_to_check{-1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1};
+    check_stat_request->stat_to_check = stat_to_check;
+    sub_requests.push_back(check_stat_request);
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/other";
+    create_request->data = "created_after_check_stat";
+    sub_requests.push_back(create_request);
+    auto multi_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(sub_requests, Coordination::ACLs{});
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), multi_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/other"), "created_after_check_stat");
+}
+
+/// A `CheckStat` that compares `numChildren` or `cversion` observes exactly what differs on the
+/// repaired direct parent, so unlike `Check` it is still refused there.
 TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCheckStatOfRepairedParentInLogTail)
 {
     if (GetParam().use_lsmt_storage)

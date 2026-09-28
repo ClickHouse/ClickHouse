@@ -253,9 +253,9 @@ namespace
 enum class RequestPathKind
 {
     /// Only the node itself: whether it exists and stats that removing a subtree never touches (its
-    /// `version`, `mzxid`, `pzxid`, ACL). Orphan cleanup repairs only `numChildren` and the children set
-    /// of the removed root's direct parent, so such a request replays identically unless the node
-    /// itself was removed.
+    /// `version`, `mzxid`, `pzxid`, ACL, and anything else in `Stat` except `numChildren` and
+    /// `cversion`). Orphan cleanup repairs only `numChildren` and the children set of the removed
+    /// root's direct parent, so such a request replays identically unless the node itself was removed.
     NodeOnly,
     /// The node itself and its direct children: whether it exists, its data, version and ACL, and the
     /// `Stat` it reports (which carries `numChildren` and `cversion`) or an explicit children listing.
@@ -399,15 +399,22 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
             /// subtree anywhere below them changes the outcome. `ListWithOptions` can be recursive
             /// depending on its options. `Check` and `CheckNotExists` compare only the node's existence,
-            /// ACL and `version` (`CheckStat` can also compare `numChildren`/`cversion`, so it stays
-            /// broader). Everything else in this group resolves the node itself and at most its direct
-            /// children.
+            /// ACL and `version`. `CheckStat` compares exactly the fields of `stat_to_check` that are not
+            /// `-1` (`checkNodeStat` in KeeperStorageImpl.cpp), so it observes the children only when it
+            /// compares `numChildren` or `cversion`. Everything else in this group resolves the node
+            /// itself and at most its direct children.
             auto kind = RequestPathKind::NodeAndChildren;
             if (request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
                 || request.getOpNum() == OpNum::Reconfig)
                 kind = RequestPathKind::Subtree;
             else if (request.getOpNum() == OpNum::Check || request.getOpNum() == OpNum::CheckNotExists)
                 kind = RequestPathKind::NodeOnly;
+            else if (request.getOpNum() == OpNum::CheckStat)
+            {
+                const auto & check = dynamic_cast<const Coordination::ZooKeeperCheckRequest &>(request);
+                if (check.stat_to_check && check.stat_to_check->numChildren == -1 && check.stat_to_check->cversion == -1)
+                    kind = RequestPathKind::NodeOnly;
+            }
             if (request.getOpNum() == OpNum::ListWithOptions)
             {
                 const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
