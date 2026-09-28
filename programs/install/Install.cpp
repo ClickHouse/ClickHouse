@@ -581,6 +581,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// False if the main config has `user_directories` without `users_xml` and no `users_config`,
         /// so the server does not read users from any XML file.
         bool has_users_xml_config = true;
+        /// All XML users configs the server reads users from, in the order it looks up users in them.
+        std::vector<fs::path> users_config_files;
 
         if (!fs::exists(config_d))
         {
@@ -697,52 +699,59 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path.string());
             }
 
-            /// Find the users config the same way as `AccessControl::addStoragesFromMainConfig` does.
-            /// If there are several XML users storages, inspect the first one, as it is the first one added by the server.
-            fs::path configured_users_config = configuration->getString("users_config", "");
-            if (configured_users_config.empty())
+            /// Find the XML users configs in the same order as `AccessControl::addStoragesFromMainConfig` adds them.
+            /// The first one is where the password for the default user is written to.
+            auto resolve_users_config_path = [&](fs::path path)
             {
-                if (configuration->has("user_directories"))
-                {
-                    Poco::Util::AbstractConfiguration::Keys keys_in_user_directories;
-                    configuration->keys("user_directories", keys_in_user_directories);
-                    for (const auto & key_in_user_directories : keys_in_user_directories)
-                    {
-                        /// Same type names as in `AccessControl::addStoragesFromUserDirectoriesConfig`.
-                        std::string type = key_in_user_directories;
-                        if (size_t bracket_pos = type.find('['); bracket_pos != std::string::npos)
-                            type.resize(bracket_pos);
-                        if (type == "users_xml" || type == "users.xml" || type == "users_config")
-                        {
-                            configured_users_config = configuration->getString("user_directories." + key_in_user_directories + ".path");
-                            break;
-                        }
-                    }
+                if (path.is_relative())
+                    path = (config_dir / path).lexically_normal();
+                return path;
+            };
 
-                    if (configured_users_config.empty())
-                        has_users_xml_config = false;
-                }
-                else
-                    configured_users_config = main_config_file;
-            }
-
-            if (has_users_xml_config)
+            auto add_users_config = [&](const fs::path & path)
             {
-                if (configured_users_config.is_relative())
-                    configured_users_config = (config_dir / configured_users_config).lexically_normal();
+                if (std::find(users_config_files.begin(), users_config_files.end(), path) == users_config_files.end())
+                    users_config_files.push_back(path);
+            };
 
-                if (configured_users_config != users_config_file)
+            bool has_user_directories = configuration->has("user_directories");
+            std::string configured_users_config = configuration->getString("users_config", "");
+            if (!configured_users_config.empty())
+                add_users_config(resolve_users_config_path(configured_users_config));
+            else if (!has_user_directories)
+                add_users_config(main_config_file);
+
+            if (has_user_directories)
+            {
+                Poco::Util::AbstractConfiguration::Keys keys_in_user_directories;
+                configuration->keys("user_directories", keys_in_user_directories);
+                for (const auto & key_in_user_directories : keys_in_user_directories)
                 {
-                    users_config_file = configured_users_config;
-                    users_d = fs::path(users_config_file).replace_extension("d");
-                    fmt::print("{} has {} as users config.\n", main_config_file.string(), users_config_file.string());
+                    /// Same type names as in `AccessControl::addStoragesFromUserDirectoriesConfig`.
+                    std::string type = key_in_user_directories;
+                    if (size_t bracket_pos = type.find('['); bracket_pos != std::string::npos)
+                        type.resize(bracket_pos);
+                    if (type == "users_xml" || type == "users.xml" || type == "users_config")
+                        add_users_config(resolve_users_config_path(
+                            configuration->getString("user_directories." + key_in_user_directories + ".path")));
                 }
             }
-            else
+
+            if (users_config_files.empty())
             {
+                has_users_xml_config = false;
                 fmt::print("{} does not use an XML users config.\n", main_config_file.string());
             }
+            else if (users_config_files.front() != users_config_file)
+            {
+                users_config_file = users_config_files.front();
+                users_d = fs::path(users_config_file).replace_extension("d");
+                fmt::print("{} has {} as users config.\n", main_config_file.string(), users_config_file.string());
+            }
         }
+
+        if (users_config_files.empty() && has_users_xml_config)
+            users_config_files.push_back(users_config_file);
 
         if (has_users_xml_config && !fs::exists(users_d))
         {
@@ -774,21 +783,26 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
 
-            /// Check if password for the default user already specified.
-            ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-            ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+            /// The server looks up the default user in the XML users configs in order and uses the first one that defines it,
+            /// so check whether it is defined anywhere and whether its first definition has a password.
+            is_default_user_removed = true;
+            for (const auto & path : users_config_files)
+            {
+                if (!fs::exists(path))
+                    continue;
 
-            if (!configuration->has("users.default"))
-            {
-                /// The default user was explicitly removed, e.g. via `<default remove="1" />` in users.d.
-                /// There is no user to set up a password for.
-                is_default_user_removed = true;
-            }
-            else if (!configuration->getString("users.default.password", "").empty()
-                || !configuration->getString("users.default.password_sha256_hex", "").empty()
-                || !configuration->getString("users.default.password_double_sha1_hex", "").empty())
-            {
-                has_password_for_default_user = true;
+                ConfigProcessor processor(path.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+                /// The default user may be explicitly removed, e.g. via `<default remove="1" />` in users.d.
+                if (!configuration->has("users.default"))
+                    continue;
+
+                is_default_user_removed = false;
+                has_password_for_default_user = !configuration->getString("users.default.password", "").empty()
+                    || !configuration->getString("users.default.password_sha256_hex", "").empty()
+                    || !configuration->getString("users.default.password_double_sha1_hex", "").empty();
+                break;
             }
         }
 
