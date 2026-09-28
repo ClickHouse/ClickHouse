@@ -504,7 +504,8 @@ void WorkloadResourceManager::applyResourceLimitLocked(
     // separate MASTER and WORKER resources) cannot carry one shared budget without double-counting it,
     // so the setting has no effect for that unsupported configuration: roots stay unlimited and no
     // implicit resource is created.
-    const bool supported = operator_resources.size() <= 1;
+    const bool supported = operator_resources.empty()
+        || (operator_resources.size() == 1 && operator_resources.front()->coversAllModes(implicit_modes));
     if (enabled && supported)
     {
         // An operator-declared resource takes precedence: drop the auto-created one if both exist.
@@ -641,6 +642,26 @@ void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resour
     chassert(getEntityName(new_resource_entity) == resource_name);
     chassert(getResourceUnit(new_resource_entity) == unit); // resource unit cannot be changed
     resource_entity = new_resource_entity;
+}
+
+bool WorkloadResourceManager::Resource::coversAllModes(const std::vector<ResourceAccessMode> & required) const
+{
+    const auto * create = assert_cast<const ASTCreateResourceQuery *>(resource_entity.get());
+    for (auto mode : required)
+    {
+        bool found = false;
+        for (const auto & operation : create->operations)
+        {
+            if (operation.mode == mode)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return false;
+    }
+    return true;
 }
 
 void WorkloadResourceManager::Resource::setImplicitRootLimit(const WorkloadSettings & root_settings)

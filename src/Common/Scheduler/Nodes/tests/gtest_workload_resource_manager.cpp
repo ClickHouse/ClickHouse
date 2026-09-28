@@ -2780,6 +2780,32 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitSplitResourceNoEffect)
     EXPECT_FALSE(any_root_semaphore);
 }
 
+// A single CPU resource covering only one role (here MASTER THREAD) cannot carry the combined
+// MASTER+WORKER budget, so the configuration is unsupported and the setting has no effect: no
+// implicit resource is created and the operator root is not capped.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialResourceNoEffect)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    bool root_semaphore = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == "cpu_master" && path == "/semaphore")
+            root_semaphore = true;
+    });
+    EXPECT_FALSE(root_semaphore);
+}
+
 // Hot-reload: the CPU budget moves finite -> unlimited -> finite in place (the resource is kept for
 // the enabled lifetime), and disabling removes the auto-created resource.
 TEST(SchedulerWorkloadResourceManager, ServerCPULimitHotReload)

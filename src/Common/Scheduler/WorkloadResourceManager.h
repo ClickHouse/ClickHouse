@@ -177,6 +177,11 @@ private:
         const String & getName() const { return resource_name; }
         CostUnit getUnit() const { return unit; }
 
+        /// True if this resource's declared access modes cover every mode in `required`. Used to
+        /// decide whether a single operator resource can carry a combined server-limit budget (e.g. a
+        /// CPU resource must cover both MASTER THREAD and WORKER THREAD).
+        bool coversAllModes(const std::vector<ResourceAccessMode> & required) const;
+
         /// Hierarchy management
         void createNode(const NodeInfo & info);
         void deleteNode(const NodeInfo & info);
