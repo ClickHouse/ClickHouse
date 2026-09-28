@@ -25,11 +25,16 @@ class IAsynchronousReader;
 class IBackup;
 class LongConnectionLimit;
 class EncryptionHeaderCache;
+class QueryStatus;
 struct AsyncReadCounters;
 
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
+
+/// Cached: `getLogger` takes a process-global mutex, and a read pipeline is built per read buffer.
+LoggerPtr getReadPipelineLogger();
 
 /// ReadPipeline: a declarative specification for creating a read buffer chain.
 ///
@@ -238,7 +243,7 @@ private:
     /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
-    LoggerPtr log = getLogger("ReadPipeline");
+    LoggerPtr log = getReadPipelineLogger();
 
     /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`). Returns nullptr when the
     /// setting is off, the source variant is not supported, or a stage the executor cannot handle is
@@ -256,8 +261,9 @@ private:
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.
-    /// `query_id` is captured once on the calling thread before any stage runs.
-    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
+    /// `query_id` and `query_status` are captured once on the calling thread before any stage runs.
+    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(
+        const std::string & query_id, const QueryStatusPtr & query_status) const;
     std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;

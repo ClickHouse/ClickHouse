@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- make_distributed_plan auto-disables use_skip_indexes_on_data_read and compile_expressions
 -- (issue #109476), including on worker tasks, whose contexts are rebuilt from the initiator's
 -- user-level settings and would otherwise keep the defaults (both are true by default). The

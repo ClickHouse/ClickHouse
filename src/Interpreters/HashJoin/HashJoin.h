@@ -142,12 +142,17 @@ public:
 
     std::string getName() const override { return "HashJoin"; }
 
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override
     {
         return getTotals().empty() && getTotalRowCount() == 0;
     }
+
+    /// The left side is streamed through once, each row emitted in input order.
+    bool preservesLeftBlockOrder() const override { return true; }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
@@ -209,7 +214,7 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
         probe_phase_finished = true;
@@ -699,7 +704,7 @@ private:
     bool probe_phase_finished = false;
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
-    size_t hash_table_matches = 0;
+    std::optional<size_t> hash_table_matches;
 
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;

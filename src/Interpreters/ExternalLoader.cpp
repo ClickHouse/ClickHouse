@@ -741,7 +741,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, describeUpdateTime(info.next_update_time));
                             continue;
                         }
 
@@ -1237,7 +1237,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, to_string(next_update_time));
+        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, describeUpdateTime(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1255,6 +1255,16 @@ private:
         /// (We can't put the loading thread back to the thread pool immediately here because at this point
         /// the loading thread is about to finish but it's not finished yet right now.)
         recently_finished_loadings.push_back(loading_id);
+    }
+
+    /// `TimePoint::max()` is the "no automatic update is scheduled" sentinel; rendering it as a
+    /// timestamp prints a date in the year 294247, which reads like a scheduling bug rather than
+    /// like "never". Spell it out instead.
+    static String describeUpdateTime(TimePoint time)
+    {
+        if (time == TimePoint::max())
+            return "never";
+        return to_string(time);
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,

@@ -44,6 +44,7 @@ doc_type: 'guide'
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 默认情况下，配额会按小时统计资源消耗，但不限制使用量。
@@ -153,6 +154,7 @@ doc_type: 'guide'
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 还可以按归一化查询哈希值来设置配额键，这样每种不同的查询模式都会拥有各自独立的配额桶。在 XML 配置中，写法如下：`<keyed_by_normalized_query_hash />`：

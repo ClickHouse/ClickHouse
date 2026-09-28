@@ -23,6 +23,14 @@ RETENTION_PREFIXES = [
     "workflow-orchestrator/",
 ]
 
+# Prefixes with their own (shorter) retention, independent of the bucket-wide
+# retention_days. Repo snapshots are large (a whole repo tree) and high-churn (one
+# per run / per PR iteration) but are consumed within minutes of creation, so they
+# expire fast to bound storage.
+SHORT_RETENTION_PREFIXES = {
+    "repo-snapshots/": 3,
+}
+
 
 class Storage:
 
@@ -125,6 +133,14 @@ class Storage:
                     "Expiration": {"Days": self.retention_days},
                 }
                 for prefix in RETENTION_PREFIXES
+            ] + [
+                {
+                    "ID": f"retention-{prefix.rstrip('/').replace('/', '-')}",
+                    "Status": "Enabled",
+                    "Filter": {"Prefix": prefix},
+                    "Expiration": {"Days": days},
+                }
+                for prefix, days in SHORT_RETENTION_PREFIXES.items()
             ]
             try:
                 current = s3.get_bucket_lifecycle_configuration(Bucket=self.name)
@@ -142,7 +158,8 @@ class Storage:
             )
             print(
                 f"Set retention {self.retention_days}d on bucket '{self.name}' "
-                f"for prefixes {RETENTION_PREFIXES}"
+                f"for prefixes {RETENTION_PREFIXES}; short retention "
+                f"{SHORT_RETENTION_PREFIXES}"
             )
             self.ext["bucket_arn"] = f"arn:aws:s3:::{self.name}"
             return self

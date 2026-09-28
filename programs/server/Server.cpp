@@ -32,6 +32,7 @@
 #include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
@@ -58,6 +59,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
+#include <Common/SeccompFilter.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
@@ -76,8 +78,11 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/S3/Credentials.h>
@@ -159,7 +164,6 @@
 #    include <cstdlib>
 #    include <sys/un.h>
 #    include <sys/mman.h>
-#    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
 #endif
 
@@ -350,6 +354,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_read_connections;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_elevated_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_high_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_critical_level_pct;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
@@ -373,6 +380,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
+    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
@@ -424,6 +432,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -467,6 +478,7 @@ namespace ServerSetting
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
+    extern const ServerSettingsSeccompMode seccomp;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -629,6 +641,44 @@ Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_s
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
 }
+
+#if defined(OS_LINUX)
+/// Whether a debugger is attached to this process, according to the `TracerPid` field of
+/// `/proc/self/status`, which the kernel sets to the pid of the tracer and to zero when there is
+/// none. This is a plain read, so unlike the `ptrace(PTRACE_TRACEME)` probe it used to be, it
+/// answers the same way whatever the `seccomp` server setting denies.
+bool isRunUnderDebugger()
+{
+    try
+    {
+        ReadBufferFromFile status("/proc/self/status");
+        while (!status.eof())
+        {
+            String line;
+            readStringUntilNewlineInto(line, status);
+            if (!status.eof())
+                ++status.position();
+
+            static constexpr std::string_view prefix = "TracerPid:";
+            if (!line.starts_with(prefix))
+                continue;
+
+            UInt64 tracer_pid = 0;
+            ReadBufferFromString value(line);
+            value.ignore(prefix.size());
+            skipWhitespaceIfAny(value);
+            readIntText(tracer_pid, value);
+            return tracer_pid != 0;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return false;
+}
+#endif
 
 }
 
@@ -1332,6 +1382,14 @@ try
             " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
+#if defined(MEMORY_SANITIZER)
+    /// The TraceCollector itself stays enabled: the memory profiler, `trace_profile_events` and
+    /// `SYSTEM INSTRUMENT` all feed it from ordinary code rather than from a signal handler.
+    LOG_INFO(log, "The sampling Query Profiler is disabled under Memory Sanitizer, because a profiler signal"
+        " delivered to a thread that is printing a sanitizer report aborts the process and truncates the"
+        " report. See QUERY_PROFILER_SUPPORTED in Common/QueryProfiler.h.");
+#endif
+
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
@@ -1372,6 +1430,10 @@ try
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
+
+        /// The config reloader applies this too; the seed here covers startup, which runs before its first callback.
+        MemoryTracker::setMinAllocationSizeToLogStackTrace(
+            server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings[ServerSetting::total_memory_profiler_step])
@@ -1507,6 +1569,22 @@ try
         );
     }
 
+    auto begin_keeper_tcp_connection_drain = [&]
+    {
+#if USE_NURAFT
+        if (auto dispatcher = global_context->tryGetKeeperDispatcher())
+            dispatcher->beginTCPConnectionDrain();
+
+        KeeperTCPHandler::closeAllConnections();
+#endif
+    };
+
+    auto is_keeper_tcp_server = [](const ProtocolServerAdapter & server)
+    {
+        const auto & port_name = server.getPortName();
+        return port_name == "keeper_server.tcp_port" || port_name == "keeper_server.tcp_port_secure";
+    };
+
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
@@ -1536,12 +1614,8 @@ try
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
-
-        size_t current_connections = 0;
+        size_t keeper_tcp_connections = 0;
+        size_t non_keeper_tcp_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
@@ -1550,25 +1624,64 @@ try
                 for (auto & server : servers_to_start_before_tables)
                 {
                     server.stop();
-                    current_connections += server.currentConnections();
+                    if (is_keeper_tcp_server(server))
+                        keeper_tcp_connections += server.currentConnections();
+                    else
+                        non_keeper_tcp_connections += server.currentConnections();
                 }
             }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher(current_connections == 0);
+        /// Stop Keeper TCP handlers before draining the remaining pre-table protocol handlers.
+        /// Those handlers include HTTP control, interserver HTTP/HTTPS, and Prometheus; they need
+        /// the embedded Keeper and RAFT to remain live until they finish.
+        begin_keeper_tcp_connection_drain();
+
+        if (non_keeper_tcp_connections)
+        {
+            LOG_INFO(log, "Closed all non-Keeper-TCP listening sockets. Waiting for {} outstanding connections.", non_keeper_tcp_connections);
+            non_keeper_tcp_connections = waitServersToFinish(
+                servers_to_start_before_tables,
+                servers_lock,
+                server_settings[ServerSetting::shutdown_wait_unfinished],
+                [&](const auto & server) { return !is_keeper_tcp_server(server); });
+        }
+
+        global_context->signalKeeperDispatcherShutdown();
+        global_context->shutdownKeeperDispatcherBeforeConnectionsFinish();
+
+        if (non_keeper_tcp_connections)
+        {
+            global_context->shutdownKeeperDispatcherAfterConnectionsFinish(false);
+            dumpCoverageReportIfPossible();
+            LOG_WARNING(
+                log,
+                "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.",
+                non_keeper_tcp_connections);
+            safeExit(0, LeakCheck::SkipAndReport);
+        }
+
+        if (!servers_to_start_before_tables.empty())
+        {
+            if (keeper_tcp_connections)
+                LOG_INFO(log, "Closed all Keeper TCP listening sockets. Waiting for {} outstanding connections.", keeper_tcp_connections);
+            else
+                LOG_INFO(log, "Closed all Keeper listening sockets.");
+
+            if (keeper_tcp_connections > 0)
+                keeper_tcp_connections = waitServersToFinish(
+                    servers_to_start_before_tables,
+                    servers_lock,
+                    server_settings[ServerSetting::shutdown_wait_unfinished],
+                    is_keeper_tcp_server);
+
+            if (keeper_tcp_connections)
+                LOG_INFO(log, "Closed Keeper TCP connections. But {} remain.", keeper_tcp_connections);
+            else
+                LOG_INFO(log, "Closed Keeper TCP connections.");
+        }
+
+        global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -1673,6 +1786,11 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
 
@@ -1732,6 +1850,29 @@ try
     addMergeTreeArenaPoolWarnings(global_context);
 
 #if defined(OS_LINUX)
+    /// Restrict the server to the system calls it is known to use, as early in the startup as the
+    /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
+    /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
+    /// was before a `from_zk` value arrived would stay in force while `system.server_settings`
+    /// reported the value from ZooKeeper. `TSYNC` extends the filter to the threads that already
+    /// exist, so everything that runs from here on - including the processes the server forks
+    /// later, which inherit it - is covered.
+    const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
+    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
+        LOG_INFO(
+            log,
+            "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
+            "be handled according to the `seccomp` server setting, which is set to `{}`",
+            seccomp_status.allowed_syscalls,
+            SettingFieldSeccompMode(seccomp_mode).toString());
+    else if (seccomp_mode != SeccompMode::Disabled)
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
+            "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
+
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -1761,8 +1902,9 @@ try
             }
             else
             {
-                /// If program is run under debugger, ptrace will fail.
-                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                /// Note: this must not rely on a system call the `seccomp` policy denies, such as
+                /// `ptrace`, because the filter is already installed by this point.
+                if (isRunUnderDebugger())
                 {
                     /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
                     global_context->addOrUpdateWarningMessage(
@@ -2419,7 +2561,8 @@ try
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
-            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Fail closed on a legacy insert_deduplication_version, or on a memory-pressure threshold
+            /// triple that is out of range or out of order, arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
             /// system.server_settings reporting an unsupported value. Reject first, then replace.
@@ -2427,6 +2570,10 @@ try
                 ServerSettings incoming_server_settings;
                 incoming_server_settings.loadSettingsFromConfig(*loaded_config);
                 validate_insert_deduplication_version(incoming_server_settings);
+                validateMemoryPressureThresholds(
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
@@ -2445,7 +2592,25 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
 
+            /// The check above sees the incoming file alone. A triple split across the file and the
+            /// command-line layer can have each source valid and the merge out of order, so check the
+            /// merged view too - here, before the first live setting below is touched.
+            validateMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
+
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
+
+            /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
+            if (const auto installed_seccomp_mode = getInstalledSeccompMode();
+                installed_seccomp_mode && *installed_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
+                LOG_WARNING(
+                    log,
+                    "The `seccomp` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
+                    "after a restart: the seccomp policy of a running process cannot be changed",
+                    SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
+                    new_server_settings[ServerSetting::seccomp].toString());
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
@@ -2492,6 +2657,9 @@ try
 
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+            MemoryTracker::setMinAllocationSizeToLogStackTrace(
+                new_server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
             per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
             per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
@@ -2569,11 +2737,6 @@ try
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
-
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
@@ -2711,6 +2874,11 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
+            getIcebergManifestDecodeThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
@@ -2718,6 +2886,14 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+
+            /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
+            /// the shared thresholds, so every monitor adopts them on its next sample,
+            /// bypassing the sticky cooldown.
+            setMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             if (config().has("resources") || config().has("workload_classifiers"))
             {
@@ -3608,12 +3784,20 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Wait for unfinished backups and restores.
-            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// This must be done after closing listening sockets (no more socket-delivered backups/restores) but before ProcessList::killAllQueries
             /// (because killAllQueries() will cancel all running backups/restores).
+            bool backups_finished = true;
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
             else
-                global_context->cancelAllBackupsAndRestores();
+            {
+                /// Refused first so that the wait cannot miss an operation started after it took
+                /// its snapshot; a distributed DDL query can still deliver one here.
+                global_context->stopAcceptingNewBackupsAndRestores();
+                backups_finished = global_context->cancelAllBackupsAndRestores(
+                    std::chrono::steady_clock::now()
+                    + std::chrono::seconds(server_settings[ServerSetting::shutdown_wait_unfinished]));
+            }
 
             stop_oom_canary();
 
@@ -3642,7 +3826,13 @@ try
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
+            /// killAllQueries() and the waits above can have driven a cancelled backup to a final
+            /// status, and then the normal teardown is able to complete. Sound because this is false
+            /// only where new operations are already refused, so the unfinished set cannot grow.
+            if (!backups_finished)
+                backups_finished = !global_context->hasUnfinishedBackupsAndRestores();
+
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries || !backups_finished)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live

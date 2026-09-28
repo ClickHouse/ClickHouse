@@ -83,6 +83,13 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// Whether the storage this table function returns is chosen by the current user's grants
+    /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
+    /// definition, not even nested in an argument of another table function such as `remote`:
+    /// the persisted definition is later resolved with no user or under the connection's
+    /// credentials, so the branch that must depend on the reader's grants cannot be decided.
+    virtual bool dependsOnCurrentUserGrants() const { return false; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
