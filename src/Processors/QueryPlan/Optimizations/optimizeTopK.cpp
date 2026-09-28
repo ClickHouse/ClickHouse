@@ -204,7 +204,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     /// own filter into PREWHERE. The dynamic filter is already off then (there is a PREWHERE),
     /// but the skip-index top-K path would still skip granules by the invoker's `ORDER BY`
     /// over the rows the view hides. See IQueryPlanStep::isSecurityBarrier.
-    if (read_from_mergetree_step->isSecurityBarrier())
+    if (read_from_mergetree_step && read_from_mergetree_step->isSecurityBarrier())
         return 0;
 
     /// FINAL queries deduplicate overlapping parts via merging sorted transforms
