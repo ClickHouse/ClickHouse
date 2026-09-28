@@ -53,6 +53,10 @@ public:
 
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneEmptyNullable() const override;
+    MutableColumnPtr cloneWithUniqueValues(MutableColumnPtr && values) const override
+    {
+        return ColumnUnique<ColumnType>::create(std::move(values), is_nullable);
+    }
 
     const ColumnPtr & getNestedColumn() const override;
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }

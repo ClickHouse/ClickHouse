@@ -51,6 +51,8 @@
     </fill_query>
 
     <query>SELECT m FROM t_map_with_buckets_read_lc FORMAT Null</query>
+    <query>SELECT m.keys FROM t_map_with_buckets_read_lc FORMAT Null</query>
+    <query>SELECT m.values FROM t_map_with_buckets_read_lc FORMAT Null</query>
     <query>SELECT m FROM t_map_with_buckets_read_lc_keys FORMAT Null</query>
     <query>SELECT m FROM t_map_with_buckets_read_string FORMAT Null</query>
     <query>SELECT m FROM t_map_with_buckets_read_uint64 FORMAT Null</query>
