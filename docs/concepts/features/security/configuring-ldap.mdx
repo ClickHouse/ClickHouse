@@ -166,6 +166,14 @@ The procedures in this section assumes that SQL Access Control and Account Manag
     9 rows in set. Elapsed: 0.004 sec.
     ```
 </Step>
+<Step title="Optionally, use a service account and synchronize users proactively" id="4-optionally-use-a-service-account-and-synchronize-users-proactively">
+
+The setup above binds as each user with a `bind_dn` template and maps roles when the user logs in. Two extensions are described in the LDAP reference:
+
+1. If users may not search groups or read their own `memberOf`, keep the `bind_dn` template and add a service account with `lookup_bind_dn` and `lookup_password`: the password is still verified by binding as the user, while `user_dn_detection` and the role mapping searches run under the service account, see [LDAP server definition](/operations/external-authenticators/ldap#ldap-server-definition).
+2. If the login is not part of any DN (for example `sAMAccountName` in Active Directory), additionally set `bind_dn` to `{user_dn}`: the service account locates the user by `user_dn_detection` and the password is verified by binding as the DN that was found, see [Search and bind with a service account](/operations/external-authenticators/ldap#ldap-search-and-bind).
+3. To create users and grant roles before the first login and to remove users that left the directory, add a `sync` section to the `ldap` user directory, see [Synchronizing LDAP users and roles](/operations/external-authenticators/ldap#ldap-user-sync).
+</Step>
 </Steps>
 
 ## Summary {#summary}

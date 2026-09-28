@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- The tests grep the log right after the query that emits the line; `logger.async` (on by default) would
+         write the line a little later. -->
+    <logger>
+        <async>false</async>
+    </logger>
+</clickhouse>
