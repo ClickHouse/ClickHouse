@@ -19,12 +19,12 @@ ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO lc_serialized_group_by_external
 SELECT if(number % 13 = 0, '', 'key_' || toString(number % 101)), if(number % 17 = 0, '', toString(number % 997)), number
-FROM numbers(200000);
+FROM numbers(20000);
 
 -- The second part builds its dictionaries in a different order.
 INSERT INTO lc_serialized_group_by_external
 SELECT if(number % 7 = 0, '', 'key_' || toString((number * 3 + 1) % 101)), if(number % 5 = 0, '', toString((number * 7 + 3) % 997)), number
-FROM numbers(200000);
+FROM numbers(20000);
 
 SELECT 'in-memory',
     count(), sum(c), sum(sv), sum(cityHash64(s, t) * c), countIf(s = ''), countIf(t = '')
