@@ -921,11 +921,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     auto paths = configuration->getPaths();
 
-    /// The key this insert starts with, and whether it is already a part of the table. With
-    /// `*_create_new_file_on_insert`, the insert steps aside from an existing object into a new key -
-    /// which is registered in the table only after the object has been written and committed, see below.
+    /// The key this insert starts with. With `*_create_new_file_on_insert`, the insert steps aside from an existing
+    /// object into a new key - which is registered in the table only after the object has been written and committed,
+    /// see below.
     String first_key = paths.front().path;
-    bool first_key_is_published = true;
     /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
     /// The numbering is derived per insert from the key of the object this insert starts with: the next objects
     /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
@@ -943,10 +942,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     auto reservations = std::make_shared<WrittenPathReservations>(configuration);
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
-    {
         first_key = *new_key;
-        first_key_is_published = false;
-    }
 
     /// A truncating insert overwrites the table: it starts from the base key, the split objects
     /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
@@ -1015,9 +1011,17 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// The reservations are captured here as well, so that they outlive the sink: the sink calls the callback
     /// only for a key that is not published yet, but the starting key of a plain insert is reserved as well,
     /// and it has to stay reserved until the insert is over even though nothing is ever published for it.
-    publish_path = [config = configuration, reservations](const String & new_key)
+    ///
+    /// The starting key of a plain insert is in the list of the paths whether its object exists or not, so the list
+    /// does not tell the next insert that it is taken. Once its object is committed, it is kept as committed in the
+    /// configuration instead, before the reservation is released, so that the next insert with
+    /// `*_create_new_file_on_insert` steps aside from it even if the object storage does not report it yet.
+    publish_path = [config = configuration, reservations, raw_key = paths.front().path](const String & new_key)
     {
-        config->appendPath({new_key});
+        if (new_key == raw_key)
+            config->commitPathWrittenByInsert(new_key);
+        else
+            config->appendPath({new_key});
     };
 
     return std::make_shared<StorageObjectStorageSink>(
@@ -1031,7 +1035,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         settings.split_on_write_by_size_bytes,
         std::move(get_next_path),
         std::move(publish_path),
-        first_key_is_published);
+        /* path_is_published = */ false);
 }
 
 bool StorageObjectStorage::optimize(
@@ -1118,6 +1122,7 @@ void StorageObjectStorage::truncate(
     }
 
     object_storage->removeObjectIfExists(StoredObject(paths.front().path));
+    configuration->forgetPathCommittedByInsert(paths.front().path);
     LOG_INFO(log, "Removed the object {} of the truncated table", paths.front().path);
 
     /// The table only ever deletes the numbered keys it remembers, and it remembers only the ones written since

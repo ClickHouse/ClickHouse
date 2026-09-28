@@ -268,12 +268,12 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     /// The reservations of this insert are released when it is over, and from then on only the object storage would
     /// tell the next insert into the partition that the keys are taken - and not every S3 implementation reports an
     /// object right after it has been written. So every committed key stays taken in the configuration of the table,
-    /// see `StorageObjectStorageConfiguration::commitPathWrittenByPartitionedInsert`. It is done after the object is
+    /// see `StorageObjectStorageConfiguration::commitPathWrittenByInsert`. It is done after the object is
     /// committed, before the reservation is released, so the key is never free in between. A generated name cannot
     /// be met again, so it is not kept.
     StorageObjectStorageSink::PublishPathCallback publish_path;
     if (!names_are_generated)
-        publish_path = [config = configuration](const String & key) { config->commitPathWrittenByPartitionedInsert(key); };
+        publish_path = [config = configuration](const String & key) { config->commitPathWrittenByInsert(key); };
 
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     if (query_settings.split_on_write_by_size_bytes)

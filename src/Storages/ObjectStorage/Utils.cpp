@@ -69,8 +69,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     /// The starting key is free when the object is not there and no other insert into this table is writing it:
     /// the object appears only when that insert is committed, and until then the reservation is the only thing
     /// that tells the two inserts apart - without it both would write the same key, and one would lose its rows.
-    /// A key committed by a previous partitioned insert is taken even if the object storage does not report it yet.
-    const bool object_exists = configuration.isPathCommittedByPartitionedInsert(key) || object_storage.exists(StoredObject(key));
+    /// A key committed by a previous insert into this table is taken even if the object storage does not report it yet.
+    const bool object_exists = configuration.isPathCommittedByInsert(key) || object_storage.exists(StoredObject(key));
     if (!object_exists && reservations.tryReserveStartingPath(key))
         return std::nullopt;
 
@@ -198,13 +198,13 @@ void removeStaleSplitObjectsByNumber(
             continue;
         }
 
-        /// A key committed by a previous partitioned insert into this table names an object, even if the object storage
+        /// A key committed by a previous insert into this table names an object, even if the object storage
         /// does not report it yet. Its key is dropped along with the object, so that the rewrite can take it again.
-        if (!configuration.isPathCommittedByPartitionedInsert(stale_key) && !object_storage.exists(StoredObject(stale_key)))
+        if (!configuration.isPathCommittedByInsert(stale_key) && !object_storage.exists(StoredObject(stale_key)))
             break;
 
         object_storage.removeObjectIfExists(StoredObject(stale_key));
-        configuration.forgetPathCommittedByPartitionedInsert(stale_key);
+        configuration.forgetPathCommittedByInsert(stale_key);
         LOG_INFO(log, "Removed the stale object {} of a previous insert split by size, overwritten by a truncating insert", stale_key);
     }
 }

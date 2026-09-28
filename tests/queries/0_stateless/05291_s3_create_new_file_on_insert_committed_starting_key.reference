@@ -1,0 +1,9 @@
+--- A plain insert commits the starting key
+data.tsv	3
+--- The object storage does not report the object anymore
+0
+--- The next insert steps aside from the committed starting key
+data.1.tsv	2
+--- The table is truncated: the starting key is free again
+data.tsv	1
+6
