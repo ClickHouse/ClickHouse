@@ -1,4 +1,10 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Core/Field.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/Logger.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <base/unit.h>
 
@@ -8,6 +14,7 @@
 #include <numeric>
 #include <ranges>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace DB;
@@ -240,4 +247,30 @@ TEST(SimpleMergeSelector, PartNewerThanCurrentTimeIsNotOld)
     /// An unbalanced pair is merged only when forced by age.
     ASSERT_EQ(count_selected({10 * MiB, 1024}, /*age=*/120, /*min_age_to_force_merge=*/60), 1);
     ASSERT_EQ(count_selected({10 * MiB, 1024}, /*age=*/-1, /*min_age_to_force_merge=*/60), 0);
+}
+
+TEST(MergeTreeDataMergerMutator, PartitionNewerThanCurrentTimeIsNotForceMerged)
+{
+    /// With `min_age_to_force_merge_on_partition_only`, a partition whose youngest part is newer than the
+    /// clock reading (negative age) must not be force-merged in full.
+    const auto & context = getContext().context;
+    /// `getBestPartitionToOptimizeEntire` reads the merge pool size before it looks at the partition age.
+    context->initializeBackgroundExecutorsIfNeeded();
+
+    auto settings = std::make_shared<MergeTreeSettings>();
+    settings->set("min_age_to_force_merge_seconds", Field(UInt64(60)));
+    settings->set("min_age_to_force_merge_on_partition_only", Field(true));
+    /// Do not depend on how busy the shared merge pool is.
+    settings->set("number_of_free_entries_in_pool_to_execute_optimize_entire_partition", Field(UInt64(0)));
+
+    const auto best_partition = [&](time_t min_age)
+    {
+        std::unordered_map<String, PartitionStatistics> stats;
+        stats["p"] = PartitionStatistics{.min_age = min_age, .part_count = 2, .total_size = 2048};
+        return getBestPartitionToOptimizeEntire(
+            /*max_total_size_to_merge=*/0, context, settings, stats, getLogger("PartitionNewerThanCurrentTimeIsNotForceMerged"));
+    };
+
+    ASSERT_EQ(best_partition(/*min_age=*/120), "p");
+    ASSERT_EQ(best_partition(/*min_age=*/-1), "");
 }
