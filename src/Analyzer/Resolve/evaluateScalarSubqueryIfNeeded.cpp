@@ -349,8 +349,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
-
-                sub_plan_capture.finish(io.pipeline);
             }
 
             if (chunk.getNumRows() == 0)
@@ -411,6 +409,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     scalar_block = std::move(block);
                 }
             }
+
+            /// A `pull` that returns a chunk leaves the pipeline running on a background thread, so
+            /// the statistics are complete only once the reads above have drained it. A subquery
+            /// that failed its validation threw before reaching here and is left unrecorded.
+            if (executor)
+                sub_plan_capture.finish(io.pipeline);
 
             logProcessorProfile(context, io.pipeline.getProcessors());
         }

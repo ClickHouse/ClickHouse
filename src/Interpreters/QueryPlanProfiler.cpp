@@ -201,9 +201,6 @@ void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * 
 
 bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal)
 {
-    if (internal)
-        return false;
-
     const auto & settings = context->getSettingsRef();
 
     if (!settings[Setting::log_query_plans])
@@ -215,13 +212,19 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
         return false;
     };
 
+    /// An internal query writes a `system.query_log` row of its own, marked by `is_internal`.
+    if (internal)
+        return declined("the query is run internally by the server, and only queries issued by a client are captured");
+
     /// The plan is stored on the `system.query_log` row, so without that row there is nowhere to
     /// put it and capturing would be pure cost.
     if (!settings[Setting::log_queries])
         return declined("setting `log_queries` is false, so the query writes no row to store it on");
 
+    /// Each shard of a distributed query writes a row of its own, and the plan of the whole query
+    /// is captured on the initiator.
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return false;
+        return declined("the query is a secondary query of a distributed query, and only the initial query is captured");
 
     if (!isSupportedQuery(ast))
         return declined("only `SELECT` queries have their plan captured");
