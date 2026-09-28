@@ -144,3 +144,4 @@ replicated engine arguments gate at 3: 0
 explicit uuid gate at 3: 0
 explicit uuid gate at 3 when dumped with uuids: 1
 replicated engine arguments gate at 3 when the dump keeps the arguments: 1
+replicated engine arguments gate at 3 when only a materialized view keeps them: 1

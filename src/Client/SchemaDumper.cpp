@@ -2344,12 +2344,12 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             needs.analyzable_query_text = true;
 
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
-        if (create->storage && create->storage->engine)
+        if (create->getTable().empty())
         {
-            const auto & engine = *create->storage->engine;
-
-            if (create->getTable().empty())
+            if (create->storage && create->storage->engine)
             {
+                const auto & engine = *create->storage->engine;
+
                 /// CREATE DATABASE: gate on the database engine name.
                 if (equalsCaseInsensitive(engine.name, "Ordinary"))
                     needs.ordinary_database = true;
@@ -2360,16 +2360,28 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
                 else if (equalsCaseInsensitive(engine.name, "MaterializedMySQL"))
                     needs.materialized_mysql_database = true;
             }
-            else
+        }
+        else
+        {
+            std::vector<const ASTFunction *> table_engines;
+            if (create->storage && create->storage->engine)
+                table_engines.push_back(create->storage->engine);
+            /// A view or TimeSeries keeps its inner table engines in `targets`.
+            if (create->targets)
+                for (const auto * inner : create->targets->getInnerEngines())
+                    if (inner->engine)
+                        table_engines.push_back(inner->engine);
+
+            /// CREATE TABLE: gate on the table engine name.
+            for (const auto * engine : table_engines)
             {
-                /// CREATE TABLE: gate on the table engine name.
-                if (startsWithCaseInsensitive(engine.name, "Replicated") && engine.arguments && !engine.arguments->children.empty())
+                if (startsWithCaseInsensitive(engine->name, "Replicated") && engine->arguments && !engine->arguments->children.empty())
                     needs.replicated_engine_arguments = true;
-                if (equalsCaseInsensitive(engine.name, "MaterializedPostgreSQL"))
+                if (equalsCaseInsensitive(engine->name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_table = true;
-                if (equalsCaseInsensitive(engine.name, "TimeSeries"))
+                if (equalsCaseInsensitive(engine->name, "TimeSeries"))
                     needs.time_series_table = true;
-                if (equalsCaseInsensitive(engine.name, "Kafka"))
+                if (equalsCaseInsensitive(engine->name, "Kafka"))
                     needs.kafka_engine = true;
             }
         }

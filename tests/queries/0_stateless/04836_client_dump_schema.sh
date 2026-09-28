@@ -663,6 +663,15 @@ REPL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_repl.sql"
 $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
 echo "replicated engine arguments gate at 3 when the dump keeps the arguments: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${DB}.zzz_repl_engine_args"
+
+# A materialized view keeps its engine in `targets`, so it must carry the same gate on its own.
+$CLICKHOUSE_CLIENT -mq "
+CREATE TABLE ${DB}.zzz_repl_mv_src (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW ${DB}.zzz_repl_mv ENGINE = ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dump_schema/zzz_repl_mv', 'r') ORDER BY x AS SELECT x FROM ${DB}.zzz_repl_mv_src;
+"
+$CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$REPL_DUMP_FILE" 2>"$ERR_FILE"
+echo "replicated engine arguments gate at 3 when only a materialized view keeps them: $(grep -c '^SET database_replicated_allow_replicated_engine_arguments = 3;$' "$REPL_DUMP_FILE")"
+$CLICKHOUSE_CLIENT -mq "DROP TABLE ${DB}.zzz_repl_mv; DROP TABLE ${DB}.zzz_repl_mv_src;"
 rm -f "$REPL_DUMP_FILE"
 
 rm -rf "$SRC_PATH" "$DST_PATH" "$DUMP_FILE" "${DUMP_FILE}.all" "${DUMP_FILE}.list" "${DUMP_FILE}.exclude" "$DUMP_DIR" "$ERR_FILE"
