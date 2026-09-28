@@ -8,7 +8,6 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <unordered_map>
 #include <unordered_set>
 
 
@@ -20,18 +19,6 @@ class AbstractConfiguration;
 namespace DB
 {
 
-/// A three-part object name, as used by the vendor-neutral OPA request schema.
-/// ClickHouse names only two levels (database and table), so the catalog - and, for a data lake
-/// database, the schema as well - are derived by `OpaConfiguration::mapTable`.
-struct OpaTableName
-{
-    String catalog;
-    String schema;
-    /// Empty for a schema-scoped operation.
-    String table;
-};
-
-
 /** Parsed contents of the `<open_policy_agent>` section of the main configuration file.
   *
   * An instance is immutable once parsed and is published as a `shared_ptr<const OpaConfiguration>`,
@@ -40,16 +27,6 @@ struct OpaTableName
   */
 struct OpaConfiguration
 {
-    /// How a ClickHouse database is projected onto the three-part name that policies see.
-    struct DatabaseMapping
-    {
-        String catalog;
-        /// A data lake database names a table `namespace.table`, and a nested namespace adds further
-        /// components. Splitting at the last separator turns the namespace into the schema, which is
-        /// the same shape Trino reports for the corresponding Iceberg table.
-        bool split_dotted_table_name = false;
-    };
-
     /// Endpoint returning a single boolean decision. Required.
     Poco::URI uri;
 
@@ -61,9 +38,6 @@ struct OpaConfiguration
 
     /// Sent as `Authorization: Bearer <token>` when not empty.
     String token;
-
-    /// Catalog reported for a database without an explicit `<mapping>` entry.
-    String default_catalog = "clickhouse";
 
     /// The `system` database is out of scope by default: clients poll it constantly for metadata,
     /// and routing that traffic to OPA would cost a request per poll.
@@ -85,10 +59,8 @@ struct OpaConfiguration
     std::unordered_set<String> exempt_users;
 
     /// Users a policy may name in the `identity` field of a row filter or a column mask. Empty
-    /// means any existing user, which is what Trino permits.
+    /// means any existing user.
     std::unordered_set<String> allowed_expression_identities;
-
-    std::unordered_map<String, DatabaseMapping> database_mappings;
 
     /// True when the configuration contains an `<open_policy_agent>` section.
     static bool isConfigured(const Poco::Util::AbstractConfiguration & config);
@@ -106,10 +78,6 @@ struct OpaConfiguration
     bool isDatabaseInScope(std::string_view database) const;
     bool isUserExempt(const String & user_name) const;
     bool isIdentityAllowed(const String & user_name) const;
-
-    OpaTableName mapTable(const String & database, const String & table) const;
-    /// The catalog and schema a database maps to, for a schema-scoped operation.
-    OpaTableName mapDatabase(const String & database) const;
 };
 
 using OpaConfigurationPtr = std::shared_ptr<const OpaConfiguration>;

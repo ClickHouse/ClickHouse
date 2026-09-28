@@ -79,7 +79,12 @@ class Handler(BaseHTTPRequestHandler):
             self._respond_raw(200, state["body_override"])
             return
 
-        decision = bool(eval(state["rule"], {}, {"input": parsed.get("input", {})}))
+        try:
+            decision = bool(eval(state["rule"], {}, {"input": parsed.get("input", {})}))
+        except Exception as e:  # noqa: BLE001 - a broken rule must be reported, not crash the handler
+            self._respond(500, {"error": f"rule failed: {e!r}"})
+            return
+
         self._respond(200, {"result": decision})
 
     def do_GET(self):

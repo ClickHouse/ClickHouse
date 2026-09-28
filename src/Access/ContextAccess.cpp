@@ -915,7 +915,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             request_context.user = current_user_name;
             request_context.query_id = context->getCurrentQueryId();
             if (auto info = getRolesInfo())
-                request_context.groups = info->getEnabledRolesNames();
+                request_context.roles = info->getEnabledRolesNames();
 
             /// A transport failure, a malformed response or an unreachable server propagates instead
             /// of being turned into an allow. Losing the policy engine must not silently lose the

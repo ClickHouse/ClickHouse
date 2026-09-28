@@ -111,10 +111,6 @@ OpaConfiguration OpaConfiguration::parse(const Poco::Util::AbstractConfiguration
 
     result.token = config.getString(CONFIG_SECTION + ".token", "");
 
-    result.default_catalog = config.getString(CONFIG_SECTION + ".default_catalog", "clickhouse");
-    if (result.default_catalog.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} must not be empty", backQuote("default_catalog"));
-
     result.check_system_database = config.getBool(CONFIG_SECTION + ".check_system_database", false);
     result.log_requests = config.getBool(CONFIG_SECTION + ".log_requests", false);
     result.log_responses = config.getBool(CONFIG_SECTION + ".log_responses", false);
@@ -134,49 +130,6 @@ OpaConfiguration OpaConfiguration::parse(const Poco::Util::AbstractConfiguration
 
     result.exempt_users = parseUserList(config, CONFIG_SECTION + ".exempt_users");
     result.allowed_expression_identities = parseUserList(config, CONFIG_SECTION + ".allowed_expression_identities");
-
-    const String mapping_key = CONFIG_SECTION + ".mapping";
-    Poco::Util::AbstractConfiguration::Keys mapping_entries;
-    config.keys(mapping_key, mapping_entries);
-
-    for (const auto & entry : mapping_entries)
-    {
-        std::string_view tag = entry;
-        if (const auto bracket_pos = tag.find('['); bracket_pos != std::string_view::npos)
-            tag = tag.substr(0, bracket_pos);
-
-        if (tag != "database")
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected element {} in the {} section, only {} elements are allowed",
-                backQuote(tag),
-                backQuote(mapping_key),
-                backQuote("database"));
-        }
-
-        const String entry_key = mapping_key + "." + entry;
-        const String database = config.getString(entry_key + "[@name]", "");
-        if (database.empty())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "An element {} in the {} section requires a non-empty {} attribute",
-                backQuote("database"),
-                backQuote(mapping_key),
-                backQuote("name"));
-        }
-
-        DatabaseMapping mapping;
-        mapping.catalog = config.getString(entry_key + ".catalog", result.default_catalog);
-        if (mapping.catalog.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An empty catalog for database {} in the {} section", backQuote(database), backQuote(mapping_key));
-
-        mapping.split_dotted_table_name = config.getBool(entry_key + ".split_dotted_table_name", false);
-
-        if (!result.database_mappings.emplace(database, std::move(mapping)).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate mapping for database {} in the {} section", backQuote(database), backQuote(mapping_key));
-    }
 
     return result;
 }
@@ -210,40 +163,6 @@ bool OpaConfiguration::isUserExempt(const String & user_name) const
 bool OpaConfiguration::isIdentityAllowed(const String & user_name) const
 {
     return allowed_expression_identities.empty() || allowed_expression_identities.contains(user_name);
-}
-
-OpaTableName OpaConfiguration::mapDatabase(const String & database) const
-{
-    OpaTableName result;
-    result.catalog = default_catalog;
-    result.schema = database;
-
-    if (const auto it = database_mappings.find(database); it != database_mappings.end())
-        result.catalog = it->second.catalog;
-
-    return result;
-}
-
-OpaTableName OpaConfiguration::mapTable(const String & database, const String & table) const
-{
-    OpaTableName result = mapDatabase(database);
-    result.table = table;
-
-    const auto it = database_mappings.find(database);
-    if (it == database_mappings.end() || !it->second.split_dotted_table_name)
-        return result;
-
-    /// A nested namespace contributes several components, so the table name is what follows the
-    /// last separator and the namespace as a whole becomes the schema. A name without a separator
-    /// describes a table that is not inside a namespace, and keeps the database as its schema.
-    const auto separator_pos = table.rfind('.');
-    if (separator_pos != String::npos)
-    {
-        result.schema = table.substr(0, separator_pos);
-        result.table = table.substr(separator_pos + 1);
-    }
-
-    return result;
 }
 
 }

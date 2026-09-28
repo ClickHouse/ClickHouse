@@ -15,17 +15,10 @@ DEFAULT_URI = f"http://127.0.0.1:{STUB_PORT}/v1/data/clickhouse/allow"
 BASE_SECTION = """<clickhouse>
     <open_policy_agent>
         <uri>{uri}</uri>
-        <default_catalog>testcatalog</default_catalog>
         {extra}
         <exempt_users>
             <user>default</user>
         </exempt_users>
-        <mapping>
-            <database name="ice">
-                <catalog>lakekeeper</catalog>
-                <split_dotted_table_name>true</split_dotted_table_name>
-            </database>
-        </mapping>
     </open_policy_agent>
 </clickhouse>"""
 
@@ -180,40 +173,50 @@ def test_request_carries_the_documented_shape():
     action = last_action()
     assert "SELECT" in action["operations"]
 
-    table = action["resource"]["table"]
-    assert table["catalogName"] == "testcatalog"
-    assert table["schemaName"] == "plain"
-    assert table["tableName"] == "orders"
-    assert "id" in table["columns"]
+    resource = action["resource"]
+    assert resource["database"] == "plain"
+    assert resource["table"] == "orders"
+    assert "id" in resource["columns"]
 
     context = recorded_requests()[-1]["input"]["context"]
-    assert context["identity"]["user"] == "analyst"
-    # A ClickHouse role is reported as a group, which is what lets one rule text match both engines.
-    assert "analysts" in context["identity"]["groups"]
-    assert context["queryId"]
-    assert context["softwareStack"]["clickhouseVersion"]
+    assert context["user"] == "analyst"
+    assert "analysts" in context["roles"]
+    assert context["query_id"]
+    assert context["clickhouse_version"]
 
 
-def test_a_dotted_table_name_is_split_into_schema_and_table():
-    """A data lake database names a table `namespace.table`; the namespace has to arrive as the
-    schema so the name matches what another engine reports for the same table."""
+def test_a_table_name_is_reported_verbatim():
+    """ClickHouse names two levels, so the table arrives exactly as ClickHouse knows it. A database
+    whose tables are named `namespace.table` keeps the dot; splitting it is a policy's business, not
+    the server's."""
     node.query("CREATE DATABASE IF NOT EXISTS ice")
     node.query(
-        "CREATE TABLE ice.`sales.orders` (id UInt32) ENGINE = MergeTree ORDER BY id"
+        "CREATE TABLE IF NOT EXISTS ice.`sales.orders` (id UInt32) ENGINE = MergeTree ORDER BY id"
     )
     node.query("GRANT SELECT ON ice.* TO analyst")
 
     set_rule("True")
     node.query("SELECT id FROM ice.`sales.orders`", user="analyst")
 
-    table = last_action()["resource"]["table"]
-    assert table["catalogName"] == "lakekeeper"
-    assert table["schemaName"] == "sales"
-    assert table["tableName"] == "orders"
+    resource = last_action()["resource"]
+    assert resource["database"] == "ice"
+    assert resource["table"] == "sales.orders"
+
+
+def test_a_database_scoped_check_omits_the_table():
+    """A policy can tell a check that covers a whole database from one about a table by the absence
+    of the key, rather than by a blank value."""
+    set_rule("True")
+    node.query("SHOW TABLES FROM plain", user="analyst")
+
+    assert any(
+        "table" not in request["input"]["action"].get("resource", {"table": None})
+        for request in recorded_requests()
+    )
 
 
 def test_a_denied_table_is_refused():
-    set_rule("input['action']['resource']['table']['tableName'] != 'orders'")
+    set_rule("input['action']['resource'].get('table') != 'orders'")
 
     assert "ACCESS_DENIED" in node.query_and_get_error(
         "SELECT id FROM plain.orders", user="analyst"
@@ -221,7 +224,7 @@ def test_a_denied_table_is_refused():
 
 
 def test_an_allowed_table_still_works():
-    set_rule("input['action']['resource']['table']['tableName'] == 'orders'")
+    set_rule("input['action']['resource'].get('table') == 'orders'")
 
     assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
 

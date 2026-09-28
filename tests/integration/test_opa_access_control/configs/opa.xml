@@ -1,15 +1,8 @@
 <clickhouse>
     <open_policy_agent>
         <uri>http://127.0.0.1:8181/v1/data/clickhouse/allow</uri>
-        <default_catalog>testcatalog</default_catalog>
         <exempt_users>
             <user>default</user>
         </exempt_users>
-        <mapping>
-            <database name="ice">
-                <catalog>lakekeeper</catalog>
-                <split_dotted_table_name>true</split_dotted_table_name>
-            </database>
-        </mapping>
     </open_policy_agent>
 </clickhouse>

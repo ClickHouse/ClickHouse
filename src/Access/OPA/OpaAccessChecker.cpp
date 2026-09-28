@@ -42,7 +42,7 @@ bool OpaAccessChecker::isAllowed(const AccessRightsElement & element, const OpaR
 
     if (element.anyTable())
     {
-        request.resource = OpaResource::forSchema(configuration->mapDatabase(element.database));
+        request.resource = OpaResource::forDatabase(element.database);
     }
     else
     {
@@ -52,7 +52,7 @@ bool OpaAccessChecker::isAllowed(const AccessRightsElement & element, const OpaR
         if (!element.anyColumn())
             columns = element.columns;
 
-        request.resource = OpaResource::forTable(configuration->mapTable(element.database, element.table), std::move(columns));
+        request.resource = OpaResource::forTable(element.database, element.table, std::move(columns));
     }
 
     return client.isAllowed(request, request_context);

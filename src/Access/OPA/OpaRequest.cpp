@@ -14,119 +14,77 @@ namespace DB
 namespace
 {
 
-/// Renders a resource as the single-key wrapper it occupies under `resource`, for example
-/// `{"table": {"catalogName": ..., "schemaName": ..., "tableName": ..., "columns": [...]}}`.
-/// The key names follow the shape a Trino policy already reads, so that an adapter only has to
-/// translate the operation name and can leave the resource untouched.
+/// An empty field is omitted rather than sent as a blank, so that a policy can distinguish a check
+/// covering a whole database from one about a table, and a check about particular columns from one
+/// that is not column scoped.
 Poco::JSON::Object::Ptr serializeResource(const OpaResource & resource)
 {
     Poco::JSON::Object::Ptr body = new Poco::JSON::Object();
-    Poco::JSON::Object::Ptr wrapper = new Poco::JSON::Object();
+    body->set("database", resource.database);
 
-    switch (resource.kind)
+    if (!resource.table.empty())
+        body->set("table", resource.table);
+
+    if (!resource.columns.empty())
     {
-        case OpaResource::Kind::Catalog:
-        {
-            body->set("name", resource.name.catalog);
-            wrapper->set("catalog", body);
-            break;
-        }
-        case OpaResource::Kind::Schema:
-        {
-            body->set("catalogName", resource.name.catalog);
-            body->set("schemaName", resource.name.schema);
-            wrapper->set("schema", body);
-            break;
-        }
-        case OpaResource::Kind::Table:
-        {
-            body->set("catalogName", resource.name.catalog);
-            body->set("schemaName", resource.name.schema);
-            body->set("tableName", resource.name.table);
-
-            /// An operation that is not column scoped omits the key entirely rather than sending an
-            /// empty array, so that a policy can tell "no columns are involved" from "these columns
-            /// are involved".
-            if (!resource.columns.empty())
-            {
-                Poco::JSON::Array::Ptr columns = new Poco::JSON::Array();
-                for (const auto & column : resource.columns)
-                    columns->add(column);
-                body->set("columns", columns);
-            }
-
-            wrapper->set("table", body);
-            break;
-        }
+        Poco::JSON::Array::Ptr columns = new Poco::JSON::Array();
+        for (const auto & column : resource.columns)
+            columns->add(column);
+        body->set("columns", columns);
     }
 
-    return wrapper;
+    return body;
 }
 
 }
 
-OpaResource OpaResource::forCatalog(String catalog)
+OpaResource OpaResource::forDatabase(String database)
 {
     OpaResource result;
-    result.kind = Kind::Catalog;
-    result.name.catalog = std::move(catalog);
+    result.database = std::move(database);
     return result;
 }
 
-OpaResource OpaResource::forSchema(OpaTableName name)
+OpaResource OpaResource::forTable(String database, String table, Names columns)
 {
     OpaResource result;
-    result.kind = Kind::Schema;
-    result.name = std::move(name);
-    return result;
-}
-
-OpaResource OpaResource::forTable(OpaTableName name, Names columns)
-{
-    OpaResource result;
-    result.kind = Kind::Table;
-    result.name = std::move(name);
+    result.database = std::move(database);
+    result.table = std::move(table);
     result.columns = std::move(columns);
     return result;
 }
 
 String OpaRequest::serialize(const OpaRequestContext & request_context) const
 {
-    Poco::JSON::Object::Ptr identity = new Poco::JSON::Object();
-    identity->set("user", request_context.user);
-
-    Poco::JSON::Array::Ptr groups = new Poco::JSON::Array();
-    for (const auto & group : request_context.groups)
-        groups->add(group);
-    identity->set("groups", groups);
-
-    Poco::JSON::Object::Ptr software_stack = new Poco::JSON::Object();
-    software_stack->set("clickhouseVersion", String{VERSION_STRING});
+    Poco::JSON::Array::Ptr roles = new Poco::JSON::Array();
+    for (const auto & role : request_context.roles)
+        roles->add(role);
 
     Poco::JSON::Object::Ptr context_object = new Poco::JSON::Object();
-    context_object->set("identity", identity);
-    context_object->set("queryId", request_context.query_id);
-    context_object->set("softwareStack", software_stack);
-
-    Poco::JSON::Object::Ptr action = new Poco::JSON::Object();
+    context_object->set("user", request_context.user);
+    context_object->set("roles", roles);
+    context_object->set("query_id", request_context.query_id);
+    context_object->set("clickhouse_version", String{VERSION_STRING});
 
     Poco::JSON::Array::Ptr operations_array = new Poco::JSON::Array();
     for (const auto & operation : operations)
         operations_array->add(operation);
+
+    Poco::JSON::Object::Ptr action = new Poco::JSON::Object();
     action->set("operations", operations_array);
 
     if (resource)
         action->set("resource", serializeResource(*resource));
 
     if (target_resource)
-        action->set("targetResource", serializeResource(*target_resource));
+        action->set("target_resource", serializeResource(*target_resource));
 
     if (!filter_resources.empty())
     {
         Poco::JSON::Array::Ptr resources = new Poco::JSON::Array();
         for (const auto & filter_resource : filter_resources)
             resources->add(serializeResource(filter_resource));
-        action->set("filterResources", resources);
+        action->set("filter_resources", resources);
     }
 
     Poco::JSON::Object::Ptr input = new Poco::JSON::Object();
