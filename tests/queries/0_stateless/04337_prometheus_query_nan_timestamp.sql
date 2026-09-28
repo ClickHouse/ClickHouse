@@ -28,11 +28,11 @@ CREATE TABLE ts_tags (
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 CREATE TABLE ts_metrics (
-    metric_family_name String,
+    metric_family String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
 CREATE TABLE ts_ns ENGINE = TimeSeries
 DATA ts_data TAGS ts_tags METRICS ts_metrics;
