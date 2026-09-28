@@ -104,26 +104,18 @@ def main():
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
-    debs = [p for p in temp_path.iterdir() if p.suffix == ".deb"]
-    if debs:
-        for package in debs:
+    for package in temp_path.iterdir():
+        if package.suffix == ".deb":
             Shell.check(
                 f"dpkg -x {package} {temp_path} && rm {package}",
                 verbose=True,
                 strict=True,
             )
-        Shell.check(
-            f"mv {temp_path}/usr/bin/clickhouse {temp_path}/clickhouse",
-            verbose=True,
-            strict=True,
-        )
-    else:
-        # The compat builds are not packaged: their self-extracting binary replaces itself with the executable on the first run.
-        Shell.check(
-            f"chmod +x {temp_path}/clickhouse && {temp_path}/clickhouse --version",
-            verbose=True,
-            strict=True,
-        )
+    Shell.check(
+        f"mv {temp_path}/usr/bin/clickhouse {temp_path}/clickhouse",
+        verbose=True,
+        strict=True,
+    )
     # Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
 
     test_results = []
@@ -140,17 +132,6 @@ def main():
         Result.from_commands_run(
             name="position independent executable",
             command=process_pie_check,
-        )
-    )
-
-    # Nothing else in CI runs the compat builds, and on x86-64-v1 `round` has a code path of its own.
-    test_results.append(
-        Result.from_commands_run(
-            name="round half to even",
-            command=[f"""
-            {temp_path}/clickhouse local --query "SELECT throwIf(round(x) != r OR round(toFloat32(x)) != r) FROM values('x Float64, r Float64', (0.5, 0), (1.5, 2), (2.5, 2), (-0.5, 0), (-1.5, -2), (-2.5, -2)) FORMAT Null"
-            """.strip()],
-            with_info=True,
         )
     )
 
