@@ -30,16 +30,28 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// unambiguously starts a SET statement is taken from the foreign text, so that the
     /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
     /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...`,
-    /// which the transpiler below can still take as foreign text.
+    /// which the transpiler below can still take as foreign text. A SET that leaves trailing input
+    /// falls through as well: e.g. MySQL `SET SESSION sql_mode = ...` would otherwise be taken as
+    /// the shorthand `SET SESSION` (`SESSION = true`) followed by junk.
     if (isCommittedToSetQuery(pos))
     {
+        const auto set_begin = pos;
+        auto consumes_statement = [&]
+        {
+            if (pos->isEnd() || pos->type == TokenType::Semicolon)
+                return true;
+            pos = set_begin;
+            node = nullptr;
+            return false;
+        };
+
         /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
         /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
         ParserSetRoleQuery set_role_p;
-        if (set_role_p.parse(pos, node, expected))
+        if (set_role_p.parse(pos, node, expected) && consumes_statement())
             return true;
         ParserSetQuery set_p;
-        if (set_p.parse(pos, node, expected))
+        if (set_p.parse(pos, node, expected) && consumes_statement())
             return true;
     }
 

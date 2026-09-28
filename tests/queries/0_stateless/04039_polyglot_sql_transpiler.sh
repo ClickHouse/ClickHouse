@@ -55,3 +55,8 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
 # rejected by the ClickHouse lexer before it gets there
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
     -q 'SET ~' 2>&1 | grep -cim1 'polyglot'
+
+# Test that a foreign SET which ClickHouse's SET parser only partially accepts reaches the transpiler:
+# MySQL `SET SESSION sql_mode = ...` must not be taken as the shorthand `SET SESSION` plus trailing junk
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET SESSION sql_mode = 'ANSI_QUOTES'" 2>&1 | grep -cim1 'polyglot'
