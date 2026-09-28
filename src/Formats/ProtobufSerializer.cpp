@@ -1727,8 +1727,10 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf, lut);
-            /// The field is a complete value, so a leftover such as the ` April 4` of `2024 April 4`
-            /// must be an error instead of silently yielding the unix timestamp `2024`.
+            /// `DateTime` has no subseconds, so fractional seconds like the `.500` of `2024-01-15 10:11:12.500`
+            /// are dropped, as before. Otherwise the field is a complete value, so a leftover such as the
+            /// ` April 4` of `2024 April 4` must be an error instead of silently yielding the unix timestamp `2024`.
+            skipDateTimeFractionalSeconds(buf);
             assertEOF(buf);
             return std::max<time_t>(tm, 0);
         }

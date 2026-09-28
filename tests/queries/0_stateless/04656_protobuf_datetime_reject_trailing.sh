@@ -21,6 +21,9 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE protobuf_datetime64_trailing (ts DateTi
 # then the tag of field 1 with wire type LENGTH_DELIMITED (0x0a), then the string length and bytes.
 printf '\x15\x0a\x132024-01-15 10:11:12' \
     | $CLICKHOUSE_CLIENT --query "INSERT INTO protobuf_datetime_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf"
+# `DateTime` has no subseconds, so fractional seconds are accepted and dropped.
+printf '\x19\x0a\x172024-01-15 10:11:12.500' \
+    | $CLICKHOUSE_CLIENT --query "INSERT INTO protobuf_datetime_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf"
 # Unlike the `DateTime` serializer, which uses the time zone of the column, the `DateTime64` one
 # parses the text in the session time zone (`readDateTime64Text` without a `DateLUTImpl` in
 # `ProtobufSerializerDecimal`), so pin it to keep the test independent of the randomized setting.
@@ -38,6 +41,12 @@ printf '\x0e\x0a\x0c2024 April 4' \
 printf '\x0e\x0a\x0c2024 April 4' \
     | $CLICKHOUSE_CLIENT --input_format_allow_errors_num 0 --input_format_allow_errors_ratio 0 \
         --query "INSERT INTO protobuf_datetime64_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" 2>&1 \
+    | grep -c -F -e "CANNOT_PARSE_INPUT_ASSERTION_FAILED" -e "CANNOT_PARSE_DATETIME"
+
+# A fractional separator without digits is not a valid value.
+printf '\x16\x0a\x142024-01-15 10:11:12.' \
+    | $CLICKHOUSE_CLIENT --input_format_allow_errors_num 0 --input_format_allow_errors_ratio 0 \
+        --query "INSERT INTO protobuf_datetime_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" 2>&1 \
     | grep -c -F -e "CANNOT_PARSE_INPUT_ASSERTION_FAILED" -e "CANNOT_PARSE_DATETIME"
 
 # The rejected rows were not inserted.
