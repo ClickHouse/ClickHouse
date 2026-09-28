@@ -264,20 +264,53 @@ class FuzzerLogParser:
         lines.reverse()
         return lines
 
+    @staticmethod
+    def ends_in_comment(query_text):
+        # Whether a line of query text ends inside a comment, i.e. the query goes on
+        # in the next line. Comment starts within string literals and quoted
+        # identifiers do not count, e.g. "SELECT if(1, '--', 'x'))".
+        quote = None
+        i = 0
+        while i < len(query_text):
+            char = query_text[i]
+            pair = query_text[i : i + 2]
+            if quote:
+                if char == "\\":
+                    i += 1
+                elif char == quote:
+                    quote = None
+            elif char in "'\"`":
+                quote = char
+            elif pair in ("--", "//", "# ", "#!"):
+                return True
+            elif pair == "/*":
+                end = query_text.find("*/", i + 2)
+                if end == -1:
+                    return True
+                i = end + 1
+            i += 1
+        return False
+
     def inside_quoted_query(self, position, file):
         # Whether the line at `position` (1-based) is part of a query quoted by an
         # earlier line of the same log record: `toOneLineQuery` keeps a newline after
         # every SQL comment, so only the record's first line carries a marker. The
         # quoted query is the last field of the `executeQuery` messages, so it ends
         # either at STACK_TRACE_MARKER or at the ")" closing the marker's parenthesis.
-        # A line with a "--" comment was broken by that comment, so the query goes on
+        # A line ending in a comment was broken by that comment, so the query goes on
         # and a ")" it ends with belongs to the comment, e.g. "-- Selecting (e.g. x)".
         for line in self.lines_before(position, file):
             if self.STACK_TRACE_MARKER in line:
                 return False
-            if line.rstrip().endswith(")") and "--" not in line:
+            markers = [
+                line.find(marker) + len(marker)
+                for marker in self.QUERY_TEXT_MARKERS
+                if marker in line
+            ]
+            query_text = line[min(markers) :] if markers else line
+            if line.rstrip().endswith(")") and not self.ends_in_comment(query_text):
                 return False
-            if any(marker in line for marker in self.QUERY_TEXT_MARKERS):
+            if markers:
                 return True
             if self.is_log_record_start(line):
                 return False
