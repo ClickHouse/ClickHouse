@@ -1,4 +1,5 @@
 import math
+import re
 import textwrap
 from pathlib import Path
 
@@ -12,6 +13,36 @@ def test_parse_duration():
     assert loader.parse_duration("1m30s") == 90.0
     assert loader.parse_duration("15s") == 15.0
     assert loader.parse_duration("1ms") == 0.001
+
+
+def test_parse_duration_ns_is_exact():
+    assert loader.parse_duration_ns("0") == 0
+    assert loader.parse_duration_ns("1ms") == 1_000_000
+    assert loader.parse_duration_ns("10s53ms") == 10_053_000_000
+    assert loader.parse_duration_ns("1.5") == 1_500_000_000
+    assert loader.parse_duration_ns("5m") == 300_000_000_000
+
+
+def test_load_interval_multiplies_into_exact_millisecond_timestamps(tmp_path: Path):
+    """``load 1ms`` with 4001 samples must produce 4001 distinct milliseconds.
+
+    A binary float interval (0.001) truncated to nanoseconds by the server
+    collapses distinct samples onto one millisecond; the sum over a
+    window of N samples then falls short of N.
+    """
+    path = tmp_path / "dense.test"
+    path.write_text("load 1ms\n  metric 1+0x4000\n\neval instant at 4s metric\n  {} 1\n")
+    (scenario,) = loader.parse_test_file(path)
+    (block,) = scenario.loads
+    assert block.interval_ns == 1_000_000
+    values = loader.series_insert_values(block.interval_ns, block.series[0])
+    assert values is not None
+    nanos = [int(ns) for ns in re.findall(r"fromUnixTimestamp64Nano\((\d+)\)", values)]
+    assert len(nanos) == 4001
+    millis = [ns // 1_000_000 for ns in nanos]
+    assert millis == list(range(4001))
+    for window_ms in (1000, 2000, 3000):
+        assert sum(1 for ms in millis if 4000 - window_ms < ms <= 4000) == window_ms
 
 
 def test_expand_arithmetic_samples():
@@ -405,13 +436,14 @@ def test_insert_sql_skips_native_histogram():
         'http_requests_histogram{path="/foo"} {{schema:0 sum:1 count:1}}x2'
     )
     assert spec.native_histogram
-    assert loader.series_insert_sql("t", 300, spec) is None
+    interval_ns = loader.parse_duration_ns("5m")
+    assert loader.series_insert_sql("t", interval_ns, spec) is None
     spec2 = loader.parse_series_line('http_requests{path="/foo"} 1 2 3')
-    sql = loader.series_insert_sql("t", 300, spec2)
+    sql = loader.series_insert_sql("t", interval_ns, spec2)
     assert sql is not None
-    assert "toDateTime64(0, 9)" in sql
-    assert "toDateTime64(600, 9)" in sql
-    assert loader.series_insert_values(300, spec2) in sql
+    assert "fromUnixTimestamp64Nano(0)" in sql
+    assert "fromUnixTimestamp64Nano(600000000000)" in sql
+    assert loader.series_insert_values(interval_ns, spec2) in sql
 
 
 def test_compliance_record_schema_version_2():

@@ -142,6 +142,14 @@ For how many blocks optimization of equal ranges of keys was applied
 
 How many elements were preallocated in hash tables for aggregation.
 
+### AggregationSharedKeptKeysRebuilds {#aggregationsharedkeptkeysrebuilds}
+
+Number of aggregation streams that rebuilt their hash table to the shared set of kept keys after the trivial GROUP BY LIMIT cutoff was reached (see the `optimize_trivial_group_by_limit_query` setting).
+
+### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
+
+Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
@@ -241,6 +249,10 @@ Number of fuzzed queries attempted by the server-side AST fuzzer.
 ### ASTFuzzerSkippedBackupRestore {#astfuzzerskippedbackuprestore}
 
 Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.
+
+### ASTFuzzerSkippedCollaborativeWorker {#astfuzzerskippedcollaborativeworker}
+
+Number of times the server-side AST fuzzer skipped fuzzing because the context was executing as a collaborative worker for another node's query: a parallel replicas participant or a cluster function worker.
 
 ### ASTFuzzerSkippedReplicatedDDLInternal {#astfuzzerskippedreplicatedddlinternal}
 
@@ -2787,6 +2799,10 @@ Number of get children recursive requests
 ### KeeperListRequest {#keeperlistrequest}
 
 Number of list requests
+
+### KeeperListWithOptionsRequest {#keeperlistwithoptionsrequest}
+
+Number of list with options requests
 
 ### KeeperLiveSessionsLockWaitMicroseconds {#keeperlivesessionslockwaitmicroseconds}
 
@@ -6367,6 +6383,10 @@ Number of 'list' (getChildren) requests to ZooKeeper.
 ### ZooKeeperListRecursive {#zookeeperlistrecursive}
 
 Number of 'listRecursive' requests to ZooKeeper.
+
+### ZooKeeperListWithOptions {#zookeeperlistwithoptions}
+
+Number of 'listWithOptions' requests to ZooKeeper.
 
 ### ZooKeeperMulti {#zookeepermulti}
 

@@ -64,6 +64,9 @@ struct TimeSeriesSettings
     static bool hasBuiltin(std::string_view name);
     SettingDescriptions enumerateSettings() const;
 
+    /// Whether the setting was explicitly set, even if to its default value.
+    bool isChanged(std::string_view name) const;
+
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;
 };
