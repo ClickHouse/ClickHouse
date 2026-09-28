@@ -997,16 +997,16 @@ struct ByteJaroSimilarityImpl
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
+        /// Shortcuts:
+
+        if (haystack_size == 0 || needle_size == 0)
+            return 0.0;
+
         /// Safety threshold against DoS
         if (haystack_size > max_string_size || needle_size > max_string_size)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function jaroSimilarity, should be at most {}", max_string_size);
-
-        /// Shortcuts:
-
-        if (haystack_size == 0 || needle_size == 0)
-            return 0.0;
 
         if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
             return 1.0;
@@ -1051,6 +1051,9 @@ struct ByteJaroWinklerSimilarityImpl
         static constexpr int max_prefix_length = 4;
         static constexpr double scaling_factor =  0.1;
         static constexpr double boost_threshold = 0.7;
+
+        if (haystack_size == 0 || needle_size == 0)
+            return 0.0;
 
         /// Safety threshold against DoS
         if (haystack_size > max_string_size || needle_size > max_string_size)

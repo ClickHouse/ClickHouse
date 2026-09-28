@@ -10,6 +10,8 @@ clickhouse	mouse	0
 clickhouse	mouse	10
 clickhouse	mouse	6
 -- Deny DoS using too large inputs
+-- Empty input bypasses size limit
+0	0	0	0
 -- non-const arguments
 byteHammingDistance			0
 byteHammingDistance		abc	3
