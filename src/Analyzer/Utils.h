@@ -198,6 +198,7 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
+/// A node that carries a window definition stays a window function.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
 /// Returns the types the arguments of a window function must be cast to before it is resolved.
