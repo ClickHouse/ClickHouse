@@ -1,0 +1,6 @@
+dst1	1	sync
+dst1	2	async
+dst2	1	sync
+dst2	2	async
+snapshots taken by sync insert	0
+snapshots taken by async insert flush	0
