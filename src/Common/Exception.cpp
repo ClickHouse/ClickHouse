@@ -1,4 +1,7 @@
 #include <base/MemorySanitizer.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -53,6 +56,28 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
     extern const int POTENTIALLY_BROKEN_DATA_PART;
     extern const int CORRUPTED_DATA;
+}
+
+String formatExceptionJSON(int code, std::string_view name, const ExceptionQueryInfo & query_info, std::string_view formatted_message)
+{
+    WriteBufferFromOwnString out;
+    WriteBufferValidUTF8 utf8_out(out);
+    const FormatSettings settings;
+    writeCString("{\"code\":", utf8_out);
+    writeIntText(code, utf8_out);
+    writeCString(",\"name\":", utf8_out);
+    writeJSONString(name, utf8_out, settings);
+    writeCString(",\"code_name\":", utf8_out);
+    writeJSONString(query_info.code_name, utf8_out, settings);
+    writeCString(",\"query_id\":", utf8_out);
+    writeJSONString(query_info.query_id, utf8_out, settings);
+    writeCString(",\"query\":", utf8_out);
+    writeJSONString(query_info.query, utf8_out, settings);
+    writeCString(",\"formatted_message\":", utf8_out);
+    writeJSONString(formatted_message, utf8_out, settings);
+    writeChar('}', utf8_out);
+    utf8_out.finalize();
+    return out.str();
 }
 
 void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size)

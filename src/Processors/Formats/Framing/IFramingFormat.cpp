@@ -148,7 +148,7 @@ void IFramingFormat::finalize()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before writing the framed exception packet");
         });
-        emitToOut([&] { writeExceptionPacket(exception_message); });
+        emitToOut([&] { writeExceptionPacket(exception_message, exception_is_structured); });
     }
 
     emitToOut([&] { finalizeImpl(); });

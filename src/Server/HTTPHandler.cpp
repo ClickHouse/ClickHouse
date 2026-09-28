@@ -1,4 +1,5 @@
 #include <Server/HTTPHandler.h>
+#include <Common/ErrorCodes.h>
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
@@ -473,6 +474,8 @@ void HTTPHandler::processQuery(
     std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
 
     context->setCurrentQueryId(query_id);
+    if (used_output.structured_exception)
+        used_output.exception_query_info.query_id = context->getCurrentQueryId();
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
@@ -1010,6 +1013,8 @@ void HTTPHandler::processQuery(
     /// SQL comes from the request body, `final_query` is empty and the body is concatenated below;
     /// the engine then wraps the parsed body query just the same.
     const String & query = final_query;
+    if (used_output.structured_exception)
+        used_output.exception_query_info.query = query;
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -1244,6 +1249,9 @@ void HTTPHandler::processQuery(
         if (framing)
             used_output.framed = true;
 
+        if (used_output.structured_exception && !framing)
+            return;
+
         /// With a framing format, the exception is always written as a separate packet, because the
         /// client parses the response as a stream of packets. Otherwise the exception is written into
         /// the output format if the format supports it and the corresponding setting is enabled.
@@ -1293,7 +1301,7 @@ void HTTPHandler::processQuery(
                         if (framing_profile_events_queue)
                             framing_for_exception->setProfileEventsQueue(
                                 framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
-                        framing_for_exception->setException(message);
+                        framing_for_exception->setException(message, used_output.structured_exception);
                         framing_for_exception->finalize();
                     }
                     else
@@ -1314,11 +1322,16 @@ void HTTPHandler::processQuery(
 
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+                if (used_output.structured_exception)
+                {
+                    used_output.exception_query_info.code_name = ErrorCodes::getName(status.code);
+                    status.message = formatExceptionJSON(status.code, "DB::Exception", used_output.exception_query_info, status.message);
+                }
 
                 drainRequestIfNeeded(request, response);
                 used_output.out_holder->setExceptionCode(status.code);
                 if (framing)
-                    framing->setException(status.message);
+                    framing->setException(status.message, used_output.structured_exception);
                 else
                     current_output_format.setException(status.message);
                 current_output_format.finalize();
@@ -1398,7 +1411,8 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format,
         query_finish_callback,
-        http_continue_callback);
+        http_continue_callback,
+        used_output.structured_exception ? &used_output.exception_query_info.query : nullptr);
 }
 
 bool HTTPHandler::trySendExceptionToClient(
@@ -1409,7 +1423,7 @@ try
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-        return wb.cancelWithException(request, exception_code, message, nullptr);
+        return wb.cancelWithException(request, exception_code, message, nullptr, used_output.structured_exception);
     }
 
     /// A framed response fails closed once its transmission has started. That covers a failure in
@@ -1493,7 +1507,8 @@ try
     /// Send the error message into already used (and possibly compressed) stream.
     /// Note that the error message will possibly be sent after some data.
     /// Also HTTP code 200 could have already been sent.
-    return used_output.out_holder->cancelWithException(request, exception_code, message, used_output.out_maybe_compressed.get());
+    return used_output.out_holder->cancelWithException(
+        request, exception_code, message, used_output.out_maybe_compressed.get(), used_output.structured_exception);
 }
 catch (...)
 {
@@ -1513,6 +1528,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     QueryScope query_scope;
 
     Output used_output;
+    const auto exception_format = request.get("X-ClickHouse-Exception-Format", "Pretty");
+    used_output.structured_exception = exception_format == "JSON";
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
@@ -1526,6 +1543,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
+        if (exception_format != "Pretty" && exception_format != "JSON")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown exception format '{}': expected Pretty or JSON", exception_format);
+
         if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
         {
             processOptionsRequest(response, server.config());
@@ -1559,7 +1579,12 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
+        response.add(
+            "Access-Control-Expose-Headers",
+            "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-"
+            "ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag,X-ClickHouse-Exception-Format");
+        if (used_output.structured_exception)
+            response.set("X-ClickHouse-Exception-Format", "JSON");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
@@ -1627,8 +1652,15 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
           * If exception is thrown on local server, then stack trace is in separate field.
           */
         const bool include_version = session && session->sessionContext();
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
-        auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
+        const ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
+        String exception_message;
+        if (used_output.structured_exception)
+        {
+            used_output.exception_query_info.code_name = ErrorCodes::getName(status.code);
+            exception_message = formatExceptionJSON(status.code, "DB::Exception", used_output.exception_query_info, status.message);
+        }
+        auto error_sent = trySendExceptionToClient(
+            status.code, used_output.structured_exception ? exception_message : status.message, request, response, used_output);
 
         used_output.cancel();
 

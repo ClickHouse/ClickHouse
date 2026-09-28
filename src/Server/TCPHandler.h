@@ -333,11 +333,12 @@ private:
 
     void processTablesStatusRequest();
 
+    bool hello_sent = false;
     void sendHello();
     void sendData(QueryState & state, const Block & block); /// Write a block to the network.
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
-    void sendException(const Exception & e, bool with_stack_trace);
+    void sendException(const Exception & e, bool with_stack_trace, const QueryState * state = nullptr);
     /// Send an exception when the connection buffers are not initialized yet
     /// (for example, when their allocation failed because the server memory limit is reached).
     void trySendExceptionWithoutConnectionBuffers(const Exception & e);

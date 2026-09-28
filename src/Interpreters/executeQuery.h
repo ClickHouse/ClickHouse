@@ -63,7 +63,8 @@ void executeQuery(
                                                    /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
                                                    /// the same semantics as the native protocol, which sends its trailing logs and profile events
                                                    /// after the query log entry too.
-    HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
+    HTTPContinueCallback http_continue_callback = {}, /// If non-empty, called after quota checks to send HTTP 100 Continue.
+    String * original_query_out = nullptr /// Receives the original SQL text, excluding parsed `INSERT` data.
 );
 
 void executeQuery(

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Exception.h>
+
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -137,6 +139,9 @@ private:
         std::shared_ptr<CascadeWriteBuffer> out_delayed_and_compressed_holder;
         /// Points to out_maybe_compressed or to CascadeWriteBuffer.
         std::shared_ptr<WriteBuffer>  out_maybe_delayed_and_compressed;
+
+        bool structured_exception = false;
+        ExceptionQueryInfo exception_query_info;
 
         bool finalized = false;
         bool canceled = false;
