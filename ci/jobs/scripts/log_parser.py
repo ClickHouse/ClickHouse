@@ -25,6 +25,8 @@ class FuzzerLogParser:
     # checked, so a marker that follows the match (a real failure quoting a query)
     # keeps the match.
     QUERY_TEXT_MARKERS = ("(in query:", "(query:")
+    # What follows the query quoted by the crash record of `SignalHandlers.cpp`.
+    CRASH_RECORD_QUERY_END = ") Received signal "
     # How many matching lines to consider before giving up on finding a failure that
     # is not a quoted query.
     MAX_FAILURE_CANDIDATES = 50
@@ -300,23 +302,34 @@ class FuzzerLogParser:
 
     def quoted_query_ends(self, query_lines):
         # Whether the query quoted by `query_lines` (its text in the marker line, then
-        # the following lines of the record) ends before their end: at a ")" closing
-        # the marker's parenthesis at the end of a line. A block comment may span
-        # lines, so its state is carried from line to line, and a ")" that ends a
-        # line inside a comment belongs to the comment, e.g. "-- Selecting (e.g. x)".
+        # the following lines of the record, then the current line's text before the
+        # match) ends before their end: at a ")" closing the marker's parenthesis at
+        # the end of a line, or followed by " Received signal " - the crash record of
+        # `SignalHandlers.cpp` is "(query: {}) Received signal {} ({})". A block
+        # comment may span lines, so its state is carried from line to line, and a
+        # ")" that ends a line inside a comment belongs to the comment, e.g.
+        # "-- Selecting (e.g. x)".
         depth = 0
         for query_text in query_lines:
             depth, in_line_comment = self.scan_comments(query_text, depth)
-            if query_text.rstrip().endswith(")") and not depth and not in_line_comment:
+            if depth or in_line_comment:
+                continue
+            if (
+                query_text.rstrip().endswith(")")
+                or self.CRASH_RECORD_QUERY_END in query_text
+            ):
                 return True
         return False
 
-    def inside_quoted_query(self, position, file):
-        # Whether the line at `position` (1-based) is part of a query quoted by an
-        # earlier line of the same log record: `toOneLineQuery` keeps a newline after
-        # every SQL comment, so only the record's first line carries a marker. The
-        # quoted query is the last field of the `executeQuery` messages, so it ends
-        # either at STACK_TRACE_MARKER or at the ")" closing the marker's parenthesis.
+    def inside_quoted_query(self, position, file, text_before_match):
+        # Whether the match at `position` (1-based line number), preceded in its line
+        # by `text_before_match`, is part of a query quoted by an earlier line of the
+        # same log record: `toOneLineQuery` keeps a newline after every SQL comment,
+        # and the crash record keeps the query's raw newlines, so only the record's
+        # first line carries a marker. The quoted query is the last field of the
+        # `executeQuery` messages, so it ends either at STACK_TRACE_MARKER or at the
+        # ")" closing the marker's parenthesis, which may precede the match in its
+        # own line, e.g. "UNION ALL SELECT 2) Received signal 11 (Segmentation fault)".
         lines = self.lines_before(position, file)
         for index, line in enumerate(lines):
             if self.STACK_TRACE_MARKER in line:
@@ -327,7 +340,9 @@ class FuzzerLogParser:
                 if marker in line
             ]
             if markers:
-                query_lines = [line[min(markers) :]] + lines[:index][::-1]
+                query_lines = (
+                    [line[min(markers) :]] + lines[:index][::-1] + [text_before_match]
+                )
                 return not self.quoted_query_ends(query_lines)
             if self.is_log_record_start(line):
                 return False
@@ -351,7 +366,7 @@ class FuzzerLogParser:
                 continue
             # A match on a record's own first line is the check above's business.
             if not self.is_log_record_start(line) and self.inside_quoted_query(
-                position, file
+                position, file, line[: match.start()]
             ):
                 print(f"Skipping the match in the quoted query text at line {position}")
                 continue
