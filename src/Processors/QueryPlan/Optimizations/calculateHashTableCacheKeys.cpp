@@ -12,6 +12,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
@@ -134,6 +135,73 @@ bool isByteTransparentTransform(const ITransformingStep & transform)
         && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
 }
 
+/// Hash an `ActionsDAG` by what it computes - the kind, name, type and function of every node and how
+/// they are wired - but not by the values its constants hold. A value can be arbitrarily large: a scalar
+/// subquery folds its whole result into the DAG (e.g. a `groupBitmap` state of millions of elements),
+/// and hashing that on every execution costs more than the rest of planning. The names already
+/// identify the constants: a literal is named by its value (`600000_UInt32`) and a scalar subquery by
+/// the hash of the subquery (`__getScalar('...')`). What is lost is only a value that the name does
+/// not determine - a folded `now()`, or a scalar subquery over changed data - and sharing statistics
+/// between such executions only makes the estimate slightly off.
+///
+/// Nodes are visited in the order `ActionsDAG::serialize` writes them, so two DAGs are told apart
+/// exactly when their serialized forms would be, apart from the constant values.
+void updateHashWithoutConstantValues(const ActionsDAG & dag, SipHash & hash)
+{
+    const auto update_with_size = [&hash](std::string_view s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+
+    /// Children before their parents, in the order of `dag.getNodes()`, like `addChildrenBeforeNode`.
+    std::vector<const ActionsDAG::Node *> ordered;
+    std::unordered_map<const ActionsDAG::Node *, size_t> node_to_id;
+    std::vector<std::pair<const ActionsDAG::Node *, size_t>> stack;
+    for (const auto & root : dag.getNodes())
+    {
+        if (node_to_id.contains(&root))
+            continue;
+        stack.emplace_back(&root, 0);
+        while (!stack.empty())
+        {
+            auto & [node, next_child] = stack.back();
+            if (next_child < node->children.size())
+            {
+                const auto * child = node->children[next_child++];
+                if (!node_to_id.contains(child))
+                    stack.emplace_back(child, 0);
+                continue;
+            }
+            if (node_to_id.emplace(node, ordered.size()).second)
+                ordered.push_back(node);
+            stack.pop_back();
+        }
+    }
+
+    hash.update(ordered.size());
+    for (const auto * node : ordered)
+    {
+        hash.update(static_cast<UInt8>(node->type));
+        update_with_size(node->result_name);
+        update_with_size(node->result_type->getName());
+        hash.update(node->children.size());
+        for (const auto * child : node->children)
+            hash.update(node_to_id.at(child));
+        hash.update(node->column != nullptr);
+        hash.update(node->is_deterministic_constant);
+        if (node->function_base)
+            update_with_size(node->function_base->getName());
+    }
+
+    hash.update(dag.getInputs().size());
+    for (const auto * input : dag.getInputs())
+        hash.update(node_to_id.at(input));
+    hash.update(dag.getOutputs().size());
+    for (const auto * output : dag.getOutputs())
+        hash.update(node_to_id.at(output));
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
@@ -144,6 +212,26 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
     if (isByteTransparentTransform(transform))
         return 0;
+
+    /// An expression or a filter is keyed by its DAG without the constant values, see
+    /// `updateHashWithoutConstantValues`. These are the steps a folded constant lands in.
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
+    {
+        SipHash hash;
+        hash.update(expression->getSerializationName());
+        updateHashWithoutConstantValues(expression->getExpression(), hash);
+        return hash.get64();
+    }
+    if (const auto * filter = typeid_cast<const FilterStep *>(&transform))
+    {
+        SipHash hash;
+        hash.update(filter->getSerializationName());
+        hash.update(filter->getFilterColumnName().size());
+        hash.update(filter->getFilterColumnName());
+        hash.update(filter->removesFilterColumn());
+        updateHashWithoutConstantValues(filter->getExpression(), hash);
+        return hash.get64();
+    }
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
     /// hashed as it is produced rather than accumulated. A step can carry a whole constant-folded

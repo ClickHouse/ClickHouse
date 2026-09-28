@@ -4949,7 +4949,9 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         /// Every other constant's value — including a folded `now()`/`randConstant` — must stay in the
         /// key, otherwise semantically different queries would share statistics. This output is
         /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
-        /// path (`for_cache_key == false`) always writes it.
+        /// path (`for_cache_key == false`) always writes it. `ExpressionStep` and `FilterStep` do not
+        /// reach this path for the hash-table-stats key: they are keyed without constant values by
+        /// `updateHashWithoutConstantValues`, because a folded constant can be arbitrarily large.
         if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
