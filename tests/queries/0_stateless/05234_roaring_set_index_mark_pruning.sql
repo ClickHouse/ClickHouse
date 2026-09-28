@@ -135,6 +135,15 @@ INSERT INTO t_roaring_compound SELECT 1, number % 5, toString(number) FROM numbe
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_roaring_compound WHERE team_id = 1 AND has([0, 3], k)) WHERE explain LIKE '%Granules%';
 SELECT count() FROM t_roaring_compound WHERE team_id = 1 AND has([0, 3], k) SETTINGS force_primary_key = 1;
 
+SELECT '--- Transformed set: many set elements map to one key value ---';
+-- With `ORDER BY toDate(ts)` the 100000 elements of the set pass through `toDate` and become two dates.
+DROP TABLE IF EXISTS t_roaring_many_to_one;
+CREATE TABLE t_roaring_many_to_one (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY toDate(ts) SETTINGS index_granularity = 8;
+INSERT INTO t_roaring_many_to_one SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(240);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_roaring_many_to_one WHERE ts IN (SELECT toDateTime('2026-01-03 00:00:00', 'UTC') + number FROM numbers(100000))) WHERE explain LIKE '%Granules%';
+SELECT count() FROM t_roaring_many_to_one WHERE ts IN (SELECT toDateTime('2026-01-03 00:00:00', 'UTC') + number FROM numbers(100000)) SETTINGS force_primary_key = 1;
+DROP TABLE t_roaring_many_to_one;
+
 DROP TABLE t_roaring_index;
 DROP TABLE t_roaring_index_u32;
 DROP TABLE t_roaring_transformed;

@@ -701,20 +701,34 @@ namespace
 /// seeking in it lose badly to a binary search over the sorted set. Measured on 10M elements: dense
 /// values build in 38 ms and answer a range check in 45 ns against 245 ns for the binary search,
 /// while values spread over the whole range build in 788 ms and answer in 10.5 us. Keep it only for
-/// the shapes where it pays. `ordered_set` is sorted, so the ends bound the span and this is O(1).
+/// the shapes where it pays. `ordered_set` is sorted, so the ends bound the span.
 template <typename Container>
 bool isWorthBuildingRoaring(const Container & data)
 {
+    /// A key transform such as `toDate` can map many set elements to one value, so count each value once.
+    size_t distinct = 1;
+    for (size_t i = 1; i < data.size(); ++i)
+        distinct += data[i] != data[i - 1];
+
     /// A small set costs almost nothing to build either way, and keeping it on the fast path is what
     /// makes the cross-bucket behaviour of `Roaring64Map` reachable from a test.
     static constexpr size_t max_size_always_worth = 65536;
-    if (data.size() <= max_size_always_worth)
+    if (distinct <= max_size_always_worth)
         return true;
 
     /// Above that size the bitmap only pays for itself when the values are dense.
     static constexpr UInt64 max_average_gap = 64;
     const UInt64 span = static_cast<UInt64>(data.back()) - static_cast<UInt64>(data.front());
-    return span / data.size() < max_average_gap;
+    return span / distinct < max_average_gap;
+}
+
+/// Adds each value of the sorted `data` once; equal values are adjacent.
+template <typename Container>
+void addDistinctSorted(roaring::Roaring64Map & bitmap, const Container & data)
+{
+    for (size_t i = 0; i < data.size(); ++i)
+        if (i == 0 || data[i] != data[i - 1])
+            bitmap.add(static_cast<uint64_t>(data[i]));
 }
 
 }
@@ -786,8 +800,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             if (isWorthBuildingRoaring(data))
             {
                 roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                for (auto val : data)
-                    roaring_bitmap->add(static_cast<uint64_t>(val));
+                addDistinctSorted(*roaring_bitmap, data);
             }
         }
         else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(ordered_set[0].get()))
@@ -796,8 +809,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             if (isWorthBuildingRoaring(data))
             {
                 roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                for (auto val : data)
-                    roaring_bitmap->add(static_cast<uint64_t>(val));
+                addDistinctSorted(*roaring_bitmap, data);
             }
         }
         else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(ordered_set[0].get()))
@@ -806,8 +818,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             if (isWorthBuildingRoaring(data))
             {
                 roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                for (auto val : data)
-                    roaring_bitmap->add(static_cast<uint64_t>(val));
+                addDistinctSorted(*roaring_bitmap, data);
             }
         }
     }

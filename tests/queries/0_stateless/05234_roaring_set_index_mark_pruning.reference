@@ -79,3 +79,6 @@ toDayOfWeek(ts, 1) IN (0)	2026-06-08 05:00:00
 --- Compound key: set column is not the leading key column ---
 Granules: 11/24
 80000
+--- Transformed set: many set elements map to one key value ---
+Granules: 7/30
+28
