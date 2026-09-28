@@ -8,7 +8,7 @@ SET allow_experimental_time_series_table = 1;
 
 CREATE TABLE prometheus ENGINE = TimeSeries;
 
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('m', map('src', 'value'), [(toDateTime64(100, 3), 1.5), (toDateTime64(110, 3), 2.5)]);
 
 SELECT '-- valid UTF-8 label names are accepted';
@@ -18,6 +18,10 @@ SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "é", "$1", 
 SELECT '-- label_replace keeps the empty source-label behavior';
 SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "dst", "constant", "", ".*")', 110);
 SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "dst", "constant", "\\xff", ".*")', 110);
+
+SELECT '-- subquery with an empty inner range';
+SELECT count() FROM prometheusQuery('prometheus', 'label_join(m, "dst", "-", "src")[1s:15s]', 110);
+SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "dst", "$1", "src", "(.*)")[1s:15s]', 110);
 
 SELECT '-- invalid label names are rejected';
 SELECT * FROM prometheusQuery('prometheus', 'label_join(m, "dst", "-", "\\xff")', 110); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }

@@ -4,4 +4,7 @@
 -- label_replace keeps the empty source-label behavior
 1
 1
+-- subquery with an empty inner range
+0
+0
 -- invalid label names are rejected
