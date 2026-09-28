@@ -147,8 +147,10 @@ private:
 
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
-    /// Set once both keys are known and before the first write; see `blob_move_attempted` of the move operation.
-    bool blob_removal_attempted = false;
+    /// Set before the copy to the temporary key, because that copy can land even when it throws.
+    bool copy_attempted = false;
+    /// Set once that copy returns. Only from then on can this operation have removed the source.
+    bool source_saved = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -219,6 +221,9 @@ private:
     /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
     /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
     bool blob_move_attempted{false};
+    /// Set once the copy of the source to `tmp_remote_path_from` returns. Only from then on can the move have removed
+    /// the source, and nothing touches the target before it.
+    bool source_saved{false};
     bool had_existing_target{false};
 
 public:
@@ -233,19 +238,20 @@ public:
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
-     *  1. Copy remote_path_to (if exists) to tmp_remote_path_from, which is used to restore the target file in case of failure.
-     *  2. Copy remote_path_from to tmp_remote_path_to, which is used to restore the source file in case of failure.
+     *  1. Copy remote_path_from to tmp_remote_path_from. A source that cannot be read stops the move here, before
+     *     anything changes.
+     *  2. If the target exists, copy remote_path_to to tmp_remote_path_to and remove remote_path_to.
      *  3. Copy remote_path_from to remote_path_to.
-     *  4. Remove remote_path_to.
+     *  4. Remove remote_path_from.
      *  5. Update fs_tree
      */
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
-     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
-     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
-     *  5. Update fs_tree
+     *  1. Restore remote_path_from from tmp_remote_path_from, if the source was saved there.
+     *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if the target did not exist. This step runs
+     *     even when the first one cannot complete.
+     *  3. Remove the temporary copies.
      */
     void undo() override;
     /**

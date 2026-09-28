@@ -27,6 +27,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class MetadataPlainRewritableDiskTest : public testing::Test
 {
 public:
@@ -2424,4 +2429,95 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAReplacedFile)
     metadata = restartMetadataStorage("UndoReplacedFile");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/target").front().remote_path), "the target file");
+}
+
+/// Only a committed transaction removes the blob of a file the metadata lists. When the blob is gone anyway, metadata
+/// and object storage diverged before the transaction began: the commit reports a broken invariant, and the reversal
+/// still leaves every object as it found it. `LOGICAL_ERROR` aborts a debug or sanitizer build where it is thrown, so
+/// there the check is that the commit dies with this report.
+static void expectCommitReportsDivergence(const MetadataTransactionPtr & tx, const std::string & missing_blob)
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    EXPECT_DEATH(tx->commit(DB::NoCommitOptions{}), "diverged");
+    (void)missing_blob;
+#else
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction that needs a missing blob succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR) << e.message();
+        EXPECT_THAT(e.message(), testing::HasSubstr("diverged"));
+        EXPECT_THAT(e.message(), testing::HasSubstr(missing_blob));
+        EXPECT_THAT(e.message(), testing::Not(testing::HasSubstr("did not complete")));
+    }
+#endif
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlob)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UnlinkWithoutBlob");
+    auto object_storage = getObjectStorage("UnlinkWithoutBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto blob = metadata->getStorageObjects("/A/file").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(blob));
+    const auto objects_before = allObjects(object_storage, "UnlinkWithoutBlob");
+
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/file", /*if_exists=*/false, /*should_remove_objects=*/true);
+    expectCommitReportsDivergence(tx, blob);
+
+    EXPECT_EQ(allObjects(object_storage, "UnlinkWithoutBlob"), objects_before);
+    EXPECT_TRUE(metadata->existsFile("/A/file"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReplaceFromFileWithoutBlobKeepsTarget)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("ReplaceWithoutBlob");
+    auto object_storage = getObjectStorage("ReplaceWithoutBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto target_blob = metadata->getStorageObjects("/A/target").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(source_blob));
+    const auto objects_before = allObjects(object_storage, "ReplaceWithoutBlob");
+
+    /// The target is a live file. A move that removed it before it found that the source cannot be read would leave the
+    /// metadata listing a file whose blob is lost.
+    auto tx = metadata->createTransaction();
+    tx->replaceFile("/A/source", "/A/target");
+    expectCommitReportsDivergence(tx, source_blob);
+
+    EXPECT_EQ(allObjects(object_storage, "ReplaceWithoutBlob"), objects_before);
+    EXPECT_EQ(readObject(object_storage, target_blob), "the target file");
+
+    metadata = restartMetadataStorage("ReplaceWithoutBlob");
+    EXPECT_TRUE(metadata->existsFile("/A/target"));
+    EXPECT_FALSE(metadata->existsFile("/A/source"));
 }
