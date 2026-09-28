@@ -550,10 +550,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /* no_squash= */ false,
                     /* no_destination= */ false,
                     /* async_insert_= */ false);
-
-                /// The top-level CountingTransform of this distributed INSERT already counted these rows.
                 interp.setSkipWriteAccounting(true);
-
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -880,9 +877,7 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             /* no_destination= */ false,
             /* async_insert_= */ false);
 
-        /// Already counted by the top-level CountingTransform, as in runWritingJob.
         interp.setSkipWriteAccounting(true);
-
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
 

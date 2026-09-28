@@ -1146,8 +1146,7 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        /// Built even when accounting is skipped: this is the pipeline's head, and `pipeline_input`
-        /// is left unset if no head transform is added at all.
+        /// Added even when accounting is skipped: `pipeline_input` comes from the first head transform.
         auto counting = std::make_shared<CountingTransform>(
             insert_header,
             skip_write_accounting_ ? nullptr : context_->getQuota(),

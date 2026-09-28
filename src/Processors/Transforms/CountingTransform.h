@@ -36,9 +36,7 @@ public:
         process_elem = elem;
     }
 
-    /// Disable the global InsertedRows / InsertedBytes profile-event increments for this transform.
-    /// Used for the nested insert of a transparent forwarder (a distributed INSERT's local shard, an
-    /// INSERT through an Alias table), whose rows an outer pipeline already accounted for the query.
+    /// Skip the InsertedRows / InsertedBytes profile-event increments in onConsume.
     void disableProfileEventsCounting()
     {
         count_profile_events = false;
