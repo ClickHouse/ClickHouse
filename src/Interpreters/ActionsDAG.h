@@ -121,8 +121,8 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        /// See `ActionsDAG::updateHash` for `with_constant_values`.
-        void updateHash(SipHash & hash_state, bool with_constant_values = true) const;
+        /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values`.
+        void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -578,11 +578,15 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    /// With `with_constant_values = false` a constant is hashed by its name and type but not by its
-    /// value, which can be arbitrarily large (a folded scalar subquery). The name still identifies the
-    /// value in practice: a literal or a folded expression is named by it. Meant for keys that tolerate
-    /// the rare collision, such as the hash-table-stats cache key.
-    void updateHash(SipHash & hash_state, bool with_constant_values = true) const;
+    /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
+    /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
+    /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
+    /// scalar subquery can carry a `groupBitmap` state of millions of elements. Fixed-size values are
+    /// always hashed. Two such constants that share a name then collide even when their values differ,
+    /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
+    /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
+    /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
+    void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 

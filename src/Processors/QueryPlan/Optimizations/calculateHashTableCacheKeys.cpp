@@ -101,9 +101,9 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// policies that pass very different numbers of rows to the boundary would otherwise share an
     /// entry.
     if (const auto & row_level_filter = read.getRowLevelFilter())
-        row_level_filter->actions.updateHash(hash, /*with_constant_values=*/ false);
+        row_level_filter->actions.updateHash(hash, /*with_variable_size_constant_values=*/ false);
     if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(hash, /*with_constant_values=*/ false);
+        dag->prewhere_actions.updateHash(hash, /*with_variable_size_constant_values=*/ false);
     return hash.get64();
 }
 
@@ -147,9 +147,9 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
     /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
-    /// written without their constant values, which can be arbitrarily large (a folded scalar
-    /// subquery); the names still identify the constants. The DAGs of a read step and of a join are
-    /// hashed with `updateHash` without values too.
+    /// written without their variable-size constant values, which can be arbitrarily large (a folded
+    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
+    /// step and of a join are hashed with `updateHash` under the same contract.
     SipHash hash;
     SipHashingWriteBuffer wbuf(hash);
     SerializedSetsRegistry registry;
@@ -253,13 +253,13 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash, /*with_constant_values=*/ false);
+                lhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash, /*with_constant_values=*/ false);
+                rhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash, /*with_constant_values=*/ false);
+                lhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash, /*with_constant_values=*/ false);
+                rhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
         }
     }
 
@@ -269,8 +269,9 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
-/// (e.g. the column-blind read hash on the input side, or the join output column names - see the
-/// `JoinStep` case below for why hashing them would be strictly worse). A resulting key
+/// (e.g. the column-blind read hash on the input side, the join output column names - see the
+/// `JoinStep` case below for why hashing them would be strictly worse - or the values of
+/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
@@ -407,7 +408,7 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
-                mixed->getActionsDAG().updateHash(frame.hash, /*with_constant_values=*/ false);
+                mixed->getActionsDAG().updateHash(frame.hash, /*with_variable_size_constant_values=*/ false);
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of
             /// columns have different output headers and different `output_bytes` when the join result

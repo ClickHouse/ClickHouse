@@ -285,7 +285,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state, bool with_constant_values) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool with_variable_size_constant_values) const
 {
     hash_state.update(type);
 
@@ -319,12 +319,12 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool with_constant_value
         /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
         /// builds matching without dropping any other constant's value (it still serializes normally
         /// for distributed propagation).
-        if (with_constant_values && !is_runtime_filter_id)
+        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
             column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state, with_constant_values);
+        child->updateHash(hash_state, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -334,7 +334,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state, bool with_constant_values) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool with_variable_size_constant_values) const
 {
     struct Frame
     {
@@ -351,7 +351,7 @@ void ActionsDAG::updateHash(SipHash & hash_state, bool with_constant_values) con
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state, with_constant_values);
+            frame.node->updateHash(hash_state, with_variable_size_constant_values);
             stack.pop();
         }
         else
@@ -4943,13 +4943,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        /// A cache key (`registry.for_cache_key`) leaves out every constant's value: it can be
-        /// arbitrarily large (a folded scalar subquery), and hashing it on every execution costs more
-        /// than the rest of planning. The `result_name` and `column_flags` written above still identify
-        /// the constant, since a literal or a folded expression is named by its value. This also drops
-        /// the value of the runtime-filter id carrier, a volatile per-plan-build rendezvous key. This
-        /// output is hash-only and never deserialized; the transmission path always writes the value.
-        if (has_column && !registry.for_cache_key)
+        /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
+        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
+        /// execution costs more than the rest of planning. It also leaves out the value of the
+        /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
+        /// stable identity. This output is hash-only and never deserialized; the transmission path
+        /// (`for_cache_key == false`) always writes the value.
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
