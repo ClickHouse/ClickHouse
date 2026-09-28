@@ -4974,7 +4974,8 @@ Fill named tuples from JSON objects only, in the `JSONExtract` family of functio
 This setting applies to JSON passed as a string. Extraction from a column of the `JSON` data type is not affected, for typed and untyped paths alike: it reads the column's subcolumns instead of parsing a JSON document, so it never reaches the code this setting governs. Named tuple *columns* in JSON input formats are governed by the separate [input_format_json_named_tuples_as_objects](/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) setting; this setting covers the extraction functions only.
 
 Disabled by default.
-)", 0) \
+)", 0, \
+        {"26.10", false, false, "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.
 
