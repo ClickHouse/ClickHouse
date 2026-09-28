@@ -139,10 +139,10 @@ bool isByteTransparentTransform(const ITransformingStep & transform)
 /// they are wired - but not by the values its constants hold. A value can be arbitrarily large: a scalar
 /// subquery folds its whole result into the DAG (e.g. a `groupBitmap` state of millions of elements),
 /// and hashing that on every execution costs more than the rest of planning. The names already
-/// identify the constants: a literal is named by its value (`600000_UInt32`) and a scalar subquery by
-/// the hash of the subquery (`__getScalar('...')`). What is lost is only a value that the name does
-/// not determine - a folded `now()`, or a scalar subquery over changed data - and sharing statistics
-/// between such executions only makes the estimate slightly off.
+/// identify the constants: a literal or a folded expression is named by its value (`600000_UInt32`,
+/// `now() - INTERVAL 10 MINUTE` becomes `'2026-09-28 16:51:42'`), and a scalar subquery by the hash
+/// of the subquery (`__getScalar('...')`). What is lost is only the result of a scalar subquery over
+/// changed data, and sharing statistics between such executions only makes the estimate slightly off.
 ///
 /// Nodes are visited in the order `ActionsDAG::serialize` writes them, so two DAGs are told apart
 /// exactly when their serialized forms would be, apart from the constant values.
