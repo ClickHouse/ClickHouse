@@ -8,9 +8,16 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowTableSettingsQuery.h>
+#include <Storages/StorageAlias.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_DENIED;
+}
 
 namespace
 {
@@ -114,7 +121,15 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
     if (!database.empty())
     {
         getContext()->checkAccess(AccessType::SHOW_TABLES, database, query.table);
-        DatabaseCatalog::instance().getTable(StorageID(database, query.table), getContext());
+        const auto table = DatabaseCatalog::instance().getTable(StorageID(database, query.table), getContext());
+
+        /// `system.table_settings` reports nothing for an alias whose target the user may not see, so as not to
+        /// expose the target's settings through it. Here that is an error too, for the same reason as above.
+        if (const auto * alias = table->as<StorageAlias>(); alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_TABLES, {}))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to show the settings of {}.{}: the user may not see the table it is an alias of",
+                backQuoteIfNeed(database), backQuoteIfNeed(query.table));
     }
 
     /// `system.table_settings` shows a data lake catalog or a remote database only when the
