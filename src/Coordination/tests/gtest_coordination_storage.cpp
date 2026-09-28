@@ -700,10 +700,9 @@ TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
         return std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
     };
 
-    /// Thread CPU time, not wall clock: the bound is on work performed, not on time the host granted.
     /// Baseline: no uncommitted backlog.
     const auto batch_a = make_remove_batch("/set_a");
-    Stopwatch watch_a{CLOCK_THREAD_CPUTIME_ID};
+    Stopwatch watch_a;
     const auto zxid_a = preprocess(batch_a);
     const UInt64 base_us = watch_a.elapsedMicroseconds();
     auto responses = storage.processRequest(batch_a, 1, zxid_a);
@@ -723,12 +722,12 @@ TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
     }
 
     const auto batch_b = make_remove_batch("/set_b");
-    Stopwatch watch_b{CLOCK_THREAD_CPUTIME_ID};
+    Stopwatch watch_b;
     const auto zxid_b = preprocess(batch_b);
     const UInt64 backlog_us = watch_b.elapsedMicroseconds();
 
     std::cerr << fmt::format(
-        "RemoveRecursive batch of {} preprocessed in {} us of CPU time without backlog and in {} us with {} uncommitted nodes\n",
+        "RemoveRecursive batch of {} preprocessed in {} us without backlog and in {} us with {} uncommitted nodes\n",
         subtrees, base_us, backlog_us, backlog);
 
     /// Commit everything in order and check the outcome.
@@ -748,8 +747,11 @@ TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
 
     /// The cost of the batch must not scale with the number of unrelated uncommitted nodes.
     /// Allow generous noise: ten times the baseline or 20 ms, whichever is larger.
+    /// Not checked under sanitizers: their runtime makes a timing this short unreliable.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
     EXPECT_LE(backlog_us, std::max<UInt64>(base_us * 10, 20000))
         << "preprocessing slowed down from " << base_us << " us to " << backlog_us << " us with " << backlog << " uncommitted nodes";
+#endif
 }
 
 /// Uncommitted children must be visible to RemoveRecursive, and must stop being visible once the
