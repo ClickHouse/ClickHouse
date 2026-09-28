@@ -237,7 +237,7 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
             {
                 std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
                     = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-                watch_list_response->path = current_path;
+                watch_list_response->path = std::string{path};
                 watch_list_response->xid = Coordination::WATCH_XID;
                 watch_list_response->zxid = -1;
                 watch_list_response->type = event_type;
@@ -723,6 +723,11 @@ bool KeeperStorage::checkACL(ACLId acl_id, int32_t permission, int64_t session_i
         return true;
     const auto node_acls = acl_map.convertNumber(acl_id);
 
+    /// An empty ACL list means unrestricted. Keeper itself stores that as id 0, but a snapshot converted
+    /// from ZooKeeper can map a nonzero id to an empty list.
+    if (node_acls.empty())
+        return true;
+
     if (uncommitted_state.hasACL(session_id, committed, [](const auto & auth_id) { return auth_id.scheme == "super"; }))
         return true;
 
@@ -1055,7 +1060,11 @@ void KeeperStorage::updateWatches(
         if (resp->error == Coordination::Error::ZOK)
         {
             static constexpr std::array list_requests{
-                Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList, Coordination::OpNum::FilteredListWithStatsAndData};
+                Coordination::OpNum::List,
+                Coordination::OpNum::SimpleList,
+                Coordination::OpNum::FilteredList,
+                Coordination::OpNum::FilteredListWithStatsAndData,
+                Coordination::OpNum::ListWithOptions};
 
             auto watch_type = std::ranges::contains(list_requests, req->getOpNum()) ? WatchType::LIST_WATCH : WatchType::WATCH;
 

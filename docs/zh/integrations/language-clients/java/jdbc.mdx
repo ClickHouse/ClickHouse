@@ -89,20 +89,20 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### 连接属性
 
-  主要配置参数在 [Java client](/zh/integrations/language-clients/java/client#client-configuration) 中定义，应原样传递给 driver。Driver 还有一些自有属性，不属于客户端配置的范畴，详见下文。
+  主要配置参数在 [Java client](/zh/integrations/language-clients/java/client#client-configuration) 中定义，应原样传递给驱动程序。驱动程序还有一些自身属性，不属于客户端配置，列举如下。
 
   **驱动属性**：
 
   | 属性                                  | 默认值      | 描述                                                                             |
   | ----------------------------------- | -------- | ------------------------------------------------------------------------------ |
   | `disable_frameworks_detection`      | `true`   | 禁用对 User-Agent 的框架识别                                                           |
-  | `jdbc_ignore_unsupported_values`    | `false`  | 在不影响驱动程序运行的情况下抑制 `SQLFeatureNotSupportedException`                             |
+  | `jdbc_ignore_unsupported_values`    | `false`  | 在不影响驱动程序工作的情况下抑制 `SQLFeatureNotSupportedException`                             |
   | `clickhouse.jdbc.v1`                | `false`  | 使用旧版 JDBC 实现，而不是新版 JDBC                                                        |
   | `default_query_settings`            | `null`   | 允许在执行查询操作时传递默认查询设置                                                             |
-  | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
-  | `beta.row_binary_for_simple_insert` | `false`  | 使用基于 `RowBinary` 写入器的 `PreparedStatement` 实现。仅适用于 `INSERT INTO ... VALUES` 语句。 |
   | `jdbc_resultset_auto_close`         | `true`   | 关闭 `Statement` 时自动关闭 `ResultSet`                                               |
-  | `jdbc_use_max_result_rows`          | `false`  | 启用后，可使用服务器属性 `max_result_rows` 来限制查询返回的行数。启用时，会覆盖用户设置的溢出模式。详见 JavaDoc。         |
+  | `beta.row_binary_for_simple_insert` | `false`  | 使用基于 `RowBinary` 写入器的 `PreparedStatement` 实现。仅适用于 `INSERT INTO ... VALUES` 语句。 |
+  | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
+  | `jdbc_use_max_result_rows`          | `false`  | 启用后，可使用服务器属性 `max_result_rows` 限制查询返回的行数，并覆盖用户设置的溢出模式。详见 JavaDoc。              |
   | `jdbc_sql_parser`                   | `JAVACC` | 配置要使用的 SQL 解析器。可选值：`ANTLR4`、`ANTLR4_PARAMS_PARSER`、`JAVACC`。                   |
   | `remember_last_set_roles`           | `true`   | 记住该连接上次设置的角色。                                                                  |
 
@@ -143,7 +143,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   注意：无需对 JDBC URL 或属性进行 URL 编码，系统会自动完成编码。
 
-  **只读 profile**
+  **只读 配置文件**
 
   我们有意避免在连接属性中添加默认设置，以防止与只读 profile 产生冲突。
   但某些用户需要传递格式设置 (例如将 JSON 读取为 String) ，对此我们建议使用 `readonly=2` profile。
@@ -151,7 +151,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### 客户端标识
 
-  有两种方式可以标识发起请求的应用程序：通过连接属性设置 `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME`，或使用 `java.sql.Connection#setClientInfo(String name, String value)` 方法。
+  有两种方法可以标识发起请求的应用程序：通过连接属性设置 `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME`，或使用 `java.sql.Connection#setClientInfo(String name, String value)` 方法。
 
   ```java showLineNumbers
   Properties properties = new Properties();
@@ -173,16 +173,16 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### 操作标识
 
-  JDBC 驱动为每个操作生成 `query_id` (目前该信息包含在服务器异常中) 。
+  JDBC 驱动会为每个操作生成 `query_id` (目前该信息包含在服务器异常中) 。
 
-  要为某个操作设置 `log_comment`，请使用 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 方法。这需要先将 `Statement` 或 `PreparedStatement` 转型为 `com.clickhouse.jdbc.StatementImpl`。
+  要为某个操作设置 `log_comment`，请使用 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 方法。为此，需要先将 `Statement` 或 `PreparedStatement` 转型为 `com.clickhouse.jdbc.StatementImpl`。
 
   ```java showLineNumbers
   StatementImpl stmt = (StatementImpl) conn.createStatement();
   stmt.getLocalSettings().logComment("some-comment");
   ```
 
-  **注意：** 此方法仅适用于单线程执行语句的场景，因为 `localSettings` 在多个线程之间是共享的。
+  **注意：** 此方法仅适用于单线程使用 statement 的场景，因为 `localSettings` 在线程之间是共享的。
 
   ## 支持的数据类型
 
@@ -192,8 +192,8 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   以下映射适用于：
 
-  * `ResultSet#getObject(columnIndex)` - 此方法会返回对应 Java 类的对象。 (`Int8` -&gt; `java.lang.Byte`，`Int16` -&gt; `java.lang.Short`，等等。)
-  * `ResultSetMetaData#getColumnType(columnIndex)` - 该方法会返回对应的 JDBC 类型。 (`Int8` -&gt; `java.lang.Byte`，`Int16` -&gt; `java.lang.Short`，等等。)
+  * `ResultSet#getObject(columnIndex)` - 此方法会返回对应 Java 类的对象。 (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short`，等等。)
+  * `ResultSetMetaData#getColumnType(columnIndex)` - 该方法会返回对应的 JDBC 类型。 (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short`，等等。)
 
   有几种方法可以更改映射关系：
 
@@ -297,17 +297,17 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   数组的通用映射规则如下：
 
-  | ClickHouse 类型                              | `getBaseTypeName()`                 | `getBaseType()`       |
-  | ------------------------------------------ | ----------------------------------- | --------------------- |
-  | `Array(<基本类型>)`                            | `<基本类型>`                            | `<JDBC 基本类型>`         |
-  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型对应的 JDBC 类型>`   |
-  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                  | `<内部 Type 的 JDBC 类型>` |
-  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`            | `<内部 Type 的 JDBC 类型>` |
-  | `Array(Array(...(<Type>)))`                | `<Type>` (最内层的元素)                   | `<最内层元素的 JDBC 类型>`    |
-  | `Array(Tuple(...))`                        | `Tuple(...)` (完整定义)                 | `OTHER`               |
-  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (完整定义) | `VARCHAR`             |
+  | ClickHouse 类型                              | `getBaseTypeName()`                 | `getBaseType()`         |
+  | ------------------------------------------ | ----------------------------------- | ----------------------- |
+  | `Array(<基本类型>)`                            | `<基本类型>`                            | `<JDBC 基本类型>`           |
+  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型对应的 JDBC 类型>`     |
+  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                  | `<内部 Type 对应的 JDBC 类型>` |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`            | `<内部 Type 的 JDBC 类型>`   |
+  | `Array(Array(...(<Type>)))`                | `<Type>` (最内层元素)                    | `<最内层元素的 JDBC 类型>`      |
+  | `Array(Tuple(...))`                        | `Tuple(...)` (完整定义)                 | `OTHER`                 |
+  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (完整定义) | `VARCHAR`               |
 
-  以上规则的注意事项：
+  以上规则说明：
 
   * 包装类型 (`Nullable`, `LowCardinality`) 会在 `getBaseTypeName()` 中保留，但 `getBaseType()` 解析得到的是内部类型的 JDBC 代码。
   * 元数据中的嵌套数组会被展平：`getBaseTypeName()` 返回最内层的非数组元素类型，而不是直接子类型。
@@ -347,10 +347,10 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * `UUID` 数组在 V2 中使用 `OTHER (1111)`，与标量 `UUID` 的映射一致。
   * `Enum` 值会映射为 `VARCHAR` —— 枚举成员始终通过字符串名称标识，与其底层数值编码无关。
 
-  **写入 Array**
+  **写入 数组**
 
   使用 `java.sql.Connection#createArrayOf` 实例化 `java.sql.Array` 对象。该对象旨在统一不同数据库间的数组处理方式。
-  创建 Array 时需要通过连接将配置传递给其工厂方法。
+  需要通过 Connection 将配置传递给 Array 的工厂方法。
 
   该方法接受两个参数：
 
@@ -371,10 +371,11 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取 Arrays**
+  **读取数组**
 
   使用 `ResultSet#getArray(columnIndex)` 读取 `Array` 对象。该对象可用于访问任意嵌套深度的数组。
-  `Array#getResultSet()` 方法可以以更统一的方式将数组元素作为 `java.sql.ResultSet` 进行读取，适用于数组元素的确切类型未知的场景。
+  `Array#getResultSet()` 方法可以以更统一的方式将数组元素作为 `java.sql.ResultSet` 进行读取。当数组元素的确切类型
+  未知时，该方法非常有用。
 
   **示例**
 
@@ -400,10 +401,10 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **写入 Tuples**
+  **写入 元组**
 
-  Tuples 会映射到 `com.clickhouse.data.Tuple` 对象，应通过调用 `setObject(columnIndex, tuple)` 方法将其写入该对象。
-  也可以使用 `java.sql.Struct` 对象来写入 Tuples，以提高可移植性。
+  Tuples 会映射到 `com.clickhouse.data.Tuple` 对象，应通过调用 `setObject(columnIndex, tuple)` 方法将其写入。
+  也可以使用 `java.sql.Struct` 对象来写入 tuples，以提高可移植性。
 
   **示例**
 
@@ -448,7 +449,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ```
 
-  **写入 Map**
+  **写入 Maps**
 
   Map 只能以 `java.collections.Map` 对象的形式写入，因为该类型需要键值对 (`java.sql.Struct` 不支持键值对) 。
 
@@ -466,9 +467,9 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取 Map**
+  **读取地图**
 
-  可以使用 `getObject(columnIndex, Map.class)` 方法将 Map 作为 `java.collections.Map` 对象读取。
+  可以通过 `getObject(columnIndex, Map.class)` 方法将 Map 读取为 `java.collections.Map` 对象。
 
   **示例**
 
@@ -488,8 +489,8 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   **写入嵌套数据**
 
-  使用 `java.sql.Connection#createStruct` 实例化 `java.sql.Struct` 对象。该对象旨在统一不同数据库中的嵌套处理方式。
-  向 Struct 工厂方法传递配置时，需要提供 Connection 对象。
+  使用 `java.sql.Connection#createStruct` 实例化 `java.sql.Struct` 对象。该对象旨在统一不同数据库中的嵌套处理。
+  需要 Connection 来向 Struct 工厂方法传递配置。
 
   该方法接受两个参数：
 
@@ -508,7 +509,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取嵌套数据**
+  **读取嵌套**
 
   使用 `ResultSet#getStruct(columnIndex, StructDescriptor)` 读取 `Nested` 对象。该对象可用于访问任意嵌套深度的嵌套内容。
   `Struct#getResultSet()` 方法可用于以更统一的方式将嵌套元素作为 `java.sql.ResultSet` 读取。当嵌套元素的确切类型未知时，此方法非常有用。
@@ -594,8 +595,8 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }});
   ```
 
-  还有一种更便捷的方式，可通过将服务器设置 `jdbc_read_json_as_string=true` 传入连接属性，以 String 形式读取 JSON。
-  这样驱动程序会将 JSON 值作为 String 返回，可使用任意 JSON 库进行解析。
+  还有一种更便捷的方式：将服务器设置 `output_format_binary_write_json_as_string=1` 传入连接属性，即可将 JSON 读取为字符串。
+  这样驱动程序会将 JSON 值以字符串形式返回，并可使用任意 JSON 库进行解析。
 
   ```java
   Properties properties = new Properties();
@@ -785,7 +786,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   只有两个枚举：
 
   * `com.clickhouse.jdbc.DriverProperties` - 驱动自身的配置属性。
-  * `com.clickhouse.client.api.ClientConfigProperties` - 客户端配置属性。有关客户端配置的更改，请参见 [Java Client 文档](/zh/integrations/language-clients/java/client#migration_from_v1_config)。
+  * `com.clickhouse.client.api.ClientConfigProperties` - 客户端配置属性。有关客户端配置变更，请参见 [Java Client 文档](/zh/integrations/language-clients/java/client#migration_from_v1_config)。
 
   连接属性的解析方式如下：
 
