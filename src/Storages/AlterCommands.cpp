@@ -557,6 +557,9 @@ bool projectionNestedMatcherChangesShape(
 
 /// A direct SELECT matcher may safely shed columns, but an existing positional GROUP BY must
 /// still resolve to the same output expression after expansion with the new table schema.
+/// Projection ORDER BY is a sorting-key expression: cloneToASTSelect() adds it to SELECT rather
+/// than creating an ORDER BY clause. Its numeric literals are rejected as constant sorting keys,
+/// not resolved as positions.
 bool projectionGroupByPositionChangesOutput(
     const ASTProjectionDeclaration & declaration,
     const ColumnsDescription & old_columns, const ColumnsDescription & new_columns)
