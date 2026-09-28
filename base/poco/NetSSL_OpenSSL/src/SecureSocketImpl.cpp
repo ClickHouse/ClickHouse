@@ -29,6 +29,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -552,6 +553,7 @@ SecureSocketImpl::HandshakeDriver::~HandshakeDriver()
 	}
 	catch (...)
 	{
+		DB::tryLogCurrentException("SecureSocketImpl", "Cannot restore the blocking mode after the handshake");
 	}
 }
 
