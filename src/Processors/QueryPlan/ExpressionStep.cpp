@@ -306,7 +306,7 @@ ExpressionStep::getRequiredColumns(const std::vector<size_t> & required_output_p
 ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     const auto plan = analyzeRequiredColumns(required_output_positions, remove_inputs);
-    const auto result = plan.toResult();
+    auto result = plan.toResult();
     if (!result.changed)
         return {};
 

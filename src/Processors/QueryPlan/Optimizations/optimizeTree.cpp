@@ -490,13 +490,14 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
 
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
-    /// added around the joins, as that push-down did when the joins were converted before it.
+    /// added around the joins, as that push-down did when the joins were converted before it. With the
+    /// same `extra_settings`: a default-constructed one truncates the description of a merged step.
     if (join_runtime_filters_were_added)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                while (tryMergeExpressions(&frame_node, nodes, {}) + tryMergeFilters(&frame_node, nodes, {}))
+                while (tryMergeExpressions(&frame_node, nodes, extra_settings) + tryMergeFilters(&frame_node, nodes, extra_settings))
                 {
                 }
             });
