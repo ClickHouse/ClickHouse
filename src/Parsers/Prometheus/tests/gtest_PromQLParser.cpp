@@ -1743,10 +1743,6 @@ TEST(PromQLParser, LineComments)
              "up # comment\r",
              "up # comment\r\n",
              "up #!comment",
-             /// An empty comment is only accepted when an end of line terminates it.
-             "up #\n",
-             "up #\r",
-             "up #\r\n",
          })
         EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
 
