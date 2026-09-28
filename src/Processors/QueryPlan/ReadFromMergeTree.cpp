@@ -4623,8 +4623,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// before deduplication and return rows a newer version should have replaced.
     cloned_step->deferred_row_level_filter = deferred_row_level_filter;
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
-    /// Without the TopK marker the clone would use the unsalted query condition cache key. It is copied
-    /// rather than set with `setTopKColumn`, which would fold the part-set salt into `condition_hash` again.
+    /// Carry over the TopK marker: without it the clone would use the unsalted query condition cache key.
+    /// It is copied rather than set with `setTopKColumn`, which would fold the part-set salt into `condition_hash` again.
     cloned_step->top_k_filter_info = top_k_filter_info;
     /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
     /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can
