@@ -4980,14 +4980,17 @@ def test_aggregation_operators():
                 [["[]", "1970-01-01 00:02:00.000", "nan"]],
             )
 
-            do_query_test(
+            # A range query, so both sides sort the groups by labels.
+            do_range_query_test(
                 f"{operator} by (label) ({metric})",
                 120,
-                '{"resultType": "vector", "result": [{"metric": {"label": "a"}, "value": [120, "0"]}, {"metric": {"label": "b"}, "value": [120, "0"]}, {"metric": {"label": "c"}, "value": [120, "NaN"]}]}',
+                120,
+                10,
+                '{"resultType": "matrix", "result": [{"metric": {"label": "a"}, "values": [[120, "0"]]}, {"metric": {"label": "b"}, "values": [[120, "0"]]}, {"metric": {"label": "c"}, "values": [[120, "NaN"]]}]}',
                 [
-                    ["[('label','a')]", "1970-01-01 00:02:00.000", 0],
-                    ["[('label','b')]", "1970-01-01 00:02:00.000", 0],
-                    ["[('label','c')]", "1970-01-01 00:02:00.000", "nan"],
+                    ["[('label','a')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','b')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','c')]", "[('1970-01-01 00:02:00.000',nan)]"],
                 ],
             )
 
