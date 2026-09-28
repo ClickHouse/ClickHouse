@@ -100,6 +100,9 @@ SELECT 'the collapsed entry is applied: same rows, fewer marks, one consultation
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT sum(b) FROM tab WHERE a > 1200 AND b = 7 SETTINGS log_comment = '04652_cold';
 SELECT sum(b) FROM tab WHERE a > 1200 AND b = 7 SETTINGS log_comment = '04652_warm';
+-- max_block_size = 8 is for the fixture queries; system.query_log also holds every other test's
+-- queries, so it is read with the default block size.
+SET max_block_size = DEFAULT;
 SYSTEM FLUSH LOGS query_log;
 -- The second read of the same predicate reads strictly fewer marks, and reports exactly one hit for
 -- the whole consultation even though two keys used to be probed.
