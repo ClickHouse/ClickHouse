@@ -5,8 +5,8 @@
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesCache.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -40,10 +40,12 @@ struct ResetCurrentThreadGuard
 
 /// Renders the epoch through the cached serialization. The zone is not observable in the type's
 /// name, so what the serialization writes is the only statement of which zone it ended up with.
+/// The column comes from the type, whose default is the epoch, since a serialization casts to the
+/// column its own type uses.
 String renderEpoch(const String & type_name)
 {
-    auto column = ColumnUInt32::create();
-    column->insertValue(0);
+    auto column = DataTypeFactory::instance().get(type_name)->createColumn();
+    column->insertDefault();
 
     WriteBufferFromOwnString out;
     getDataTypesCache().getSerialization(type_name)->serializeText(*column, 0, out, FormatSettings{});
@@ -57,7 +59,7 @@ bool poolsSerialization(const String & type_name)
 
 }
 
-TEST(DataTypesCache, ReusesEntriesWithinOneQuery)
+TEST(DataTypesCache, ReusesStoredEntries)
 {
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
@@ -65,8 +67,8 @@ TEST(DataTypesCache, ReusesEntriesWithinOneQuery)
     auto query_context = makeQueryContext("data_types_cache_test_same_query", "UTC");
     auto query_scope = QueryScope::create(query_context);
 
-    auto first = getDataTypesCache().getType("DateTime64(3)");
-    auto second = getDataTypesCache().getType("DateTime64(3)");
+    auto first = getDataTypesCache().getType("Array(String)");
+    auto second = getDataTypesCache().getType("Array(String)");
     ASSERT_EQ(first.get(), second.get());
 }
 
@@ -135,10 +137,10 @@ TEST(DataTypesCache, DoesNotPoolSerializationsThatCapturedTheQueryContext)
     ASSERT_FALSE(poolsSerialization("Map(String, Array(DateTime))"));
     ASSERT_FALSE(poolsSerialization("JSON(ts DateTime)"));
 
-    /// The type is still pooled: the zone it captured is read by nobody.
+    /// The type is not stored either, because whoever reads it is handed the context it resolved.
     auto first_type = getDataTypesCache().getType("DateTime");
     auto second_type = getDataTypesCache().getType("DateTime");
-    ASSERT_EQ(first_type.get(), second_type.get());
+    ASSERT_NE(first_type.get(), second_type.get());
 }
 
 TEST(DataTypesCache, PoolsNonPoolableSerializations)
