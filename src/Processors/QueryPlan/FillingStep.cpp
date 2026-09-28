@@ -172,8 +172,10 @@ void FillingStep::serialize(Serialization & ctx) const
     writeVarUInt(required_columns.size(), ctx.out);
     for (const auto & [key, name] : required_columns)
     {
-        writeStringBinary(key, ctx.out);
-        writeStringBinary(name, ctx.out);
+        /// With no alias, `InterpolateDescription` fills this map straight from
+        /// `actions.getRequiredColumns()`, so both halves can be planner-composed names.
+        ctx.writeColumnName(String{key});
+        ctx.writeColumnName(String{name});
     }
 }
 
