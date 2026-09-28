@@ -122,8 +122,8 @@ public:
         ///
         /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
         const bool overflow_row = false;
-        const size_t max_rows_to_group_by = 0;
-        const OverflowMode group_by_overflow_mode = OverflowMode::THROW;
+        size_t max_rows_to_group_by = 0;
+        OverflowMode group_by_overflow_mode = OverflowMode::THROW;
 
         /// Two-level aggregation settings (used for a large number of keys).
         /// With how many keys or the size of the aggregation state in bytes,

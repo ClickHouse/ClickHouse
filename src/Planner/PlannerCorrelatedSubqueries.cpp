@@ -1111,6 +1111,16 @@ QueryPlan decorrelateQueryPlan(
         auto new_aggregator_params = original_aggregator_params.cloneWithKeysAndAggregates(
             new_keys, new_aggregates, original_aggregator_params.only_merge);
 
+        /// The correlated columns are hidden keys: the user's `max_rows_to_group_by` / `group_by_overflow_mode`
+        /// would count groups over all outer rows at once instead of within one evaluation of the subquery,
+        /// so a `LATERAL` subquery without `GROUP BY` could throw or be truncated. Like the internal decorrelation
+        /// joins, this aggregation is not bounded by them.
+        if (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN)
+        {
+            new_aggregator_params.max_rows_to_group_by = 0;
+            new_aggregator_params.group_by_overflow_mode = OverflowMode::THROW;
+        }
+
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),
             std::move(new_aggregator_params),
