@@ -404,9 +404,9 @@ CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
 CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
                  url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim, and the
--- rejection message must not echo it either: a nested map's values are hidden only by its parent's
--- formatter, so such a node formatted on its own carries them in plaintext.
+-- A headers() map keeps its keys, hides its values and takes no positional slot, so the access key id
+-- of the valid triple stays visible. The rejection message must not echo the map: only its parent's
+-- formatter hides a nested map's values, so the map formatted on its own carries them in plaintext.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
                  headers('X-Auth' = 'SEKRIT_DBHDR'))); -- { serverError BAD_ARGUMENTS }
 
