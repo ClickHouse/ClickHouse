@@ -506,7 +506,16 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
 
     DatabaseBackup::Configuration result;
 
-    result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    /// `checkAndGetLiteralArgument` formats the argument it rejects, and a locator written in this
+    /// position would format its credentials in plaintext.
+    try
+    {
+        result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a string literal");
+    }
 
     /** A locator held in a string literal (`Backup('db', 'File(\'backup.zip\')')`) is the form that
       * metadata rewritten by an older server carries, so it has to keep loading - a server that cannot
@@ -525,9 +534,9 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
         }
     }
 
-    /// `BackupInfo::fromAST` puts the offending argument into its message, and that message reaches the
-    /// error log and the `exception` column of `query_log`. A locator held in a string literal is exactly
-    /// the text that can carry credentials, so refuse it here without echoing it.
+    /// A locator held in a string literal is exactly the text that can carry credentials, and a rejection
+    /// message reaches the error log and the `exception` column of `query_log`, so name the accepted form
+    /// here rather than the text given.
     if (!engine_args[1]->as<ASTFunction>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected function as the backup destination of a `Backup` database. It must be spelled as the "
