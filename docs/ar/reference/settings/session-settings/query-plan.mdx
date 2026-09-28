@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لتبديل تحسين على مستوى خطة الاستعلام، لا يُجسِّد أثناء التحويل النهائي للتجميع سوى أفضل n مجموعات في كل حاوية ثنائية المستوى، عندما يُمرَّر ناتج التجميع النهائي إلى ORDER BY مع LIMIT n ويثبت أن الاختيار في كل حاوية دقيق."}]}]} />
+
+يبدّل تحسينًا على مستوى خطة الاستعلام لا يُجسِّد، أثناء التحويل النهائي للتجميع، سوى أفضل n مجموعات في كل حاوية ثنائية المستوى، وذلك عندما يُمرَّر ناتج التجميع النهائي إلى `ORDER BY` مع `LIMIT n` وتثبت الخطة أن الاختيار في كل حاوية دقيق. والنتيجة دقيقة: فالمجموعة التي تقع خارج أفضل n مجموعات في حاويتها تسبقها عالميًا n مجموعات على الأقل، لذا لا يمكن أن تكون ضمن أفضل n عالميًا.
+لا يسري هذا الإعداد إلا إذا كانت قيمة [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) تساوي 1.
+
+القيم الممكنة:
+
+* 0 - تعطيل
+* 1 - تمكين
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "تحسين جديد لدمج عامل تصفية على الأعمدة الناتجة عن ARRAY JOIN في خطوة ARRAY JOIN، وهو مفعّل افتراضيًا."}]}]} />
+
+يُفعِّل أو يعطّل تحسينًا على مستوى خطة الاستعلام يدمج عامل تصفية على أعمدة العناصر الناتجة عن `ARRAY JOIN` في خطوة `ARRAY JOIN`، بحيث تُصفّى المصفوفات ضمن فضاء العناصر قبل توسيعها، فلا تُوسَّع العناصر المُستبعَدة ولا تُكرَّر أبدًا.
+لا يسري مفعوله إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) تساوي 1.
+
+<Note>
+  هذا إعداد مخصص للخبراء لا ينبغي أن يستخدمه المطورون إلا لأغراض التصحيح. قد يتغير هذا الإعداد مستقبلًا بطرق غير متوافقة مع الإصدارات السابقة أو قد يُزال.
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -234,6 +265,8 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "إعداد جديد."}]}]} />
 
 يحدّد قيمة الحد الأقصى التي تسمح بتقييم خطة الاستعلام لتحسين TopK باستخدام فهرس التخطي minmax والتصفية بالعتبة الديناميكية. إذا كانت القيمة صفرًا، فلا يوجد حد.
+
+يتحكم هذا الإعداد أيضًا في سلوك [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم خطة الاستعلام لتحسين التجسيد الكسول.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet محلية باستخدام دالة الجدول `file` ومحرك الجدول `File`."}]}]} />
+
+استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet المحلية باستخدام دالة الجدول `file` ومحرك الجدول `File`: في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير المطلوبة للفرز والتصفية إلا للصفوف `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg)."}]}]} />
 
 استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg): في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير اللازمة للفرز والتصفية إلا للصفوف الـ `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
 
@@ -455,6 +498,26 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 * 0 - تعطيل
 * 1 - تمكين
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لدفع الدالات المُقلِّصة للحجم (`length`, `lengthUTF8`, `empty`, `notEmpty`) إلى ما بعد خطوتَي `Sorting` و`Filter`، بحيث تُستبدل الوسيطة العريضة بالنتيجة ذات الحجم الثابت. previous_value=false، لذا فإن `compatibility` مع الإصدارات السابقة لـ 26.8 يستعيد السلوك السابق (من دون دفع لأسفل)."}]}]} />
+
+يُفعّل أو يعطّل تحسينًا على مستوى خطة الاستعلام ينقل الدالات المُقلِّصة للحجم (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+إلى أسفل خطة التنفيذ، بعد خطوتَي `Sorting` و`Filter`. تحل النتيجة ذات الحجم الثابت محل
+وسيطة `String` / `FixedString` العريضة، لذا لا تعود الوسيطة تمر عبر هاتين الخطوتين.
+لا تُطبّق إعادة الكتابة إلا إذا لم يكن عمود الوسيطة مطلوبًا بعد الخطوة التي يُدفع إليها.
+
+لا يسري هذا الإعداد إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) تساوي 1.
+
+القيم الممكنة:
+
+* 0 - تعطيل
+* 1 - تفعيل
 
 <div id="query_plan_push_limit_by_into_sort">
   ## query_plan_push_limit_by_into_sort
@@ -500,22 +563,6 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
 
 الحفاظ على القراءة بالترتيب من الجدول الأيسر في عمليات JOIN، بحيث يمكن للخطوات اللاحقة الاستفادة من ذلك.
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد يتيح تمرير القراءة بالترتيب عبر hash join مُهيأ بحد تلقائي للانسكاب إلى القرص، وذلك بإبقاء هذا الربط في الذاكرة للحفاظ على الترتيب الذي يضمنه. تكون previous_value=false لكي يعيد `compatibility` مع الإصدارات الأقدم من 26.8 السلوك التحفظي السابق، حيث لا يُستخدم هذا الربط مطلقًا للقراءة بالترتيب، لكنه يظل قادرًا دائمًا على الانسكاب إلى القرص."}]}]} />
-
-يسمح لـ [`query_plan_read_in_order_through_join`](/ar/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) بالتطبيق أيضًا على hash join مُهيأ بحد تلقائي للانسكاب إلى القرص باستخدام [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-
-لا يمكن لهذا الربط ضمان الحفاظ على ترتيب الجدول الأيسر إلا إذا لم ينسكب إلى القرص مطلقًا، لأن الانسكاب يوزع الصفوف على حاويات بحسب التجزئة. لذلك، عند تطبيق التحسين، يُحتفَظ بالربط في الذاكرة ولا يعود حد الانسكاب مُفعّلًا؛ ويُقيَّد الجدول في الجانب الأيمن بمتتبع الذاكرة بدلًا من ذلك، كما لو لم يُهيَّأ انسكاب تلقائي.
-
-اضبط القيمة على `0` للإبقاء على السلوك التحفظي المتمثل في عدم تمرير القراءة بالترتيب مطلقًا عبر ربط قد ينسكب إلى القرص. وتظل الاستعلامات التي تعتمد على الانسكاب للبقاء ضمن حد الذاكرة، والتي كانت ستصبح مؤهلة للتحسين لولا ذلك، تعمل كما كانت سابقًا.
-
-لا يعتمد تحسين `ORDER BY ... LIMIT` المنفصل عبر `JOIN`، الذي يدفع `Sort` و`Limit` إلى الجانب المحفوظ من الربط، على احتفاظ الربط بأي ترتيب، ويظل متاحًا للربوط القادرة على الانسكاب إلى القرص بغض النظر عن هذا الإعداد. لكنه يفسح المجال للقراءة بالترتيب عندما تكون ممكنة؛ لذا، عند تمكين هذا الإعداد، يستخدم `ORDER BY ... LIMIT` فوق ربط قادر على الانسكاب إلى القرص، ويمكن لِجانبه المحفوظ بث الصفوف بالترتيب المطلوب، مخطط القراءة بالترتيب بدلًا من دفع `Sort` و`Limit` إلى الأسفل. ويحافظ هذا التحويل على شروطه السابقة، وأبرزها أن [`query_plan_join_swap_table`](/ar/reference/settings/session-settings/query-plan#query_plan_join_swap_table) مضبوط صراحةً على `false`: ففي الوضع الافتراضي `auto`، قد يبدّل تحسين لاحق جانبي الربط، مما يُبطل مخطط القراءة بالترتيب؛ لذلك لا يُعتمد هذا التحويل مطلقًا، وتحتفظ هذه الاستعلامات بـ `Sort` و`Limit` المدفوعين إلى الأسفل.
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

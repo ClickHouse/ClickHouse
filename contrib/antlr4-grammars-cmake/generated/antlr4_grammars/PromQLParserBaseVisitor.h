@@ -89,10 +89,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitSelectorIdentifier(PromQLParser::SelectorIdentifierContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitLabelMatcherOperator(PromQLParser::LabelMatcherOperatorContext *ctx) override {
     return visitChildren(ctx);
   }

@@ -19,6 +19,13 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
 SET group_by_top_k_optimization_observation_rows = 65536;
 SET optimize_trivial_group_by_limit_query = 0;
+-- CI randomizes `max_bytes_before_external_group_by`, and a threshold below the size
+-- of an empty two-level hash table puts the query into a spill-per-block loop: every
+-- flush reinitializes the table with a fresh arena and a fresh heap, so the cumulative
+-- counters below stop describing a single in-memory table. Pin the spill off - what is
+-- under test is the bound the in-memory heap maintains.
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
 -- Single-node heap mechanics: under parallel replicas the no-`ORDER BY` shape
@@ -33,9 +40,13 @@ CREATE TABLE t_no_order_freeze (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 
 -- The first 200000 rows hold 5 distinct keys, so the heap fills to its capacity
 -- with nothing to reject and outlives the observation window; the next 500000
--- rows are all distinct.
-INSERT INTO t_no_order_freeze SELECT number % 5 FROM numbers(200000);
-INSERT INTO t_no_order_freeze SELECT 1000000 + number FROM numbers(500000);
+-- rows are all distinct.  Everything goes into a single part in a single insert
+-- block: parts can be read in any order, and the phases must reach the
+-- aggregation in this order.
+SET max_insert_threads = 1;
+SET min_insert_block_size_rows = 1000000;
+INSERT INTO t_no_order_freeze
+SELECT if(number < 200000, number % 5, 1000000 + number) FROM numbers(700000);
 
 SELECT k, count() FROM t_no_order_freeze GROUP BY k LIMIT 5
 SETTINGS log_comment = '04657_no_order_by' FORMAT Null;
@@ -45,11 +56,16 @@ SETTINGS log_comment = '04657_with_order_by' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Without `ORDER BY`: no freeze, and the heap goes on rejecting the exploded keys.
-SELECT 'no_order_by: frozen, rejected_many';
+-- Without `ORDER BY`: no freeze, and the heap rejects every one of the 500000
+-- exploded keys.  A rejected row never reaches the hash table, so this count is
+-- also what bounds it: a key that leaked in would be a row that was not skipped.
+-- A lone `count()` state lives inline in the hash-table cell, so this shape
+-- allocates no aggregate-state arena at all.
+SELECT 'no_order_by: frozen, rejected_all, no arena';
 SELECT
     max(ProfileEvents['AggregationTopKHeapsFrozen']),
-    max(ProfileEvents['AggregationTopKRowsSkipped']) > 400000
+    max(ProfileEvents['AggregationTopKRowsSkipped']) = 500000,
+    max(ProfileEvents['ArenaAllocBytes']) = 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase()
     AND type = 'QueryFinish' AND log_comment = '04657_no_order_by';
@@ -60,16 +76,6 @@ SELECT max(ProfileEvents['AggregationTopKHeapsFrozen']) > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase()
     AND type = 'QueryFinish' AND log_comment = '04657_with_order_by';
-
--- Keeping the heap alive is what bounds the hash table: the no-`ORDER BY` query
--- must use far less memory than the frozen one, which retains every group.
-SELECT 'no_order_by uses less memory than the frozen order-by run';
-SELECT
-    maxIf(memory_usage, log_comment = '04657_no_order_by')
-        < maxIf(memory_usage, log_comment = '04657_with_order_by')
-FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase()
-    AND type = 'QueryFinish' AND log_comment IN ('04657_no_order_by', '04657_with_order_by');
 
 -- Results are unaffected: every group the no-`ORDER BY` query returns carries its
 -- complete count (which groups it returns is arbitrary - none of them tie here,

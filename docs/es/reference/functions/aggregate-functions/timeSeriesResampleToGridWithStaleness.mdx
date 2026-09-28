@@ -17,6 +17,8 @@ Función de agregación que toma series temporales como pares de marcas de tiemp
 
 Alias: `timeSeriesLastToGrid`.
 
+Si varias muestras tienen la misma marca de tiempo, solo se utiliza una de ellas: la muestra con el valor más alto. Un valor NaN pierde frente a cualquier otro valor, por lo que un valor NaN solo se utiliza si todas las muestras de esta marca de tiempo son NaN.
+
 <Warning>
   Esta función es experimental; habilítela estableciendo `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>

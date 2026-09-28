@@ -101,6 +101,7 @@ DEFINE_ICEBERG_FIELD(replace);
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(first_row_id, first-row-id);
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_first_row_id, first_row_id);
 DEFINE_ICEBERG_FIELD_ALIAS(added_rows, added-rows);
 DEFINE_ICEBERG_FIELD_ALIAS(next_row_id, next-row-id);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot-id);
@@ -111,6 +112,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(current_schema_id, current-schema-id);
 DEFINE_ICEBERG_FIELD_ALIAS(table_uuid, table-uuid);
 DEFINE_ICEBERG_FIELD_ALIAS(total_records, total-records);
 DEFINE_ICEBERG_FIELD_ALIAS(total_files_size, total-files-size);
+DEFINE_ICEBERG_FIELD_ALIAS(refresh_cursor, clickhouse.refresh-cursor);
 DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
@@ -184,10 +186,20 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, null_value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content_offset);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content_size_in_bytes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, key_metadata);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, contains_null);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, contains_nan);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, lower_bound);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, upper_bound);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, first_row_id);
+
+constexpr Int32 row_id_field_id = 2147483540;
+constexpr Int32 last_updated_sequence_number_field_id = 2147483539;
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not

@@ -31,9 +31,9 @@ FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
 WHERE event_date >= today() - 7
 ```
 
-Use a variante S3 para AWS S3 e GCS. O Azure e o sistema de arquivos local têm variantes dedicadas (`icebergAzure`, `icebergLocal` e equivalentes para outros formatos). Consulte [Consultar diretamente](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly) para ver a lista completa.
+Use a variante S3 para AWS S3 e GCS. O Azure e o sistema de arquivos local têm variantes dedicadas (`icebergAzure`, `icebergLocal` e equivalentes para outros formatos). Consulte [consulta direta](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly) para ver a lista completa.
 
-[Paimon](/pt-BR/reference/functions/table-functions/paimon) oferece apenas funções de tabela.
+[Paimon](/pt-BR/reference/functions/table-functions/paimon) oferece funções de tabela e [motores de tabela experimentais](/pt-BR/reference/engines/table-engines/integrations/paimon).
 
 <div id="table-engines">
   ### Motores de tabela
@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### Verifique o volume de leitura
 </div>
 
-Compare `read_rows` e `read_bytes` em [system.query&#95;log](/pt-BR/reference/system-tables/query_log) antes e depois de adicionar filtros ou ajustar configurações. ProfileEvents como `ReadBufferFromS3Bytes` e `CachedReadBufferReadFromCacheBytes` mostram quanto dos dados veio do armazenamento de objetos em comparação com o cache local. Consulte [Otimização de consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization) para um passo a passo completo sobre o query&#95;log e o EXPLAIN.
+Compare `read_rows` e `read_bytes` em [`system.query&#95;log`](/pt-BR/reference/system-tables/query_log) antes e depois de adicionar filtros ou ajustar configurações. ProfileEvents como `ReadBufferFromS3Bytes` e `CachedReadBufferReadFromCacheBytes` mostram quanto dos dados veio do armazenamento de objetos em comparação com o cache local. Consulte [Diagnostique consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) para um passo a passo completo sobre o `query&#95;log` e o `EXPLAIN`.
 
 Desative [enable&#95;filesystem&#95;cache](/pt-BR/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) durante o benchmarking para que os acertos de cache não mascarem as mudanças entre execuções.
 

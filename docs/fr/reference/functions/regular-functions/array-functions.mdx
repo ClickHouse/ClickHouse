@@ -63,9 +63,9 @@ SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a
 ```
 
 ```response title=Response
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
+┌─a───────────────────────────┬─toTypeName(a)─────────────────────────┐
+│ [5,'1998-06-16 00:00:00',5] │ Array(Variant(DateTime, Int32, Int8)) │
+└─────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayAUCPR">
@@ -190,7 +190,7 @@ arrayAutocorrelation(arr, [max_lag])
 **Arguments**
 
 * `arr` — Tableau de nombres. [`Array(T)`](/fr/reference/data-types/array)
-* `max_lag` — Facultatif. Nombre maximal de retards à calculer. Doit être un entier non négatif. [`Integer`](/fr/reference/data-types/int-uint)
+* `max_lag` — Facultatif. Nombre maximal de décalages à calculer. Doit être un entier non négatif. [`Integer`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -205,7 +205,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);
 ```
 
 ```response title=Response
-[1, 0.4, -0.1, -0.4, -0.4]
+[1,0.4,-0.1,-0.4,-0.4]
 ```
 
 **Symétrique**
@@ -215,7 +215,7 @@ SELECT arrayAutocorrelation([10, 20, 10]);
 ```
 
 ```response title=Response
-[1, -0.6666666666666669, 0.16666666666666674]
+[1,-0.6666666666666669,0.16666666666666674]
 ```
 
 **Constante**
@@ -225,7 +225,7 @@ SELECT arrayAutocorrelation([5, 5, 5]);
 ```
 
 ```response title=Response
-[nan, nan, nan]
+[nan,nan,nan]
 ```
 
 **Limité**
@@ -235,7 +235,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);
 ```
 
 ```response title=Response
-[1, 0.4]
+[1,0.4]
 ```
 
 <div id="arrayAvg">
@@ -444,7 +444,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4, 5, 6]
+[1,2,3,4,5,6]
 ```
 
 <div id="arrayCount">
@@ -518,7 +518,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4]
+[1,2,3,4]
 ```
 
 **Avec une fonction lambda**
@@ -528,7 +528,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 6, 12]
+[2,6,12]
 ```
 
 <div id="arrayCumSumNonNegative">
@@ -564,7 +564,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 0, 1]
+[1,2,0,1]
 ```
 
 **Avec une fonction lambda**
@@ -574,7 +574,7 @@ SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 0, 6]
+[2,0,6]
 ```
 
 <div id="arrayDifference">
@@ -702,7 +702,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 ```
 
 ```response title=Response
-32    UInt16
+32	UInt16
 ```
 
 **Exemple de Tuple**
@@ -712,7 +712,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 ```
 
 ```response title=Response
-32    Float64
+32	Float64
 ```
 
 <div id="arrayElement">
@@ -740,6 +740,8 @@ Les indices négatifs sont pris en charge. Dans ce cas, l&#39;élément correspo
 
 L&#39;opérateur `[n]` fournit la même fonctionnalité.
 
+Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le n-ième élément du vecteur est reconstruit avec la précision complète du type d&#39;élément QBit, en ne lisant que les plans de bits du groupe de stride auquel il appartient.
+
 **Syntaxe**
 
 ```sql
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **Arguments**
 
-* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array). - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
+* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array) ou [`QBit`](/fr/reference/data-types/qbit). - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
 
 **Valeur renvoyée**
 
@@ -870,7 +872,7 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 ```
 
 ```response title=Response
-NULL
+\N
 ```
 
 **Tableau d’indices**
@@ -1045,7 +1047,7 @@ SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
 
 ```response title=Response
-[[1, 1, 2, 3], [1, 2, 3, 4]]
+[[1,1,2,3],[1,2,3,4]]
 ```
 
 <div id="arrayEnumerateUniq">
@@ -1084,10 +1086,10 @@ SELECT arrayEnumerateUniq([10, 20, 10, 30]);
 ```
 
 ```response title=Response
-[1, 1, 2, 1]
+[1,1,2,1]
 ```
 
-**Plusieurs arrays**
+**Plusieurs tableaux**
 
 ```sql title=Query
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);
@@ -1105,32 +1107,33 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);
 -- the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the
 -- value of the arrayEnumerateUniq(Goals.ID) function.
 
+CREATE TABLE visits (CounterID UInt32, Sign Int8, Goals Nested(ID UInt32)) ENGINE = Memory;
+
+INSERT INTO visits VALUES
+    (160656, 1, [53225, 53225, 56600]),
+    (160656, 1, [53225, 2825062]),
+    (160656, 1, [56600, 56600, 2825062]),
+    (160657, 1, [53225]);
+
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
     sumIf(Sign, num = 1) AS Visits
-FROM test.visits
+FROM visits
 ARRAY JOIN
     Goals,
     arrayEnumerateUniq(Goals.ID) AS num
 WHERE CounterID = 160656
 GROUP BY GoalID
-ORDER BY Reaches DESC
+ORDER BY Reaches DESC, GoalID
 LIMIT 10
 ```
 
 ```response title=Response
 ┌──GoalID─┬─Reaches─┬─Visits─┐
-│   53225 │    3214 │   1097 │
-│ 2825062 │    3188 │   1097 │
-│   56600 │    2803 │    488 │
-│ 1989037 │    2401 │    365 │
-│ 2830064 │    2396 │    910 │
-│ 1113562 │    2372 │    373 │
-│ 3270895 │    2262 │    812 │
-│ 1084657 │    2262 │    345 │
-│   56599 │    2260 │    799 │
-│ 3271094 │    2256 │    812 │
+│   53225 │       3 │      2 │
+│   56600 │       3 │      2 │
+│ 2825062 │       2 │      2 │
 └─────────┴─────────┴────────┘
 ```
 
@@ -1172,7 +1175,7 @@ SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
 ```
 
 ```response title=Response
-[1, 1, 2]
+[1,1,2]
 ```
 
 **Exemple 2**
@@ -1181,11 +1184,11 @@ SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
 -- with clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
 -- is identical to that which arrayEnumerateUniqwould give for the same array.
 
-SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1], [2, 3, 2], [2]]
+SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 ```
 
 ```response title=Response
-[1, 1, 2]
+[[1,1,1],[2,3,2],[2]]
 ```
 
 **Exemple 3**
@@ -1204,7 +1207,7 @@ SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [2, 3, 2], [2]]
+[[1,1,1],[2,3,2],[2]]
 ```
 
 **Exemple 4**
@@ -1215,7 +1218,7 @@ SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [1, 2, 1], [1]]
+[[1,1,1],[1,2,1],[1]]
 ```
 
 <div id="arrayExcept">
@@ -1258,7 +1261,7 @@ SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])
 ```
 
 ```response title=Response
-[1, 2, 2, 4]
+[1,2,2,4]
 ```
 
 **with&#95;nulls1**
@@ -1268,7 +1271,7 @@ SELECT arrayExcept([1, NULL, 2, NULL], [2])
 ```
 
 ```response title=Response
-[1, NULL, NULL]
+[1,NULL,NULL]
 ```
 
 **with&#95;nulls2**
@@ -1288,7 +1291,7 @@ SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])
 ```
 
 ```response title=Response
-['apple', 'cherry']
+['apple','cherry']
 ```
 
 <div id="arrayExists">
@@ -1365,7 +1368,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 1, 2, 2]
+[1,1,2,2]
 ```
 
 **Exemple avec deux tableaux**
@@ -1375,7 +1378,7 @@ SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2,
 ```
 
 ```response title=Response
-[5, 5, 6, 6]
+[5,5,6,6]
 ```
 
 <div id="arrayFilter">
@@ -1470,7 +1473,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayFirstIndex">
@@ -1560,7 +1563,7 @@ SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(re
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayFlatten">
@@ -1603,7 +1606,7 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 ```
 
 ```response title=Response
-[1, 2, 3]
+[1,2,3]
 ```
 
 <div id="arrayFold">
@@ -1765,6 +1768,8 @@ et avec les fonctions d’agrégation, qui prennent un groupe de lignes et les &
 Toutes les valeurs des colonnes sont simplement copiées, à l’exception de celles de la colonne à laquelle cette fonction est appliquée ;
 celles-ci sont remplacées par la valeur correspondante du tableau.
 
+`unnest` (depuis la version 26.5) est un alias insensible à la casse de `arrayJoin` sous forme d’appel de fonction (`SELECT unnest(arr)`). La syntaxe PostgreSQL de source de table n’est pas prise en charge (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL`). Utilisez la clause `ARRAY JOIN` pour ces requêtes.
+
 `arrayJoin`, y compris via son alias `unnest`, ne peut pas être utilisé dans une condition `JOIN ON` évaluée lors de la jointure, car une telle condition doit
 préserver le nombre de lignes. Une condition qui ne porte que sur un seul côté, ainsi qu’une clé d’égalité sur `arrayJoin`, sont
 extraites avant la jointure et ne sont pas affectées. Une condition `ALL INNER JOIN` sans disjonction n’est pas non plus affectée,
@@ -1800,11 +1805,11 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
 ```response title=Response
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
 ```
 
 **arrayJoin affecte toutes les clauses de la requête**
@@ -2024,7 +2029,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayLastIndex">
@@ -2093,7 +2098,7 @@ arrayLastOrNull(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr]
 
 **Valeur renvoyée**
 
-Retourne le dernier élément du tableau source pour lequel `λ` n’est pas true, sinon retourne `NULL`.
+Renvoie le dernier élément du tableau source pour lequel `λ` n’est pas true, sinon renvoie `NULL`.
 
 **Exemples**
 
@@ -2114,7 +2119,7 @@ SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayLevenshteinDistance">
@@ -2219,7 +2224,7 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
 
 ```response title=Response
-[3, 4, 5]
+[3,4,5]
 ```
 
 **Création d’un tuple d’éléments à partir de plusieurs tableaux**
@@ -2229,7 +2234,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
 
 ```response title=Response
-[(1, 4),(2, 5),(3, 6)]
+[(1,4),(2,5),(3,6)]
 ```
 
 <div id="arrayMax">
@@ -2360,7 +2365,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 ```
 
 ```response title=Response
-(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)
+(0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
 <div id="arrayPartialReverseSort">
@@ -2406,7 +2411,7 @@ SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **simple&#95;string**
@@ -2426,7 +2431,7 @@ SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[9, 5]
+[9,5]
 ```
 
 **lambda&#95;simple**
@@ -2436,7 +2441,7 @@ SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **lambda&#95;complex**
@@ -2446,7 +2451,7 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[0, 1, 2]
+[0,1,2]
 ```
 
 <div id="arrayPartialShuffle">
@@ -2504,7 +2509,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4])
 ```
 
 ```response title=Response
-[4, 1, 3, 2]
+[2,3,4,1]
 ```
 
 **random&#95;seed**
@@ -2524,7 +2529,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)
 ```
 
 ```response title=Response
-[3, 2, 1, 4]
+[3,2,1,4]
 ```
 
 **matérialiser**
@@ -2534,18 +2539,18 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 ```
 
 ```response title=Response
-┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [4,3,2,1]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,4,1,2]                │ [3,2,1]                  │
-│ [1,2,3,4]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,1,2,4]                │ [3,2,1]                  │
-│ [1,3,2,4]                │ [3,2,1]                  │
-└──────────────────────────┴──────────────────────────┘
+┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
+│ [3,2,1,4]                                             │ [3,2,1]                               │
+│ [3,2,1,4]                                             │ [3,1,2]                               │
+│ [4,3,2,1]                                             │ [1,3,2]                               │
+│ [1,4,3,2]                                             │ [2,1,3]                               │
+│ [3,4,1,2]                                             │ [3,2,1]                               │
+│ [1,2,3,4]                                             │ [3,2,1]                               │
+│ [1,4,3,2]                                             │ [1,2,3]                               │
+│ [1,4,3,2]                                             │ [3,2,1]                               │
+│ [3,1,2,4]                                             │ [3,2,1]                               │
+│ [1,3,2,4]                                             │ [2,1,3]                               │
+└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayPartialSort">
@@ -2561,7 +2566,7 @@ Cette fonction est identique à `arraySort`, mais avec un argument `limit` suppl
 </Tip>
 
 <Note>
-  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -2580,7 +2585,7 @@ arrayPartialSort([f,] limit, arr [, arr1, ... ,arrN])
 **Valeur renvoyée**
 
 Renvoie un tableau de la même taille que le tableau d’origine, dans lequel les éléments de l’intervalle `[1..limit]` sont triés
-par ordre croissant. Les éléments restants `(limit..N]` sont dans un ordre indéterminé.
+par ordre croissant. Les éléments restants `(limit..N]` sont dans un ordre non spécifié.
 
 **Exemples**
 
@@ -2591,7 +2596,7 @@ SELECT arrayPartialSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **simple&#95;string**
@@ -2601,7 +2606,7 @@ SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])
 ```
 
 ```response title=Response
-['embolism', 'expenses', 'gladly', 'lasso']
+['embolism','expenses','gladly','lasso']
 ```
 
 **retain&#95;sorted**
@@ -2611,7 +2616,7 @@ SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **lambda&#95;simple**
@@ -2621,7 +2626,7 @@ SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **lambda&#95;complex**
@@ -2631,7 +2636,7 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[2, 1, 0]
+[2,1,0]
 ```
 
 <div id="arrayPopBack">
@@ -2665,7 +2670,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[1, 2]
+[1,2]
 ```
 
 <div id="arrayPopFront">
@@ -2699,7 +2704,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[2, 3]
+[2,3]
 ```
 
 <div id="arrayProduct">
@@ -3086,7 +3091,7 @@ SELECT arrayRemove([1, 2, 2, 3], 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **Exemple 2**
@@ -3096,7 +3101,7 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 ```
 
 ```response title=Response
-['a', 'b']
+['a','b']
 ```
 
 <div id="arrayResize">
@@ -3225,7 +3230,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 2, 2, NULL]
+[1,2,2,NULL]
 ```
 
 **Exemple avec deux tableaux**
@@ -3235,7 +3240,7 @@ SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], 
 ```
 
 ```response title=Response
-[5, 6, 6, 2]
+[5,6,6,2]
 ```
 
 <div id="arrayReverseSort">
@@ -3329,7 +3334,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1], [2, 3, 4], [5]]
+[[1],[2,3,4],[5]]
 ```
 
 <div id="arrayRotateLeft">
@@ -3511,7 +3516,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;
 ```
 
 ```response title=Response
-[0, 0, 1, 2, 3, 4]
+[0,0,1,2,3,4]
 ```
 
 **Valeur négative de n**
@@ -3521,7 +3526,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;
 ```
 
 ```response title=Response
-[3, 4, 5, 6, 0, 0]
+[3,4,5,6,0,0]
 ```
 
 **Utilisation d’une valeur par défaut**
@@ -3531,7 +3536,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;
 ```
 
 ```response title=Response
-[42, 42, 1, 2, 3, 4]
+[42,42,1,2,3,4]
 ```
 
 <div id="arrayShingles">
@@ -3566,7 +3571,7 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 ```
 
 ```response title=Response
-[[1, 2, 3], [2, 3, 4]]
+[[1,2,3],[2,3,4]]
 ```
 
 <div id="arrayShuffle">
@@ -3666,7 +3671,9 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 Introduit dans : v1.1.0
 
-Renvoie une portion du tableau, en incluant les éléments `NULL`.
+Renvoie un secteur du tableau, en incluant les éléments `NULL`.
+
+Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le résultat est un QBit sur les dimensions sélectionnées (une projection sur un sous-ensemble de dimensions). Dans ce cas, `offset` et `length` doivent être des constantes, car la dimension d’un QBit fait partie de son type et le secteur doit sélectionner au moins une dimension. Un secteur aligné sur les limites des groupes de pas du QBit conserve le pas et réutilise les flux de plans de bits stockés sans copie.
 
 **Syntaxe**
 
@@ -3676,13 +3683,13 @@ arraySlice(arr, offset [, length])
 
 **Arguments**
 
-* `arr` — Tableau à découper. [`Array(T)`](/fr/reference/data-types/array)
+* `arr` — Tableau à découper. [`Array(T)`](/fr/reference/data-types/array) ou [`QBit`](/fr/reference/data-types/qbit)
 * `offset` — Décalage à partir du bord du tableau. Une valeur positive indique un décalage à gauche, et une valeur négative un retrait à droite. La numérotation des éléments du tableau commence à `1`. [`(U)Int*`](/fr/reference/data-types/int-uint)
-* `length` — Longueur de la tranche demandée. Si vous spécifiez une valeur négative, la fonction renvoie une tranche ouverte `[offset, array_length - length]`. Si vous omettez cette valeur, la fonction renvoie la tranche `[offset, the_end_of_array]`. [`(U)Int*`](/fr/reference/data-types/int-uint)
+* `length` — Longueur du secteur demandé. Si vous spécifiez une valeur négative, la fonction renvoie un secteur ouvert `[offset, array_length - length]`. Si vous omettez cette valeur, la fonction renvoie le secteur `[offset, the_end_of_array]`. [`(U)Int*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
-Renvoie une tranche du tableau contenant `length` éléments à partir de l’`offset` spécifié [`Array(T)`](/fr/reference/data-types/array)
+Renvoie un secteur du tableau contenant `length` éléments à partir de l’`offset` spécifié [`Array(T)`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -3693,7 +3700,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ```response title=Response
-[2, NULL, 4]
+[2,NULL,4]
 ```
 
 <div id="arraySort">
@@ -3795,7 +3802,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1, 2, 3], [4, 5]]
+[[1,2,3],[4,5]]
 ```
 
 <div id="arraySum">
@@ -4012,7 +4019,7 @@ SELECT arrayTranspose([[1, 2], [3, 4]])
 ```
 
 ```response title=Response
-[[1, 3], [2, 4]]
+[[1,3],[2,4]]
 ```
 
 **Matrice non carrée**
@@ -4022,7 +4029,7 @@ SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])
 ```
 
 ```response title=Response
-[[1, 4], [2, 5], [3, 6]]
+[[1,4],[2,5],[3,6]]
 ```
 
 **Éléments de type String**
@@ -4032,7 +4039,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 ```
 
 ```response title=Response
-[['a', 'c'], ['b', 'd']]
+[['a','c'],['b','d']]
 ```
 
 <div id="arrayUnion">
@@ -4157,7 +4164,7 @@ arrayWithConstant(N, x)
 
 **Valeur renvoyée**
 
-Renvoie un Array contenant `N` éléments ayant pour valeur `x`. [`Array(T)`](/fr/reference/data-types/array)
+Renvoie un tableau contenant `N` éléments ayant pour valeur `x`. [`Array(T)`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -4168,7 +4175,7 @@ SELECT arrayWithConstant(3, 1)
 ```
 
 ```response title=Response
-[1, 1, 1]
+[1,1,1]
 ```
 
 <div id="arrayZip">
@@ -4202,7 +4209,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 ```response title=Response
-[('a', 5), ('b', 2), ('c', 1)]
+[('a',5),('b',2),('c',1)]
 ```
 
 <div id="arrayZipUnaligned">
@@ -4236,7 +4243,7 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 ```
 
 ```response title=Response
-[('a', 1),(NULL, 2),(NULL, 3)]
+[('a',1),(NULL,2),(NULL,3)]
 ```
 
 <div id="countEqual">
@@ -4666,7 +4673,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 
 ```response title=Response
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
 ```
 
@@ -4956,7 +4963,8 @@ SELECT hasAll([1], ['a'])
 ```
 
 ```response title=Response
-Raises a NO_COMMON_TYPE exception
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **Tableau de tableaux**
@@ -5037,7 +5045,8 @@ SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])
 ```
 
 ```response title=Response
-Raises a `NO_COMMON_TYPE` exception
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **Tableau de tableaux**
@@ -5155,14 +5164,15 @@ SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])
 1
 ```
 
-**Tableaux sans type en commun**
+**Tableaux sans type commun**
 
 ```sql title=Query
 SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 ```
 
 ```response title=Response
-Raises a `NO_COMMON_TYPE` exception
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 <div id="indexOf">
@@ -5363,9 +5373,9 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 ```
 
 ```response title=Response
-┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
-│ ábc │            4 │               3 │
-└─────┴──────────────┴─────────────────┘
+┌─str─┬─length(str)─┬─lengthUTF8(str)─┐
+│ ábc │           4 │               3 │
+└─────┴─────────────┴─────────────────┘
 ```
 
 <div id="notEmpty">
@@ -5657,9 +5667,9 @@ SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 ```response title=Response
-┌─replicate(1, ['a', 'b', 'c'])───┐
-│ [1, 1, 1]                       │
-└─────────────────────────────────┘
+┌─replicate(1, ['a', 'b', 'c'])─┐
+│ [1,1,1]                       │
+└───────────────────────────────┘
 ```
 
 <div id="reverse">
@@ -5693,7 +5703,7 @@ SELECT reverse([1, 2, 3, 4]);
 ```
 
 ```response title=Response
-[4, 3, 2, 1]
+[4,3,2,1]
 ```
 
 **Inverser une chaîne de caractères**
@@ -5703,7 +5713,7 @@ SELECT reverse('abcd');
 ```
 
 ```response title=Response
-'dcba'
+dcba
 ```
 
 {/*AUTOGENERATED_END*/}

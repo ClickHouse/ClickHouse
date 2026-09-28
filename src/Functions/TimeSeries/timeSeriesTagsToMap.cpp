@@ -94,9 +94,9 @@ Returns a map of tag names to tag values, sorted by tag name, without duplicate 
 SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
         )",
         R"(
-┌─tags───────────────────────────────────────────────────────────┐
-│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
-└─────────────────────────────────────────────────────────────────┘
+┌─tags─────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'} │
+└──────────────────────────────────────────────────────────────┘
         )"
     }
     };

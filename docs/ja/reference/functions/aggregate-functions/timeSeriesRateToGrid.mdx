@@ -15,6 +15,8 @@ doc_type: 'reference'
 
 時系列データをタイムスタンプと値のペアとして受け取り、開始タイムスタンプ、終了タイムスタンプ、step で表される等間隔の時間グリッド上で、このデータから [PromQL ライクな rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) を計算する集約関数です。グリッド上の各ポイントについて、`rate` の計算に使用するサンプルは、指定された時間ウィンドウ内で評価されます。
 
+複数のサンプルが同じタイムスタンプを持つ場合、使用されるのはそのうち 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のすべての値より優先度が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ NaN 値が使用されます。
+
 <Warning>
   この関数は実験的機能です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Warning>
@@ -68,7 +70,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

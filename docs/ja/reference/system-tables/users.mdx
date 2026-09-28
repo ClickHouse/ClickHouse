@@ -23,11 +23,12 @@ doc_type: 'リファレンス'
 * `storage` ([String](/ja/reference/data-types/string)) — ユーザーのストレージへのパス。access&#95;control&#95;path パラメーターで設定します。
 * `auth_type` ([Array(Enum8(&#39;no&#95;password&#39; = 0, &#39;plaintext&#95;password&#39; = 1, &#39;sha256&#95;password&#39; = 2, &#39;double&#95;sha1&#95;password&#39; = 3, &#39;ldap&#39; = 4, &#39;kerberos&#39; = 5, &#39;ssl&#95;certificate&#39; = 6, &#39;bcrypt&#95;password&#39; = 7, &#39;ssh&#95;key&#39; = 8, &#39;http&#39; = 9, &#39;jwt&#39; = 10, &#39;scram&#95;sha256&#95;password&#39; = 11, &#39;no&#95;authentication&#39; = 12))](/ja/reference/data-types/array)) — 認証タイプを示します。ユーザーは、パスワードなし、平文パスワード、SHA256 エンコードパスワード、二重 SHA-1 エンコードパスワード、bcrypt エンコードパスワードなど、複数の方法で識別できます。
 * `auth_params` ([Array(String)](/ja/reference/data-types/array)) — auth&#95;type に応じた JSON 形式の認証パラメーター。
-* `valid_until` ([Array(DateTime)](/ja/reference/data-types/array)) — ユーザー認証情報の有効期限となる日時。
-* `host_ip` ([Array(String)](/ja/reference/data-types/array)) — ClickHouse server への接続を許可するホストの IP アドレス。
-* `host_names` ([Array(String)](/ja/reference/data-types/array)) — ClickHouse server への接続を許可するホスト名。
-* `host_names_regexp` ([Array(String)](/ja/reference/data-types/array)) — ClickHouse server への接続を許可するホスト名の正規表現。
-* `host_names_like` ([Array(String)](/ja/reference/data-types/array)) — LIKE predicate で設定した、ClickHouse server への接続を許可するホスト名。
+* `valid_until` ([Array(DateTime64(0))](/ja/reference/data-types/array)) — 認証方式ごとのユーザー認証情報の有効期限となる日時。保存される値は、サーバー または session time zone で表示される絶対時点です。保存値 `0` (Unix epoch。`UTC` の サーバー では `1970-01-01 00:00:00` と表示されます) は、認証情報が期限切れにならないことを意味するセンチネル値です。
+* `auth_grants` ([Array(String)](/ja/reference/data-types/array)) — 認証方式ごとに、`GRANTS` 句で指定されたアクセス権の制限。アクセス権が制限されていない場合は空文字列。
+* `host_ip` ([Array(String)](/ja/reference/data-types/array)) — ClickHouse サーバー への接続を許可するホストの IP アドレス。
+* `host_names` ([Array(String)](/ja/reference/data-types/array)) — ClickHouse サーバー への接続を許可するホスト名。
+* `host_names_regexp` ([Array(String)](/ja/reference/data-types/array)) — ClickHouse サーバー への接続を許可するホスト名の正規表現。
+* `host_names_like` ([Array(String)](/ja/reference/data-types/array)) — LIKE predicate で設定した、ClickHouse サーバー への接続を許可するホスト名。
 * `default_roles_all` ([UInt8](/ja/reference/data-types/int-uint)) — ユーザーにデフォルトで設定される、付与済みのすべてのロールを示します。
 * `default_roles_list` ([Array(String)](/ja/reference/data-types/array)) — デフォルトで設定される付与済みロールのリスト。
 * `default_roles_except` ([Array(String)](/ja/reference/data-types/array)) — リストにあるロールを除く、デフォルトで設定されるすべての付与済みロール。

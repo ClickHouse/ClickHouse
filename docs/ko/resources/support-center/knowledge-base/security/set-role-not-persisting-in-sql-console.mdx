@@ -12,6 +12,10 @@ keywords: ['SQL 콘솔', 'SET ROLE', 'RBAC', '액세스 제어']
 
 ClickHouse Cloud SQL 콘솔에서 `SET ROLE`을 실행하면 한 쿼리에서는 역할이 변경된 것처럼 보이지만, 다음 쿼리에서는 원래 역할로 되돌아갈 수 있습니다. 쿼리와 세션 전반에서 권한을 유지해야 한다면 사용자별 SQL 콘솔 역할을 사용하십시오.
 
+<Tip>
+  콘솔에서 데이터베이스 액세스를 관리하려면 [Cloud 관리형 데이터베이스 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)(베타)을 사용하는 것이 좋습니다. `sql-console-role:<email>` 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않습니다.
+</Tip>
+
 <div id="symptoms">
   ## 증상
 </div>

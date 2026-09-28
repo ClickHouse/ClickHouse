@@ -170,6 +170,12 @@ Paramètres de compression des données pour les tables du moteur [MergeTree](/f
 </compression>
 ```
 
+<div id="config-file">
+  ## config-file
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indique le fichier de configuration du serveur.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ Paramètres de compression des données pour les tables du moteur [MergeTree](/f
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Oui" />
 
 Fréquence à laquelle ClickHouse recharge la configuration et vérifie la présence de nouvelles modifications
-
-<div id="config-file">
-  ## config-file
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indique le fichier de configuration du serveur.
 
 <div id="core_dump">
   ## core_dump
@@ -973,7 +973,7 @@ Pour plus d&#39;informations, voir la section [Création de tables répliquées]
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Désactive l’insertion depuis les moteurs de file d’attente de messages (Kafka, RabbitMQ, NATS) dans les vues matérialisées attachées
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Désactive l’insertion depuis les moteurs de file d’attente de messages (Kafka, RabbitMQ, NATS) dans les vues matérialisées attachées
 
 <div id="metric_log">
   ## metric_log

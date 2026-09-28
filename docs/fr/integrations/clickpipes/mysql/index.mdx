@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -133,11 +134,13 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 6. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données MySQL source. Lors de cette sélection, vous pouvez également renommer les tables dans la base de données ClickHouse de destination et exclure des colonnes spécifiques.
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### Vérifiez les permissions et démarrez le ClickPipe
 </div>
 
-7. Sélectionnez le rôle « Accès complet » dans le menu déroulant des permissions, puis cliquez sur « Terminer la configuration ».
+8. Sélectionnez le rôle « Accès complet » dans le menu déroulant des permissions, puis cliquez sur « Terminer la configuration ».
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Vérifiez les permissions" size="lg" border />
 

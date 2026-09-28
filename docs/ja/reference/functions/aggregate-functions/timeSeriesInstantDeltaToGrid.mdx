@@ -16,6 +16,8 @@ doc_type: 'reference'
 時系列データをタイムスタンプと値の組として受け取り、開始タイムスタンプ、終了タイムスタンプ、step で指定される一定間隔の時間グリッド上で、このデータから [PromQL ライクな idelta](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) を計算する集約関数です。
 グリッド上の各点について、`idelta` の計算に使用するサンプルは、指定された時間ウィンドウ内で考慮されます。
 
+複数のサンプルが同じタイムスタンプを持つ場合、そのうち使用されるのは 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のどの値よりも優先度が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ使用されます。
+
 <Warning>
   この関数は実験的です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Warning>

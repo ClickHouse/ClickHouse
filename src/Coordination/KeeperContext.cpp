@@ -19,6 +19,7 @@
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/saturatedWaitDuration.h>
 #include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
@@ -81,6 +82,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
+        KeeperFeatureFlag::LIST_WITH_OPTIONS,
         KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
@@ -770,6 +772,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
         case Coordination::OpNum::ListRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE);
+        case Coordination::OpNum::ListWithOptions:
+            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS);
         case Coordination::OpNum::CheckStat:
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
@@ -833,7 +837,7 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
     wait_commit_upto_idx = log_idx;
     bool success = last_committed_log_idx_cv.wait_for(
         lock,
-        std::chrono::milliseconds(wait_timeout_ms),
+        saturatedWaitMilliseconds(wait_timeout_ms),
         [&] { return shutdown_called || lastCommittedIndex() >= wait_commit_upto_idx; });
 
     wait_commit_upto_idx.reset();

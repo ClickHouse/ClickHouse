@@ -82,9 +82,17 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
 
 カスタムロールにデータ権限を追加すると、ClickHouse Cloud は選択した各サービスに、`cloud:` をプレフィックスとする対応するロールを作成します。たとえば、`readonly` というカスタムロールは、データベースでは `cloud:readonly` として表示されます。カスタムロールのメンバーは、SQL コンソールのパスワードレス認証を使用してサービスに接続すると、これらのデータベース権限を取得します。
 
-<Info>
-  データベースで手動で割り当てられた、[`sql-console-role:<email>` 命名規則](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)を使用するロールは、コンソールを通じて割り当てられたロールよりも優先されます。
-</Info>
+<Tip>
+  Cloud 管理のデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)と互換性のない、手動で割り当てられた [`sql-console-role:<email>`](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) ロールに代わるものです。
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### 前提条件
+</div>
+
+サービス上のカスタムデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)に依存しており、無効になっている間は適用されません。ロールにデータ権限を追加する前に、サービスに移動し、`Settings` を開き、`Security` セクションで `JWT authentication` カードを見つけます。`SQL Console` トグルが有効になっていることを確認してください。
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="SQL Consoleトグルが有効になっているJWT認証カード" size="lg" force />
 
 <Steps>
   <Step title="ロールにデータ権限を追加する" id="add-data-permissions">
@@ -92,17 +100,17 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   </Step>
 
   <Step title="サービスを選択する" id="select-data-permissions-service">
-    権限を適用するサービスを選択します。複数のサービスに権限を適用するには、サービスを追加します。
+    権限を適用するサービスを選択します。複数のサービスに同じ `Read-only` または `Admin` 権限を適用するには、サービスを追加します。
   </Step>
 
   <Step title="アクセスレベルを選択する" id="choose-data-access-level">
-    `Read-only`、`Admin`、または `Custom` アクセスを選択します。`Custom` アクセスでは、ClickHouse の [`GRANT` ステートメント](/ja/reference/statements/grant)を使用して、特定のデータアクセス権限を定義します。
+    `Read-only`、`Admin`、または `Custom` アクセスを選択します。`Custom` アクセスでは、ClickHouse の [`GRANT` ステートメント](/ja/reference/statements/grant)を使用して、特定のデータアクセス権限を定義します。`Custom` アクセスは、権限の対象が単一のサービスである場合にのみ選択できます。複数のサービスにカスタム権限を定義するには、サービスごとに個別の `Data` 権限を追加します。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="カスタムGRANTステートメントでデータ権限が定義された新しいロールの作成ダイアログ" size="md" />
   </Step>
 
   <Step title="ロールを作成する" id="create-role-with-data-permissions">
-    `Create role` をクリックします。選択したサービスにデータベースロールが作成されます。
+    `Create role` をクリックします。選択したサービスにデータベースロールが作成されます。ロールがサービスに反映されるまで最大10分かかる場合がありますが、ロールを割り当てられたユーザーは、サービスにクエリを実行するとすぐにその権限を取得します。
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   ### データベースロールを確認する
 </div>
 
-コンソール で管理されるロールは、データベース内に `cloud:` プレフィックスと `cloud` ストレージタイプを使用して作成されます。これらを一覧表示するには、サービス の `system.roles` テーブルにクエリを実行します。
+コンソール で管理されるロールは、データベース内に `cloud:` プレフィックスと `cloud` ストレージタイプを使用して作成され、作成後に表示されるまで最大 10 分かかる場合があります。これらを一覧表示するには、サービス の `system.roles` テーブルにクエリを実行します。
 
 ```sql
 SELECT * FROM system.roles;

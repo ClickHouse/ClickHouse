@@ -21,7 +21,7 @@ doc_type: 'reference'
 
 * `name` ([String](/ru/reference/data-types/string)) — Имя структуры словаря, указанное в предложении LAYOUT.
 * `is_complex` ([UInt8](/ru/reference/data-types/int-uint)) — Указывает, требуется ли для структуры составной ключ (ключ, состоящий из нескольких атрибутов или имеющий нецелочисленный тип).
-* `description` ([String](/ru/reference/data-types/string)) — Общее описание назначения структуры словаря.
+* `description` ([String](/ru/reference/data-types/string)) — Описание назначения структуры словаря. Для структур, имеющих отдельную страницу документации, содержит полный текст этой страницы в Markdown; для остальных структур — краткое описание.
 * `syntax` ([String](/ru/reference/data-types/string)) — Способ указания структуры в предложении LAYOUT запроса CREATE DICTIONARY.
 * `examples` ([String](/ru/reference/data-types/string)) — Примеры использования.
 * `introduced_in` ([String](/ru/reference/data-types/string)) — Версия ClickHouse, в которой структура впервые появилась, в формате major.minor.

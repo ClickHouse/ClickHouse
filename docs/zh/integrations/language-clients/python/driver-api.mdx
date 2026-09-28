@@ -321,6 +321,8 @@ ClickHouse Connect 客户端的 `query*` 和 `command` 方法都接受一个可�
 
 ClickHouse 支持对查询值使用[服务器端绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)。绑定的值会作为 HTTP 参数与查询分开发送。ClickHouse Connect 在检测到形如 `{<name>:<datatype>}` 的表达式时，会使用此模式。请以 Python 字典形式传入这些值。
 
+参数名称必须是 ClickHouse ASCII BareWord 名称。只要服务器接受，驱动程序允许在名称开头、中间或末尾使用 `$`，例如 `{$tenant_id:String}`。以 `$` 开头和结尾，且值为 `bytes`、`bytearray` 或 `memoryview` 等缓冲区类型的字典键，保留给 ClickHouse Connect 的原始二进制参数约定。如果此类键用于非二进制服务器端参数，请仅使用一个 `{name:Type}` 占位符。重复的 `$tag$` 名称可能会被 ClickHouse 解析为 Heredoc 标记。
+
 对于可空值，请使用 Python `None`。`Array` 和 `Tuple` 参数中支持嵌套的 `None` 值；当 `dict_parameter_format` 设置为 `"map"` 时，`Map` 字面量中也支持嵌套的 `None` 值。
 
 * 使用 Python 字典、日期时间值和字符串值的服务器端绑定
@@ -904,7 +906,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` 和 `Cursor.executemany` 都接受额外的 `settings` 和 `query_formats` 关键字参数。`settings` 用于传递 ClickHouse 设置。当语句返回行时，`query_formats` 会根据 ClickHouse 类型应用读取格式，其映射方式与 `Client.query` 相同。对于兼容的 `INSERT ... VALUES` 语句，如果提供的是已 materialized 的行序列，`executemany` 会使用驱动的 Native 批量 insert 路径。`fetchone`、`fetchmany` 和 `fetchall` 会读取当前已 materialized 的结果。
+`Cursor.execute` 和 `Cursor.executemany` 都接受额外的 `settings` 和 `query_formats` 关键字参数。`settings` 用于传递 ClickHouse 设置。当语句返回行时，`query_formats` 会根据 ClickHouse 类型应用读取格式，其映射方式与 `Client.query` 相同。`Cursor.execute` 还接受仅限关键字的 `pyformat_encoded` 参数。其默认值 `True` 遵循 DB-API `pyformat` 约定。当语句编译器生成了原始百分号时，SQLAlchemy 方言会将其设为 `False`，因此应用通常不应设置它。对于兼容的 `INSERT ... VALUES` 语句，如果提供的是已 materialized 的行序列，`executemany` 会使用驱动的 Native 批量 insert 路径。`fetchone`、`fetchmany` 和 `fetchall` 会读取当前已 materialized 的结果。
 
 `Cursor.description` 会根据每个结果列的类型确定 `null_ok`。不可为 NULL 的类型返回 `False`，可为 NULL 的类型返回 `True`，包括 `Nullable` 包装器、`Variant` 和 `Dynamic`。`None` 表示可空性未知。当以 `SELECT` 或 `WITH` 开头的查询 (忽略前导注释) 既不返回行也不返回列元数据时，游标会执行 `LIMIT 0` 元数据查询来填充 `description`。如果该元数据查询失败，`description` 将保持为空。
 

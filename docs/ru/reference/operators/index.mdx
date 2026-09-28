@@ -116,6 +116,32 @@ ClickHouse преобразует операторы в соответствую
 
 `a ILIKE b` — функция `ilike(a, b)`.
 
+<div id="match-function">
+  ### Функция match
+</div>
+
+`a REGEXP b` — функция `match(a, b)`.
+
+`a ~ b` — функция `match(a, b)` (сопоставление по регулярному выражению в стиле PostgreSQL).
+
+<div id="notmatch-function">
+  ### Функция notMatch
+</div>
+
+`a !~ b` — функция `notMatch(a, b)` (проверяет, что `a` не соответствует регулярному выражению `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### Функция matchCaseInsensitive
+</div>
+
+`a ~* b` — функция `matchCaseInsensitive(a, b)` (регистронезависимое сопоставление по регулярному выражению).
+
+<div id="notmatchcaseinsensitive-function">
+  ### Функция notMatchCaseInsensitive
+</div>
+
+`a !~* b` — функция `notMatchCaseInsensitive(a, b)` (проверяет, что `a` не соответствует регулярному выражению `b` без учёта регистра).
+
 <div id="between-function">
   ### Функция BETWEEN
 </div>

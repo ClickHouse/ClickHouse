@@ -52,8 +52,11 @@ public:
 
     PostingList read(const TokenPostingsInfo & token_info, const RowsRange & range, const PostingList * candidates) const
     {
-        if (token_info.embedded_postings)
-            return *token_info.embedded_postings;
+        if (!token_info.embedded_postings.empty())
+        {
+            const auto & embedded = token_info.embedded_postings;
+            return PostingList(embedded.size(), embedded.data());
+        }
 
         PostingList postings;
         for (size_t block_idx : token_info.getBlocksToRead(range))
@@ -124,7 +127,7 @@ UInt64 computeCountForPart(
     auto make_stream = [&](const MergeTreeIndexSubstream & substream)
     {
         return makeTextIndexInputStream(
-            data_part->getDataPartStoragePtr(),
+            part_info,
             index.index->getFileName() + substream.suffix,
             substream.extension,
             MergeTreeIndexReader::patchSettings(reader_settings, substream.type));

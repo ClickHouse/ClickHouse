@@ -171,6 +171,12 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 </compression>
 ```
 
+<div id="config-file">
+  ## 設定ファイル
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />サーバーの設定ファイルを指します。
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -178,12 +184,6 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="はい" />
 
 ClickHouse が設定を再読み込みし、新たな変更があるかどうかを確認する頻度
-
-<div id="config-file">
-  ## 設定ファイル
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />サーバーの設定ファイルを指します。
 
 <div id="core_dump">
   ## core_dump
@@ -975,7 +975,7 @@ JSONロギングを有効にするには、次のスニペットを使用しま�
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />メッセージキューエンジン (Kafka、RabbitMQ、NATS) から、アタッチされたmaterialized viewへの挿入を無効にします
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />メッセージキューエンジン (Kafka、RabbitMQ、NATS) から、アタッチされたmaterialized viewへの挿入を無効にします
 
 <div id="metric_log">
   ## metric_log

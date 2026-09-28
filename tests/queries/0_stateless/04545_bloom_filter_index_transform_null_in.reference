@@ -1,0 +1,53 @@
+String: IN null-free set prunes with transform_null_in=1
+1
+2
+String: GLOBAL IN null-free set prunes with transform_null_in=1
+1
+2
+String: IN subquery of the same type prunes with transform_null_in=1
+1
+2
+String: GLOBAL IN subquery of the same type prunes with transform_null_in=1
+1
+2
+String: `=` prunes with transform_null_in=1 (was already working)
+1
+1
+Nullable: IN null-free set prunes with transform_null_in=1
+1
+1
+LowCardinality: IN null-free set prunes with transform_null_in=1
+1
+2
+LowCardinality(Nullable): IN null-free set prunes with transform_null_in=1
+1
+1
+Nullable: IN set with NULL does not prune, result includes NULL rows
+0
+11
+Correctness: null-free set, results equal for transform_null_in 0 vs 1
+1
+Nullable: hand-written nullIn null-free set prunes with transform_null_in=0
+1
+1
+Nullable: hand-written globalNullIn null-free set prunes with transform_null_in=0
+1
+1
+Nullable: hand-written nullIn with a NULL literal keeps skip-index and full-scan results equal at transform_null_in=0
+1
+1
+Array: IN does not prune with transform_null_in=1 (unsound array hashing)
+0
+Array: IN empty array result is correct with transform_null_in=1
+1
+Type mismatch: String index vs integer set does not prune with transform_null_in=1
+0
+Type mismatch: query still raises the conversion error with transform_null_in=1
+Lossy cast: results are identical with and without the skip index
+1
+Lossy cast: both matching rows are returned
+2
+Tuple: IN does not prune with transform_null_in=1
+0
+Tuple: NULL-carrying set returns the same rows with and without the skip index
+1

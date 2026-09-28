@@ -33,6 +33,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="إعداد البنية التحتية لـ BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      عند النقر على **Set up Infrastructure**، يُجري ClickHouse Cloud تلقائيًا [تحقق ما قبل التشغيل](/ar/products/bring-your-own-cloud/onboarding/standard#preflight-validation) قبل التهيئة، للتحقق من أن حساب خدمة الإدارة لديه الأذونات المطلوبة وأن واجهات برمجة تطبيقات Google Cloud المطلوبة مفعّلة. لا يزال التحقق التلقائي من شبكة VPC التي تحضرها بنفسك غير مشمول في مرحلة ما قبل التشغيل لـ GCP، لذا تأكد من أن شبكة VPC لديك تستوفي [متطلبات الشبكة](#configure-existing-vpc) أعلاه قبل البدء.
+    </Note>
+
     في وحدة تحكم ClickHouse Cloud، قم بتكوين ما يلي عند إعداد بنية تحتية جديدة:
 
     1. ضمن **VPC configuration**، اختر **Use existing VPC**.

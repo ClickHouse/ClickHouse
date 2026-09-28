@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
+
+切换一项查询计划级别的优化：当最终聚合的输出经由带有 `LIMIT n` 的 `ORDER BY` 排序，且计划能够证明每个桶的选择结果准确时，该优化会在聚合的最终转换过程中，仅按此顺序物化每个两级桶中排名前 n 的组。结果准确无误：未进入所在桶前 n 名的组，在全局范围内至少有 n 个组排在它之前，因此不可能进入全局前 n 名。
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+
+可能的值：
+
+* 0 - 禁用
+* 1 - 启用
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增优化：将针对 ARRAY JOIN 后列的过滤器融合到 ARRAY JOIN 步骤中，默认启用。"}]}]} />
+
+启用或禁用一项查询计划级别的优化：将针对 `ARRAY JOIN` 后元素列的过滤器融合到 `ARRAY JOIN` 步骤中，在展开前按元素筛选数组，确保被过滤掉的元素不会被展开或复制。
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+
+<Note>
+  这是一项专家级设置，仅供开发人员调试时使用。该设置未来可能会以不向后兼容的方式变更或被移除。
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -234,6 +265,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "新设置。"}]}]} />
 
 控制允许使用 minmax 跳过索引和动态阈值筛选来评估 TopK 优化查询计划的最大 LIMIT 值。如果为 0，则不设限制。
+
+此设置还控制 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) 的行为。
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 使用查询计划进行惰性物化优化。
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对通过 `file` 表函数和 `File` 表引擎读取本地 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
+
+对通过 `file` 表函数和 `File` 表引擎读取本地 Parquet 文件启用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅针对通过 `LIMIT` 保留下来的 `n` 行读取排序和筛选所不需要的列。仅当 `query_plan_optimize_lazy_materialization` 已启用时生效。
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
 
 对从对象存储 (包括 Iceberg 表) 读取 Parquet 文件时使用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅对经 `LIMIT` 保留的 `n` 行读取排序和筛选不需要的列。仅当启用 `query_plan_optimize_lazy_materialization` 时生效。
 
@@ -450,6 +493,26 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 <Note>
   这是一项专家级设置，仅供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式更改，或被移除。
 </Note>
+
+可能的值：
+
+* 0 - 禁用
+* 1 - 启用
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：将减少数据量的函数（`length`、`lengthUTF8`、`empty`、`notEmpty`）下推到 `Sorting` 和 `Filter` 步骤之后，以固定大小的结果替换宽参数列。previous_value=false，因此将 `compatibility` 设置为 26.8 之前的版本时，会恢复原有行为（不下推）。"}]}]} />
+
+启用或禁用一项查询计划级别的优化：在执行计划中，将减少数据量的函数 (`length`、`lengthUTF8`、`empty`、`notEmpty`)
+下推到 `Sorting` 和 `Filter` 步骤之后。固定大小的结果会替换宽 `String` / `FixedString`
+参数，因此该参数无需再经过这些步骤传递。
+仅当参数列在被下推步骤之前不再需要时，才会应用此重写。
+
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时，此设置才生效。
 
 可能的值：
 
@@ -500,22 +563,6 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "新设置"}]}]} />
 
 在 JOIN 操作中保持按顺序从左表读取，以便后续步骤加以利用。
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：通过将 hash join 固定在内存中以保留其承诺的顺序，使按顺序读取能够穿透设有自动落盘阈值的 hash join。previous_value=false，因此与 26.8 之前版本的 `compatibility` 会恢复原有的保守行为：此类连接绝不会用于按顺序读取，但始终可以落盘。"}]}]} />
-
-允许 [`query_plan_read_in_order_through_join`](/zh/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) 也适用于通过 [`max_bytes_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 或 [`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) 配置了自动落盘阈值的 hash join。
-
-此类连接只有在从不落盘时，才能保证保留左表的顺序，因为落盘会按哈希将行分散到各个桶中。因此，该优化生效时，连接会保留在内存中，且不再触发落盘阈值：右侧表将改由内存跟踪器限制，如同未配置自动落盘一样。
-
-设置为 `0` 可保留保守行为，即绝不让按顺序读取穿透可能落盘的连接。依赖落盘以满足内存限制，且原本会符合该优化条件的查询，将继续按原有方式运行。
-
-独立的通过 `JOIN` 执行 `ORDER BY ... LIMIT` 的优化会将 `Sort` 和 `Limit` 下推到连接的保留侧。它从不依赖连接保留任何顺序，因此无论此设置如何，对于支持落盘的连接都仍然可用。不过，当可以按顺序读取时，它会为按顺序读取让路——因此，启用此设置后，若支持落盘连接的保留侧能够按请求的顺序流式传输行，其上的 `ORDER BY ... LIMIT` 将采用按顺序读取计划，而非下推的 `Sort` 和 `Limit`。该切换仍遵循原有条件，尤其是必须将 [`query_plan_join_swap_table`](/zh/reference/settings/session-settings/query-plan#query_plan_join_swap_table) 显式设置为 `false`：在默认的 `auto` 下，后续优化可能会交换连接两侧，使按顺序读取计划失效，因此不会采用该切换，此类查询将继续使用下推的 `Sort` 和 `Limit`。
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

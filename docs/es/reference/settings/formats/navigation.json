@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Configuración de formato",
+  "group": "Format Settings",
   "pages": [
     "es/reference/settings/formats/bool",
     "es/reference/settings/formats/date-time",

@@ -61,29 +61,41 @@ o código-fonte [no repositório do GitHub](https://github.com/ClickHouse/terraf
 </Note>
 
 <div id="terraform-provider-releases">
-  ## Lançamentos dos provedores Terraform
+  ## Lançamentos dos providers Terraform
 </div>
 
-A ClickHouse mantém dois provedores oficiais do Terraform — o provedor ClickHouse Cloud para infraestrutura em nuvem e o provedor DBops para objetos em nível de banco de dados. Ambos seguem o mesmo modelo de lançamento.
+A ClickHouse mantém dois providers oficiais do Terraform - o provider ClickHouse Cloud para infraestrutura em nuvem e o provider DBops para objetos em nível de banco de dados. Ambos seguem o mesmo modelo de lançamento.
 
-<div id="stable-vs-alpha">
-  ### Estável versus alpha
+<div id="ga-vs-beta-resources">
+  ### Recursos GA versus Beta
 </div>
 
-As versões estáveis (por exemplo, 3.11.1, 1.9.0) incluem apenas recursos para funcionalidades GA. As versões alpha (por exemplo, 3.12.0-alpha2, 1.10.0-alpha1) incluem tudo o que há nas versões estáveis, além de recursos para funcionalidades ainda em beta ou private preview, e devem ser explicitamente fixadas para uso.
+Cada lançamento consiste em uma única compilação que contém todos os recursos. Os recursos de funcionalidades que ainda não atingiram a disponibilidade geral são distribuídos junto com os recursos GA, marcados como **beta** — não há uma compilação separada nem nada a fixar para usá-los.
+
+Um recurso beta é indicado em dois lugares:
+
+* **Durante o plano e a aplicação**, como um aviso `Beta Resource`. O Terraform nunca falha devido a avisos, portanto a execução prossegue normalmente.
+* **Na documentação**, com um destaque que diz &quot;Este recurso está em beta&quot;.
+
+Beta significa que o schema e o comportamento podem mudar em uma versão futura do provider. Tudo que não tiver esse marcador é GA e está coberto pelas garantias habituais de compatibilidade.
+
+<Note>
+  Antes da v3.25.2, o provider marcava esses recursos como *alpha* em vez de *beta*, e o aviso durante o plano era `Alpha Resource`. Apenas a redação mudou — não há schema, comportamento nem migração de estado envolvidos —, mas ferramentas que usam grep na saída do plano em busca de `Alpha Resource` deixarão de encontrar correspondências silenciosamente. Lançamentos anteriores também publicavam uma compilação alpha separada.
+</Note>
 
 <div id="versioning">
   ### Versionamento
 </div>
 
-Ambos os providers usam versionamento semântico (MAJOR.MINOR.PATCH). A versão major é incrementada em caso de mudanças incompatíveis, a versão minor para novos recursos ou funcionalidades, e a
-versão patch para correções de bugs. Lançamentos alpha acrescentam um sufixo de pré-lançamento à próxima versão minor (por exemplo, 3.12.0-alpha1), com o número alpha sendo incrementado à medida que correções ou mudanças adicionais são incluídas antes da promoção (por exemplo, alpha1 → alpha2 → alpha3). Os lançamentos são gerados sob demanda, em vez de seguirem um cronograma fixo. Um novo alpha é criado quando um recurso é adicionado para uma funcionalidade que ainda não é GA, ou quando uma correção precisa de validação antecipada. Uma nova versão estável é criada quando as mudanças acumuladas — incluindo quaisquer funcionalidades que tenham alcançado GA nesse meio-tempo — estiverem prontas para produção, normalmente após um período de feedback dos clientes. Várias versões minor alpha podem se acumular antes de serem consolidadas em uma única versão estável.
+Ambos os providers usam versionamento semântico (MAJOR.MINOR.PATCH). A versão major é incrementada em caso de mudanças incompatíveis, a versão minor para novos recursos ou funcionalidades, e a versão patch para correções de bugs. Os lançamentos são gerados sob demanda, em vez de seguirem um cronograma fixo.
+
+Versões com o sufixo `-alphaN` (por exemplo, `3.15.0-alpha3`) são anteriores ao modelo de compilação única. Elas continuam disponíveis, mas não são mais produzidas.
 
 <div id="promotion">
-  ### Promoção de alpha para estável
+  ### Promoção de beta para GA
 </div>
 
-Quando um recurso do Terraform está pronto para GA, ele é promovido de alpha para estável no próximo lançamento estável. Até lá, o recurso fica disponível apenas em builds alpha.
+Quando um recurso atinge a disponibilidade geral, ele deixa de ter o marcador beta no próximo lançamento do provider: o aviso no momento do plano deixa de ser exibido, e o destaque na documentação é removido. Nada mais muda — não há edições de configuração, migração de estado nem alternância entre compilações.
 
 <div id="terraform-and-openapi-new-pricing---replica-settings-explained">
   ## Terraform e OpenAPI New Pricing: Configurações de réplica explicadas

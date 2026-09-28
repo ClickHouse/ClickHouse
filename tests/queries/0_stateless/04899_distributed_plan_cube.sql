@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- `GROUP BY ... WITH CUBE` under `make_distributed_plan`: the aggregation runs distributed and
 -- the `Cube` step computes all subtotal combinations over the merged result. The `Cube` step can
 -- land in a worker stage (below a distributed `ORDER BY`), so its serialization is exercised here.

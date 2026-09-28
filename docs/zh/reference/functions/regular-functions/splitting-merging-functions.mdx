@@ -269,7 +269,7 @@ reverseBySeparator(string[, separator])
 **参数**
 
 * `string` — 要反转各部分顺序的输入字符串。[`String`](/zh/reference/data-types/string)
-* `separator` — 用于识别各部分的分隔字符串。如果未提供，则使用 &#39;.&#39; (点号) 。默认值：&#39;.&#39; [`String`](/zh/reference/data-types/string)
+* `separator` — 用于识别各部分的分隔符字符串。如果未提供，则使用 &#39;.&#39; (点号) 。默认值：&#39;.&#39; [`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **路径反转**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **自定义分隔符**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **点号的特殊情况**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **单个元素**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **空分隔符**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **空的正则表达式**
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **空字符串分隔符**
@@ -599,17 +599,18 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 
 * `splitByNonAlpha` 按非 ASCII 字母数字字符拆分字符串 (另请参见函数 [splitByNonAlpha](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)) 。
 * `splitByString(S)` 按用户定义的分隔符字符串 `S` 拆分字符串 (另请参见函数 [splitByString](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByString)) 。这些分隔符可通过可选参数指定，例如 `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`。请注意，每个分隔符字符串都可以由多个字符组成 (如示例中的 `', '`) 。如果未显式指定，则默认分隔符列表为单个空格 `[' ']`。
+* `splitByRegexp(re)` 按用户定义的正则表达式分隔符 `re` 拆分字符串 (另请参见函数 [splitByRegexp](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)) 。该正则表达式为必填项，例如 `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`。与 `splitByString` 不同，正则表达式分隔符可保留包含特殊字符的标记 (例如 `C++` 或 `C#`)。
 * `asciiCJK` 使用 Unicode 单词边界规则 (类似于 UAX #29) 将字符串拆分为标记。ASCII 字母数字字符和下划线会与连接符一起组成标记 (字母使用 `:`，同类字符使用 `.` 和 `'`) 。非 ASCII Unicode 字符会成为单字符标记。
 * `chinese` 使用字典和隐马尔可夫模型将中文文本分割为单词 (该算法遵循 [jieba](https://github.com/fxsjy/jieba)；内嵌的字典和模型数据源自 [cppjieba](https://github.com/yanyiwu/cppjieba))。与将每个非 ASCII 字符视为单字符标记的 `asciiCJK` 不同，`chinese` 会将连续的中文字符组合成单词，从而生成更有意义的标记，并提高中文文本的搜索质量。可选的 `granularity` 参数可以是 `coarse_grained` (默认值) 或 `fine_grained`；后者还会枚举重叠的子词，以更大的索引为代价提高召回率。
 * `icu(locale)` 使用 ICU 库的 Unicode 单词分段功能 (UAX #29) 将字符串拆分为单词标记。对于单词之间没有空格的文字系统 (例如中文、日文和泰文)，ICU 会应用基于字典的分段，因此此类文本会被拆分为有意义的单词。`locale` 是传递给分段器的 ICU 区域设置 (分段主要由文字系统和字典驱动；区域设置会选择 ICU 的区域特定定制)；它是必需的，并作为单独的参数传入，例如 `tokens(value, 'icu', 'ja')`。
 * `japanese` 使用 MeCab 形态分析器将日文文本拆分为单词。需要在服务器配置中配置字典 (请参阅[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)文档)。
 * `ngrams(N)` 将字符串拆分为等长的 `N`-gram (另请参见函数 [ngrams](/zh/reference/functions/regular-functions/splitting-merging-functions#ngrams)) 。可通过 1 到 8 之间的可选整数参数指定 ngram 长度，例如 `tokens(value, 'ngrams', 3)`。如果未显式指定，则默认 ngram 长度为 3。
 * `sparseGrams(min_length, max_length, min_cutoff_length)` 将字符串拆分为可变长度的 n-gram，长度最短为 `min_length`、最长为 `max_length` (含边界)  (另请参见函数 [sparseGrams](/zh/reference/functions/regular-functions/string-functions#sparseGrams)) 。除非显式指定，否则 `min_length` 和 `max_length` 默认为 3 和 100。如果提供了参数 `min_cutoff_length`，则只返回长度大于或等于 `min_cutoff_length` 的 n-gram。与 `ngrams(N)` 相比，`sparseGrams` 分词器会生成可变长度的 N-gram，从而更灵活地表示原始文本。例如，`tokens(value, 'sparseGrams', 3, 5, 4)` 会在内部基于输入字符串生成 3-、4-、5-gram，但只返回 4- 和 5-gram。
-* `array` 不执行分词，即每一行的值都是一个标记 (另请参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。
+* `array` 不执行分词，即每一行的值都是一个标记 (另请参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。为与其他系统兼容，`keyword` 可作为 `array` 的别名使用。
 
-对于 `splitByString` 分词器，如果这些分隔符不构成[前缀码](https://en.wikipedia.org/wiki/Prefix_code)，通常会希望匹配时优先使用更长的分隔符。
-为此，请按长度降序传入这些分隔符。
-例如，当 separators = `['%21', '%']` 时，字符串 `%21abc` 会被分词为 `['abc']`；而当 separators = `['%', '%21']` 时，则会被分词为 `['21ac']` (这很可能不是你想要的结果) 。
+对于 `splitByString` 分词器，如果这些标记不构成[前缀码](https://en.wikipedia.org/wiki/Prefix_code)，通常应优先匹配较长的分隔符。
+为此，请按长度降序传入分隔符。
+例如，当 separators = `['%21', '%']` 时，字符串 `%21abc` 会被分词为 `['abc']`；而 separators = `['%', '%21']` 则会被分词为 `['21ac']` (这可能不是您想要的结果) 。
 
 **语法**
 
@@ -617,6 +618,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'splitByRegexp', regexp)
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -629,10 +631,11 @@ tokens(value, 'array')
 **参数**
 
 * `value` — 输入字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `tokenizer` — 要使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数可选；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 要使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数可选；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 * `locale` — 仅当参数 `tokenizer` 为 `icu` 时适用：必填的区域设置，例如 `'ja'`。[`const String`](/zh/reference/data-types/string)
 * `n` — 仅当参数 `tokenizer` 为 `ngrams` 时适用：可选参数，用于定义 ngrams 的长度。如果未显式设置，则默认为 `3`。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `separators` — 仅当参数 `tokenizer` 为 `split` 时适用：可选参数，用于定义分隔符字符串。如果未显式设置，则默认为 `[' ']`。[`const Array(String)`](/zh/reference/data-types/array)
+* `regexp` — 仅当参数 `tokenizer` 为 `splitByRegexp` 时适用：必填参数，用于定义正则表达式分隔符。[`const String`](/zh/reference/data-types/string)
 * `min_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时适用：可选参数，用于定义最小 gram 长度，默认为 3。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `max_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时适用：可选参数，用于定义最大 gram 长度，默认为 100。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `min_cutoff_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时适用：可选参数，用于定义最小截断长度。[`const UInt8`](/zh/reference/data-types/int-uint)
@@ -703,6 +706,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `locale` — 仅当参数 `tokenizer` 为 `icu` 时才相关：必填的区域设置，例如 `'ja'`。[`const String`](/zh/reference/data-types/string)
 * `n` — 仅当参数 `tokenizer` 为 `ngrams` 时才相关：一个可选参数，用于定义 ngram 的长度。如果未显式设置，则默认为 `3`。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `separators` — 仅当参数 `tokenizer` 为 `split` 时才相关：一个可选参数，用于定义分隔符字符串。如果未显式设置，则默认为 `[' ']`。[`const Array(String)`](/zh/reference/data-types/array)
+* `regexp` — 仅当参数 `tokenizer` 为 `splitByRegexp` 时才相关：一个必填参数，用于定义正则表达式分隔符。[`const String`](/zh/reference/data-types/string)
 * `min_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时才相关：一个可选参数，用于定义最小 gram 长度，默认为 3。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `max_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时才相关：一个可选参数，用于定义最大 gram 长度，默认为 100。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `min_cutoff_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时才相关：一个可选参数，用于定义最小截断长度。[`const UInt8`](/zh/reference/data-types/int-uint)

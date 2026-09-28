@@ -1,6 +1,9 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,6 +53,28 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
         if (!a_types[i]->equals(*b_types[i]))
             return false;
     return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -525,10 +550,6 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
-    /// `V3` was written only by builds of `master` between PR #102356 and its revert; no stable
-    /// release produced it. It is still read here: parts written by such a build are otherwise
-    /// unreadable, and `ALTER TABLE ... MATERIALIZE STATISTICS` cannot rewrite them on a readonly
-    /// disk. See the `V3` note in `Statistics.h` for the two differences from `V4`.
     if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2
         && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4)
         throw Exception(
@@ -544,13 +565,17 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
+    /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+    /// column type differs from the current type — statistics built on a different type are
+    /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
+    /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
+    /// V1 / V2.
+    ///
+    /// V3 layout: same layout as V4 but without the `stored_type_name` field, and the only
+    /// conflict is bit 4 of `stat_types_mask`, which meant the reverted `NullCount` in V3
+    /// and means `Basic` in V4 — the deserializer skips it.
     if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4)
     {
-        /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
-        /// column type differs from the current type — statistics built on a different type are
-        /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
-        /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
-        /// V1 / V2.
         if (version == StatisticsFileVersion::V4)
         {
             String stored_type_name;
@@ -583,10 +608,9 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
 
             auto type = static_cast<StatisticsType>(i);
 
-            /// This bit was the reverted `NullCount` statistic in `V3` and is `Basic` today, so a
-            /// `V3` payload here is not a `Basic` payload. The size prefix lets us skip it.
             if (version == StatisticsFileVersion::V3 && type == StatisticsType::Basic)
             {
+                /// In V3, this was the NullCount statistics -> ignore
                 buf.ignore(stat_size);
                 continue;
             }
@@ -957,6 +981,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
 }
 
 }

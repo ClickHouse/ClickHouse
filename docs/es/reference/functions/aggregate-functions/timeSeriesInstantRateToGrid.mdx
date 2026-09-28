@@ -15,6 +15,8 @@ Introducido en: v25.6.0
 
 Función de agregación que toma datos de series temporales como pares de marcas de tiempo y valores, y calcula un [irate similar a PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) a partir de estos datos en una cuadrícula temporal regular definida por la marca de tiempo inicial, la marca de tiempo final y el paso. Para cada punto de la cuadrícula, las muestras para calcular `irate` se toman en cuenta dentro de la ventana de tiempo especificada.
 
+Si varias muestras tienen la misma marca de tiempo, solo se usa una de ellas: la muestra con el valor más alto. Un valor NaN pierde frente a cualquier otro valor, por lo que solo se usa un valor NaN si todas las muestras de esta marca de tiempo son NaN.
+
 <Warning>
   Esta función es experimental; habilítela configurando `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>

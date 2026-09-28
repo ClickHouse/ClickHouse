@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/zh/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.mdx';
 
 您可以使用 ClickPipes 将源 Postgres 数据库中的数据摄取到 ClickHouse Cloud。源 Postgres 数据库既可以托管在本地环境中，也可以托管在云端，包括 Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase 等。
 
@@ -152,15 +153,13 @@ Postgres ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以
   如果您在 ClickHouse 中定义的排序键与 Postgres 中的 primary key 不同，请务必阅读相关的[注意事项](/zh/integrations/clickpipes/postgres/ordering-keys)。
 </Warning>
 
-8. 此外，您还可以提供自定义的 `PARTITION BY <expr>` 表达式，以控制目标端 [ClickHouse 表分区](/zh/concepts/core-concepts/partitions)。
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="分区方式" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### 检查权限并启动 ClickPipe
 </div>
 
-8. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
+9. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="检查权限" size="lg" border />
 

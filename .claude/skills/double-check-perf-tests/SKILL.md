@@ -56,8 +56,8 @@ skill:
    S3 report reflects, since it is overwritten in place — and the script
    warns when the choice was not unique.
 7. Downloads both binaries from `clickhouse-builds`:
-   - Right: `PRs/<pr>/<sha>/build_{amd,arm}_release/clickhouse`
-   - Left:  `REFs/master/<ref-sha>/build_{amd,arm}_release/clickhouse`
+   - Right: `PRs/<pr>/<sha>/pr/build_{amd,arm}_release/clickhouse`
+   - Left:  `REFs/master/<ref-sha>/masterci/build_{amd,arm}_release/clickhouse`
 8. Starts two local `clickhouse-server` processes (ports 9001 + 19001, the
    same ports `CHServer` uses in `ci/jobs/performance_tests.py`).
 9. Reruns **only** the affected query indices via
@@ -291,7 +291,7 @@ treated as CI noise.
   finished uploading), pass `--reference-sha` explicitly. The CI sets this
   field from `SELECT value FROM system.build_options WHERE name='GIT_HASH'`
   on the reference binary itself, so the resulting SHA is guaranteed to
-  match a buildable commit under `REFs/master/<sha>/build_*_release/`.
+  match a buildable commit under `REFs/master/<sha>/masterci/build_*_release/`.
 - Datasets are intentionally not downloaded automatically — they are large
   and the user should opt in. Existing data is hardlinked into both server
   dirs via `cp -al` (same trick `performance_tests.py` uses), so disk usage
