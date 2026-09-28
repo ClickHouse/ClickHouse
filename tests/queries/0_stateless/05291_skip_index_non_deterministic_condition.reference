@@ -12,6 +12,10 @@ id = 1 AND rand	1
 rand	0
 rowNumberInBlock	0
 control: id = 1	1
+-- set index on a column named rand()
+rand	1
+id < 10 AND rand	1
+rand, index used	0
 -- text index on map keys: 40000 rows have the key, about 40 of the others pass through rand
 map element	1
 map subcolumn	1

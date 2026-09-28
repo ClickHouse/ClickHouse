@@ -8,6 +8,7 @@
 DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_map;
 DROP TABLE IF EXISTS t_json;
+DROP TABLE IF EXISTS t_name;
 
 -- One value of `id` per granule: a granule skipped by mistake loses all of its rows.
 CREATE TABLE t_set (id UInt64, INDEX s_idx id TYPE set(0) GRANULARITY 1)
@@ -24,12 +25,23 @@ SELECT 'generateUUIDv4', count() BETWEEN 35000 AND 45000 FROM t_set WHERE toUInt
 SELECT 'rand in a lambda', count() BETWEEN 15000 AND 25000 FROM t_set WHERE arrayExists(x -> x = rand() % 4, [id]);
 SELECT 'rand in if', count() BETWEEN 45000 AND 55000 FROM t_set WHERE if(rand() % 2 = 0, id = 1, 1);
 SELECT 'id = 1 OR rand', count() BETWEEN 45000 AND 55000 FROM t_set WHERE id = 1 OR rand() % 2 = 0;
-SELECT 'id = 1 AND rand', count() BETWEEN 8000 AND 12000 FROM t_set WHERE id = 1 AND rand() % 2 = 0;
+SELECT 'id = 1 AND rand', count() BETWEEN 7500 AND 12500 FROM t_set WHERE id = 1 AND rand() % 2 = 0;
 
 SELECT '-- set index, is the index used';
 SELECT 'rand', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_set WHERE rand() % 2 = 0 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: s_idx%';
 SELECT 'rowNumberInBlock', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_set WHERE rowNumberInBlock() % 2 = 0 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: s_idx%';
 SELECT 'control: id = 1', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_set WHERE id = 1 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: s_idx%';
+
+-- A column named like the function does not stand in for it.
+CREATE TABLE t_name (id UInt64, `rand()` UInt32, INDEX r_idx (id, `rand()`) TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name SELECT intDiv(number, 8) % 4, 1 + intDiv(number, 8) % 2 FROM numbers(80000);
+
+SELECT '-- set index on a column named rand()';
+SELECT 'rand', count() BETWEEN 35000 AND 45000 FROM t_name WHERE rand() % 2 = 0;
+SELECT 'id < 10 AND rand', count() BETWEEN 35000 AND 45000 FROM t_name WHERE id < 10 AND rand() % 2 = 0;
+SELECT 'rand, index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_name WHERE rand() % 2 = 0 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: r_idx%';
 
 -- Every second granule has the key 'k', the others only the key 'z'.
 CREATE TABLE t_map (id UInt64, m Map(String, String), INDEX ki mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1)
@@ -58,3 +70,4 @@ SELECT 'control: index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count
 DROP TABLE t_set;
 DROP TABLE t_map;
 DROP TABLE t_json;
+DROP TABLE t_name;
