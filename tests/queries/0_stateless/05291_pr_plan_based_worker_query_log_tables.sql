@@ -30,8 +30,10 @@ WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday(
       WHERE type = 'QueryFinish' AND is_initial_query = 1 AND event_date >= yesterday()
         AND current_database = currentDatabase() AND log_comment = 'pr_worker_access_probe');
 
-SELECT 'and the database, and some columns';
-SELECT countIf(NOT has(databases, currentDatabase())) = 0 AND countIf(length(columns) = 0) = 0
+-- Columns are not asserted: the step carries the storage read list after plan optimizations, not the
+-- planner's column set, so it is deliberately not reported.
+SELECT 'and the database';
+SELECT countIf(NOT has(databases, currentDatabase())) = 0
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
   AND initial_query_id IN (

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Common/quoteString.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -7082,13 +7083,24 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 
     /// A read that arrives as a shipped plan never goes through the planner, which is what records the
     /// access info a locally planned read reports (`PlannerJoinTree.cpp`). Without this, the worker's
-    /// `system.query_log` row names no database, table or column, so its work cannot be attributed to
-    /// what it read. Only the receiver deserializes, so the initiator's own read is not counted twice.
-    /// Recorded after the table is known to be a `MergeTree` one, so a read that is about to be
-    /// rejected is not reported as access, and from the resolved storage's own id rather than from the
-    /// names the plan carried, which is what the planner passes too.
+    /// `system.query_log` row names no database or table, so its work cannot be attributed to what it
+    /// read. Only the receiver deserializes, so the initiator's own read is not counted twice, and the
+    /// id comes from the resolved storage rather than from the names the plan carried, as the planner
+    /// does. Recorded after the `MergeTree` check, so a read about to be rejected is not reported.
+    ///
+    /// The columns are deliberately left out. The planner records the query's own column set
+    /// (`table_expression_data.getColumnNames()`), while all this step has is the list it was
+    /// serialized with - `getAllColumnNames`, the storage read list after the plan optimizations, which
+    /// a rewrite can change: `replaceVectorColumnWithDistanceColumn` swaps the vector column for
+    /// `_distance`, and `useVectorSearchWithQuantizedCodes` appends helper subcolumns. Reporting those
+    /// would make `system.query_log.columns` mean one thing for a local read and another for a shipped
+    /// one; reporting none keeps it honest until the planner's set is carried across.
     if (ctx.context->hasQueryContext())
-        ctx.context->getQueryContext()->addQueryAccessInfo(storage_ptr->getStorageID(), column_names);
+    {
+        const auto resolved_id = storage_ptr->getStorageID();
+        ctx.context->getQueryContext()->addQueryAccessInfo(
+            backQuoteIfNeed(resolved_id.getDatabaseName()), resolved_id.getFullTableName(), /*column_names=*/ {});
+    }
 
     MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
