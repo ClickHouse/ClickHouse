@@ -30,7 +30,7 @@ namespace DB
 LazyPipeFDs TraceSender::pipe;
 
 static thread_local bool inside_send = false;
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept
 {
     /** The method shouldn't be called recursively or throw exceptions.
       * There are several reasons:

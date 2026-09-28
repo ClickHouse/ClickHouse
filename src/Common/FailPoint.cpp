@@ -61,6 +61,7 @@ static struct InitFiu
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \
+    REGULAR(patch_part_index_write_empty) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
@@ -183,7 +184,9 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(query_metric_log_delay_collect) \
-    ONCE(zk_send_thread_request_window_throw)
+    ONCE(keeper_changelog_preallocate_no_space) \
+    ONCE(zk_send_thread_request_window_throw) \
+    REGULAR(aggregate_function_state_transfer_throw)
 
 namespace FailPoints
 {

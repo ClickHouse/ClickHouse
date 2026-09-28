@@ -15,6 +15,9 @@
 namespace DB
 {
 
+template <typename T>
+using VectorWithMemoryTracking = std::vector<T, AllocatorWithMemoryTracking<T>>;
+
 /// An implementation of the FPC codec for floating-point values described in the paper
 ///   M. Burtscher, P. Ratanaworabhan: "FPC: A high-speed compressor for double-precision floating-point data" (2008).
 /// Note: The paper only describes compression of 64-bit doubles and leaves 32-bit floats to future work. The code
@@ -185,7 +188,7 @@ private:
         }
     }
 
-    std::vector<TUInt> table;
+    VectorWithMemoryTracking<TUInt> table;
     TUInt prev_value;
     size_t hash;
 };
@@ -226,7 +229,7 @@ private:
         }
     }
 
-    std::vector<TUInt> table;
+    VectorWithMemoryTracking<TUInt> table;
     size_t hash;
 };
 
