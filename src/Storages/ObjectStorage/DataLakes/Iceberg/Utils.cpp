@@ -1802,7 +1802,7 @@ static String formatIcebergTransformExpression(
             "Iceberg field with source id {} is not a top-level column of the current schema, so it cannot be represented in `CREATE TABLE`",
             source_id);
 
-    const auto column_name = backQuoteIfNeed(it->second);
+    auto column_name = backQuoteIfNeed(it->second);
     if (transform->transform_name == "identity")
         return column_name;
     if (transform->argument)
