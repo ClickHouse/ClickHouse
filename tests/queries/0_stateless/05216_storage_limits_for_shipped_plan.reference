@@ -3,3 +3,7 @@ and so does the plan-based one
 the total byte limit as well
 a limit that is not exceeded does not fire
 4999950000
+a distributed plan refuses too
+4999950000
+the read of an IN subquery in a shipped plan is limited as well
+3
