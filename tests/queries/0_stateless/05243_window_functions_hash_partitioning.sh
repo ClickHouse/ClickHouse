@@ -66,6 +66,7 @@ check "spilling to disk" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k), max(
 check "spilling with a constant column" "$(digest "SELECT 42 AS c, x, sum(x) OVER (PARTITION BY k) FROM t SETTINGS max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0, max_block_size = 10, max_threads = 2")"
 check "filter on the partition key" "SELECT k, x, sum(x) OVER (PARTITION BY k) AS c FROM t QUALIFY k = 3 ORDER BY x LIMIT 3"
 check "max_rows_to_sort" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k) FROM t SETTINGS max_rows_to_sort = 1000000, max_bytes_to_sort = 1000000000")"
+check "max_rows_to_sort per stream with one thread" "$(digest "SELECT x, sum(x) OVER (PARTITION BY k) FROM (SELECT * FROM t UNION ALL SELECT * FROM t) SETTINGS max_threads = 1, max_rows_to_sort = 1500")"
 check "LIMIT" "SELECT k, sum(x) OVER (PARTITION BY k) AS c FROM t WHERE x < 20 ORDER BY x LIMIT 3"
 
 echo "--- sorting ---"

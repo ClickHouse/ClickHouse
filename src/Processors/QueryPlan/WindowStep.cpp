@@ -139,34 +139,41 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         for (const auto & column : window_description.partition_by)
             key_positions.push_back(input_header.getPositionByName(column.column_name));
 
-        /// Every stream must hold whole partitions.
-        if (!skip_scatter_by_partition)
+        /// `max_rows_to_sort` / `max_bytes_to_sort` per stream, as for the sorting it replaces: it checks them
+        /// after the scatter, or on the input streams if there is a single thread, and merges them later.
+        StreamLocalLimits limits;
+        limits.mode = LimitsMode::LIMITS_CURRENT;
+        limits.size_limits = hash_partitioning_settings->size_limits;
+        limits.size_limits.overflow_mode = OverflowMode::THROW;
+        auto add_limits_check = [&]
         {
-            if (num_threads > 1)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
-                SortingStep::checkScatterConnectionLimit(num_threads, pipeline.getNumStreams());
-                scatterByPartition(pipeline, num_threads, key_positions);
-            }
-            else
-            {
-                pipeline.resize(1);
-            }
+                return std::make_shared<LimitsCheckingTransform>(header, limits);
+            });
+        };
+
+        /// Every stream must hold whole partitions.
+        if (skip_scatter_by_partition)
+        {
+            add_limits_check();
+        }
+        else if (num_threads > 1)
+        {
+            SortingStep::checkScatterConnectionLimit(num_threads, pipeline.getNumStreams());
+            scatterByPartition(pipeline, num_threads, key_positions);
+            add_limits_check();
+        }
+        else
+        {
+            add_limits_check();
+            pipeline.resize(1);
         }
 
         /// The input can be many small chunks, e.g. after a selective PREWHERE.
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<SimpleSquashingChunksTransform>(header, hash_partitioning_settings->max_block_size, 1_MiB);
-        });
-
-        /// `max_rows_to_sort` / `max_bytes_to_sort` per stream, as for the sorting it replaces.
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
-        limits.size_limits = hash_partitioning_settings->size_limits;
-        limits.size_limits.overflow_mode = OverflowMode::THROW;
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<LimitsCheckingTransform>(header, limits);
         });
 
         const auto & sort_settings = *hash_partitioning_settings;

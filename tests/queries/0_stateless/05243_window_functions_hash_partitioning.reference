@@ -53,6 +53,8 @@
 3	17	71500
 === max_rows_to_sort: hash partitioning 1 ===
 1000	827569046260263161
+=== max_rows_to_sort per stream with one thread: hash partitioning 1 ===
+2000	1912208055619220950
 === LIMIT: hash partitioning 1 ===
 0	21
 1	24
