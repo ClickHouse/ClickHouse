@@ -11,6 +11,7 @@
 #include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -36,6 +37,7 @@
 
 #include <charconv>
 #include <filesystem>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -159,6 +161,45 @@ namespace
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
+    }
+
+    /// The `Char` production of XML 1.0.
+    bool isValidXMLCharacter(UInt32 code_point)
+    {
+        return code_point == 0x9 || code_point == 0xA || code_point == 0xD
+            || (code_point >= 0x20 && code_point <= 0xD7FF)
+            || (code_point >= 0xE000 && code_point <= 0xFFFD)
+            || (code_point >= 0x10000 && code_point <= 0x10FFFF);
+    }
+
+    /// Escaping is not enough to make an arbitrary string writable as XML. XML 1.0 forbids the C0 control
+    /// characters other than tab, line feed and carriage return, the surrogate halves and `U+FFFE`/`U+FFFF`
+    /// outright - the code points, not just their literal spelling - so no character reference can carry one,
+    /// and a byte sequence that is not valid UTF-8 names no code point at all. Such a value can only be
+    /// refused. A carriage return is not reported: it is a legal XML character, and end-of-line normalization
+    /// rewriting it to a line feed on read changes the value but still leaves the document readable.
+    /// Returns the byte offset of the first character `writeXMLStringForTextElementOrAttributeValue` would
+    /// emit unreadably, or nothing if the whole string can be written.
+    std::optional<size_t> findCharacterNotWritableAsXML(std::string_view s)
+    {
+        const char * const begin = s.data();
+        const char * const end = begin + s.size();
+
+        for (const char * pos = begin; pos < end;)
+        {
+            const size_t length = UTF8::seqLength(static_cast<UInt8>(*pos));
+
+            std::optional<UInt32> code_point;
+            if (length <= static_cast<size_t>(end - pos))
+                code_point = UTF8::convertUTF8ToCodePoint(pos, length);
+
+            if (!code_point || !isValidXMLCharacter(*code_point))
+                return pos - begin;
+
+            pos += length;
+        }
+
+        return {};
     }
 }
 
