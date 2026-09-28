@@ -1,0 +1,8 @@
+-- row policy with a MATERIALIZED CTE, applied while a `Merge` table reads the table
+1
+2
+-- TTL WHERE with a MATERIALIZED CTE, applied by a merge
+3
+-- row policy with a table function, applied inside INSERT ... SELECT into a table of another structure
+a	1
+a	2

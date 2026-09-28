@@ -160,6 +160,10 @@ std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
     /// which the interpreter never did for a subquery - including one built by a background merge for a `TTL`
     /// expression, whose context carries the settings of the default profile.
     prepared.context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    /// The context of an `INSERT` carries the insertion table, and the analyzer would take the structure of a table
+    /// function in the subquery from it. `QueryAnalyzer` reads this setting from the scope context only, so the query
+    /// context - shared with the rest of the `INSERT` - is left alone, as `evaluateScalarSubqueryIfNeeded` does.
+    prepared.context->setSetting("use_structure_from_insertion_table_in_table_functions", Field(0));
     /// The analyzer re-applies the subquery's own `SETTINGS` clause over this context, so strip the parallel
     /// replica settings from it as well. The AST belongs to the analysed statement, whose text is persisted,
     /// so strip a clone.
@@ -169,6 +173,10 @@ std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
     };
     ASTPtr query = prepared.query->clone();
     removeSettingsFromQuery(query, parallel_replica_settings);
+    /// The plan is extracted before anything else could add the materialization of the subquery's
+    /// `MATERIALIZED` CTEs, so it has to carry it; `collectMaterializedCTEs` returns nothing for subquery
+    /// options unless materialization is forced.
+    prepared.options.forceMaterializeCTE();
     return std::make_shared<InterpreterSelectQueryAnalyzer>(
         query, prepared.context, prepared.options, required_source_columns);
 }
