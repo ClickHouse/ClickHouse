@@ -32,7 +32,7 @@ ClickHouse Cloud propose désormais ClickPipes pour migrer votre base de donnée
 * `pg_dump` et `psql` installés sur votre machine locale. Tous deux sont fournis avec les outils client PostgreSQL standard.
 
 <div id="considerations">
-  ## Points à prendre en compte avant la migration {#considerations}
+  ## Points à prendre en compte avant la migration
 </div>
 
 * **Propagation du DDL** : la réplication continue (CDC) capture les opérations DML et `ADD COLUMN`. Les autres modifications DDL, telles que `DROP COLUMN` et `ALTER COLUMN`, ne sont pas propagées et doivent être appliquées manuellement sur la base cible.

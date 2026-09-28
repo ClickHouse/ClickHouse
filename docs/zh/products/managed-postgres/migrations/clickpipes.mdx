@@ -32,7 +32,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 * 在本地计算机上安装 `pg_dump` 和 `psql`。两者都包含在标准 PostgreSQL 客户端工具中。
 
 <div id="considerations">
-  ## 迁移前注意事项 {#considerations}
+  ## 迁移前注意事项
 </div>
 
 * **DDL 传播**：持续复制 (CDC) 会捕获 DML 操作和 `ADD COLUMN`。其他 DDL 更改 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会自动传播，必须在目标端手动执行。

@@ -41,7 +41,7 @@ ClickHouse Cloud Console の **Settings → Security** から、サービスご�
 </Note>
 
 <div id="how-it-works">
-  ## 仕組み {#how-it-works}
+  ## 仕組み
 </div>
 
 クライアント (アイデンティティプロバイダまたはアプリケーション) は JWT を生成し、**秘密鍵**で署名します。トークンは、想定される[トークン形式](/ja/concepts/features/security/external-authenticators/jwt#token-claims)に従う必要があります。ClickHouse は、JWKS URL で公開されている**公開鍵**を使用してトークンを検証します。

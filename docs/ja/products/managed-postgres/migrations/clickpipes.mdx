@@ -32,7 +32,7 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 * ローカルマシンに `pg_dump` と `psql` がインストールされていること。どちらも標準の PostgreSQL クライアントツールに含まれています。
 
 <div id="considerations">
-  ## 移行前の注意事項 {#considerations}
+  ## 移行前の注意事項
 </div>
 
 * **DDL の伝播**: 継続的レプリケーション (CDC) は、DML 操作と `ADD COLUMN` を取り込みます。`DROP COLUMN` や `ALTER COLUMN` など、その他の DDL 変更は伝播されないため、ターゲット側で手動で適用する必要があります。

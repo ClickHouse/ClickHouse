@@ -28,7 +28,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 * **clickhouse-local** installé sur votre machine. Consultez le [guide d’installation de clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) pour démarrer.
 
 <div id="what-youll-build">
-  ## Ce que vous allez créer {#what-youll-build}
+  ## Ce que vous allez créer
 </div>
 
 Dans OpenTelemetry, chaque span de trace contient un ensemble d’**attributs de ressource** — des métadonnées clé-valeur qui décrivent l’entité ayant produit la télémétrie (nom du service, hôte, région cloud, pod Kubernetes, etc.). L’ensemble des clés varie selon les services et les environnements, ce qui en fait un cas d’usage naturel pour le type `Map` de ClickHouse : les clés sont dynamiques et spécifiques à l’application, mais une ligne donnée n’en contient généralement qu’une poignée.

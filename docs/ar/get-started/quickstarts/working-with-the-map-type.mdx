@@ -28,7 +28,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 * يجب تثبيت **clickhouse-local** على جهازك. راجع [دليل إعداد clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) للبدء.
 
 <div id="what-youll-build">
-  ## ما الذي ستبنيه {#what-youll-build}
+  ## ما الذي ستبنيه
 </div>
 
 في OpenTelemetry، يحمل كل `trace span` مجموعة من **سمات الموارد** — وهي بيانات وصفية بتنسيق مفتاح-قيمة تصف الكيان الذي أنتج بيانات telemetry (مثل اسم الخدمة، والمضيف، والمنطقة السحابية، وpod في Kubernetes، وغير ذلك). وتختلف مجموعة المفاتيح بين الخدمات والبيئات، مما يجعل نوع `Map` في ClickHouse مناسبًا لهذا الاستخدام بطبيعته: فالمفاتيح ديناميكية وخاصّة بالتطبيق، لكن أي صف معيّن لا يحتوي عادةً إلا على عدد قليل منها.

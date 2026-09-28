@@ -32,7 +32,7 @@ ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de
 * `pg_dump` y `psql` instalados en tu equipo local. Ambos se incluyen con las herramientas estándar del cliente de PostgreSQL.
 
 <div id="considerations">
-  ## Consideraciones antes de migrar {#considerations}
+  ## Consideraciones antes de migrar
 </div>
 
 * **Propagación de DDL**: la replicación continua (CDC) captura operaciones DML y `ADD COLUMN`. Otros cambios de DDL, como `DROP COLUMN` y `ALTER COLUMN`, no se propagan y deben aplicarse manualmente en el sistema de destino.

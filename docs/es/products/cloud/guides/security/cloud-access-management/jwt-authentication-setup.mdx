@@ -41,7 +41,7 @@ Para configurar proveedores de JWT para un servicio, necesita:
 </Note>
 
 <div id="how-it-works">
-  ## Cómo funciona {#how-it-works}
+  ## Cómo funciona
 </div>
 
 El Client (su proveedor de identidad o aplicación) genera un JWT y lo firma con su **clave privada**. El token debe seguir el [formato de token](/es/concepts/features/security/external-authenticators/jwt#token-claims) previsto. A continuación, ClickHouse lo verifica con las claves **públicas** publicadas en su URL de JWKS:

@@ -41,7 +41,7 @@ Pour configurer des fournisseurs JWT pour un service, vous devez disposer des é
 </Note>
 
 <div id="how-it-works">
-  ## Fonctionnement {#how-it-works}
+  ## Fonctionnement
 </div>
 
 Le client (votre fournisseur d’identité ou votre application) génère un JWT et le signe avec sa **clé privée**. Le jeton doit respecter le [format de jeton](/fr/concepts/features/security/external-authenticators/jwt#token-claims) attendu. ClickHouse le vérifie ensuite à l’aide des clés **publiques** publiées à l’URL de votre JWKS :

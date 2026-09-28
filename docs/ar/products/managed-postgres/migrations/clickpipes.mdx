@@ -32,7 +32,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * يجب أن يكون `pg_dump` و`psql` مثبَّتين على جهازك المحلي. يأتي كلاهما ضمن أدوات PostgreSQL client القياسية.
 
 <div id="considerations">
-  ## اعتبارات قبل الترحيل {#considerations}
+  ## اعتبارات قبل الترحيل
 </div>
 
 * **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على النظام الهدف.
