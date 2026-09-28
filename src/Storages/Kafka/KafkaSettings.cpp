@@ -118,7 +118,6 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
     loadSettingsFromNamedCollection(*impl, *named_collection, SettingOrigin::Definition);
 }
 
-
 void KafkaSettings::sanityCheck(ContextPtr global_context) const
 {
     UInt64 kafka_consumer_reschedule_ms = (*impl)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();

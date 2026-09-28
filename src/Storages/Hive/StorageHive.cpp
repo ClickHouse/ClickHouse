@@ -1575,9 +1575,7 @@ day:         2021-09-18
 
 SettingDescriptions StorageHive::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// `HiveSettings::loadFromConfig` exists but nothing calls it, so despite the `hive` config
-    /// section a `Hive` table's settings can only come from its defaults or its definition, which
-    /// `HiveSettings::loadFromQuery` records in the settings object.
+    /// Nothing calls `HiveSettings::loadFromConfig`, so the `hive` config section sets none of these.
     return storage_settings->enumerateSettings();
 }
 

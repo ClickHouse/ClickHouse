@@ -127,15 +127,8 @@ StoragePostgreSQL::StoragePostgreSQL(
 
 SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// A setting the definition does not state carries the value the creating session had for it: `default`
-    /// where that is the compiled-in default and `other` where it is not - the rule `Join` and `Distributed`
-    /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
-    /// nothing here and the source has to come from the value.
-    ///
-    /// Except for what a named collection or the table's own `SETTINGS` clause supplied, which
-    /// `loadSettingsFromNamedCollection` and `PostgreSQLSettings::loadFromQuery` record in the settings object
-    /// and `setOriginByValue` leaves alone: neither the session's nor a
-    /// default, and the value cannot reveal them, since either may well state the default.
+    /// A setting the definition does not state carries the creating session's value, and `loadFromQueryContext`
+    /// assigns all of them, so the changed flag says nothing: the value decides, as for `Join` and `Distributed`.
     SettingDescriptions descriptions = settings.enumerateSettings();
     setOriginByValue(descriptions);
     return descriptions;

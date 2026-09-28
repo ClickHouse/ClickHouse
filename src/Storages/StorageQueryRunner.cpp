@@ -807,8 +807,6 @@ StorageQueryRunner::~StorageQueryRunner() = default;
 
 SettingDescriptions StorageQueryRunner::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The engine reads its settings from the definition alone, which `QueryRunnerSettings::loadFromQuery`
-    /// records in the settings object, so what the definition does not state is at the compiled-in default.
     return settings.enumerateSettings();
 }
 

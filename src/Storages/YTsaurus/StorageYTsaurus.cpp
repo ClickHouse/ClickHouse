@@ -299,9 +299,8 @@ SELECT * FROM yt_saurus;
 
 SettingDescriptions StorageYTsaurus::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The settings object records the table's own `SETTINGS` clause, as `YTsaurusSettings::loadFromQuery`
-    /// applies it. A named collection supplies none of a table's settings: `processNamedCollectionResult`
-    /// accepts only connection keys for a table, so there is no `named_collection` source to record.
+    /// A named collection supplies none of a table's settings: `processNamedCollectionResult` accepts only connection
+    /// keys for a table.
     return settings.enumerateSettings();
 }
 

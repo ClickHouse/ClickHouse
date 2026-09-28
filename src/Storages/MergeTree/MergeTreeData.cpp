@@ -14848,15 +14848,10 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
 
 SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
 {
-    /// Every source is recorded in the settings object, whose traits record origins. A table starts
-    /// from the server's settings, built by `applyCompatibilitySetting` and then `loadFromConfig`, which record
-    /// `compatibility` and `config`; its own `SETTINGS` clause is applied over them by `loadFromQuery`, and again
-    /// by `changeSettings` after an `ALTER`, which record `definition`.
     const auto merge_tree_settings = getSettings();
     auto settings = merge_tree_settings->enumerateSettings();
 
-    /// The bounds a profile puts on these settings, reported exactly as
-    /// `system.merge_tree_settings` reports them.
+    /// The bounds a profile puts on these settings, as `system.merge_tree_settings` reports them.
     const auto constraints_and_profiles = query_context->getSettingsConstraintsAndCurrentProfiles();
     merge_tree_settings->applyConstraints(settings, constraints_and_profiles->constraints);
     return settings;

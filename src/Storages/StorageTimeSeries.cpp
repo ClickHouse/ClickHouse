@@ -1389,7 +1389,6 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
 
 SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The settings object records what the table's definition states - see the constructor and `alter`.
     return storage_settings.get()->enumerateSettings();
 }
 

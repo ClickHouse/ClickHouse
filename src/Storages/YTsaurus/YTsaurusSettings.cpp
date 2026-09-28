@@ -92,10 +92,7 @@ VectorWithMemoryTracking<std::string_view> YTsaurusSettings::getAllRegisteredNam
 
 void YTsaurusSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
-    /// Through the shared loader, which records that the collection supplied these values and which collection
-    /// it was. A reader may see a collection's values only where it may read that collection, and that is
-    /// decided from what the settings object recorded - so a loader that assigns without recording would put
-    /// its values outside the check.
+    /// Through the shared loader, which records the collection: a reader may see its values only where it may read it.
     loadSettingsFromNamedCollection(*impl, named_collection, SettingOrigin::Default);
 }
 

@@ -1194,18 +1194,11 @@ PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_
 namespace DB::StorageKafkaUtils
 {
 
-/// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values.
-/// Both befriend this: the helpers it composes are free functions, but the state it reports - the collection
-/// name, the expanded topics, the brokers, the group, the format, the schema and the generated client id - is
-/// private to each storage, and neither exposes all of it.
+/// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values, and
+/// befriend this for the private state it reports.
 template <typename KafkaStorage>
 SettingDescriptions getTableSettings(const KafkaStorage & storage)
 {
-    /// Three things set a `Kafka` table's settings, in this order, and the settings object records each: a named
-    /// collection given in the engine arguments, as `loadSettingsFromNamedCollection` loads it; the table's own
-    /// `SETTINGS` clause, as `loadFromQuery` applies it over the collection; and the storage's constructor, which
-    /// pins a few format settings through the typed `set`, forgetting whichever of the two supplied them. Anything left as `Other` was set by the engine
-    /// itself. Saying so is the point of that value - guessing a source for it would be wrong.
     auto settings = storage.kafka_settings->enumerateSettings();
 
     /// What the table works with: the constructor expands macros in these, and generates a client id when none is

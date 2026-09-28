@@ -190,8 +190,7 @@ private:
     bool delay_read_for_global_subqueries = false;
     MaterializedCTEWeakPtr materialized_cte;
 
-    /// `MultiVersion`, not a plain member: `getTableSettings` reads these while `ALTER ... MODIFY SETTING`
-    /// replaces them, and a reader that held a reference across that saw freed memory.
+    /// `MultiVersion`: inserts and `getTableSettings` read these while `ALTER ... MODIFY SETTING` replaces them.
     MultiVersion<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;

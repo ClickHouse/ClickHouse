@@ -105,7 +105,6 @@ void NATSSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & nam
     loadSettingsFromNamedCollection(*impl, *named_collection, SettingOrigin::Definition);
 }
 
-
 SettingsChanges NATSSettings::getFormatSettings() const
 {
     SettingsChanges values;

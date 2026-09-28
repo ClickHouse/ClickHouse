@@ -165,17 +165,11 @@ void StorageJoin::optimizeUnlocked()
 namespace
 {
 
-/// A setting `Join` takes from the server's settings for whatever its definition leaves out. The value
-/// is rendered through the same setting field the server's settings use, so the comparison with the default compares
-/// like with like. A value other than the default was set by something `Join` cannot name, such as a settings
-/// profile, which is what `Other` says; `StorageDistributed` reports what it copies from the server the same way.
-/// `metadata` is any `Settings` instance: what is read from it - the default, type, description and tier - is
-/// compiled in, so every instance answers alike, and the caller always has one at hand.
-/// Named by string, not by `Setting::x`: these are the core settings' own names, and a typed index of the core
-/// `Settings` is the one thing that would make a settings class outside `Core` name one. A name that a later
-/// release renames does not go unnoticed - `metadata.getDefaultValueString` throws `UNKNOWN_SETTING` for a name
-/// the core does not have, and `hasBuiltinSetting` builds its list through here, so the first `Join` table with
-/// a `SETTINGS` clause raises it and the tests below cover that path.
+/// A setting `Join` takes from the server's settings for whatever its definition leaves out, rendered through the
+/// setting field the server uses so that it compares with the default like with like. A value other than the default
+/// was set by something `Join` cannot name, such as a profile: `Other`. `metadata` is any `Settings` instance - only
+/// compiled-in metadata is read from it. Named by string, since a typed index would make a settings class outside
+/// `Core` name a core setting; a renamed one throws `UNKNOWN_SETTING` on the first `Join` table with a `SETTINGS` clause.
 SettingDescription enumerateServerBackedJoinSetting(const Settings & metadata, String name, String value)
 {
     SettingDescription described;
@@ -235,10 +229,8 @@ bool StorageJoin::hasBuiltinSetting(std::string_view name)
 
 SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) const
 {
-    /// `Join` keeps no settings object. The creator resolves its settings once - from the table's own
-    /// `SETTINGS` clause and, for what the clause leaves out, from the server's settings (`args.getContext`, the
-    /// global context, not the creating session) - and passes the results to the constructor. Report what the
-    /// table holds: a setting the clause leaves out is shown nowhere else, not even by `SHOW CREATE TABLE`.
+    /// `Join` keeps no settings object: the creator resolves each setting once - from the clause, else the server's
+    /// settings - and passes the values to the constructor. What the clause leaves out is shown nowhere else.
     auto settings = enumerateServerBackedJoinSettings(
         query_context->getSettingsRef(), {use_nulls, limits, overwrite, any_join_distinct_right_table_keys});
 
@@ -252,10 +244,8 @@ SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) cons
 
 SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)
 {
-    /// What a table created now would take for each setting its definition leaves out: the server's settings,
-    /// which the creator reads from the global context - `StorageFactory::Arguments::getContext` is the global
-    /// context, as `StorageFactory::get` asserts, so a session that changed one of these still creates tables
-    /// with the server's value - and the engine's own defaults for `disk` and `persistent`.
+    /// What a table created now would take where its definition is silent: the server's settings, which the creator
+    /// reads from the global context rather than the session, and the engine's own defaults for `disk` and `persistent`.
     const auto & server = context->getGlobalContext()->getSettingsRef();
     auto settings = enumerateServerBackedJoinSettings(
         server,

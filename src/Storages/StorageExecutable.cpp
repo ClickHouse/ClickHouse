@@ -750,7 +750,6 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
 
 SettingDescriptions StorageExecutable::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// `ExecutableSettings::loadFromQuery` records the table's own `SETTINGS` clause in the settings object.
     return settings->enumerateSettings();
 }
 

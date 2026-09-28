@@ -1830,9 +1830,6 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 
 SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The settings object, whose traits record origins, records what a named collection supplied, as
-    /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
-    /// applies it over the collection.
     auto settings = rabbitmq_settings->enumerateSettings();
 
     /// What the table works with. The constructor expands macros in these, and generates a queue base named after
@@ -1857,9 +1854,8 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr /* query_contex
         setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_password, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
     }
 
-    /// The constructor expands macros from the server configuration into the address, while the setting still holds
-    /// what was stated - from the clause or a named collection alike: where they differ, a macro supplied part of
-    /// it, which is the server's.
+    /// The constructor expands the server's macros into the address, while the setting holds what was stated: where
+    /// they differ, a macro supplied part of it.
     NameSet expanded_from_macros;
     if (configuration.connection_string != (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].value)
         expanded_from_macros.emplace(RabbitMQSettings::nameAtOffset(RabbitMQSetting::rabbitmq_address.offset));

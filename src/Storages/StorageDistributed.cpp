@@ -2622,17 +2622,10 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
 SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
-    /// applied over the compiled defaults, which `DistributedSettings::loadFromConfig` records in the settings
-    /// object and the table's copy keeps - and then applies its own `SETTINGS`
-    /// clause, which `DistributedSettings::loadFromQuery` records as the definition. The engine supports no
-    /// settings `ALTER`, so nothing applies the clause again.
     auto settings = distributed_settings->enumerateSettings();
 
-    /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the ones
-    /// the definition does not state, and copying a field of the same type copies its changed bit with it. So the
-    /// bit says nothing here: it is set for a value that merely equals the default, and clear for one that does
-    /// not. The value decides instead - whatever set a value other than the default, it was not the default.
+    /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings, with their
+    /// changed bits, into the ones the definition does not state, so the bit says nothing here: the value decides.
     setOriginByValue(settings);
 
     return settings;

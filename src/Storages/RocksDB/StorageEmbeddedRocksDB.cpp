@@ -1769,8 +1769,6 @@ void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands
 
 SettingDescriptions StorageEmbeddedRocksDB::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// `RocksDBSettings` records the table's own `SETTINGS` clause as `loadFromQuery` applies it, and again as
-    /// `alter` rebuilds the settings from the whole clause after `MODIFY` or `RESET SETTING`.
     return storage_settings.get()->enumerateSettings();
 }
 

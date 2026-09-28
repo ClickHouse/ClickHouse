@@ -152,21 +152,15 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
 SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The constructors a `MaterializedPostgreSQL` database uses receive no settings - there they belong to
-    /// the database - so there is nothing for such a table to report here. It is not what the user sees for
-    /// one either: a table of such a database is listed as the nested table the data is materialized into,
-    /// and reports that table's settings (verified in `test_postgresql_replica_database_engine/test_3.py`).
+    /// A table of a `MaterializedPostgreSQL` database gets no settings - they belong to the database - and is listed
+    /// as the nested table, which reports its own.
     if (!replication_settings)
         return {};
 
-    /// What the definition states, `MaterializedPostgreSQLSettings::loadFromQuery` records in the settings object.
-    /// A setting it does not state carries the compiled-in default, except `materialized_postgresql_tables_list`,
-    /// which the constructor sets to this table's remote name - the value the replication handler works with.
     SettingDescriptions settings = replication_settings->enumerateSettings();
 
-    /// The constructor replaced this one with the table's own remote name, so the value reported is the
-    /// handler's rather than the clause's even where the clause states it - and `definition` promises the
-    /// value came from the clause. Say `other` instead, as for anything else the engine assigned itself.
+    /// The constructor replaces this one with the table's remote name, which the replication handler works with, so
+    /// the value is the engine's even where the clause states it.
     setOrigin(settings, {"materialized_postgresql_tables_list"}, SettingOrigin::Other);
 
     return settings;

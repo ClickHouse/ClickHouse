@@ -1313,9 +1313,8 @@ void registerStorageNATS(StorageFactory & factory)
         /// empty macro must not turn a non-empty query credential into an empty replacement after
         /// the check that prevents dropping credentials from a named collection.
         ///
-        /// Only where a macro changes the value, and through the field's value alone: assigning the field would mark
-        /// a setting nobody stated as changed - reported then as a value the engine chose - and would not say which
-        /// values the server's macros supplied, which `NATSSettings::expanded_from_macros` records.
+        /// Only where a macro changes the value, through the field's value alone: assigning the field would mark an
+        /// unstated setting changed. `NATSSettings::expanded_from_macros` records which values the macros supplied.
         auto macros = args.getContext()->getMacros();
         auto expand_in_place = [&](auto setting)
         {
@@ -1706,9 +1705,6 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 
 SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The settings object, whose traits record origins, records what a named collection supplied, as
-    /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
-    /// applies it over the collection.
     auto settings = nats_settings->enumerateSettings();
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no
@@ -1728,9 +1724,8 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_token, (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_credential_file, (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
 
-    /// What macros from the server configuration supplied is the server's: the factory records which credentials it
-    /// expanded them into, in place, and the constructor expands them into the URL and the server list, whose own
-    /// settings still hold what was stated.
+    /// What the server's macros supplied is the server's: the factory records the credentials it expanded in place,
+    /// and the constructor expands the URL and the server list, whose settings still hold what was stated.
     NameSet expanded_from_macros = nats_settings->expanded_from_macros;
     const auto macros = getContext()->getMacros();
     for (const auto setting : {NATSSetting::nats_url, NATSSetting::nats_server_list})

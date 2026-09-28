@@ -130,8 +130,7 @@ public:
         auto new_data = std::make_unique<StorageMemory::BlocksWithCounts>(*(storage.data.get()));
         new_data->rows += inserted_rows;
         new_data->bytes += inserted_bytes;
-        /// A snapshot, not a reference: `ALTER ... MODIFY SETTING` replaces the settings object, and a reference
-        /// held across that read freed memory.
+        /// A snapshot: `ALTER ... MODIFY SETTING` may replace the settings object meanwhile.
         const auto memory_settings_snapshot = storage.getMemorySettings();
         const auto & memory_settings = *memory_settings_snapshot;
         while (!new_data->blocks.empty()

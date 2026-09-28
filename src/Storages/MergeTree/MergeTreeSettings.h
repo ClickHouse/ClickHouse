@@ -111,8 +111,7 @@ struct MergeTreeSettings
     SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
-    /// What `loadFromQuery` needs to know about the query it is loading from, named at the call site rather than
-    /// read off three trailing booleans.
+    /// What `loadFromQuery` needs to know about the query it is loading from.
     struct LoadFromQuery
     {
         /// The table is being loaded from metadata that already exists, rather than created or fully attached.
@@ -145,9 +144,8 @@ struct MergeTreeSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     SettingDescriptions enumerateSettings() const;
-    /// Fills in what the user's settings constraints say about each of `settings`. `MergeTreeSettings`
-    /// is the only engine settings type `SettingsConstraints` can describe - a profile reaches it
-    /// through the `merge_tree_` name prefix - so no other struct has an equivalent.
+    /// Fills in what the user's settings constraints say about each of `settings`: a profile reaches only
+    /// `MergeTreeSettings` of all engine settings, through the `merge_tree_` prefix.
     void applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const;
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
