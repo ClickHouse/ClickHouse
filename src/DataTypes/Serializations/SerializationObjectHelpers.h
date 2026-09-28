@@ -36,7 +36,9 @@ std::vector<std::string_view> scanPathNamesForBucket(
     size_t target_bucket, size_t num_buckets);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
-void unflattenAndInsertPaths(const VectorWithMemoryTracking<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
+/// Templated on the paths container: deserialization passes a tracked one, generated data a plain one.
+template <typename PathsContainer>
+void unflattenAndInsertPaths(const PathsContainer & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
 
 /// Get the bucket number for a specific path.
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);

@@ -106,7 +106,8 @@ std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObj
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const VectorWithMemoryTracking<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
+template <typename PathsContainer>
+void unflattenAndInsertPaths(const PathsContainer & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -133,6 +134,12 @@ void unflattenAndInsertPaths(const VectorWithMemoryTracking<String> & flattened_
         shared_data_offsets.push_back(shared_data_paths->size());
     }
 }
+
+template void unflattenAndInsertPaths<std::vector<String>>(
+    const std::vector<String> &, MutableColumns &&, ColumnObject &, size_t);
+
+template void unflattenAndInsertPaths<VectorWithMemoryTracking<String>>(
+    const VectorWithMemoryTracking<String> &, MutableColumns &&, ColumnObject &, size_t);
 
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
 {
