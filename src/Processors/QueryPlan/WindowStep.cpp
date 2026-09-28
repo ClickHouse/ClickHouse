@@ -42,6 +42,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -144,6 +145,8 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits = hash_partitioning_settings->size_limits;
+        /// Like the sorting in `addWindowSteps`: `sort_overflow_mode = 'break'` would compute the windows over
+        /// incomplete partitions.
         limits.size_limits.overflow_mode = OverflowMode::THROW;
         auto add_limits_check = [&]
         {
@@ -519,9 +522,13 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
+    /// Reject flag bits this version does not know, so that they fail closed instead of building a step with
+    /// another execution contract than the sender planned. The hash partitioning flag exists since step version 1.
+    if (flags & ~UInt8(ctx.step_version >= 1 ? 3 : 1))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "WindowStep: unsupported flags={} in step version {}", static_cast<size_t>(flags), ctx.step_version);
     bool streams_fan_out = bool(flags & 1);
     std::optional<SortingStep::Settings> hash_partitioning_settings;
-    if (ctx.step_version >= 1 && (flags & 2))
+    if (flags & 2)
         hash_partitioning_settings.emplace(ctx.settings);
 
     WindowDescription window_description;
