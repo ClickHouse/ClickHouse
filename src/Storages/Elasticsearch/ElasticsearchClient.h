@@ -12,7 +12,7 @@ namespace DB
 class ElasticsearchClient
 {
 public:
-    explicit ElasticsearchClient(ElasticsearchConfiguration, ContextPtr);
+    ElasticsearchClient(ElasticsearchConfiguration, ContextPtr);
 
     using IndexPage = Poco::JSON::Array::Ptr;
 
