@@ -1923,3 +1923,34 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }
+
+
+TEST(PromQLParser, FunctionNames)
+{
+    /// Any name followed by '(' is a function name, even an unknown one.
+    EXPECT_EQ(parse("foo_bar(x)"), R"(
+foo_bar(x)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(foo_bar):
+        InstantSelector:
+            __name__ EQ 'x'
+)");
+
+    /// Whitespace and comments may separate a function name from '('.
+    EXPECT_EQ(parse("foo_bar (x)"), parse("foo_bar(x)"));
+    EXPECT_EQ(parse("foo_bar # comment\n (x)"), parse("foo_bar(x)"));
+    EXPECT_EQ(parse("rate (x[5m])"), parse("rate(x[5m])"));
+    expectRoundTrip("min_of (1, 2)", "min_of(1, 2)");
+
+    /// A function name not followed by '(' is a metric name.
+    EXPECT_EQ(parse("rate"), R"(
+rate
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'rate'
+)");
+
+    expectRoundTrip(R"(time{job="x"} + rate)", R"(time{job="x"} + rate)");
+}

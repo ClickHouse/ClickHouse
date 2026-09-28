@@ -21,11 +21,21 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_FUNCTION;
 }
 
 
 namespace DB::PrometheusQueryToSQL
 {
+
+namespace
+{
+    /// Prometheus functions and aggregation operators which are not implemented here yet.
+    constexpr std::string_view not_implemented_functions[] = {
+        "double_exponential_smoothing", "histogram_avg", "histogram_count", "histogram_fraction", "histogram_quantiles",
+        "histogram_stddev", "histogram_stdvar", "histogram_sum", "info", "integral", "limit_ratio", "range", "sort",
+        "sort_by_label", "sort_by_label_desc", "sort_desc", "start_timestamp", "step", "timestamp"};
+}
 
 SQLQueryPiece applyFunction(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
@@ -77,7 +87,10 @@ SQLQueryPiece applyFunction(
     if (isHistogramQuantile(function_name))
         return applyHistogramQuantile(function_node, std::move(arguments), context);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
+    if (std::ranges::contains(not_implemented_functions, function_name))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
+
+    throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "unknown function with name \"{}\"", function_name);
 }
 
 }

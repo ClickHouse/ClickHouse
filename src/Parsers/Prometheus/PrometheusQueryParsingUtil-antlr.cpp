@@ -144,12 +144,9 @@ namespace
         std::unique_ptr<antlr4::Token> nextToken() override
         {
             auto next_token = PromQLLexer::nextToken();
-            if (next_token->getType() == METRIC_NAME)
-            {
-                const auto token_text = next_token->getText();
-                if (token_text == "min_of" || token_text == "max_of")
-                    static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
-            }
+            /// Like in Prometheus, any name followed by '(' is a function name.
+            if (next_token->getType() == METRIC_NAME && isFollowedByLeftParen())
+                static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
 
             if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
             {
@@ -183,6 +180,25 @@ namespace
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
             hitEOF = true;
+        }
+
+        /// Returns whether the next character after whitespace and comments is '('.
+        bool isFollowedByLeftParen()
+        {
+            antlr4::CharStream * stream = getInputStream();
+            bool in_comment = false;
+            for (ssize_t i = 1;; ++i)
+            {
+                size_t c = stream->LA(i);
+                if (c == antlr4::IntStream::EOF)
+                    return false;
+                if (c == '#')
+                    in_comment = true;
+                else if (c == '\n')
+                    in_comment = false;
+                else if (!in_comment && c != ' ' && c != '\t' && c != '\r')
+                    return c == '(';
+            }
         }
 
         std::string_view promql_query;
