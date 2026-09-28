@@ -18,6 +18,7 @@ set(DBMS_FUNCTIONS
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
+    CancellationBudget.cpp # makeCancellationCheck (Used by arrayResize.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
     FunctionsConversion_impl00.cpp
@@ -68,6 +69,7 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
     CastOverloadResolver.h
+    CancellationBudget.h
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})

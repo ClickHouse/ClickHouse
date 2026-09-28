@@ -36,6 +36,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <base/sort.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -126,6 +127,10 @@ void tryFoldFunctionToConstant(
     if (!node.function_base->isSuitableForConstantFolding())
         return;
 
+    /// Outside the `try`, so that a best-effort fold does not hide the cancellation of the query.
+    if (all_const)
+        CurrentThread::checkIfNotCancelled();
+
     ColumnPtr column;
     try
     {
@@ -143,6 +148,8 @@ void tryFoldFunctionToConstant(
     {
         if (!best_effort)
             throw;
+        /// A best-effort fold gives up on evaluation failures, not on a cancelled query.
+        CurrentThread::checkIfNotCancelled();
         return;
     }
 

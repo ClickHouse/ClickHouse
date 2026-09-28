@@ -14,17 +14,18 @@ struct ArrayResizeConstant : public ArrayAndValueSourceSelectorBySink<ArrayResiz
 {
     template <typename ArraySource, typename ValueSource, typename Sink>
     static void selectArrayAndValueSourceBySink(
-            ArraySource && array_source, ValueSource && value_source, Sink && sink, ssize_t size)
+            ArraySource && array_source, ValueSource && value_source, Sink && sink, ssize_t size, CancellationBudget & budget)
     {
-        resizeConstantSize(array_source, value_source, sink, size);
+        resizeConstantSize(array_source, value_source, sink, size, budget);
     }
 };
 
 }
 
-void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size)
+void resizeConstantSize(
+    IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size, CancellationBudget & budget)
 {
-    ArrayResizeConstant::select(sink, array_source, value_source, size);
+    ArrayResizeConstant::select(sink, array_source, value_source, size, budget);
 }
 }
 

@@ -22,6 +22,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
@@ -3397,6 +3398,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (all_arguments_constants)
             {
+                CurrentThread::checkIfNotCancelled();
+
                 size_t num_rows = 1;
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
