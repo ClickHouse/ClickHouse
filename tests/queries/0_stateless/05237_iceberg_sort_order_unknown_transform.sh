@@ -46,5 +46,19 @@ sed -i 's/"bucket\[xyz\]"/"bucket]"/' "${LATEST}"
 ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0"
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
+# The write path must tolerate the dropped sort order too: IcebergStorageSink
+# parses the sort order through getSortingKeyDescriptionFromMetadata when the
+# table is opened for writing, so recreating the table over the corrupted
+# metadata and inserting a row used to fail the same way.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE} (x Int64, y String)
+        ENGINE = IcebergLocal('${TABLE_PATH}')
+        SETTINGS iceberg_format_version = 2;
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (30, 'c') SETTINGS use_iceberg_metadata_files_cache = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT 1"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 rm -rf "${TABLE_PATH}"
