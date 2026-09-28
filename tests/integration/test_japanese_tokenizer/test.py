@@ -77,6 +77,29 @@ def test_text_index(started_cluster):
     node.query("DROP TABLE jp")
 
 
+def test_text_index_low_cardinality(started_cluster):
+    skip_if_no_mecab(node)
+    node.query("DROP TABLE IF EXISTS jp_lc")
+    node.query(
+        """
+        CREATE TABLE jp_lc (id UInt32, s LowCardinality(String),
+            INDEX idx s TYPE text(tokenizer = 'japanese'))
+        ENGINE = MergeTree ORDER BY id
+        """
+    )
+    # Three values in turn over several granules: no two neighbouring rows hold the same value.
+    node.query(
+        "INSERT INTO jp_lc SELECT number, ['日本語の形態素解析エンジン', 'これはテストの文章です', '日本語のテスト'][number % 3 + 1] FROM numbers(30000)"
+    )
+
+    for token in ["エンジン", "文章", "テスト"]:
+        query = f"SELECT count() FROM jp_lc WHERE hasAnyTokens(s, '{token}', 'japanese')"
+        full_scan = query + " SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0"
+        assert node.query(query) == node.query(full_scan), token
+
+    node.query("DROP TABLE jp_lc")
+
+
 def test_wrong_sha_fails_closed(started_cluster):
     skip_if_no_mecab(node_bad_sha)
     error = node_bad_sha.query_and_get_error("SELECT tokens('日本語', 'japanese')")

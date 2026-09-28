@@ -2003,8 +2003,9 @@ void MergeTreeIndexAggregatorText::addDocumentsFromLowCardinality(ColumnPtr colu
     const auto & dictionary = column_low_cardinality.getDictionary();
 
     auto & tokens_map = granule_builder.tokens_map;
-    /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, empty before that.
-    std::vector<std::pair<size_t, size_t>> ranges(dictionary.size());
+    /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, `not_seen` before that.
+    static constexpr size_t not_seen = std::numeric_limits<size_t>::max();
+    std::vector<std::pair<size_t, size_t>> ranges(dictionary.size(), {not_seen, not_seen});
     std::vector<PostingListBuilder *> builders;
     size_t buffer_size = tokens_map.getBufferSizeInCells();
 
@@ -2013,7 +2014,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromLowCardinality(ColumnPtr colu
         const size_t index = column_low_cardinality.getIndexAt(i);
         auto & [begin, end] = ranges[index];
 
-        if (begin == end && !dictionary.isNullAt(index))
+        if (begin == not_seen && !dictionary.isNullAt(index))
         {
             const std::string_view value = dictionary.getDataAt(index);
             begin = builders.size();
@@ -2029,7 +2030,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromLowCardinality(ColumnPtr colu
             /// Growing the map moves the builders.
             if (tokens_map.getBufferSizeInCells() != buffer_size)
             {
-                std::fill(ranges.begin(), ranges.end(), std::pair<size_t, size_t>{});
+                std::fill(ranges.begin(), ranges.end(), std::pair{not_seen, not_seen});
                 builders.clear();
                 buffer_size = tokens_map.getBufferSizeInCells();
             }
