@@ -1,0 +1,223 @@
+<test>
+    <create_query>
+        CREATE TABLE inverse_lookup_source_table
+        (
+            id UInt64,
+            attr_string String,
+            attr_uint UInt64
+        ) ENGINE = MergeTree ORDER BY id;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE inverse_lookup_fact_table
+        (
+            key UInt64,
+            payload String
+        ) ENGINE = MergeTree ORDER BY key;
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY inverse_lookup_dictionary
+        (
+            id UInt64,
+            attr_string String DEFAULT '0',
+            attr_uint UInt64
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'inverse_lookup_source_table'))
+        LAYOUT(HASHED())
+        LIFETIME(0);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO inverse_lookup_source_table
+        SELECT number % 10, toString(number % 10), number % 10
+        FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO inverse_lookup_fact_table
+        SELECT number % 10, toString(number % 10)
+        FROM numbers(1000000);
+    </fill_query>
+
+    <!-- Test equality comparison: dictGet(...) = 'value' -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) = '4'
+        FORMAT Null;
+    </query>
+
+    <!-- Test notEquals comparison: dictGet(...) != 'value' -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) != '4'
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater than comparison (UInt64) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &gt; 5
+        FORMAT Null;
+    </query>
+
+    <!-- Test less or equals comparison (UInt64) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &lt;= 5
+        FORMAT Null;
+    </query>
+
+    <!-- Test less than comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &lt; '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater or equals comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &gt;= '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater than comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &gt; '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test less or equals comparison (String) -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) &lt;= '5'
+        FORMAT Null;
+    </query>
+
+    <!-- Test less than comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &lt; 4
+        FORMAT Null;
+    </query>
+
+    <!-- Test greater or equals comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &gt;= 4
+        FORMAT Null;
+    </query>
+
+    <!-- Test LIKE comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) LIKE '5%'
+        FORMAT Null;
+    </query>
+
+    <!-- Test NOT LIKE comparison -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT LIKE '5%'
+        FORMAT Null;
+    </query>
+
+    <!-- Test In with default_value, string -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) IN ('0', '1', '2', '3', '4')
+        FORMAT Null;
+    </query>
+
+    <!-- Test NotIn with default_value, string -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT IN ('0', '1', '2', '3', '4')
+        FORMAT Null;
+    </query>
+
+    <!-- Test In without default_value, string -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) IN ('1', '2', '3', '4', '5')
+        FORMAT Null;
+    </query>
+
+    <!-- Test NotIn without default_value, string -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT IN ('1', '2', '3', '4', '5')
+        FORMAT Null;
+    </query>
+
+    <!-- Test In with default_value, uint64 -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) IN (0, 1, 2, 3, 4)
+        FORMAT Null;
+    </query>
+
+    <!-- Test NotIn with default_value, uint64 -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) NOT IN (0, 1, 2, 3, 4)
+        FORMAT Null;
+    </query>
+
+    <!-- Test In without default_value, uint64 -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) IN (1, 2, 3, 4, 5)
+        FORMAT Null;
+    </query>
+
+    <!-- Test NotIn without default_value, uint64 -->
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) NOT IN (1, 2, 3, 4, 5)
+        FORMAT Null;
+    </query>
+
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) IN ('0', '1', '2', '3', '4')
+          AND dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) &lt; 4
+        FORMAT Null;
+    </query>
+
+    <query>
+        SELECT count()
+        FROM inverse_lookup_fact_table
+        WHERE dictGetString('inverse_lookup_dictionary', 'attr_string', key) NOT IN ('0', '1', '2', '3', '4')
+           OR dictGetString('inverse_lookup_dictionary', 'attr_string', key) &gt;= '4'
+        FORMAT Null;
+    </query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS inverse_lookup_dictionary;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS inverse_lookup_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS inverse_lookup_fact_table;</drop_query>
+</test>
