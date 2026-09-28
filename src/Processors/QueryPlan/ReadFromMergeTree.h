@@ -567,6 +567,18 @@ public:
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
+
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        SourceStepWithFilter::forEachActionsDAG(visitor);
+
+        /// Set only when PREWHERE is deferred after FINAL, in which case it is the filter that
+        /// actually runs.
+        if (const auto & prewhere = getDeferredPrewhereInfo())
+            visitor(prewhere->prewhere_actions);
+        if (const auto & row_level = getDeferredRowLevelFilter())
+            visitor(row_level->actions);
+    }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
     /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
     /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and

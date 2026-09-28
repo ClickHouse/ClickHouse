@@ -55,6 +55,12 @@ public:
         return false;
     }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        if (actions_dag)
+            visitor(*actions_dag);
+    }
+
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
@@ -166,6 +167,11 @@ public:
     /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
+
+    /// Calls `visitor` for every `ActionsDAG` this step owns, so a caller can inspect the
+    /// expressions of a plan without knowing the step types. A step that owns none does nothing.
+    using ActionsDAGVisitor = std::function<void(const ActionsDAG &)>;
+    virtual void forEachActionsDAG(const ActionsDAGVisitor & /*visitor*/) const {}
 
     /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
     /// and no statistics are collected. A step that returns true must also attach a

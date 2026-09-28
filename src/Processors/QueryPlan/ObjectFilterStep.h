@@ -23,6 +23,7 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override { visitor(actions_dag); }
 
     const ActionsDAG & getExpression() const { return actions_dag; }
     ActionsDAG & getExpression() { return actions_dag; }

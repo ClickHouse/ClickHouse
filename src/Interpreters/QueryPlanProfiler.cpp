@@ -17,10 +17,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -88,36 +84,12 @@ void recordConsumedSubqueries(QueryPlan & plan)
         }
     };
 
-    /// The step types that can hold an expression referencing a set. `SourceStepWithFilter` covers
-    /// the reads generically, which is where a pushed-down `PREWHERE` puts the condition.
+    /// Every step is asked for the `ActionsDAG`s it owns, so a step type that can carry a set is
+    /// never missed here: a `HAVING ... IN (SELECT ...)` survives as a `TotalsHavingStep`, and a
+    /// pushed-down `PREWHERE` as part of the read.
     const auto collect_from_step = [&](IQueryPlanStep & step)
     {
-        if (auto * expression = dynamic_cast<ExpressionStep *>(&step))
-            collect_from_dag(expression->getExpression(), step);
-        else if (auto * filter = dynamic_cast<FilterStep *>(&step))
-            collect_from_dag(filter->getExpression(), step);
-
-        if (auto * source = dynamic_cast<SourceStepWithFilter *>(&step))
-        {
-            if (const auto & dag = source->getFilterActionsDAG())
-                collect_from_dag(*dag, step);
-
-            /// Where filter pushdown puts the condition, and therefore where an `IN` over an
-            /// indexed column ends up: `s_suppkey IN subquery1` is a PREWHERE by the time the plan
-            /// is optimized, not a `Filter` step of its own.
-            if (const auto & prewhere = source->getPrewhereInfo())
-                collect_from_dag(prewhere->prewhere_actions, step);
-        }
-
-        /// Set only when PREWHERE is deferred after FINAL, in which case it is the filter that
-        /// actually runs.
-        if (auto * read_from_merge_tree = dynamic_cast<ReadFromMergeTree *>(&step))
-        {
-            if (const auto & prewhere = read_from_merge_tree->getDeferredPrewhereInfo())
-                collect_from_dag(prewhere->prewhere_actions, step);
-            if (const auto & row_level = read_from_merge_tree->getDeferredRowLevelFilter())
-                collect_from_dag(row_level->actions, step);
-        }
+        step.forEachActionsDAG([&](const ActionsDAG & dag) { collect_from_dag(dag, step); });
     };
 
     std::vector<QueryPlan::Node *> stack;
