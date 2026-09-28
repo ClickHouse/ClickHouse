@@ -195,8 +195,8 @@ namespace
 void checkShutdownAfterSendTimeout(bool receive_timeout_before_shutdown)
 {
     EphemeralCert cert;
-    auto server_ctx = cert.makeContext(Poco::Net::Context::SERVER_USE);
-    auto client_ctx = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+    auto server_ctx = makeContext(cert, Poco::Net::Context::SERVER_USE);
+    auto client_ctx = makeContext(cert, Poco::Net::Context::CLIENT_USE);
 
     Poco::Net::SecureServerSocket server_socket(
         Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx);
