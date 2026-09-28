@@ -3340,6 +3340,14 @@ Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equival
 Additionally, exact equality predicates of the form `nullIf(key, sentinel) = const` (where `sentinel != const` and types match exactly) are rewritten to `key = const` so primary key, partition, and skip indexes on `key` can prune granules directly. Range and disjunctive nullIf pruning is not supported.
 )", 0, \
         {"26.5", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."}) \
+    DECLARE(Bool, enable_s2_index_pruning, false, R"(
+Allow `s2RectContains`, `s2CapContains`, and `s2CellsIntersect` to be used as key conditions for primary key index pruning. When the key column stores S2 cell identifiers, this enables granule-level spatial filtering so that non-matching granules are skipped during reads. At parse time the query region is decomposed into a tight `S2CellUnion` covering; at eval time each granule's `[cell_min, cell_max]` Hilbert-curve interval is tested directly against the covering, bypassing the common-ancestor over-approximation.
+)", 0, \
+        {"26.10", false, false, "New setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."}) \
+    DECLARE(UInt64, s2_max_covering_cells, 8, R"(
+Maximum number of S2 cells used to approximate the query region when `enable_s2_index_pruning` is enabled. Higher values produce tighter coverings (fewer false-positive granules) at the cost of slightly more comparisons per granule. Has no effect for `s2CellsIntersect`, which always uses a single-cell exact covering regardless of this setting.
+)", 0, \
+        {"26.10", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `enable_s2_index_pruning`."}) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
