@@ -7054,7 +7054,7 @@ void StorageReplicatedMergeTree::alter(
         }
         else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("table_readonly"))
         {
-            turns_readonly_on = (*settings_defaults)[MergeTreeSetting::table_readonly];
+            turns_readonly_on = (*default_storage_settings)[MergeTreeSetting::table_readonly];
         }
 
         if (turns_readonly_on)
