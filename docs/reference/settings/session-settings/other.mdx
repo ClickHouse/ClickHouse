@@ -106,6 +106,14 @@ Possible values:
 - 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
 - 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
 
+## arrow_flight_request_timeout_sec {#arrow_flight_request_timeout_sec}
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "New setting bounding a single Arrow Flight request. No timeout was set before, so a Flight server that accepted a request and never answered blocked the query indefinitely; 0 restores that behavior."}]}]}/>
+
+Timeout in seconds for a single Arrow Flight request. It bounds the whole request: for a read that is the entire result stream, not just the wait for the first record batch. Zero means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
