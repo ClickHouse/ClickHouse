@@ -636,6 +636,26 @@ RowPolicyFilterPtr ContextAccess::getOpaRowFilter(const ContextPtr & context, co
     return checker.getRowFilter(database, table_name, request_context, context->getOpaDecisionCache());
 }
 
+std::unordered_map<String, OpaParsedMask> ContextAccess::getOpaColumnMasks(
+    const ContextPtr & context, const String & database, const String & table_name, const Names & columns) const
+{
+    if (params.full_access)
+        return {};
+
+    auto opa_configuration = access_control->getOpaConfiguration();
+    if (!opa_configuration || !opa_configuration->hasColumnMasking())
+        return {};
+
+    OpaRequestContext request_context;
+    request_context.user = getUserName();
+    request_context.query_id = context->getCurrentQueryId();
+    if (auto info = getRolesInfo())
+        request_context.roles = info->getEnabledRolesNames();
+
+    const OpaAccessChecker checker{std::move(opa_configuration)};
+    return checker.getColumnMasks(database, table_name, columns, request_context, context->getOpaDecisionCache());
+}
+
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};

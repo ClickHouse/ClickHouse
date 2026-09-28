@@ -33,6 +33,10 @@ public:
     /// the absence of a filter is a meaningful answer.
     std::vector<OpaViewExpression> getRowFilters(const OpaRequest & request, const OpaRequestContext & request_context) const;
 
+    /// Asks for the masks that apply to the columns named in the request. One request covers a whole
+    /// table, so a wide table does not turn into one request per column.
+    std::vector<OpaColumnMask> getColumnMasks(const OpaRequest & request, const OpaRequestContext & request_context) const;
+
 private:
     /// Performs the POST, retrying only transport failures. A response that arrived and was
     /// understood is never retried, whichever way it decided.
@@ -44,6 +48,9 @@ private:
 
     /// Extracts a list of expressions. An absent or null `result` yields an empty list.
     static std::vector<OpaViewExpression> parseViewExpressions(const Poco::URI & uri, const String & response_body);
+
+    /// Extracts a list of per-column masks. An absent or null `result` yields an empty list.
+    static std::vector<OpaColumnMask> parseColumnMasks(const Poco::URI & uri, const String & response_body);
 
     static Poco::JSON::Object::Ptr parseResponseObject(const Poco::URI & uri, const String & response_body);
 

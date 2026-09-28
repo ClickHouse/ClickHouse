@@ -236,6 +236,72 @@ std::vector<OpaViewExpression> OpaClient::parseViewExpressions(const Poco::URI &
     return expressions;
 }
 
+std::vector<OpaColumnMask> OpaClient::parseColumnMasks(const Poco::URI & uri, const String & response_body)
+{
+    const auto object = parseResponseObject(uri, response_body);
+
+    /// A table with no masked column leaves `result` undefined, which is the common case.
+    if (!object->has("result"))
+        return {};
+
+    const auto result = object->get("result");
+    if (result.isEmpty())
+        return {};
+
+    if (result.type() != typeid(Poco::JSON::Array::Ptr))
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "Expected the 'result' field in the response of OPA at {} to be an array of objects with "
+            "'column' and 'expression' fields. Response: {}",
+            uri.toString(),
+            response_body);
+    }
+
+    const auto array = result.extract<Poco::JSON::Array::Ptr>();
+
+    std::vector<OpaColumnMask> masks;
+    masks.reserve(array->size());
+
+    for (size_t i = 0; i < array->size(); ++i)
+    {
+        const auto entry = array->get(static_cast<unsigned int>(i));
+        if (entry.type() != typeid(Poco::JSON::Object::Ptr))
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "Expected element {} of the 'result' array in the response of OPA at {} to be an object. Response: {}",
+                i,
+                uri.toString(),
+                response_body);
+        }
+
+        const auto entry_object = entry.extract<Poco::JSON::Object::Ptr>();
+
+        OpaColumnMask mask;
+        mask.column = entry_object->optValue<String>("column", "");
+        mask.expression = entry_object->optValue<String>("expression", "");
+        mask.identity = entry_object->optValue<String>("identity", "");
+
+        /// A mask that does not say which column it applies to, or has nothing to apply, cannot be
+        /// used. Ignoring it would show the real value, which is the opposite of what was intended.
+        if (mask.column.empty() || mask.expression.empty())
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "Element {} of the 'result' array in the response of OPA at {} needs both a 'column' and "
+                "an 'expression' field. Response: {}",
+                i,
+                uri.toString(),
+                response_body);
+        }
+
+        masks.push_back(std::move(mask));
+    }
+
+    return masks;
+}
+
 bool OpaClient::isAllowed(const OpaRequest & request, const OpaRequestContext & request_context) const
 {
     const String body = request.serialize(request_context);
@@ -265,6 +331,25 @@ std::vector<OpaViewExpression> OpaClient::getRowFilters(const OpaRequest & reque
     try
     {
         return parseViewExpressions(uri, send(uri, body));
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::OpaRequestFailures);
+        throw;
+    }
+}
+
+std::vector<OpaColumnMask> OpaClient::getColumnMasks(const OpaRequest & request, const OpaRequestContext & request_context) const
+{
+    chassert(configuration->column_masking_uri.has_value());
+    const Poco::URI & uri = *configuration->column_masking_uri;
+
+    const String body = request.serialize(request_context);
+
+    ProfileEvents::increment(ProfileEvents::OpaRequests);
+    try
+    {
+        return parseColumnMasks(uri, send(uri, body));
     }
     catch (...)
     {

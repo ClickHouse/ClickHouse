@@ -95,19 +95,6 @@ OpaConfiguration OpaConfiguration::parse(const Poco::Util::AbstractConfiguration
     result.batch_uri = parseOptionalURI(config, CONFIG_SECTION + ".batch_uri");
     result.row_filters_uri = parseOptionalURI(config, CONFIG_SECTION + ".row_filters_uri");
     result.column_masking_uri = parseOptionalURI(config, CONFIG_SECTION + ".column_masking_uri");
-    result.batch_column_masking_uri = parseOptionalURI(config, CONFIG_SECTION + ".batch_column_masking_uri");
-
-    /// Both endpoints answer the same question, and honouring both would make the effective mask
-    /// depend on which one the code happened to consult first.
-    if (result.column_masking_uri && result.batch_column_masking_uri)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Settings {} and {} of the {} section are mutually exclusive, specify only one of them",
-            backQuote("column_masking_uri"),
-            backQuote("batch_column_masking_uri"),
-            backQuote(CONFIG_SECTION));
-    }
 
     result.token = config.getString(CONFIG_SECTION + ".token", "");
 

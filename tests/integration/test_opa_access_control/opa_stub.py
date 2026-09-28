@@ -20,6 +20,7 @@ state = {
     "status": 200,
     "body_override": None,
     "row_filters": "{}",
+    "column_masks": "{}",
 }
 
 
@@ -54,12 +55,18 @@ class Handler(BaseHTTPRequestHandler):
             state["status"] = 200
             state["body_override"] = None
             state["row_filters"] = "{}"
+            state["column_masks"] = "{}"
             self._respond(200, {"ok": True})
             return
 
         if self.path == "/filters":
             # The row filter endpoint answers with a literal body, independently of the decision rule.
             state["row_filters"] = body or "{}"
+            self._respond(200, {"ok": True})
+            return
+
+        if self.path == "/masks":
+            state["column_masks"] = body or "{}"
             self._respond(200, {"ok": True})
             return
 
@@ -88,6 +95,10 @@ class Handler(BaseHTTPRequestHandler):
         # satisfy the decision endpoint's shape.
         if "rowFilters" in self.path:
             self._respond_raw(200, state["row_filters"])
+            return
+
+        if "columnMask" in self.path:
+            self._respond_raw(200, state["column_masks"])
             return
 
         if state["status"] != 200:

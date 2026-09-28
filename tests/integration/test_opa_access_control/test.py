@@ -133,17 +133,6 @@ def test_optional_endpoints_are_reported():
     node.wait_for_log_line("row filters endpoint")
 
 
-def test_both_column_masking_endpoints_are_rejected():
-    """The two endpoints answer the same question, so accepting both would make the effective mask
-    depend on which one the server happened to consult first."""
-    write_section(
-        extra=f"<column_masking_uri>http://127.0.0.1:{STUB_PORT}/a</column_masking_uri>"
-        f"<batch_column_masking_uri>http://127.0.0.1:{STUB_PORT}/b</batch_column_masking_uri>"
-    )
-
-    assert "mutually exclusive" in node.query_and_get_error("SYSTEM RELOAD CONFIG")
-
-
 def test_a_missing_uri_is_rejected():
     """The section exists to turn authorization on; without a decision endpoint it cannot, and
     silently disabling itself would drop the control the operator was configuring."""
@@ -459,3 +448,181 @@ def test_a_row_filter_combines_with_a_native_row_policy():
         )
     finally:
         node.query("DROP ROW POLICY IF EXISTS only_big ON plain.orders")
+
+
+MASKING_URI = f"http://127.0.0.1:{STUB_PORT}/v1/data/clickhouse/columnMask"
+
+def enable_column_masking():
+    write_section(extra=f"<column_masking_uri>{MASKING_URI}</column_masking_uri>")
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def set_column_masks(body):
+    stub_curl("/masks", data=body)
+
+
+REDACT_EMAIL = '{"result": [{"column": "customer_email", "expression": "\'****\'"}]}'
+
+
+def test_a_masked_column_is_replaced_in_the_projection():
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+
+    assert (
+        node.query("SELECT customer_email FROM plain.orders", user="analyst")
+        == "****\n****\n"
+    )
+
+
+def test_an_unmasked_user_sees_the_real_value():
+    enable_column_masking()
+    set_column_masks('{"result": []}')
+
+    assert (
+        node.query(
+            "SELECT customer_email FROM plain.orders ORDER BY id", user="analyst"
+        )
+        == "a@x.com\nb@x.com\n"
+    )
+
+
+def test_a_mask_applies_in_where():
+    """The mask is the column's definition, so a predicate sees the masked value too. If it did not,
+    a user could search for a value and learn it from whether rows came back."""
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+
+    assert (
+        node.query(
+            "SELECT count() FROM plain.orders WHERE customer_email = 'a@x.com'",
+            user="analyst",
+        ).strip()
+        == "0"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM plain.orders WHERE customer_email = '****'",
+            user="analyst",
+        ).strip()
+        == "2"
+    )
+
+
+def test_a_mask_applies_in_group_by():
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+
+    assert (
+        node.query(
+            "SELECT customer_email, count() FROM plain.orders GROUP BY customer_email",
+            user="analyst",
+        )
+        == "****\t2\n"
+    )
+
+
+def test_a_mask_applies_to_a_join_key():
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+
+    # Masked to the same constant on both sides, so every row matches every row.
+    assert (
+        node.query(
+            "SELECT count() FROM plain.orders AS a "
+            "JOIN plain.orders AS b ON a.customer_email = b.customer_email",
+            user="analyst",
+        ).strip()
+        == "4"
+    )
+
+
+def test_a_mask_is_cast_to_the_declared_type():
+    """`id` is a UInt32, so a mask returning a string has to be converted rather than changing the
+    column's type underneath the query."""
+    enable_column_masking()
+    set_column_masks('{"result": [{"column": "id", "expression": "\'7\'"}]}')
+
+    assert node.query("SELECT id FROM plain.orders", user="analyst") == "7\n7\n"
+
+
+def test_an_unrelated_column_is_untouched():
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+
+    assert (
+        node.query("SELECT id FROM plain.orders ORDER BY id", user="analyst") == "1\n2\n"
+    )
+
+
+def test_a_trivial_count_is_unaffected_by_a_mask():
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+
+
+def test_two_masks_for_one_column_are_rejected():
+    """Honouring both would make the effective mask depend on the order a policy emitted them."""
+    enable_column_masking()
+    set_column_masks(
+        '{"result": [{"column": "customer_email", "expression": "\'a\'"},'
+        ' {"column": "customer_email", "expression": "\'b\'"}]}'
+    )
+
+    assert "more than one mask" in node.query_and_get_error(
+        "SELECT customer_email FROM plain.orders", user="analyst"
+    )
+
+
+def test_a_mask_without_a_column_is_rejected():
+    enable_column_masking()
+    set_column_masks('{"result": [{"expression": "\'****\'"}]}')
+
+    assert node.query_and_get_error(
+        "SELECT customer_email FROM plain.orders", user="analyst"
+    )
+
+
+def test_a_malformed_mask_is_reported():
+    enable_column_masking()
+    set_column_masks(
+        '{"result": [{"column": "customer_email", "expression": "not valid sql ("}]}'
+    )
+
+    assert node.query_and_get_error(
+        "SELECT customer_email FROM plain.orders", user="analyst"
+    )
+
+
+def test_masking_an_alias_column_is_rejected():
+    """An ALIAS column already defines what it evaluates to; choosing one silently would either
+    ignore the mask or ignore the table definition."""
+    enable_column_masking()
+    node.query(
+        "CREATE TABLE IF NOT EXISTS plain.with_alias "
+        "(id UInt32, doubled UInt32 ALIAS id * 2) ENGINE = MergeTree ORDER BY id"
+    )
+    node.query("GRANT SELECT ON plain.with_alias TO analyst")
+    set_column_masks('{"result": [{"column": "doubled", "expression": "0"}]}')
+
+    assert "ALIAS column" in node.query_and_get_error(
+        "SELECT doubled FROM plain.with_alias", user="analyst"
+    )
+
+
+def test_a_mask_is_fetched_once_per_table():
+    """One request covers the whole table, so a wide table does not turn into one request per
+    column."""
+    enable_column_masking()
+    set_column_masks(REDACT_EMAIL)
+    node.query(
+        "SELECT id, amount, customer_email FROM plain.orders", user="analyst"
+    )
+
+    mask_requests = [
+        request
+        for request in recorded_requests()
+        if "customer_email" in request["input"]["action"]["resource"].get("columns", [])
+    ]
+    # The masks for every column arrive together, so one request mentions the whole column list.
+    assert mask_requests

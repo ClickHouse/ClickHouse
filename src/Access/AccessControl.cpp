@@ -698,12 +698,11 @@ void AccessControl::setOpaConfiguration(const Poco::Util::AbstractConfiguration 
 
     LOG_INFO(
         getLogger(),
-        "Open Policy Agent authorization is enabled, decision endpoint {}{}{}{}{}",
+        "Open Policy Agent authorization is enabled, decision endpoint {}{}{}{}",
         parsed->uri.toString(),
         parsed->batch_uri ? ", batch endpoint " + parsed->batch_uri->toString() : "",
         parsed->row_filters_uri ? ", row filters endpoint " + parsed->row_filters_uri->toString() : "",
-        parsed->column_masking_uri ? ", column masking endpoint " + parsed->column_masking_uri->toString() : "",
-        parsed->batch_column_masking_uri ? ", batch column masking endpoint " + parsed->batch_column_masking_uri->toString() : "");
+        parsed->column_masking_uri ? ", column masking endpoint " + parsed->column_masking_uri->toString() : "");
 
     opa_configuration->set(std::move(parsed));
 }

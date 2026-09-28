@@ -16,6 +16,21 @@ struct OpaViewExpression
     String identity;
 };
 
+/// A mask a policy returned for one column of a table, as it arrives on the wire.
+struct OpaColumnMask
+{
+    String column;
+    String expression;
+    String identity;
+};
+
+/// A mask after its expression has been parsed, ready to be attached to a column.
+struct OpaParsedMask
+{
+    ASTPtr expression;
+    String identity;
+};
+
 /** Parses an expression a policy returned.
   *
   * `description` names what is being parsed and appears in the error, because a policy author reading

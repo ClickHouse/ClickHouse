@@ -56,4 +56,20 @@ void OpaDecisionCache::setRowFilters(const Key & key, const std::vector<OpaViewE
     row_filters.emplace(key, filters);
 }
 
+std::optional<std::vector<OpaColumnMask>> OpaDecisionCache::getColumnMasks(const Key & key) const
+{
+    std::lock_guard lock{mutex};
+
+    if (const auto it = column_masks.find(key); it != column_masks.end())
+        return it->second;
+
+    return {};
+}
+
+void OpaDecisionCache::setColumnMasks(const Key & key, const std::vector<OpaColumnMask> & masks)
+{
+    std::lock_guard lock{mutex};
+    column_masks.emplace(key, masks);
+}
+
 }

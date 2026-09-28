@@ -2,7 +2,9 @@
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/OPA/OpaExpressions.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 
 
@@ -16,6 +18,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 OpaAccessChecker::OpaAccessChecker(OpaConfigurationPtr configuration_)
     : configuration(std::move(configuration_))
@@ -145,6 +152,66 @@ RowPolicyFilterPtr OpaAccessChecker::getRowFilter(
     filter->database_and_table_name = std::make_shared<const std::pair<String, String>>(database, table);
 
     return filter;
+}
+
+std::unordered_map<String, OpaParsedMask> OpaAccessChecker::getColumnMasks(
+    const String & database,
+    const String & table,
+    const Names & columns,
+    const OpaRequestContext & request_context,
+    const OpaDecisionCachePtr & cache) const
+{
+    if (!configuration->hasColumnMasking() || !configuration->isDatabaseInScope(database)
+        || configuration->isUserExempt(request_context.user) || columns.empty())
+        return {};
+
+    OpaRequest request;
+    request.operations = {"SELECT"};
+    request.resource = OpaResource::forTable(database, table, columns);
+
+    const OpaDecisionCache::Key key{request.operations, *request.resource};
+
+    std::vector<OpaColumnMask> masks;
+    if (cache)
+    {
+        if (auto cached = cache->getColumnMasks(key))
+        {
+            ProfileEvents::increment(ProfileEvents::OpaCacheHits);
+            masks = std::move(*cached);
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::OpaCacheMisses);
+            masks = client.getColumnMasks(request, request_context);
+            cache->setColumnMasks(key, masks);
+        }
+    }
+    else
+    {
+        masks = client.getColumnMasks(request, request_context);
+    }
+
+    std::unordered_map<String, OpaParsedMask> result;
+    for (const auto & mask : masks)
+    {
+        OpaParsedMask parsed;
+        parsed.expression = parseOpaExpression(mask.expression, "mask for column " + backQuote(mask.column));
+        parsed.identity = mask.identity;
+
+        /// Two masks for the same column would make the effective one depend on the order a policy
+        /// happened to emit them.
+        if (!result.emplace(mask.column, std::move(parsed)).second)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The Open Policy Agent policy returned more than one mask for column {} of table {}.{}",
+                backQuote(mask.column),
+                backQuoteIfNeed(database),
+                backQuoteIfNeed(table));
+        }
+    }
+
+    return result;
 }
 
 }

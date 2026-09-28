@@ -48,10 +48,14 @@ public:
     std::optional<std::vector<OpaViewExpression>> getRowFilters(const Key & key) const;
     void setRowFilters(const Key & key, const std::vector<OpaViewExpression> & filters);
 
+    std::optional<std::vector<OpaColumnMask>> getColumnMasks(const Key & key) const;
+    void setColumnMasks(const Key & key, const std::vector<OpaColumnMask> & masks);
+
 private:
     mutable std::mutex mutex;
     std::unordered_map<Key, bool, Hash> decisions TSA_GUARDED_BY(mutex);
     std::unordered_map<Key, std::vector<OpaViewExpression>, Hash> row_filters TSA_GUARDED_BY(mutex);
+    std::unordered_map<Key, std::vector<OpaColumnMask>, Hash> column_masks TSA_GUARDED_BY(mutex);
 };
 
 using OpaDecisionCachePtr = std::shared_ptr<OpaDecisionCache>;

@@ -5035,13 +5035,33 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     if (table_node || table_function_node)
     {
         auto & data = data_it->second;
+        /// A table function has no name a policy could describe, so masking applies to tables only.
+        auto masked_storage_id = table_node ? table_node->getStorageID() : StorageID::createEmpty();
         data.setColumnNodeMapPopulator(
-            [this, &data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), &scope]
+            [this, &data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), masked_storage_id, &scope]
             (ColumnNameToColumnNodeMap & node_map) mutable
         {
             const auto & columns_description = captured_storage_snapshot->metadata->getColumns();
 
             std::vector<std::pair<std::string, ColumnNodePtr>> alias_columns_to_resolve;
+
+            /** A masked column is given the mask as its expression, which is the same thing an ALIAS
+              * column has. That makes the mask apply wherever the column is named - in the projection,
+              * but also in WHERE, GROUP BY and a join key - so no part of the query can observe the
+              * value behind the mask. Applying it later, as a step over the read data, would leave
+              * predicates comparing against the real value.
+              */
+            std::unordered_map<String, OpaParsedMask> column_masks;
+            if (masked_storage_id.hasDatabase())
+            {
+                Names column_names;
+                column_names.reserve(data.column_names_and_types.size());
+                for (const auto & column_name_and_type : data.column_names_and_types)
+                    column_names.push_back(column_name_and_type.name);
+
+                column_masks = scope.context->getAccess()->getOpaColumnMasks(
+                    scope.context, masked_storage_id.getDatabaseName(), masked_storage_id.getTableName(), column_names);
+            }
 
             /** For ALIAS columns in table we must additionally analyze ALIAS expressions.
               * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + 5);
@@ -5059,7 +5079,29 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             for (const auto & column_name_and_type : data.column_names_and_types)
             {
                 const auto & column_default = columns_description.getDefault(column_name_and_type.name);
-                if (column_default && column_default->kind == ColumnDefaultKind::Alias)
+                const auto mask_it = column_masks.find(column_name_and_type.name);
+                const bool is_masked = mask_it != column_masks.end();
+
+                if (is_masked && column_default && column_default->kind == ColumnDefaultKind::Alias)
+                {
+                    /// Both want to define what the column evaluates to. Silently choosing one would
+                    /// either ignore the mask or ignore the table definition.
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "An Open Policy Agent policy returned a mask for column {} of table {}, which is an "
+                        "ALIAS column. Masking an ALIAS column is not supported",
+                        backQuote(column_name_and_type.name),
+                        masked_storage_id.getFullTableName());
+                }
+
+                if (is_masked)
+                {
+                    auto mask_expression = buildQueryTree(mask_it->second.expression, scope.context);
+                    auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(mask_expression), table_expression_node);
+                    node_map.emplace(column_name_and_type.name, column_node);
+                    alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
+                }
+                else if (column_default && column_default->kind == ColumnDefaultKind::Alias)
                 {
                     auto alias_expression = buildQueryTree(column_default->expression, scope.context);
                     auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);

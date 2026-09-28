@@ -34,7 +34,6 @@ struct OpaConfiguration
     std::optional<Poco::URI> batch_uri;
     std::optional<Poco::URI> row_filters_uri;
     std::optional<Poco::URI> column_masking_uri;
-    std::optional<Poco::URI> batch_column_masking_uri;
 
     /// Sent as `Authorization: Bearer <token>` when not empty.
     String token;
@@ -71,8 +70,7 @@ struct OpaConfiguration
 
     bool hasBatch() const { return batch_uri.has_value(); }
     bool hasRowFilters() const { return row_filters_uri.has_value(); }
-    bool hasColumnMasking() const { return column_masking_uri.has_value() || batch_column_masking_uri.has_value(); }
-    bool hasBatchColumnMasking() const { return batch_column_masking_uri.has_value(); }
+    bool hasColumnMasking() const { return column_masking_uri.has_value(); }
 
     /// An object of a database that is out of scope is authorized by native grants alone.
     bool isDatabaseInScope(std::string_view database) const;

@@ -41,6 +41,15 @@ public:
         const OpaRequestContext & request_context,
         const OpaDecisionCachePtr & cache) const;
 
+    /// The masks a policy applies to the named columns of a table, keyed by column name. One request
+    /// covers the whole table.
+    std::unordered_map<String, OpaParsedMask> getColumnMasks(
+        const String & database,
+        const String & table,
+        const Names & columns,
+        const OpaRequestContext & request_context,
+        const OpaDecisionCachePtr & cache) const;
+
 private:
     const OpaConfigurationPtr configuration;
     const OpaClient client;
