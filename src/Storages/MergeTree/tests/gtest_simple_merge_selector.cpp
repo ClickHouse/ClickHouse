@@ -213,3 +213,31 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeWaivesMinPartsToMergeAtOnce)
     ASSERT_EQ(selected.size(), 1);
     ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));
 }
+
+TEST(SimpleMergeSelector, PartNewerThanCurrentTimeIsNotOld)
+{
+    /// A part committed after the selection read the clock has a negative age: it is as young as a part
+    /// can be, so neither the age-lowered base nor `min_age_to_force_merge` may apply to it.
+    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+
+    const auto count_selected = [&](const std::vector<size_t> & sizes, time_t age, size_t min_age_to_force_merge)
+    {
+        auto parts_range = makePartsRange(sizes, age);
+        auto statistics = makeStatistics(parts_range, /*partition_min_age=*/age);
+
+        SimpleMergeSelector::Settings settings;
+        settings.partitions_stats = &statistics;
+        settings.min_age_to_force_merge = min_age_to_force_merge;
+
+        return SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr).size();
+    };
+
+    /// Two equal parts pass the size ratio only once their age has lowered the base to 2.
+    ASSERT_EQ(count_selected({1024, 1024}, /*age=*/7200, /*min_age_to_force_merge=*/0), 1);
+    ASSERT_EQ(count_selected({1024, 1024}, /*age=*/0, /*min_age_to_force_merge=*/0), 0);
+    ASSERT_EQ(count_selected({1024, 1024}, /*age=*/-1, /*min_age_to_force_merge=*/0), 0);
+
+    /// An unbalanced pair is merged only when forced by age.
+    ASSERT_EQ(count_selected({10 * MiB, 1024}, /*age=*/120, /*min_age_to_force_merge=*/60), 1);
+    ASSERT_EQ(count_selected({10 * MiB, 1024}, /*age=*/-1, /*min_age_to_force_merge=*/60), 0);
+}
