@@ -15,9 +15,12 @@
 #include <Common/tests/gtest_global_context.h>
 #include <base/scope_guard.h>
 
+#include <array>
 #include <atomic>
+#include <barrier>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace DB::Setting
 {
@@ -204,6 +207,62 @@ GTEST_TEST(SettingsSnapshot, IndependentConcurrentDescendants)
         worker.join();
     EXPECT_EQ(failures.load(), 0);
     EXPECT_EQ(serialize(parent, SettingsWriteFormat::DEFAULT), expected);
+}
+
+namespace
+{
+void checkConcurrentLastOwners(bool detach_states)
+{
+    constexpr size_t iterations = 2000;
+    std::vector<std::array<Settings, 2>> pairs;
+    pairs.reserve(iterations);
+    for (size_t iteration = 0; iteration < iterations; ++iteration)
+    {
+        Settings parent;
+        parent.set(Setting::log_comment, String(256, 'p'));
+        auto & pair = pairs.emplace_back(std::array<Settings, 2>{parent, parent});
+        if (detach_states)
+        {
+            pair[0].set(Setting::max_query_size, UInt64(100000));
+            pair[1].set(Setting::max_query_size, UInt64(100001));
+            ASSERT_FALSE(pair[0].sharesSnapshotWith(pair[1]));
+        }
+        else
+            ASSERT_TRUE(pair[0].sharesSnapshotWith(pair[1]));
+        ASSERT_EQ(&pair[0][Setting::log_comment], &pair[1][Setting::log_comment]);
+        /// Unlike the pinned-parent test, only these two owners survive until the concurrent writes.
+    }
+
+    std::barrier start(2);
+    auto mutate = [&](size_t index)
+    {
+        for (auto & pair : pairs)
+        {
+            start.arrive_and_wait();
+            pair[index].set(Setting::log_comment, String(257, index == 0 ? 'a' : 'b'));
+        }
+    };
+    std::thread first(mutate, 0);
+    std::thread second(mutate, 1);
+    first.join();
+    second.join();
+    for (const auto & pair : pairs)
+    {
+        EXPECT_EQ(pair[0][Setting::log_comment].value, String(257, 'a'));
+        EXPECT_EQ(pair[1][Setting::log_comment].value, String(257, 'b'));
+        EXPECT_NE(&pair[0][Setting::log_comment], &pair[1][Setting::log_comment]);
+    }
+}
+}
+
+GTEST_TEST(SettingsSnapshot, ConcurrentLastStateOwners)
+{
+    checkConcurrentLastOwners(false);
+}
+
+GTEST_TEST(SettingsSnapshot, ConcurrentLastChunkOwners)
+{
+    checkConcurrentLastOwners(true);
 }
 
 GTEST_TEST(SettingsSnapshot, CacheKeyPreservesExactCustomState)

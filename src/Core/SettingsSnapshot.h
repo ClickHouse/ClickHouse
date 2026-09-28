@@ -3,6 +3,9 @@
 #include <Core/SettingsMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
+#include <boost/make_shared.hpp>
+#include <boost/shared_ptr.hpp>
+
 #include <array>
 #include <cstddef>
 #include <memory>
@@ -195,7 +198,7 @@ class SettingsSnapshot
     struct State
     {
         std::shared_ptr<const Data> defaults;
-        std::array<std::shared_ptr<const std::byte>, num_chunks> values{};
+        std::array<boost::shared_ptr<const std::byte>, num_chunks> values{};
         std::array<bool, num_chunks> server_chunks{};
         const bool server_owned;
 
@@ -206,8 +209,8 @@ class SettingsSnapshot
             /// The state owns `defaults`; empty control blocks identify immutable borrowed chunks.
             server_chunks.fill(true);
             for (size_t index = 0; index < num_chunks; ++index)
-                values[index] = std::shared_ptr<const std::byte>(
-                    std::shared_ptr<const Data>{}, reinterpret_cast<const std::byte *>(defaults.get()) + index * chunk_size);
+                values[index] = boost::shared_ptr<const std::byte>(
+                    boost::shared_ptr<const Data>{}, reinterpret_cast<const std::byte *>(defaults.get()) + index * chunk_size);
         }
 
         State(const State & other, bool server_owned_)
@@ -219,16 +222,19 @@ class SettingsSnapshot
         }
     };
 
-    static const std::shared_ptr<State> & defaultState()
+    static const boost::shared_ptr<State> & defaultState()
     {
         /// Own a typed copy so the snapshot's values can outlive the accessor singleton.
-        static const auto result = std::allocate_shared<State>(
+        static const auto result = boost::allocate_shared<State>(
             SettingsSnapshotAllocator<State>{true},
             std::allocate_shared<const Data>(SettingsSnapshotAllocator<Data, SettingsAllocationKind::DenseData>{true}));
         return result;
     }
 
-    std::shared_ptr<State> state = defaultState();
+    /// Both the table and chunk ownership checks must acquire a sibling's completed copy before
+    /// reusing its source storage. Boost's reference-count load is acquire; `std::shared_ptr::use_count`
+    /// does not provide this synchronization (libc++ uses a relaxed load).
+    boost::shared_ptr<State> state = defaultState();
 
 public:
     bool sharesStorageWith(const SettingsSnapshot & other) const { return state == other.state; }
@@ -249,19 +255,19 @@ public:
     {
         const bool server_owned = settingsAllocationIsServerOwned();
         if (state.use_count() != 1 || state->server_owned != server_owned)
-            state = std::allocate_shared<State>(SettingsSnapshotAllocator<State>{server_owned}, *state, server_owned);
+            state = boost::allocate_shared<State>(SettingsSnapshotAllocator<State>{server_owned}, *state, server_owned);
 
         const size_t index = offset / chunk_size;
         auto & owner = state->values[index];
         /// Zero owners means a borrowed default; one means a uniquely owned mutable chunk.
         if (owner.use_count() != 1 || state->server_chunks[index] != server_owned)
         {
-            auto replacement = std::allocate_shared<Chunk>(
+            auto replacement = boost::allocate_shared<Chunk>(
                 SettingsSnapshotAllocator<Chunk, SettingsAllocationKind::SnapshotChunk>{server_owned},
                 index,
                 [this](size_t position) { return std::as_const(*this).getSettingPointer(position); });
             const auto * address = replacement->buffer.get();
-            owner = std::shared_ptr<const std::byte>(std::move(replacement), address);
+            owner = boost::shared_ptr<const std::byte>(std::move(replacement), address);
             state->server_chunks[index] = server_owned;
         }
         return const_cast<std::byte *>(owner.get()) + offset % chunk_size;
