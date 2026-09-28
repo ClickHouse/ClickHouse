@@ -11,3 +11,11 @@ SELECT intDiv(length(arrayResize([], 8000, repeat('x', 16384))), 0) SETTINGS max
 
 SELECT length(arrayWithConstant(50000000, [])), intDiv(1, 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 SELECT intDiv(length(arrayWithConstant(50000000, [])), 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+
+-- A constant reference vector is cast to the type of the QBit column during analysis, which fails to parse 'x';
+-- after the deadline, the query stops before that cast.
+DROP TABLE IF EXISTS t_qbit;
+CREATE TABLE t_qbit (q QBit(Float32, 4)) ENGINE = MergeTree ORDER BY tuple();
+SELECT L2DistanceTransposed(q, ['x'], 16) FROM t_qbit SETTINGS optimize_qbit_distance_function_reads = 1; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT arrayWithConstant(50000000, []), L2DistanceTransposed(q, ['x'], 16) FROM t_qbit SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw', optimize_qbit_distance_function_reads = 1; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_qbit;

@@ -1160,6 +1160,7 @@ std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, Fo
             args.push_back({col, child->result_type, child->result_name});
         }
 
+        CurrentThread::checkIfNotCancelled();
         ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
         const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
         if (!column_const)
@@ -1178,6 +1179,7 @@ std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, Fo
         /// Swallowing the exception is Ok: the predicate is left unfolded, and evaluating it
         /// at runtime reproduces the exception (or not, under short-circuit evaluation)
         /// exactly as the query dictates
+        CurrentThread::checkIfNotCancelled();
         return std::nullopt;
     }
 }

@@ -33,6 +33,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/validateColumnType.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 
@@ -1128,6 +1129,8 @@ QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
     auto argument_columns = cast_function->getArgumentColumns();
     if (!std::all_of(argument_columns.begin(), argument_columns.end(), [](const auto & arg) { return arg.column && isColumnConst(*arg.column); }))
         return cast_node;
+
+    CurrentThread::checkIfNotCancelled();
 
     auto result_type = function_base->getResultType();
     auto executable_function = function_base->prepare(argument_columns);
