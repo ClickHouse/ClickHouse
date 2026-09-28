@@ -83,6 +83,7 @@ void registerTableFunctions()
     registerTableFunctionYTsaurus(factory);
 #endif
 
+    registerTableFunctionSparql(factory);
 }
 
 }

@@ -83,6 +83,8 @@ void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
+void registerTableFunctionSparql(TableFunctionFactory & factory);
+
 void registerTableFunctions();
 
 }

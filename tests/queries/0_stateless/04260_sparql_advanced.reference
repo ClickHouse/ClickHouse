@@ -1,0 +1,25 @@
+:alice
+:bob
+:carol
+:dave
+Alice	30
+Bob	20
+Carol	25
+Dave	35
+Alice	30
+Bob	20
+Carol	25
+Dave	35
+Alice	alice@example.com	+1-555-0101
+Bob		
+Carol	carol@example.com	
+Dave		+1-555-0104
+Bob	20
+Carol	25
+Alice	30
+Carol	25
+25
++1-555-0101
++1-555-0104
+alice@example.com
+carol@example.com
