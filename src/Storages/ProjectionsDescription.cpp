@@ -306,12 +306,12 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// it sets the projection's own default explicitly, so such a setting is not inherited either.
     if (parent_metadata)
     {
-        const auto inherit = [&](const auto & setting, std::string_view name, bool parent_value)
+        const auto inherit = [&](const auto & setting, std::string_view setting_name, bool parent_value)
         {
             if ((*merge_tree_settings)[setting].changed)
                 return;
             if (projection_definition->with_settings
-                && std::ranges::find(projection_definition->with_settings->default_settings, name)
+                && std::ranges::find(projection_definition->with_settings->default_settings, setting_name)
                     != projection_definition->with_settings->default_settings.end())
                 return;
             (*merge_tree_settings)[setting] = parent_value;
