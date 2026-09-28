@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <numeric>
+
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -77,9 +79,11 @@ void checkAnswersMatch(
 
     const auto applied = make_step()->removeUnusedColumns(required_output_positions, remove_inputs);
 
-    EXPECT_EQ(predicted.changed, applied.changed);
+    EXPECT_EQ(predicted.step_changed, applied.step_changed);
+    EXPECT_EQ(predicted.inputs_changed, applied.inputs_changed);
     EXPECT_EQ(predicted.required_input_positions, applied.required_input_positions);
     EXPECT_EQ(predicted.kept_output_positions, applied.kept_output_positions);
+    EXPECT_EQ(predicted.added_output_count, applied.added_output_count);
 }
 
 }
@@ -129,7 +133,8 @@ TEST(FilterStepRequiredColumns, KeepsTheFilterInputAndDropsTheRest)
 
     /// Output header is (x, c). Asking for c only still needs a, because the filter reads it.
     const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
-    ASSERT_TRUE(result.changed);
+    ASSERT_TRUE(result.step_changed);
+    ASSERT_TRUE(result.inputs_changed);
     ASSERT_EQ(result.required_input_positions.size(), 1u);
     EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({0, 2}));
 
@@ -145,7 +150,8 @@ TEST(ExpressionStepRequiredColumns, ReportsThePositionEachInputReads)
 
     /// Output 1 is an alias of b, which reads header position 1.
     const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
-    ASSERT_TRUE(result.changed);
+    ASSERT_TRUE(result.step_changed);
+    ASSERT_TRUE(result.inputs_changed);
     ASSERT_EQ(result.required_input_positions.size(), 1u);
     EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({1}));
     EXPECT_EQ(result.kept_output_positions, std::vector<size_t>({1}));
@@ -158,7 +164,28 @@ TEST(ExpressionStepRequiredColumns, DuplicateNamesKeepTheirOwnPosition)
     /// Output 1 is an alias of the second input, which reads header position 1. Resolving the surviving
     /// input by name would answer 0 and feed the expression the wrong column.
     const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
-    ASSERT_TRUE(result.changed);
+    ASSERT_TRUE(result.step_changed);
+    ASSERT_TRUE(result.inputs_changed);
     ASSERT_EQ(result.required_input_positions.size(), 1u);
     EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({1}));
+}
+
+/// Asked for every output, the step changes nothing, and says so with every position rather than with
+/// empty lists.
+TEST(ExpressionStepRequiredColumns, ReportsEverythingWhenNothingChanges)
+{
+    const auto step = makeStep();
+    const auto output_columns = step->getOutputHeader()->columns();
+    const auto input_columns = step->getInputHeaders().front()->columns();
+
+    std::vector<size_t> all_outputs(output_columns);
+    std::iota(all_outputs.begin(), all_outputs.end(), 0);
+
+    const auto result = step->getRequiredColumns(all_outputs, /*remove_inputs=*/false);
+    EXPECT_FALSE(result.step_changed);
+    EXPECT_FALSE(result.inputs_changed);
+    EXPECT_EQ(result.kept_output_positions, all_outputs);
+    EXPECT_EQ(result.added_output_count, 0u);
+    ASSERT_EQ(result.required_input_positions.size(), 1u);
+    EXPECT_EQ(result.required_input_positions.front().size(), input_columns);
 }

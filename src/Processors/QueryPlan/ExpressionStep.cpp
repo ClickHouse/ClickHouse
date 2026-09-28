@@ -170,32 +170,22 @@ bool ExpressionStep::RequiredColumnsPlan::changesAnything() const
 
 IQueryPlanStep::RemoveUnusedColumnsResult ExpressionStep::RequiredColumnsPlan::toResult() const
 {
-    if (!changesAnything())
-        return {};
+    RemoveUnusedColumnsResult result;
+    result.step_changed = changesAnything();
+    /// Nothing else goes away, so when nothing changes these are all the positions.
+    result.kept_output_positions = required_output_positions;
 
-    RemoveUnusedColumnsResult result{true, {}, required_output_positions};
-
-    /// Nothing is asked of the child while the inputs have to stay.
-    if (!remove_inputs)
-        return result;
-
-    const auto drops_an_input = std::ranges::any_of(input_columns, [](auto column)
-    {
-        return column == InputColumn::ReadNotNeeded || column == InputColumn::PassesThroughDropped;
-    });
-
-    if (!drops_an_input)
-        return result;
-
-    std::vector<size_t> required_input_positions;
+    /// While the inputs have to stay, the child is asked for everything it produces, and a pass-through
+    /// nobody asked for is consumed by the DAG instead.
+    auto & required_input_positions = result.required_input_positions.emplace_back();
     for (size_t position = 0; position < input_columns.size(); ++position)
     {
         const auto column = input_columns[position];
-        if (column == InputColumn::ReadAndNeeded || column == InputColumn::PassesThroughNeeded)
+        if (!remove_inputs || column == InputColumn::ReadAndNeeded || column == InputColumn::PassesThroughNeeded)
             required_input_positions.push_back(position);
     }
 
-    result.required_input_positions = {std::move(required_input_positions)};
+    result.inputs_changed = required_input_positions.size() != input_columns.size();
     return result;
 }
 
@@ -307,8 +297,8 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
 {
     const auto plan = analyzeRequiredColumns(required_output_positions, remove_inputs);
     auto result = plan.toResult();
-    if (!result.changed)
-        return {};
+    if (!result.step_changed)
+        return result;
 
     const auto & input_header = input_headers.front();
 
@@ -337,7 +327,7 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
     if (actions_dag.getInputs().size() > input_header->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    if (result.required_input_positions.empty())
+    if (!result.inputs_changed)
     {
         updateOutputHeader();
         return result;

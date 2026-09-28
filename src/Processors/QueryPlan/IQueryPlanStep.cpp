@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
+#include <numeric>
 #include <unordered_map>
 
 namespace DB
@@ -48,6 +49,25 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     if (!supportsDataflowStatisticsCollection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
     dataflow_cache_updater = std::move(updater);
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::keepEverything() const
+{
+    RemoveUnusedColumnsResult result;
+
+    for (const auto & input_header : input_headers)
+    {
+        auto & positions = result.required_input_positions.emplace_back(input_header->columns());
+        std::iota(positions.begin(), positions.end(), 0);
+    }
+
+    if (output_header)
+    {
+        result.kept_output_positions.resize(output_header->columns());
+        std::iota(result.kept_output_positions.begin(), result.kept_output_positions.end(), 0);
+    }
+
+    return result;
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/)

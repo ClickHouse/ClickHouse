@@ -16,6 +16,13 @@ namespace QueryPlanOptimizations
 {
 namespace
 {
+/// Whether the column at `new_position` of a child's new output header is one the parent did not ask for:
+/// either a kept column nobody requires, or one the child added after the kept ones.
+bool isExtraChildColumn(size_t new_position, const std::vector<size_t> & kept_output_positions, const std::set<size_t> & required_set)
+{
+    return new_position >= kept_output_positions.size() || !required_set.contains(kept_output_positions[new_position]);
+}
+
 /// Position-based overload: compare kept_output_positions (what the child actually kept)
 /// against required_positions (what the parent asked for) to determine extras to discard.
 /// Builds a DAG with all child output columns as inputs and only the required columns as
@@ -35,9 +42,9 @@ bool addDiscardingExpressionStepIfNeeded(
 
     /// Check whether there are any columns to discard.
     bool has_columns_to_discard = false;
-    for (size_t kept_output_position : kept_output_positions)
+    for (size_t new_pos = 0; new_pos < output_header->columns(); ++new_pos)
     {
-        if (!required_set.contains(kept_output_position))
+        if (isExtraChildColumn(new_pos, kept_output_positions, required_set))
         {
             has_columns_to_discard = true;
             break;
@@ -68,9 +75,9 @@ bool addDiscardingExpressionStepIfNeeded(
 
     /// Only add the required columns as DAG outputs.
     auto & dag_outputs = discarding_dag.getOutputs();
-    for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
+    for (size_t new_pos = 0; new_pos < output_header->columns(); ++new_pos)
     {
-        if (required_set.contains(kept_output_positions[new_pos]))
+        if (!isExtraChildColumn(new_pos, kept_output_positions, required_set))
             dag_outputs.push_back(input_nodes[new_pos]);
     }
 
@@ -107,16 +114,6 @@ static bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
-std::vector<size_t> effectiveKeptOutputPositions(bool changed, std::vector<size_t> && kept_output_positions, size_t num_output_columns)
-{
-    if (changed)
-        return std::move(kept_output_positions);
-
-    std::vector<size_t> all_positions(num_output_columns);
-    std::iota(all_positions.begin(), all_positions.end(), 0);
-    return all_positions;
-}
-
 bool absorbExtraChildColumns(
     QueryPlan::Node & node,
     size_t child_id,
@@ -137,13 +134,13 @@ bool absorbExtraChildColumns(
 
     const auto & child_output = node.children[child_id]->step->getOutputHeader();
 
-    /// Identify extra columns: positions in kept_output_positions that are not in required_positions.
+    /// Identify extra columns: kept positions nobody requires, and the columns the child added.
     std::set<size_t> required_set(required_positions.begin(), required_positions.end());
 
     bool added_any = false;
-    for (size_t new_pos = 0; new_pos < kept_output_positions.size(); ++new_pos)
+    for (size_t new_pos = 0; new_pos < child_output->columns(); ++new_pos)
     {
-        if (!required_set.contains(kept_output_positions[new_pos]))
+        if (isExtraChildColumn(new_pos, kept_output_positions, required_set))
         {
             const auto & col = child_output->getByPosition(new_pos);
             dag->addInput(col.name, col.type);
@@ -188,15 +185,10 @@ static ChildUpdateResult removeSingleChildOutput(
 
     // Here we never want to remove inputs because the grandchildren might not be able to remove outputs.
     auto child_result = child_step->removeUnusedColumns(required_positions, false);
-    const bool child_updated = child_result.changed;
-
-    if (child_updated)
+    if (child_result.step_changed)
         result.updated = true;
 
-    const auto effective_kept_positions = effectiveKeptOutputPositions(
-        child_result.changed,
-        std::move(child_result.kept_output_positions),
-        child_step->getOutputHeader()->columns());
+    const auto & effective_kept_positions = child_result.kept_output_positions;
 
     /// If the child's output doesn't match the parent's input (extra columns the child
     /// couldn't remove, e.g. ReadFromMergeTree with FINAL keeping sort key columns,
@@ -284,7 +276,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
 
         auto remove_result = node->step->removeUnusedColumns(all_outputs, can_remove_inputs);
 
-        if (remove_result.changed)
+        if (remove_result.step_changed)
             ++depth;
 
         required_input_positions = std::move(remove_result.required_input_positions);

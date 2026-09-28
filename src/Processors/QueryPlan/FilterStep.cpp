@@ -595,13 +595,15 @@ FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_p
         required_output_positions,
         prevent_input_removal ? false : remove_inputs);
 
-    if (!plan.pruning.result.changed && output_header->columns() == required_output_positions.size())
-        return plan;
+    plan.result.step_changed = plan.pruning.result.changed || output_header->columns() != required_output_positions.size();
+    /// Nothing else goes away, so when nothing changes these are all the positions.
+    plan.result.kept_output_positions = required_output_positions;
+    plan.result.inputs_changed = plan.pruning.result.input_positions_changed;
 
-    if (plan.pruning.result.input_positions_changed)
-        plan.result = {true, {plan.pruning.result.required_input_positions}, required_output_positions};
+    if (plan.result.inputs_changed)
+        plan.result.required_input_positions.push_back(plan.pruning.result.required_input_positions);
     else
-        plan.result = {true, {}, required_output_positions};
+        plan.result.required_input_positions = keepEverything().required_input_positions;
 
     return plan;
 }
@@ -615,8 +617,8 @@ FilterStep::getRequiredColumns(const std::vector<size_t> & required_output_posit
 FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     const auto plan = analyzeRequiredColumns(required_output_positions, remove_inputs);
-    if (!plan.result.changed)
-        return {};
+    if (!plan.result.step_changed)
+        return plan.result;
 
     const auto & input_header = input_headers.front();
     applyFilterDAGOutputPruning(actions_dag, remove_filter_column, *input_header, plan.pruning);
@@ -624,7 +626,7 @@ FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std:
     if (actions_dag.getInputs().size() > input_header->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    if (plan.result.required_input_positions.empty())
+    if (!plan.result.inputs_changed)
     {
         updateOutputHeader();
         return plan.result;
