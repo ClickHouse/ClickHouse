@@ -1,0 +1,260 @@
+---
+slug: /operations/open-policy-agent
+sidebarTitle: 'Open Policy Agent'
+title: 'Authorization with Open Policy Agent'
+keywords: ['Open Policy Agent', 'OPA', 'Authorization', 'Access Control', 'Row Filtering', 'Column Masking', 'Security']
+description: 'Describes how to delegate authorization decisions to an Open Policy Agent server, including row filtering and column masking'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/_self_managed_only_no_roadmap.mdx';
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<SelfManaged />
+
+<ExperimentalBadge/>
+
+ClickHouse can ask an [Open Policy Agent](https://www.openpolicyagent.org/) (OPA) server to
+authorize queries, in addition to its own [grants](/operations/access-rights). This lets one set of
+policies, written in Rego and kept outside the database, govern who may read which tables and
+columns, which rows they see, and which column values are masked.
+
+## How it fits with grants {#how-it-fits-with-grants}
+
+An OPA policy can only take access away. ClickHouse evaluates its own grants first, and consults OPA
+only for a check that the grants already allowed. A user therefore needs both the grant and the
+policy's approval, and a policy can never widen what a user was granted.
+
+This ordering also keeps the number of requests down, because a check that grants already refuse
+never reaches OPA.
+
+## Failure is a denial {#failure-is-a-denial}
+
+If the policy server is unreachable, answers with a status other than 200, or returns a body that
+does not match the documented shape, the query fails. There is no path from a failed request to an
+allowed query.
+
+This is deliberate, and it has an operational consequence worth planning for: while OPA is
+unavailable, queries against governed tables do not run. Use `exempt_users` for the administrative
+account you would repair the configuration with.
+
+## Configuration {#configuration}
+
+Add an `open_policy_agent` section to the server configuration. The feature is off when the section
+is absent.
+
+```xml
+<clickhouse>
+    <open_policy_agent>
+        <uri>http://opa.example.com:8181/v1/data/clickhouse/allow</uri>
+        <batch_uri>http://opa.example.com:8181/v1/data/clickhouse/batch</batch_uri>
+        <row_filters_uri>http://opa.example.com:8181/v1/data/clickhouse/row_filters</row_filters_uri>
+        <column_masking_uri>http://opa.example.com:8181/v1/data/clickhouse/column_masks</column_masking_uri>
+        <exempt_users>
+            <user>default</user>
+        </exempt_users>
+    </open_policy_agent>
+</clickhouse>
+```
+
+| Setting | Default | Description |
+|---|---|---|
+| `uri` | required | Endpoint answering a single allow-or-deny decision. |
+| `batch_uri` | none | Endpoint answering about many objects at once. Without it, those questions are asked one object at a time. |
+| `row_filters_uri` | none | Endpoint returning row filters. Without it, no row filtering is applied. |
+| `column_masking_uri` | none | Endpoint returning column masks. Without it, no masking is applied. |
+| `token` | empty | Sent as `Authorization: Bearer <token>` when set. |
+| `check_system_database` | `false` | Whether checks on the `system` database are sent to OPA. Clients poll system tables constantly, so each poll would otherwise cost a request. |
+| `exempt_users` | empty | Users whose queries bypass OPA entirely. |
+| `log_requests` | `false` | Log each request body at `DEBUG` level. Produces a lot of output. |
+| `log_responses` | `false` | Log each response body at `DEBUG` level. |
+| `connection_timeout_ms` | `1000` | Connection timeout. |
+| `receive_timeout_ms` | `2000` | Receive timeout. |
+| `send_timeout_ms` | `2000` | Send timeout. |
+| `max_tries` | `3` | Attempts per request. Only transport failures are retried. |
+| `retry_initial_backoff_ms` | `50` | Backoff before the second attempt, doubling thereafter. |
+| `retry_max_backoff_ms` | `1000` | Upper bound on the backoff. |
+| `max_batch_size` | `1000` | Largest number of objects in one batched request. A longer list is split. |
+
+The section is re-read by `SYSTEM RELOAD CONFIG`. A malformed section fails the reload and leaves the
+previous configuration in place, rather than quietly disabling authorization.
+
+Objects in the temporary database and in `information_schema` are never sent to OPA, and neither is a
+global privilege such as `SYSTEM SHUTDOWN`, which names no table for a policy to describe.
+
+## Request format {#request-format}
+
+Every endpoint receives the same envelope:
+
+```json
+{
+  "input": {
+    "context": {
+      "user": "alice",
+      "roles": ["analysts", "eu_staff"],
+      "query_id": "8f3c1d2e-...",
+      "clickhouse_version": "26.10.1.1"
+    },
+    "action": {
+      "operations": ["SELECT"],
+      "resource": {
+        "database": "sales",
+        "table": "orders",
+        "columns": ["id", "amount", "customer_email"]
+      }
+    }
+  }
+}
+```
+
+`roles` holds the user's enabled roles.
+
+`operations` is a list, not a single name, because one ClickHouse check can require several
+privileges at once and a policy must allow all of them. The names are the canonical grant keywords,
+not their aliases: `ALTER UPDATE` rather than `UPDATE`, and `TRUNCATE` rather than `TRUNCATE TABLE`.
+
+An inapplicable field is omitted rather than sent empty, so a policy can distinguish:
+
+- no `table` — the check covers the whole database, as `SHOW TABLES` does
+- no `columns` — the check is about the table as a whole rather than particular columns
+
+A batched request replaces `resource` with `filter_resources`, a list of resources of the same shape.
+
+## Decisions {#decisions}
+
+The endpoint at `uri` must answer with a boolean `result`, or with an object containing a boolean
+`allow`:
+
+```json
+{"result": true}
+```
+
+If `result` is missing, ClickHouse reports an error rather than denying silently, because an
+undefined document almost always means the endpoint path does not match the policy's package and
+rule name.
+
+```rego
+package clickhouse
+
+default allow := false
+
+allow if {
+    "SELECT" in input.action.operations
+    input.action.resource.database == "sales"
+}
+```
+
+### Batched decisions {#batched-decisions}
+
+When ClickHouse has to discover which of several objects a user may see — for example which columns
+of a table are readable — it asks about them together if `batch_uri` is set. The answer is the list
+of allowed indices into `filter_resources`:
+
+```json
+{"result": [0, 2]}
+```
+
+An absent or empty list allows nothing. An index outside the request is an error, since it cannot be
+matched to anything that was asked about.
+
+```rego
+package clickhouse
+
+batch contains i if {
+    some i
+    resource := input.action.filter_resources[i]
+    allow with input.action.resource as resource
+}
+```
+
+## Row filtering {#row-filtering}
+
+With `row_filters_uri` set, ClickHouse asks which rows a user may see and applies the answer as a
+row-level filter. Each expression is SQL, evaluated against the table's columns:
+
+```json
+{"result": [{"expression": "region = 'EU'"}]}
+```
+
+Several filters are combined with `AND`, so each one can only remove more rows.
+
+```rego
+package clickhouse
+
+row_filters contains {"expression": "region = 'EU'"} if {
+    input.action.resource.database == "sales"
+    input.action.resource.table == "orders"
+    not "admins" in input.context.roles
+}
+```
+
+An absent `result` means no filtering, which is the common case and is not an error. An expression
+that cannot be parsed is an error rather than something to skip, because skipping a filter would
+show more rows than the policy intended.
+
+A filter is a per-row predicate, so it cannot contain a function that changes the number of rows,
+such as `arrayJoin`. This is the same restriction a `ROW POLICY` written in SQL has.
+
+## Column masking {#column-masking}
+
+With `column_masking_uri` set, ClickHouse asks which columns to mask and what to replace them with.
+One request covers a whole table:
+
+```json
+{"result": [{"column": "customer_email", "expression": "'****'"}]}
+```
+
+```rego
+package clickhouse
+
+column_masks contains {"column": "customer_email", "expression": "'****'"} if {
+    input.action.resource.database == "sales"
+    input.action.resource.table == "orders"
+    not "admins" in input.context.roles
+}
+```
+
+A masked column behaves as though the mask were its definition, so the mask applies everywhere the
+column is named — in the projection, but also in `WHERE`, in `GROUP BY` and as a join key. A user
+cannot search for a value and learn it from whether rows come back. The result is converted to the
+column's declared type.
+
+Two masks for one column are rejected, because the effective one would otherwise depend on the order
+the policy emitted them. Masking an `ALIAS` column is not supported, since the column already defines
+what it evaluates to.
+
+A masked column loses index and `PREWHERE` pushdown, so reading it is slower. Unmasked columns of the
+same table are unaffected.
+
+## Filters and masks are not limited by the user's grants {#filters-and-masks-and-grants}
+
+A row filter or a column mask may reference a column the querying user has no `SELECT` grant on. This
+matches how a `ROW POLICY` written in SQL behaves: the expression is administrator-defined, not
+user-supplied, so it is not subject to the querying user's column grants.
+
+This differs from engines where such an expression is evaluated with the requesting user's privileges
+and therefore needs a per-expression identity override to reach a hidden column. ClickHouse has no
+such override, and a policy that returns an `identity` field will have it ignored. Anyone sharing
+policies between ClickHouse and another engine should be aware of the difference.
+
+## What is not delegated {#what-is-not-delegated}
+
+`GRANT`, `REVOKE` and role management remain governed by ClickHouse's own grants. Mixing SQL-style
+grant administration with an external policy engine makes the effective permissions of a user hard to
+reason about, so a policy is not asked about them.
+
+## Observability {#observability}
+
+The following `ProfileEvents` describe the traffic:
+
+| Event | Description |
+|---|---|
+| `OpaRequests` | Requests sent. |
+| `OpaRequestFailures` | Requests that produced no usable decision. Each one denied the access it was asked about. |
+| `OpaDenials` | Times a policy denied access that grants allowed. |
+| `OpaCacheHits` | Decisions answered from the per-query cache. |
+| `OpaCacheMisses` | Decisions that required a request. |
+
+Decisions are cached for the duration of a single query, because one query checks the same table
+several times while planning and analyzing it. The cache never outlives the query, so a policy change
+takes effect on the next query.
