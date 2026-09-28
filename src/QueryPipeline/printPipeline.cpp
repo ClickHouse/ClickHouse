@@ -49,9 +49,19 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         return Key{processor.getQueryPlanStepGroup(), processor.getQueryPlanStep(), processor.getName()};
     };
 
+    /// The processors of an opaque step (see `IQueryPlanStep::isOpaqueInExplain`) and their edges are left out.
+    auto is_hidden = [](const IProcessor & processor)
+    {
+        const auto * step = processor.getQueryPlanStep();
+        return step && step->isOpaqueInExplain();
+    };
+
     /// Fill nodes.
     for (const auto & processor : processors)
     {
+        if (is_hidden(*processor))
+            continue;
+
         auto res = graph.emplace(get_key(*processor), Node());
         auto & node = res.first->second;
         node.agents.emplace_back(processor.get());
@@ -65,11 +75,14 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     /// Fill edges.
     for (const auto & processor : processors)
     {
+        if (is_hidden(*processor))
+            continue;
+
         auto & from =  graph[get_key(*processor)];
 
         for (auto & port : processor->getOutputs())
         {
-            if (!port.isConnected())
+            if (!port.isConnected() || is_hidden(port.getInputPort().getProcessor()))
                 continue;
 
             auto & to = graph[get_key(port.getInputPort().getProcessor())];

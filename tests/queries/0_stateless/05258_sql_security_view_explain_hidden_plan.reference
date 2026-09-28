@@ -1,0 +1,36 @@
+-- definer_view for the reader: private value, inner steps, hidden marker
+EXPLAIN PLAN actions = 1: 0 0 1
+EXPLAIN PLAN actions = 1, pretty = 0: 0 0 1
+EXPLAIN PLAN header = 1, indexes = 1: 0 0 1
+EXPLAIN PLAN json = 1, actions = 1, header = 1: 0 0 1
+EXPLAIN PIPELINE header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, compact = 0: 0 0 0
+EXPLAIN ESTIMATE: 0 0 0
+-- definer_view for the reader with the format setting but without the privilege
+0 0 1
+-- definer_view: the reader still queries it
+0
+-- none_view for the reader: private value, inner steps, hidden marker
+EXPLAIN PLAN actions = 1: 0 0 1
+EXPLAIN PLAN actions = 1, pretty = 0: 0 0 1
+EXPLAIN PLAN header = 1, indexes = 1: 0 0 1
+EXPLAIN PLAN json = 1, actions = 1, header = 1: 0 0 1
+EXPLAIN PIPELINE header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, compact = 0: 0 0 0
+EXPLAIN ESTIMATE: 0 0 0
+-- none_view for the reader with the format setting but without the privilege
+0 0 1
+-- none_view: the reader still queries it
+0
+-- definer_view for its definer: the plan is shown, with the value folded from the private table
+1 1 0
+0 1 0
+-- none_view for the same user: no definer to match, and no privilege to create such a view
+0 0 1
+-- a user who may create views with this definer sees the plan
+1 1 0
+0 0 1
+-- a user who may create SQL SECURITY NONE views sees the plan
+1 1 0

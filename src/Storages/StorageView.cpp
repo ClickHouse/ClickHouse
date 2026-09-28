@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -70,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
 }
@@ -358,13 +361,16 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
 
 /// Reads a sealed view (see `StorageView::isSealed`). The view's plan is a child plan of this step rather
 /// than its subtree, so the optimizations of the outer query cannot see through it; it is optimized on its own.
+/// The plan runs with the privileges of the view's definer and may hold values folded from data the invoker
+/// cannot read, such as a scalar subquery over a private table, so EXPLAIN shows it only if `show_plan` is set.
 class ReadFromSealedViewStep final : public ISourceStep
 {
 public:
-    ReadFromSealedViewStep(QueryPlan view_plan_, const ContextPtr & view_context)
+    ReadFromSealedViewStep(QueryPlan view_plan_, const ContextPtr & view_context, bool show_plan_)
         : ISourceStep(view_plan_.getCurrentHeader())
         , view_plan(std::move(view_plan_))
         , optimization_settings(view_context)
+        , show_plan(show_plan_)
     {
         /// The view's plan becomes a part of the outer pipeline, built on this server.
         optimization_settings.make_distributed_plan = false;
@@ -376,18 +382,28 @@ public:
 
     QueryPlanStepPtr clone() const override
     {
-        return std::unique_ptr<ReadFromSealedViewStep>(new ReadFromSealedViewStep(view_plan.clone(), optimization_settings));
+        return std::unique_ptr<ReadFromSealedViewStep>(new ReadFromSealedViewStep(view_plan.clone(), optimization_settings, show_plan));
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override
     {
         pipeline = std::move(*view_plan.buildQueryPipeline(optimization_settings, settings, /*do_optimize=*/ false));
+
+        /// EXPLAIN PIPELINE and `system.processors_profile_log` attribute the processors to their plan steps.
+        if (!show_plan)
+            for (const auto & processor : pipeline.getProcessors())
+                processor->setQueryPlanStep(this);
     }
 
     QueryPlanRawPtrs getChildPlans() override { return {&view_plan}; }
 
+    bool isOpaqueInExplain() const override { return !show_plan; }
+
     void describePipeline(FormatSettings & settings) const override
     {
+        if (!show_plan)
+            return;
+
         WriteBufferFromOwnString out;
         view_plan.explainPipeline(out, {.header = settings.write_header, .compact_repeated_processor_chains = settings.compact_repeated_processor_chains});
 
@@ -399,16 +415,31 @@ public:
 
 private:
     /// For `clone`: the plan is already optimized.
-    ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_)
+    ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_, bool show_plan_)
         : ISourceStep(view_plan_.getCurrentHeader())
         , view_plan(std::move(view_plan_))
         , optimization_settings(std::move(optimization_settings_))
+        , show_plan(show_plan_)
     {
     }
 
     QueryPlan view_plan;
     QueryPlanOptimizationSettings optimization_settings;
+    bool show_plan;
 };
+
+/// Whether the user could have created the view themselves. Then its plan, which runs with the view's
+/// privileges, holds nothing new to them.
+bool canCreateSuchView(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    if (metadata.sql_security_type == SQLSecurityType::NONE)
+        return context->getAccess()->isGranted(AccessType::ALLOW_SQL_SECURITY_NONE);
+
+    if (!metadata.definer)
+        return false;
+
+    return *metadata.definer == context->getUserName() || context->getAccess()->isGranted(AccessType::SET_DEFINER, *metadata.definer);
+}
 
 }
 
@@ -679,7 +710,13 @@ void StorageView::readImpl(
 
     if (sealed)
     {
-        auto read_from_sealed_view = std::make_unique<ReadFromSealedViewStep>(std::move(query_plan), view_context);
+        const bool show_plan = canCreateSuchView(*storage_snapshot->metadata, context) || canDisplaySecrets(context);
+
+        auto read_from_sealed_view = std::make_unique<ReadFromSealedViewStep>(std::move(query_plan), view_context, show_plan);
+        read_from_sealed_view->setStepDescription(
+            show_plan ? getStorageID().getFullNameNotQuoted()
+                      : getStorageID().getFullNameNotQuoted() + ", plan hidden without the displaySecretsInShowAndSelect privilege",
+            context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
         query_plan = QueryPlan();
         query_plan.addStep(std::move(read_from_sealed_view));
     }
