@@ -530,11 +530,26 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// up in `entry.right` is whichever the enumeration reached first. The right side is the one
     /// read into the hash table, so give that role to the smaller estimate. Skipped when the query
     /// pinned `query_plan_join_swap_table`, which asks for a particular side and is entitled to it.
-    /// Only kinds that commute may be turned round - semi/anti and the one-sided outer joins keep
-    /// their preserved side on the left - and only when both estimates are known.
-    if (!query_graph.join_swap_table && (isInner(entry.kind) || isCrossOrComma(entry.kind)) && left->estimated_rows
-        && right->estimated_rows && *left->estimated_rows < *right->estimated_rows)
-        left.swap(right);
+    /// Inner and cross joins commute; `ALL` outer joins are mirrored through `reverseJoinKind`
+    /// (`Left` <-> `Right`), the same equivalence the enumeration itself uses. Semi/anti joins keep
+    /// their sides. Only done when both estimates are known.
+    ///
+    /// On equal estimates keep the input with more relations on the left: the enumeration reaches a
+    /// lone relation against the rest first, which would otherwise build the hash table from a whole
+    /// subtree - the left-deep shape greedy produces avoids that.
+    const bool can_turn_round = isInner(entry.kind) || isCrossOrComma(entry.kind)
+        || (entry.strictness == JoinStrictness::All && (isLeft(entry.kind) || isRight(entry.kind) || isFull(entry.kind)));
+    if (!query_graph.join_swap_table && can_turn_round && left->estimated_rows && right->estimated_rows)
+    {
+        const bool left_is_smaller = *left->estimated_rows < *right->estimated_rows;
+        const bool tie_with_larger_right = *left->estimated_rows == *right->estimated_rows
+            && std::popcount(entry.left) < std::popcount(entry.right);
+        if (left_is_smaller || tie_with_larger_right)
+        {
+            left.swap(right);
+            join_operator.kind = reverseJoinKind(join_operator.kind);
+        }
+    }
 
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
 }
