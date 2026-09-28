@@ -44,6 +44,7 @@ from ast import literal_eval as make_tuple
 from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
 from errno import EPERM, ESRCH
+from functools import cache
 from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
@@ -897,20 +898,12 @@ def kill_process_group(pgid, fatal_log):
         # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
         # not be enough, but at least something)
         sleep(0.1)
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except OSError as e:
-            # SIGTERM above succeeded, so we have permission to signal this group.
-            # EPERM here is a macOS-specific behavior: killpg returns EPERM when
-            # the group contains zombie processes (already exited after SIGTERM
-            # but not yet reaped). Linux ignores zombies in killpg instead.
-            if e.errno in (ESRCH, EPERM):
-                print(f"Got {e.strerror} while sending SIGKILL to {pgid}. Ignoring.")
-            else:
-                raise
+        os.killpg(pgid, signal.SIGKILL)
     except OSError as e:
-        if e.errno == ESRCH:
-            print(f"Got ESRCH while killing {pgid}. Ignoring.")
+        # EPERM is how macOS reports a group whose members have all exited but are not
+        # reaped yet: its `killpg` skips zombies, so it finds nothing it may signal.
+        if e.errno in (ESRCH, EPERM):
+            print(f"Got {e.strerror} while killing {pgid}. Ignoring.")
         else:
             raise
     print(f"Process group {pgid} should be killed")
@@ -2408,10 +2401,17 @@ def load_diagnostics_results(diagnostics_dir):
     return results
 
 
+# Reported from the parent: the same message from `preexec_fn` would go to the per-test
+# stderr file, which the test command's own `2> {stderr}` then truncates.
+@cache
+def report_cgroups_unavailable():
+    print("Cgroups are not available, memory limit will not be applied", file=sys.stderr)
+
+
 def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int):
     def preexec_fn():
         if CGROUP_VERSION is None:
-            print(f"Cgroups are not available, memory limit will not be applied", file=sys.stderr)
+            # Already reported once from the parent by report_cgroups_unavailable().
             return
 
         try:
@@ -3563,9 +3563,8 @@ class TestCase:
             if proc.returncode is None:
                 f = io.StringIO()
                 with redirect_stdout(f):
-                    kill_process_group(
-                        os.getpgid(proc.pid), self.fatal_sanitizer_prefix
-                    )
+                    # `start_new_session=True`, so the leader's pid is the pgid
+                    kill_process_group(proc.pid, self.fatal_sanitizer_prefix)
                 kill_output = f.getvalue()
 
         description = ""
@@ -4034,8 +4033,6 @@ class TestCase:
             ),
         }
 
-        # >> append to stderr (but not stdout since it is not used there),
-        # because there are also output of per test database creation
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
@@ -4056,11 +4053,23 @@ class TestCase:
         preexec_fn = None
         cgroup_name = None
         if args.memory_limit:
+            if CGROUP_VERSION is None:
+                report_cgroups_unavailable()
             cgroup_name = f"clickhouse-test-{os.getpid()}"
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
-        # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        # Pre-create both files: a fatal `preexec_fn` exits before bash execs, so the
+        # command's own redirects never run and the post-`wait` normalization would raise.
+        # See tests/clickhouse-test-process-management.md for the mechanism.
+        open(self.stdout_file, "wb").close()
+        open(self.stderr_file, "wb").close()
+        # A per-test wrapper must not inherit our stdout or stderr: it is in its own session,
+        # so one that outlives us would wedge the CI pipeline we head. `ab` because the
+        # command's own `2> {stderr}` holds a second descriptor with its own offset.
+        with open(self.stderr_file, "ab") as wrapper_stderr:
+            # pylint:disable-next=consider-using-with; TODO: fix
+            proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn,
+                         stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
         _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"

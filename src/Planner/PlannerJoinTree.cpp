@@ -1702,7 +1702,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
     bool is_single_table_expression,
-    bool wrap_read_columns_in_subquery)
+    bool wrap_read_columns_in_subquery,
+    QueryTreeNodePtr & query_prewhere)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1715,6 +1716,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     {
         auto columns = table_expression_data.getColumns();
         table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+
+        /** Once wrapped, this table is read by the nested planner, so keep its `PREWHERE` with that read.
+          * Drop it from the outer query and from this table's initiator actions: otherwise
+          * `appendSetsFromActionsDAG` still treats the original `IN` sets as useful, and they
+          * stay not-ready after the nested planner built a separate copy.
+          */
+        if (query_prewhere && table_expression_data.getPrewhereFilterActions())
+        {
+            table_expression->as<QueryNode &>().getPrewhere() = query_prewhere->clone();
+            query_prewhere = {};
+            table_expression_data.resetPrewhereFilterActions();
+        }
     }
 
     auto * table_node = table_expression->as<TableNode>();
@@ -2055,8 +2068,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         }
                     }
 
+                    /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
+                    /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that
+                    /// executes the plan rebuilds the read without it and would return the rows the policy
+                    /// excludes. For a storage whose PREWHERE support depends on the columns (e.g. `Memory`)
+                    /// that node cannot tell whether the policy was pushed down, so keep the policy as an
+                    /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
+                    /// user's conditions never see the excluded rows.
+                    if (select_query_options.build_logical_plan && storage->supportedPrewhereColumns().has_value())
+                        where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (can_push_down_filter)
+                    else if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                     {
@@ -3455,6 +3477,13 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
     if (!left_storage || left_storage->getShardCount() < 2)
         return;
 
+    /** A `PREWHERE` without a column is bound to the leftmost table. There is no column source that
+      * `buildQueryTreeForShard` could use to recognize that table after the swap, so leave this join
+      * unchanged and let the initiator-side wrapper preserve the filter.
+      */
+    if (query_node.hasPrewhere() && !getPrewhereTableExpression(query_node.getPrewhere()))
+        return;
+
     /** A `JOIN USING` key records its sides positionally, the left one first. The join condition, the
       * `USING (a AS b)` clause shipped to the shards and the key supertype all read that order, so the
       * sides have to be swapped together with the table expressions. A key that does not hold a plain
@@ -3717,7 +3746,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         select_query_options,
         planner_context,
         is_single_table_expression,
-        should_wrap_left_table /*wrap_read_columns_in_subquery*/);
+        should_wrap_left_table /*wrap_read_columns_in_subquery*/,
+        query_node_typed.getPrewhere());
     if (left_table_expression_query_plan.stage != QueryProcessingStage::FetchColumns)
         return left_table_expression_query_plan;
 
@@ -3817,7 +3847,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 select_query_options,
                 planner_context,
                 is_single_table_expression,
-                is_remote /*wrap_read_columns_in_subquery*/));
+                is_remote /*wrap_read_columns_in_subquery*/,
+                query_node_typed.getPrewhere()));
         }
     }
 
