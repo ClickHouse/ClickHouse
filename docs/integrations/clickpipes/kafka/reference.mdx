@@ -24,18 +24,9 @@ import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/Experi
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs logo" width="32" /> | Streaming | Stable | Configure ClickPipes and start ingesting streaming data from Azure Event Hubs into ClickHouse Cloud. |
 | WarpStream | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream logo" width="32" /> | Streaming | Stable | Configure ClickPipes and start ingesting streaming data from WarpStream into ClickHouse Cloud. |
 
-## Advanced settings {#advanced-settings}
-
-### Isolation level {#isolation-level}
+## Isolation Level {#isolation-level}
 
 The Kafka consumer isolation level determines whether a ClickPipe reads and inserts only messages committed by a Kafka transaction. Enable the `kafka_read_committed` setting to use `read_committed` and skip messages from aborted Kafka transactions. Disable it to use `read_uncommitted` and read all messages. You can configure this setting under **Advanced Settings**.
-
-### Tombstone handling {#tombstone-handling}
-
-Kafka tombstones are records with a key and a null value. Under **Advanced Settings**, you can configure how a Kafka ClickPipe handles them:
-
-- **Delete matching rows** deletes matching rows from the destination table using a [lightweight delete](/concepts/features/operations/delete/lightweight-delete). This option is available only when exactly-once semantics is enabled. Lightweight deletes are expensive and are not appropriate for large workloads.
-- **Mark rows as deleted** writes each tombstone as a row. For large workloads, this is the recommended option: create a [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree) destination table and select the `_is_deleted` virtual column. ClickPipes configures that virtual column as the engine's `is_deleted` column.
 
 ## Supported data formats {#supported-data-formats}
 
