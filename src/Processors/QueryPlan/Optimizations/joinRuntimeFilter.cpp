@@ -1164,7 +1164,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (auto build_subtree_rows = estimateBuildSubtreeRows(build_filter_node))
         {
             if (!build_side_row_count || *build_side_row_count > *build_subtree_rows)
-                build_side_row_count = *build_subtree_rows;
+                build_side_row_count = build_subtree_rows;
         }
 
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
@@ -1179,10 +1179,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             auto build_stats = getJoinKeyStats(build_filter_node, build_key_name);
             if (build_stats && build_side_row_count)
             {
-                if (build_stats->total_rows > *build_side_row_count)
-                    build_stats->total_rows = *build_side_row_count;
-                if (build_stats->distinct_values > *build_side_row_count)
-                    build_stats->distinct_values = *build_side_row_count;
+                build_stats->total_rows = std::min(build_stats->total_rows, *build_side_row_count);
+                build_stats->distinct_values = std::min(build_stats->distinct_values, *build_side_row_count);
             }
 
             /// Determine effective n from trustworthy statistics only. Raw part row counts are useful as
