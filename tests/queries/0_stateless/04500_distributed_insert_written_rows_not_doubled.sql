@@ -25,14 +25,14 @@ CREATE TABLE dist_04500 AS local_04500
 -- A plain INSERT into a Distributed table must not double-count the rows written to local
 -- shards (issue #106361). Rows pushed into local shards are already accounted by the
 -- top-level CountingTransform of the distributed INSERT.
+-- max_network_bytes = 1 fails a shard written over the network (Network bandwidth limit for a
+-- query exceeded), so this INSERT succeeding proves both shards took the local branch.
 INSERT INTO dist_04500 SELECT number FROM numbers(1000)
-    SETTINGS log_comment = '04500_dist_insert', log_profile_events = 1;
+    SETTINGS log_comment = '04500_dist_insert', log_profile_events = 1, max_network_bytes = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
 -- Expect written_rows = 1000, not 2000, and written_bytes = 8000 (1000 UInt64), not 16000.
--- written_bytes comes from the same nested CountingTransform accounting that also drives the
--- WRITTEN_BYTES quota, so a correct value here confirms the quota is not double-charged either.
 SELECT written_rows, written_bytes
 FROM system.query_log
 WHERE type = 'QueryFinish'
@@ -43,10 +43,8 @@ WHERE type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
--- The nested per-shard CountingTransform also increments the global InsertedRows / InsertedBytes
--- profile events, so ProfileEvent_InsertedRows / ProfileEvent_InsertedBytes in system.query_log
--- must not be doubled either (1000 / 8000, not 2000 / 16000). Otherwise dashboards built on those
--- counters stay inflated even after written_rows / written_bytes are fixed.
+-- ProfileEvent_InsertedRows / ProfileEvent_InsertedBytes must not be doubled either
+-- (1000 / 8000, not 2000 / 16000).
 SELECT ProfileEvents['InsertedRows'], ProfileEvents['InsertedBytes']
 FROM system.query_log
 WHERE type = 'QueryFinish'
@@ -62,15 +60,18 @@ LIMIT 1;
 -- unpatched server reported in written_rows was double-counting, not real rows.
 SELECT count() FROM local_04500;
 
--- The PR touches TWO local-write paths in DistributedSink: the synchronous runWritingJob
--- (distributed_foreground_insert = 1, exercised above) and the writeToLocal branch used by
--- the async writeAsyncImpl (distributed_foreground_insert = 0). Cover writeToLocal too, so
--- the fix is proven for both. With prefer_localhost_replica = 1 the local-shard writes still
--- happen synchronously inside the INSERT (writeToLocal is called directly, not deferred to
--- disk spooling), so the accounting is deterministic without waiting on background flush.
+-- DistributedSink has two local-write paths: runWritingJob (distributed_foreground_insert = 1,
+-- above) and writeToLocal, used by the async writeAsyncImpl (distributed_foreground_insert = 0).
+-- With prefer_localhost_replica = 1 the async INSERT still writes its local shards synchronously
+-- through writeToLocal. Sends are stopped, so rows spooled for a background send could not reach
+-- local_04500 yet: all 2000 rows (1000 from the foreground INSERT above) being there proves
+-- writeToLocal ran.
+SYSTEM STOP DISTRIBUTED SENDS dist_04500;
 INSERT INTO dist_04500 SELECT number FROM numbers(1000)
     SETTINGS log_comment = '04500_dist_insert_async', log_profile_events = 1,
              distributed_foreground_insert = 0;
+SELECT count() FROM local_04500;
+SYSTEM START DISTRIBUTED SENDS dist_04500;
 
 SYSTEM FLUSH DISTRIBUTED dist_04500;
 SYSTEM FLUSH LOGS query_log;
@@ -96,11 +97,6 @@ WHERE type = 'QueryFinish'
   AND log_comment = '04500_dist_insert_async'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
-
--- 2000 physical rows now (the first foreground INSERT wrote 1000, this async one wrote 1000
--- more into the same local shard table) -- confirming the async written_rows = 1000 was the
--- logical count for this INSERT, not a doubled per-shard count.
-SELECT count() FROM local_04500;
 
 -- Refreshable MV appending into a Distributed target: system.view_refreshes.written_rows
 -- must report the logical row count, not the doubled per-shard count.
@@ -172,7 +168,7 @@ DROP TABLE local_04500;
 -- A delegating storage that writes through its own nested InterpreterInsertQuery must keep
 -- accounting those writes: they are different rows in different tables. TimeSeries is the
 -- concrete case (StorageTimeSeries::write -> TimeSeriesSink::createTargetPipeline builds the
--- Tags/Samples/Metrics target inserts). Suppression is per-interpreter and only a forwarder
+-- target inserts, here tags and samples). Suppression is per-interpreter and only a forwarder
 -- sets it on the interpreter it builds, so those child inserts keep their CountingTransforms.
 -- Without them the distributed INSERT would under-report versus a direct TimeSeries insert.
 SET allow_experimental_time_series_table = 1;
@@ -202,11 +198,11 @@ INSERT INTO ts_dist_04500 (metric_name, tags, samples)
 SYSTEM FLUSH LOGS query_log;
 
 -- The distributed insert must report the SAME written_rows as the direct insert: the TimeSeries
--- child inserts (samples/tags/metrics target tables) are still counted, because suppression is
--- set only on the forwarder's own interpreter. written_rows is the number of physical rows
--- written to the three target tables (deterministic); written_bytes is not compared because the
--- distributed path re-blocks the data, so its byte total legitimately differs from a direct
--- insert. 1 means the row totals are equal.
+-- child inserts (tags and samples target tables) are still counted, because suppression is
+-- set only on the forwarder's own interpreter. written_rows is the outer rows plus the rows the
+-- child inserts write (deterministic); written_bytes is not compared because the distributed
+-- path re-blocks the data, so its byte total legitimately differs from a direct insert.
+-- 1 means the row totals are equal.
 SELECT
     (SELECT written_rows FROM system.query_log
        WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'

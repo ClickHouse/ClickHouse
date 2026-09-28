@@ -12,12 +12,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 N="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 USER="u_${N}"
 QUOTA_OK="qok_${N}"
+QUOTA_DIST="qdist_${N}"
+QUOTA_MV="qmv_${N}"
 QUOTA_LOW="qlow_${N}"
 PINS="log_profile_events = 1, async_insert = 0"
+DIST_PINS="distributed_foreground_insert = 1, prefer_localhost_replica = 1, parallel_distributed_insert_select = 0, enable_parallel_replicas = 0"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP USER IF EXISTS ${USER};
 DROP QUOTA IF EXISTS ${QUOTA_OK};
+DROP QUOTA IF EXISTS ${QUOTA_DIST};
+DROP QUOTA IF EXISTS ${QUOTA_MV};
 DROP QUOTA IF EXISTS ${QUOTA_LOW};
 CREATE TABLE direct_${N} (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE target_${N} (x UInt64) ENGINE = MergeTree ORDER BY x;
@@ -74,12 +79,39 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "INSERT INTO qalias_${N} SELECT number 
 ${CLICKHOUSE_CLIENT} -q "SELECT 'quota_charged', written_bytes FROM system.quotas_usage WHERE quota_name = '${QUOTA_OK}'"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'quota_rows', count() FROM qtarget_${N}"
 
+# Each quota below replaces the previous one: all quotas of a user are charged at once, so every
+# arm needs the only accumulator. Through a Distributed table whose two shards are both local, the
+# local-shard write is charged once as well (the doubled charge was 16000/12000).
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE dlocal_${N} (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE dist_${N} AS dlocal_${N}
+    ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), dlocal_${N}, rand());
+DROP QUOTA ${QUOTA_OK};
+CREATE QUOTA ${QUOTA_DIST} FOR INTERVAL 100 YEAR MAX WRITTEN BYTES = 12000 TO ${USER};
+"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "INSERT INTO dist_${N} SELECT number FROM numbers(1000) SETTINGS ${PINS}, ${DIST_PINS}"
+${CLICKHOUSE_CLIENT} -q "SELECT 'dist_quota_charged', written_bytes FROM system.quotas_usage WHERE quota_name = '${QUOTA_DIST}'"
+${CLICKHOUSE_CLIENT} -q "SELECT 'dist_quota_rows', count() FROM dlocal_${N}"
+
+# A dependent materialized view writes different rows, so its write stays charged: 8000 for the
+# Alias insert plus 8000 for the view. 24000 is the doubled Alias hop, 8000 a suppressed view.
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE qmvdst_${N} (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE qmvsrc_${N} (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW qmv_${N} TO qmvdst_${N} AS SELECT x FROM qmvsrc_${N};
+CREATE TABLE qmvalias_${N} ENGINE = Alias(qmvsrc_${N});
+DROP QUOTA ${QUOTA_DIST};
+CREATE QUOTA ${QUOTA_MV} FOR INTERVAL 100 YEAR MAX WRITTEN BYTES = 100000 TO ${USER};
+"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "INSERT INTO qmvalias_${N} SELECT number FROM numbers(1000) SETTINGS ${PINS}"
+${CLICKHOUSE_CLIENT} -q "SELECT 'mv_quota_charged', written_bytes FROM system.quotas_usage WHERE quota_name = '${QUOTA_MV}'"
+
 # Negative control: a quota the write genuinely exceeds must still reject it. Without this arm, a
 # fix that disabled quota accounting for Alias inserts altogether would pass every arm above.
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE ntarget_${N} (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE nalias_${N} ENGINE = Alias(ntarget_${N});
-DROP QUOTA ${QUOTA_OK};
+DROP QUOTA ${QUOTA_MV};
 CREATE QUOTA ${QUOTA_LOW} FOR INTERVAL 100 YEAR MAX WRITTEN BYTES = 4000 TO ${USER};
 "
 echo -n "quota_too_low "
