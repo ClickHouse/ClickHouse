@@ -22,7 +22,7 @@ void ConvertFunctionOrHasAnyData::visit(ASTFunction & function, ASTPtr &)
     if (function.name != "or")
         return;
 
-    std::unordered_map<String, std::shared_ptr<ASTLiteral>> identifier_to_patterns;
+    std::unordered_map<String, boost::intrusive_ptr<ASTLiteral>> identifier_to_patterns;
     for (auto & child : function.children)
     {
         if (auto * expr_list_fn = child->as<ASTExpressionList>())
@@ -58,7 +58,7 @@ void ConvertFunctionOrHasAnyData::visit(ASTFunction & function, ASTPtr &)
                     if (it == std::end(identifier_to_patterns))
                     {
                         it = identifier_to_patterns
-                                 .insert({identifier->getAliasOrColumnName(), std::make_shared<ASTLiteral>(Field{Array{}})})
+                                 .insert({identifier->getAliasOrColumnName(), make_intrusive<ASTLiteral>(Field{Array{}})})
                                  .first;
                         auto match = makeASTFunction("hasAny");
                         match->arguments->children.push_back(arguments[0]);
@@ -74,7 +74,7 @@ void ConvertFunctionOrHasAnyData::visit(ASTFunction & function, ASTPtr &)
 
             /// OR must have at least two arguments.
             if (unique_elems.size() == 1)
-                unique_elems.push_back(std::make_shared<ASTLiteral>(Field(false)));
+                unique_elems.push_back(make_intrusive<ASTLiteral>(Field(false)));
 
             expr_list_fn->children = std::move(unique_elems);
         }
