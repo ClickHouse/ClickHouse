@@ -5,6 +5,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -120,10 +121,14 @@ PreparedSubquery prepareSubquery(
             select_query->replaceDatabaseAndTable(table_id);
         }
 
-        select_expression_list->children.reserve(columns.size());
+        select_expression_list->children.reserve(std::max<size_t>(columns.size(), 1));
         /// manually substitute column names in place of asterisk
         for (const auto & column : columns)
             select_expression_list->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
+        /// A storage without ordinary columns, such as a parameterized view, is read as a single constant column,
+        /// as `buildQueryToReadColumnsFromTableExpression` does, so that `x IN table` keeps one column of the set.
+        if (select_expression_list->children.empty())
+            select_expression_list->children.emplace_back(make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
     }
     else
     {
