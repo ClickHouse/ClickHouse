@@ -323,8 +323,10 @@ This makes settings like `string_serialization_version` effective.
 - `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
 listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
-- `with_subcolumns` - Everything `with_missing_columns` records, plus serialization information
-for named subcolumns, such as declared paths in `JSON`.
+- `with_subcolumns` - Everything `with_missing_columns` records (so `skip_empty_columns_on_insert`
+keeps working), plus serialization information for nested subcolumns: named subcolumns, such as
+declared paths in `JSON`, and the recursive metadata carried through `Array` and `Nullable`,
+such as sparse elements inside `Array(...)` or `Nullable(Tuple(...))`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
