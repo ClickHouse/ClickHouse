@@ -904,6 +904,66 @@ def test_create_without_engine_arguments_no_database_location(started_cluster):
     assert "cannot tell where table" in str(exc.value), str(exc.value)
 
 
+def test_create_without_engine(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(
+        DatabaseInput={
+            "Name": root_namespace,
+            "LocationUri": f"s3://warehouse-glue/{root_namespace}",
+        }
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` "
+        "(id Int64, val String) SETTINGS allow_experimental_insert_into_iceberg = 1",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1, 'a');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "1\ta\n"
+
+
+def test_create_without_engine_no_database_location(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_no_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(DatabaseInput={"Name": root_namespace})
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(Exception) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, val String)",
+            settings={"allow_experimental_database_glue_catalog": 1},
+        )
+    assert "cannot tell where table" in str(exc.value), str(exc.value)
+    assert table_name not in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
 def test_create_gzip_metadata(started_cluster):
     # Regression for issue #109801: a catalog-backed CREATE TABLE from ClickHouse
     # with gzip metadata compression exercises IcebergMetadata::createInitial and

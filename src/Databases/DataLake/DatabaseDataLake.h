@@ -87,6 +87,8 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
+    String getDefaultTableEngineName(const String & name) const override;
+
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
 
     void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
@@ -162,6 +164,10 @@ private:
         const DataLake::TableMetadata & table_metadata,
         bool lightweight) const;
 
+    DataLake::TableMetadata getNewTableMetadata(
+        const DatabaseDataLakeSettings & settings,
+        const DataLake::ICatalog & catalog,
+        const String & name) const;
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot

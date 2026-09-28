@@ -42,6 +42,7 @@
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -867,15 +868,14 @@ void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageCon
     }
 }
 
-ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
+DataLake::TableMetadata DatabaseDataLake::getNewTableMetadata(
+    const DatabaseDataLakeSettings & settings,
+    const DataLake::ICatalog & catalog,
+    const String & name) const
 {
-    const auto settings_version = database_settings.get();
-    const DatabaseDataLakeSettings & settings = *settings_version;
-
-    auto catalog = getCatalog();
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
-    auto location = catalog->getDefaultTableLocation(namespace_name, table_name);
+    auto location = catalog.getDefaultTableLocation(namespace_name, table_name);
     if (!location)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -889,6 +889,65 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
         table_metadata.withForceAddBucket();
     table_metadata.setLocation(*location);
+    return table_metadata;
+}
+
+String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
+{
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
+    auto catalog = getCatalog();
+    const auto table_metadata = getNewTableMetadata(settings, *catalog, name);
+    const auto table_format = catalog->getTableFormat(table_metadata);
+    const auto storage_type = table_metadata.getStorageType();
+
+    if (table_format == DataLake::DataLakeTableFormat::ICEBERG)
+    {
+        switch (storage_type)
+        {
+            case DatabaseDataLakeStorageType::S3:
+                return IcebergS3Definition::storage_engine_name;
+            case DatabaseDataLakeStorageType::Azure:
+                return IcebergAzureDefinition::storage_engine_name;
+            case DatabaseDataLakeStorageType::HDFS:
+                return IcebergHDFSDefinition::storage_engine_name;
+            case DatabaseDataLakeStorageType::Local:
+                return IcebergLocalDefinition::storage_engine_name;
+            case DatabaseDataLakeStorageType::Other:
+                break;
+        }
+    }
+    else if (table_format == DataLake::DataLakeTableFormat::DELTA)
+    {
+        switch (storage_type)
+        {
+            case DatabaseDataLakeStorageType::S3:
+                return DeltaLakeDefinition::storage_engine_name;
+            case DatabaseDataLakeStorageType::Azure:
+                return DeltaLakeAzureDefinition::storage_engine_name;
+            case DatabaseDataLakeStorageType::Local:
+                return DeltaLakeLocalDefinition::storage_engine_name;
+            case DatabaseDataLakeStorageType::HDFS:
+            case DatabaseDataLakeStorageType::Other:
+                break;
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot choose a table engine for table {} in database {}: its catalog creates {} tables in {} ({}). "
+        "Specify the table engine explicitly",
+        name, backQuoteIfNeed(getDatabaseName()), table_format, storage_type, table_metadata.getLocation());
+}
+
+ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
+{
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
+    auto catalog = getCatalog();
+    const auto table_metadata = getNewTableMetadata(settings, *catalog, name);
 
     const auto location_storage_type = table_metadata.getStorageType();
     if (toDataLakeStorageType(engine_storage_type) != location_storage_type)
@@ -896,7 +955,7 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
             ErrorCodes::BAD_ARGUMENTS,
             "Catalog of database {} places table {} in {} ({}), while its table engine writes to {}. "
             "Use the table engine variant for {}",
-            backQuoteIfNeed(getDatabaseName()), name, location_storage_type, *location,
+            backQuoteIfNeed(getDatabaseName()), name, location_storage_type, table_metadata.getLocation(),
             toDataLakeStorageType(engine_storage_type), location_storage_type);
 
     return buildTableEngineArgs(settings, *catalog, table_metadata, /* lightweight */false).args;

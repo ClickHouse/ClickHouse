@@ -499,7 +499,7 @@ private:
     static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
     {
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        return std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+        return std::static_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
     }
 #endif
 

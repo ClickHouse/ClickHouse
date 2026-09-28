@@ -271,7 +271,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
                 /// For some reason glue allow to have empty tables
                 /// without any columns. They are also empty in object
                 /// storage, so just ignore them.
-                if (table.GetStorageDescriptor().GetColumns().empty())
+                if (table.GetStorageDescriptor().GetColumns().empty() && !isReadableGlueTable(table))
                     continue;
 
                 if (limit != 0 && result.size() >= limit)
