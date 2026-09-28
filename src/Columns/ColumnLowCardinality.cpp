@@ -355,7 +355,7 @@ void batchSerializeLowCardinalityString(
     for (size_t row = 0; row < memories.size(); ++row)
     {
         const size_t index = data[row];
-        const size_t begin = index == 0 ? 0 : offsets[index - 1];
+        const size_t begin = offsets[static_cast<ssize_t>(index) - 1];
         const size_t value_size = offsets[index] - begin;
         const size_t stored_size = value_size + zero_byte;
         char * memory = memories[row];
