@@ -86,13 +86,17 @@ void executeNaiveBayes(
 
     const String dictionary_name{arguments[0].column->getDataAt(0)};
 
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+    const auto & external_loader = context->getExternalDictionariesLoader();
 
+    /// Check access before loading the dictionary, because loading contacts the dictionary source.
     if (!access_checked.load(std::memory_order_relaxed))
     {
-        context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+        auto dictionary_id = external_loader.getDictionaryID(dictionary_name, context);
+        context->checkAccess(AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
         access_checked.store(true, std::memory_order_relaxed);
     }
+
+    auto dictionary = external_loader.getDictionary(dictionary_name, context);
 
     const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
     if (!nb_dict)

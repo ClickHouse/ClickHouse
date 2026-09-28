@@ -97,15 +97,17 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+        const auto & external_loader = context->getExternalDictionariesLoader();
 
+        /// Check access before loading the dictionary, because loading contacts the dictionary source.
         if (!access_checked)
         {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            auto dictionary_id = external_loader.getDictionaryID(dictionary_name, context);
+            context->checkAccess(AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
             access_checked = true;
         }
 
-        return dict;
+        return external_loader.getDictionary(dictionary_name, context);
     }
 
     std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)

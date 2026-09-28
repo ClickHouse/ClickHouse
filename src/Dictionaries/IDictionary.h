@@ -103,7 +103,12 @@ public:
     std::string getDatabaseOrNoDatabaseTag() const
     {
         std::lock_guard lock{mutex};
+        return getDatabaseOrNoDatabaseTag(dictionary_id);
+    }
 
+    /// The database name used for access checks of the dictionary with the given ID.
+    static std::string getDatabaseOrNoDatabaseTag(const StorageID & dictionary_id)
+    {
         if (!dictionary_id.database_name.empty())
             return dictionary_id.database_name;
 

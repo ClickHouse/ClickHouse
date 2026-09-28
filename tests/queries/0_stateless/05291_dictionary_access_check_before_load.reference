@@ -1,0 +1,59 @@
+NOT_LOADED
+--- no grants
+SELECT * FROM dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+DESCRIBE TABLE dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictGet('db.d', 'value', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictHas('db.d', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT count() FROM numbers(1) GROUP BY dictGet('db.d', 'value', number) SETTINGS enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+SELECT * FROM dictionary('d')
+ACCESS_DENIED
+NOT_LOADED
+DESCRIBE TABLE dictionary('d')
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictGet('d', 'value', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictHas('d', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+--- SELECT is enough for the dictionary table function, but not for dictGet
+SELECT dictGet('d', 'value', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+DESCRIBE TABLE dictionary('d')
+id	UInt64					
+value	String					
+SELECT * FROM dictionary('d')
+1	a
+LOADED
+--- dictGet
+NOT_LOADED
+SELECT dictGet('d', 'value', toUInt64(1))
+a
+LOADED
+NOT_LOADED
+SELECT dictHas('db.d', toUInt64(1))
+1
+LOADED
+NOT_LOADED
+SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
+1
+LOADED
+NOT_LOADED
+SELECT * FROM dictionary('d')
+1	a
+LOADED
