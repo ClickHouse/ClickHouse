@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# A view with `SQL SECURITY DEFINER` or `NONE` is read through an opaque step, so the invoker's
-# expressions and predicates never see the rows the view drops.
+# A view with `SQL SECURITY DEFINER` or `NONE` that hides rows is read through an opaque step,
+# so the invoker's expressions and predicates never see the rows the view drops.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -94,7 +94,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT secret FROM $db.definer_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
     SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
 
-echo "--- every view that runs with other privileges is sealed"
+echo "--- only a view that runs with other privileges and can hide rows is sealed"
 for view in definer_view none_view invoker_view projection_view policy_view; do
     echo -n "$view: "
     ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.$view WHERE secret = 'x')"

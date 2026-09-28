@@ -6364,7 +6364,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
     /// Inlining would make a sealed view transparent to all optimizations.
-    if (StorageView::isSealed(*storage_snapshot->metadata))
+    if (view->isSealed(*storage_snapshot->metadata, scope.context))
         return;
 
     auto storage_id = storage->getStorageID();

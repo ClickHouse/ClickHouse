@@ -816,7 +816,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Rewriting a sealed view into a subquery would make it transparent to the optimizations below,
     /// so it is read as a table. A parameterized view needs the rewrite to substitute its parameters.
-    if (view && !view->isParameterizedView() && StorageView::isSealed(*metadata_snapshot))
+    if (view && !view->isParameterizedView() && view->isSealed(*metadata_snapshot, context))
         view = nullptr;
 
     if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())

@@ -21,12 +21,11 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #include <ranges>
 
@@ -47,8 +46,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -400,25 +397,6 @@ public:
         return {&view_plan};
     }
 
-    /// The inner plan ships as a self-contained plan, sets included, so every step of it must be serializable.
-    /// Its row policies and filters travel inside the plan, so the remote side runs it with the same semantics.
-    bool isSerializable() const override { return findNonSerializableStep(view_plan.getRootNode()) == nullptr; }
-
-    void serialize(Serialization & ctx) const override
-    {
-        writeBinary(show_plan, ctx.out);
-        view_plan.serialize(ctx.out, ctx.version);
-    }
-
-    static QueryPlanStepPtr deserialize(Deserialization & ctx)
-    {
-        bool show_plan;
-        readBinary(show_plan, ctx.in);
-        auto view_plan = QueryPlan::makeSets(QueryPlan::deserialize(ctx.in, ctx.context, ctx.max_type_complexity), ctx.context);
-        return std::unique_ptr<ReadFromSealedViewStep>(
-            new ReadFromSealedViewStep(std::move(view_plan), QueryPlanOptimizationSettings(ctx.context), show_plan));
-    }
-
     void describePipeline(FormatSettings & settings) const override
     {
         if (!show_plan)
@@ -434,7 +412,7 @@ public:
     }
 
 private:
-    /// For `clone` and `deserialize`: the plan is already optimized.
+    /// For `clone`: the plan is already optimized.
     ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_, bool show_plan_)
         : ISourceStep(view_plan_.getCurrentHeader())
         , view_plan(std::move(view_plan_))
@@ -461,12 +439,6 @@ bool canCreateSuchView(const StorageInMemoryMetadata & metadata, const ContextPt
     return *metadata.definer == context->getUserName() || context->getAccess()->isGranted(AccessType::SET_DEFINER, *metadata.definer);
 }
 
-}
-
-void registerReadFromSealedViewStep(QueryPlanStepRegistry & registry);
-void registerReadFromSealedViewStep(QueryPlanStepRegistry & registry)
-{
-    registry.registerStep("ReadFromSealedView", ReadFromSealedViewStep::deserialize);
 }
 
 VirtualColumnsDescription StorageView::createVirtuals()
@@ -534,7 +506,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
 
     /// A sealed view is read through an opaque step, which parallel replicas cannot look into.
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    if (isSealed(*metadata_snapshot))
+    if (isSealed(*metadata_snapshot, context))
         return nullptr;
 
     auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
@@ -644,14 +616,28 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     return find_storage(inner_query_tree.get());
 }
 
-bool StorageView::isSealed(const StorageInMemoryMetadata & metadata)
+bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
 {
-    return metadata.sql_security_type == SQLSecurityType::DEFINER || metadata.sql_security_type == SQLSecurityType::NONE;
+    if (metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE)
+        return false;
+
+    /// A row policy of the invoker on the view itself hides rows too, even though it is applied above the read.
+    if (getEffectiveRowPolicyFilter(*this, context))
+        return true;
+
+    const auto & inner_query = metadata.getSelectQuery().inner_query;
+    auto storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
+    if (!storage || !storage->isMergeTree()
+        || inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>().where())
+        return true;
+
+    /// A row policy of the view's context on the table is applied inside the read, so the projection still hides rows.
+    return getEffectiveRowPolicyFilter(*storage, metadata.getSQLSecurityOverriddenContext(context)) != nullptr;
 }
 
 StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
 {
-    if (is_parameterized_view || isSealed(*snapshot->metadata))
+    if (is_parameterized_view || isSealed(*snapshot->metadata, context))
     {
         return nullptr;
     }
@@ -685,7 +671,7 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    const bool sealed = isSealed(*storage_snapshot->metadata);
+    const bool sealed = isSealed(*storage_snapshot->metadata, context);
     auto view_context = getViewContext(context, storage_snapshot, this);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
