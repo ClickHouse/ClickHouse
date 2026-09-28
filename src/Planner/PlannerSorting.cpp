@@ -63,12 +63,14 @@ std::pair<Field, std::optional<IntervalKind>> extractWithFillValueWithIntervalKi
 
 /// `FillingTransform` turns a numeric `FROM` / `TO` bound of a `DateTime64` sort key (a number of seconds) into the
 /// ticks of a plain `Decimal64`, which knows nothing of the calendar window, and then writes the filled values into the
-/// `DateTime64` column. Convert such a bound here, where the query settings are known, as the value it materializes:
-/// the same `date_time_overflow_behavior` outcome as `CAST` gives for the same constant (see `dateTime64OutOfWindow`).
+/// `DateTime64` column. A `Date` / `Date32` bound is worse off: its raw day number would be taken as a number of seconds.
+/// Convert such a bound here, where the query settings are known, as the value it materializes: the same
+/// `date_time_overflow_behavior` outcome as `CAST` gives for the same constant (see `dateTime64OutOfWindow`).
 /// The bound then carries the type of the sort key, which `FillingTransform` accepts as is.
 void convertDateTime64FillBound(Field & value, DataTypePtr & value_type, const DataTypePtr & sort_key_type, const FormatSettings & format_settings)
 {
-    if (value.isNull() || !value_type || (!isNumber(value_type) && !isDecimal(value_type)))
+    if (value.isNull() || !value_type
+        || (!isNumber(value_type) && !isDecimal(value_type) && !isDateOrDate32(value_type) && !isDateTime(value_type)))
         return;
 
     value = convertFieldToTypeOrThrow(value, *sort_key_type, value_type.get(), format_settings, /*convert_inexact_floats=*/true);
