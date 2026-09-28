@@ -66,11 +66,29 @@ namespace Setting
 namespace
 {
 
+/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
+struct SubcolumnSupportAnswers
+{
+    bool all_transformers;
+    std::optional<bool> tuple_element_only;
+};
+
+using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
+
+SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, SubcolumnSupportCache & cache)
+{
+    auto it = cache.find(&storage);
+    if (it == cache.end())
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+    return it->second;
+}
+
 struct ColumnContext
 {
     NameAndTypePair column;
     TableExpressionNodePtr column_source;
     ContextPtr context;
+    SubcolumnSupportCache & subcolumn_support_cache;
 };
 
 /// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
@@ -518,7 +536,7 @@ bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const
 /// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:
 /// an unnamed tuple names its elements "1", "2", ... while a source reading them from a file matches
 /// the flattened `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
-bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple)
+bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple, SubcolumnSupportCache & cache)
 {
     if (tuple.hasExplicitNames())
         return false;
@@ -527,7 +545,7 @@ bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const
     if (!storage)
         return false;
 
-    return !storage->supportsOptimizationToSubcolumns();
+    return !getSubcolumnSupportAnswers(*storage, cache).all_transformers;
 }
 
 template <typename DataType>
@@ -560,7 +578,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, *subcolumn_name)
             || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
+            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete, ctx.subcolumn_support_cache))
             return;
 
     /// ``Tuple(`t.a` UInt64, t Tuple(a UInt64))`` resolves `c.t.a` to the sibling, not to `t`.`a`.
@@ -1195,26 +1213,13 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
-struct SubcolumnSupportAnswers
-{
-    bool all_transformers;
-    std::optional<bool> tuple_element_only;
-};
-
-using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
-
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
-    auto it = cache.find(&storage);
-    if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
-
-    auto & answers = it->second;
+    auto & answers = getSubcolumnSupportAnswers(storage, cache);
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)
@@ -1735,7 +1740,7 @@ public:
             if (transformer_it != node_transformers.end()
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), column_source, getContext()};
+                ColumnContext ctx{std::move(column), column_source, getContext(), subcolumn_support_cache};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1760,7 +1765,7 @@ public:
                 && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_source.get())))
             {
                 auto result_type = chain_func->getResultType();
-                ColumnContext ctx{std::move(column), chain_source, getContext()};
+                ColumnContext ctx{std::move(column), chain_source, getContext(), subcolumn_support_cache};
                 it->second(node, *chain_func, ctx, intermediates);
 
                 if (!result_type->equals(*node->getResultType()))

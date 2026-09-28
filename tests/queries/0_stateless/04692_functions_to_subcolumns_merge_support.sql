@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS mt1;
 DROP TABLE IF EXISTS mt2;
 DROP TABLE IF EXISTS f1;
 DROP TABLE IF EXISTS f2;
+DROP TABLE IF EXISTS mt_u;
+DROP TABLE IF EXISTS f_u;
 DROP TABLE IF EXISTS m_all;
 DROP TABLE IF EXISTS m_mixed;
 DROP TABLE IF EXISTS m_empty;
@@ -78,6 +80,24 @@ WHERE explain ILIKE '%size0%';
 
 SELECT 'mixed capability, values', tupleElement(t, 'a'), length(arr) FROM f2;
 
+-- An element of an unnamed tuple is rewritten to its ordinal subcolumn only where the storage serves
+-- subcolumns itself, not for a File that matches element names against the file schema. In one query
+-- exactly one side is rewritten, in either order.
+CREATE TABLE mt_u (id UInt64, ut Tuple(UInt64, UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mt_u VALUES (1, (10, 20));
+CREATE TABLE f_u (id UInt64, ut Tuple(UInt64, UInt64)) ENGINE = File(CSV);
+INSERT INTO f_u VALUES (2, (30, 40));
+
+SELECT 'unnamed tuple, supporting side first', count()
+FROM (EXPLAIN QUERY TREE SELECT tupleElement(ut, 1) FROM mt_u UNION ALL SELECT tupleElement(ut, 1) FROM f_u)
+WHERE explain ILIKE '%ut.1%';
+
+SELECT 'unnamed tuple, opting-out side first', count()
+FROM (EXPLAIN QUERY TREE SELECT tupleElement(ut, 1) FROM f_u UNION ALL SELECT tupleElement(ut, 1) FROM mt_u)
+WHERE explain ILIKE '%ut.1%';
+
+SELECT 'unnamed tuple, values', x FROM (SELECT tupleElement(ut, 1) AS x FROM mt_u UNION ALL SELECT tupleElement(ut, 1) FROM f_u) ORDER BY x;
+
 -- An empty match set has no child that opts out, so the answer is vacuously true.
 CREATE TABLE m_empty AS mt1 ENGINE = Merge(currentDatabase(), '^nomatch_zzz$');
 
@@ -101,6 +121,8 @@ DROP TABLE m_nested;
 DROP TABLE m_empty;
 DROP TABLE m_mixed;
 DROP TABLE m_all;
+DROP TABLE f_u;
+DROP TABLE mt_u;
 DROP TABLE f2;
 DROP TABLE f1;
 DROP TABLE mt2;

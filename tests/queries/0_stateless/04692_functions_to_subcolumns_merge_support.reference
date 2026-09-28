@@ -12,6 +12,10 @@ tuple element first, length not rewritten	0
 length first, tuple rewritten	1
 length first, length not rewritten	0
 mixed capability, values	10	3
+unnamed tuple, supporting side first	1
+unnamed tuple, opting-out side first	1
+unnamed tuple, values	10
+unnamed tuple, values	30
 empty match set, rewritten	1
 empty match set, values	0
 nested merge, rewritten	1
