@@ -143,8 +143,12 @@ private:
     /// loop's alignment. The value comes from the index, not an accumulator: ranges here are short, so
     /// the vectoriser's scalar remainder dominates and independent values fill it better. `iotaWithStep`
     /// keeps an accumulator because its caller generates whole blocks, where a multiply would cost more.
+    /// For a signed `T` with a negative step, `idx * step` and the sum are evaluated in `size_t`, so
+    /// the two's-complement wrap is what yields the right value once it is cast back to `T`. The
+    /// element count is computed in `__int128_t` by the callers, so the mathematical result fits `T`.
     template <typename T>
-    static NO_INLINE void fillConstStartStep(T * out, size_t n, T start, T step)
+    static NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW
+    void fillConstStartStep(T * out, size_t n, T start, T step)
     {
         /// Same as in `iota`: a portable AArch64 build keeps LLVM's default interleave factor of 2,
         /// while x86-64-v3 is already at 4.
@@ -156,6 +160,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStartStep(
             const IColumn * end_arg, const T start, const T step, const size_t input_rows_count) const
     {
@@ -279,6 +284,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStart(
             const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count) const
     {

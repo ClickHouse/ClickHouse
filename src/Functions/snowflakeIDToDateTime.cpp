@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -76,6 +77,8 @@ public:
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
+            /// The epoch is an arbitrary `UInt64` from the caller, so adding it to the extracted
+            /// timestamp is modular, as everywhere else in ClickHouse arithmetic.
         }
 
         auto col_res = ColumnDateTime::create(input_rows_count);
@@ -85,13 +88,13 @@ public:
         {
             const auto & src_data = col_src_non_const->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_data[i] >> time_shift) + epoch) / 1000);
+                res_data[i] = static_cast<UInt32>(common::addIgnoreOverflow(src_data[i] >> time_shift, epoch) / 1000);
         }
         else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
         {
             UInt64 src_val = col_src_const->getValue<UInt64>();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_val >> time_shift) + epoch) / 1000);
+                res_data[i] = static_cast<UInt32>(common::addIgnoreOverflow(src_val >> time_shift, epoch) / 1000);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
@@ -147,6 +150,8 @@ public:
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
+            /// The epoch is an arbitrary `UInt64` from the caller, so adding it to the extracted
+            /// timestamp is modular, as everywhere else in ClickHouse arithmetic.
         }
 
         auto col_res = ColumnDateTime64::create(input_rows_count, 3);
@@ -156,13 +161,13 @@ public:
         {
             const auto & src_data = col_src_non_const->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_data[i] >> time_shift) + epoch;
+                res_data[i] = common::addIgnoreOverflow(src_data[i] >> time_shift, epoch);
         }
         else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
         {
             UInt64 src_val = col_src_const->getValue<UInt64>();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_val >> time_shift) + epoch;
+                res_data[i] = common::addIgnoreOverflow(src_val >> time_shift, epoch);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
