@@ -16,7 +16,6 @@
 #if defined(OS_LINUX)
 #include <sys/inotify.h>
 #elif defined(OS_DARWIN)
-#include <Common/FailPoint.h>
 #include <map>
 #include <set>
 #include <vector>
@@ -40,13 +39,6 @@ namespace FileLogSetting
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_max;
 }
-
-#if defined(OS_DARWIN)
-namespace FailPoints
-{
-    extern const char file_log_directory_watcher_pause_after_listing[];
-}
-#endif
 
 #if defined(OS_LINUX)
 static constexpr int buffer_size = 4096;
@@ -199,34 +191,20 @@ void DirectoryWatcherBase::watchFunc()
     auto scan = [this](std::map<std::string, FileState> & out)
     {
         out.clear();
-        std::vector<std::string> names;
         for (const auto & entry : std::filesystem::directory_iterator(path))
         {
-            if (entry.is_regular_file())
-                names.push_back(entry.path().filename().string());
-        }
-
-        FailPointInjection::pauseFailPoint(FailPoints::file_log_directory_watcher_pause_after_listing);
-
-        bool complete = true;
-        for (const auto & name : names)
-        {
-            const auto file_path = std::filesystem::path(path) / name;
-            struct stat st{};
-            if (::stat(file_path.c_str(), &st) != 0)
-            {
-                if (errno == ENOENT)
-                    complete = false;
+            if (!entry.is_regular_file())
                 continue;
-            }
+            struct stat st{};
+            if (::stat(entry.path().c_str(), &st) != 0)
+                continue;
             out.emplace(
-                name,
+                entry.path().filename().string(),
                 FileState{
                     static_cast<UInt64>(st.st_ino),
                     static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
                     static_cast<Int64>(st.st_size)});
         }
-        return complete;
     };
 
     /// A kqueue wakes the loop promptly. The directory fd fires on structural changes (an entry
@@ -337,37 +315,6 @@ void DirectoryWatcherBase::watchFunc()
         }
     };
 
-    /// Pre-existing files are loaded by StorageFileLog's own directory scan; the watcher, like
-    /// inotify, reports only subsequent changes. So seed the snapshot without emitting events. A
-    /// transient failure here (e.g. the directory being briefly recreated) must not permanently kill
-    /// this one-shot task, so we log and retry rather than return - StorageFileLog::loadFiles has
-    /// already captured the initial file set, and retrying keeps the baseline correct (seeding from an
-    /// empty snapshot would re-emit every pre-existing file as ADDED and re-read it from offset 0).
-    std::map<std::string, FileState> snapshot;
-    while (!stopped)
-    {
-        try
-        {
-            scan(snapshot);
-            sync_file_watches(snapshot);
-            break;
-        }
-        catch (const std::exception & e)
-        {
-            LOG_WARNING(getLogger("FileLogDirectoryWatcher"), "Failed to seed watched directory {}, will retry: {}", path, e.what());
-            pollfd stop_wait{.fd = event_pipe.fds_rw[0], .events = POLLIN, .revents = 0};
-            poll(&stop_wait, 1, static_cast<int>(milliseconds_to_wait)); /// interruptible wait before retrying
-        }
-    }
-    if (stopped)
-        return;
-
-    pollfd pfds[2];
-    pfds[0].fd = event_pipe.fds_rw[0];
-    pfds[0].events = POLLIN;
-    pfds[1].fd = kq;
-    pfds[1].events = POLLIN;
-
     /// Names whose watched inode was unlinked (NOTE_DELETE), accumulated across drains. Kept outside
     /// the loop so a pass that is retried (e.g. a transient scan/watch failure) does not lose the
     /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
@@ -417,6 +364,39 @@ void DirectoryWatcherBase::watchFunc()
         return result;
     };
 
+    /// Pre-existing files are loaded by StorageFileLog's own directory scan; the watcher, like
+    /// inotify, reports only subsequent changes. So seed the snapshot without emitting events. A
+    /// transient failure here (e.g. the directory being briefly recreated) must not permanently kill
+    /// this one-shot task, so we log and retry rather than return - StorageFileLog::loadFiles has
+    /// already captured the initial file set, and retrying keeps the baseline correct (seeding from an
+    /// empty snapshot would re-emit every pre-existing file as ADDED and re-read it from offset 0).
+    std::map<std::string, FileState> snapshot;
+    while (!stopped)
+    {
+        try
+        {
+            scan(snapshot);
+            sync_file_watches(snapshot);
+            if (drain_events().structural)
+                continue;
+            break;
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(getLogger("FileLogDirectoryWatcher"), "Failed to seed watched directory {}, will retry: {}", path, e.what());
+            pollfd stop_wait{.fd = event_pipe.fds_rw[0], .events = POLLIN, .revents = 0};
+            poll(&stop_wait, 1, static_cast<int>(milliseconds_to_wait)); /// interruptible wait before retrying
+        }
+    }
+    if (stopped)
+        return;
+
+    pollfd pfds[2];
+    pfds[0].fd = event_pipe.fds_rw[0];
+    pfds[0].events = POLLIN;
+    pfds[1].fd = kq;
+    pfds[1].events = POLLIN;
+
     bool rescan_without_waiting = false;
     while (!stopped)
     {
@@ -439,18 +419,19 @@ void DirectoryWatcherBase::watchFunc()
         std::map<std::string, FileState> current;
         try
         {
-            const bool complete = scan(current);
-            /// Listing then `stat` is not atomic with a rename, so a scan the directory changed under is not diffed.
-            const auto drained = drain_events();
-            /// The drain consumed wakeups that the scan may not reflect.
-            rescan_without_waiting = drained.any || !complete;
-            if (!complete || drained.structural)
-                continue;
+            scan(current);
             /// Install/refresh the per-file watches for the new set BEFORE emitting any events. A
             /// transient failure here (e.g. EMFILE) then just retries the whole pass with nothing
             /// queued and StorageFileLog left untouched, instead of stranding a half-emitted batch
             /// behind a dead watcher. It also drops any file that vanished mid-scan from `current`.
             sync_file_watches(current);
+            /// Listing, `stat` and opening the watches are not atomic with a rename, which would be
+            /// diffed as REMOVED + ADDED, so a pass the directory changed under is discarded.
+            const auto drained = drain_events();
+            /// The drain consumed wakeups that the pass may not reflect.
+            rescan_without_waiting = drained.any;
+            if (drained.structural)
+                continue;
         }
         catch (const std::exception & e)
         {
