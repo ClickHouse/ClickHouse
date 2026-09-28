@@ -218,13 +218,8 @@
               "pages": [
                 "concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
                 "concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
-                "concepts/features/connect-to-clickhouse/native-tools/web-terminal"
-              ]
-            },
-            {
-              "group": "AI clients",
-              "pages": [
-                "concepts/features/connect-to-clickhouse/ai-clients/mcp"
+                "concepts/features/connect-to-clickhouse/native-tools/web-terminal",
+                "concepts/features/connect-to-clickhouse/native-tools/mcp"
               ]
             },
             {
@@ -251,6 +246,13 @@
                   ]
                 },
                 "concepts/features/connect-to-clickhouse/protocols/ssh"
+              ]
+            },
+            {
+              "group": "Prometheus",
+              "pages": [
+                "concepts/features/connect-to-clickhouse/prometheus/index",
+                "concepts/features/connect-to-clickhouse/prometheus/metrics"
               ]
             },
             {

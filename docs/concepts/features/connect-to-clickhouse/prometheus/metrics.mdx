@@ -1,14 +1,14 @@
 ---
 description: 'Prometheus metrics endpoint in ClickHouse: expose server metrics on a dedicated port for scraping.'
 sidebarTitle: 'Prometheus metrics endpoint'
-slug: /guides/oss/deployment-and-scaling/monitoring/prometheus-metrics
+slug: /concepts/features/connect-to-clickhouse/prometheus/metrics
 title: 'Prometheus metrics endpoint'
 doc_type: 'reference'
 ---
 
 ClickHouse exposes its own metrics on a dedicated port in the Prometheus text format, so that a Prometheus server can scrape them.
 
-To store Prometheus metrics in ClickHouse and query them with PromQL, see [Prometheus HTTP API and PromQL](/integrations/connectors/data-integrations/prometheus) instead.
+To store Prometheus metrics in ClickHouse and query them with PromQL, see [Prometheus HTTP API and PromQL](/concepts/features/connect-to-clickhouse/prometheus) instead.
 
 <Note>
 If you're using ClickHouse Cloud, you can expose metrics to Prometheus using the [Prometheus Integration](/products/cloud/features/monitoring/prometheus).

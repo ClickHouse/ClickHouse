@@ -20,12 +20,16 @@
     "source": "/concepts/features/interfaces/web-terminal"
   },
   {
-    "destination": "/concepts/features/connect-to-clickhouse/ai-clients/mcp",
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/mcp",
     "source": "/concepts/features/interfaces/mcp"
   },
   {
-    "destination": "/concepts/features/connect-to-clickhouse/ai-clients/mcp",
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/mcp",
     "source": "/interfaces/mcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/mcp",
+    "source": "/concepts/features/connect-to-clickhouse/ai-clients/mcp"
   },
   {
     "destination": "/concepts/features/connect-to-clickhouse/drivers/adbc",
@@ -38,6 +42,10 @@
   {
     "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
     "source": "/concepts/features/interfaces/odbc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
+    "source": "/concepts/features/interfaces/odbc/index"
   },
   {
     "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
@@ -116,20 +124,32 @@
     "source": "/concepts/features/interfaces/third-party"
   },
   {
+    "destination": "/integrations",
+    "source": "/concepts/features/interfaces/third-party/index"
+  },
+  {
     "destination": "/concepts/features/operations/insert/schema-inference",
     "source": "/concepts/features/interfaces/schema-inference"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics",
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
     "source": "/concepts/features/interfaces/prometheus-metrics"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics",
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
     "source": "/interfaces/prometheus-metrics"
   },
   {
-    "destination": "/integrations/connectors/data-integrations/prometheus",
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
     "source": "/concepts/features/interfaces/prometheus"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
+    "source": "/integrations/connectors/data-integrations/prometheus"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
+    "source": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics"
   },
   {
     "destination": "/ar/integrations/language-clients/java/jdbc",
@@ -6040,6 +6060,10 @@
     "source": "/interfaces/odbc"
   },
   {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
+    "source": "/interfaces/odbc/index"
+  },
+  {
     "destination": "/concepts/features/connect-to-clickhouse",
     "source": "/interfaces/overview"
   },
@@ -6048,7 +6072,7 @@
     "source": "/interfaces/postgresql"
   },
   {
-    "destination": "/integrations/connectors/data-integrations/prometheus",
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
     "source": "/interfaces/prometheus"
   },
   {
@@ -6078,6 +6102,10 @@
   {
     "destination": "/integrations",
     "source": "/interfaces/third-party/"
+  },
+  {
+    "destination": "/integrations",
+    "source": "/interfaces/third-party/index"
   },
   {
     "destination": "/integrations/language-clients/third-party/client-libraries",

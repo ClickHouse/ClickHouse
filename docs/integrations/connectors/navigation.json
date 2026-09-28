@@ -197,7 +197,6 @@
       "group": "Data integrations",
       "pages": [
         "integrations/connectors/tools/data-integration-index",
-        "integrations/connectors/data-integrations/prometheus",
         "integrations/connectors/data-integrations/integrations/retool",
         "integrations/connectors/data-integrations/integrations/easypanel",
         "integrations/connectors/data-integrations/integrations/microsoft-fabric",
