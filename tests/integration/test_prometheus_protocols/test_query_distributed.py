@@ -80,6 +80,7 @@ def start_cluster():
         )
         node.query("GRANT SELECT ON *.* TO prom_plan_pinned")
         node.query("GRANT READ ON REMOTE TO prom_plan_pinned")
+        node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO prom_plan_pinned")
         yield cluster
     finally:
         cluster.shutdown()
@@ -142,6 +143,19 @@ def test_the_read_never_ships_a_plan_to_the_shards(params, promql):
         )
     )
     assert answer == query(LOCAL, promql)
+
+
+@pytest.mark.parametrize(
+    "user, settings",
+    [("default", {"serialize_query_plan": 1}), ("prom_plan_pinned", {})],
+    ids=["asked_for_by_the_query", "const_in_the_profile"],
+)
+def test_the_table_function_never_ships_a_plan_to_the_shards(user, settings):
+    """The same pin on the table-function path."""
+    sql = f"SELECT * FROM prometheusQuery({{}}, 'sum by (job) (m)', {EVALUATION_TIME}) ORDER BY ALL"
+    distributed = node.query(sql.format("ts_dist"), user=user, settings=settings)
+    assert distributed == node.query(sql.format("ts_all"))
+    assert len(distributed.splitlines()) == 2, distributed
 
 
 def test_sharding_key_splits_the_metric_across_both_shards():

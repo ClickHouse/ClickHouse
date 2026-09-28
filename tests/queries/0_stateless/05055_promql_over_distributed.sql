@@ -60,6 +60,8 @@ SELECT * FROM prometheusQuery(ts_dist, 'rate(m[40s])', 140) ORDER BY ALL;
 
 SELECT '--- sum by (job): one row per job, each totalling series from both shards ---';
 SELECT * FROM prometheusQuery(ts_dist, 'sum by (job) (m)', 140) ORDER BY ALL;
+-- A shipped plan would resolve `ts_local` on the initiator, where it does not exist: the shards get the query text.
+SELECT * FROM prometheusQuery(ts_dist, 'sum by (job) (m)', 140) ORDER BY ALL SETTINGS serialize_query_plan = 1;
 
 SELECT '--- sum(): a single row with the total of all four series ---';
 SELECT * FROM prometheusQuery(ts_dist, 'sum(m)', 140) ORDER BY ALL;
