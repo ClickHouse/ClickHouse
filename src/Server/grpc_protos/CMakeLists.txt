@@ -1,5 +1,4 @@
-file(GLOB PROTO_FILES CONFIGURE_DEPENDS "*.proto")
-PROTOBUF_GENERATE_GRPC_CPP(clickhouse_grpc_proto_sources clickhouse_grpc_proto_headers ${PROTO_FILES})
+PROTOBUF_GENERATE_GRPC_CPP(clickhouse_grpc_proto_sources clickhouse_grpc_proto_headers clickhouse_grpc.proto)
 
 add_library(clickhouse_grpc_protos ${clickhouse_grpc_proto_headers} ${clickhouse_grpc_proto_sources})
 target_include_directories(clickhouse_grpc_protos SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})

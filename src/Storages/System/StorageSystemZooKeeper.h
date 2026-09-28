@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ class Context;
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.
   */
-class StorageSystemZooKeeper final : public StorageWithCommonVirtualColumns
+class StorageSystemZooKeeper final : public IStorage
 {
 public:
     explicit StorageSystemZooKeeper(const StorageID & table_id_);
@@ -19,11 +19,10 @@ public:
     std::string getName() const override { return "SystemZooKeeper"; }
 
     static ColumnsDescription getColumnsDescription();
-    static VirtualColumnsDescription createVirtuals();
 
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/) override;
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & /*column_names*/,
         const StorageSnapshotPtr & storage_snapshot,

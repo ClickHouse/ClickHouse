@@ -1,6 +1,4 @@
--- Tags: long, no-random-merge-tree-settings
--- no-random-merge-tree-settings: randomized small index_granularity (e.g. 1-3) makes the
--- repeated JSON path scans over 20000-row inserts time out on sanitizer builds (600s limit).
+-- Tags: long
 
 SET enable_json_type = 1;
 set max_block_size = 1000;

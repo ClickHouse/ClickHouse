@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 void StorageHDFSConfiguration::check(ContextPtr context)
@@ -169,7 +170,7 @@ static void addStructureAndFormatToArgsIfNeededHDFS(
         size_t count = args.size();
         if (count == 0 || count > HDFSStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                ErrorCodes::LOGICAL_ERROR,
                 "Expected 1 to {} arguments in table function hdfs, got {}",
                 HDFSStorageParsedArguments::getMaxNumberOfArguments(),
                 count);

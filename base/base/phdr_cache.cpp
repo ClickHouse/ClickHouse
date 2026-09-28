@@ -3,7 +3,6 @@
 /// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
 
 #include <base/defines.h>
-#include <base/phdr_cache.h>
 
 #if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
     #define USE_PHDR_CACHE 1
@@ -78,12 +77,12 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 
 extern "C"
 {
-void __lsan_ignore_object(const void *); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
-}
-
-#ifndef ADDRESS_SANITIZER
-extern "C" void __lsan_ignore_object(const void *) {} // NOLINT
+#ifdef ADDRESS_SANITIZER
+void __lsan_ignore_object(const void *);
+#else
+void __lsan_ignore_object(const void *) {} // NOLINT
 #endif
+}
 
 
 void updatePHDRCache()
@@ -108,27 +107,20 @@ void updatePHDRCache()
 }
 
 
-namespace
+bool hasPHDRCache()
 {
-    /// The lock-free dl_iterate_phdr override above is active once the cache is populated.
-    bool hasPHDRCache() { return phdr_cache.load() != nullptr; }
-}
-
-bool hasAsyncSignalSafeUnwind()
-{
-    return hasPHDRCache();
+    return phdr_cache.load() != nullptr;
 }
 
 #else
 
 void updatePHDRCache() {}
 
-#if defined(USE_MUSL) || defined(OS_DARWIN)
-    /// musl: dl_iterate_phdr is inherently lock-free.
-    /// macOS: unwinding uses frame-pointer backtrace() which never calls dl_iterate_phdr.
-    bool hasAsyncSignalSafeUnwind() { return true; }
+#if defined(USE_MUSL)
+    /// With statically linked with musl, dl_iterate_phdr is immutable.
+    bool hasPHDRCache() { return true; }
 #else
-    bool hasAsyncSignalSafeUnwind() { return false; }
+    bool hasPHDRCache() { return false; }
 #endif
 
 #endif

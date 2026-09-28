@@ -119,7 +119,7 @@ size_t EOFPacket::getPayloadSize() const
 void EOFPacket::readPayloadImpl(ReadBuffer & payload)
 {
     payload.readStrict(reinterpret_cast<char *>(&header), 1);
-    chassert(header == 0xfe);
+    assert(header == 0xfe);
     payload.readStrict(reinterpret_cast<char *>(&warnings), 2);
     payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
 }
@@ -134,7 +134,7 @@ void EOFPacket::writePayloadImpl(WriteBuffer & buffer) const
 void AuthSwitchPacket::readPayloadImpl(ReadBuffer & payload)
 {
     payload.readStrict(reinterpret_cast<char *>(&header), 1);
-    chassert(header == 0xfe);
+    assert(header == 0xfe);
     readStringUntilEOF(plugin_name, payload);
 }
 
@@ -155,7 +155,7 @@ size_t ERRPacket::getPayloadSize() const
 void ERRPacket::readPayloadImpl(ReadBuffer & payload)
 {
     payload.readStrict(reinterpret_cast<char *>(&header), 1);
-    chassert(header == 0xff);
+    assert(header == 0xff);
 
     payload.readStrict(reinterpret_cast<char *>(&error_code), 2);
 

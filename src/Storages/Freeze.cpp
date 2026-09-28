@@ -84,10 +84,10 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     if (version == 1)
     {
         /// is_replicated and is_remote are not used
-        bool is_replicated = false;
+        bool is_replicated;
         readBoolText(is_replicated, buffer);
         DB::assertChar('\n', buffer);
-        bool is_remote = false;
+        bool is_remote;
         readBoolText(is_remote, buffer);
         DB::assertChar('\n', buffer);
     }

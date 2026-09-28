@@ -29,20 +29,6 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-
-
-namespace ProfileEvents
-{
-	extern const Event TLSHandshakes;
-	extern const Event TLSHandshakeMicroseconds;
-	extern const Event TLSHandshakeErrors;
-	extern const Event TLSServerHandshakes;
-	extern const Event TLSServerHandshakeMicroseconds;
-	extern const Event TLSServerHandshakeErrors;
-}
-
 
 using Poco::IOException;
 using Poco::TimeoutException;
@@ -115,40 +101,6 @@ SSLOperationResult performSSLOperation(SSL * ssl, Operation && operation, bool z
 }
 
 
-/// Accounts one TLS handshake in profile events, separately for incoming (server) and
-/// outgoing (client) connections.
-///
-/// The elapsed time is always charged, because a handshake on a non-blocking socket is
-/// abandoned and retried until it completes, and the cost of all of its attempts belongs
-/// to the one handshake. The handshake itself is counted once it stops being retriable,
-/// by `succeeded` or by `failed`.
-struct HandshakeProfileEventCounter
-{
-	explicit HandshakeProfileEventCounter(bool isServer_) : isServer(isServer_) {}
-
-	~HandshakeProfileEventCounter()
-	{
-		ProfileEvents::increment(
-			isServer ? ProfileEvents::TLSServerHandshakeMicroseconds : ProfileEvents::TLSHandshakeMicroseconds,
-			watch.elapsedMicroseconds());
-	}
-
-	void succeeded() const
-	{
-		ProfileEvents::increment(isServer ? ProfileEvents::TLSServerHandshakes : ProfileEvents::TLSHandshakes);
-	}
-
-	void failed() const
-	{
-		ProfileEvents::increment(isServer ? ProfileEvents::TLSServerHandshakeErrors : ProfileEvents::TLSHandshakeErrors);
-	}
-
-private:
-	const bool isServer;
-	/// Qualified: `Poco::Stopwatch` is a different class and would win the unqualified lookup here.
-	::Stopwatch watch;
-};
-
 SecureSocketImpl::SecureSocketImpl(Poco::AutoPtr<SocketImpl> pSocketImpl, Context::Ptr pContext):
 	_pSSL(nullptr),
 	_pSocket(pSocketImpl),
@@ -163,7 +115,7 @@ SecureSocketImpl::SecureSocketImpl(Poco::AutoPtr<SocketImpl> pSocketImpl, Contex
 
 SecureSocketImpl::~SecureSocketImpl()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	try
 	{
 		reset();
@@ -177,7 +129,7 @@ SecureSocketImpl::~SecureSocketImpl()
 
 SocketImpl* SecureSocketImpl::acceptConnection(SocketAddress& clientAddr)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (!_pSSL);
 
 	StreamSocket ss = _pSocket->acceptConnection(clientAddr);
@@ -188,44 +140,15 @@ SocketImpl* SecureSocketImpl::acceptConnection(SocketAddress& clientAddr)
 }
 
 
-void SecureSocketImpl::setBioMethod(const BIO_METHOD * method)
-{
-	_bioMethod = method;
-}
-
-
-void SecureSocketImpl::setMutex(std::unique_ptr<RecursiveMutex> mutex)
-{
-	poco_check_ptr (mutex);
-	_mutex = std::move(mutex);
-}
-
-
-void SecureSocketImpl::markFatalError()
-{
-	ScopedLock lock(*_mutex);
-	_fatalError = true;
-}
-
-
-const BIO_METHOD * SecureSocketImpl::getBioMethod() const
-{
-	return _bioMethod ? _bioMethod : BIO_s_socket();
-}
-
-
 void SecureSocketImpl::acceptSSL()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (!_pSSL);
 	_fatalError = false;
 
-	BIO* pBIO = BIO_new(getBioMethod());
+	BIO* pBIO = BIO_new(BIO_s_socket());
 	if (!pBIO) throw SSLException("Cannot create BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
-
-	if (_bioMethod)
-		BIO_set_data(pBIO, _pSocket.get());
 
 	_pSSL = SSL_new(_pContext->sslContext());
 	if (!_pSSL)
@@ -241,7 +164,7 @@ void SecureSocketImpl::acceptSSL()
 
 void SecureSocketImpl::connect(const SocketAddress& address, bool performHandshake)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL) reset();
 
 	poco_assert (!_pSSL);
@@ -253,7 +176,7 @@ void SecureSocketImpl::connect(const SocketAddress& address, bool performHandsha
 
 void SecureSocketImpl::connect(const SocketAddress& address, const Poco::Timespan& timeout, bool performHandshake)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL) reset();
 
 	poco_assert (!_pSSL);
@@ -273,7 +196,7 @@ void SecureSocketImpl::connect(const SocketAddress& address, const Poco::Timespa
 
 void SecureSocketImpl::connectNB(const SocketAddress& address)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL) reset();
 
 	poco_assert (!_pSSL);
@@ -285,17 +208,14 @@ void SecureSocketImpl::connectNB(const SocketAddress& address)
 
 void SecureSocketImpl::connectSSL(bool performHandshake)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (!_pSSL);
 	poco_assert (_pSocket->initialized());
 	_fatalError = false;
 
-	BIO* pBIO = BIO_new(getBioMethod());
+	BIO* pBIO = BIO_new(BIO_s_socket());
 	if (!pBIO) throw SSLException("Cannot create SSL BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
-
-	if (_bioMethod)
-		BIO_set_data(pBIO, _pSocket.get());
 
 	_pSSL = SSL_new(_pContext->sslContext());
 	if (!_pSSL)
@@ -324,8 +244,25 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	{
 		if (performHandshake && _pSocket->getBlocking())
 		{
-			if (completeHandshakeImpl(true) != 1)
+			SSLOperationResult result;
+			Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+			do
+			{
+				RemainingTimeCounter counter(remaining_time);
+				result = performSSLOperation(_pSSL, [this]
+				{
+					return SSL_connect(_pSSL);
+				});
+			}
+			while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+			if (result.rc <= 0)
+			{
+				if (handleError(result.rc, result.sslError, result.socketError, result.errorCode) < 0)
+					throw Poco::TimeoutException("SSL handshake timed out");
 				throw SSLConnectionUnexpectedlyClosedException();
+			}
+			_needHandshake = false;
+			verifyPeerCertificate();
 		}
 	}
 	catch (...)
@@ -340,7 +277,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 
 void SecureSocketImpl::bind(const SocketAddress& address, bool reuseAddress, bool reusePort)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_check_ptr (_pSocket);
 
 	_pSocket->bind(address, reuseAddress, reusePort);
@@ -349,7 +286,7 @@ void SecureSocketImpl::bind(const SocketAddress& address, bool reuseAddress, boo
 
 void SecureSocketImpl::listen(int backlog)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_check_ptr (_pSocket);
 
 	_pSocket->listen(backlog);
@@ -358,7 +295,7 @@ void SecureSocketImpl::listen(int backlog)
 
 void SecureSocketImpl::shutdown()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
 	{
 		if (_fatalError)
@@ -409,7 +346,7 @@ void SecureSocketImpl::shutdown()
 
 void SecureSocketImpl::close()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	try
 	{
 		shutdown();
@@ -423,7 +360,7 @@ void SecureSocketImpl::close()
 
 int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
@@ -432,10 +369,12 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	int rc;
 	if (_needHandshake)
 	{
-		rc = completeHandshakeImpl(true);
-		if (rc == 0)
+		rc = completeHandshake();
+		if (rc == 1)
+			verifyPeerCertificate();
+		else if (rc == 0)
 			throw SSLConnectionUnexpectedlyClosedException();
-		else if (rc != 1)
+		else
 			return rc;
 	}
 
@@ -467,7 +406,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 
 int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
@@ -480,8 +419,10 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	int rc;
 	if (_needHandshake)
 	{
-		rc = completeHandshakeImpl(true);
-		if (rc != 1)
+		rc = completeHandshake();
+		if (rc == 1)
+			verifyPeerCertificate();
+		else
 			return rc;
 	}
 
@@ -516,7 +457,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 int SecureSocketImpl::available() const
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_check_ptr (_pSSL);
 
 	return SSL_pending(_pSSL);
@@ -525,65 +466,38 @@ int SecureSocketImpl::available() const
 
 int SecureSocketImpl::completeHandshake()
 {
-	return completeHandshakeImpl(false);
-}
-
-
-int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
-{
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
-	HandshakeProfileEventCounter handshakeCounter(SSL_is_server(_pSSL) != 0);
-
 	int rc;
-	try
+	SSLOperationResult result;
+	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+	do
 	{
-		SSLOperationResult result;
-		Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
-		do
+		RemainingTimeCounter counter(remaining_time);
+		result = performSSLOperation(_pSSL, [this]
 		{
-			RemainingTimeCounter counter(remaining_time);
-			result = performSSLOperation(_pSSL, [this]
-			{
-				return SSL_do_handshake(_pSSL);
-			});
-		}
-		/// `mustRetry` itself throws `Poco::TimeoutException` when a blocking socket runs out of time.
-		while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
-		rc = result.rc;
-		if (rc <= 0)
-		{
-			rc = handleError(rc, result.sslError, result.socketError, result.errorCode);
-			if (rc < 0 && _pSocket->getBlocking())
-				throw Poco::TimeoutException("SSL handshake timed out");
-			/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
-			/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means
-			/// the peer closed the connection in the middle of the handshake.
-			if (rc == 0)
-				handshakeCounter.failed();
-			return rc;
-		}
-		_needHandshake = false;
-		/// The peer certificate is validated as a part of the handshake, so that an unacceptable
-		/// certificate is accounted as a handshake error rather than as a successful handshake.
-		if (verifyPeer)
-			verifyPeerCertificate();
+			return SSL_do_handshake(_pSSL);
+		});
 	}
-	catch (...)
+	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+	rc = result.rc;
+	if (rc <= 0)
 	{
-		handshakeCounter.failed();
-		throw;
+		rc = handleError(rc, result.sslError, result.socketError, result.errorCode);
+		if (rc < 0 && _pSocket->getBlocking())
+			throw Poco::TimeoutException("SSL handshake timed out");
+		return rc;
 	}
-	handshakeCounter.succeeded();
+	_needHandshake = false;
 	return rc;
 }
 
 
 void SecureSocketImpl::verifyPeerCertificate()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_peerHostName.empty())
 		verifyPeerCertificate(_pSocket->peerAddress().host().toString());
 	else
@@ -593,7 +507,7 @@ void SecureSocketImpl::verifyPeerCertificate()
 
 void SecureSocketImpl::verifyPeerCertificate(const std::string& hostName)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	long certErr = verifyPeerCertificateImpl(hostName);
 	if (certErr != X509_V_OK)
 	{
@@ -605,7 +519,7 @@ void SecureSocketImpl::verifyPeerCertificate(const std::string& hostName)
 
 long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	Context::VerificationMode mode = _pContext->verificationMode();
 	if (mode == Context::VERIFY_NONE || !_pContext->extendedCertificateVerificationEnabled() ||
 	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
@@ -653,7 +567,7 @@ bool SecureSocketImpl::isLocalHost(const std::string& hostName)
 
 X509* SecureSocketImpl::peerCertificate() const
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
 		return SSL_get1_peer_certificate(_pSSL);
 	else
@@ -662,7 +576,7 @@ X509* SecureSocketImpl::peerCertificate() const
 
 Poco::Timespan SecureSocketImpl::getMaxTimeoutOrLimit()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	Poco::Timespan remaining_time = _pSocket->getReceiveTimeout();
 	Poco::Timespan send_timeout = _pSocket->getSendTimeout();
 	if (remaining_time < send_timeout)
@@ -683,7 +597,7 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 {
 	if (remaining_time == 0)
 		return false;
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (rc <= 0)
 	{
 		switch (sslError)
@@ -723,7 +637,7 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 
 int SecureSocketImpl::handleError(int rc, int sslError, int error, unsigned long errorCode)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (rc > 0) return rc;
 
 	switch (sslError)
@@ -787,14 +701,14 @@ int SecureSocketImpl::handleError(int rc, int sslError, int error, unsigned long
 
 void SecureSocketImpl::setPeerHostName(const std::string& peerHostName)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	_peerHostName = peerHostName;
 }
 
 
 void SecureSocketImpl::reset()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	close();
 	if (_pSSL)
 	{
@@ -807,14 +721,14 @@ void SecureSocketImpl::reset()
 
 void SecureSocketImpl::abort()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	_pSocket->shutdown();
 }
 
 
 Session::Ptr SecureSocketImpl::currentSession()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
 	{
 		SSL_SESSION* pSession = SSL_get1_session(_pSSL);
@@ -834,14 +748,14 @@ Session::Ptr SecureSocketImpl::currentSession()
 
 void SecureSocketImpl::useSession(Session::Ptr pSession)
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	_pSession = pSession;
 }
 
 
 bool SecureSocketImpl::sessionWasReused()
 {
-	ScopedLock lock(*_mutex);
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
 		return SSL_session_reused(_pSSL) != 0;
 	else

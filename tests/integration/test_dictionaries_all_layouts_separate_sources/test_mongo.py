@@ -6,15 +6,11 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
 from helpers.external_sources import SourceMongo
 
-from .common import (
-    ComplexLayoutTester,
-    LAYOUTS_COMPLEX,
-    LAYOUTS_RANGED,
-    LAYOUTS_SIMPLE,
-    RangedLayoutTester,
-    SimpleLayoutTester,
-)
+from .common import *
 
+simple_tester = None
+complex_tester = None
+ranged_tester = None
 test_name = "mongo"
 
 

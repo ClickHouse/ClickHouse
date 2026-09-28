@@ -1,9 +1,0 @@
-p_gran2 marks:	51
-projections after create:	p_gran2	{'index_granularity':'2','index_granularity_bytes':'999999999'}
-p_gran10 marks:	11
-projections after alter:	p_gran10	{'index_granularity':'10','index_granularity_bytes':'999999999'}
-projections after alter:	p_gran2	{'index_granularity':'2','index_granularity_bytes':'999999999'}
-projections after reattach:	p_gran10	{'index_granularity':'10','index_granularity_bytes':'999999999'}
-projections after reattach:	p_gran2	{'index_granularity':'2','index_granularity_bytes':'999999999'}
-projection part_type:	Compact
-compress settings:	p_compress	1234567

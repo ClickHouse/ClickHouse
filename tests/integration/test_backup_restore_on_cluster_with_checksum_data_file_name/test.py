@@ -1,4 +1,3 @@
-import os
 import string
 import random
 
@@ -108,7 +107,7 @@ def test_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -140,7 +139,7 @@ def test_empty_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -249,10 +248,10 @@ def test_projection():
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
     )
-    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
 
     node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
-    node1.query("INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
 
     assert (
         node1.query(
@@ -264,7 +263,7 @@ def test_projection():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     assert (
         node1.query(
@@ -314,7 +313,7 @@ def test_file_deduplication():
 
     # Unique data.
     node1.query(
-        "INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
+        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
     )
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")

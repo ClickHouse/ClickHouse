@@ -2,6 +2,7 @@
 
 #include <base/scope_guard.h>
 #include <base/types.h>
+#include <Common/Exception.h>
 
 
 namespace DB

@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Parsers/ASTViewTargets.h>
-#include <Core/UUID.h>
-
-#include <optional>
 
 
 namespace DB
@@ -18,9 +15,8 @@ struct CreateQueryUUIDs
     /// Collect UUIDs from ASTCreateQuery.
     /// Parameters:
     /// `generate_random` - if it's true then unspecified in the query UUIDs will be generated randomly;
-    /// `for_restore` - set when restoring from a backup: all UUIDs (even specified in the query) will be
-    /// (re)generated randomly.
-    explicit CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random = false, bool for_restore = false);
+    /// `force_random` - if it's true then all UUIDs (even specified in the query) will be (re)generated randomly.
+    explicit CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random = false, bool force_random = false);
 
     bool empty() const;
     explicit operator bool() const { return !empty(); }
@@ -39,11 +35,6 @@ struct CreateQueryUUIDs
 
     /// UUIDs of its target table (or tables).
     std::vector<std::pair<ViewTarget::Kind, UUID>> targets_inner_uuids;
-
-    /// The version of a TimeSeries table (see TimeSeriesVersion.h): toString() writes the "metric families" target
-    /// under its old name "Metrics" in the versions before TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME.
-    /// Not set for other tables.
-    std::optional<UInt64> time_series_version;
 };
 
 }

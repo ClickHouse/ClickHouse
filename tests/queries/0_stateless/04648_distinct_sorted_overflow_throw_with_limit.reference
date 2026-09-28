@@ -1,5 +1,0 @@
--- the final distinct over the sorted stream is the only DistinctSortedStreamTransform in the plan
-1
--- the size limit is exceeded by the chunk that also reaches the LIMIT hint: the query must throw
--- with the size limit satisfied, the LIMIT hint still stops reading and the query succeeds
-25

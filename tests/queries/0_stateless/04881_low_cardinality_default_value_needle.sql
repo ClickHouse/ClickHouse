@@ -28,8 +28,11 @@ SELECT has(materialize(CAST([0, 5], 'Array(LowCardinality(UInt8))')), toUInt64(0
 -- so representability is decided by comparing the needle against its own cast image.
 SELECT has(materialize(CAST([toIPv4('0.0.0.0'), toIPv4('1.2.3.4')], 'Array(LowCardinality(IPv4))')), toUInt32(0)) AS lc, has(materialize(CAST([toIPv4('0.0.0.0'), toIPv4('1.2.3.4')], 'Array(IPv4)')), toUInt32(0)) AS oracle;
 
--- A FixedString needle is padded to its own width and equality ignores that padding.
-SELECT has(materialize(CAST(['', 'xy'], 'Array(LowCardinality(String))')), CAST('', 'FixedString(4)')) AS lc, length(arrayFilter(x -> x = CAST('', 'FixedString(4)'), materialize(CAST(['', 'xy'], 'Array(String)')))) AS oracle;
+-- A FixedString needle is padded to its own width and equality ignores that padding. The plain-array
+-- arrayFilter oracle of the original test is dropped on 26.3: the vectorized `String = FixedString`
+-- comparison on this branch does not ignore the padding yet, so it reads 0 even though the
+-- constant-folded `'' = CAST('', 'FixedString(4)')` reads 1.
+SELECT has(materialize(CAST(['', 'xy'], 'Array(LowCardinality(String))')), CAST('', 'FixedString(4)')) AS lc;
 
 -- -0.0 and 0.0 are equal but a text format stores them apart, so either zero as a needle must match
 -- either spelling, and a count must see both. stored_bits is asserted in the same row: if it ever
@@ -50,12 +53,11 @@ SELECT arrayMap(x -> reinterpretAsUInt64(x), a) AS stored_bits, has(a, CAST('z',
 SELECT has(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), 'zzz') AS absent_needle, has(materialize(CAST(['a', 'b'], 'Array(LowCardinality(String))')), '') AS default_absent;
 SELECT has(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), materialize('')) AS non_const_needle, indexOfAssumeSorted(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), '') AS assume_sorted;
 
--- One answer that only the dictionary shortcut produces, so a build that stopped taking it would
--- move it: a NaN is one dictionary entry but never equal to itself, so it disagrees with the
--- plain-array oracle printed beside it, a known defect of the value comparison tracked elsewhere and
--- not of the lookup this test covers. A negative needle over an unsigned element used to disagree
--- the same way; it now agrees, because a constant that does not survive the cast to the dictionary
--- type equals no element.
+-- Two answers that only the dictionary shortcut produces, so a build that stopped taking it would
+-- move them. Both disagree with the plain-array oracle printed beside them, and both are known
+-- defects of the value comparison tracked elsewhere, not of the lookup this test covers: a NaN is
+-- one dictionary entry but never equal to itself, and a negative needle is compared to an unsigned
+-- element as a raw number.
 SELECT has(materialize(CAST([nan, 1.5], 'Array(LowCardinality(Float64))')), nan) AS nan_needle, has(materialize(CAST([nan, 1.5], 'Array(Float64)')), nan) AS oracle;
 SELECT has(materialize(CAST([0, 255], 'Array(LowCardinality(UInt8))')), toInt8(-1)) AS negative_needle, has(materialize(CAST([0, 255], 'Array(UInt8)')), toInt8(-1)) AS oracle;
 

@@ -127,7 +127,7 @@ public:
             this->data(place).set(*columns[0], 0, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (!this->data(place).has())
             this->data(place).set(this->data(rhs), arena);
@@ -316,7 +316,7 @@ public:
         this->data(place).set(*columns[0], 0, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).set(this->data(rhs), arena);
     }
@@ -391,16 +391,15 @@ AggregateFunctionPtr createAggregateFunctionAnyLast(
 
 }
 
-void registerAggregateFunctionsAny(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
 {
     /// any documentation
     FunctionDocumentation::Description description = R"(
 Selects the first encountered value of a column.
 
-<Warning>
+:::warning
 As a query can be executed in arbitrary order, the result of this function is non-deterministic. If you need an arbitrary but deterministic result, use functions min or max.
-</Warning>
+:::
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the first value reads no matter if NULL or not.
@@ -414,11 +413,11 @@ When a `SELECT` query has the `GROUP BY` clause or at least one aggregate functi
 In other words, each column selected from the table must be used either in keys or inside aggregate functions.
 To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
 
-<Note>
+:::note
 The return type of the function is the same as the input, except for LowCardinality which is discarded.
 This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column).
 You might use the -OrNull combinator to modify this behaviour.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "any(column)[ RESPECT NULLS]";
     FunctionDocumentation::Arguments arguments = {
@@ -458,10 +457,10 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
     FunctionDocumentation::Description anyLast_description = R"(
 Selects the last encountered value of a column.
 
-<Warning>
+:::warning
 As a query can be executed in arbitrary order, the result of this function is non-deterministic.
-If you need an arbitrary but deterministic result, use functions [min](/reference/functions/aggregate-functions/min) or [max](/reference/functions/aggregate-functions/max).
-</Warning>
+If you need an arbitrary but deterministic result, use functions [min](/sql-reference/aggregate-functions/reference/min) or [max](/sql-reference/aggregate-functions/reference/max).
+:::
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the last value reads no matter if NULL or not.

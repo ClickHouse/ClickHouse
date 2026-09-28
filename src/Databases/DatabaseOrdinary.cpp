@@ -4,7 +4,6 @@
 #include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
@@ -24,7 +23,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -35,10 +33,16 @@
 #include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace fs = std::filesystem;
 
@@ -51,9 +55,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -75,14 +76,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
-    extern const int QUERY_IS_TOO_LARGE;
 }
 
 namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
-extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 }
 
 
@@ -114,8 +113,6 @@ DatabaseOrdinary::DatabaseOrdinary(
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
-
-    max_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_tables].value;
 
     LOG_INFO(log, "Metadata disk {}, path {}", metadata_disk_ptr->getName(), metadata_disk_ptr->getPath());
 }
@@ -205,14 +202,18 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
-    return fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
-}
+    fs::path data_path;
+    if (!tableStarted)
+    {
+        auto create_query = tryGetCreateTableQuery(name, getContext());
+        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
+    }
+    else
+        data_path = getTableDataPath(name);
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
-{
-    return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -235,7 +236,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -344,14 +345,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
-                {
-                    SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
-                    SelectIntersectExceptQueryVisitor{data}.visit(ast);
-                }
-                {
-                    NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-                    NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-                }
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
@@ -383,10 +378,10 @@ void DatabaseOrdinary::loadTableFromMetadata(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
-    if (shouldLazyLoad(query, name, mode))
+    if (shouldLazyLoad(query, mode))
     {
         loadTableLazy(local_context, name, ast, mode);
         return;
@@ -437,51 +432,17 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
-}
-
-bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return false;
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
-        || query.isParameterizedView())
-        return false;
-
-    /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
-    /// inner tables could be orphaned by a cross-database move. Load it eagerly, as for views.
-    if (query.is_time_series_table)
-        return false;
-
-    /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
-    /// metadata could be read without a grant on the target. Load it eagerly, as for views.
-    if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        || query.isParameterizedView() || query.is_window_view)
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
-        return false;
-
-    /// A push source starts the background job that feeds its materialized views in its own `startup`,
-    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
-    /// never start and the ingestion would stall silently until the table is read by hand. Load it
-    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
-    /// unused source table still costs nothing to load.
-    ///
-    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
-    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
-    /// and it also holds the views of the databases that were loaded earlier. A view created later
-    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
-    /// through `StorageProxy::getStorageSnapshot`.
-    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
-        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
         return false;
 
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
@@ -545,7 +506,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    TransactionManager::increaseAsyncTablesLoadingJobNumber();
+    TransactionLog::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
@@ -553,7 +514,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         fmt::format("load table {}", name.getFullName()),
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
-            SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
+            SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
 
@@ -566,7 +527,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
 
     auto storage_disks = table->getStoragePolicy()->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -747,9 +708,8 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
     return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
+Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
-    ensurePopulated();
     std::set<String> unique_names;
     {
         std::lock_guard lock(mutex);
@@ -760,23 +720,6 @@ VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) 
             unique_names.emplace(table_name);
     }
     return {unique_names.begin(), unique_names.end()};
-}
-
-void DatabaseOrdinary::eraseAsyncLoadState(const String & table_name)
-{
-    /// Drop pending async load/startup task references so that `getAllTableNames`
-    /// (and the hints derived from it) do not still suggest a no-longer-present name.
-    startup_table.erase(table_name);
-    load_table.erase(table_name);
-}
-
-StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
-{
-    /// Detach first: if the base throws (e.g. UNKNOWN_TABLE) the table is not
-    /// detached, so its async-load state must stay intact. Erase only on success.
-    auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
-    eraseAsyncLoadState(table_name);
-    return table;
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
@@ -809,22 +752,8 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context, validate_new_create_query);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-
-    if (validate_new_create_query)
-    {
-        size_t max_query_size = local_context->getSettingsRef()[Setting::max_query_size];
-        if (max_query_size && statement.size() > max_query_size)
-            throw Exception(
-                ErrorCodes::QUERY_IS_TOO_LARGE,
-                "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
-                "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
-                table_id.getNameForLogs(),
-                statement.size(),
-                max_query_size);
-    }
-
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
@@ -853,7 +782,6 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
-void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -881,35 +809,6 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
-        .description = R"DOCS_MD(
-The `Ordinary` database engine is the legacy database engine. It stores each table's metadata in a separate file and has been superseded by [`Atomic`](/reference/engines/database-engines/atomic).
-
-:::warning
-`Ordinary` is deprecated. Do not use it for new databases.
-:::
-
-## Creating a database {#creating-a-database}
-
-Creating an `Ordinary` database requires enabling [`allow_deprecated_database_ordinary`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary):
-
-```sql
-SET allow_deprecated_database_ordinary = 1;
-
-CREATE DATABASE legacy
-ENGINE = Ordinary;
-```
-
-## Migration {#migration}
-
-Use `Atomic` for new databases. It is the default database engine in open-source ClickHouse and supports atomic metadata operations, including non-blocking `DROP TABLE` and `RENAME TABLE`.
-
-## See also {#see-also}
-
-- [Atomic database engine](/reference/engines/database-engines/atomic)
-- [`allow_deprecated_database_ordinary`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)
-)DOCS_MD",
-        .syntax = "ENGINE = Ordinary",
-        .related = {"Atomic"}});
+    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true});
 }
 }
