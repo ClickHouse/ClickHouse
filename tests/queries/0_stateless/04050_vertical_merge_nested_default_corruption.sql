@@ -774,3 +774,41 @@ SELECT count() FROM
 );
 
 DROP TABLE t_nested_default_projection_consistency;
+
+-- An intermediate whose values for some rows are in a patch part is not recomputed from its
+-- `DEFAULT` for those rows, so the dependency closure must not follow it (mirroring the guard that
+-- keeps a patched column from being expired). `m` is absent from every part and expired, `tmp`
+-- reads `m` but has live values in the patch part, so `n.b` (which reads `tmp`) is written by the
+-- merge instead of being expired.
+DROP TABLE IF EXISTS t_nested_patched_intermediate;
+
+CREATE TABLE t_nested_patched_intermediate (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1;
+
+INSERT INTO t_nested_patched_intermediate VALUES (1, [10,20]);
+INSERT INTO t_nested_patched_intermediate VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_patched_intermediate ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_patched_intermediate ADD COLUMN tmp Array(UInt32) DEFAULT m;
+ALTER TABLE t_nested_patched_intermediate ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), tmp);
+
+UPDATE t_nested_patched_intermediate SET tmp = [7,8] WHERE id = 1;
+
+OPTIMIZE TABLE t_nested_patched_intermediate FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_patched_intermediate;
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_patched_intermediate' AND active AND column = 'n.b';
+SELECT id, `n.a`, tmp, `n.b` FROM t_nested_patched_intermediate ORDER BY id;
+
+DROP TABLE t_nested_patched_intermediate;
