@@ -11,7 +11,9 @@ SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
 # Below we rm -rf config.d before repopulating it; refuse if that would wipe the source configs.
 # Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
-if [ "$DEST_SERVER_PATH" -ef "$SRC_PATH" ] || [ "$DEST_SERVER_PATH/config.d" -ef "$SRC_PATH/config.d" ]; then
+# Check every pairing, since either the destination root or only its config.d may alias either the source root or its config.d.
+if [ "$DEST_SERVER_PATH" -ef "$SRC_PATH" ] || [ "$DEST_SERVER_PATH" -ef "$SRC_PATH/config.d" ] \
+    || [ "$DEST_SERVER_PATH/config.d" -ef "$SRC_PATH" ] || [ "$DEST_SERVER_PATH/config.d" -ef "$SRC_PATH/config.d" ]; then
     echo "Refusing to install: DEST_SERVER_PATH ($DEST_SERVER_PATH) or its config.d is the same directory as SRC_PATH ($SRC_PATH) or its config.d. This script deletes and repopulates config.d, which would destroy the tracked test configs." >&2
     exit 1
 fi
