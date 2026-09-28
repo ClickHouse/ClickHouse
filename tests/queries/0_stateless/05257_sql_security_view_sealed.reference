@@ -23,6 +23,11 @@ visible
 1	2
 1	2
 1	2
+--- an outer ORDER BY ... LIMIT is not pushed into the view to stop reading early
+visible
+visible
+2
+2
 --- the view is still queried as usual
 alice	visible
 1	visible

@@ -1208,6 +1208,12 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
+    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// below that boundary, so the amount of data read would depend on the rows the view hides.
+    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        return;
+
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
     /// `SELECT id FROM v FINAL ORDER BY ts DESC LIMIT 10`) select which rows the
     /// view exposes: `SAMPLE` restricts it to a pseudo-random subset and `FINAL`

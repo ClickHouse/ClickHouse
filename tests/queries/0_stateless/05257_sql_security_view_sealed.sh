@@ -70,6 +70,18 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id LIKE '05257_${CLICKHOUSE_DATABASE}_%'
     ORDER BY query_id"
 
+echo "--- an outer ORDER BY ... LIMIT is not pushed into the view to stop reading early"
+# Reading `secrets` in reverse order of `secret` would stop at the visible row before reaching the hidden one.
+for view in definer_view none_view; do
+    ${CLICKHOUSE_CLIENT} --user "$user" --use_query_condition_cache 0 --max_threads 1 --max_block_size 1 --query_id "05257order_${CLICKHOUSE_DATABASE}_${view}" --query "
+        SELECT secret FROM $db.$view ORDER BY secret DESC LIMIT 1"
+done
+${CLICKHOUSE_CLIENT} --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT read_rows FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id LIKE '05257order_${CLICKHOUSE_DATABASE}_%'
+    ORDER BY query_id"
+
 echo "--- the view is still queried as usual"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "
     SELECT owner, secret FROM $db.definer_view ORDER BY secret LIMIT 1;
