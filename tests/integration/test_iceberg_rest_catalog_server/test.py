@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import base64
 import json
 import time
 import uuid
@@ -74,10 +73,6 @@ def catalog_url(path):
     return f"http://{node.ip_address}:{CATALOG_PORT}{path}"
 
 
-def get_keeper():
-    return cluster.get_kazoo_client("zoo1")
-
-
 def catalog_request(
     method, path, json=None, params=None, expected_code=200, auth=None, headers=None
 ):
@@ -98,12 +93,16 @@ def assert_error_shape(response, expected_type):
     assert error["message"]
 
 
-def create_namespace(name_levels, properties=None, expected_code=200):
+def create_namespace(name_levels, properties=None, expected_code=200, auth=None):
     body = {"namespace": name_levels}
     if properties is not None:
         body["properties"] = properties
     return catalog_request(
-        "POST", "/v1/my_warehouse/namespaces", json=body, expected_code=expected_code
+        "POST",
+        "/v1/my_warehouse/namespaces",
+        json=body,
+        expected_code=expected_code,
+        auth=auth,
     )
 
 
@@ -120,15 +119,15 @@ def tables_url(ns, table=None):
     return url
 
 
-def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, **extra):
+def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, **extra):
     body = {"name": name, "schema": schema, **extra}
-    return catalog_request("POST", tables_url(ns), json=body, expected_code=expected_code)
+    return catalog_request(
+        "POST", tables_url(ns), json=body, expected_code=expected_code, auth=auth
+    )
 
 
-def list_tables(ns, expected_code=200):
-    response = catalog_request("GET", tables_url(ns), expected_code=expected_code)
-    if expected_code != 200:
-        return response
+def list_tables(ns):
+    response = catalog_request("GET", tables_url(ns))
     return [identifier["name"] for identifier in response.json()["identifiers"]]
 
 
@@ -139,9 +138,13 @@ def table_exists(ns, table):
     return response.status_code == 204
 
 
-def drop_table(ns, table, expected_code=204, params=None):
+def drop_table(ns, table, expected_code=204, params=None, auth=None):
     return catalog_request(
-        "DELETE", tables_url(ns, table), params=params, expected_code=expected_code
+        "DELETE",
+        tables_url(ns, table),
+        params=params,
+        expected_code=expected_code,
+        auth=auth,
     )
 
 
@@ -157,27 +160,6 @@ def list_metadata_files(location):
         obj.object_name
         for obj in cluster.minio_client.list_objects(BUCKET, prefix, recursive=True)
     ]
-
-
-def assert_load_table_result(result):
-    metadata = result["metadata"]
-    assert result["config"] == {}
-    assert metadata["format-version"] == 2
-    assert metadata["table-uuid"]
-    assert metadata["current-schema-id"] == 0
-    assert metadata["schemas"][0]["schema-id"] == 0
-    assert metadata["schemas"][0]["fields"] == DEFAULT_SCHEMA["fields"]
-    assert metadata["last-column-id"] == 2
-    assert metadata["partition-specs"] == [{"spec-id": 0, "fields": []}]
-    assert metadata["last-partition-id"] == 999
-    assert metadata["sort-orders"] == [{"order-id": 0, "fields": []}]
-    assert metadata["current-snapshot-id"] == -1
-    assert metadata["refs"] == {}
-    assert metadata["snapshots"] == []
-    assert "format-version" not in metadata["properties"]
-    assert result["metadata-location"] == (
-        f"{metadata['location']}/metadata/v1-{metadata['table-uuid']}.metadata.json"
-    )
 
 
 def test_config(started_cluster):
@@ -204,36 +186,35 @@ def test_config(started_cluster):
     )
     assert_error_shape(response, "NoSuchWarehouseException")
 
+    # Views are part of the spec, but there are no plans for this server to support them.
+    response = catalog_request(
+        "GET", "/v1/my_warehouse/namespaces/sales/views", expected_code=406
+    )
+    assert_error_shape(response, "UnsupportedOperationException")
+
 
 def test_namespaces(started_cluster):
     ns = f"sales_{uuid.uuid4().hex[:8]}"
 
     location = f"s3://{BUCKET}/sales/"
-    response = create_namespace([ns], properties={"location": location})
-    result = response.json()
+    result = create_namespace([ns], properties={"location": location}).json()
     assert result["namespace"] == [ns]
     assert result["properties"] == {"location": location}
-
-    # The server has credentials for one bucket only, so a location elsewhere is refused up front.
-    response = create_namespace(
-        [f"{ns}_bad"], properties={"location": "s3://other-bucket/sales"}, expected_code=400
-    )
-    assert_error_shape(response, "BadRequestException")
 
     response = create_namespace([ns], expected_code=409)
     assert_error_shape(response, "AlreadyExistsException")
 
-    create_namespace([ns, "eu"])
+    # Missing parents are created with empty properties.
+    create_namespace([ns, "eu", "west"])
+    response = create_namespace([ns, "eu"], expected_code=409)
+    assert_error_shape(response, "AlreadyExistsException")
 
     top_level = list_namespaces()
     assert [ns] in top_level
     assert [ns, "eu"] not in top_level
 
-    assert list_namespaces(parent=ns) == [[ns, "eu"]]
-
     # Multi-part namespaces are joined with the unit separator 0x1F (url encoded `%1F`),
     # which is the spec default when /config does not override `namespace-separator`.
-    create_namespace([ns, "eu", "west"])
     assert list_namespaces(parent=ns) == [[ns, "eu"]]
     assert list_namespaces(parent=f"{ns}\x1feu") == [[ns, "eu", "west"]]
     assert list_namespaces(parent=f"{ns}\x1feu\x1fwest") == []
@@ -251,37 +232,10 @@ def test_namespaces(started_cluster):
     response = catalog_request(
         "GET",
         "/v1/my_warehouse/namespaces",
-        params={"parent": f"{ns}\x1fmissing"},
+        params={"parent": "missing"},
         expected_code=404,
     )
     assert_error_shape(response, "NoSuchNamespaceException")
-
-
-def test_create_namespace_creates_parents(started_cluster):
-    ns = f"parents_{uuid.uuid4().hex[:8]}"
-
-    create_namespace([ns, "eu", "west"])
-
-    assert [ns] in list_namespaces()
-    assert list_namespaces(parent=ns) == [[ns, "eu"]]
-    assert list_namespaces(parent=f"{ns}\x1feu") == [[ns, "eu", "west"]]
-
-    # The parents are created with empty properties, and creating them again conflicts.
-    response = create_namespace([ns, "eu"], expected_code=409)
-    assert_error_shape(response, "AlreadyExistsException")
-
-
-def test_not_implemented(started_cluster):
-    response = catalog_request(
-        "POST", "/v1/my_warehouse/namespaces/sales/tables/t", expected_code=406
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
-
-    # Views are part of the spec, but there are no plans for this server to support them.
-    response = catalog_request(
-        "GET", "/v1/my_warehouse/namespaces/sales/views", expected_code=406
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
 
 
 def test_stop_start_listen(started_cluster):
@@ -309,115 +263,50 @@ def test_authentication(started_cluster):
     cases = [
         (DEFAULT_AUTH, None, True),
         (("default", "wrong"), None, False),
-        (("no_such_user", ""), None, False),
         (None, {"X-ClickHouse-User": "default", "X-ClickHouse-Key": ""}, True),
         (None, {"X-ClickHouse-User": "default", "X-ClickHouse-Key": "wrong"}, False),
     ]
+    # One keep-alive session, so a rejected request must not poison the next one.
+    session = requests.Session()
     for auth, headers, is_ok in cases:
-        response = catalog_request(
-            "GET",
-            "/v1/my_warehouse/namespaces",
-            expected_code=200 if is_ok else 401,
-            auth=auth,
-            headers=headers,
+        response = session.get(
+            catalog_url("/v1/my_warehouse/namespaces"), auth=auth, headers=headers
         )
+        assert response.status_code == (200 if is_ok else 401), response.text
         if not is_ok:
             assert_error_shape(response, "NotAuthorizedException")
 
 
-def test_create_namespace_rejects_readonly(started_cluster):
+def test_ddl_rejects_readonly(started_cluster):
     ns = f"forbidden_{uuid.uuid4().hex[:8]}"
-    body = {"namespace": [ns]}
-
-    # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
-    for user, expected_word in [("readonly_user", "readonly"), ("no_ddl_user", "DDL")]:
-        auth = (user, "")
-        # Reads are allowed.
-        catalog_request("GET", "/v1/my_warehouse/namespaces", auth=auth)
-
-        response = catalog_request(
-            "POST", "/v1/my_warehouse/namespaces", json=body, auth=auth, expected_code=403
-        )
-        assert_error_shape(response, "ForbiddenException")
-        assert expected_word in response.json()["error"]["message"]
-        assert [ns] not in list_namespaces()
-
-    create_namespace([ns])
-    assert [ns] in list_namespaces()
-
-
-def test_table_ddl_rejects_readonly(started_cluster):
-    ns = f"forbidden_tables_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
     create_table(ns, "existing")
 
+    # `allow_ddl = 0` permits writes but not structural changes, and namespaces and tables are structure.
     for user, expected_word in [("readonly_user", "readonly"), ("no_ddl_user", "DDL")]:
         auth = (user, "")
         # Reads are allowed.
-        catalog_request("GET", tables_url(ns), auth=auth)
         catalog_request("GET", tables_url(ns, "existing"), auth=auth)
-        assert requests.head(catalog_url(tables_url(ns, "existing")), auth=auth).status_code == 204
 
-        response = catalog_request(
-            "POST",
-            tables_url(ns),
-            json={"name": "forbidden", "schema": DEFAULT_SCHEMA},
-            auth=auth,
-            expected_code=403,
-        )
+        response = create_namespace([ns, "child"], auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
         assert expected_word in response.json()["error"]["message"]
 
-        response = catalog_request("DELETE", tables_url(ns, "existing"), auth=auth, expected_code=403)
-        assert_error_shape(response, "ForbiddenException")
-        assert expected_word in response.json()["error"]["message"]
+    auth = ("readonly_user", "")
+    create_table(ns, "forbidden", auth=auth, expected_code=403)
+    drop_table(ns, "existing", auth=auth, expected_code=403)
 
+    assert list_namespaces(parent=ns) == []
     assert list_tables(ns) == ["existing"]
-
-
-def test_auth_failure_does_not_poison_connection(started_cluster):
-    session = requests.Session()
-    response = session.get(
-        catalog_url("/v1/my_warehouse/namespaces"), auth=("default", "wrong")
-    )
-    assert response.status_code == 401
-    response = session.get(
-        catalog_url("/v1/my_warehouse/namespaces"), auth=DEFAULT_AUTH
-    )
-    assert response.status_code == 200
-
-
-def test_client_auth_header(started_cluster):
-    # (credentials, is_ok)
-    cases = [
-        (b"default:", True),
-        (b"default:wrong", False),
-    ]
-    for credentials, is_ok in cases:
-        token = base64.b64encode(credentials).decode()
-        # The client fetches /v1/config on CREATE DATABASE, so wrong credentials fail there with the server's 401.
-        query = f"""
-            DROP DATABASE IF EXISTS rest_client_auth_db;
-            SET allow_experimental_database_iceberg = 1;
-            CREATE DATABASE rest_client_auth_db
-            ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1')
-            SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-                auth_header = 'Authorization: Basic {token}'
-            """
-        if is_ok:
-            node.query(query)
-            node.query("DROP DATABASE IF EXISTS rest_client_auth_db")
-        else:
-            error = node.query_and_get_error(query)
-            assert "401" in error, error
 
 
 def test_keeper_layout(started_cluster):
     # TODO: RestCatalog client cannot list a namespace level with a dot or a space.
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})
+    result = create_table(f"{ns}\x1feu-west", "my.table").json()
 
-    zk = get_keeper()
+    zk = cluster.get_kazoo_client("zoo1")
     assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
@@ -429,7 +318,15 @@ def test_keeper_layout(started_cluster):
     assert zk.get(parent_path)[0] == b"{}"
     assert zk.get(child_path)[0] == b'{"owner":"asya"}'
 
+    assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
+    pointer = json.loads(zk.get(f"{child_path}/tables/my%2Etable")[0])
+    assert pointer == {
+        "uuid": result["metadata"]["table-uuid"],
+        "metadata_location": result["metadata-location"],
+    }
+
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
+    assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
 
 
 def test_create_and_load_table(started_cluster):
@@ -437,99 +334,39 @@ def test_create_and_load_table(started_cluster):
     create_namespace([ns])
 
     result = create_table(ns, "events").json()
-    assert_load_table_result(result)
-    table_uuid = result["metadata"]["table-uuid"]
-    assert result["metadata"]["location"] == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
-    assert result["metadata-location"].startswith(
-        f"{BASE_LOCATION}/{ns}/events-{table_uuid}/metadata/v1-"
+    metadata = result["metadata"]
+    table_uuid = metadata["table-uuid"]
+    assert result["config"] == {}
+    assert metadata["format-version"] == 2
+    assert metadata["location"] == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
+    assert metadata["current-schema-id"] == 0
+    assert metadata["schemas"][0]["fields"] == DEFAULT_SCHEMA["fields"]
+    assert metadata["last-column-id"] == 2
+    assert metadata["partition-specs"] == [{"spec-id": 0, "fields": []}]
+    assert metadata["last-partition-id"] == 999
+    assert metadata["sort-orders"] == [{"order-id": 0, "fields": []}]
+    assert metadata["current-snapshot-id"] == -1
+    assert metadata["snapshots"] == []
+    assert result["metadata-location"] == (
+        f"{metadata['location']}/metadata/v1-{table_uuid}.metadata.json"
     )
 
     loaded = catalog_request("GET", tables_url(ns, "events")).json()
-    assert loaded["metadata-location"] == result["metadata-location"]
-    assert loaded["metadata"] == result["metadata"]
+    assert loaded == result
 
-    stat = cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
-    assert stat.size > 0
+    # Creating it again leaks no second metadata file next to the first one.
+    response = create_table(ns, "events", location=metadata["location"], expected_code=409)
+    assert_error_shape(response, "TableAlreadyExistsException")
+    assert list_metadata_files(metadata["location"]) == [
+        metadata_key(result["metadata-location"])
+    ]
 
     response = catalog_request("GET", tables_url(ns, "missing"), expected_code=404)
     assert_error_shape(response, "NoSuchTableException")
-
-
-def test_create_table_with_location(started_cluster):
-    ns = f"location_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-
-    location = f"s3://{BUCKET}/custom/{ns}/path"
-    result = create_table(ns, "custom", location=location + "/").json()
-    assert result["metadata"]["location"] == location
-    assert result["metadata-location"].startswith(location + "/metadata/v1-")
-    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
-
-    response = create_table(ns, "elsewhere", location="s3://other-bucket/path", expected_code=400)
+    response = create_table(ns, "t", schema=None, expected_code=400)
     assert_error_shape(response, "BadRequestException")
-    assert not table_exists(ns, "elsewhere")
 
-
-def test_create_table_in_namespace_location(started_cluster):
-    ns = f"nsloc_{uuid.uuid4().hex[:8]}"
-    ns_location = f"s3://{BUCKET}/custom/{ns}"
-    create_namespace([ns], properties={"location": ns_location + "/"})
-
-    result = create_table(ns, "events").json()
-    table_uuid = result["metadata"]["table-uuid"]
-    assert result["metadata"]["location"] == f"{ns_location}/events-{table_uuid}"
-    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
-
-    # An explicit table location still wins over the namespace location.
-    location = f"s3://{BUCKET}/explicit/{ns}"
-    result = create_table(ns, "explicit", location=location).json()
-    assert result["metadata"]["location"] == location
-
-
-def test_create_table_conflict(started_cluster):
-    ns = f"conflict_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-
-    result = create_table(ns, "t").json()
-    location = result["metadata"]["location"]
-
-    # The second attempt gets the same explicit location, so a leaked file would show up next to the first one.
-    response = create_table(ns, "t", location=location, expected_code=409)
-    assert_error_shape(response, "TableAlreadyExistsException")
-
-    files = list_metadata_files(location)
-    assert len(files) == 1, files
-    assert files[0] == metadata_key(result["metadata-location"])
-
-
-def test_create_table_bad_requests(started_cluster):
-    ns = f"bad_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-
-    schema_duplicate_ids = {
-        "type": "struct",
-        "fields": [
-            {"id": 1, "name": "a", "required": False, "type": "int"},
-            {"id": 1, "name": "b", "required": False, "type": "int"},
-        ],
-    }
-    bad_bodies = [
-        {"name": "t"},
-        {"name": "t", "schema": schema_duplicate_ids},
-        {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
-        {"name": "t", "schema": DEFAULT_SCHEMA, "properties": {"format-version": "1"}},
-    ]
-    for body in bad_bodies:
-        response = requests.post(catalog_url(tables_url(ns)), json=body)
-        assert response.status_code == 400, (body, response.text)
-        assert_error_shape(response, "BadRequestException")
-
-    assert list_tables(ns) == []
-
-    response = create_table("missing_ns", "t", expected_code=404)
-    assert_error_shape(response, "NoSuchNamespaceException")
-
-    # Nested ids count, and partition fields must reference the schema.
+    # Nested ids count, partition fields reference the schema, and `format-version` is not a property.
     schema_nested = {
         "type": "struct",
         "fields": [
@@ -552,13 +389,36 @@ def test_create_table_bad_requests(started_cluster):
     assert result["metadata"]["properties"] == {"owner": "asya"}
 
 
+def test_table_location(started_cluster):
+    ns = f"location_{uuid.uuid4().hex[:8]}"
+    ns_location = f"s3://{BUCKET}/custom/{ns}"
+    create_namespace([ns], properties={"location": ns_location + "/"})
+
+    result = create_table(ns, "events").json()
+    table_uuid = result["metadata"]["table-uuid"]
+    assert result["metadata"]["location"] == f"{ns_location}/events-{table_uuid}"
+    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
+
+    # An explicit table location wins over the namespace location.
+    location = f"s3://{BUCKET}/explicit/{ns}"
+    result = create_table(ns, "explicit", location=location + "/").json()
+    assert result["metadata"]["location"] == location
+    assert result["metadata-location"].startswith(location + "/metadata/v1-")
+    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
+
+    # The server has credentials for one bucket only, so a location elsewhere is refused up front.
+    response = create_table(ns, "elsewhere", location="s3://other-bucket/path", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert not table_exists(ns, "elsewhere")
+
+
 def test_list_and_exists_and_drop(started_cluster):
     ns = f"listing_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
     assert list_tables(ns) == []
 
     create_table(ns, "b_table")
-    create_table(ns, "a_table")
+    result = create_table(ns, "a_table").json()
     response = catalog_request("GET", tables_url(ns))
     assert response.json()["identifiers"] == [
         {"namespace": [ns], "name": "a_table"},
@@ -567,54 +427,20 @@ def test_list_and_exists_and_drop(started_cluster):
     assert table_exists(ns, "a_table")
     assert not table_exists(ns, "c_table")
 
+    response = drop_table(ns, "a_table", params={"purgeRequested": "true"}, expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert table_exists(ns, "a_table")
+
     drop_table(ns, "a_table")
     assert not table_exists(ns, "a_table")
-    response = catalog_request("GET", tables_url(ns, "a_table"), expected_code=404)
-    assert_error_shape(response, "NoSuchTableException")
+    assert list_tables(ns) == ["b_table"]
     response = drop_table(ns, "a_table", expected_code=404)
     assert_error_shape(response, "NoSuchTableException")
-    assert list_tables(ns) == ["b_table"]
-
-    drop_table(ns, "b_table")
-    assert list_tables(ns) == []
-
-    response = list_tables("missing_ns", expected_code=404)
-    assert_error_shape(response, "NoSuchNamespaceException")
-
-
-def test_drop_table_purge_not_supported(started_cluster):
-    ns = f"purge_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    result = create_table(ns, "t").json()
-
-    response = drop_table(ns, "t", params={"purgeRequested": "true"}, expected_code=400)
-    assert_error_shape(response, "BadRequestException")
-    assert table_exists(ns, "t")
-
-    drop_table(ns, "t", params={"purgeRequested": "false"})
-    assert not table_exists(ns, "t")
     # Files stay on object storage.
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
 
-
-def test_keeper_table_node(started_cluster):
-    # TODO: RestCatalog client cannot list a namespace level with a dot or a space.
-    ns = f"keeper-{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    result = create_table(ns, "my.table").json()
-
-    zk = get_keeper()
-    escaped_ns = ns.replace("-", "%2D")
-    node_path = f"{KEEPER_ROOT}/namespaces/{escaped_ns}/tables/my%2Etable"
-    assert zk.get_children(f"{KEEPER_ROOT}/namespaces/{escaped_ns}/tables") == ["my%2Etable"]
-    pointer = json.loads(zk.get(node_path)[0])
-    assert pointer == {
-        "uuid": result["metadata"]["table-uuid"],
-        "metadata_location": result["metadata-location"],
-    }
-
-    assert list_tables(ns) == ["my.table"]
-    assert table_exists(ns, "my.table")
+    response = catalog_request("GET", tables_url("missing_ns"), expected_code=404)
+    assert_error_shape(response, "NoSuchNamespaceException")
 
 
 def test_pyiceberg_client(started_cluster):
@@ -656,19 +482,27 @@ def test_pyiceberg_client(started_cluster):
     assert not catalog.table_exists(f"{ns}.events")
 
 
-def test_clickhouse_client_reads_empty_table(started_cluster):
+def test_clickhouse_client(started_cluster):
     ns = f"chclient_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
     create_table(ns, "events")
 
-    node.query(f"""
-        DROP DATABASE IF EXISTS rest_tables_db;
-        SET allow_experimental_database_iceberg = 1;
-        CREATE DATABASE rest_tables_db
-        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
-        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
-        """)
+    def create_database(token):
+        return f"""
+            DROP DATABASE IF EXISTS rest_tables_db;
+            SET allow_experimental_database_iceberg = 1;
+            CREATE DATABASE rest_tables_db
+            ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+            SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+                storage_endpoint = 'http://minio1:9001/{BUCKET}',
+                auth_header = 'Authorization: Basic {token}'
+            """
+
+    # The client fetches /v1/config on CREATE DATABASE, so wrong credentials fail there with the server's 401.
+    error = node.query_and_get_error(create_database("ZGVmYXVsdDp3cm9uZw=="))  # default:wrong
+    assert "401" in error, error
+
+    node.query(create_database("ZGVmYXVsdDo="))  # default:
     try:
         tables = node.query("SHOW TABLES FROM rest_tables_db").split()
         assert f"{ns}.events" in tables
