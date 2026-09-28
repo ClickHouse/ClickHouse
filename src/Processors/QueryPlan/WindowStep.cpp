@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/WindowFunction.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -22,6 +21,7 @@
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/scatterByPartition.h>
+#include <WindowFunctions/IWindowFunction.h>
 #include <Common/JSONBuilder.h>
 #include <base/unit.h>
 

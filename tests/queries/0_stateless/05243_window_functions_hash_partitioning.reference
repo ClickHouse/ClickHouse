@@ -72,3 +72,7 @@
 0	71071
 0	71071
 0	71071
+=== ORDER BY a prefix of the partition key: hash partitioning 0 ===
+0	71071
+0	71071
+0	71071

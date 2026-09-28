@@ -72,3 +72,4 @@ check "window function" "$(digest "SELECT x, row_number() OVER (PARTITION BY k),
 check "no PARTITION BY" "$(digest "SELECT x, sum(x) OVER () FROM t")"
 check "Float key" "$(digest "SELECT x, sum(x) OVER (PARTITION BY f) FROM t")"
 check "ORDER BY the partition key" "SELECT k, sum(x) OVER (PARTITION BY k) AS c FROM t ORDER BY k LIMIT 3"
+check "ORDER BY a prefix of the partition key" "SELECT k, sum(x) OVER (PARTITION BY k, k % 2) AS c FROM t ORDER BY k LIMIT 3"

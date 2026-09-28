@@ -77,8 +77,8 @@ void PartitionAggregateTransform::consume(Chunk chunk)
     {
         auto key = serializeKeysToPoolContiguous(row, key_columns.size(), key_columns, arena, nullptr);
 
-        decltype(key_to_group)::LookupResult it;
-        bool inserted;
+        decltype(key_to_group)::LookupResult it = nullptr;
+        bool inserted = false;
         key_to_group.emplace(key, it, inserted);
         if (inserted)
         {
@@ -158,7 +158,7 @@ void PartitionAggregateTransform::spill()
         for (size_t i = 0; i < columns.size(); ++i)
             if (!is_const_column[i])
                 written.push_back(columns[i]->convertToFullIfWrapped());
-        (*spilled)->write(header.cloneWithColumns(std::move(written)));
+        (*spilled)->write(header.cloneWithColumns(written));
     }
 
     chunks.clear();

@@ -1966,11 +1966,14 @@ void addWindowSteps(QueryPlan & query_plan,
                 || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
 
-        /// Hash partitioning replaces a sort, unless the sort would also serve the final ORDER BY. The
+        /// Hash partitioning replaces a sort, unless the sort would also serve the final ORDER BY: either the
+        /// final sort extends the window sort, or the window sort already satisfies it completely. The
         /// distributed plan only distributes windows over a sort (`tryPushWindowBelowSortedGather`).
+        const bool window_sort_serves_query_order = sortDescriptionIsPrefix(window_description.partition_by, query_sort_description)
+            || (!query_sort_description.empty() && sortDescriptionIsPrefix(query_sort_description, window_description.partition_by));
         const bool use_hash_partitioning = need_sort && settings[Setting::query_plan_window_functions_hash_partitioning]
             && !settings[Setting::make_distributed_plan]
-            && !sortDescriptionIsPrefix(window_description.partition_by, query_sort_description)
+            && !window_sort_serves_query_order
             && WindowStep::canUseHashPartitioning(window_description, *query_plan.getCurrentHeader());
         previous_uses_hash_partitioning = use_hash_partitioning;
 
