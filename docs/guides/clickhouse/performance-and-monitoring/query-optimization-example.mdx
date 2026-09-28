@@ -1,0 +1,382 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: 'Worked optimization example'
+title: 'Worked query optimization example'
+description: 'Follow a worked example of improving ClickHouse query performance through schema and ordering-key changes'
+doc_type: 'guide'
+keywords: ['query optimization', 'performance', 'NYC Taxi', 'data types', 'ordering key']
+---
+
+import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
+
+This guide applies two optimization approaches to the NYC Taxi dataset. First, it reduces the amount of data stored and processed by choosing more precise column types. It then introduces an ordering key that allows ClickHouse to skip data for selective queries. Each change is measured against the same baseline. See the [query optimization overview](/guides/clickhouse/performance-and-monitoring/query-optimization) for the broader workflow that this example follows.
+
+## Before you begin {#before-you-begin}
+
+The examples use the `nyc_taxi.trips_small_inferred` table. Create and load it if you have not already done so:
+
+<Accordion title="Set up the example dataset">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+The source Parquet file contains approximately 329 million rows. The timings in this guide were recorded on one deployment and will vary with available compute resources. Compare the relative change between stages rather than expecting identical durations.
+
+When applying this method to your own workload, use [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) to identify a recurring query pattern and choose a representative run before changing the query or schema.
+
+## Process overview {#process-overview}
+
+The example uses the following three stages:
+
+1. Run three independent workload queries against the inferred schema to establish a baseline.
+2. Create a table with more precise column types, load the same data, and rerun the queries.
+3. Create another table with the same optimized schema and an ordering key, then rerun the queries again.
+
+Changing the schema and ordering key in separate stages makes their effects easier to distinguish. [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) explains when to consider these changes and how to validate them. For more guidance on collecting comparable measurements, see [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+## Define the baseline workload {#define-the-baseline-workload}
+
+In the same client session used to run the workload, disable the filesystem cache for remote data, the query cache, and the query-condition cache:
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+These settings help make repeated runs comparable while testing. Restore their previous values after completing the measurements.
+</Note>
+
+The following three independent queries form the baseline workload. Run all three against each table created in the following stages. Execute each query several times under comparable conditions and record a representative duration, such as the median, along with rows read and peak memory usage. See [Establish a repeatable baseline](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline) for the complete measurement workflow, including how to retrieve these values from `system.query_log`.
+
+### Filter on calculated trip speed {#calculated-speed-filter}
+
+This query calculates trip duration and speed before finding the distribution of trip distances for rides faster than 30 miles per hour:
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+### Aggregate trips in a date range {#date-range-aggregation}
+
+This query calculates ride counts, distance, and average payment amounts for the first quarter of 2009:
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+### Filter by passenger count {#passenger-count-filter}
+
+This query calculates the average trip duration for trips with one or two passengers:
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+The original measurements were:
+
+| Workload | Duration | Rows read | Peak memory |
+| --- | ---: | ---: | ---: |
+| Calculated-speed filter | 1.699 sec | 329.04 million | 440.24 MiB |
+| Date-range aggregation | 1.419 sec | 329.04 million | 546.75 MiB |
+| Passenger-count filter | 1.414 sec | 329.04 million | 451.53 MiB |
+
+All three queries read approximately 329 million rows, which is close to the number of rows in the table. This establishes the opportunity to improve two different aspects of the workload: make the selected columns cheaper to process, then reduce the number of rows selected when the filters permit it.
+
+## Optimize the schema {#optimize-the-schema}
+
+Schema inference is a practical way to begin exploring a dataset, but the inferred types can be wider or more permissive than the workload requires. Inspect the data before changing the schema rather than assuming that an inferred type is unnecessary.
+
+### Avoid unnecessary Nullable columns {#nullable}
+
+A [`Nullable`](/reference/data-types/nullable) column stores a null mask in addition to its values. Keep `Nullable` when the distinction between a null value and the type's default value is meaningful, but avoid it for columns that are guaranteed to contain a value.
+
+Count null values in the columns used by the example schema:
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+Only `ratecode_id`, `mta_tax`, and `payment_type` contain null values in this dataset. The optimized schema retains `Nullable` for those columns and removes it from the others.
+
+### Use LowCardinality for repeated values {#low-cardinality}
+
+[`LowCardinality`](/reference/data-types/lowcardinality) uses dictionary encoding and can reduce storage and processing for columns with many repeated values. Check the number of distinct values before applying it:
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+These four columns contain substantially fewer distinct values than rows. They are reasonable candidates for `LowCardinality`, although the effect should still be measured for the workload. Approximately 10,000 distinct values is a useful starting point for identifying candidates, not a fixed limit.
+
+### Choose more precise data types {#optimize-data-type}
+
+Use the narrowest type that safely preserves the required range and precision. For example, inspect the minimum and maximum values of numeric columns before replacing an inferred `Int64` or `Float64`:
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+Both integer columns fit in [`UInt8`](/reference/data-types/int-uint), although `passenger_count` reaches its maximum value of 255. The example also uses [`Float32`](/reference/data-types/float) for `trip_distance` and [`Decimal32`](/reference/data-types/decimal) for monetary values. All values in this dataset fit the target ranges, and the example accepts the reduced floating-point precision and cent-scale monetary precision because its workload compares aggregate results. Retain the wider source types when exact source values are required. The example replaces the inferred [`DateTime64`](/reference/data-types/datetime64) columns with [`DateTime`](/reference/data-types/datetime) in the same `UTC` timezone because the example queries do not require fractional-second precision.
+
+These choices are specific to this dataset. Confirm the range, precision, and nullability requirements of production data before applying the same changes.
+
+### Apply the schema changes {#apply-the-optimizations}
+
+Create a table without an ordering key so that this stage measures the schema changes independently:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+In each workload query, replace `nyc_taxi.trips_small_inferred` with `nyc_taxi.trips_small_no_pk`, then rerun all three queries. The original example recorded the following representative results:
+
+| Workload | Inferred schema | Optimized schema | Rows read | Optimized peak memory |
+| --- | ---: | ---: | ---: | ---: |
+| Calculated-speed filter | 1.699 sec | 1.353 sec | 329.04 million | 337.12 MiB |
+| Date-range aggregation | 1.419 sec | 1.171 sec | 329.04 million | 531.09 MiB |
+| Passenger-count filter | 1.414 sec | 1.188 sec | 329.04 million | 265.05 MiB |
+
+The queries still read the same number of rows, but the optimized schema reduces the amount of data represented by those rows. Query duration and peak memory therefore improve without changing data selection.
+
+Compare the on-disk size of the two tables:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+For this dataset, the optimized schema reduces compressed storage by approximately 34%, from 7.38 GiB to 4.89 GiB.
+
+## Optimize the ordering key {#optimize-the-ordering-key}
+
+In the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family, the ordering key determines how rows are arranged on disk. ClickHouse builds a sparse primary index over that order so that it can skip granules that cannot satisfy a query's filters. Unlike a primary key in many transactional databases, it does not enforce uniqueness.
+
+The ordering key should reflect the filters used by important recurring queries. Column order matters: a key is most effective when the query filters on a useful prefix. Lower-cardinality columns sometimes make effective leading entries when they are commonly filtered, and a time component is often useful for time-based workloads. For detailed selection guidance, see [Choosing a primary key](/best-practices/choosing-a-primary-key).
+
+For this example, use `(passenger_count, pickup_datetime, dropoff_datetime)`. `passenger_count` has few distinct values and appears in the passenger-count filter, while `pickup_datetime` appears in the date-range aggregation. Although `pickup_datetime` is not the first column, ClickHouse can still use values from later key columns to exclude data when the leading column is unconstrained. Filtering on a useful prefix of the ordering key generally provides stronger pruning.
+
+### Apply the ordering-key change {#apply-the-ordering-key-change}
+
+Create a table with the same optimized schema used in the previous stage. Change only the ordering key:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+In each workload query, replace the table name with `nyc_taxi.trips_small_pk`, then rerun all three queries.
+
+## Compare the results {#compare-the-results}
+
+The original guide recorded the following measurements across the three stages:
+
+| Workload | Measurement | Inferred schema | Optimized schema | Optimized schema and ordering key |
+| --- | --- | ---: | ---: | ---: |
+| Calculated-speed filter | Duration | 1.699 sec | 1.353 sec | 0.765 sec |
+|  | Rows read | 329.04 million | 329.04 million | 329.04 million |
+|  | Peak memory | 440.24 MiB | 337.12 MiB | 444.19 MiB |
+| Date-range aggregation | Duration | 1.419 sec | 1.171 sec | 0.248 sec |
+|  | Rows read | 329.04 million | 329.04 million | 41.46 million |
+|  | Peak memory | 546.75 MiB | 531.09 MiB | 173.50 MiB |
+| Passenger-count filter | Duration | 1.414 sec | 1.188 sec | 0.431 sec |
+|  | Rows read | 329.04 million | 329.04 million | 276.99 million |
+|  | Peak memory | 451.53 MiB | 265.05 MiB | 197.38 MiB |
+
+The schema optimization reduces storage and makes the selected values cheaper to process. The ordering key provides the largest additional improvement for the date-range aggregation because ClickHouse can skip granules outside its date range. The passenger-count filter also reads fewer rows because it filters on the first key column. The calculated-speed filter still reads the entire table because its filter is derived from `pickup_datetime`, `dropoff_datetime`, and `trip_distance` rather than a useful prefix of the ordering key.
+
+Inspect the date-range aggregation with `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+On ClickHouse 25.9 and later, these settings ensure that `EXPLAIN` reports the indexes used and the parts and granules they eliminate.
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+The primary index selects 5,061 of 40,167 granules. That reduction corresponds with the date-range aggregation processing 41.46 million rows instead of the full 329.04 million.
+
+## Apply the method to your workload {#apply-the-method-to-your-workload}
+
+Use the same sequence for your own workload:
+
+1. Record baseline duration, rows and bytes read, and peak memory.
+2. Inspect whether selected columns use unnecessarily wide or permissive types.
+3. Apply and measure schema changes without changing the data layout.
+4. Test an ordering key based on the filters used by important recurring queries.
+5. Compare data selected with `EXPLAIN indexes = 1`, then rerun the baseline queries under comparable conditions.
+
+Do not assume that the types or ordering key from this example will suit another dataset. Use the observed values and query filters to make those decisions.
+
+## Next steps {#next-steps}
+
+Return to [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) to evaluate projections, materialized views, data-skipping indexes, or precomputation when schema and ordering-key changes do not address the measured bottleneck.

@@ -33,17 +33,17 @@ public:
             /// The same as MAP but the data is separated into N buckets (same Map columns) that are stored separately.
             MAP_WITH_BUCKETS = 1,
             /// Advanced serialization that implements logic similar to the Compact part inside each
-            /// granule of shared data for faster reading of individual paths from shared data.
+            /// chunk of shared data for faster reading of individual paths from shared data.
             /// There are several streams in this serialization:
             /// - ObjectSharedDataStructure stream (in Compact parts it's separated into Prefix and Suffix):
-            ///     <number of rows stored in the granule>                                         ─┐
-            ///     <number of paths stored in the granule>                                         │   <- Prefix
-            ///     <list of paths>                                                                ─┘
-            ///     <mark of the ObjectSharedDataData stream in this granule>                      ─┐
-            ///     <mark of the ObjectSharedDataPathsMarks stream in this granule>                 │   <- Suffix
-            ///     <mark of the ObjectSharedDataPathsSubstreamsMetadata stream in this granule>   ─┘
+            ///     <number of rows stored in the chunk>                                                ─┐
+            ///     <number of paths stored in the chunk>                                                │   <- Prefix
+            ///     <list of paths>                                                                     ─┘
+            ///     <mark of the ObjectSharedDataData stream in this chunk>                             ─┐
+            ///     <mark of the ObjectSharedDataPathsMarks stream in this chunk>                        │   <- Suffix
+            ///     <mark of the ObjectSharedDataPathsSubstreamsMetadata stream in this chunk>          ─┘
             /// - ObjectSharedDataData stream:
-            ///     <data of all paths as a single granule in Compact part format>
+            ///     <data of all paths as a single chunk in Compact part format>
             /// - ObjectSharedDataPathsMarks stream:
             ///     <mark of the beginning of each path data in ObjectSharedDataData stream>
             /// - ObjectSharedDataSubstreams stream:
@@ -62,6 +62,11 @@ public:
             /// - ObjectSharedDataCopyValues stream:
             ///     <data of the shared data Map values column>
             ADVANCED = 2,
+            /// The same as ADVANCED but with support for splitting rows into multiple chunks
+            /// to reduce peak memory during serialization.
+            /// In Wide parts: chunk-then-streams layout (each chunk writes all substreams sequentially).
+            /// In Compact parts: stream-then-chunks layout (each substream writes all chunks contiguously).
+            ADVANCED_CHUNKED = 3,
         };
 
         Value value;
@@ -124,30 +129,30 @@ public:
     bool tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override { throwNoSerialization(); }
 
 private:
-    /// Structure that represents the state of the data in a single granule deserialized from ObjectSharedDataStructure stream.
+    /// Structure that represents the state of the data in a single chunk deserialized from ObjectSharedDataStructure stream.
     /// This structure contains all information that is needed to deserialize the data of a specific paths/their subcolumns from
-    /// the same granule.
-    struct StructureGranule
+    /// the same chunk.
+    struct ChunkStructure
     {
         /// Map from the position of the path in the paths list to the requested path.
         /// We use std::map because we need positions to be ordered.
         std::map<size_t, String> position_to_requested_path;
-        /// List of all paths stored in the granule. It is filled only if whole
+        /// List of all paths stored in the chunk. It is filled only if whole
         /// shared data is deserialized when we need the list of all paths.
         std::vector<String> all_paths;
-        /// Number of rows in this granule.
+        /// Number of rows in this chunk.
         size_t num_rows = 0;
-        /// How much rows should be read from this granule. Can be less than num_rows if we read only a part of the granule.
+        /// How much rows should be read from this chunk. Can be less than num_rows if we read only a part of the chunk.
         size_t limit = 0;
-        /// How much rows should be skipped in this granule before reading.
+        /// How much rows should be skipped in this chunk before reading.
         size_t offset = 0;
-        /// Total number of paths in this granule, not only requested ones.
+        /// Total number of paths in this chunk, not only requested ones.
         size_t num_paths = 0;
-        /// Mark of the ObjectSharedDataData stream for this granule.
+        /// Mark of the ObjectSharedDataData stream for this chunk.
         MarkInCompressedFile data_stream_mark{};
-        /// Mark of the ObjectSharedDataPathsMarks stream for this granule.
+        /// Mark of the ObjectSharedDataPathsMarks stream for this chunk.
         MarkInCompressedFile paths_marks_stream_mark{};
-        /// Mark of the ObjectSharedDataPathsSubstreamsMetadata stream for this granule.
+        /// Mark of the ObjectSharedDataPathsSubstreamsMetadata stream for this chunk.
         MarkInCompressedFile paths_substreams_metadata_stream_mark{};
 
         void clear()
@@ -161,15 +166,15 @@ private:
         }
     };
 
-    using StructureGranules = std::vector<StructureGranule>;
+    using ChunkStructures = std::vector<ChunkStructure>;
 
     /// We deserialize data from ObjectSharedDataStructure stream only once and then use substreams cache to get it if needed.
-    /// We can read more than 1 granule at a time, so we need to be able to store a list of StructureGranule structures in the cache.
+    /// We can read more than 1 chunk at a time, so we need to be able to store a list of ChunkStructure structures in the cache.
     struct SubstreamsCacheStructureElement : public ISerialization::ISubstreamsCacheElement
     {
-        explicit SubstreamsCacheStructureElement(std::shared_ptr<StructureGranules> structure_granules_) : structure_granules(structure_granules_) {}
+        explicit SubstreamsCacheStructureElement(std::shared_ptr<ChunkStructures> chunk_structures_) : chunk_structures(chunk_structures_) {}
 
-        std::shared_ptr<StructureGranules> structure_granules;
+        std::shared_ptr<ChunkStructures> chunk_structures;
     };
 
     /// State of the deserialization from ObjectSharedDataStructure stream
@@ -191,11 +196,11 @@ private:
         /// List of paths prefixes that were requested by reading a sub-object, all paths
         /// that matches these prefixes needs to be read.
         std::vector<String> requested_paths_prefixes;
-        /// If we read the whole shared data we need the list of all paths stored in each granule.
+        /// If we read the whole shared data we need the list of all paths stored in each chunk.
         bool need_all_paths = false;
 
-        /// We can read only a part of the granule, so we need to remember the state of the last read granule.
-        StructureGranule last_granule_structure;
+        /// We can read only a part of the chunk, so we need to remember the state of the last read chunk.
+        ChunkStructure last_chunk_structure;
 
         ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {
@@ -211,25 +216,20 @@ private:
     static DeserializeBinaryBulkStatePtr deserializeStructureStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
 
     /// Deserialize data from ObjectSharedDataStructure stream with specified limit.
-    static std::shared_ptr<StructureGranules> deserializeStructure(
+    static std::shared_ptr<ChunkStructures> deserializeStructure(
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
         SubstreamsCache * cache);
 
-    /// Deserialize prefix of the granule in ObjectSharedDataStructure(Prefix) stream that contains:
-    ///   - number of rows in the granule
-    ///   - list of all paths stored in the granule
-    static void deserializeStructureGranulePrefix(
+    /// Deserialize prefix of the chunk in ObjectSharedDataStructure(Prefix) stream.
+    static void deserializeChunkStructurePrefix(
         ReadBuffer & buf,
-        StructureGranule & structure_granule,
+        ChunkStructure & chunk_structure,
         const DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state);
 
-    /// Deserialize suffix of the granule in ObjectSharedDataStructure(Suffix) stream that contains:
-    ///   - mark of the ObjectSharedDataData stream in this granule
-    ///   - mark of the ObjectSharedDataPathsMarks stream in this granule
-    ///   - mark of the ObjectSharedDataPathsSubstreamsMetadata stream in this granule
-    static void deserializeStructureGranuleSuffix(ReadBuffer & buf, StructureGranule & structure_granule);
+    /// Deserialize suffix of the chunk in ObjectSharedDataStructure(Suffix) stream.
+    static void deserializeChunkStructureSuffix(ReadBuffer & buf, ChunkStructure & chunk_structure);
 
     /// Struct that contains all information about path that is required to read
     /// its data or its subcolumn data from ADVANCED shared data serialization.
@@ -257,18 +257,18 @@ private:
         std::unordered_map<String, PathInfo> path_to_info;
     };
 
-    using PathsInfosGranules = std::vector<PathsInfos>;
+    using PathsInfosChunks = std::vector<PathsInfos>;
 
     /// We deserialize paths infos only once and then put it in the cache.
     struct SubstreamsCachePathsInfosElement : public ISubstreamsCacheElement
     {
-        explicit SubstreamsCachePathsInfosElement(std::shared_ptr<PathsInfosGranules> paths_infos_granules_) : paths_infos_granules(paths_infos_granules_) {}
+        explicit SubstreamsCachePathsInfosElement(std::shared_ptr<PathsInfosChunks> paths_infos_chunks_) : paths_infos_chunks(paths_infos_chunks_) {}
 
-        std::shared_ptr<PathsInfosGranules> paths_infos_granules;
+        std::shared_ptr<PathsInfosChunks> paths_infos_chunks;
     };
 
-    static std::shared_ptr<PathsInfosGranules> deserializePathsInfos(
-        const SerializationObjectSharedData::StructureGranules & structure_granules,
+    static std::shared_ptr<PathsInfosChunks> deserializePathsInfos(
+        const SerializationObjectSharedData::ChunkStructures & chunk_structures,
         const SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
         DeserializeBinaryBulkSettings & settings,
         SubstreamsCache * cache);
@@ -277,27 +277,27 @@ private:
     /// for specific paths and their subcolumns.
     struct PathsData
     {
-        /// Data of the all requested paths in this granule.
+        /// Data of the all requested paths in this chunk.
         std::unordered_map<String, ColumnPtr> paths_data;
-        /// Data of the all requested paths subcolumns in this granule.
+        /// Data of the all requested paths subcolumns in this chunk.
         /// If paths is inside paths_data, it cannot be inside paths_subcolumns_data,
         /// so if we need subcolumn in this case we will extract it in memory.
         std::unordered_map<String, std::unordered_map<String, ColumnPtr>> paths_subcolumns_data;
     };
 
-    using PathsDataGranules = std::vector<PathsData>;
+    using PathsDataChunks = std::vector<PathsData>;
 
     /// We deserialize paths data only once and then put it in the cache.
     struct SubstreamsCachePathsDataElement : public ISubstreamsCacheElement
     {
-        explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataGranules> paths_data_granules_) : paths_data_granules(paths_data_granules_) {}
+        explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataChunks> paths_data_chunks_) : paths_data_chunks(paths_data_chunks_) {}
 
-        std::shared_ptr<PathsDataGranules> paths_data_granules;
+        std::shared_ptr<PathsDataChunks> paths_data_chunks;
     };
 
-    static std::shared_ptr<PathsDataGranules> deserializePathsData(
-        const SerializationObjectSharedData::StructureGranules & structure_granules,
-        const PathsInfosGranules & paths_infos_granules,
+    static std::shared_ptr<PathsDataChunks> deserializePathsData(
+        const SerializationObjectSharedData::ChunkStructures & chunk_structures,
+        const PathsInfosChunks & paths_infos_chunks,
         const SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
         DeserializeBinaryBulkSettings & settings,
         const DataTypePtr & dynamic_type,

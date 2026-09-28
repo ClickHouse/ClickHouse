@@ -20,6 +20,8 @@ doc_type: 'reference'
   ولإرجاع صف واحد يحتوي على القيمة الافتراضية لنوع المصفوفة، يمكنك تغليفها بـ [emptyArrayToSingle](/ar/reference/functions/regular-functions/array-functions#emptyArrayToSingle)، على سبيل المثال: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (منذ الإصدار 26.5) اسم مستعار لـ `arrayJoin` غير حساس لحالة الأحرف عند استخدامه بصيغة استدعاء الدالة (`SELECT unnest(arr)`). لا تُدعم صياغة PostgreSQL لمصدر الجدول (`FROM unnest(...)` و`CROSS JOIN UNNEST(...)` و`LATERAL`). استخدم عبارة [`ARRAY JOIN`](/ar/reference/statements/select/array-join) لهذه الاستعلامات.
+
 على سبيل المثال:
 
 ```sql title="Query"

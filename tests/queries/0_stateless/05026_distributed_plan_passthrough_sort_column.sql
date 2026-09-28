@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A sorted `GatherExchange` under a step whose `ActionsDAG` does not mention a sort column at all.
 -- `ActionsDAG::updateHeader` copies such a column from the input header into the output header without
 -- giving it a node in `outputs`, so the move-up check found it in the header and then failed to look it

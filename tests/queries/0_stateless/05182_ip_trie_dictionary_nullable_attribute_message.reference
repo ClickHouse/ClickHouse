@@ -1,0 +1,4 @@
+--- A Nullable attribute is rejected, and the message says only that:
+nullable attributes not supported for dictionary of type Trie
+--- An Array attribute is supported:
+['a','b']

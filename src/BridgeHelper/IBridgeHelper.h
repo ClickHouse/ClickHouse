@@ -11,7 +11,7 @@
 namespace DB
 {
 
-/// Base class for server-side bridge helpers, e.g. xdbc-bridge and library-bridge.
+/// Base class for server-side bridge helpers, e.g. xdbc-bridge.
 /// Contains helper methods to check/start bridge sync
 class IBridgeHelper: protected WithContext
 {
@@ -57,13 +57,6 @@ protected:
     virtual Poco::Timespan getHTTPTimeout() const = 0;
 
     virtual Poco::URI createBaseURI() const = 0;
-
-    /// The single directory or file the bridge is allowed to `dlopen`, passed to it as `--libraries-path`.
-    /// An empty optional means the bridge does not load shared libraries at all, so it needs no sandbox.
-    /// A bridge that does load them must never be started without one, so the override is expected to
-    /// throw instead of returning an empty optional when the sandbox is not configured.
-    virtual std::optional<String> getLibrariesSandboxPath() const { return {}; }
-
 
 private:
     std::unique_ptr<ShellCommand> startBridgeCommand();

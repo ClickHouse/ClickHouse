@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "데이터 소스",
+      "group": "Data sources",
       "pages": [
         "ko/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "데이터 시각화",
+      "group": "Data visualization",
       "pages": [
         "ko/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "커뮤니티 통합",
+          "group": "Community integrations",
           "pages": [
             "ko/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ko/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,9 +100,8 @@
     },
     {
       "expanded": true,
-      "group": "데이터 수집",
+      "group": "Data ingestion",
       "pages": [
-        "ko/integrations/connectors/data-ingestion/index",
         "ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ko/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -139,7 +138,7 @@
             "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow 템플릿",
+              "group": "Dataflow templates",
               "pages": [
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -149,15 +148,7 @@
         },
         "ko/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
+          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
         },
         "ko/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -180,7 +171,7 @@
         },
         {
           "expanded": false,
-          "group": "커뮤니티 통합",
+          "group": "Community integrations",
           "pages": [
             "ko/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ko/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -198,11 +189,12 @@
     },
     {
       "expanded": true,
-      "group": "데이터 통합",
+      "group": "Data integrations",
       "pages": [
         "ko/integrations/connectors/tools/data-integration-index",
         "ko/integrations/connectors/data-integrations/integrations/retool",
         "ko/integrations/connectors/data-integrations/integrations/easypanel",
+        "ko/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ko/integrations/connectors/data-integrations/integrations/middleware",
         "ko/integrations/connectors/data-integrations/integrations/notion",
         "ko/integrations/connectors/data-integrations/integrations/splunk"
@@ -210,7 +202,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL 클라이언트",
+      "group": "SQL-clients",
       "pages": [
         "ko/integrations/connectors/sql-clients/index",
         "ko/integrations/connectors/sql-clients/sql-console",
@@ -226,7 +218,7 @@
     },
     {
       "expanded": true,
-      "group": "도구",
+      "group": "Tools",
       "pages": [
         "ko/integrations/connectors/tools/index",
         "ko/integrations/connectors/tools/misc-index",
@@ -237,5 +229,5 @@
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",
-  "item": "커넥터"
+  "item": "Connectors"
 }

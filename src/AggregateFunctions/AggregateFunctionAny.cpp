@@ -138,6 +138,22 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return singleValueSerializedSizeBound<Data>();
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        if constexpr (HasSerializedSizeBound<Data>)
+        {
+            this->data(place).write(dst, *serialization);
+            return dst;
+        }
+        else
+            return IAggregateFunction::serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, this->result_type, arena);
@@ -326,6 +342,22 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return singleValueSerializedSizeBound<Data>();
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        if constexpr (HasSerializedSizeBound<Data>)
+        {
+            this->data(place).write(dst, *serialization);
+            return dst;
+        }
+        else
+            return IAggregateFunction::serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, this->result_type, arena);
@@ -398,9 +430,9 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description = R"(
 Selects the first encountered value of a column.
 
-:::warning
+<Warning>
 As a query can be executed in arbitrary order, the result of this function is non-deterministic. If you need an arbitrary but deterministic result, use functions min or max.
-:::
+</Warning>
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the first value reads no matter if NULL or not.
@@ -414,11 +446,11 @@ When a `SELECT` query has the `GROUP BY` clause or at least one aggregate functi
 In other words, each column selected from the table must be used either in keys or inside aggregate functions.
 To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
 
-:::note
+<Note>
 The return type of the function is the same as the input, except for LowCardinality which is discarded.
 This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column).
 You might use the -OrNull combinator to modify this behaviour.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "any(column)[ RESPECT NULLS]";
     FunctionDocumentation::Arguments arguments = {
@@ -458,10 +490,10 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
     FunctionDocumentation::Description anyLast_description = R"(
 Selects the last encountered value of a column.
 
-:::warning
+<Warning>
 As a query can be executed in arbitrary order, the result of this function is non-deterministic.
 If you need an arbitrary but deterministic result, use functions [min](/reference/functions/aggregate-functions/min) or [max](/reference/functions/aggregate-functions/max).
-:::
+</Warning>
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the last value reads no matter if NULL or not.
