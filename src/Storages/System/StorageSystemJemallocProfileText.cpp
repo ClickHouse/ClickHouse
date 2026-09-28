@@ -84,8 +84,7 @@ Pipe StorageSystemJemallocProfileText::read(
         max_block_size,
         format,
         symbolize_with_inline,
-        collapsed_use_count,
-        /* remove_file= */ true);
+        collapsed_use_count);
 
     return Pipe(std::move(source));
 #else

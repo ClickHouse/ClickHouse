@@ -1,6 +1,7 @@
--- Tags: no-parallel-replicas, no-darwin
+-- Tags: no-parallel-replicas, no-darwin, no-old-analyzer
 -- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
 -- no-parallel-replicas: STREAM reads do not support parallel replicas.
+-- no-old-analyzer: streaming queries are analyzer-only; the old analyzer raises NOT_IMPLEMENTED (Code 48).
 
 -- A pathological max_streams_for_merge_tree_reading must not throw std::length_error from
 -- pipes.reserve in groupPartitionsByStreams (which aborts the server in debug/sanitizer builds).

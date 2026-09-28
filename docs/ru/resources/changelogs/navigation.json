@@ -7,7 +7,7 @@
         "ru/resources/changelogs/cloud/index",
         "ru/resources/changelogs/cloud/2026",
         {
-          "group": "Archive",
+          "group": "Архив",
           "pages": [
             "ru/resources/changelogs/cloud/archive/2025",
             "ru/resources/changelogs/cloud/archive/2024",
@@ -17,7 +17,7 @@
         },
         "ru/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloud database release changelog",
+          "group": "Журнал изменений релизов базы данных в Cloud",
           "pages": [
             "ru/resources/changelogs/cloud/release-notes-index",
             {
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "dropdown": "Open source",
+      "dropdown": "С открытым исходным кодом",
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "ru/resources/changelogs/oss/2026",
         {
           "expanded": false,
-          "group": "Archive",
+          "group": "Архив",
           "pages": [
             "ru/resources/changelogs/oss/2025",
             "ru/resources/changelogs/oss/2024",
@@ -77,5 +77,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "Changelogs"
+  "item": "История изменений"
 }

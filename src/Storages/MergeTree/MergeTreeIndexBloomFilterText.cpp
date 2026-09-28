@@ -1,27 +1,21 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
-#include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
-#include <Functions/Regexps.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -160,14 +154,12 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
-    TokenizerPtr token_extactor_,
-    NameSet columns_shadowing_map_subcolumns_)
+    TokenizerPtr token_extactor_)
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
     if (!predicate)
     {
@@ -327,60 +319,6 @@ std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const std::
     return it == index_columns.end() ? std::nullopt : std::make_optional<size_t>(std::ranges::distance(index_columns.cbegin(), it));
 }
 
-/// The granule tokenizes the raw bytes of the indexed column, so a probe must be built from bytes of
-/// that same encoding. Returns false when the constant cannot be represented there, in which case the
-/// caller must not use the index: declining costs pruning, probing foreign bytes loses rows.
-static bool convertConstantToIndexDomain(
-    const DataTypePtr & indexed_type, const DataTypePtr & constant_type, const Field & constant, String & out_bytes)
-{
-    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(indexed_type);
-
-    if (WhichDataType(actual_type).isStringOrFixedString())
-    {
-        out_bytes = constant.safeGet<String>();
-        return true;
-    }
-
-    /// A `FixedString` constant arrives without the trailing zeros that string comparison ignores, while
-    /// this domain deserializes the type's declared width. Zero-extend it back, as the conversion to
-    /// `FixedString` does for a shorter value.
-    Field widened = constant;
-    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(removeNullable(removeLowCardinality(constant_type)).get());
-        fixed_string_type && widened.getType() == Field::Types::String
-        && widened.safeGet<String>().size() < fixed_string_type->getN())
-    {
-        String bytes = widened.safeGet<String>();
-        bytes.resize(fixed_string_type->getN());
-        widened = std::move(bytes);
-    }
-
-    /// `try` because index analysis can run for constants the comparison itself would never evaluate.
-    Field converted = tryConvertFieldToType(widened, *actual_type, constant_type.get());
-    if (converted.isNull())
-        return false;
-
-    auto column = actual_type->createColumn();
-    if (!column->tryInsert(converted))
-        return false;
-    out_bytes = column->getDataAt(0);
-    return true;
-}
-
-/// True when the constant lands on the index domain's default value. The comparison is on the encoded
-/// bytes, so it holds for domains where the default has no textual spelling of its own, such as the 16
-/// zero bytes of `IPv6`.
-static bool constantIsIndexDomainDefault(
-    const DataTypePtr & indexed_type, const DataTypePtr & constant_type, const Field & constant)
-{
-    String constant_bytes;
-    if (!convertConstantToIndexDomain(indexed_type, constant_type, constant, constant_bytes))
-        return false;
-
-    auto column = BloomFilter::getPrimitiveType(indexed_type)->createColumn();
-    column->insertDefault();
-    return constant_bytes == column->getDataAt(0);
-}
-
 bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
@@ -437,42 +375,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                 tokenizer->stringToBloomFilter(json_info->path.data(), json_info->path.size(), *out.bloom_filter);
                 return true;
             }
-        }
-
-        /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a 3-argument
-        /// call `like(col, pattern, escape_char)` / `notLike(...)`. Fold the escape character into the
-        /// pattern and dispatch through the existing 2-argument handler. `ilike` is intentionally not
-        /// handled here because this index does not support case-insensitive LIKE.
-        if (arguments_size == 3 && (function_name == "like" || function_name == "notLike"))
-        {
-            auto lhs_argument = function_node.getArgumentAt(0);
-            auto pattern_argument = function_node.getArgumentAt(1);
-            auto escape_argument = function_node.getArgumentAt(2);
-
-            Field pattern_field;
-            DataTypePtr pattern_type;
-            Field escape_field;
-            DataTypePtr escape_type;
-            if (pattern_argument.tryGetConstant(pattern_field, pattern_type)
-                && escape_argument.tryGetConstant(escape_field, escape_type)
-                && pattern_field.getType() == Field::Types::String
-                && escape_field.getType() == Field::Types::String)
-            {
-                const String & escape_str = escape_field.safeGet<String>();
-                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`, otherwise
-                /// skipping the granule would drop a `like` call that should have raised `BAD_ARGUMENTS`.
-                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
-                        function_name, escape_str);
-
-                Field rewritten_field(likePatternWithCustomEscapeToLikePattern(
-                    pattern_field.safeGet<String>(), escape_str[0]));
-                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out))
-                    return true;
-            }
-            return false;
         }
 
         if (arguments_size != 2)
@@ -535,51 +437,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
-namespace
-{
-
-bool isLikePatternFunction(const String & function_name)
-{
-    return function_name == "like"
-        || function_name == "notLike"
-        || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike";
-}
-
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
-Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
-{
-    auto inner_type = removeNullable(removeLowCardinality(type));
-
-    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
-    {
-        String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
-        return Field(std::move(value));
-    }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
-        array_type && field.getType() == Field::Types::Array)
-    {
-        Array stripped;
-        const auto & elements = field.safeGet<Array>();
-        stripped.reserve(elements.size());
-        for (const auto & element : elements)
-            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
-        return Field(std::move(stripped));
-    }
-
-    return field;
-}
-
-/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
-bool functionIgnoresFixedStringPadding(const String & function_name)
-{
-    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
-}
-
-}
-
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -595,7 +452,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
         {
             auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field, value_type))
+            if (!isJSONPathFilterSafe(key_type, value_field))
                 return false;
 
             out.key_column = json_info->header_position;
@@ -606,36 +463,16 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    auto unwrapped_value_type = WhichDataType(stripped_value_type).isString() ? stripped_value_type : value_type;
-
-    auto value_data_type = WhichDataType(unwrapped_value_type);
+    auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    /// Every allowed tokenizer `ngrams`, `splitByNonAlpha` and `sparseGrams` emit the terms of the unpadded value as terms of the padded one.
-    Field const_value = functionIgnoresFixedStringPadding(function_name)
-        ? stripFixedStringPaddingForTerms(value_field, value_type)
-        : value_field;
-    /// Travels with `const_value`: the map branches below replace the value with the map key, whose
-    /// type is not the compared expression's type. `convertFieldToType` dispatches on this.
-    DataTypePtr const_source_type = value_type;
-
-    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
-    /// granule holding matching rows.
-    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
-        && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
-        return false;
+    Field const_value = value_field;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
-    bool reads_map_element_against_values_index = false;
 
     if (key_node.isFunction())
     {
@@ -651,8 +488,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but arrayElement returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            if (value_field == value_type->getDefault())
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
@@ -666,15 +502,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 {
                     key_index = map_keys_index;
 
-                    auto unwrapped_const_type = removeLowCardinality(const_type);
-                    if (!const_value.isNull())
-                        unwrapped_const_type = removeNullable(unwrapped_const_type);
-
-                    auto const_data_type = WhichDataType(unwrapped_const_type);
-                    if (const_value.isNull() || (!const_data_type.isStringOrFixedString() && !const_data_type.isArray()))
+                    auto const_data_type = WhichDataType(const_type);
+                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
                         return false;
-
-                    const_source_type = const_type;
                 }
                 else
                 {
@@ -684,7 +514,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
                 key_index = map_values_exists;
-                reads_map_element_against_values_index = true;
             }
             else
             {
@@ -696,26 +525,23 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns))
+        if (auto parsed = tryParseMapSubcolumnName(column_name))
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but the subcolumn returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            if (value_field == value_type->getDefault())
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
-                const_source_type = std::make_shared<DataTypeString>();
             }
             else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
                 key_index = map_values_idx;
-                reads_map_element_against_values_index = true;
             }
             else
             {
@@ -724,26 +550,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    /// The default above is the compared expression's, which is the map value type only for a string
-    /// valued map. A key the row does not have still reads as the map value type's default, a value the
-    /// index does not hold, so such a comparison must not prune.
-    if (reads_map_element_against_values_index
-        && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
-        return false;
-
     const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
     const auto is_has_token_case_insensitive = function_name.starts_with("hasTokenCaseInsensitive");
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
-        /// A separator-bearing needle is invalid for the throwing `hasToken` variants, which raise during
-        /// the scan, so the unwrapping above must not let such a needle prune the granule that owes the
-        /// exception. `value_field` is the needle; `const_value` may hold a map key here.
-        if (WhichDataType(value_type).isLowCardinality() && !function_name.ends_with("OrNull")
-            && value_field.getType() == Field::Types::String
-            && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
-            return false;
-
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -838,12 +649,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
-        String value;
-        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
-            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
+        const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
@@ -851,12 +660,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
-        String value;
-        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
-            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
+        const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
@@ -927,9 +734,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
-        /// Validate the regexp before using its required substring to build
-        /// the skip-index condition.
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())
@@ -1022,32 +826,11 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
-        /// A set element's own bytes are the index encoding only when the indexed column is a string; on
-        /// any other domain each element needs the same re-encoding a single constant gets.
-        const DataTypePtr & indexed_type = index_data_types[elem.key_index];
-        const bool convert = !WhichDataType(BloomFilter::getPrimitiveType(indexed_type)).isStringOrFixedString();
-        const DataTypePtr & element_type = prepared_set->getElementsTypes()[tuple_idx];
-        const bool is_fixed_string_element = WhichDataType(column->getDataType()).isFixedString();
-
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
-            String converted;
-            /// One unconvertible element would under-approximate membership, so decline the whole atom.
-            if (convert && !convertConstantToIndexDomain(indexed_type, element_type, (*column)[row], converted))
-                return false;
-
             bloom_filters.back().emplace_back(params);
-
-            std::string_view element = converted;
-            if (!convert)
-            {
-                /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
-                element = column->getDataAt(row);
-                if (is_fixed_string_element)
-                    element = element.substr(0, element.find_last_not_of('\0') + 1);
-            }
-
-            forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
+            auto ref = column->getDataAt(row);
+            forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
 
@@ -1070,8 +853,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

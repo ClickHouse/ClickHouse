@@ -21,8 +21,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
-#include <algorithm>
-
 #include "config.h"
 
 #if USE_AWS_S3
@@ -103,7 +101,7 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
-void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
+void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator();
 
@@ -156,12 +154,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
-    /// `max_num_streams` is a read-parallelism request, not a thread budget.
-    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output
         && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
-        && output_ports > 0 && output_ports < resize_to)
-        pipe.resize(resize_to);
+        && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

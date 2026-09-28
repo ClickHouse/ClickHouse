@@ -21,13 +21,6 @@ SET query_plan_max_limit_for_top_k_optimization = 0;
 -- Do not let the profitability freeze drop the heap: these streams never skip a
 -- row, so an unfrozen heap is exactly what is under test.
 SET group_by_top_k_optimization_observation_rows = 0;
--- CI randomizes `max_bytes_before_external_group_by`, and a threshold below the size
--- of an empty two-level hash table puts the query into a spill-per-block loop: every
--- flush reinitializes the table with a fresh arena and a fresh heap, so the cumulative
--- counters below stop describing a single in-memory table. Pin the spill off - what is
--- under test is the bound the in-memory heap maintains.
-SET max_bytes_before_external_group_by = 0;
-SET max_bytes_ratio_before_external_group_by = 0;
 SET max_threads = 1;
 
 SELECT 'evicted states are reused within one block';

@@ -19,7 +19,7 @@ SELECT
     timeSeriesResetsToGrid(100, 200, 20, 100)(ts, vals) AS resets,
     timeSeriesDerivToGrid(100, 200, 20, 100)(ts, vals) AS deriv,
     timeSeriesPredictLinearToGrid(100, 200, 20, 100, 60)(ts, vals) AS predict,
-    timeSeriesLastToGrid(100, 200, 20, 100)(ts, vals) AS resample
+    timeSeriesResampleToGridWithStaleness(100, 200, 20, 100)(ts, vals) AS resample
 FORMAT Vertical;
 
 -- A shuffled array reliably tests the out-of-order add path.
@@ -39,7 +39,7 @@ SELECT
     timeSeriesResetsToGrid(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesResetsToGrid(100, 200, 20, 100)(ts, vals),
     timeSeriesDerivToGrid(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesDerivToGrid(100, 200, 20, 100)(ts, vals),
     timeSeriesPredictLinearToGrid(100, 200, 20, 100, 60)(shuffled_ts, shuffled_vals) = timeSeriesPredictLinearToGrid(100, 200, 20, 100, 60)(ts, vals),
-    timeSeriesLastToGrid(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesLastToGrid(100, 200, 20, 100)(ts, vals);
+    timeSeriesResampleToGridWithStaleness(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesResampleToGridWithStaleness(100, 200, 20, 100)(ts, vals);
 
 -- When several samples share a timestamp, the largest real value wins, and a NaN (a Prometheus stale marker) loses
 -- to any real value, in whatever order the samples arrive. Each check must equal the aggregation of its explicit
@@ -107,13 +107,13 @@ SELECT timeSeriesRateToGridMerge(100, 200, 20, 100)(st) = (SELECT timeSeriesRate
 DROP TABLE ts_agg_states;
 
 -- Servers of older versions serialize samples in hash-map order, so any wire order must be accepted. Both literals
--- are a FORMAT_VERSION 5 timeSeriesRateToGridState(100, 200, 20, 100) over samples (110, 1), (125, 3), (140, 2);
+-- are a FORMAT_VERSION 4 timeSeriesRateToGridState(100, 200, 20, 100) over samples (110, 1), (125, 3), (140, 2);
 -- in the second one the two 16-byte (timestamp, value) pairs of its two-sample bucket are swapped.
 -- Regenerate both literals if the serialization format ever changes.
 SELECT 'deserializing samples in a different wire order gives the same result (grid, 1):';
 WITH
-    CAST(unhex('05000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F0600000000000000020000000000000048E80100000000000000000000000840E0220200000000000000000000000040'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS sorted_state,
-    CAST(unhex('05000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F06000000000000000200000000000000E022020000000000000000000000004048E80100000000000000000000000840'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS swapped_state
+    CAST(unhex('04000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F0600000000000000020000000000000048E80100000000000000000000000840E0220200000000000000000000000040'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS sorted_state,
+    CAST(unhex('04000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F06000000000000000200000000000000E022020000000000000000000000004048E80100000000000000000000000840'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS swapped_state
 SELECT finalizeAggregation(sorted_state), finalizeAggregation(sorted_state) = finalizeAggregation(swapped_state);
 
 -- Scalar path: the same series stored as one sorted part and as two parts with interleaved timestamps.

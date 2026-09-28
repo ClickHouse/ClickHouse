@@ -88,31 +88,6 @@ public:
         }
     }
 
-    void remove(T value)
-    {
-        if (isSmall())
-        {
-            if (small.find(value) == small.end())
-                return;
-
-            /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
-            /// `small_set_size` values, so this is a bounded amount of work.
-            std::array<T, small_set_size> kept{};
-            size_t kept_size = 0;
-            for (const auto & x : small)
-                if (x.getValue() != value)
-                    kept[kept_size++] = x.getValue();
-
-            small.clear();
-            for (size_t i = 0; i < kept_size; ++i)
-                small.insert(kept[i]);
-        }
-        else
-        {
-            roaring_bitmap->remove(static_cast<Value>(value));
-        }
-    }
-
     UInt64 size() const
     {
         if (isSmall())
@@ -328,22 +303,10 @@ public:
                     ++ret;
             }
         }
-        else if (r1.isSmall())
-        {
-            for (const auto & x : r1.small)
-            {
-                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
-                    ++ret;
-            }
-        }
-        else if constexpr (sizeof(T) < 8)
-        {
-            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
-        }
         else
         {
-            /// Roaring64Map exposes no and_cardinality, so the intersection must be materialized.
-            ret = (*roaring_bitmap & *r1.roaring_bitmap).cardinality();
+            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+            ret = (*roaring_bitmap & *new_rb).cardinality();
         }
         return ret;
     }
@@ -423,14 +386,8 @@ public:
                     return 1;
             }
         }
-        else if constexpr (sizeof(T) < 8)
-        {
-            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
-                return 1;
-        }
         else
         {
-            /// Roaring64Map exposes no intersect, so the intersection must be materialized.
             if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
                 return 1;
         }

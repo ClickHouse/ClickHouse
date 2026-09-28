@@ -3,16 +3,13 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Parsers/IAST.h>
-#include <Common/Exception.h>
-
-#include <cstring>
 
 namespace DB
 {
 
-ASTPtr CompressionCodecNone::getCodecDescription() const
+CompressionCodecNone::CompressionCodecNone()
 {
-    return makeCodecDescription("NONE");
+    setCodecDescription("NONE");
 }
 
 uint8_t CompressionCodecNone::getMethodByte() const
@@ -22,7 +19,7 @@ uint8_t CompressionCodecNone::getMethodByte() const
 
 void CompressionCodecNone::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const

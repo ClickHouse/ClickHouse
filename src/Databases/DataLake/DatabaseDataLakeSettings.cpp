@@ -111,11 +111,6 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
     return changes;
 }
 
-bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
-{
-    return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
-}
-
 const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
 {
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();

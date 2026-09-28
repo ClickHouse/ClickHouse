@@ -7,7 +7,7 @@
         "zh/resources/changelogs/cloud/index",
         "zh/resources/changelogs/cloud/2026",
         {
-          "group": "Archive",
+          "group": "归档",
           "pages": [
             "zh/resources/changelogs/cloud/archive/2025",
             "zh/resources/changelogs/cloud/archive/2024",
@@ -17,7 +17,7 @@
         },
         "zh/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloud database release changelog",
+          "group": "Cloud 数据库版本更新日志",
           "pages": [
             "zh/resources/changelogs/cloud/release-notes-index",
             {
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "dropdown": "Open source",
+      "dropdown": "开源",
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "zh/resources/changelogs/oss/2026",
         {
           "expanded": false,
-          "group": "Archive",
+          "group": "归档",
           "pages": [
             "zh/resources/changelogs/oss/2025",
             "zh/resources/changelogs/oss/2024",
@@ -77,5 +77,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "Changelogs"
+  "item": "更新日志"
 }

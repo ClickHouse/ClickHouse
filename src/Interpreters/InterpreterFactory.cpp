@@ -18,7 +18,7 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -35,6 +35,7 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowSettingQuery.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
@@ -49,7 +50,6 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTCreateTokenQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -65,7 +65,10 @@
 #include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
@@ -90,6 +93,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
 }
 
@@ -140,16 +144,25 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        interpreter_name = "InterpreterSelectQueryAnalyzer";
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            interpreter_name = "InterpreterSelectQueryAnalyzer";
+        /// This is internal part of ASTSelectWithUnionQuery.
+        /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
+        else
+            interpreter_name = "InterpreterSelectQuery";
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
-        interpreter_name = "InterpreterSelectQueryAnalyzer";
+
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            interpreter_name = "InterpreterSelectQueryAnalyzer";
+        else
+            interpreter_name = "InterpreterSelectWithUnionQuery";
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
     {
-        interpreter_name = "InterpreterSelectQueryAnalyzer";
+        interpreter_name = "InterpreterSelectIntersectExceptQuery";
     }
     else if (query->as<ASTInsertQuery>())
     {
@@ -233,6 +246,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExplainQuery>())
     {
+        const auto kind = query->as<ASTExplainQuery>()->getKind();
+        if (kind == ASTExplainQuery::ParsedAST)
+            context->setSetting("allow_experimental_analyzer", false);
+
         interpreter_name = "InterpreterExplainQuery";
     }
     else if (query->as<ASTShowProcesslistQuery>())
@@ -259,9 +276,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterSystemQuery";
     }
-    else if (query->as<ASTCreateTokenQuery>())
+    else if (query->as<ASTWatchQuery>())
     {
-        interpreter_name = "InterpreterCreateTokenQuery";
+        interpreter_name = "InterpreterWatchQuery";
     }
     else if (query->as<ASTCreateUserQuery>())
     {
@@ -375,9 +392,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropIndexQuery";
     }
-    else if (query->as<ASTHypotheticalObjectQuery>())
+    else if (query->as<ASTHypotheticalIndexQuery>())
     {
-        interpreter_name = "InterpreterHypotheticalObjectQuery";
+        interpreter_name = "InterpreterHypotheticalIndexQuery";
     }
     else if (query->as<ASTBackupQuery>())
     {

@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -15,11 +16,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
-#include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
 
@@ -32,6 +30,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -75,20 +74,9 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// only when the store held nothing for this table
-void appendNoCandidatesRow(WhatIfResult & result)
-{
-    WhatIfCandidateResult none;
-    none.name = "(none)";
-    none.status = WhatIfCandidateResult::NotApplicable;
-    none.not_applicable_reason = "No hypothetical indexes or projections defined for this table. "
-        "Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.";
-    result.candidates.push_back(std::move(none));
-}
-
-/// nothing was scanned, so every candidate gets the same reason
+/// Nothing was scanned, so mark every candidate not-applicable with the same reason
 WhatIfResult buildResultWithoutScan(
-    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason, const ContextPtr & context)
+    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason)
 {
     WhatIfResult result;
     result.database = data.getStorageID().getDatabaseName();
@@ -102,19 +90,14 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-    {
-        WhatIfCandidateResult r;
-        r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
-        r.status = WhatIfCandidateResult::NotApplicable;
-        r.not_applicable_reason = reason;
-        refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
-        result.candidates.push_back(std::move(r));
-    }
     if (result.candidates.empty())
-        appendNoCandidatesRow(result);
+    {
+        WhatIfCandidateResult none;
+        none.name = "(none)";
+        none.status = WhatIfCandidateResult::NotApplicable;
+        none.not_applicable_reason = "No hypothetical indexes defined for this table.";
+        result.candidates.push_back(std::move(none));
+    }
     return result;
 }
 
@@ -138,10 +121,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         return true;
                     }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
-                    return change.name == "force_optimize_projection"
-                        || change.name == "force_optimize_projection_name"
-                        || change.name == "preferred_optimize_projection_name"
-                        || change.name == "enable_parallel_replicas"
+                    return change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
                         || change.name == "use_skip_indexes_on_data_read";
                 });
@@ -316,11 +296,7 @@ WhatIfResult estimateHypotheticalIndexes(
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
-    local_context->resetSettingsToDefaultValue(
-        {"force_data_skipping_indices",
-         "force_optimize_projection",
-         "force_optimize_projection_name",
-         "preferred_optimize_projection_name"});
+    local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
 
     auto select_query_copy = select_query->clone();
     std::vector<String> forced_strings;
@@ -334,11 +310,17 @@ WhatIfResult estimateHypotheticalIndexes(
     QueryPlan plan;
     ContextPtr plan_context = local_context;
 
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
-        interpreter.applyDistributedPlanFallbackIfNeeded();
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(select_query_copy, local_context, query_options);
+        plan_context = interpreter.getContext();
+        interpreter.buildQueryPlan(plan);
     }
 
     plan.optimize(QueryPlanOptimizationSettings(plan_context));
@@ -354,7 +336,7 @@ WhatIfResult estimateHypotheticalIndexes(
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)
-                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit", local_context);
+                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit");
 
             /// The plan answers the query without reading the table's parts at all: a trivial
             /// count, a minmax_count or exact-count projection, or a projection that selected no
@@ -377,10 +359,7 @@ WhatIfResult estimateHypotheticalIndexes(
             }
 
             return buildResultWithoutScan(
-                *mt,
-                store,
-                "The query is answered without reading the table's parts, so an index on them would not be read",
-                local_context);
+                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
         }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -428,7 +407,6 @@ WhatIfResult estimateHypotheticalIndexes(
     result.table = data.getStorageID().getTableName();
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
-    result.baseline_rows = analysis.selected_rows;
 
     /// The average row size is the parent table's, so it says nothing about rows selected from a
     /// projection. Leave it at 0 and the formatter omits the line rather than printing a wrong one
@@ -464,6 +442,18 @@ WhatIfResult estimateHypotheticalIndexes(
 
     const auto & store = context->getHypotheticalObjectStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
+
+    if (hypo_indexes.empty())
+    {
+        WhatIfCandidateResult no_index;
+        no_index.name = "(none)";
+        no_index.status = WhatIfCandidateResult::NotApplicable;
+        no_index.not_applicable_reason = "No hypothetical indexes defined for this table. "
+            "Use CREATE HYPOTHETICAL INDEX to define one.";
+        result.candidates.push_back(std::move(no_index));
+        validate_forced_indices();
+        return result;
+    }
 
     String blanket_not_applicable_reason;
     if (query_with_final)
@@ -547,13 +537,6 @@ WhatIfResult estimateHypotheticalIndexes(
         combined.total_marks = combined_total_marks;
         result.candidates.push_back(std::move(combined));
     }
-
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-        result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
-
-    if (result.candidates.empty())
-        appendNoCandidatesRow(result);
 
     return result;
 }

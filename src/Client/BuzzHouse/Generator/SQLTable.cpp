@@ -1815,7 +1815,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
     if (usage == IndexUsage::HypotheticalIndex)
     {
-        /// `InterpreterHypotheticalObjectQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
+        /// `InterpreterHypotheticalIndexQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
         static const std::vector<IndexType> hypothetical_index_types
             = {IndexType::IDX_set,
                IndexType::IDX_minmax,
@@ -2076,7 +2076,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                static const DB::Strings post_codecs = {"none", "bitpacking", "pfor"};
+                static const DB::Strings post_codecs = {"none", "bitpacking"};
 
                 idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }

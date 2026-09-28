@@ -16,7 +16,6 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
-
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
@@ -141,27 +140,10 @@ public:
 
     void resolveStorages(const ContextPtr & context);
 
-    /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
-    /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it), because set and CTE
-    /// expansion is then left to `convertToDistributed`; a plan that skipped the decision keeps its
-    /// `Delayed*` placeholder steps and fails with a logical error when the pipeline is built.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
-
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
-
-    /// The single decision function for `make_distributed_plan`. When this plan cannot be
-    /// distributed: throws under `distributed_plan_fallback_to_local_execution = 0`, otherwise
-    /// logs, flips `settings.make_distributed_plan` to false and returns true. The plan is
-    /// verified at most once and the outcome is recorded in `distributed_plan_decision`.
-    bool applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings);
-
-    /// True once `applyDistributedPlanFallbackToLocal` accepted this plan for distributed execution.
-    bool staysDistributed() const { return distributed_plan_decision == DistributedPlanDecision::Distributed; }
-
-    /// True once `applyDistributedPlanFallbackToLocal` rejected this plan, which then runs locally.
-    bool didFallBackToLocal() const { return distributed_plan_decision == DistributedPlanDecision::FellBack; }
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -197,16 +179,6 @@ public:
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
     auto getInterpretersContexts() const { return resources.interpreter_context; }
-    /// Registers a context that `applyDistributedPlanFallbackToLocal` sets `make_distributed_plan = 0` on
-    /// when this plan falls back (see `QueryPlanResourceHolder::distributed_plan_decision_contexts`).
-    void addDistributedPlanDecisionContext(ContextMutablePtr context)
-    {
-        resources.distributed_plan_decision_contexts.emplace_back(std::move(context));
-    }
-    /// Copies the interpreter and decision contexts of a plan that is kept aside instead of being united
-    /// into this one (set sources, materialized CTEs, correlated subqueries), so they stay alive and
-    /// follow this plan's distributed-plan decision.
-    void takeContextsFrom(const QueryPlan & kept_aside_plan);
     void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
@@ -248,9 +220,6 @@ public:
     /// (multiple sources / multi-input steps).
     static QueryPlan cloneSubtree(Node * subplan_root);
 
-    /// Same as above, preserving the execution limits and resources from the plan that owns the subtree.
-    static QueryPlan cloneSubtree(Node * subplan_root, const QueryPlan & source_plan);
-
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
@@ -284,22 +253,7 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
-
-    enum class DistributedPlanDecision
-    {
-        Undecided,
-        Distributed,
-        FellBack,
-    };
-
-    /// The outcome of `applyDistributedPlanFallbackToLocal` for this plan. Later calls do not
-    /// re-verify the plan, they only re-apply the recorded outcome to the settings. This is correct
-    /// only while every caller passes the same settings as the inputs of the decision
-    /// (`enable_cascades_optimizer`, the `distributed_plan_default_*_bucket_count` values, the
-    /// projection force flags). It holds today because they all come from the same query context.
-    DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
 };
-
 
 /// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,

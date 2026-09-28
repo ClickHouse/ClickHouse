@@ -280,13 +280,6 @@ CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_S
 CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
 
--- A locator held in a string literal is text this finder cannot parse, and that text can carry an
--- access key or a presigned URL. The `Backup` engine accepts that form only while replaying its own
--- metadata, but a statement carrying it is formatted - by `PARALLEL WITH`, by the distributed DDL
--- queue, by `query_log` - before the engine rejects it, so it must be masked whole.
-CREATE DATABASE db_04510_quoted ENGINE = Backup('',
-                 'S3(\'https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG\', \'ak\', \'SEKRIT_QUOTED\')'); -- { serverError BAD_ARGUMENTS }
-
 -- The S3 database engine accepts no positional beyond secret_access_key; an extra positional must
 -- be masked in the logged query text.
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
