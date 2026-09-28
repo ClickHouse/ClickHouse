@@ -148,7 +148,12 @@ public:
         /// Start the transaction before the DDL so that the table creation and the row inserts commit or roll back together.
         /// Otherwise `CREATE TABLE` would be autocommitted, and a later failure during inserts would leave an empty table
         /// behind in the direct local-file output path.
-        executeSQLite(sqlite_db.get(), "BEGIN");
+        ///
+        /// In the direct local-file output path another connection may have the same database open. Like the sink of
+        /// the `SQLite` storage engine, take the writer lock up front with `BEGIN IMMEDIATE`, where a busy database can
+        /// safely be waited for: a deferred `BEGIN` would take it on the first `sqlite3_step`, and a statement that
+        /// fails with SQLITE_BUSY inside an explicit transaction cannot be retried.
+        executeSQLiteRetryOnBusy(sqlite_db.get(), "BEGIN IMMEDIATE");
         executeSQLite(sqlite_db.get(), makeCreateTableQuery(*header, settings.sqlite.output_table_name));
         insert_statement = prepareSQLiteStatement(sqlite_db.get(), makeInsertQuery(*header, settings.sqlite.output_table_name));
     }
@@ -200,7 +205,9 @@ public:
     void writeSuffix() override
     {
         insert_statement.reset();
-        executeSQLite(sqlite_db.get(), "COMMIT");
+        /// `COMMIT` may have to wait for readers to release their locks; a busy `COMMIT` keeps the transaction open
+        /// and can be retried.
+        executeSQLiteRetryOnBusy(sqlite_db.get(), "COMMIT");
 
         if (write_serialized_database_to_output)
             writeSerializedSQLiteDatabase(sqlite_db.get(), out);
