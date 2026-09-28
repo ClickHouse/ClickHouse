@@ -758,3 +758,89 @@ def test_batching_is_split_into_chunks():
 
     # Three columns, two per request.
     assert batch_request_count() == 2
+
+
+
+def operations_seen():
+    return [
+        tuple(request["input"]["action"]["operations"]) for request in recorded_requests()
+    ]
+
+
+def test_insert_is_governed():
+    node.query("GRANT INSERT ON plain.* TO analyst")
+    set_rule("'INSERT' not in input['action']['operations']")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "INSERT INTO plain.orders VALUES (3, 30, 'c@x.com')", user="analyst"
+    )
+
+
+def test_a_read_only_policy_allows_select_and_refuses_insert():
+    node.query("GRANT INSERT ON plain.* TO analyst")
+    set_rule("input['action']['operations'] == ['SELECT']")
+
+    assert node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "INSERT INTO plain.orders VALUES (4, 40, 'd@x.com')", user="analyst"
+    )
+
+
+def test_alter_is_governed():
+    node.query("GRANT ALTER UPDATE ON plain.orders TO analyst")
+    set_rule("'ALTER UPDATE' not in input['action']['operations']")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "ALTER TABLE plain.orders UPDATE amount = 0 WHERE id = 1", user="analyst"
+    )
+
+
+def test_drop_table_is_governed():
+    node.query("CREATE TABLE IF NOT EXISTS plain.droppable (id UInt32) ENGINE = MergeTree ORDER BY id")
+    node.query("GRANT DROP TABLE ON plain.droppable TO analyst")
+    set_rule("'DROP TABLE' not in input['action']['operations']")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "DROP TABLE plain.droppable", user="analyst"
+    )
+
+
+def test_create_table_is_governed():
+    node.query("GRANT CREATE TABLE ON plain.* TO analyst")
+    set_rule("'CREATE TABLE' not in input['action']['operations']")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "CREATE TABLE plain.forbidden (id UInt32) ENGINE = MergeTree ORDER BY id",
+        user="analyst",
+    )
+
+
+def test_truncate_is_governed():
+    node.query("CREATE TABLE IF NOT EXISTS plain.truncatable (id UInt32) ENGINE = MergeTree ORDER BY id")
+    node.query("GRANT TRUNCATE ON plain.truncatable TO analyst")
+    set_rule("'TRUNCATE' not in input['action']['operations']")
+
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "TRUNCATE TABLE plain.truncatable", user="analyst"
+    )
+
+
+def test_a_rename_is_authorized_on_both_names():
+    """ClickHouse authorizes a rename as separate checks on the old and the new name, so a policy sees
+    each one as its own resource and needs no combined request to describe the pair."""
+    node.query("CREATE TABLE IF NOT EXISTS plain.before (id UInt32) ENGINE = MergeTree ORDER BY id")
+    node.query("GRANT SELECT, DROP TABLE ON plain.before TO analyst")
+    node.query("GRANT CREATE TABLE, INSERT ON plain.after TO analyst")
+    set_rule("True")
+
+    node.query("RENAME TABLE plain.before TO plain.after", user="analyst")
+    try:
+        tables = {
+            request["input"]["action"]["resource"].get("table")
+            for request in recorded_requests()
+        }
+        assert "before" in tables
+        assert "after" in tables
+    finally:
+        node.query("DROP TABLE IF EXISTS plain.after")
+

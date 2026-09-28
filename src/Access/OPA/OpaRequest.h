@@ -54,8 +54,6 @@ struct OpaRequest
     Names operations;
 
     std::optional<OpaResource> resource;
-    /// The object being created, for an operation that produces a new name, such as `RENAME TABLE`.
-    std::optional<OpaResource> target_resource;
     /// The objects of a batched request. Mutually exclusive with `resource` in practice.
     std::vector<OpaResource> filter_resources;
 

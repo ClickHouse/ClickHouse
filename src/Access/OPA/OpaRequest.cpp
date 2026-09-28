@@ -76,9 +76,6 @@ String OpaRequest::serialize(const OpaRequestContext & request_context) const
     if (resource)
         action->set("resource", serializeResource(*resource));
 
-    if (target_resource)
-        action->set("target_resource", serializeResource(*target_resource));
-
     if (!filter_resources.empty())
     {
         Poco::JSON::Array::Ptr resources = new Poco::JSON::Array();
