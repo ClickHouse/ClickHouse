@@ -1,0 +1,10 @@
+same columns	id	UInt64	id comment
+same columns	v	UInt64	v comment
+after reload	id	UInt64	id comment
+after reload	v	UInt64	v comment
+changed columns	v	String	v comment
+changed columns	w	UInt64	
+restored columns	id	UInt64	
+restored columns	v	UInt64	v comment
+comment column	id	from alter
+comment column	v	

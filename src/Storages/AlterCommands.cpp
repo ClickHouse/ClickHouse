@@ -1272,7 +1272,14 @@ void AlterCommand::apply(
 
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
-        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        /// A comment, unlike the other column attributes, stays valid for any type the new query gives the column.
+        ColumnsDescription new_columns;
+        for (const auto & column : as_select_sample->getNamesAndTypesList())
+        {
+            const auto * previous_column = metadata.columns.tryGet(column.name);
+            new_columns.add(ColumnDescription(column.name, column.type, previous_column ? previous_column->comment : String{}));
+        }
+        metadata.columns = std::move(new_columns);
     }
     else if (type == MODIFY_REFRESH)
     {
