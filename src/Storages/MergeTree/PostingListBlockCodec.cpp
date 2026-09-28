@@ -14,6 +14,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// A full posting list block is bit-packed as whole SIMD blocks, which is what the SIMD implementation is efficient at.
+static_assert(IPostingListBlockCodec::BLOCK_SIZE % BitpackingBlockCodec::BLOCK_SIZE == 0,
+    "The posting list block size must be a multiple of the bitpacking block size");
+
 namespace
 {
     void writeByte(uint8_t x, std::span<char> & out)
