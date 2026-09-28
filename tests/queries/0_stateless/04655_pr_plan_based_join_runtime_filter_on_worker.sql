@@ -39,6 +39,11 @@ SET enable_join_runtime_filters_index_analysis = 0;
 -- heuristic. A skipped block is counted as `RuntimeFilterRowsSkipped` only, so it lands on neither side of
 -- the `Passed < Checked` assertion below, which then depends on the randomized block size.
 SET join_runtime_filter_blocks_to_skip_before_reenabling = 0;
+-- Keep the built filter usable: CI randomizes `join_runtime_bloom_filter_bytes` down to 1 KiB,
+-- which 10000 build keys fill completely, and the max set-bit ratio down to 0. Either one makes
+-- `isWorthUsing` drop the key set, and then every probe row is skipped rather than checked.
+SET join_runtime_bloom_filter_bytes = 524288;
+SET join_runtime_bloom_filter_max_ratio_of_set_bits = 1.0;
 
 -- RIGHT JOIN: the build side is the coordinated side, so this is the shape whose split has to be lifted
 -- through `BuildRuntimeFilterStep` for the join to ship at all.

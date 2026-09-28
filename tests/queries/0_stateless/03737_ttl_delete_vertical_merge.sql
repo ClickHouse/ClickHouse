@@ -1,3 +1,6 @@
+-- Every table pins `enable_vertical_merge_algorithm`: CI randomizes it off, and the activation
+-- thresholds below only pick between the algorithms once it is on.
+
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 0;
 
@@ -21,6 +24,7 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
@@ -75,6 +79,7 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
@@ -117,6 +122,7 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 0,
@@ -165,6 +171,7 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
@@ -214,6 +221,7 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
@@ -265,6 +273,7 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
