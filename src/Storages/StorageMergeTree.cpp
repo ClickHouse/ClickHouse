@@ -3265,6 +3265,14 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     return results;
 }
 
+void StorageMergeTree::throwIfSourceHasUniqueKey(const StoragePtr & source_table, ContextPtr local_context)
+{
+    auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
+    if (source_uk_metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "REPLACE/ATTACH PARTITION FROM a source table with UNIQUE KEY is not supported");
+}
+
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
     assertNotReadonly();
@@ -3273,10 +3281,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// Source-side UK reject (destination-side rejection is centralized in
     /// MergeTreeData::alterPartition). Without this, REPLACE PARTITION FROM a
     /// UK source into a plain table would silently break UK invariants.
-    auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
-    if (source_uk_metadata_snapshot->hasUniqueKey())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "REPLACE/ATTACH PARTITION FROM a source table with UNIQUE KEY is not supported");
+    throwIfSourceHasUniqueKey(source_table, local_context);
 
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);

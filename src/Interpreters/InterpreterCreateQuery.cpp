@@ -53,6 +53,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -2407,11 +2408,43 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         {
             if (auto source_table = DatabaseCatalog::instance().tryGetTable({as_database_name, as_table_name}, getContext()))
             {
+                /// The clone fill of a non-replicated target is `StorageMergeTree::replacePartitionFrom`,
+                /// which rejects a `UNIQUE KEY` source before the structure check. Mirror that veto with the
+                /// same helper. A replicated target fill does not veto `UNIQUE KEY` sources, so it stays legal.
+                if (dynamic_cast<const StorageMergeTree *>(new_storage.get()) != nullptr)
+                    StorageMergeTree::throwIfSourceHasUniqueKey(source_table, getContext());
+
                 TableLockHolder source_lock = source_table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
                 auto my_snapshot = new_storage->getInMemoryMetadataPtr(getContext(), false);
                 auto src_snapshot = source_table->getInMemoryMetadataPtr(getContext(), false);
                 merge_tree_data->checkStructureAndGetMergeTreeData(source_table, src_snapshot, my_snapshot);
             }
+        }
+    };
+
+    /// The storage above is already built (it may have created its data path) but not yet published.
+    /// A failed clone check must drop it, exactly like `validateStorage` does on its own failure, so a
+    /// refused `CLONE AS` leaves no orphan table or leftover data path behind.
+    auto check_clone_as_source_publication = [&](const StoragePtr & new_storage)
+    {
+        try
+        {
+            check_clone_as_source_structure(new_storage);
+        }
+        catch (...)
+        {
+            if (mode <= LoadingStrictnessLevel::CREATE)
+            {
+                try
+                {
+                    new_storage->drop();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("check_clone_as_source_structure");
+                }
+            }
+            throw;
         }
     };
 
@@ -2434,7 +2467,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 mode,
                 is_restore_from_backup);
             validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
-            check_clone_as_source_structure(res);
+            check_clone_as_source_publication(res);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2687,7 +2720,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    check_clone_as_source_structure(res);
+    check_clone_as_source_publication(res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
