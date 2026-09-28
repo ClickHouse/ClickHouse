@@ -1692,7 +1692,7 @@ For the recommended materialized-view consumption path (the acknowledgement is s
             .related = {"Kafka", "RabbitMQ", "FileLog"}});
 }
 
-SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */) const
+SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
 {
     /// The settings object, whose traits record origins, records what a named collection supplied, as
     /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
@@ -1715,6 +1715,10 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_password, (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_token, (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
     setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_credential_file, (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+
+    /// The factory expands macros from the server configuration into the credentials in place, and the constructor
+    /// into the URL and the server list, so a secret the definition states as `'{nats_pw}'` is the server's here.
+    markSecretsExpandedFromServerConfiguration(settings, getSettingsStatedInDefinition(getStorageID(), query_context));
     return settings;
 }
 

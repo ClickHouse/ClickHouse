@@ -58,6 +58,10 @@ struct SettingDescription
     /// may read that collection, and a grant names one, so the row has to say which. Empty where the engine
     /// did not record a name, which is then a value nothing can check and so nothing may see.
     String named_collection;
+    /// Whether the value carries something the server configuration supplied rather than the query that stated it -
+    /// a macro the engine expanded into a stated `nats_password = '{nats_pw}'`, say. A secret of the server's is
+    /// never shown, whoever reads it, as a secret with `origin` `Config` is not: see `SettingRowWriter::masks`.
+    bool from_server_configuration = false;
 };
 
 using SettingDescriptions = std::vector<SettingDescription>;

@@ -62,6 +62,13 @@ SettingDescriptions describeSettingsStatedInDefinition(const StorageID & table_i
 SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const StorageID & table_id, ContextPtr context);
 SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const SettingsChanges & stated);
 
+/// Marks `from_server_configuration` on every setting holding a secret whose value is not the text `stated`, the
+/// table's own `SETTINGS` clause, gives it - which is what an engine that expands macros from the server
+/// configuration into its settings reports - and, failing closed, on one the clause does not state at all unless a
+/// named collection, the server configuration or nothing supplied it. Matched by any name the setting answers to, as a
+/// definition may use.
+void markSecretsExpandedFromServerConfiguration(SettingDescriptions & settings, const SettingsChanges & stated);
+
 /// Sets `origin` for every setting in `names`, matched by canonical name only, not by alias. Used where the
 /// engine assigns settings outside its loaders, so the settings object cannot record the source.
 void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOrigin origin);

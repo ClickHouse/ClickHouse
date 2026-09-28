@@ -60,10 +60,10 @@ public:
         if (setting.origin == SettingOrigin::NamedCollection)
             return !may_show_named_collection || !may_show_named_collection(setting.named_collection);
         /// A secret the server's configuration supplied - the password of its `nats` or `rabbitmq` section, which a
-        /// table that states no authentication of its own uses - belongs to whoever runs the server, not to a
-        /// query's author: `SHOW CREATE TABLE` never printed it, and `displaySecretsInShowAndSelect`, which governs
-        /// the secrets a query states, does not reach it.
-        if (setting.origin == SettingOrigin::Config)
+        /// table that states no authentication of its own uses, or a macro expanded into one the table states -
+        /// belongs to whoever runs the server, not to a query's author: `SHOW CREATE TABLE` never printed it, and
+        /// `displaySecretsInShowAndSelect`, which governs the secrets a query states, does not reach it.
+        if (setting.origin == SettingOrigin::Config || setting.from_server_configuration)
             return !setting.masked_value.empty();
         return !show_secrets && !setting.masked_value.empty();
     }

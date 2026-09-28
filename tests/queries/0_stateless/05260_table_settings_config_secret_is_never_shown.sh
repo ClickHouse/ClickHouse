@@ -7,6 +7,7 @@
 # one a query stated: `SHOW CREATE TABLE` never printed it, so `displaySecretsInShowAndSelect` - which reveals the
 # secrets a query states - must not reveal it either. The table stating its own credentials is the control: the
 # same reader sees those, so the config secret is hidden by its source and not because no secret can be shown.
+# A macro from the server configuration expanded into a secret the table states is the server's in the same way.
 #
 # `clickhouse-local` with a config file, because the stateless test server does not enable
 # `display_secrets_in_show_and_select`. The tables are attached rather than created: an attached `NATS` table
@@ -25,6 +26,10 @@ cat > "$CONFIG" <<'EOF'
         <user>config_user</user>
         <password>leak05260configpw</password>
     </nats>
+    <macros>
+        <nats_pw>leak05260macropw</nats_pw>
+        <amqp_pw>leak05260amqppw</amqp_pw>
+    </macros>
 </clickhouse>
 EOF
 
@@ -37,5 +42,18 @@ ATTACH TABLE own UUID '05260000-0000-4000-8000-000000000002' (a UInt64) ENGINE =
     nats_username = 'table_user', nats_password = 'table_password';
 SELECT table, name, value, is_masked, source FROM system.table_settings
 WHERE name IN ('nats_username', 'nats_password') ORDER BY table, name;"
+
+echo "-- a macro from the server configuration, expanded into a secret the table states, is the server's too"
+# `SHOW CREATE TABLE` prints `{nats_pw}`; the engine works with, and would report, what the macro holds. The
+# `RabbitMQ` address with a credential of its own is the control: the same reader sees that one.
+$CLICKHOUSE_LOCAL --config-file "$CONFIG" --format_display_secrets_in_show_and_select 1 -q "
+ATTACH TABLE from_macro UUID '05260000-0000-4000-8000-000000000003' (a UInt64) ENGINE = NATS SETTINGS ${NATS_SETTINGS},
+    nats_username = 'table_user', nats_password = '{nats_pw}';
+CREATE TABLE address_from_macro (a UInt64) ENGINE = RabbitMQ
+    SETTINGS rabbitmq_address = 'amqp://u:{amqp_pw}@127.0.0.1:1/v', rabbitmq_exchange_name = 'x', rabbitmq_format = 'CSV';
+CREATE TABLE address_stated (a UInt64) ENGINE = RabbitMQ
+    SETTINGS rabbitmq_address = 'amqp://u:stated_pw@127.0.0.1:1/v', rabbitmq_exchange_name = 'x', rabbitmq_format = 'CSV';
+SELECT table, name, value, is_masked, source FROM system.table_settings
+WHERE name IN ('nats_password', 'rabbitmq_address') ORDER BY table, name;" -- --message_queue_disable_insertion=1
 
 rm -f "$CONFIG"

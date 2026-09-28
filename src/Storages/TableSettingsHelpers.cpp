@@ -186,6 +186,37 @@ SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const
     return settings;
 }
 
+void markSecretsExpandedFromServerConfiguration(SettingDescriptions & settings, const SettingsChanges & stated)
+{
+    for (auto & setting : settings)
+    {
+        /// Only a secret: a macro expanded into anything else - a topic, a path - is no more than the definition
+        /// and `system.macros` say, and is reported as it is.
+        if (setting.masked_value.empty())
+            continue;
+
+        const auto change = std::ranges::find_if(stated, [&](const SettingChange & stated_change)
+        {
+            return stated_change.name == setting.name
+                || std::ranges::find(setting.aliases, std::string_view{stated_change.name}) != setting.aliases.end();
+        });
+
+        if (change != stated.end())
+        {
+            /// Stated, and reported as something else: a macro was expanded into it.
+            setting.from_server_configuration = convertFieldToString(change->value) != setting.value;
+        }
+        else
+        {
+            /// Not in the clause, so nothing says which part of it the query stated: an engine argument overriding a
+            /// named collection's key - `NATS(nc, nats_password = '{nats_pw}')` - has macros expanded as well. A value a
+            /// collection, the server configuration or no one supplied has its own rule; any other is not shown.
+            setting.from_server_configuration = setting.origin != SettingOrigin::NamedCollection
+                && setting.origin != SettingOrigin::Config && setting.origin != SettingOrigin::Default;
+        }
+    }
+}
+
 void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOrigin origin)
 {
     for (auto & setting : settings)
