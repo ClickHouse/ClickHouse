@@ -153,7 +153,7 @@ void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
 /// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
 void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
 {
-    if (node->as<QueryNode>() || node->as<UnionNode>())
+    if ((node->getNodeType() == QueryTreeNodeType::QUERY) || node->as<UnionNode>())
     {
         inlineAliasColumnsImpl(node);
         return;
@@ -329,10 +329,8 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (node->as<QueryNode>())
-            query_node_stack.push_back(node);
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            ++query_node_depth;
+            query_node_stack.push_back(node);
 
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
@@ -344,7 +342,7 @@ public:
             in_function_or_join_entry.query_node = node;
             if (!query_node_stack.empty())
                 in_function_or_join_entry.parent_query_node = query_node_stack.back();
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            in_function_or_join_entry.subquery_depth = query_node_stack.size();
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
         }
@@ -356,7 +354,7 @@ public:
             in_function_or_join_entry.query_node = node;
             if (!query_node_stack.empty())
                 in_function_or_join_entry.parent_query_node = query_node_stack.back();
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            in_function_or_join_entry.subquery_depth = query_node_stack.size();
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
         }
@@ -367,13 +365,10 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            --query_node_depth;
-
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
 
-        if (node->as<QueryNode>())
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
             query_node_stack.pop_back();
     }
 
@@ -456,9 +451,6 @@ private:
         }
     }
 
-    /// Number of enclosing SELECT queries; a UNION is not a level. `max_subquery_depth` is checked against
-    /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
-    size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
     std::vector<QueryTreeNodePtr> query_node_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
