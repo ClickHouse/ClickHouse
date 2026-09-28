@@ -2,8 +2,9 @@
 -- so the nesting depth of the parameters comes from the data. Deep nesting must be reported instead of
 -- overflowing the stack. The payload below is SimpleAggregateFunction('x', [<Array of size 1> ...]).
 
-SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0d01', 300000)))) SETTINGS input_format_binary_max_type_complexity = 1000; -- { serverError INCORRECT_DATA }
-SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0f0100', 300000)))) SETTINGS input_format_binary_max_type_complexity = 1000; -- { serverError INCORRECT_DATA }
+-- The budget is far below the depth any build can reach, so the counter always trips before the stack guard.
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0d01', 300000)))) SETTINGS input_format_binary_max_type_complexity = 10; -- { serverError INCORRECT_DATA }
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0f0100', 300000)))) SETTINGS input_format_binary_max_type_complexity = 10; -- { serverError INCORRECT_DATA }
 
 -- Without a complexity budget only the stack guard is left.
 SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0d01', 300000)))) SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }
