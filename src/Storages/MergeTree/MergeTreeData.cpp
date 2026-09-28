@@ -10134,33 +10134,43 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     return converted;
 }
 
-/// A conversion such as `CAST('2024-02-30', 'Date')` or `toDate('2024-02-30')` in a partition value is folded to
-/// `2024-03-01` before `convertPartitionFieldToType` sees it, so its string argument is checked the same way.
+/// Checks a string that a conversion turns into a date or a time the same way as a partition literal. A tuple is
+/// checked element by element.
+static void checkDateTimeConversionArgument(const Field & value, const DataTypePtr & type)
+{
+    if (value.getType() == Field::Types::String)
+    {
+        if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
+            convertPartitionFieldToType(value, type);
+    }
+    else if (value.getType() == Field::Types::Tuple)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        const auto & elements = value.safeGet<Tuple>();
+        if (tuple_type && tuple_type->getElements().size() == elements.size())
+            for (size_t i = 0; i < elements.size(); ++i)
+                checkDateTimeConversionArgument(elements[i], tuple_type->getElement(i));
+    }
+}
+
+/// A conversion such as `CAST('2024-02-30', 'Date')` or `toDate(concat('2024-02-', '30'))` in a partition value is
+/// folded to `2024-03-01` before `convertPartitionFieldToType` sees it, so the string it converts is checked first.
 static void checkDateTimeConversionsInPartitionValue(const ASTPtr & ast, ContextPtr context)
 {
     const auto * function = ast->as<ASTFunction>();
-    if (!function || !function->arguments || function->arguments->children.empty())
+    if (!function || !function->arguments)
         return;
 
-    if (function->name == "tuple")
-    {
-        for (const auto & child : function->arguments->children)
-            checkDateTimeConversionsInPartitionValue(child, context);
-        return;
-    }
+    for (const auto & child : function->arguments->children)
+        checkDateTimeConversionsInPartitionValue(child, context);
 
     static const std::unordered_set<std::string_view> date_time_conversions
         = {"toDate", "toDate32", "toDateTime", "toDateTime32", "toDateTime64"};
-    if (!isFunctionCast(function) && !date_time_conversions.contains(function->name))
+    if (function->arguments->children.empty() || (!isFunctionCast(function) && !date_time_conversions.contains(function->name)))
         return;
 
-    const auto * argument = function->arguments->children[0]->as<ASTLiteral>();
-    if (!argument || argument->value.getType() != Field::Types::String)
-        return;
-
-    const DataTypePtr type = evaluateConstantExpression(ast, context).second;
-    if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
-        convertPartitionFieldToType(argument->value, type);
+    const Field argument = evaluateConstantExpression(function->arguments->children[0], context).first;
+    checkDateTimeConversionArgument(argument, evaluateConstantExpression(ast, context).second);
 }
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
