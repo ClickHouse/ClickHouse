@@ -1222,8 +1222,8 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
         if (token_info.header & PostingsSerialization::Flags::RawPostings)
         {
             const PostingList postings = readAllPostingsForToken(unique_tokens[u], token_info);
-            std::vector<UInt32> docs(postings.cardinality());
-            postings.toUint32Array(docs.data());
+            auto docs = std::make_shared<PaddedPODArray<UInt32>>(postings.cardinality());
+            postings.toUint32Array(docs->data());
             cursors.emplace_back(std::move(docs));
         }
         else
