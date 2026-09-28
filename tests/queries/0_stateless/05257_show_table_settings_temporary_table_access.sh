@@ -28,6 +28,8 @@ $CLICKHOUSE_CLIENT -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
 # Enough to reach the surface and to make a temporary table, and nothing on the permanent table.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.table_settings TO ${USER}"
 $CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${USER}"
+# Where `table_engines_require_grant` is on, as in the test configuration, creating one also needs its engine.
+$CLICKHOUSE_CLIENT -q "GRANT TABLE ENGINE ON Memory TO ${USER}"
 
 echo "-- its own temporary table, with no grant on any table, reports its definition"
 $CLICKHOUSE_CLIENT --user="${USER}" -n -q "
