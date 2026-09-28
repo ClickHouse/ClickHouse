@@ -7075,6 +7075,13 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageID table_id(database_name, table_name);
     auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
 
+    /// A read that arrives as a shipped plan never goes through the planner, which is what records the
+    /// access info a locally planned read reports (`PlannerJoinTree.cpp`). Without this, the worker's
+    /// `system.query_log` row names no database, table or column, so its work cannot be attributed to
+    /// what it read. Only the receiver deserializes, so the initiator's own read is not counted twice.
+    if (ctx.context->hasQueryContext())
+        ctx.context->getQueryContext()->addQueryAccessInfo(table_id, column_names);
+
     auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
