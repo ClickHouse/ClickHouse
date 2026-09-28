@@ -47,16 +47,12 @@ ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Pa
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
 # The write path must tolerate the dropped sort order too: IcebergStorageSink
-# parses the sort order through getSortingKeyDescriptionFromMetadata when the
-# table is opened for writing, so recreating the table over the corrupted
-# metadata and inserting a row used to fail the same way.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
-${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE} (x Int64, y String)
-        ENGINE = IcebergLocal('${TABLE_PATH}')
-        SETTINGS iceberg_format_version = 2;
-"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (30, 'c') SETTINGS use_iceberg_metadata_files_cache = 0"
+# parses the sort order of the latest metadata through
+# getSortingKeyDescriptionFromMetadata on every INSERT, so inserting a row
+# into the table over the corrupted metadata used to fail the same way.
+# The table is not recreated: CREATE over a path that already has Iceberg
+# metadata throws TABLE_ALREADY_EXISTS.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --query "INSERT INTO ${TABLE} VALUES (30, 'c')"
 ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0"
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
