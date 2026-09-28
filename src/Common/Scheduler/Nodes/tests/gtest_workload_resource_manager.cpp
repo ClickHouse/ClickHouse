@@ -2521,6 +2521,30 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAutoCreateAndRemove)
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
 }
 
+// An "unlimited" server memory limit (`WorkloadSettings::unlimited`, i.e. `max_server_memory_usage = 0`
+// translated by Server.cpp) must NOT install a zero-byte budget on the implicit root: the resource is
+// created but carries no allocation limit, so reservations are not blocked. (Regression: the raw 0 was
+// copied as `max_memory = 0`, which blocked all reservations.)
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitUnlimitedDoesNotBlock)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = WorkloadSettings::unlimited;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    bool root_limit_seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == implicit_resource && path == "/limit")
+            root_limit_seen = true;
+    });
+    EXPECT_FALSE(root_limit_seen) << "unlimited server memory limit must not install a root allocation limit";
+}
+
 // The server budget on the implicit root caps the AGGREGATE reservation across all workloads under it,
 // even when the workloads themselves declare no memory limit.
 TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAggregateCap)

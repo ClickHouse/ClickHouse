@@ -2869,7 +2869,10 @@ try
                     workload_limits.respect_memory_limit = respect_memory_limit;
                     workload_limits.implicit_default_workload = implicit_default_workload;
                     workload_limits.cpu_slots = respect_cpu_limit ? cpu_slots : WorkloadSettings::unlimited;
-                    workload_limits.memory_bytes = respect_memory_limit
+                    /// `max_server_memory_usage == 0` means "no server memory cap" (unlimited); the
+                    /// workload scheduler's unlimited sentinel is `WorkloadSettings::unlimited`, not 0,
+                    /// so translate it rather than installing a zero-byte reservation budget.
+                    workload_limits.memory_bytes = (respect_memory_limit && max_server_memory_usage != 0)
                         ? static_cast<Int64>(max_server_memory_usage)
                         : WorkloadSettings::unlimited;
                     global_context->getResourceManager()->updateServerLimits(workload_limits);
