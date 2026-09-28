@@ -68,9 +68,10 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
 
     description.add({"is_masked", std::make_shared<DataTypeUInt8>(),
         "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
-        "user may not see it. Grant `displaySecretsInShowAndSelect` and enable "
-        "`format_display_secrets_in_show_and_select` to see it. A secret the server configuration supplied is "
-        "never shown."});
+        "user may not see it. To see it, the server configuration has to set `display_secrets_in_show_and_select`, "
+        "the user needs the `displaySecretsInShowAndSelect` grant, and the query "
+        "`format_display_secrets_in_show_and_select`. A secret the server configuration supplied - directly or "
+        "through a macro - is never shown."});
 
     return description;
 }

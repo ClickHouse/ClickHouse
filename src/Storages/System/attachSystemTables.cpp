@@ -1176,6 +1176,8 @@ Settings of every table engine that has settings of its own, with the value the 
 
 Describes engines rather than tables: for the settings in effect for one table, see [system.table_settings](/reference/system-tables/table_settings).
 
+Reading this table needs the `SELECT` privilege on it, as [system.merge_tree_settings](/reference/system-tables/merge_tree_settings) does: the values are the server's, with its configuration and `compatibility` applied.
+
 .examples
 ```sql
 SELECT engine, name, value, `default` FROM system.engine_settings WHERE engine = 'Memory';
@@ -2031,9 +2033,9 @@ An engine that keeps no settings of its own reports only what the table's `SETTI
 
 The value of a setting a named collection supplied is shown as `[HIDDEN]`, with `is_masked = 1`, to a reader who could not read that collection from [system.named_collections](/reference/system-tables/named_collections) - a collection is secret as a whole, not only the keys a masking rule knows. Which setting it supplied is still reported.
 
-A secret the server configuration supplied - the password of its `nats` or `rabbitmq` section, which a table that states no authentication of its own uses - is always shown as `[HIDDEN]`: it belongs to whoever runs the server, and `displaySecretsInShowAndSelect` does not reveal it.
+A secret the server configuration supplied - the password of its `nats` or `rabbitmq` section, which a table that states no authentication of its own uses, or a macro expanded into a secret the table or its named collection states - is always shown as `[HIDDEN]`: it belongs to whoever runs the server, and `displaySecretsInShowAndSelect` does not reveal it.
 
-Reading this table needs the `SELECT` privilege on it, as [system.parts](/reference/system-tables/parts) does, and a table is shown to a user who also has the `SHOW TABLES` privilege on it. A row can say more than the table's `CREATE` query: a value the server configuration set, a macro expanded, state held in Keeper - each of which another system table also keeps behind a grant. The [SHOW TABLE SETTINGS](/reference/statements/show) statement reads this table for one table, and so needs the same privileges.
+Reading this table needs the `SELECT` privilege on it, as [system.parts](/reference/system-tables/parts) does, and a table is shown to a user who also has the `SHOW TABLES` privilege on it. A row can say more than the table's `CREATE` query: a value the server configuration set, a macro expanded, state held in Keeper - each of which another system table also keeps behind a grant. An `Alias` table is shown only to a user who may also see the table it is an alias of. The [SHOW TABLE SETTINGS](/reference/statements/show) statement reads this table for one table, and so needs the same privileges.
 
 .examples
 ```sql

@@ -41,9 +41,10 @@ ColumnsDescription sharedSettingColumns()
             "release's default the `compatibility` setting rolled back to, a `named_collection` the table was built "
             "from, the table's own `SETTINGS` clause (`definition`), metadata shared between replicas "
             "(`shared_metadata`), or `other` where the engine does not say - which is also how a value the engine "
-            "adjusts while it runs is reported. Which of them can appear depends on the engine. The value of a "
-            "setting a named collection supplied is hidden, as `system.named_collections` hides it: a collection is "
-            "secret as a whole, not only the keys a masking rule knows."},
+            "adjusts while it runs is reported. Which of them can appear depends on the engine. In "
+            "`system.table_settings`, the value of a setting a named collection supplied is hidden, as "
+            "`system.named_collections` hides it: a collection is secret as a whole, not only the keys a masking rule "
+            "knows."},
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
             "Minimum value the current user's settings constraints allow, or NULL if none is set. "

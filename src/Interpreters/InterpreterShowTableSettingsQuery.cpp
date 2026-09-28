@@ -126,10 +126,13 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
         /// `system.table_settings` reports nothing for an alias whose target the user may not see, so as not to
         /// expose the target's settings through it. Here that is an error too, for the same reason as above.
         if (const auto * alias = table->as<StorageAlias>(); alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_TABLES, {}))
+            /// In the form of the other access errors. The target is not named: `SHOW TABLES` on the alias alone does
+            /// not reveal it.
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
-                "Not enough privileges to show the settings of {}.{}: the user may not see the table it is an alias of",
-                backQuoteIfNeed(database), backQuoteIfNeed(query.table));
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SHOW TABLES "
+                "on the table {}.{} is an alias of",
+                getContext()->getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(query.table));
     }
 
     /// `system.table_settings` shows a data lake catalog or a remote database only when the
