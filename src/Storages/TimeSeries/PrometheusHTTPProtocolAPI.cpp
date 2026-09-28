@@ -291,7 +291,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     {
         query_context->setSetting("prefer_localhost_replica", true);
         query_context->setSetting("enable_parallel_replicas", false);
-        /// Also stated on the generated cluster() call, which a constrained profile would reject.
+        /// Ship the query text: a serialized plan binds an unqualified name on the initiator,
+        /// and shards do not apply their own row policies to a shipped plan (#112891).
         query_context->setSetting("serialize_query_plan", false);
     }
 

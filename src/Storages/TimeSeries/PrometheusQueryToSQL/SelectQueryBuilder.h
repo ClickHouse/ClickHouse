@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SettingsChanges.h>
 #include <Core/Joins.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
@@ -29,8 +28,6 @@ public:
     ASTPtr join_on;
     String union_table;
     SQLSubqueries with;
-    /// Rendered as a SETTINGS clause on this SELECT alone; empty adds nothing.
-    SettingsChanges settings_changes;
 
     ASTPtr getSelectQuery();
 };

@@ -72,8 +72,8 @@ def start_cluster():
             "INSERT INTO ts_all (metric_name, tags, samples) "
             "SELECT metric_name, tags, samples FROM ts_dist"
         )
-        # Keeps `serialize_query_plan` on and forbids a query from changing it, so the SETTINGS
-        # clause the generated read carries is dropped and only a context-level pin survives.
+        # Keeps `serialize_query_plan` on and forbids a query from changing it, so only a
+        # context-level pin can turn it off for the generated read.
         node.query(
             "CREATE USER prom_plan_pinned IDENTIFIED WITH no_password "
             "SETTINGS serialize_query_plan = 1 CONST"
