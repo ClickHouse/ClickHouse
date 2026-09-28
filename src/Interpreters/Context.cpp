@@ -26,7 +26,6 @@
 #include <Common/Throttler.h>
 #include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -41,7 +40,9 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
@@ -2441,9 +2442,10 @@ void withSettingChangeErrorContext(const SettingChange & change, Apply && apply)
     }
     catch (Exception & e)
     {
+        const auto masked = CoreSettings::renderSecretSettingValue(String(Settings::resolveName(change.name)), change.value);
         e.addMessage(fmt::format(
                          "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
+                         change.name, masked ? *masked : BaseSettingsHelpers::formatValueForErrorMessage(change.value)));
         throw;
     }
 }
@@ -3710,18 +3712,11 @@ void Context::setServerSetting(std::string_view name, const Field & value)
 
 void Context::applySettingChange(const SettingChange & change)
 {
-    try
+    withSettingChangeErrorContext(change, [&]
     {
         settings->checkShorthandChange(change);
         setSetting(change.name, change.value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format(
-                         "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
-        throw;
-    }
+    });
 }
 
 
