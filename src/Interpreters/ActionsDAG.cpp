@@ -127,7 +127,6 @@ void tryFoldFunctionToConstant(
     if (!node.function_base->isSuitableForConstantFolding())
         return;
 
-    /// Outside the `try`, so that a best-effort fold does not hide the cancellation of the query.
     if (all_const)
         CurrentThread::checkIfNotCancelled();
 
@@ -1963,7 +1962,6 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
 
                         if (has_all_arguments)
                         {
-                            /// Values (unlike a header, with 0 rows) are computed for real, as in a constant fold.
                             if (input_rows_count > 0 && node->type == ActionType::FUNCTION)
                                 CurrentThread::checkIfNotCancelled();
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);

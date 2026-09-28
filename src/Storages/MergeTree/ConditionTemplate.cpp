@@ -227,7 +227,6 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here.
-        /// A cancelled query is not one of them.
         CurrentThread::checkIfNotCancelled();
         return generateUnsubstituted();
     }

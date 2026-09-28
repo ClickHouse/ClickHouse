@@ -692,7 +692,6 @@ inline size_t valueBytes(const GenericValueSlice & slice) { return slice.element
 template <typename Slice>
 size_t valueBytes(const NullableSlice<Slice> & slice) { return valueBytes(static_cast<const Slice &>(slice)) + 1; }
 
-/// Writes `count` copies of the current value and charges `budget` once per chunk of copies.
 template <typename ValueSource, typename Sink>
 void writeValueRepeatedly(ValueSource && value_source, Sink && sink, size_t count, CancellationBudget & budget)
 {
