@@ -1421,7 +1421,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
     if (!storage_function->hasArguments())
         return;
 
-    /// Every hide/show decision is the one `BACKUP ... TO` makes for the same locator.
+    /// Shows at most what `BACKUP ... TO` shows for the same locator.
     FunctionSecretArgumentsFinder locator_finder(std::move(storage_function));
     locator_finder.findBackupNameSecretArguments();
     const auto & hidden = locator_finder.result;
@@ -1435,7 +1435,6 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         replacement += "'[HIDDEN]'";
         has_secret = true;
     };
-    /// Appends an identifier or a string literal as written; false for anything else.
     auto write_as_written = [](const AbstractFunction::Argument & arg, String & out)
     {
         String text;
