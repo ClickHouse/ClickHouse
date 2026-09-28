@@ -32,7 +32,6 @@ class AbstractConfiguration;
 
 namespace DB
 {
-class SettingsConstraints;
 class ASTStorage;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
@@ -144,9 +143,9 @@ struct MergeTreeSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     SettingDescriptions enumerateSettings() const;
-    /// Fills in what the user's settings constraints say about each of `settings`: a profile reaches only
+    /// The same, with the bounds the user's settings constraints put on each: a profile reaches only
     /// `MergeTreeSettings` of all engine settings, through the `merge_tree_` prefix.
-    void applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const;
+    SettingDescriptions enumerateSettingsWithConstraints(const ContextPtr & context) const;
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);

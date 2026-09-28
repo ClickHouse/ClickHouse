@@ -95,10 +95,8 @@ SettingDescriptions StorageLogSettings::enumerateTableSettings(const String & di
                 if (change.name == setting.name)
                     setting.value = change.value.safeGet<String>();
         }
-
-        /// A disk the table did not name comes from its `storage_policy`, which is what `Other` says here.
-        setting.origin = setting.value == setting.default_value ? SettingOrigin::Default : SettingOrigin::Other;
     }
-    return withOriginFromDefinition(std::move(settings), stated);
+    /// A disk the table did not name comes from its `storage_policy`, which is what `Other` says here.
+    return withOriginFromDefinition(withOriginByValue(std::move(settings)), stated);
 }
 }

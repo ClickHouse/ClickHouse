@@ -194,11 +194,12 @@ void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOri
             setting.origin = origin;
 }
 
-void setOriginByValue(SettingDescriptions & settings)
+SettingDescriptions withOriginByValue(SettingDescriptions settings)
 {
     for (auto & setting : settings)
         if (setting.origin == SettingOrigin::Default || setting.origin == SettingOrigin::Other)
             setting.origin = setting.value == setting.default_value ? SettingOrigin::Default : SettingOrigin::Other;
+    return settings;
 }
 
 void setEffectiveValue(

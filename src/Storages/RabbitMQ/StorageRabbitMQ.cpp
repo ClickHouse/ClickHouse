@@ -1850,8 +1850,8 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr /* query_contex
     {
         setEffectiveValue(settings, RabbitMQSetting::rabbitmq_vhost, configuration.vhost,
             vhost_from_config ? std::optional(SettingOrigin::Config) : std::nullopt);
-        setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_username, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
-        setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_password, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
+        setEffectiveValueWithConfigFallback(settings, *rabbitmq_settings, RabbitMQSetting::rabbitmq_username, configuration.username);
+        setEffectiveValueWithConfigFallback(settings, *rabbitmq_settings, RabbitMQSetting::rabbitmq_password, configuration.password);
     }
 
     /// The constructor expands the server's macros into the address, while the setting holds what was stated: where

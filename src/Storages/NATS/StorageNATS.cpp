@@ -1719,10 +1719,10 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */
     setEffectiveValue(settings, NATSSetting::nats_client_cert_file, configuration.client_cert_file);
     setEffectiveValue(settings, NATSSetting::nats_client_key_file, configuration.client_key_file);
 
-    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_username, (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
-    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_password, (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
-    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_token, (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
-    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_credential_file, (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+    setEffectiveValueWithConfigFallback(settings, *nats_settings, NATSSetting::nats_username, configuration.username);
+    setEffectiveValueWithConfigFallback(settings, *nats_settings, NATSSetting::nats_password, configuration.password);
+    setEffectiveValueWithConfigFallback(settings, *nats_settings, NATSSetting::nats_token, configuration.token);
+    setEffectiveValueWithConfigFallback(settings, *nats_settings, NATSSetting::nats_credential_file, configuration.credential_file);
 
     /// What the server's macros supplied is the server's: the factory records the credentials it expanded in place,
     /// and the constructor expands the URL and the server list, whose settings still hold what was stated.

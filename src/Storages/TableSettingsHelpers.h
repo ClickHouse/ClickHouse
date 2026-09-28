@@ -23,7 +23,7 @@ using NameSetWithViewLookup
 /// source of each value as it is assigned. The rest reconstruct it:
 ///   - no settings object - `Join`, `Set`, the `IStorage` base: `withOriginFromDefinition` reads the stored `CREATE`;
 ///   - a loader that assigns every setting, from the session or by rebuilding the object - `PostgreSQL`,
-///     `ObjectStorageQueue`: `setOriginByValue`;
+///     `ObjectStorageQueue`: `withOriginByValue`;
 ///   - a working value derived after loading - an expanded macro, a generated id, a value from a server config
 ///     section: `setEffectiveValue` and `setEffectiveValueWithConfigFallback`.
 
@@ -51,9 +51,9 @@ void markSecretsFromServerConfiguration(SettingDescriptions & settings, const Na
 /// engine assigns settings outside its loaders, so the settings object cannot record the source.
 void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOrigin origin);
 
-/// Recomputes `origin` from the value - `Default` where it equals the compiled-in default, else `Other` - for an
-/// engine whose loader assigns every setting, marking them all changed. A source the object recorded is kept.
-void setOriginByValue(SettingDescriptions & settings);
+/// Returns `settings` with `origin` recomputed from the value - `Default` where it equals the compiled-in default, else
+/// `Other` - for an engine whose loader assigns every setting, marking them all changed. A recorded source is kept.
+SettingDescriptions withOriginByValue(SettingDescriptions settings);
 
 /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
 /// enumeration masks it, and sets `origin` when given. For an engine that derives its working values after
@@ -78,11 +78,12 @@ void setEffectiveValue(
     setEffectiveValue(settings, Owner::nameAtOffset(setting.offset), value, origin);
 }
 
+/// `stated` is what `owner`, the table's settings object, holds for the setting.
 template <typename Owner, typename FieldType>
 void setEffectiveValueWithConfigFallback(
-    SettingDescriptions & settings, SettingIndex<Owner, FieldType> setting, const String & stated, const String & value)
+    SettingDescriptions & settings, const Owner & owner, SettingIndex<Owner, FieldType> setting, const String & value)
 {
-    setEffectiveValueWithConfigFallback(settings, Owner::nameAtOffset(setting.offset), stated, value);
+    setEffectiveValueWithConfigFallback(settings, Owner::nameAtOffset(setting.offset), owner[setting].value, value);
 }
 
 }

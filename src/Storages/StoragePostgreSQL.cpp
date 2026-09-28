@@ -129,9 +129,7 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr /* query_cont
 {
     /// A setting the definition does not state carries the creating session's value, and `loadFromQueryContext`
     /// assigns all of them, so the changed flag says nothing: the value decides, as for `Join` and `Distributed`.
-    SettingDescriptions descriptions = settings.enumerateSettings();
-    setOriginByValue(descriptions);
-    return descriptions;
+    return withOriginByValue(settings.enumerateSettings());
 }
 
 VirtualColumnsDescription StoragePostgreSQL::createVirtuals()

@@ -483,6 +483,11 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     if (!filter_actions_dag)
         return;
 
+    const auto reads = [](const ActionsDAG & dag, std::string_view column)
+    {
+        return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return input->result_name == column; });
+    };
+
     /// Only a predicate that reads `table` narrows a database's tables: listing a data lake catalog's names only to
     /// keep all of them costs a full catalog walk. One on `database` alone is applied in `initializePipeline`.
     Block tables_block
@@ -491,7 +496,7 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
         { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
     };
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context);
-        dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "table"; }))
+        dag && reads(*dag, "table"))
         table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
 
     /// And one that reads `engine`, which `system.tables` pushes down too: applied inside the source, since a
@@ -503,10 +508,9 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
         { nullptr, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "engine" },
     };
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &engines_block, context);
-        dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "engine"; }))
+        dag && reads(*dag, "engine"))
     {
-        engine_filter_reads_table
-            = std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "table"; });
+        engine_filter_reads_table = reads(*dag, "table");
         engine_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 

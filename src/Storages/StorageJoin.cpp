@@ -179,7 +179,6 @@ SettingDescription enumerateServerBackedJoinSetting(const Settings & metadata, S
     described.comment = metadata.getDescription(name);
     described.tier = metadata.getTier(name);
     described.name = std::move(name);
-    described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
     return described;
 }
 
@@ -196,7 +195,7 @@ struct ServerBackedJoinValues
 /// the list from here, so they cannot disagree about which settings there are.
 SettingDescriptions enumerateServerBackedJoinSettings(const Settings & metadata, const ServerBackedJoinValues & values)
 {
-    return {
+    return withOriginByValue({
         enumerateServerBackedJoinSetting(metadata, "join_use_nulls", SettingFieldBool{values.use_nulls}.toString()),
         enumerateServerBackedJoinSetting(metadata, "max_rows_in_join", SettingFieldUInt64{values.limits.max_rows}.toString()),
         enumerateServerBackedJoinSetting(metadata, "max_bytes_in_join", SettingFieldUInt64{values.limits.max_bytes}.toString()),
@@ -207,7 +206,7 @@ SettingDescriptions enumerateServerBackedJoinSettings(const Settings & metadata,
             metadata,
             "any_join_distinct_right_table_keys",
             SettingFieldBool{values.any_join_distinct_right_table_keys}.toString()),
-    };
+    });
 }
 
 }

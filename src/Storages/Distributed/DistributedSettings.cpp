@@ -141,11 +141,9 @@ SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr cont
     /// From the global context, which the creator fills them from.
     settings.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
 
-    auto described = settings.enumerateSettings();
     /// Filling one of these copies the core setting's changed bit too, so the value decides, as in
     /// `StorageDistributed::getTableSettings`.
-    setOriginByValue(described);
-    return described;
+    return withOriginByValue(settings.enumerateSettings());
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)

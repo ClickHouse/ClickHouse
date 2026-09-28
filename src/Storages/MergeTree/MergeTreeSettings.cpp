@@ -3522,35 +3522,24 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 
-namespace
-{
-
-SettingDescriptions enumerateServerEffective(const MergeTreeSettings & settings, ContextPtr context)
-{
-    /// What the engine actually uses on this server: the `merge_tree` config section and the
-    /// `compatibility` setting are already applied to these, and it is the instance
-    /// `registerStorageMergeTree` starts a new table from.
-    auto enumerated = settings.enumerateSettings();
-    settings.applyConstraints(enumerated, context->getSettingsConstraintsAndCurrentProfiles()->constraints);
-    return enumerated;
-}
-
-}
-
 SettingDescriptions MergeTreeSettings::enumerateEngineSettings(ContextPtr context)
 {
-    return enumerateServerEffective(context->getMergeTreeSettings(), context);
+    /// What the engine uses on this server: the instance `registerStorageMergeTree` starts a new table from, with the
+    /// `merge_tree` config section and `compatibility` applied.
+    return context->getMergeTreeSettings().enumerateSettingsWithConstraints(context);
 }
 
 SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
 {
     /// The replicated family reads an additional `replicated_merge_tree` config section, so its
     /// settings differ from the rest of the family and it registers its own function.
-    return enumerateServerEffective(context->getReplicatedMergeTreeSettings(), context);
+    return context->getReplicatedMergeTreeSettings().enumerateSettingsWithConstraints(context);
 }
 
-void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const
+SettingDescriptions MergeTreeSettings::enumerateSettingsWithConstraints(const ContextPtr & context) const
 {
+    auto settings = enumerateSettings();
+    const auto & constraints = context->getSettingsConstraintsAndCurrentProfiles()->constraints;
     for (auto & setting : settings)
     {
         Field min;
@@ -3571,6 +3560,7 @@ void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const S
             setting.disallowed_values.push_back(valueToStringUtil(setting.name, value));
         setting.readonly = writability == SettingConstraintWritability::CONST;
     }
+    return settings;
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)

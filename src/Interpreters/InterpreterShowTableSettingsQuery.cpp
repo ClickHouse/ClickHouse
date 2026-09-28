@@ -43,8 +43,11 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery(const String & datab
     /// `system.table_settings` is the statement's whole implementation; this narrows it to one table and picks
     /// the columns that fit a terminal - `description` runs to paragraphs, so it is left out. Anything more is a
     /// query against the table.
-    WriteBufferFromOwnString rewritten_query;
+    WriteBufferFromOwnString table_filter;
+    table_filter << " WHERE database = " << DB::quote << database << " AND table = " << DB::quote << query.table
+                 << (query.changed ? " AND changed" : "");
 
+    WriteBufferFromOwnString rewritten_query;
     if (query.has_like)
     {
         /// Match the pattern against every name a setting answers to, but print the declared one: alias rows exist so
@@ -57,28 +60,15 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery(const String & datab
         rewritten_query
             << "SELECT declared_name AS name, any(value) AS value, any(changed) AS changed, any(source) AS source"
             << " FROM (SELECT if(alias_for = '', name, alias_for) AS declared_name, name AS answers_to,"
-            << " value, changed, source FROM system.table_settings"
-            << " WHERE database = " << DB::quote << database
-            << " AND table = " << DB::quote << query.table;
-
-        if (query.changed)
-            rewritten_query << " AND changed";
-
-        rewritten_query
+            << " value, changed, source FROM system.table_settings" << table_filter.str()
             << ") GROUP BY declared_name"
             << " HAVING countIf(answers_to " << like << DB::quote << query.like << ") "
             << (query.not_like ? "= 0" : "> 0");
     }
     else
     {
-        rewritten_query
-            << "SELECT name, value, changed, source FROM system.table_settings"
-            << " WHERE database = " << DB::quote << database
-            << " AND table = " << DB::quote << query.table
-            << " AND alias_for = ''";
-
-        if (query.changed)
-            rewritten_query << " AND changed";
+        rewritten_query << "SELECT name, value, changed, source FROM system.table_settings" << table_filter.str()
+                        << " AND alias_for = ''";
     }
 
     rewritten_query << " ORDER BY name";

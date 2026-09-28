@@ -2230,7 +2230,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     }
 
     /// A member of this storage holds a value, not who set it. Recover that by value.
-    setOriginByValue(settings);
+    settings = withOriginByValue(std::move(settings));
 
     /// Read once, so that an `ALTER` in between cannot split the names marking origins from the values used below.
     auto stated = getSettingsStatedInDefinition(getStorageID(), query_context);
