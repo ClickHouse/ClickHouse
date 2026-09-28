@@ -987,8 +987,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
                     subquery_query_node->getPrewhere() = parent_query_node->getPrewhere()->clone();
                     parent_query_node->getPrewhere() = {};
-                    if (auto * table_expression_data = planner_context->getTableExpressionDataOrNull(prewhere_table_expression))
-                        table_expression_data->resetPrewhereFilterActions();
                 }
             }
 
