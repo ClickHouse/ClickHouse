@@ -2062,7 +2062,7 @@ bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
     {
         if (token.empty())
             return false;
-        encoded_tokens.push_back(KeyValuePairsTokenizer::encodeToken(haystack->path, token, /*is_rest=*/ false));
+        encoded_tokens.push_back(KeyValuePairsTokenizer::encodeToken(haystack->path, token, /*is_duplicate=*/ false));
     }
 
     /// Exact for both skip-index and direct read in any polarity. For Nullable / `.:String` haystacks

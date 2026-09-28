@@ -205,7 +205,7 @@ std::optional<JSONStringValuesHaystack> tryMatchJSONStringValuesHaystack(
     if (suffix.ends_with(explicit_string_suffix))
     {
         suffix.remove_suffix(explicit_string_suffix.size());
-        if (suffix.empty() || suffix.find(".:`") != std::string_view::npos)
+        if (suffix.empty() || suffix.contains(".:`"))
             return std::nullopt;
 
         return JSONStringValuesHaystack{
@@ -215,7 +215,7 @@ std::optional<JSONStringValuesHaystack> tryMatchJSONStringValuesHaystack(
     }
 
     /// Any other runtime-type suffix is not Exact.
-    if (suffix.find(".:`") != std::string_view::npos)
+    if (suffix.contains(".:`"))
         return std::nullopt;
 
     DataTypePtr unwrapped = removeLowCardinality(result_type);

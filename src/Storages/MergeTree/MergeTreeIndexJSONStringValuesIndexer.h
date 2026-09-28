@@ -13,12 +13,13 @@ class ColumnObject;
 class DataTypeObject;
 class IColumn;
 struct MergeTreeIndexTextGranuleBuilder;
+struct PostingListBuildContext;
 
 /// Walks String leaves of a `ColumnObject` slice and emits path-scoped tokens for `jsonStringValues`.
 class JSONStringValuesIndexer
 {
 public:
-    explicit JSONStringValuesIndexer(MergeTreeIndexTextGranuleBuilder & granule_builder_);
+    JSONStringValuesIndexer(MergeTreeIndexTextGranuleBuilder & granule_builder_, const PostingListBuildContext & build_context_);
 
     void addRow(const ColumnObject & column_object, const DataTypeObject & type_object, size_t row);
 
@@ -30,6 +31,7 @@ private:
     void processSharedDataValue(std::string_view path, std::string_view value_data);
 
     MergeTreeIndexTextGranuleBuilder & granule_builder;
+    const PostingListBuildContext & build_context;
     SplitByNonAlphaTokenizer split;
     PaddedPODArray<UInt8> token;
     UInt32 token_position = 0;

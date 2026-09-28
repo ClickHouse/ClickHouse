@@ -1945,7 +1945,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     else if (isObject(removeNullable(removeLowCardinality(index_column.type)))
         && tokenizer->getType() == ITokenizer::Type::JSONStringValues)
     {
-        addDocumentsFromJSON(preprocessed_column, index_column.type, offset, rows_read);
+        addDocumentsFromJSON(preprocessed_column, index_column.type, offset, rows_read, context);
     }
     else
     {
@@ -2030,7 +2030,8 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     }
 }
 
-void MergeTreeIndexAggregatorText::addDocumentsFromJSON(ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read)
+void MergeTreeIndexAggregatorText::addDocumentsFromJSON(
+    ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
 {
     column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
@@ -2044,7 +2045,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromJSON(ColumnPtr column, const 
     if (!type_object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "jsonStringValues text index expected type JSON, got {}", type->getName());
 
-    JSONStringValuesIndexer indexer(granule_builder);
+    JSONStringValuesIndexer indexer(granule_builder, context);
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
         if (nullable && nullable->isNullAt(i))

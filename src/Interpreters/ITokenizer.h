@@ -501,7 +501,7 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
 };
 
 /// Switch for a text index on a bare `JSON` column. String leaves are split with `splitByNonAlpha`,
-/// then encoded with `KeyValuePairsTokenizer::encodeToken(path, token, is_rest = false)`.
+/// then encoded with `KeyValuePairsTokenizer::encodeToken(path, token, is_duplicate = false)`.
 /// Tokens are built in `MergeTreeIndexAggregatorText::addDocumentsFromJSON`; the methods below throw.
 struct JSONStringValuesTokenizer final : public ITokenizerHelper<JSONStringValuesTokenizer>
 {

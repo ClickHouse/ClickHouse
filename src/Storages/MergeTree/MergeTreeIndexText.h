@@ -552,7 +552,8 @@ private:
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     /// Path-scoped tokens from String leaves of a ColumnObject slice. `jsonStringValues` only.
-    void addDocumentsFromJSON(ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read);
+    void addDocumentsFromJSON(
+        ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     String index_column_name;
     MergeTreeIndexTextParams params;

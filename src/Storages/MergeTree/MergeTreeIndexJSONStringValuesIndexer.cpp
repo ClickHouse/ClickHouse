@@ -25,8 +25,10 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-JSONStringValuesIndexer::JSONStringValuesIndexer(MergeTreeIndexTextGranuleBuilder & granule_builder_)
+JSONStringValuesIndexer::JSONStringValuesIndexer(
+    MergeTreeIndexTextGranuleBuilder & granule_builder_, const PostingListBuildContext & build_context_)
     : granule_builder(granule_builder_)
+    , build_context(build_context_)
 {
 }
 
@@ -54,8 +56,8 @@ void JSONStringValuesIndexer::emitString(std::string_view path, std::string_view
             if (token_size == 0)
                 return false;
 
-            KeyValuePairsTokenizer::encodeToken(path, std::string_view(token_data, token_size), /*is_rest=*/ false, token);
-            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++);
+            KeyValuePairsTokenizer::encodeToken(path, std::string_view(token_data, token_size), /*is_duplicate=*/ false, token);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, build_context);
             return false;
         });
 }
