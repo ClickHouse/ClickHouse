@@ -57,7 +57,9 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    first = r.getString("first");
+    /// The SQL parser lower-cases the key (see `ParserKeyValuePair`), and the checks for secret keys in
+    /// `formatImpl` and `hasSecretParts` rely on it, so canonicalize it the same way here.
+    first = Poco::toLower(r.getString("first"));
     if (first.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
 
