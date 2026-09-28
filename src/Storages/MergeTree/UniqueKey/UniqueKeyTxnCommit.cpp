@@ -10,11 +10,11 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/UniqueKey/BlockAllocation.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 #include <Storages/StorageMergeTree.h>
 
@@ -29,7 +29,6 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <optional>
 #include <utility>
@@ -503,13 +502,9 @@ UniqueKeyTxnCommit::InsertOutcome UniqueKeyTxnCommit::insert(InsertRequest reque
 class UniqueKeyTxnCommit::MergeCommit : public UniqueKeyCommitBase
 {
 public:
-    MergeCommit(
-        StorageMergeTree & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const MergeRequest & request_)
+    MergeCommit(StorageMergeTree & storage_, const MergeRequest & request_)
         : UniqueKeyCommitBase(storage_.uniqueKeyTxnManager().deleteBitmapStore())
         , storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
         , request(request_)
     {
     }
@@ -555,14 +550,27 @@ private:
     DeleteBitmapPtr computeMergeLateKills();
 
     StorageMergeTree & storage;
-    StorageMetadataPtr metadata_snapshot;
     const MergeRequest & request;
 };
 
+/// A late kill is a source row killed after the merge's snapshot: the merged part still holds it
+/// live, so it has to be killed there. The merge dropped the rows dead at the snapshot, so its row
+/// mapping indexes the rows each source sent, not their raw offsets: source offset `o` is the
+/// `o - rank(o)`-th row sent, where `rank(o)` counts the rows of `prev_snapshot` before `o` -- the
+/// source's bitmap at the merge's snapshot, i.e. the rows the merge skipped.
+///
+/// Example: source A holds ids 10 20 30 40 50 and 20 (offset 1) is dead at the snapshot, so A
+/// sends 10 30 40 50. Merged with B's 15 35 45 55, A's rows land at 0 2 4 6 and B's at 1 3 5 7.
+/// If 40 (offset 3) is killed during the merge, it was A's sent row 3 - 1 = 2 (0-based), which
+/// landed at merged row 4. Without the subtraction, row 6 (id 50, live) would be killed instead.
+///
+/// Without a sorting key the merge appends the sources in order, so the merged row is the rows
+/// the earlier sources sent plus that index.
 DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
 {
     const auto & sources = request.source_parts;
     const auto & snapshot_bitmaps = request.snapshot_bitmaps;
+    const auto & offsets = request.merged_part_offsets;
     const IMergeTreeDataPart & merged_part = *request.merged_part;
 
     chassert(sources.size() == snapshot_bitmaps.size());
@@ -570,59 +578,46 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     if (merged_part.rows_count == 0)
         return nullptr;
 
-#if USE_ROCKSDB
-    const Names & unique_key_column_names = metadata_snapshot->getUniqueKeyColumns();
-    /// No cap, for the same reason as the load-time rebuild in `ensureValidDenseIndex`.
-    constexpr UInt64 max_encoded_size = std::numeric_limits<UInt64>::max();
+    if (!offsets.isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY merge into {}: the row mapping is not finalized at the commit", merged_part.name);
 
-    /// The merged part is still staged in its tmp dir, and its freshly-written SST is read back
-    /// through that storage. Bound checks against the merged row count run inside the probe target.
-    SSTProbeTargetPart probe(
-        &merged_part,
-        /*pinned_bitmap=*/nullptr,
-        openSSTReaderFromStorage(
-            merged_part.getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, storage.getContext()->getReadSettings()));
-
-    auto self_kills = std::make_shared<DeleteBitmap>();
+    auto late_kills = std::make_shared<DeleteBitmap>();
+    UInt64 source_start = 0;
 
     for (size_t i = 0; i < sources.size(); ++i)
     {
-        auto newly_dead = std::make_shared<DeleteBitmap>();
-        newly_dead->merge(*delete_bitmap_store.readLatestBitmap(sources[i]->info));
-        newly_dead->subtract(*snapshot_bitmaps[i]);
-        if (newly_dead->empty())
-            continue;
+        const DeleteBitmap & prev_snapshot = *snapshot_bitmaps[i];
+        const UInt64 live_at_snapshot = sources[i]->rows_count - prev_snapshot.cardinality();
+        if (offsets.isMappingEnabled() && offsets.getPartRowsCount(i) != live_at_snapshot)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "UNIQUE KEY merge into {}: mapped {} row(s) of source part {}, which had {} live at the snapshot",
+                merged_part.name, offsets.getPartRowsCount(i), sources[i]->name, live_at_snapshot);
 
-        /// Assemble the keys to probe the latest position again
-        Block uk_block = UniqueKeyDenseIndexOps::readUniqueKeyColumns(
-            storage, sources[i], metadata_snapshot, unique_key_column_names);
+        DeleteBitmap newly_dead;
+        newly_dead.merge(*delete_bitmap_store.readLatestBitmap(sources[i]->info));
+        newly_dead.subtract(prev_snapshot);
 
-        auto dead = newly_dead->toPermutation();
-        std::vector<std::optional<UInt64>> merged_rows;
-        probe.findRowIndexBatch(uk_block, unique_key_column_names, &dead, max_encoded_size, merged_rows);
-
-        for (size_t k = 0; k < merged_rows.size(); ++k)
+        for (const UInt64 source_offset : newly_dead.toVector())
         {
-            if (unlikely(!merged_rows[k].has_value()))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "UNIQUE KEY merge into {}: the key at row {} of source part {} was live at the "
-                    "merge snapshot but is absent from the merged part's dense index",
-                    merged_part.name, dead[k], sources[i]->name);
-            self_kills->add(*merged_rows[k]);
+            const UInt64 input_offset = source_offset - prev_snapshot.rangeCardinality(0, source_offset);
+            late_kills->add(offsets.isMappingEnabled() ? offsets[i, input_offset] : source_start + input_offset);
         }
+
+        source_start += live_at_snapshot;
     }
 
-    return self_kills->empty() ? nullptr : self_kills;
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-        "UNIQUE KEY merge reconciliation requires RocksDB support (USE_ROCKSDB=1)");
-#endif
+    if (!offsets.isMappingEnabled() && source_start != merged_part.rows_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY merge into {}: {} row(s) of the sources were live at the snapshot, but the merged part has {}",
+            merged_part.name, source_start, merged_part.rows_count);
+
+    return late_kills->empty() ? nullptr : late_kills;
 }
 
-void UniqueKeyTxnCommit::merge(
-    StorageMergeTree & storage, const StorageMetadataPtr & metadata_snapshot, MergeRequest request)
+void UniqueKeyTxnCommit::merge(StorageMergeTree & storage, MergeRequest request)
 {
-    MergeCommit op(storage, metadata_snapshot, request);
+    MergeCommit op(storage, request);
     storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op);
 
     const String & partition_id = request.merged_part->info.getPartitionId();
@@ -668,7 +663,7 @@ protected:
 private:
     struct MarkerPartHandle
     {
-        MutableDataPartPtr data_part;
+        MergeTreeMutableDataPartPtr data_part;
         scope_guard tmp_dir_holder;
     };
 

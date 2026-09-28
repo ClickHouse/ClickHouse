@@ -29,7 +29,7 @@ public:
 
     /// Read `uk_names` for every physical row of `part` in part-offset order
     /// (`apply_deleted_mask=false`, sequential source), so block row `i` == part
-    /// offset `i`. Shared by the load-time rebuild and the merge late-kill path.
+    /// offset `i`. Used by the load-time rebuild.
     static Block readUniqueKeyColumns(
         const MergeTreeData & data,
         const std::shared_ptr<const IMergeTreeDataPart> & part,

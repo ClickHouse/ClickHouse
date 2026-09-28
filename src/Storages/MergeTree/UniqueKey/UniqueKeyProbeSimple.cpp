@@ -44,7 +44,7 @@ std::vector<ProbeResult> UniqueKeyProbeSimple::probeBatch(const Block & keys, co
     /// Encode the whole key batch once, in unique-key column order — targets
     /// consume the encoded bytes and never re-encode.
     VectorWithMemoryTracking<String> encoded;
-    UniqueKeyEncoding::encodeBlockKeys(keys, unique_key_column_names, /*subset=*/nullptr, max_encoded_size, encoded);
+    UniqueKeyEncoding::encodeBlockKeys(keys, unique_key_column_names, max_encoded_size, encoded);
 
     std::vector<std::string_view> views;
     views.reserve(n);

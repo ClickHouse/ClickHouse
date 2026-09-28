@@ -16,6 +16,7 @@ namespace DB
 {
 
 class StorageMergeTree;
+class MergedPartOffsets;
 
 /// The three writes that implement `IUniqueKeyCommit`, one entry point each. The protocol they
 /// run -- stage, publish, commit, all inside one hold of the partition guard -- is described on
@@ -53,15 +54,19 @@ public:
     struct MergeRequest
     {
         MergeTreeTransactionHolder & transaction;
+        /// `snapshot_bitmaps` and `merged_part_offsets` are indexed like this.
         const MergeTreeData::DataPartsVector & source_parts;
         MergeTreeMutableDataPartPtr merged_part;
+        /// The bitmaps the merge's input filter dropped rows by.
         const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps;
+        /// Where each row the input filter let through landed in `merged_part`.
+        const MergedPartOffsets & merged_part_offsets;
     };
 
     /// MERGE:
     /// 1. Create the snapshot, and run regular merge
     /// 2. Commit: Reconciles the rows killed by concurrent operations into the merged part's self-bitmap
-    static void merge(StorageMergeTree & storage, const StorageMetadataPtr & metadata_snapshot, MergeRequest request);
+    static void merge(StorageMergeTree & storage, MergeRequest request);
 
     struct DeleteRequest
     {

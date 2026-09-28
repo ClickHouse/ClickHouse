@@ -39,12 +39,10 @@ void encodeBlock(
     size_t max_size,
     VectorWithMemoryTracking<String> & out);
 
-/// Encode `block`'s `uk_names` columns, in unique-key order, into `out`. `subset`, if
-/// non-null, gathers (does not sort) the rows: `out[i]` encodes block row `(*subset)[i]`.
+/// Encode `block`'s `uk_names` columns, in unique-key order, into `out`.
 void encodeBlockKeys(
     const Block & block,
     const Names & uk_names,
-    const IColumn::Permutation * subset,
     size_t max_size,
     VectorWithMemoryTracking<String> & out);
 
