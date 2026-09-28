@@ -40,6 +40,93 @@ https://mcp.clickhouse.cloud/mcp
 
 Choose your IDE or tool below and follow the corresponding setup instructions.
 
+### Authenticate from a headless environment {#headless-mcp-client-authentication}
+
+If your MCP client runs on a remote or headless host where a browser-based OAuth flow is not practical, authenticate with a [ClickHouse Cloud API key](/cloud/manage/openapi) instead.
+
+1. In the ClickHouse Cloud console, open your organization and select **API Keys**.
+2. Create a key with the minimum roles and permissions required for the organizations and services the MCP client needs to access, then download the key ID and secret.
+3. On the remote host, provide the credentials through your secret-management system and create an HTTP Basic authorization value:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. Select your MCP client and add the remote MCP server:
+
+<Tabs>
+<Tab title="Claude Code" id="headless-auth-claude-code">
+
+```bash
+claude mcp add \
+  --scope user \
+  --transport http \
+  clickhouse-cloud \
+  https://mcp.clickhouse.cloud/mcp \
+  --header 'Authorization: ${CH_AUTH}'
+```
+
+Claude Code expands `CH_AUTH` from the environment when it connects. Launch Claude Code and run `/mcp` to confirm that `clickhouse-cloud` is connected.
+
+See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server) for details about remote HTTP servers and header configuration.
+
+</Tab>
+<Tab title="Codex" id="headless-auth-codex">
+
+Add the following entry to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.clickhouse-cloud]
+url = "https://mcp.clickhouse.cloud/mcp"
+env_http_headers = { Authorization = "CH_AUTH" }
+```
+
+Run `codex mcp list` to confirm that `clickhouse-cloud` is configured.
+
+See the [Codex configuration reference](https://developers.openai.com/codex/config-reference) for details about `mcp_servers.<id>.env_http_headers`.
+
+</Tab>
+<Tab title="OpenCode" id="headless-auth-opencode">
+
+Add the following entry to your `opencode.jsonc` configuration:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "clickhouse-cloud": {
+        "type": "remote",
+        "url": "https://mcp.clickhouse.cloud/mcp",
+        "oauth": false,
+        "headers": {
+          "Authorization": "{env:CH_AUTH}"
+        }
+      }
+    }
+  }
+}
+```
+
+Run `opencode mcp list` to confirm that `clickhouse-cloud` is connected.
+
+See the [OpenCode MCP documentation](https://opencode.ai/v2/docs/mcp-servers#remote) for details about remote servers, headers, and environment-variable substitution.
+
+</Tab>
+</Tabs>
+
+Keep `CH_AUTH` available in each client session, and do not commit the API key, secret, or `CH_AUTH` value to source control. Base64 encoding does not encrypt the credentials.
+
+This API-key flow does not require a browser or a separate `clickhousectl` login.
+
 ### Claude Code {#claude-code}
 
 From your working directory, run the following command to add the ClickHouse Cloud MCP Server configuration to Claude Code:
@@ -61,41 +148,6 @@ Run the following command to list MCP servers:
 ```
 
 Select `clickhouse-cloud` and authenticate via OAuth using your credentials for ClickHouse Cloud.
-
-#### Authenticate from a headless environment {#headless-mcp-client-authentication}
-
-If Claude Code runs on a remote or headless host where a browser-based OAuth flow is not practical, authenticate with a [ClickHouse Cloud API key](/cloud/manage/openapi) instead.
-
-1. In the ClickHouse Cloud console, open your organization and select **API Keys**.
-2. Create a key with the minimum roles and permissions required for the organizations and services Claude Code needs to access, then download the key ID and secret.
-3. On the remote host, provide the credentials through your secret-management system and create an HTTP Basic authentication value:
-
-```bash
-export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
-export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
-
-export CH_AUTH="$(
-  printf '%s:%s' \
-    "$CLICKHOUSE_CLOUD_API_KEY" \
-    "$CLICKHOUSE_CLOUD_API_SECRET" |
-  base64 | tr -d '\n'
-)"
-```
-
-4. Add the remote MCP server to Claude Code with the authorization header:
-
-```bash
-claude mcp add \
-  --scope user \
-  --transport http \
-  clickhouse-cloud \
-  https://mcp.clickhouse.cloud/mcp \
-  --header 'Authorization: Basic ${CH_AUTH}'
-```
-
-Claude Code expands `CH_AUTH` from the environment when it connects. Keep the variable available in each Claude Code session, and do not commit the API key, secret, or encoded `CH_AUTH` value to source control. The encoded value is a credential, not encryption.
-
-Launch Claude Code and run `/mcp` to confirm that `clickhouse-cloud` is connected. This API-key flow does not require a browser or a separate `clickhousectl` login.
 
 ### Claude web UI {#claude-web}
 
