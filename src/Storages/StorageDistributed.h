@@ -184,15 +184,7 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result) const;
-
-    ClusterPtr skipUnusedShards(
-        ClusterPtr cluster,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result,
-        const StorageSnapshotPtr & storage_snapshot,
-        ContextPtr context) const;
+        const SelectQueryInfo & query_info) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
         ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
@@ -213,7 +205,6 @@ private:
     ///
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
-    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
