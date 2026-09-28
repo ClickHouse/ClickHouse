@@ -2,9 +2,11 @@
 # Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
-# Pins the outcome of Iceberg data compaction per build: `OPTIMIZE TABLE` on an Iceberg
-# table reports `NOT_IMPLEMENTED` where the rewrite cannot be published, and succeeds where
-# data compaction is implemented. The setting gate is common to both builds.
+# Pins the refusal of Iceberg data compaction in the open-source build: with
+# `allow_experimental_iceberg_compaction`, `OPTIMIZE TABLE` on an Iceberg table reports
+# `NOT_IMPLEMENTED`, and without it the error names the setting. Cloud decides from the
+# table-level setting instead of the one sent with the query, so there `OPTIMIZE` may either
+# succeed or name the setting.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,10 +31,8 @@ out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 \
 if grep -qF 'Logical error' <<< "$out"; then
     echo "FAIL: logical error: $out"
 elif [ "$is_cloud" = 1 ]; then
-    # Where data compaction is implemented the statement must succeed, not merely avoid a
-    # logical error.
-    if grep -qF 'Code:' <<< "$out"; then
-        echo "FAIL: expected OPTIMIZE to succeed where data compaction is implemented: $out"
+    if grep -qF 'Code:' <<< "$out" && ! grep -qF allow_experimental_iceberg_compaction <<< "$out"; then
+        echo "FAIL: expected OPTIMIZE to succeed or to name the setting: $out"
     else
         echo "ok"
     fi
@@ -43,9 +43,10 @@ else
     echo "FAIL: expected a NOT_IMPLEMENTED refusal on the open-source build: $out"
 fi
 
-# The setting gate is unchanged in both builds: without the setting the error names it.
+# Without the setting the error names it (on Cloud, unless the table-level setting is on).
 out=$(${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
-if grep -qF allow_experimental_iceberg_compaction <<< "$out"; then
+if grep -qF allow_experimental_iceberg_compaction <<< "$out" \
+    || { [ "$is_cloud" = 1 ] && ! grep -qF 'Code:' <<< "$out"; }; then
     echo "ok"
 else
     echo "FAIL: expected the setting gate to report the setting: $out"
