@@ -214,19 +214,21 @@ Pipe StorageDictionary::read(
     const size_t threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
+    const auto & external_loader = getContext()->getExternalDictionariesLoader();
 
     /**
      * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
      * If none of these conditions are met - we ask to grant a dictGet.
+     * Check access before loading the dictionary, because loading contacts the dictionary source.
      */
-    bool has_dict_get = local_context->getAccess()->isGranted(
-        AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-    bool has_select = local_context->getAccess()->isGranted(
-        AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    auto dictionary_id = external_loader.getDictionaryID(registered_dictionary_name, local_context);
+    auto dictionary_database = IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id);
+    bool has_dict_get = local_context->getAccess()->isGranted(AccessType::dictGet, dictionary_database, dictionary_id.getTableName());
+    bool has_select = local_context->getAccess()->isGranted(AccessType::SELECT, dictionary_database, dictionary_id.getTableName());
     if (!has_dict_get && !has_select)
-        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+        local_context->checkAccess(AccessType::dictGet, dictionary_database, dictionary_id.getTableName());
 
+    auto dictionary = external_loader.getDictionary(registered_dictionary_name, local_context);
     return dictionary->read(column_names, max_block_size, threads);
 }
 

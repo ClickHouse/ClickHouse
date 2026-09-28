@@ -25,6 +25,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
     SOURCE(CLICKHOUSE(TABLE 'nb_src' DB '${CLICKHOUSE_DATABASE}'))
     LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
     LIFETIME(0);
+    CREATE TABLE w (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d);
+    SYSTEM UNLOAD DICTIONARY d;
     CREATE USER ${username} NOT IDENTIFIED;
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${username};
 "
@@ -70,6 +72,11 @@ do
     as_user "SELECT count() FROM numbers(1) GROUP BY dictGet('${dict}', 'value', number) SETTINGS enable_analyzer = 0"
     status
 done
+
+echo "--- SELECT on a Dictionary table is not enough without a grant on the dictionary"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w TO ${username}"
+as_user "SELECT * FROM w"
+status
 
 echo "--- no grants, naiveBayesClassifier"
 status nb
