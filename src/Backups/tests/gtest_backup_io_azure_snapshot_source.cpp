@@ -4,10 +4,16 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Backups/BackupIO_AzureBlobStorage.h>
+#include <Common/Exception.h>
 
 #include <azure/storage/common/storage_credential.hpp>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -57,17 +63,45 @@ TEST(BackupIOAzureSnapshotSource, NamespaceWithoutPrefix)
     EXPECT_EQ(source.endpoint.getContainerEndpoint(), "https://source.blob.core.windows.net/data");
 }
 
-TEST(BackupIOAzureSnapshotSource, KeepsConnectionStringAccount)
+namespace
+{
+
+AzureBlobStorage::ConnectionParams connectionStringBackup()
 {
     const String connection_string = "DefaultEndpointsProtocol=https;AccountName=backups;AccountKey=a2V5;EndpointSuffix=core.windows.net";
     auto backup = backupConnectionParams(AzureBlobStorage::ConnectionString{connection_string});
     backup.endpoint.storage_account_url = connection_string;
+    return backup;
+}
 
-    const auto source = makeSnapshotSourceConnectionParams(backup, "https://source.blob.core.windows.net", "data/mergetree/");
+}
 
-    EXPECT_EQ(source.endpoint.storage_account_url, connection_string);
+TEST(BackupIOAzureSnapshotSource, ConnectionStringOfTheSnapshotAccountIsKept)
+{
+    const auto backup = connectionStringBackup();
+
+    /// The recorded endpoint is the backup's own account (a trailing slash must not matter).
+    const auto source = makeSnapshotSourceConnectionParams(backup, "https://backups.blob.core.windows.net/", "data/mergetree/");
+
+    EXPECT_EQ(source.endpoint.storage_account_url, backup.endpoint.storage_account_url);
     EXPECT_EQ(source.endpoint.container_name, "data");
     EXPECT_EQ(source.endpoint.prefix, "mergetree/");
+}
+
+TEST(BackupIOAzureSnapshotSource, ConnectionStringOfAnotherAccountIsRejected)
+{
+    const auto backup = connectionStringBackup();
+
+    try
+    {
+        makeSnapshotSourceConnectionParams(backup, "https://source.blob.core.windows.net", "data/mergetree/");
+        FAIL() << "expected BAD_ARGUMENTS";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_NE(e.message().find("cannot access another storage account"), String::npos);
+    }
 }
 
 #endif

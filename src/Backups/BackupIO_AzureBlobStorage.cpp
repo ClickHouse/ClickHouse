@@ -15,6 +15,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/core/context.hpp>
+#include <azure/core/url.hpp>
 
 #include <filesystem>
 
@@ -26,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -61,6 +63,24 @@ namespace
             {"sdk_retry_max_backoff_ms", std::to_string(settings.sdk_retry_max_backoff_ms)},
         };
     }
+
+    /// Storage account URLs as the SDK canonicalizes them, without trailing slashes, so that a
+    /// manifest endpoint and a connection string's blob endpoint compare equal for the same account.
+    String canonicalStorageAccountURL(const String & url)
+    {
+        String canonical;
+        try
+        {
+            canonical = Azure::Core::Url(url).GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure storage account URL {}: {}", url, e.what());
+        }
+        while (canonical.ends_with('/'))
+            canonical.pop_back();
+        return canonical;
+    }
 }
 
 AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
@@ -68,8 +88,20 @@ AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
 {
     auto connection_params = backup_connection_params;
 
-    /// A connection string already names the storage account; only a URL can be replaced.
-    if (!std::holds_alternative<AzureBlobStorage::ConnectionString>(connection_params.auth_method))
+    if (std::holds_alternative<AzureBlobStorage::ConnectionString>(connection_params.auth_method))
+    {
+        /// A connection string carries one account and its key, so it cannot be pointed at another
+        /// account: the snapshot's objects must live in the account the backup is read from.
+        const String backup_account_url = connection_params.getConnectionURL();
+        if (canonicalStorageAccountURL(endpoint) != canonicalStorageAccountURL(backup_account_url))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot read the objects of a lightweight snapshot from {}: the backup is read with a connection string for {}, "
+                "which cannot access another storage account",
+                endpoint,
+                backup_account_url);
+    }
+    else
         connection_params.endpoint.storage_account_url = endpoint;
 
     const auto slash_pos = blob_namespace.find('/');

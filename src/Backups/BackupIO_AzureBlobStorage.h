@@ -16,6 +16,8 @@ namespace DB
 /// (`AzureObjectStorage::getObjectsNamespace`), while the recorded object keys are relative to the prefix, so
 /// it is split back into a container and a blob prefix: used as a container name, `<container>/<prefix>`
 /// gives every container-level request extra path segments, which Azure rejects with `400 InvalidUri`.
+/// A connection string cannot be pointed at another account, so with connection-string auth the recorded
+/// endpoint has to be the backup's own account, otherwise `BAD_ARGUMENTS` is thrown.
 AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
     const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace);
 
