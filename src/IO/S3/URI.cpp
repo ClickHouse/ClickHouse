@@ -10,6 +10,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <aws/s3/S3EndpointProvider.h>
@@ -44,8 +45,20 @@ String maskedURIString(const Poco::URI & uri)
 {
     String result = uri.toString();
     maskURIUserinfo(result);
+    /// With `compatibility_s3_presigned_url_query_in_path` the constructor folds the query of a presigned URL
+    /// into the path by percent-encoding its '?', which `toString` renders as `%3F`, so `maskPresignedURLParameters`
+    /// would not see the parameters. Put the '?' back: `toString` encodes '%' itself as `%25`, so a `%3F` can only
+    /// come from a '?'.
+    boost::replace_all(result, "%3F", "?");
     maskPresignedURLParameters(result);
     return result;
+}
+
+/// With `compatibility_s3_presigned_url_query_in_path` the query of a presigned URL ends up in the bucket or the key.
+String maskedQuotedString(String value)
+{
+    maskPresignedURLParameters(value);
+    return quoteString(value);
 }
 
 }
@@ -246,7 +259,7 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-            quoteString(bucket),
+            maskedQuotedString(bucket),
             !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
 }
 
@@ -257,7 +270,7 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid S3 key: {}{}",
-            quoteString(key),
+            maskedQuotedString(key),
             !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
     };
 
