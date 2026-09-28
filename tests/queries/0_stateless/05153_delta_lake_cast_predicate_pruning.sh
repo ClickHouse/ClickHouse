@@ -348,4 +348,15 @@ check t "toDate(d) != toDate32('2026-01-01')"
 check t "toDate32(d) < toDate('2026-01-02')"
 check t "toDate(d) = toDate32('2205-06-08')"
 
+# The snapshot scan must build the engine predicate with the query's overflow settings. A nullable
+# source hides the out-of-range RHS parse from zero-row header analysis, so if pruning coerced the
+# literal with the default `ignore` it would clamp `'1969-12-31'` to a real day and drop both files,
+# suppressing the exception. Both rows stay inside the `Date` domain, so the only overflow is the RHS.
+make_table overflow_rhs 'Nullable(Date32)' full 1970-01-02 2026-01-01
+for enabled in 0 1; do
+    expect_error "overflow_rhs: toDate(d) = '1969-12-31' (engine predicate ${enabled}, throw)" \
+        overflow_rhs "toDate(d) = '1969-12-31'" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
+        "date_time_overflow_behavior='throw'"
+done
+
 run_all

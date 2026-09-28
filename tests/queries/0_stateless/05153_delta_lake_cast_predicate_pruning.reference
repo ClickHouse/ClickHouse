@@ -222,3 +222,7 @@ t: toDate32(d) < toDate('2026-01-02')
 t: toDate(d) = toDate32('2205-06-08')
 []
 3
+overflow_rhs: toDate(d) = '1969-12-31' (engine predicate 0, throw)
+1
+overflow_rhs: toDate(d) = '1969-12-31' (engine predicate 1, throw)
+1
