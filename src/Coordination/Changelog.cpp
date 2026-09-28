@@ -20,6 +20,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -53,6 +54,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char keeper_changelog_preallocate_no_space[];
 }
 
 namespace
@@ -252,7 +258,8 @@ public:
     bool appendRecord(ChangelogRecord && record)
     {
         const auto * file_buffer = tryGetFileBaseBuffer();
-        chassert(file_buffer && current_file_description);
+        if (!file_buffer || !current_file_description)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writer wasn't initialized for any file");
 
         chassert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
         // check if log file reached the limit for amount of records it can contain
@@ -493,6 +500,12 @@ private:
                 res = fallocate(
                     file_buffer->getFD(), FALLOC_FL_KEEP_SIZE, 0, log_file_settings.max_size + log_file_settings.overallocate_size);
             } while (res < 0 && errno == EINTR);
+
+            fiu_do_on(FailPoints::keeper_changelog_preallocate_no_space,
+            {
+                res = -1;
+                errno = ENOSPC;
+            });
 
             if (res != 0)
             {
@@ -2242,9 +2255,6 @@ void Changelog::appendCompletionThread()
     bool append_ok = false;
     while (append_completion_queue.pop(append_ok))
     {
-        if (!append_ok)
-            current_writer->finalize();
-
         // we shouldn't start the raft_server before sending it here
         if (auto raft_server_locked = raft_server.lock())
             raft_server_locked->notify_log_append_completion(append_ok);

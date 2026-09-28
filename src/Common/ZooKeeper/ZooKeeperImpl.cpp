@@ -1744,14 +1744,17 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, info.request->tracing_context.get());
 
-        if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
+        /// A failed push kills the session (the `catch` below calls `finalize`), so be patient here.
+        const UInt64 push_timeout_ms = 3 * static_cast<UInt64>(args.session_timeout_ms);
+
+        if (!requests_queue.tryPush(std::move(info), push_timeout_ms))
         {
             if (requests_queue.isFinished())
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
             throw Exception(Error::ZOPERATIONTIMEOUT,
-                "Cannot push request to queue within operation timeout of {} ms",
-                args.operation_timeout_ms);
+                "Cannot push request to queue within {} ms",
+                push_timeout_ms);
         }
     }
     catch (...)

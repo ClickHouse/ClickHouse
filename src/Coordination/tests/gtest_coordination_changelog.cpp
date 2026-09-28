@@ -4,10 +4,16 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <thread>
 
+
+namespace DB::FailPoints
+{
+    extern const char keeper_changelog_preallocate_no_space[];
+}
 
 template<typename TestType>
 class CoordinationChangelogTest : public ::testing::Test
@@ -53,6 +59,35 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestSimple)
     EXPECT_EQ(changelog.last_entry()->get_term(), 77);
     EXPECT_EQ(changelog.entry_at(1)->get_term(), 77);
     EXPECT_EQ(changelog.log_entries(1, 2)->size(), 1);
+}
+
+/// A failed preallocation (e.g. `ENOSPC`) fails the batch, but must leave the writer usable:
+/// the next append retries the preallocation. Previously the append completion thread
+/// finalized the writer without holding the writer lock, and the next append dereferenced
+/// the destroyed file buffer.
+TEST_P(CoordinationTestWithCompression, ChangelogTestAppendAfterPreallocationFailure)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000, .max_size = 1024 * 1024},
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_preallocate_no_space);
+
+    auto entry = getLogEntry("hello world", 77);
+    changelog.append(entry);
+    EXPECT_FALSE(changelog.flush());
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        changelog.append(entry);
+        EXPECT_TRUE(changelog.flush());
+    }
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestFile)
