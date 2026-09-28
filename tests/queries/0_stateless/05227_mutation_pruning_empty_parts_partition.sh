@@ -97,6 +97,9 @@ newest_mutation_scope t_pruning_empty_r1 "$mutation_before"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START REPLICATION QUEUES t_pruning_empty_r1; SYSTEM SYNC REPLICA t_pruning_empty_r1"
 wait_for_mutations t_pruning_empty_r1
+# Each replica mutates its own parts: `r2` fetches the mutation's queue entries and may still be applying them.
+${CLICKHOUSE_CLIENT} -q "SYSTEM SYNC REPLICA t_pruning_empty_r2"
+wait_for_mutations t_pruning_empty_r2
 
 ${CLICKHOUSE_CLIENT} -q "
 SELECT 'r1', count() FROM t_pruning_empty_r1 WHERE p = 2;
