@@ -30,6 +30,7 @@ private:
     void propagateRangeToParents(const PrometheusQueryTree::Node * node, Decimal64 range);
 
     std::shared_ptr<const PrometheusQueryTree> promql_tree;
+    DataTypePtr table_timestamp_type;
 
     /// The scale of all timestamps and durations here, the same as `PrometheusQueryEvaluationSettings::time_scale`.
     UInt32 time_scale;

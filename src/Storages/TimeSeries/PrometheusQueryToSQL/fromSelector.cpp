@@ -16,9 +16,9 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    bool clipTimestampRangeToStorageType(TimestampType & min_time, TimestampType & max_time, const DataTypePtr & timestamp_data_type)
+    bool clipTimestampRangeToStorageType(TimestampType & min_time, TimestampType & max_time, const DataTypePtr & table_timestamp_type)
     {
-        WhichDataType which_data_type{timestamp_data_type};
+        WhichDataType which_data_type{table_timestamp_type};
         if (!(which_data_type.isDateTime() || which_data_type.isUInt32()))
             return true;
 
@@ -54,7 +54,7 @@ namespace
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
 
-        if (!clipTimestampRangeToStorageType(min_time, max_time, context.timestamp_data_type))
+        if (!clipTimestampRangeToStorageType(min_time, max_time, context.table_timestamp_type))
             return SQLQueryPiece{node, ResultType::RANGE_VECTOR, StoreMethod::EMPTY};
 
         builder.from_table_function = makeASTFunction(
@@ -62,8 +62,8 @@ namespace
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
             make_intrusive<ASTLiteral>(String{instant_selector_text}),
-            timeSeriesTimestampToAST(min_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(max_time, context.timestamp_data_type));
+            timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(max_time, context.result_timestamp_type));
 
         res.select_query = builder.getSelectQuery();
         return res;
