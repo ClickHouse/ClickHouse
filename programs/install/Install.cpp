@@ -697,14 +697,31 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path.string());
             }
 
-            /// Find the users config the same way as `AccessControl::setupFromMainConfig` does.
+            /// Find the users config the same way as `AccessControl::addStoragesFromMainConfig` does.
+            /// If there are several XML users storages, inspect the first one, as it is the first one added by the server.
             fs::path configured_users_config = configuration->getString("users_config", "");
             if (configured_users_config.empty())
             {
-                if (configuration->has("user_directories.users_xml.path"))
-                    configured_users_config = configuration->getString("user_directories.users_xml.path");
-                else if (configuration->has("user_directories"))
-                    has_users_xml_config = false;
+                if (configuration->has("user_directories"))
+                {
+                    Poco::Util::AbstractConfiguration::Keys keys_in_user_directories;
+                    configuration->keys("user_directories", keys_in_user_directories);
+                    for (const auto & key_in_user_directories : keys_in_user_directories)
+                    {
+                        /// Same type names as in `AccessControl::addStoragesFromUserDirectoriesConfig`.
+                        std::string type = key_in_user_directories;
+                        if (size_t bracket_pos = type.find('['); bracket_pos != std::string::npos)
+                            type.resize(bracket_pos);
+                        if (type == "users_xml" || type == "users.xml" || type == "users_config")
+                        {
+                            configured_users_config = configuration->getString("user_directories." + key_in_user_directories + ".path");
+                            break;
+                        }
+                    }
+
+                    if (configured_users_config.empty())
+                        has_users_xml_config = false;
+                }
                 else
                     configured_users_config = main_config_file;
             }
