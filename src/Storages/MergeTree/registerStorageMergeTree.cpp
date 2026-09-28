@@ -424,6 +424,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 
+    checkStorageSettingNames(args);
+
     auto component_guard = Coordination::setCurrentComponent("registerStorageMergeTree::create");
 
     /// Route every long-lived allocation built up while constructing this MergeTree-family
