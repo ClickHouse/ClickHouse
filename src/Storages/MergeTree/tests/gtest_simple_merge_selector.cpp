@@ -62,6 +62,8 @@ PartsRanges selectRightTailRange(SimpleMergeSelector::Settings settings, const s
 {
     settings.base = 2.0;
     settings.enable_heuristic_to_align_parts = false;
+    /// Isolate the right-tail heuristic; this one also needs `partitions_stats`.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
 
     SimpleMergeSelector selector(settings);
     auto parts_range = makePartsRange({10 * MiB, 10 * MiB, 1024}, ages);
