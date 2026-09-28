@@ -20,6 +20,8 @@
 #include <Common/quoteString.h>
 #include <fmt/ranges.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
@@ -35,12 +37,17 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsTimezone iceberg_partition_timezone;
+}
+
 namespace DB::Iceberg
 {
 
-DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name, std::optional<String> time_zone)
 {
-    auto transform_and_argument = parseTransformAndArgument(transform_name_src);
+    auto transform_and_argument = parseTransformAndArgument(transform_name_src, time_zone);
     if (!transform_and_argument)
     {
         LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name_src);
@@ -58,6 +65,13 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     {
         return makeASTFunction(
                 transform_and_argument->transform_name, make_intrusive<ASTLiteral>(*transform_and_argument->argument), make_intrusive<ASTIdentifier>(column_name));
+    }
+    if (transform_and_argument->time_zone)
+    {
+        return makeASTFunction(
+            transform_and_argument->transform_name,
+            make_intrusive<ASTIdentifier>(column_name),
+            make_intrusive<ASTLiteral>(*transform_and_argument->time_zone));
     }
     return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }
@@ -213,7 +227,7 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
         result.partition_specification.emplace_back(source_id, transform_name, partition_name, static_cast<Int32>(i));
-        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
+        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name, context->getSettingsRef()[Setting::iceberg_partition_timezone]);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;

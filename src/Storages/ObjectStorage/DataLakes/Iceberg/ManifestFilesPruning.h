@@ -30,7 +30,7 @@ namespace DB::Iceberg
 struct ProcessedManifestFileEntry;
 class ManifestFileIterator;
 
-DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name, std::optional<String> time_zone = std::nullopt);
 
 struct PartitionKeyFromSpec
 {
