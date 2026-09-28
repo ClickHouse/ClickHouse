@@ -26,14 +26,16 @@ SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
--- Read the send side, not the arrivals. `BuildRuntimeFilterPartialTransform` appends a serialized
--- partial to its task's exchange sink as one extra row, exists only on the transported path, and
--- is counted where the state is serialized - so it does not depend on whether a probe task was
--- still running to receive it. A filter that stayed local would score 0.
-SELECT '-- the join-stage build shipped its partials';
-SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 2
+-- `BuildRuntimeFilterPartialTransform` exists only on the transported path, so a filter that
+-- stayed local would score 0. Together, its streams read the 100 keys of `small_build`. The check
+-- ignores the partial that a build task adds as an extra output row, because that row can be
+-- missing. The probe scan does not wait for the filter, so every probe task can finish before a
+-- build task emits its partial. The merge task then closes its inputs, and the partial is dropped.
+SELECT '-- the join-stage build read all 100 keys on the transported path';
+SELECT sum(input_rows) = 100
 FROM system.processors_profile_log
 WHERE event_date >= yesterday()
+  AND name = 'BuildRuntimeFilterPartialTransform'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND event_date >= yesterday()
