@@ -1,4 +1,8 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest, no-parallel
+# The test asserts on the CPU throughput of four busy threads, so it needs four idle cores:
+# under the parallel load of other tests (and on the small Fast test runner) the shards do not
+# get enough CPU time to tell the summed figure apart from the one of the last row per host.
 
 # Regression test for the CPU figure of a distributed query whose shards share one host name:
 # the server forwards the `ProfileEvents` of every shard to the client, and one packet can carry
