@@ -265,16 +265,25 @@ class FuzzerLogParser:
         return lines
 
     @staticmethod
-    def ends_in_comment(query_text):
-        # Whether a line of query text ends inside a comment, i.e. the query goes on
-        # in the next line. Comment starts within string literals and quoted
+    def scan_comments(query_text, depth):
+        # Scan a line of query text that starts inside `depth` nested block comments
+        # and return the nesting depth at its end, together with whether it ends in a
+        # line comment. Either way the line ends inside a comment, i.e. the query goes
+        # on in the next line. Comment starts within string literals and quoted
         # identifiers do not count, e.g. "SELECT if(1, '--', 'x'))".
         quote = None
         i = 0
         while i < len(query_text):
             char = query_text[i]
             pair = query_text[i : i + 2]
-            if quote:
+            if depth:
+                if pair == "/*":
+                    depth += 1
+                    i += 1
+                elif pair == "*/":
+                    depth -= 1
+                    i += 1
+            elif quote:
                 if char == "\\":
                     i += 1
                 elif char == quote:
@@ -282,13 +291,24 @@ class FuzzerLogParser:
             elif char in "'\"`":
                 quote = char
             elif pair in ("--", "//", "# ", "#!"):
-                return True
+                return depth, True
             elif pair == "/*":
-                end = query_text.find("*/", i + 2)
-                if end == -1:
-                    return True
-                i = end + 1
+                depth = 1
+                i += 1
             i += 1
+        return depth, False
+
+    def quoted_query_ends(self, query_lines):
+        # Whether the query quoted by `query_lines` (its text in the marker line, then
+        # the following lines of the record) ends before their end: at a ")" closing
+        # the marker's parenthesis at the end of a line. A block comment may span
+        # lines, so its state is carried from line to line, and a ")" that ends a
+        # line inside a comment belongs to the comment, e.g. "-- Selecting (e.g. x)".
+        depth = 0
+        for query_text in query_lines:
+            depth, in_line_comment = self.scan_comments(query_text, depth)
+            if query_text.rstrip().endswith(")") and not depth and not in_line_comment:
+                return True
         return False
 
     def inside_quoted_query(self, position, file):
@@ -297,9 +317,8 @@ class FuzzerLogParser:
         # every SQL comment, so only the record's first line carries a marker. The
         # quoted query is the last field of the `executeQuery` messages, so it ends
         # either at STACK_TRACE_MARKER or at the ")" closing the marker's parenthesis.
-        # A line ending in a comment was broken by that comment, so the query goes on
-        # and a ")" it ends with belongs to the comment, e.g. "-- Selecting (e.g. x)".
-        for line in self.lines_before(position, file):
+        lines = self.lines_before(position, file)
+        for index, line in enumerate(lines):
             if self.STACK_TRACE_MARKER in line:
                 return False
             markers = [
@@ -307,11 +326,9 @@ class FuzzerLogParser:
                 for marker in self.QUERY_TEXT_MARKERS
                 if marker in line
             ]
-            query_text = line[min(markers) :] if markers else line
-            if line.rstrip().endswith(")") and not self.ends_in_comment(query_text):
-                return False
             if markers:
-                return True
+                query_lines = [line[min(markers) :]] + lines[:index][::-1]
+                return not self.quoted_query_ends(query_lines)
             if self.is_log_record_start(line):
                 return False
         return False
