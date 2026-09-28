@@ -97,7 +97,11 @@ std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(
     const SubstreamPath & path, size_t prefix_len, const IDataType::SubcolumnInfo * dynamic_subcolumn)
 {
     auto result = std::make_unique<IDataType::SubcolumnInfo>();
-    result->data = ISerialization::createFromPath(path, prefix_len);
+    /// The selected leaf ends the whole path: when the rest of the name was resolved from the data it
+    /// lives in `dynamic_subcolumn`, while `path[prefix_len - 1]` is only the prefix that matched.
+    const ISerialization::Substream * selected_terminal
+        = dynamic_subcolumn && !dynamic_subcolumn->substreams_path.empty() ? &dynamic_subcolumn->substreams_path.back() : nullptr;
+    result->data = ISerialization::createFromPath(path, prefix_len, selected_terminal);
     result->substreams_path.assign(path.begin(), path.begin() + prefix_len);
     /// The dynamic subcolumn's own substreams continue the path.
     if (dynamic_subcolumn)
@@ -122,15 +126,22 @@ std::unique_ptr<IDataType::SubcolumnInfo> resolveDynamicSubcolumn(
         return nullptr;
 
     auto resolved_path = dynamic_parent_path;
-    if (resolved_path[parent].creator)
+    if (auto creator = resolved_path[parent].creator)
     {
+        /// Offer the creator the leaf that was really selected, which ends the resolved path rather
+        /// than this one.
+        if (!dynamic_subcolumn->substreams_path.empty())
+        {
+            if (auto specialized = creator->specializeForSelectedSubcolumn(dynamic_subcolumn->substreams_path.back()))
+                creator = std::move(specialized);
+        }
+
         /// Build the serialization before the type is wrapped, so that a creator inspecting its
         /// prev_type argument sees the type the serialization actually serializes. Same order as in
         /// ISerialization::createFromPath.
-        const auto & creator = *resolved_path[parent].creator;
-        dynamic_subcolumn->data.serialization = creator.create(dynamic_subcolumn->data.serialization, dynamic_subcolumn->data.type);
-        dynamic_subcolumn->data.type = creator.create(dynamic_subcolumn->data.type);
-        dynamic_subcolumn->data.column = creator.create(dynamic_subcolumn->data.column);
+        dynamic_subcolumn->data.serialization = creator->create(dynamic_subcolumn->data.serialization, dynamic_subcolumn->data.type);
+        dynamic_subcolumn->data.type = creator->create(dynamic_subcolumn->data.type);
+        dynamic_subcolumn->data.column = creator->create(dynamic_subcolumn->data.column);
     }
 
     resolved_path[parent].data = dynamic_subcolumn->data;

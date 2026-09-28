@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+#
+# Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173: an Iceberg `timestamp`
+# column has no time zone in its type name, so the type object carries whichever zone was current when
+# it was built. Execution parses a string literal against such a column in the session zone, while key
+# analysis converts the same literal with a CAST to that type. When the two zones differ the pruner
+# looks for the partition value of a different instant than the one execution matches, and silently
+# skips the file that holds the matching row: no error, no log line. `use_iceberg_partition_pruning`
+# is on by default.
+#
+# Each arm that can lose a row is paired with the same query at `use_iceberg_partition_pruning = 0`.
+# That control returns 1, so the row is present in the file and only pruning removes it; without the
+# control an arm cannot tell a pruning bug from a predicate that names the wrong instant.
+#
+# Every statement pins `session_timezone`, because the test runner randomizes that setting.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+DAY_TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}_day"
+DAY_PATH="${USER_FILES_PATH}/${DAY_TABLE}/"
+HOUR_TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}_hour"
+HOUR_PATH="${USER_FILES_PATH}/${HOUR_TABLE}/"
+
+trap 'rm -rf "${DAY_PATH}" "${HOUR_PATH}" 2>/dev/null' EXIT
+
+# Both rows fall in UTC day 19724 (2024-01-02), and in two different UTC hours. Background Iceberg
+# compaction would rewrite the manifests these arms read, so it is pinned off per table.
+#
+# The `timestamp` column maps to a `DateTime64(6)` with no time zone in its name, and such a type
+# carries the zone that was current where it was built, so the creating session pins one: a `SETTINGS`
+# clause on `CREATE ... ENGINE = IcebergLocal(...)` is read as storage settings, hence the client flag.
+${CLICKHOUSE_CLIENT} --session_timezone UTC --query "
+    CREATE TABLE ${DAY_TABLE} (ts DateTime64(6), id Int32)
+    ENGINE = IcebergLocal('${DAY_PATH}', 'Parquet') PARTITION BY (toRelativeDayNum(ts))
+    SETTINGS allow_experimental_iceberg_compaction = 0;
+
+    CREATE TABLE ${HOUR_TABLE} (ts DateTime64(6), id Int32)
+    ENGINE = IcebergLocal('${HOUR_PATH}', 'Parquet') PARTITION BY (toRelativeHourNum(ts))
+    SETTINGS allow_experimental_iceberg_compaction = 0;
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    INSERT INTO ${DAY_TABLE} SETTINGS session_timezone = 'UTC' VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2);
+    INSERT INTO ${HOUR_TABLE} SETTINGS session_timezone = 'UTC' VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2);
+"
+
+echo "--- rows as stored ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT ts, id FROM ${DAY_TABLE} ORDER BY id SETTINGS session_timezone = 'UTC' FORMAT TSV"
+
+# The arms below are only meaningful while the column's zone stays the one pinned above instead of
+# following the session: if that ever changes, this prints the session zone and the test fails here
+# rather than turning every arm into a tautology.
+echo "--- zone the timestamp column carries, read under a non-UTC session ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT DISTINCT timeZoneOf(ts) FROM ${DAY_TABLE} SETTINGS session_timezone = 'Asia/Tokyo'"
+
+# 2024-01-03 05:00:00 in Asia/Tokyo is 2024-01-02 20:00:00Z, which is the second row. Pruning must
+# agree with execution: both counts are 1.
+echo "--- day transform, non-UTC session, equality, pruning on then off ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
+        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
+        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
+
+echo "--- day transform, non-UTC session, range, pruning on then off ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
+        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
+    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
+        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
+
+echo "--- day transform, UTC session ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-02 20:00:00'
+        SETTINGS session_timezone = 'UTC', use_iceberg_partition_pruning = 1;"
+
+# `toRelativeHourNum` returns t / 3600 for any timezone whose offset is a whole number of hours, so
+# the hour transform only shifts in a zone with a fractional offset. Asia/Kolkata is +05:30, where
+# 2024-01-03 01:30:00 is the same instant as 2024-01-02 20:00:00Z.
+echo "--- hour transform, fractional-offset session, pruning on then off ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-03 01:30:00'
+        SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 1;
+    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-03 01:30:00'
+        SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 0;"
+
+echo "--- partition spec transform names ---"
+grep -hoE '"transform"[[:space:]]*:[[:space:]]*"[^"]*"' "${DAY_PATH}metadata/"*.json | tr -d ' ' | sort -u
+grep -hoE '"transform"[[:space:]]*:[[:space:]]*"[^"]*"' "${HOUR_PATH}metadata/"*.json | tr -d ' ' | sort -u
+
+# A predicate no partition can satisfy: the count is 0 and files are still skipped. Without this
+# arm every arm above would also pass if pruning simply stopped working.
+echo "--- non-matching predicate: no rows, and files are pruned ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2025-06-01 00:00:00'
+        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1,
+                 log_comment = '${CLICKHOUSE_DATABASE}_prune_probe';
+    SYSTEM FLUSH LOGS query_log;"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT max(ProfileEvents['IcebergPartitionPrunedFiles']) > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+      AND log_comment = '${CLICKHOUSE_DATABASE}_prune_probe'
+    SETTINGS enable_parallel_replicas = 0"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE IF EXISTS ${DAY_TABLE} SYNC;
+    DROP TABLE IF EXISTS ${HOUR_TABLE} SYNC;"

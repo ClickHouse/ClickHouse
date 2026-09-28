@@ -179,7 +179,10 @@ def get_commit_sha(env):
         if os.environ.get(k):
             return os.environ.get(k)
     try:
-        from tests.ci.pr_info import PRInfo
+        _tools_dir = os.path.join(REPO_DIR, "ci", "tools")
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
+        from pr_info import PRInfo
         if getattr(PRInfo(), "sha", None):
             return PRInfo().sha
     except Exception:
