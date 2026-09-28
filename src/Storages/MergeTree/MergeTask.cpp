@@ -925,12 +925,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// produce values inconsistent with the shared `Nested` offsets, and only it lets the
         /// expression's dependencies reach the column. Count the parts in which each storage column
         /// takes that path.
+        ///
+        /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time, so a part that still
+        /// physically stores `old` stores the values of `new` (unless `old` is itself a live storage
+        /// column again, see `renamed_column_targets` below).
+        NameSet storage_column_names;
+        storage_column_names.reserve(global_ctx->storage_columns.size());
+        for (const auto & storage_column : global_ctx->storage_columns)
+            storage_column_names.emplace(storage_column.name);
+
         std::unordered_map<String, size_t> recomputed_from_default_part_counts;
         for (size_t part_index = 0; part_index < global_ctx->future_part->parts.size(); ++part_index)
         {
             NameSet part_column_names;
             for (const auto & col : global_ctx->future_part->parts[part_index]->getColumns())
                 part_column_names.emplace(col.name);
+
+            for (const auto & rename : global_ctx->alter_conversions[part_index]->getRenameMap())
+            {
+                if (part_column_names.contains(rename.rename_from) && !storage_column_names.contains(rename.rename_from))
+                    part_column_names.emplace(rename.rename_to);
+            }
 
             for (const auto & storage_column : global_ctx->storage_columns)
             {
@@ -966,10 +981,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_present_in_patch_parts.emplace(col.name);
         }
 
-        NameSet storage_column_names;
-        storage_column_names.reserve(global_ctx->storage_columns.size());
-        for (const auto & storage_column : global_ctx->storage_columns)
-            storage_column_names.emplace(storage_column.name);
+        /// A column with values in a patch part has live values and is never expired (see the outer
+        /// guard below), so the merged part stores it and reads never recompute it. Do not follow its
+        /// expression either: otherwise a patched intermediate would drag an unrelated `Nested`
+        /// subcolumn onto the `expired_columns` path, turning it from materialized at merge time into
+        /// recomputed at read time from the stored (patched) intermediate.
+        for (const auto & column_name : columns_present_in_patch_parts)
+            columns_recomputed_from_default_in_some_part.erase(column_name);
 
         /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: `storage_columns`
         /// already carries `new`, while the source parts still physically store `old`. Treat `new`
