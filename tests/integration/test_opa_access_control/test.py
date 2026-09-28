@@ -369,3 +369,93 @@ def test_decisions_are_not_reused_across_queries():
     assert "ACCESS_DENIED" in node.query_and_get_error(
         "SELECT count() FROM plain.orders", user="analyst"
     )
+
+
+ROW_FILTERS_URI = f"http://127.0.0.1:{STUB_PORT}/v1/data/clickhouse/rowFilters"
+
+
+def enable_row_filters():
+    write_section(extra=f"<row_filters_uri>{ROW_FILTERS_URI}</row_filters_uri>")
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def set_row_filters(body):
+    """The filter endpoint answers from its own state, so a filter response never has to satisfy the
+    decision endpoint's shape."""
+    stub_curl("/filters", data=body)
+
+
+def test_a_row_filter_removes_rows():
+    enable_row_filters()
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert (
+        node.query("SELECT id FROM plain.orders ORDER BY id", user="analyst") == "1\n"
+    )
+
+
+def test_several_row_filters_are_combined_with_and():
+    """A second filter can only remove more rows; it must not widen what the first one allowed."""
+    enable_row_filters()
+    set_row_filters(
+        '{"result": [{"expression": "id >= 1"}, {"expression": "amount > 15"}]}'
+    )
+
+    assert node.query("SELECT id FROM plain.orders", user="analyst") == "2\n"
+
+
+def test_no_row_filter_leaves_every_row():
+    """A policy that defines no filter leaves `result` undefined, which is the common case and must
+    not be read as an error."""
+    enable_row_filters()
+    set_row_filters("{}")
+
+    assert (
+        node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "2"
+    )
+
+
+def test_a_row_filter_applies_through_a_view():
+    enable_row_filters()
+    node.query("CREATE VIEW IF NOT EXISTS plain.orders_view AS SELECT * FROM plain.orders")
+    node.query("GRANT SELECT ON plain.orders_view TO analyst")
+    set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+    assert (
+        node.query("SELECT count() FROM plain.orders_view", user="analyst").strip()
+        == "1"
+    )
+
+
+def test_a_malformed_row_filter_is_reported():
+    """Dropping an expression that cannot be parsed would show more rows than the policy intended."""
+    enable_row_filters()
+    set_row_filters('{"result": [{"expression": "this is not sql"}]}')
+
+    assert node.query_and_get_error("SELECT id FROM plain.orders", user="analyst")
+
+
+def test_a_row_filter_cannot_change_the_row_count():
+    """A filter is a per-row predicate, so a function that changes the number of rows is rejected -
+    the same restriction a row policy written in SQL has."""
+    enable_row_filters()
+    set_row_filters('{"result": [{"expression": "arrayJoin([1, 2]) = 1"}]}')
+
+    assert node.query_and_get_error("SELECT id FROM plain.orders", user="analyst")
+
+
+def test_a_row_filter_combines_with_a_native_row_policy():
+    """Both apply, so the result is the intersection."""
+    enable_row_filters()
+    node.query(
+        "CREATE ROW POLICY IF NOT EXISTS only_big ON plain.orders USING amount > 15 TO analyst"
+    )
+    try:
+        set_row_filters('{"result": [{"expression": "id = 1"}]}')
+
+        # The native policy keeps only id=2, the OPA filter keeps only id=1; together, nothing.
+        assert (
+            node.query("SELECT count() FROM plain.orders", user="analyst").strip() == "0"
+        )
+    finally:
+        node.query("DROP ROW POLICY IF EXISTS only_big ON plain.orders")

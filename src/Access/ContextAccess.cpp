@@ -8,6 +8,7 @@
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/OPA/OpaAccessChecker.h>
+#include <Access/OPA/OpaConfiguration.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Databases/DatabaseFactory.h>
@@ -569,7 +570,6 @@ std::shared_ptr<const EnabledMaskingPolicies> ContextAccess::getEnabledMaskingPo
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     RowPolicyFilterPtr filter;
-
     {
         std::lock_guard lock{mutex};
 
@@ -613,6 +613,27 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
     }
 
     return filter;
+}
+
+RowPolicyFilterPtr ContextAccess::getOpaRowFilter(const ContextPtr & context, const String & database, const String & table_name) const
+{
+    if (params.full_access)
+        return nullptr;
+
+    auto opa_configuration = access_control->getOpaConfiguration();
+    if (!opa_configuration || !opa_configuration->hasRowFilters())
+        return nullptr;
+
+    /// Read the identity before talking to OPA: the accessors below take this object's mutex, and the
+    /// request must not be issued while it is held.
+    OpaRequestContext request_context;
+    request_context.user = getUserName();
+    request_context.query_id = context->getCurrentQueryId();
+    if (auto info = getRolesInfo())
+        request_context.roles = info->getEnabledRolesNames();
+
+    const OpaAccessChecker checker{std::move(opa_configuration)};
+    return checker.getRowFilter(database, table_name, request_context, context->getOpaDecisionCache());
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const

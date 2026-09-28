@@ -1,7 +1,9 @@
 #include <Access/OPA/OpaAccessChecker.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/OPA/OpaExpressions.h>
 #include <Common/ProfileEvents.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 
 
 namespace ProfileEvents
@@ -90,6 +92,59 @@ bool OpaAccessChecker::isAllowed(
         ProfileEvents::increment(ProfileEvents::OpaDenials);
 
     return decision;
+}
+
+RowPolicyFilterPtr OpaAccessChecker::getRowFilter(
+    const String & database,
+    const String & table,
+    const OpaRequestContext & request_context,
+    const OpaDecisionCachePtr & cache) const
+{
+    if (!configuration->hasRowFilters() || !configuration->isDatabaseInScope(database)
+        || configuration->isUserExempt(request_context.user))
+        return nullptr;
+
+    OpaRequest request;
+    request.operations = {"SELECT"};
+    request.resource = OpaResource::forTable(database, table);
+
+    const OpaDecisionCache::Key key{request.operations, *request.resource};
+
+    std::vector<OpaViewExpression> view_expressions;
+    if (cache)
+    {
+        if (auto cached = cache->getRowFilters(key))
+        {
+            ProfileEvents::increment(ProfileEvents::OpaCacheHits);
+            view_expressions = std::move(*cached);
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::OpaCacheMisses);
+            view_expressions = client.getRowFilters(request, request_context);
+            cache->setRowFilters(key, view_expressions);
+        }
+    }
+    else
+    {
+        view_expressions = client.getRowFilters(request, request_context);
+    }
+
+    if (view_expressions.empty())
+        return nullptr;
+
+    ASTs parsed;
+    parsed.reserve(view_expressions.size());
+    for (const auto & view_expression : view_expressions)
+        parsed.push_back(parseOpaRowFilterExpression(view_expression.expression, "row filter"));
+
+    auto filter = std::make_shared<RowPolicyFilter>();
+    /// Several filters all apply, so they are combined with AND: a policy can add restrictions but
+    /// cannot use a second filter to widen what the first one allowed.
+    filter->expression = parsed.size() == 1 ? parsed.front() : makeASTForLogicalAnd(std::move(parsed));
+    filter->database_and_table_name = std::make_shared<const std::pair<String, String>>(database, table);
+
+    return filter;
 }
 
 }

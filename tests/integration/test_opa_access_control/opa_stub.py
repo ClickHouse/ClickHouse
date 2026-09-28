@@ -14,7 +14,13 @@ import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-state = {"rule": "True", "requests": [], "status": 200, "body_override": None}
+state = {
+    "rule": "True",
+    "requests": [],
+    "status": 200,
+    "body_override": None,
+    "row_filters": "{}",
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -47,6 +53,13 @@ class Handler(BaseHTTPRequestHandler):
             state["requests"] = []
             state["status"] = 200
             state["body_override"] = None
+            state["row_filters"] = "{}"
+            self._respond(200, {"ok": True})
+            return
+
+        if self.path == "/filters":
+            # The row filter endpoint answers with a literal body, independently of the decision rule.
+            state["row_filters"] = body or "{}"
             self._respond(200, {"ok": True})
             return
 
@@ -70,6 +83,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         state["requests"].append(parsed)
+
+        # The row filter endpoint is answered from its own state, so a filter response never has to
+        # satisfy the decision endpoint's shape.
+        if "rowFilters" in self.path:
+            self._respond_raw(200, state["row_filters"])
+            return
 
         if state["status"] != 200:
             self._respond(state["status"], {"error": "induced failure"})

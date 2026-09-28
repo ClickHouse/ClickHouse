@@ -56,6 +56,10 @@ public:
     /// The function returns nullptr if there is no filter to apply.
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
+    /// Returns the row filter an Open Policy Agent policy applies to a table, or nullptr when OPA is
+    /// not configured, the table is out of scope, or the policy applies no filter.
+    RowPolicyFilterPtr getOpaRowFilter(const ContextPtr & context, const String & database, const String & table_name) const;
+
 #if CLICKHOUSE_CLOUD
     std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const;
 #endif
@@ -262,6 +266,8 @@ public:
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
     ALWAYS_INLINE RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const { return access->getRowPolicyFilter(database, table_name, filter_type); }
+
+    ALWAYS_INLINE RowPolicyFilterPtr getOpaRowFilter(const ContextPtr & query_context, const String & database, const String & table_name) const { return access->getOpaRowFilter(query_context, database, table_name); }
 
 #if CLICKHOUSE_CLOUD
     ALWAYS_INLINE std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const { return access->getEnabledMaskingPolicies(); }

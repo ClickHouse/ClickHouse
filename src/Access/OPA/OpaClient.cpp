@@ -34,6 +34,36 @@ OpaClient::OpaClient(OpaConfigurationPtr configuration_)
 {
 }
 
+Poco::JSON::Object::Ptr OpaClient::parseResponseObject(const Poco::URI & uri, const String & response_body)
+{
+    Poco::Dynamic::Var parsed;
+    try
+    {
+        Poco::JSON::Parser parser;
+        parsed = parser.parse(response_body);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "Cannot parse the response of OPA at {} as JSON: {}. Response: {}",
+            uri.toString(),
+            e.displayText(),
+            response_body);
+    }
+
+    if (parsed.type() != typeid(Poco::JSON::Object::Ptr))
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "Expected a JSON object in the response of OPA at {}, got: {}",
+            uri.toString(),
+            response_body);
+    }
+
+    return parsed.extract<Poco::JSON::Object::Ptr>();
+}
+
 String OpaClient::send(const Poco::URI & uri, const String & body) const
 {
     if (configuration->log_requests)
@@ -101,32 +131,7 @@ String OpaClient::send(const Poco::URI & uri, const String & body) const
 
 bool OpaClient::parseDecision(const Poco::URI & uri, const String & response_body)
 {
-    Poco::Dynamic::Var parsed;
-    try
-    {
-        Poco::JSON::Parser parser;
-        parsed = parser.parse(response_body);
-    }
-    catch (const Poco::Exception & e)
-    {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "Cannot parse the response of OPA at {} as JSON: {}. Response: {}",
-            uri.toString(),
-            e.displayText(),
-            response_body);
-    }
-
-    if (parsed.type() != typeid(Poco::JSON::Object::Ptr))
-    {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "Expected a JSON object in the response of OPA at {}, got: {}",
-            uri.toString(),
-            response_body);
-    }
-
-    const auto object = parsed.extract<Poco::JSON::Object::Ptr>();
+    const auto object = parseResponseObject(uri, response_body);
 
     /// OPA omits `result` when the queried document is undefined, which in practice almost always
     /// means the endpoint path does not match the policy's package and rule. Saying so is far more
@@ -166,6 +171,71 @@ bool OpaClient::parseDecision(const Poco::URI & uri, const String & response_bod
         response_body);
 }
 
+std::vector<OpaViewExpression> OpaClient::parseViewExpressions(const Poco::URI & uri, const String & response_body)
+{
+    const auto object = parseResponseObject(uri, response_body);
+
+    /// Unlike a decision, the absence of an answer here is itself an answer: a policy that defines no
+    /// filter for a table leaves `result` undefined, and almost every table has no filter.
+    if (!object->has("result"))
+        return {};
+
+    const auto result = object->get("result");
+    if (result.isEmpty())
+        return {};
+
+    if (result.type() != typeid(Poco::JSON::Array::Ptr))
+    {
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "Expected the 'result' field in the response of OPA at {} to be an array of objects with an "
+            "'expression' field. Response: {}",
+            uri.toString(),
+            response_body);
+    }
+
+    const auto array = result.extract<Poco::JSON::Array::Ptr>();
+
+    std::vector<OpaViewExpression> expressions;
+    expressions.reserve(array->size());
+
+    for (size_t i = 0; i < array->size(); ++i)
+    {
+        const auto entry = array->get(static_cast<unsigned int>(i));
+        if (entry.type() != typeid(Poco::JSON::Object::Ptr))
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "Expected element {} of the 'result' array in the response of OPA at {} to be an object. Response: {}",
+                i,
+                uri.toString(),
+                response_body);
+        }
+
+        const auto entry_object = entry.extract<Poco::JSON::Object::Ptr>();
+
+        OpaViewExpression view_expression;
+        view_expression.expression = entry_object->optValue<String>("expression", "");
+        view_expression.identity = entry_object->optValue<String>("identity", "");
+
+        /// An entry without an expression cannot be applied. Skipping it would show more rows than the
+        /// policy intended, so it is reported instead.
+        if (view_expression.expression.empty())
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "Element {} of the 'result' array in the response of OPA at {} has no 'expression' field. Response: {}",
+                i,
+                uri.toString(),
+                response_body);
+        }
+
+        expressions.push_back(std::move(view_expression));
+    }
+
+    return expressions;
+}
+
 bool OpaClient::isAllowed(const OpaRequest & request, const OpaRequestContext & request_context) const
 {
     const String body = request.serialize(request_context);
@@ -176,6 +246,25 @@ bool OpaClient::isAllowed(const OpaRequest & request, const OpaRequestContext & 
     try
     {
         return parseDecision(configuration->uri, send(configuration->uri, body));
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::OpaRequestFailures);
+        throw;
+    }
+}
+
+std::vector<OpaViewExpression> OpaClient::getRowFilters(const OpaRequest & request, const OpaRequestContext & request_context) const
+{
+    chassert(configuration->row_filters_uri.has_value());
+    const Poco::URI & uri = *configuration->row_filters_uri;
+
+    const String body = request.serialize(request_context);
+
+    ProfileEvents::increment(ProfileEvents::OpaRequests);
+    try
+    {
+        return parseViewExpressions(uri, send(uri, body));
     }
     catch (...)
     {

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Access/OPA/OpaExpressions.h>
 #include <Access/OPA/OpaRequest.h>
 #include <base/defines.h>
 
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 
 namespace DB
@@ -41,9 +43,15 @@ public:
     std::optional<bool> get(const Key & key) const;
     void set(const Key & key, bool decision);
 
+    /// Row filters are memoized separately: they answer a different question about the same resource,
+    /// and a query asks for them as often as it asks whether the table may be read at all.
+    std::optional<std::vector<OpaViewExpression>> getRowFilters(const Key & key) const;
+    void setRowFilters(const Key & key, const std::vector<OpaViewExpression> & filters);
+
 private:
     mutable std::mutex mutex;
     std::unordered_map<Key, bool, Hash> decisions TSA_GUARDED_BY(mutex);
+    std::unordered_map<Key, std::vector<OpaViewExpression>, Hash> row_filters TSA_GUARDED_BY(mutex);
 };
 
 using OpaDecisionCachePtr = std::shared_ptr<OpaDecisionCache>;

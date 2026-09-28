@@ -4,6 +4,7 @@
 #include <Access/OPA/OpaConfiguration.h>
 #include <Access/OPA/OpaDecisionCache.h>
 #include <Access/OPA/OpaRequest.h>
+#include <Access/EnabledRowPolicies.h>
 
 
 namespace DB
@@ -29,6 +30,14 @@ public:
     /// A `cache` memoizes the answer for the rest of the query; passing null asks every time.
     bool isAllowed(
         const AccessRightsElement & element,
+        const OpaRequestContext & request_context,
+        const OpaDecisionCachePtr & cache) const;
+
+    /// The row filter a policy applies to a table, or null when it applies none. Multiple filters are
+    /// combined with AND, so each one can only remove rows.
+    RowPolicyFilterPtr getRowFilter(
+        const String & database,
+        const String & table,
         const OpaRequestContext & request_context,
         const OpaDecisionCachePtr & cache) const;
 
