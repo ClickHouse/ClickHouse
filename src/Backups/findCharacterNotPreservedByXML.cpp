@@ -1,4 +1,4 @@
-#include <Backups/findCharacterNotRoundTrippableAsXML.h>
+#include <Backups/findCharacterNotPreservedByXML.h>
 
 #include <Common/UTF8Helpers.h>
 
@@ -17,7 +17,7 @@ namespace
     }
 }
 
-std::optional<size_t> findCharacterNotRoundTrippableAsXML(std::string_view s)
+std::optional<size_t> findCharacterNotPreservedByXML(std::string_view s)
 {
     const char * const begin = s.data();
     const char * const end = begin + s.size();

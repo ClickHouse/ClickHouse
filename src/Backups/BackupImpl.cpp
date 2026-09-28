@@ -6,7 +6,7 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
 #include <Backups/getBackupDataFileName.h>
-#include <Backups/findCharacterNotRoundTrippableAsXML.h>
+#include <Backups/findCharacterNotPreservedByXML.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -498,7 +498,7 @@ void BackupImpl::writeBackupMetadata()
     /// The value is never quoted in the message: `<base_backup>` holds a locator that can carry credentials.
     auto xml_string = [](std::string_view element, const String & str)
     {
-        if (auto offset = findCharacterNotRoundTrippableAsXML(str))
+        if (auto offset = findCharacterNotPreservedByXML(str))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot write the backup metadata: the value of <{}> has a character at byte offset {} that "

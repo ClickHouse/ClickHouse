@@ -16,8 +16,8 @@ namespace DB
 /// A carriage return is refused too: it is legal XML, but normalization rewrites it to a line feed on
 /// read, so the value comes back different.
 ///
-/// Returns the byte offset of the first such character, or nothing if the whole string survives the
-/// round trip.
-std::optional<size_t> findCharacterNotRoundTrippableAsXML(std::string_view s);
+/// Returns the byte offset of the first such character, or nothing if the whole string comes back as it
+/// was written.
+std::optional<size_t> findCharacterNotPreservedByXML(std::string_view s);
 
 }
