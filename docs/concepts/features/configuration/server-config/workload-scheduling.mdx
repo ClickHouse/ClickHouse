@@ -332,10 +332,12 @@ CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi
 CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
 ```
 
-When the memory allocated in a workload's subtree rises above its soft limit, the scheduler asks the largest reclaimable allocation to reclaim memory, matching the eviction order used at the hard limit (highest normalized memory usage and lowest precedence first). Unlike hitting the hard limit, crossing the soft limit neither blocks nor kills the query: it keeps running while it spills, and the gap between the soft and hard limits is the headroom that lets spilling proceed. If nothing under the workload is reclaimable, no spill is requested and the hard `max_memory` limit stays the sole backstop. Set the soft limit on the `all` workload for a global spill threshold, or on nested workloads for per-workload thresholds.
+When the memory allocated in a workload's subtree exceeds its soft limit, the scheduler asks queries with reclaimable memory to spill to disk. Several queries can spill concurrently to reduce memory usage below the soft limit.
+
+Crossing the soft limit does not itself block or evict queries: selected operators perform spilling during execution. Configure a gap between the soft and hard limits to leave headroom for spilling. If nothing under the workload is reclaimable, no spill is requested and the hard `max_memory` limit stays the sole backstop. Set the soft limit on the `all` workload for a global spill threshold, or on nested workloads for per-workload thresholds.
 
 :::note
-Spilling of reclaimable memory is experimental and builds on memory reservation scheduling (which is itself experimental). The scheduler issues spill requests once memory rises above the soft limit; how much a query can actually reclaim depends on which of its operators support serializing their state to disk. When no reclaimable memory is reported, the soft limit has no effect and behavior is identical to using only the hard `max_memory` limit; currently no operators report reclaimable memory.
+Spilling of reclaimable memory is experimental and builds on memory reservation scheduling (which is itself experimental). Supported operators include external sorting, aggregation, spillable hash joins, and external `DISTINCT`. How much memory can be reclaimed depends on each operator's current execution phase. Reclaimable estimates below the query setting `min_bytes_to_spill` are ignored. When no reclaimable memory is reported, the soft limit has no effect and behavior is identical to using only the hard `max_memory` limit.
 :::
 
 ## Query slot scheduling {#query_scheduling}
