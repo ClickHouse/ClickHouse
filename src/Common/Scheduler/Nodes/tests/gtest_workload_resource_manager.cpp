@@ -2474,6 +2474,16 @@ TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
     }
 }
 
+// The implicit server-limit resource names are reserved: an operator CREATE RESOURCE using them is
+// rejected, so the manager's name-based inference can never mistake an operator resource for the
+// synthesized one.
+TEST(SchedulerWorkloadResourceManager, ServerLimitReservedResourceNamesRejected)
+{
+    ResourceTest t;
+    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"));
+    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"));
+}
+
 // The server memory limit is mirrored onto the per-resource implicit root workload. When enabled and
 // no `MEMORY RESERVATION` resource is declared, the manager creates an internal one and the storage
 // resolves the reservation resource name to it, so the execution paths route through it.

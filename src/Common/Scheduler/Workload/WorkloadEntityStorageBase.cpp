@@ -418,6 +418,15 @@ bool WorkloadEntityStorageBase::storeEntity(
     auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());
     auto * resource = typeid_cast<ASTCreateResourceQuery *>(create_entity_query.get());
 
+    // The implicit server-limit resources are created and owned by the resource manager, keyed by
+    // these reserved names; an operator resource with the same name would be mistaken for the
+    // synthesized one (mutated/removed on feature toggles). Forbid creating them via SQL.
+    if (resource
+        && (entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Resource name '{}' is reserved for the implicit server-limit resource and cannot be used",
+            entity_name);
+
     while (true)
     {
         std::unique_lock lock{mutex};
@@ -715,7 +724,19 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
 {
     std::unordered_map<String, ASTPtr> local_new_entities;
     for (const auto & [entity_name, create_query] : raw_new_entities)
-        local_new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
+    {
+        auto normalized = normalizeCreateWorkloadEntityQuery(*create_query);
+        // Reserved implicit server-limit resource names are managed internally and must not be
+        // config-defined; ignore such an entity (rather than abort startup) with a warning, mirroring
+        // the reject on the SQL path in storeEntity().
+        if (typeid_cast<ASTCreateResourceQuery *>(normalized.get())
+            && (entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME))
+        {
+            LOG_WARNING(log, "Ignoring resource '{}' loaded from configuration: the name is reserved for the implicit server-limit resource", entity_name);
+            continue;
+        }
+        local_new_entities[entity_name] = normalized;
+    }
 
     std::unique_lock lock(mutex);
 
