@@ -892,6 +892,13 @@ TEST(LocalObjectStorage, ListObjectsHidesUnfinishedWrites)
 
     writer->finalize();
     EXPECT_EQ(list(), std::vector<std::string>{path.string()});
+
+    /// The staging prefix is reserved, so hiding it hides no object.
+    EXPECT_THROW(
+        storage->writeObject(
+            DB::StoredObject((root / "directory" / ".tmp_local_object_storage_keep").string()),
+            DB::WriteMode::Rewrite, /*attributes=*/ {}, DB::DBMS_DEFAULT_BUFFER_SIZE, {}),
+        DB::Exception);
 }
 
 /// Every etag this storage hands out has to be the same kind of token, because a

@@ -311,6 +311,7 @@ private:
 /// name with this prefix, as a remote object storage never lists an unfinished
 /// upload: a reader listing a directory while a writer is open must not take the
 /// staged file for an object, as the `plain_rewritable` metadata would do.
+/// `writeObject` rejects it as the name of an object, so hiding it hides no object.
 constexpr std::string_view staging_file_name_prefix = ".tmp_local_object_storage_";
 
 /// Give the version about to be published a modification time strictly later than
@@ -587,6 +588,14 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Write object: {}", resolved_path);
+
+    /// `listObjects` hides every name with the staging prefix, so an object published
+    /// under such a name would be written but never listed.
+    if (fs::path(resolved_path).filename().string().starts_with(staging_file_name_prefix))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write object {}: the name prefix `{}` is reserved for staged writes of the local object storage",
+            object.remote_path, staging_file_name_prefix);
 
     /// Unlike real blob storage, in local fs we cannot create a file with non-existing prefix.
     /// So let's create it.
