@@ -63,8 +63,8 @@ namespace ErrorCodes
 
 namespace
 {
-    /// `s3_storage_class_name` addresses the `s3_storage_class` field (see `fromBackupQuery`), so the two
-    /// spellings must resolve as one setting: defaulting either has to drop a change written as the other.
+    /// `s3_storage_class_name` is an alias of the `s3_storage_class` field, so a reset of either drops a
+    /// change written as the other.
     std::string_view canonicalBackupSettingName(std::string_view name)
     {
         if (name == "s3_storage_class_name")
@@ -72,10 +72,8 @@ namespace
         return name;
     }
 
-    /// The canonical names of the backup-specific settings. The two extra names are `BackupSettings` fields
-    /// handled by their own branches in `fromBackupQuery` and kept out of the macro, so a macro-only
-    /// classifier would call them core settings and try to reset them on the query context instead. The
-    /// `s3_storage_class_name` alias needs no entry: `canonicalBackupSettingName` maps it onto its target.
+    /// The backup-specific names. The last two are fields kept out of the macro; unlisted, they would be
+    /// reset on the query context.
     constexpr std::string_view BACKUP_SPECIFIC_SETTING_NAMES[] = {
 #define BACKUP_SETTING_NAME(TYPE, NAME) #NAME,
         LIST_OF_BACKUP_SETTINGS(BACKUP_SETTING_NAME)
@@ -140,9 +138,8 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 
 bool BackupSettings::isAsync(const ASTBackupQuery & query)
 {
-    /// This runs before `fromBackupQuery` (BackupsWorker decides where to run the operation first), so it
-    /// resolves `async = DEFAULT` on its own. It must reach the same value `fromBackupQuery` will: hence the
-    /// last of several `async` changes, and the same field conversion. One name, so no classification.
+    /// Runs before `fromBackupQuery` and must agree with it: a reset wins, else the last change, converted
+    /// as the field converts it.
     if (query.settings)
     {
         const auto & settings = query.settings->as<const ASTSetQuery &>();
@@ -181,23 +178,12 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    /// A `name = DEFAULT` is not carried over in any form, only the overrides it cancels are dropped. This
-    /// clause reaches the other hosts as SQL *text*: `executeDDLQueryOnCluster` serializes the rebuilt query
-    /// with `formatWithSecretsOneLine` and every host re-parses it with its own parser. `ASTSetQuery` prints
-    /// all `changes` before all `default_settings`, and this rebuild always emits a generated `backup_uuid`
-    /// change, so a `name = DEFAULT` here would always be printed after a comma - the one shape a parser
-    /// without this fix rejects, which would break a cluster that is mid-rolling-upgrade.
+    /// Other hosts re-parse this clause as text, and older parsers reject `name = DEFAULT` after a comma, so no reset is sent.
     ///
-    /// Nor is a CORE reset replaced with its declared default: an explicit value marks the setting as
-    /// changed on the receiving host, where the reset leaves it unset, and object-storage code reads that
-    /// bit (e.g. `BackupWriterS3` applies a query-level `s3_retry_attempts` over the host's own `<s3>`
-    /// configuration only if it is changed). The reset has already been applied to the query context,
-    /// which is where the DDL settings packet sent with this text comes from, so the packet already leaves
-    /// the setting out, see `eraseOverridesOfResetSettings`.
+    /// Nor is a core reset sent as its default: that marks it changed on the receiver, where e.g. `BackupWriterS3` then overrides `<s3>`.
+    /// The DDL settings packet already omits it, so only its overrides are dropped.
     ///
-    /// A backup-specific reset needs nothing either: the rebuild emits resolved effective state, and
-    /// re-resolving a defaulted name on the receiver would discard state generated since parsing
-    /// (`backup_uuid` is the concrete case).
+    /// A backup-specific reset is not sent: the rebuild carries resolved state, and resolving it again would lose `backup_uuid`.
     eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())

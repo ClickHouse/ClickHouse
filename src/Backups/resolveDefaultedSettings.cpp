@@ -37,9 +37,8 @@ SettingsWithDefaultsResolved resolveDefaultedSettings(
             res.core_default_names.push_back(name);
     }
 
-    /// Dropping the change is what makes the setting take its default value: the fields of
-    /// BackupSettings/RestoreSettings are default-initialized and only a `changes` entry overrides one.
-    /// Erase every match, not just the first, since one name may appear repeatedly.
+    /// Dropping the change leaves the field at its default. Erase every match: one name may appear several
+    /// times.
     std::erase_if(
         res.changes,
         [&](const SettingChange & change)
@@ -67,9 +66,7 @@ void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<
 {
     for (const auto & name : default_names)
     {
-        /// A reset clears the setting whichever name wrote it: a built-in alias addresses the same field as
-        /// its canonical name, and a `merge_tree_` setting is stored under the exact name that wrote it, so an
-        /// override written through any of that setting's names is an override of it.
+        /// A reset clears the setting under every name: an alias addresses its canonical field, a `merge_tree_` one is stored as written.
         const std::string_view canonical = Settings::resolveName(name);
         const Strings & equivalent_names = settingEquivalentNames(name);
         std::erase_if(

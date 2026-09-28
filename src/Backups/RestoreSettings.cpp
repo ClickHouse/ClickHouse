@@ -213,9 +213,8 @@ namespace
 
 namespace
 {
-    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`
-    /// (see `fromRestoreQuery`), so the two spellings must resolve as one setting: defaulting either has to
-    /// drop a change written as the other.
+    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`;
+    /// a reset of either drops both.
     std::string_view canonicalRestoreSettingName(std::string_view name)
     {
         if (name == "allow_unresolved_access_dependencies")
@@ -223,10 +222,8 @@ namespace
         return name;
     }
 
-    /// The canonical names of the restore-specific settings. The obsolete name above is a field of
-    /// `RestoreSettings` handled by its own branch in `fromRestoreQuery` and deliberately kept out of the
-    /// macro, so it is canonicalized rather than listed; a macro-only classifier would call it a core
-    /// setting and try to reset it on the query context instead.
+    /// The restore-specific names. The obsolete name above is kept out of the macro, so it is canonicalized
+    /// rather than listed.
     constexpr std::string_view RESTORE_SPECIFIC_SETTING_NAMES[] = {
 #define RESTORE_SETTING_NAME(TYPE, NAME) #NAME,
         LIST_OF_RESTORE_SETTINGS(RESTORE_SETTING_NAME)
@@ -294,10 +291,7 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    /// A `name = DEFAULT` does not carry over in any form, only the overrides it cancels are dropped, for
-    /// the reasons spelled out in `BackupSettings::copySettingsToQuery`: the rebuilt clause is re-parsed from
-    /// text by each receiving host, so it must contain no `= DEFAULT`; a core reset is already absent from
-    /// the DDL settings packet; and `restore_uuid` is generated after parsing and emitted above as a change.
+    /// No reset is sent, only the overrides it cancels are dropped, as in `BackupSettings::copySettingsToQuery`.
     eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())

@@ -18,8 +18,7 @@ struct SettingsWithDefaultsResolved
     /// setting keeps its default value.
     SettingsChanges changes;
 
-    /// The defaulted names that are not BACKUP/RESTORE-specific. They are core (or unknown) settings, so
-    /// resolving them means resetting them on the query context rather than dropping a `changes` entry.
+    /// The defaulted core (or unknown) names, to be reset on the query context.
     std::vector<String> core_default_names;
 };
 
@@ -29,40 +28,31 @@ struct CoreSettingsFromQuery
     /// The core overrides to apply.
     SettingsChanges changes;
 
-    /// The core settings to reset to their default value. A name may appear here and in `changes` at the
-    /// same time, and then the reset wins, which is what a `SET X = 1, X = DEFAULT` does.
+    /// The core settings to reset. A name may also be in `changes`, and then the reset wins, as in
+    /// `SET X = 1, X = DEFAULT`.
     std::vector<String> default_names;
 };
 
-/// Maps a setting name to the name of the field it addresses, so that an alias and its canonical
-/// spelling resolve as one setting. Returns the name unchanged if it is already canonical.
+/// Maps an alias to the canonical name of the setting it addresses; returns a canonical name unchanged.
 using CanonicalSettingNameFn = std::string_view (*)(std::string_view);
 
-/// `specific_names` lists the canonical names of the BACKUP/RESTORE-specific settings; everything else is
-/// treated as a core setting, which is also how an unknown name is treated today.
+/// `specific_names` are the canonical BACKUP/RESTORE-specific names; any other name, unknown ones included,
+/// is a core setting.
 ///
-/// A defaulted name is matched against `changes` irrespective of textual order, because the two carriers
-/// are separate vectors: `ParserSetQuery` appends to `changes` and to `default_settings` independently, so
-/// `X = 1, X = DEFAULT` and `X = DEFAULT, X = 1` are the same AST modulo vector order. Both must end at
-/// the default, which is what `SET` does.
+/// The two carriers are separate vectors, so a reset matches a change in either textual order, and both
+/// orders end at the default.
 SettingsWithDefaultsResolved resolveDefaultedSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
-/// The core part of the clause: the changes `resolveDefaultedSettings` left that are not
-/// BACKUP/RESTORE-specific, plus the defaulted names it classified as core.
+/// The core part of the clause: the core changes `resolveDefaultedSettings` left, and the defaulted core
+/// names.
 CoreSettingsFromQuery extractCoreSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
-/// Remove from `changes` every override of a setting named in `default_names`, under any name of that
-/// setting. For rebuilding a SETTINGS clause that is sent to other hosts: see
-/// `BackupSettings::copySettingsToQuery`.
+/// Removes from `changes` every override of a setting in `default_names`, under any of its names, for a clause sent to other hosts.
 ///
-/// A reset is not forwarded in any form. The host that parsed the clause resets the setting on its query
-/// context, which clears the setting's `changed` bit, so the DDL settings packet built from that context
-/// (`DDLLogEntry::setSettingsIfRequired`) leaves the setting out, and each receiving host ends with the
-/// setting unset too. What must not survive is an override of it in the rebuilt text, because a receiving
-/// host applies that text on top of the packet: `SETTINGS max_threads = 4, max_threads = DEFAULT` must not
-/// arrive as `max_threads = 4`.
+/// The reset itself is not sent: it cleared the `changed` bit on the initiator, so the DDL settings packet already omits the setting.
+/// A receiver applies the text over that packet, so `max_threads = 4, max_threads = DEFAULT` must not arrive as `max_threads = 4`.
 void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<String> & default_names);
 
 }

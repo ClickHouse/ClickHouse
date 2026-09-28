@@ -1,7 +1,5 @@
 -- { echo }
--- Every `stable` below must be 1: formatting a BACKUP/RESTORE query must produce text that re-parses to
--- the same text. A stability predicate rather than a golden dump, so a resolved `= DEFAULT` item is free
--- to disappear on the first format as long as doing so is idempotent.
+-- Every `stable` below must be 1: a formatted BACKUP/RESTORE query must re-parse to the same text.
 
 -- DEFAULT first, then a backup-specific setting.
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, structure_only = 1$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, structure_only = 1$$) AS stable;
@@ -52,9 +50,8 @@ SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d',
 1
 SELECT formatQuerySingleLine(formatQuerySingleLine($$RESTORE TABLE t FROM Disk('d', 'b') SETTINGS restore_uuid = DEFAULT$$)) = formatQuerySingleLine($$RESTORE TABLE t FROM Disk('d', 'b') SETTINGS restore_uuid = DEFAULT$$) AS stable;
 1
--- The sub-settings have their own AST fields, so a DEFAULT reaching their branch clears the field. Only
--- `cluster_host_ids` reaches it from a lone item: `base_backup` accepts a bare identifier as a backup name
--- (`Memory` is one), so `base_backup = DEFAULT` names a backup called DEFAULT and is left as written.
+-- `cluster_host_ids = DEFAULT` clears the field; a lone `base_backup = DEFAULT` names a backup called
+-- DEFAULT and stays as written.
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS base_backup = DEFAULT$$);
 BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS base_backup = DEFAULT
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS cluster_host_ids = DEFAULT$$);
@@ -70,21 +67,17 @@ SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS BASE_BA
 BACKUP TABLE t TO Disk(\'d\', \'b\')
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, CLUSTER_HOST_IDS = DEFAULT$$);
 BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS foo = DEFAULT
--- A JSON AST carries the two fields and the settings independently, and nothing there resolves a name that
--- addresses a field, so it is refused: printing it would emit a `<field> = ..., <field> = DEFAULT` pair
--- whose own text reparses without the field.
+-- A JSON AST with a field name in `default_settings` is refused, since it would not round-trip.
 SELECT formatQueryFromJSON('{"type":"BackupQuery","kind":"BACKUP","backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"b"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"base_backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"base"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"settings":{"type":"SetQuery","default_settings":["base_backup"]},"elements":[{"type":"TABLE","table_name":"t","new_table_name":"t"}]}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"BackupQuery","kind":"BACKUP","backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"b"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"settings":{"type":"SetQuery","default_settings":["cluster_host_ids"]},"elements":[{"type":"TABLE","table_name":"t","new_table_name":"t"}]}'); -- { serverError BAD_ARGUMENTS }
 -- Control: an ordinary core name in the same carrier is still accepted there.
 SELECT formatQueryFromJSON('{"type":"BackupQuery","kind":"BACKUP","backup_name":{"type":"Function","name":"Disk","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"d"}},{"type":"Literal","value":{"field_type":"String","value":"b"}}]},"no_empty_args":true,"kind":"BACKUP_NAME"},"settings":{"type":"SetQuery","default_settings":["max_threads"]},"elements":[{"type":"TABLE","table_name":"t","new_table_name":"t"}]}');
 BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS max_threads = DEFAULT
--- A backup-specific DEFAULT is reprinted as written; it is the resolved `changes` entry that the Backups
--- layer drops, and this query has none. Formatting it must be idempotent either way.
+-- A backup-specific DEFAULT is reprinted as written; formatting must be idempotent either way.
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$) AS stable;
 1
--- Controls. These forms do not involve `= DEFAULT` and must behave exactly as before: a query parameter is
--- an ordinary change to the BACKUP grammar, a `{name:Type}` value is not, and a clause the grammar cannot
--- read to the end is still a syntax error rather than being silently rerouted.
+-- Controls without `= DEFAULT` behave as before, and a clause the grammar cannot read to the end is still
+-- a syntax error.
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = {t:UInt64}$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = {t:UInt64}$$) AS stable;
 1
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = {t:UInt64}, structure_only = 1$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = {t:UInt64}, structure_only = 1$$) AS stable;
@@ -96,9 +89,8 @@ SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d',
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS param_x = 1$$);
 BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS param_x = 1
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = 1, max_threads = {t:UInt64}$$); -- { serverError SYNTAX_ERROR }
--- Formatting alone cannot tell whether the settings are actually delivered, so run real backups. Each of
--- these clauses was rejected with `UNKNOWN_SETTING`, because a DEFAULT item diverted the whole clause onto
--- the query context, where a backup-specific name is unknown.
+-- Real backups: each of these clauses used to fail with `UNKNOWN_SETTING`, as a DEFAULT item diverted
+-- the whole clause.
 DROP TABLE IF EXISTS t_04700;
 CREATE TABLE t_04700 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04700 SELECT number FROM numbers(16);
@@ -106,8 +98,8 @@ BACKUP TABLE t_04700 TO Memory('04700_b1') SETTINGS foo = DEFAULT, structure_onl
 BACKUP TABLE t_04700 TO Memory('04700_b2') SETTINGS foo = DEFAULT, password = 'p' FORMAT Null;
 BACKUP TABLE t_04700 TO Memory('04700_b3') SETTINGS foo = DEFAULT, compression_level = 5 FORMAT Null;
 BACKUP TABLE t_04700 TO Memory('04700_b4') SETTINGS foo = DEFAULT, data_file_name_prefix_length = 3 FORMAT Null;
--- And the delivered value must take effect. `structure_only` is observable: with it the backup carries no
--- rows, and `structure_only = DEFAULT` must put it back to false, so the same backup carries all of them.
+-- The delivered value takes effect: `structure_only` empties the backup, and `structure_only = DEFAULT`
+-- keeps all rows.
 BACKUP TABLE t_04700 TO Memory('04700_so_on') SETTINGS foo = DEFAULT, structure_only = 1 FORMAT Null;
 DROP TABLE IF EXISTS t_04700_r1;
 RESTORE TABLE t_04700 AS t_04700_r1 FROM Memory('04700_so_on') FORMAT Null;
@@ -118,10 +110,8 @@ DROP TABLE IF EXISTS t_04700_r2;
 RESTORE TABLE t_04700 AS t_04700_r2 FROM Memory('04700_so_def') FORMAT Null;
 SELECT count() AS rows_with_structure_only_defaulted FROM t_04700_r2;
 16
--- The same for a core setting, which is delivered to the query context and not to the settings layer: a
--- tiny `max_execution_time` in the clause aborts the backup, and resetting the same name in the same
--- clause puts it back to the declared default, so the backup completes. The budget is below any elapsed
--- time the first check can observe, so the first arm aborts by construction.
+-- Same for a core setting: a tiny `max_execution_time` aborts the backup, and a reset of it in the same
+-- clause lets it complete.
 BACKUP TABLE t_04700 TO Memory('04700_slow') SETTINGS max_execution_time = 0.000001 FORMAT Null; -- { serverError TIMEOUT_EXCEEDED }
 BACKUP TABLE t_04700 TO Memory('04700_reset') SETTINGS max_execution_time = 0.000001, max_execution_time = DEFAULT FORMAT Null;
 DROP TABLE t_04700_r1;

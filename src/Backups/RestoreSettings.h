@@ -217,8 +217,7 @@ struct RestoreSettings
     /// Returns the restore-specific settings as a string map for observability (see `system.backups`).
     std::map<String, String> getSerializedSettings() const;
 
-    /// Returns only the non-restore-specific settings from a `RESTORE` query, both the overrides and the
-    /// names to reset (`name = DEFAULT`).
+    /// Returns only the non-restore-specific settings from a `RESTORE` query.
     /// In contrast to `fromRestoreQuery`, this helper does not touch the
     /// `base_backup_name` AST node, so it is safe to call before
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.

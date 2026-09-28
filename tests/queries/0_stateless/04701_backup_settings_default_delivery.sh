@@ -4,9 +4,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Formatting a query cannot show whether a `name = DEFAULT` item was actually resolved: the formatter
-# prints the two SETTINGS carriers and never consults BackupSettings/RestoreSettings. So assert the
-# resolved value itself, through system.backups.settings, which reports what the settings layer built.
+# Formatting cannot show whether a `name = DEFAULT` item was resolved, so read the resolved value from
+# system.backups.settings.
 
 ${CLICKHOUSE_CLIENT} -m --query "
 drop table if exists src;
@@ -108,9 +107,7 @@ from system.backups where id in ('${uniq}_r4', '${uniq}_r5') order by id
 
 echo "-- \`async\` decides whether the client waits, so resetting it must change the returned status."
 
-# `BackupSettings::isAsync` resolves `async = DEFAULT` on its own (it runs before `fromBackupQuery`) and is
-# the sole input to InterpreterBackupQuery's decision whether to wait. Reset back to the default (false)
-# => the interpreter waits => the query itself reports the finished status.
+# The reset makes `async` false again, so the query waits and reports the finished status.
 ${CLICKHOUSE_CLIENT} --query "
 backup table src to Disk('backups', '${uniq}_s1')
 settings id='${uniq}_s1', async=1, async=DEFAULT;
@@ -145,8 +142,8 @@ from system.backups where id in ('${uniq}_s3', '${uniq}_s4', '${uniq}_s5') order
 
 echo "-- \`compression\` has no effect from a SETTINGS clause, so both forms are refused here too."
 
-# Refused for the same reason as on an ordinary query: the HTTP response body is shaped before the
-# query runs. `compression_method` is a BACKUP setting and a different name, so it keeps working.
+# Refused as on an ordinary query. `compression_method` is a BACKUP setting with a different name, so it
+# keeps working.
 ${CLICKHOUSE_CLIENT} --query "
 backup table src to Disk('backups', '${uniq}_h1') settings compression = 'gz';
 " 2>&1 | grep -m1 -o "shapes the HTTP response body"
