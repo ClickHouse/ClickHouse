@@ -183,7 +183,7 @@ DROP TABLE IF EXISTS ts_dist_04500;
 
 -- Baseline: direct insert into a TimeSeries table.
 CREATE TABLE ts_direct_04500 ENGINE = TimeSeries;
-INSERT INTO ts_direct_04500 (metric_name, tags, time_series)
+INSERT INTO ts_direct_04500 (metric_name, tags, samples)
     SELECT 'm' || toString(number % 50), map('h', toString(number)),
            [(toDateTime64(number, 3), toFloat64(number))]
     FROM numbers(1000)
@@ -193,7 +193,7 @@ INSERT INTO ts_direct_04500 (metric_name, tags, time_series)
 CREATE TABLE ts_local_04500 ENGINE = TimeSeries;
 CREATE TABLE ts_dist_04500 AS ts_local_04500
     ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), ts_local_04500, rand());
-INSERT INTO ts_dist_04500 (metric_name, tags, time_series)
+INSERT INTO ts_dist_04500 (metric_name, tags, samples)
     SELECT 'm' || toString(number % 50), map('h', toString(number)),
            [(toDateTime64(number, 3), toFloat64(number))]
     FROM numbers(1000)
@@ -220,7 +220,7 @@ SELECT
 
 -- The distributed insert must count strictly more than the outer 1000 rows and charge nonzero
 -- bytes: without counting the TimeSeries child inserts it would report only 1000 (the
--- metric_name/tags/time_series rows) and a much smaller written_bytes.
+-- metric_name/tags/samples rows) and a much smaller written_bytes.
 SELECT written_rows > 1000 AND written_bytes > 0
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'
