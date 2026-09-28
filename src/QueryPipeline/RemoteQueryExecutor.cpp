@@ -32,7 +32,6 @@
 #include <Storages/StorageMemory.h>
 
 #include <Columns/ColumnBLOB.h>
-#include <Common/FailPoint.h>
 
 #include <base/scope_guard.h>
 
