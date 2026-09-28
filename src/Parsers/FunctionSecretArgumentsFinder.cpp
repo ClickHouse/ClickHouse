@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/maskURIPassword.h>
