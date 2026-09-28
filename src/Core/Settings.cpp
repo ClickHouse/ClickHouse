@@ -7598,7 +7598,7 @@ Use lazy materialization optimization for reading local Parquet files with the `
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
-        {"25.12", 10, 10000, "Increase the limit after performance improvement"}, \
+        {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
         {"25.11", 10, 100, "More optimal"}, \
         {"25.4", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"}) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
