@@ -101,10 +101,16 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
     const String database = resolveReportedDatabase(query, getContext());
 
+    /// The `SELECT` grant on `system.table_settings`, which the rewritten query needs for any table, first: resolving
+    /// the table below can fetch it from a remote database or a data lake catalog, which a user refused the grant
+    /// must not make the server do. The columns are the ones the rewritten query reads.
+    getContext()->checkAccess(
+        AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "table_settings",
+        Strings{"database", "table", "name", "value", "changed", "source", "alias_for"});
+
     /// As `SHOW CREATE TABLE` does: a table the user may not see, or one that does not exist, is an error, not an
     /// empty result, which would read as a table with no settings. `system.table_settings` shows a table to whoever
-    /// may `SHOW TABLES` it; a temporary table belongs to the session and needs no such grant. The `SELECT` grant on
-    /// `system.table_settings` itself, which every table needs, is checked when the rewritten query reads it.
+    /// may `SHOW TABLES` it; a temporary table belongs to the session and needs no such grant.
     if (!database.empty())
     {
         getContext()->checkAccess(AccessType::SHOW_TABLES, database, query.table);
