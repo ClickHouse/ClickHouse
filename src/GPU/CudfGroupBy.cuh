@@ -1,0 +1,55 @@
+#pragma once
+
+#include <GPU/GPUTypes.h>
+
+#include <cuda_runtime_api.h>
+
+namespace DB::GPU
+{
+
+/** A `GROUP BY` with `cudf::groupby`, for keys that `RecordGroupBy` cannot pack into one word:
+  * variable-width ones, alongside fixed-width integers. The values are integers, reduced by `sum`, `min` or
+  * `max`.
+  *
+  * Each batch is grouped on its own, and the groups of the batches are merged by grouping them
+  * again - the sums of the partial sums, the minimums of the minimums - whenever the batches
+  * gathered since the last merge have more groups than the merge left, so that a key seen in many
+  * batches is merged a logarithmic number of times.
+  *
+  * Everything runs on a stream the caller owns, which must not be the legacy default stream:
+  * cuco copies a count back with `cudaMemcpyBatchAsync`, which refuses it. The caller orders the
+  * stream after what filled a batch, and what refills it after the stream.
+  *
+  * This header is what the host sees of the class; the state behind the pointer is the nvcc
+  * island's, which alone includes cuDF.
+  */
+class CudfGroupBy
+{
+public:
+    CudfGroupBy(GPUSpan<GPUColumnType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream);
+    ~CudfGroupBy();
+
+    CudfGroupBy(const CudfGroupBy &) = delete;
+    CudfGroupBy & operator=(const CudfGroupBy &) = delete;
+
+    /// Groups one batch and folds it into the groups so far, reading the batch on the stream.
+    void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values);
+
+    /// Closes the groups to further batches and answers how many there are.
+    size_t finalize();
+
+    /// The groups, on the device until the object goes: a column per key, of the key's type, and a
+    /// column per value in the type its `GPUGroupByValue` says it leaves a group in.
+    DeviceColumnView key(size_t index) const;
+    DeviceColumnView value(size_t index) const;
+
+private:
+    struct State;
+    State * state = nullptr;
+};
+
+/// Subtracts `minus` from each of `count` offsets on `stream`: what a variable-width column on the
+/// device does to its offsets when the bytes before its first row are dropped.
+void subtractFromOffsets(uint64_t * offsets, size_t count, uint64_t minus, rmm::cuda_stream_view stream);
+
+}

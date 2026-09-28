@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
+#include <cstring>
 #include <numeric>
 
 namespace ProfileEvents
@@ -56,7 +57,7 @@ GPUAccumulator::GPUAccumulator(
     if (codec_)
         pipe = std::make_unique<CompressedUploadPipe>(argument_type, stage_bytes, *codec_);
     else
-        pipe = std::make_unique<PlainUploadPipe>(argument_type, stage_bytes);
+        pipe = std::make_unique<ColumnUploadPipe>(argument_type, stage_bytes);
 }
 
 void GPUAccumulator::add(const IColumn & column)
@@ -92,9 +93,9 @@ void GPUAccumulator::addBlock(std::string_view payload, size_t decompressed_byte
         reduceBatchOnDevice();
 }
 
-PlainUploadPipe & GPUAccumulator::plainPipeOrThrow()
+ColumnUploadPipe & GPUAccumulator::plainPipeOrThrow()
 {
-    auto * plain_pipe = typeid_cast<PlainUploadPipe *>(pipe.get());
+    auto * plain_pipe = typeid_cast<ColumnUploadPipe *>(pipe.get());
     if (!plain_pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Plain values for an accumulator of compressed blocks");
     return *plain_pipe;
@@ -107,7 +108,7 @@ void GPUAccumulator::reduceBatchOnDevice()
 
     Stopwatch watch;
 
-    const DeviceColumnView values = pipe->flush().view();
+    const DeviceColumnView values = pipe->flush();
 
     onDevice([&] { reduction->addBatch(values); }, "Cannot reduce {} values by `{}` on a GPU", values.rows, aggregationName(aggregation));
 
@@ -192,36 +193,76 @@ size_t rowBytesOf(
     return bytes;
 }
 
-std::vector<PlainUploadPipe> pipesFor(const DataTypes & types, size_t batch_rows, bool compressed)
+std::vector<ColumnUploadPipe> pipesFor(const DataTypes & types, size_t batch_rows, bool compressed)
 {
-    std::vector<PlainUploadPipe> pipes;
+    std::vector<ColumnUploadPipe> pipes;
     if (compressed)
         return pipes;
 
+    /// A batch of fixed-width values fills a slot of its size; a column without a fixed width
+    /// gets the largest.
     pipes.reserve(types.size());
     for (const auto & type : types)
-        pipes.emplace_back(*type, std::min(batch_rows * sizeOf(elementTypeOrThrow(*type)), GPUAccumulator::max_stage_bytes));
+    {
+        const GPUColumnType column_type = columnTypeOrThrow(*type);
+        const size_t stage_bytes = column_type.kind == GPUColumnKind::Fixed
+            ? std::min(batch_rows * sizeOf(column_type.element_type), GPUAccumulator::max_stage_bytes)
+            : GPUAccumulator::max_stage_bytes;
+        pipes.emplace_back(*type, stage_bytes);
+    }
     return pipes;
+}
+
+std::vector<GPUElementType> keyElementTypesOf(const std::vector<GPUColumnType> & keys)
+{
+    std::vector<GPUElementType> element_types;
+    element_types.reserve(keys.size());
+    for (const auto & key : keys)
+        element_types.push_back(key.element_type);
+    return element_types;
+}
+
+std::vector<size_t> variableKeyIndicesOf(const std::vector<GPUColumnType> & keys)
+{
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        if (keys[i].kind == GPUColumnKind::Variable)
+            indices.push_back(i);
+    }
+    return indices;
 }
 
 std::vector<DeviceColumn> deviceColumnsFor(
     const std::vector<GPUElementType> & key_element_types,
     const std::vector<GPUGroupByValue> & values,
     const std::vector<GPUElementType> & filter_element_types,
+    size_t num_variable_keys,
     bool compressed)
 {
     std::vector<DeviceColumn> columns;
     if (!compressed)
         return columns;
 
-    columns.reserve(key_element_types.size() + values.size() + filter_element_types.size());
+    columns.reserve(key_element_types.size() + values.size() + filter_element_types.size() + num_variable_keys);
     for (const GPUElementType key_element_type : key_element_types)
         columns.emplace_back(key_element_type);
     for (const GPUGroupByValue & value : values)
         columns.emplace_back(value.element_type);
     for (const GPUElementType filter_element_type : filter_element_types)
         columns.emplace_back(filter_element_type);
+    for (size_t i = 0; i < num_variable_keys; ++i)
+        columns.emplace_back(GPUElementType::UInt64);
     return columns;
+}
+
+/// How many rows of a variable-width column the bytes that have arrived cover: the rows whose end, in
+/// `offsets` after the first, is within `chars_bytes`.
+size_t rowsCoveredBy(const std::vector<UInt64> & offsets, size_t chars_bytes)
+{
+    if (offsets.empty())
+        return 0;
+    return static_cast<size_t>(std::upper_bound(offsets.begin() + 1, offsets.end(), chars_bytes) - (offsets.begin() + 1));
 }
 
 /// nvcomp expands each block with one warp, so a call over few blocks leaves the device idle
@@ -249,7 +290,9 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     size_t num_readers_,
     const DataTypes & filter_types,
     std::optional<GPUFilterProgram> filter_)
-    : key_element_types(elementTypesOrThrow(key_types))
+    : group_keys(groupByKeysOrThrow(key_types))
+    , key_element_types(keyElementTypesOf(group_keys))
+    , variable_key_indices(variableKeyIndicesOf(group_keys))
     , values(groupByValuesOrThrow(argument_types, result_types, aggregations))
     , filter_element_types(elementTypesOrThrow(filter_types))
     , filter(std::move(filter_))
@@ -257,11 +300,25 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , compressed(compressed_)
     , key_pipes(pipesFor(key_types, batch_rows, compressed))
     , value_pipes(pipesFor(argument_types, batch_rows, compressed))
-    , group_by(onDevice(
-          [&] { return std::make_unique<RecordGroupBy>(key_element_types, values); },
-          "Cannot set up a `GROUP BY` over {} keys on the device",
-          key_element_types.size()))
 {
+    if (variable_key_indices.empty())
+        group_by = onDevice(
+            [&] { return std::make_unique<RecordGroupBy>(key_element_types, values); },
+            "Cannot set up a `GROUP BY` over {} keys on the device",
+            key_element_types.size());
+    else
+    {
+        variable_group_stream = std::make_unique<DeviceStream>();
+        variable_group_by = onDevice(
+            [&] { return std::make_unique<CudfGroupBy>(group_keys, values, variable_group_stream->get()); },
+            "Cannot set up a `GROUP BY` over {} keys, {} of them of variable width, on the device",
+            group_keys.size(),
+            variable_key_indices.size());
+    }
+
+    if (filter && !variable_key_indices.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation by variable-width keys with a `WHERE` for the device");
+
     if (filter.has_value() != !filter_element_types.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with a `WHERE` and the columns of one do not go together");
 
@@ -282,13 +339,14 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     if (num_readers_ == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation over compressed blocks with no reading threads");
 
-    const size_t num_columns = key_element_types.size() + values.size() + filter_element_types.size();
+    const size_t num_columns = numColumns();
     readers.reserve(num_readers_);
     for (size_t i = 0; i < num_readers_; ++i)
     {
         Reader & reader = readers.emplace_back();
         reader.staging.resize(num_columns);
-        reader.device_columns = deviceColumnsFor(key_element_types, values, filter_element_types, compressed);
+        reader.device_columns = deviceColumnsFor(key_element_types, values, filter_element_types, variable_key_indices.size(), compressed);
+        reader.variable_offsets.resize(variable_key_indices.size());
     }
 
     work_queue = std::make_unique<ConcurrentBoundedQueue<DeviceWork>>(queued_buffers_per_column * (num_columns + 1) * num_readers_);
@@ -321,13 +379,13 @@ void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & val
     if (compressed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of plain columns for a GPU aggregation over compressed blocks");
 
-    if (key_columns.size() != key_pipes.size() || value_columns.size() != value_pipes.size())
+    if (key_columns.size() != group_keys.size() || value_columns.size() != value_pipes.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "A block of {} key and {} value columns for a GPU aggregation over {} and {}",
             key_columns.size(),
             value_columns.size(),
-            key_pipes.size(),
+            group_keys.size(),
             value_pipes.size());
 
     const size_t num_rows = key_columns.front()->size();
@@ -343,8 +401,54 @@ void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & val
     for (size_t i = 0; i < value_columns.size(); ++i)
         value_pipes[i].stage(*value_columns[i]);
 
-    if (stagedRows() >= batch_rows)
+    /// A batch of variable-width keys is bounded by bytes, as a row of them has no fixed width.
+    if (stagedRows() >= batch_rows || stagedVariableBytes() >= GPUAccumulator::max_stage_bytes)
         sendBatchToDevice();
+}
+
+size_t GroupByGPUAccumulator::stagedVariableBytes() const
+{
+    size_t bytes = 0;
+    for (const auto & pipe : key_pipes)
+    {
+        if (pipe.type().kind == GPUColumnKind::Variable)
+            bytes += pipe.stagedBytes();
+    }
+    return bytes;
+}
+
+size_t GroupByGPUAccumulator::variableOffsetsColumnOf(size_t key_index) const
+{
+    const auto it = std::find(variable_key_indices.begin(), variable_key_indices.end(), key_index);
+    if (it == variable_key_indices.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key {} of a GPU aggregation is not of variable width", key_index);
+
+    return group_keys.size() + values.size() + filter_element_types.size() + static_cast<size_t>(it - variable_key_indices.begin());
+}
+
+void GroupByGPUAccumulator::addVariableOffsets(size_t reader_index, size_t key_index, std::span<const UInt64> offsets)
+{
+    Reader & reader = readerOrThrow(reader_index);
+    rethrowDeviceError();
+
+    const size_t column_index = variableOffsetsColumnOf(key_index);
+    StagedColumn & column = reader.staging[column_index];
+
+    const size_t bytes = offsets.size_bytes();
+    if (!column.staged.empty() && column.staged.size() + bytes > compressed_stage_bytes)
+        handOff(reader_index, column_index);
+
+    column.raw = true;
+    column.staged.append({reinterpret_cast<const char *>(offsets.data()), bytes});
+    column.decompressed_bytes += bytes;
+}
+
+std::optional<size_t> GroupByGPUAccumulator::variableOrdinalOfOffsetsColumn(size_t column_index) const
+{
+    const size_t first = group_keys.size() + values.size() + filter_element_types.size();
+    if (column_index < first || column_index >= numColumns())
+        return std::nullopt;
+    return column_index - first;
 }
 
 void GroupByGPUAccumulator::sendBatchToDevice()
@@ -353,12 +457,12 @@ void GroupByGPUAccumulator::sendBatchToDevice()
     if (num_rows == 0)
         return;
 
-    const auto flushed = [](std::vector<PlainUploadPipe> & pipes)
+    const auto flushed = [](std::vector<ColumnUploadPipe> & pipes)
     {
         std::vector<DeviceColumnView> columns;
         columns.reserve(pipes.size());
         for (auto & pipe : pipes)
-            columns.push_back(pipe.flush().view());
+            columns.push_back(pipe.flush());
         return columns;
     };
 
@@ -367,8 +471,12 @@ void GroupByGPUAccumulator::sendBatchToDevice()
     const std::vector<DeviceColumnView> keys = flushed(key_pipes);
     const std::vector<DeviceColumnView> value_columns = flushed(value_pipes);
 
-    const double kernel_microseconds
-        = onDevice([&] { return group_by->addBatch(keys, value_columns, {}, nullptr); }, "Cannot group {} rows on the device", num_rows);
+    double kernel_microseconds = 0;
+    if (variable_group_by)
+        groupByVariable(keys, value_columns, num_rows);
+    else
+        kernel_microseconds
+            = onDevice([&] { return group_by->addBatch(keys, value_columns, {}, nullptr); }, "Cannot group {} rows on the device", num_rows);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -486,7 +594,11 @@ void GroupByGPUAccumulator::enqueue(DeviceWork && work)
 {
     rethrowDeviceError();
 
-    if (!work_queue->push(std::move(work)))
+    Stopwatch watch;
+    const bool pushed = work_queue->push(std::move(work));
+    readers_wait_microseconds.fetch_add(watch.elapsedMicroseconds(), std::memory_order_relaxed);
+
+    if (!pushed)
     {
         rethrowDeviceError();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU aggregation's device thread stopped taking work without an error");
@@ -543,7 +655,16 @@ void GroupByGPUAccumulator::runDeviceThread()
             }
             else
             {
-                taken = idle ? work_queue->pop(work) : work_queue->tryPop(work);
+                if (idle)
+                {
+                    Stopwatch watch;
+                    taken = work_queue->pop(work);
+                    device_wait_microseconds.fetch_add(watch.elapsedMicroseconds(), std::memory_order_relaxed);
+                }
+                else
+                {
+                    taken = work_queue->tryPop(work);
+                }
                 if (!taken && idle)
                     return;
             }
@@ -600,7 +721,9 @@ void GroupByGPUAccumulator::runDeviceThread()
             }
 
             /// Nothing to do until an upload lands.
+            Stopwatch watch;
             flushPendingRaw(/*wait=*/!raw_pending.empty());
+            device_wait_microseconds.fetch_add(watch.elapsedMicroseconds(), std::memory_order_relaxed);
         }
     }
     catch (...)
@@ -625,7 +748,7 @@ void GroupByGPUAccumulator::runDeviceThread()
 
 void GroupByGPUAccumulator::appendRaw(DeviceWork && work)
 {
-    const size_t num_columns = key_element_types.size() + values.size() + filter_element_types.size();
+    const size_t num_columns = numColumns();
     if (work.reader >= readers.size() || work.column_index >= num_columns)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "A buffer of column {} from reader {} on the GPU aggregation's device thread", work.column_index, work.reader);
@@ -657,6 +780,19 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
             "Cannot append {} plain bytes to a device column",
             bytes);
 
+        /// The offsets of a variable-width key are kept on the host as well, to tell how far its bytes go.
+        if (const auto ordinal = variableOrdinalOfOffsetsColumn(work.column_index))
+        {
+            const std::string_view landed_offsets = work.staged.bytes();
+            if (landed_offsets.size() % sizeof(UInt64) != 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of the offsets of a variable-width key", landed_offsets.size());
+
+            std::vector<UInt64> & mirror = readers[work.reader].variable_offsets[*ordinal];
+            const size_t at = mirror.size();
+            mirror.resize(at + landed_offsets.size() / sizeof(UInt64));
+            memcpy(mirror.data() + at, landed_offsets.data(), landed_offsets.size());
+        }
+
         work.staged = PinnedBuffer{};
         CopiedRaw copied{.work = std::move(work), .copied = DeviceEvent{}};
         copied.copied.record(StreamRegistry::get().compute);
@@ -683,7 +819,7 @@ void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
 {
     expansion_watch.restart();
 
-    const size_t num_columns = key_element_types.size() + values.size() + filter_element_types.size();
+    const size_t num_columns = numColumns();
 
     std::vector<Decompressor::Piece> pieces;
     pieces.reserve(works.size());
@@ -772,8 +908,12 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
 
     Reader & reader = readers[reader_index];
 
-    for (size_t i = 0; i < reader.device_columns.size(); ++i)
+    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+    for (size_t i = 0; i < first_offsets_column; ++i)
     {
+        if (i < group_keys.size() && group_keys[i].kind == GPUColumnKind::Variable)
+            continue;
+
         const DeviceColumn & column = reader.device_columns[i];
         if (reader.dropped_rows * column.elementSize() + column.bytes() != num_rows * column.elementSize())
             throw Exception(
@@ -786,19 +926,48 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
                 column.elementSize());
     }
 
+    for (size_t j = 0; j < variable_key_indices.size(); ++j)
+    {
+        const std::vector<UInt64> & offsets = reader.variable_offsets[j];
+        const size_t chars_bytes = reader.device_columns[variable_key_indices[j]].bytes();
+        if (offsets.empty() || reader.dropped_rows + offsets.size() - 1 != num_rows || offsets.back() != chars_bytes)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Variable-width key {} of a part came to {} rows of {} offsets and {} bytes on the device, where the part has {} rows",
+                variable_key_indices[j],
+                reader.dropped_rows,
+                offsets.size(),
+                chars_bytes,
+                num_rows);
+    }
+
     groupRowsOnDevice(reader, num_rows - reader.dropped_rows);
 
     for (auto & column : reader.device_columns)
         column.clear();
+    for (auto & offsets : reader.variable_offsets)
+        offsets.clear();
     reader.grouped_rows = 0;
     reader.dropped_rows = 0;
 }
 
 size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) const
 {
+    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+
     size_t rows = std::numeric_limits<size_t>::max();
-    for (const auto & column : reader.device_columns)
-        rows = std::min(rows, column.rows());
+    for (size_t i = 0; i < first_offsets_column; ++i)
+    {
+        if (i < group_keys.size() && group_keys[i].kind == GPUColumnKind::Variable)
+            continue;
+        rows = std::min(rows, reader.device_columns[i].rows());
+    }
+
+    /// A variable-width key's rows are those whose bytes have all arrived; its offsets land before its
+    /// bytes are counted, as they are appended on the host as well.
+    for (size_t j = 0; j < variable_key_indices.size(); ++j)
+        rows = std::min(rows, rowsCoveredBy(reader.variable_offsets[j], reader.device_columns[variable_key_indices[j]].bytes()));
+
     return rows;
 }
 
@@ -811,19 +980,36 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
     std::vector<DeviceColumnView> keys;
     std::vector<DeviceColumnView> value_columns;
     std::vector<DeviceColumnView> filter_columns;
-    keys.reserve(key_element_types.size());
+    keys.reserve(group_keys.size());
     value_columns.reserve(values.size());
     filter_columns.reserve(filter_element_types.size());
 
-    for (size_t i = 0; i < reader.device_columns.size(); ++i)
+    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+    size_t next_variable = 0;
+    for (size_t i = 0; i < first_offsets_column; ++i)
     {
+        if (i < group_keys.size() && group_keys[i].kind == GPUColumnKind::Variable)
+        {
+            /// The offsets are relative to the bytes the column holds, from its first row on.
+            const DeviceColumnView offsets = reader.device_columns[first_offsets_column + next_variable].view();
+            keys.push_back({
+                .element_type = GPUElementType::UInt8,
+                .data = reader.device_columns[i].view().data,
+                .rows = num_rows,
+                .kind = GPUColumnKind::Variable,
+                .offsets = reinterpret_cast<const uint64_t *>(offsets.data) + reader.grouped_rows,
+            });
+            ++next_variable;
+            continue;
+        }
+
         DeviceColumnView view = reader.device_columns[i].view();
         view.data += reader.grouped_rows * sizeOf(view.element_type);
         view.rows = num_rows;
 
-        if (i < key_element_types.size())
+        if (i < group_keys.size())
             keys.push_back(view);
-        else if (i < key_element_types.size() + values.size())
+        else if (i < group_keys.size() + values.size())
             value_columns.push_back(view);
         else
             filter_columns.push_back(view);
@@ -831,10 +1017,14 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
 
     Stopwatch watch;
 
-    const double kernel_microseconds = onDevice(
-        [&] { return group_by->addBatch(keys, value_columns, filter_columns, filter ? &*filter : nullptr); },
-        "Cannot group {} rows on the device",
-        num_rows);
+    double kernel_microseconds = 0;
+    if (variable_group_by)
+        groupByVariable(keys, value_columns, num_rows);
+    else
+        kernel_microseconds = onDevice(
+            [&] { return group_by->addBatch(keys, value_columns, filter_columns, filter ? &*filter : nullptr); },
+            "Cannot group {} rows on the device",
+            num_rows);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -844,10 +1034,58 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
     reader.grouped_rows = up_to;
 }
 
+void GroupByGPUAccumulator::groupByVariable(
+    const std::vector<DeviceColumnView> & keys, const std::vector<DeviceColumnView> & value_columns, size_t num_rows)
+{
+    const rmm::cuda_stream_view compute = StreamRegistry::get().compute;
+    const rmm::cuda_stream_view grouping = variable_group_stream->get();
+
+    DeviceEvent filled;
+    filled.record(compute);
+    filled.waitOn(grouping);
+
+    onDevice([&] { variable_group_by->addBatch(keys, value_columns); }, "Cannot group {} rows by variable-width keys on the device", num_rows);
+
+    DeviceEvent grouped;
+    grouped.record(grouping);
+    grouped.waitOn(compute);
+}
+
 void GroupByGPUAccumulator::dropGroupedRows(Reader & reader)
 {
-    for (auto & column : reader.device_columns)
-        column.dropFront(reader.grouped_rows);
+    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+    for (size_t i = 0; i < first_offsets_column; ++i)
+    {
+        if (i < group_keys.size() && group_keys[i].kind == GPUColumnKind::Variable)
+            continue;
+        reader.device_columns[i].dropFront(reader.grouped_rows);
+    }
+
+    /// A variable-width key drops the bytes of the grouped rows, and its offsets, which the first row left
+    /// starts from, are moved back by as many: on the device, and on the host.
+    for (size_t j = 0; j < variable_key_indices.size(); ++j)
+    {
+        std::vector<UInt64> & offsets = reader.variable_offsets[j];
+        const UInt64 dropped_bytes = offsets[reader.grouped_rows];
+
+        reader.device_columns[variable_key_indices[j]].dropFront(dropped_bytes);
+
+        DeviceColumn & device_offsets = reader.device_columns[first_offsets_column + j];
+        device_offsets.dropFront(reader.grouped_rows);
+        onDevice(
+            [&]
+            {
+                subtractFromOffsets(
+                    reinterpret_cast<uint64_t *>(device_offsets.mutableData()), device_offsets.rows(), dropped_bytes, StreamRegistry::get().compute);
+            },
+            "Cannot move the offsets of a variable-width key back by {} bytes",
+            dropped_bytes);
+
+        offsets.erase(offsets.begin(), offsets.begin() + reader.grouped_rows);
+        for (UInt64 & offset : offsets)
+            offset -= dropped_bytes;
+    }
+
     reader.dropped_rows += reader.grouped_rows;
     reader.grouped_rows = 0;
 }
@@ -868,7 +1106,9 @@ size_t GroupByGPUAccumulator::finalize()
     }
 
     Stopwatch watch;
-    const size_t groups = onDevice([&] { return group_by->finalize(); }, "Cannot finalize a `GROUP BY` on the device");
+    const size_t groups = variable_group_by
+        ? onDevice([&] { return variable_group_by->finalize(); }, "Cannot finalize a `GROUP BY` by variable-width keys on the device")
+        : onDevice([&] { return group_by->finalize(); }, "Cannot finalize a `GROUP BY` on the device");
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
     num_groups = groups;
@@ -879,6 +1119,12 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
 {
     if (!num_groups)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU aggregation were asked for before it was finalized");
+
+    if (variable_group_by)
+    {
+        copyVariableGroupsTo(key_columns, value_columns);
+        return;
+    }
 
     std::vector<HostColumnView> keys;
     keys.reserve(key_columns.size());
@@ -901,6 +1147,46 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 
+void GroupByGPUAccumulator::copyVariableGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns)
+{
+    const size_t rows = *num_groups;
+
+    if (key_columns.size() != group_keys.size() || value_columns.size() != values.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "{} key and {} value columns for the groups of a GPU aggregation over {} and {}",
+            key_columns.size(),
+            value_columns.size(),
+            group_keys.size(),
+            values.size());
+
+    if (rows == 0)
+        return;
+
+    Stopwatch watch;
+
+    ColumnDownload download(variable_group_stream->get());
+
+    for (size_t i = 0; i < group_keys.size(); ++i)
+    {
+        const DeviceColumnView key = onDevice([&] { return variable_group_by->key(i); }, "Cannot view key {} of the groups", i);
+        if (key.rows != rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of key {} of {} groups", key.rows, i, rows);
+        download.add(key, *key_columns[i]);
+    }
+
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        const DeviceColumnView value = onDevice([&] { return variable_group_by->value(i); }, "Cannot view value {} of the groups", i);
+        if (value.rows != rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of value {} of {} groups", value.rows, i, rows);
+        download.add(value, *value_columns[i]);
+    }
+
+    download.finish();
+
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
 }
 
 #endif

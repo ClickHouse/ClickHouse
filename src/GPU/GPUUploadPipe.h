@@ -4,6 +4,7 @@
 
 #if USE_GPU
 
+#include <GPU/GPUColumns.h>
 #include <GPU/GPUDecompression.h>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUTypes.h>
@@ -23,13 +24,19 @@ namespace DB::GPU
 class DeviceColumn
 {
 public:
-    explicit DeviceColumn(GPUElementType element_type_) : element_type(element_type_) { }
+    /// On the compute stream.
+    explicit DeviceColumn(GPUElementType element_type_);
+
+    /// Allocated, copied into and freed in the order of `stream_`.
+    DeviceColumn(GPUElementType element_type_, rmm::cuda_stream_view stream_);
 
     void appendPlain(std::string_view host_values) { values.append(host_values); }
 
     void appendCompressed(Decompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks);
 
     char * grow(size_t bytes) { return values.grow(bytes); }
+
+    char * mutableData() { return values.data(); }
 
     void dropFront(size_t num_rows);
 
@@ -45,29 +52,23 @@ public:
 
 private:
     const GPUElementType element_type;
+    const rmm::cuda_stream_view stream;
     DeviceBuffer values;
     DeviceBuffer spare;
 };
 
 
-/** Gathers the values of one column on the host and sends them to the device, where they make up
-  * one `DeviceColumn`. What an implementation takes, and how it sends it, is its own; this is what
-  * the user of the column on the device sees.
-  */
 class IUploadPipe
 {
 public:
     virtual ~IUploadPipe() = default;
 
-    /// The rows taken since the last `reset`, sent or not.
     virtual size_t stagedRows() const = 0;
 
     virtual size_t stagedBytes() const = 0;
 
-    /// Sends what is staged and returns the column on the device.
-    virtual const DeviceColumn & flush() = 0;
+    virtual DeviceColumnView flush() = 0;
 
-    /// Drops the rows on the device, keeping its memory for the next batch.
     virtual void reset() = 0;
 
 protected:
@@ -76,78 +77,66 @@ protected:
 };
 
 
-/** Takes the values as they are - the column of a block, or bytes written straight into its
-  * staging buffer - and copies them to the device. Two staging slots in pinned memory take turns:
-  * while the copy of one runs, the other is filled.
-  */
-class PlainUploadPipe final : public IUploadPipe
+class ColumnUploadPipe final : public IUploadPipe
 {
 public:
     static bool canUpload(const IDataType & type);
 
-    PlainUploadPipe(const IDataType & type, size_t stage_bytes_);
+    /// Copies on the compute stream.
+    ColumnUploadPipe(const IDataType & type, size_t stage_bytes_);
 
-    ~PlainUploadPipe() override;
+    /// Copies on `stream_`, which has to outlive the pipe.
+    ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, rmm::cuda_stream_view stream_);
 
-    PlainUploadPipe(PlainUploadPipe &&) noexcept = default;
+    ~ColumnUploadPipe() override;
 
-    PlainUploadPipe(const PlainUploadPipe &) = delete;
-    PlainUploadPipe & operator=(const PlainUploadPipe &) = delete;
-    PlainUploadPipe & operator=(PlainUploadPipe &&) = delete;
+    ColumnUploadPipe(ColumnUploadPipe &&) noexcept = default;
+
+    ColumnUploadPipe(const ColumnUploadPipe &) = delete;
+    ColumnUploadPipe & operator=(const ColumnUploadPipe &) = delete;
+    ColumnUploadPipe & operator=(ColumnUploadPipe &&) = delete;
 
     void stage(const IColumn & column);
 
     std::span<char> reserveRaw(size_t max_bytes);
     void commitRaw(size_t bytes);
 
-    size_t stagedRows() const override { return staged_bytes / element_size; }
+    GPUColumnType type() const { return layout.type; }
+
+    size_t stagedRows() const override { return staged_rows; }
 
     size_t stagedBytes() const override { return staged_bytes; }
 
-    const DeviceColumn & flush() override;
+    DeviceColumnView flush() override;
 
     void reset() override;
 
     void waitForUploads();
 
 private:
-    struct Slot
-    {
-        PinnedBuffer staged;
-        DeviceEvent copied;
-        bool in_flight = false;
-
-        Slot() = default;
-
-        Slot(Slot && other) noexcept
-            : staged(std::move(other.staged)), copied(std::move(other.copied)), in_flight(std::exchange(other.in_flight, false))
-        {
-        }
-    };
-
-    static constexpr size_t num_slots = 2;
-
     void sendStagedToDevice();
 
-    Slot & currentSlot() { return slots[current_slot]; }
+    void makeStagingWritable();
 
-    const GPUElementType element_type;
-    const size_t element_size;
+    void startOffsets();
+
+    const ColumnLayout layout;
     const size_t stage_bytes;
+    const rmm::cuda_stream_view stream;
 
-    Slot slots[num_slots];
-    size_t current_slot = 0;
+    std::vector<PinnedBuffer> staging;
+    size_t staging_bytes = 0;
+    DeviceEvent copied;
+    bool in_flight = false;
 
+    size_t staged_rows = 0;
     size_t staged_bytes = 0;
+    std::vector<size_t> elements_taken;
 
-    DeviceColumn device;
+    std::vector<DeviceBuffer> device;
 };
 
 
-/** Takes the compressed blocks of a column file, all of one codec, and has the device expand
-  * them. Sending is synchronous - it returns once the blocks are expanded - so one staging buffer
-  * is enough.
-  */
 class CompressedUploadPipe final : public IUploadPipe
 {
 public:
@@ -166,7 +155,7 @@ public:
 
     size_t stagedBytes() const override { return staged_bytes; }
 
-    const DeviceColumn & flush() override;
+    DeviceColumnView flush() override;
 
     void reset() override;
 

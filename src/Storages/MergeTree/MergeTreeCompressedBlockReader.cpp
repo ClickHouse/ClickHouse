@@ -14,20 +14,28 @@ namespace ErrorCodes
 }
 
 MergeTreeCompressedBlockReader::MergeTreeCompressedBlockReader(
-    const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings)
+    const IMergeTreeDataPart & part,
+    const NameAndTypePair & column,
+    const ReadSettings & read_settings,
+    const ISerialization::SubstreamPath & substream_path)
     : CompressedReadBufferBase(nullptr)
-    , file(openColumnFile(part, column, read_settings))
+    , file(openColumnFile(part, column, read_settings, substream_path))
 {
     compressed_in = file.get();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> MergeTreeCompressedBlockReader::openColumnFile(
-    const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings)
+    const IMergeTreeDataPart & part,
+    const NameAndTypePair & column,
+    const ReadSettings & read_settings,
+    const ISerialization::SubstreamPath & substream_path)
 {
     chassert(part.getType() == MergeTreeDataPartType::Wide);
 
     const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-        column, {}, ".bin", part.checksums, part.storage.getSettings());
+        column, substream_path, ".bin", part.checksums, part.storage.getSettings());
+    if (!stream_name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has no file for a stream of column {}", part.name, column.name);
 
     return part.getDataPartStorage().readFile(*stream_name + ".bin", read_settings, /*read_hint=*/std::nullopt);
 }

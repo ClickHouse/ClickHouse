@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"gpu_aggregation_batch_bytes", 268435456, 268435456, "New experimental setting, the batch size of the GPU aggregation."},
             {"gpu_aggregation_readers", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the columns are expanded on the device or on the host."},
             {"gpu_aggregation_device_decompression_max_ratio", 0.5, 0.5, "New experimental setting, the compression ratio up to which a column is expanded on the device rather than sent whole."},
+            {"gpu_aggregation_decompression", "ratio", "ratio", "New experimental setting, whether a GPU aggregation over compressed blocks expands a column on the device or on the host by a fixed threshold, always on one of them, or by which of them waits for the other while the query runs."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},

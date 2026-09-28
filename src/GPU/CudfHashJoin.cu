@@ -7,7 +7,6 @@
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
 
-#include <rmm/device_buffer.hpp>
 #include <rmm/device_uvector.hpp>
 
 #include <memory>
@@ -91,58 +90,41 @@ void CudfHashJoin::build(DeviceColumnView keys, GPUSpan<DeviceColumnView> payloa
     state->hash_join = guarded(
         "building a hash table over " + std::to_string(keys.rows) + " rows",
         [&] { return std::make_unique<cudf::hash_join>(cudf::table_view(key_columns), cudf::null_equality::EQUAL, stream); });
-
-    /// The probes run on streams of their own, which do not wait for the compute stream.
-    checkCuda(cudaStreamSynchronize(stream.value()), "cannot wait for the hash table to be built");
 }
 
 struct CudfHashJoinProbe::State
 {
     const CudfHashJoin::State & join;
-
-    cudaStream_t stream = nullptr;
-
-    rmm::device_buffer keys;
+    const rmm::cuda_stream_view stream;
 
     std::unique_ptr<rmm::device_uvector<cudf::size_type>> probe_indices;
     std::unique_ptr<cudf::table> gathered_payloads;
     bool probed = false;
 
-    explicit State(const CudfHashJoin::State & join_)
+    State(const CudfHashJoin::State & join_, rmm::cuda_stream_view stream_)
         : join(join_)
+        , stream(stream_)
     {
-        checkCuda(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), "cannot create a stream for a probe of the hash table");
-    }
-
-    ~State()
-    {
-        /// Whatever the last probe left queued must finish before its buffers go back to the pool
-        /// and the stream goes away. Nothing can be reported from here.
-        cudaStreamSynchronize(stream);
-        probe_indices.reset();
-        gathered_payloads.reset();
-        keys = rmm::device_buffer();
-        cudaStreamSynchronize(stream);
-        cudaStreamDestroy(stream);
     }
 };
 
-CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join)
+CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream)
 {
     if (!join.state->built)
         throw CudfError("a probe of a hash table that is not built");
 
-    state = new State(*join.state);
+    state = new State(*join.state, stream);
 }
 
+/// The matches are freed in the order of the probe's stream, which the caller keeps until after.
 CudfHashJoinProbe::~CudfHashJoinProbe()
 {
     delete state;
 }
 
-size_t CudfHashJoinProbe::probe(const char * host_keys, size_t num_rows)
+size_t CudfHashJoinProbe::probe(DeviceColumnView keys)
 {
-    if (num_rows == 0)
+    if (keys.rows == 0)
         throw CudfError("an empty block of the left table");
 
     state->gathered_payloads.reset();
@@ -153,22 +135,11 @@ size_t CudfHashJoinProbe::probe(const char * host_keys, size_t num_rows)
     if (!join.hash_join)
         return 0;
 
-    const rmm::cuda_stream_view stream{state->stream};
-    const size_t key_bytes = num_rows * sizeOf(join.key_element_type);
-
-    if (state->keys.size() < key_bytes)
-        state->keys = guarded(
-            "allocating room for " + std::to_string(num_rows) + " keys", [&] { return rmm::device_buffer(key_bytes, stream); });
-
-    checkCuda(
-        cudaMemcpyAsync(state->keys.data(), host_keys, key_bytes, cudaMemcpyHostToDevice, stream.value()),
-        "cannot send the keys of a left block");
-
-    const DeviceColumnView keys{join.key_element_type, static_cast<const char *>(state->keys.data()), num_rows};
+    const rmm::cuda_stream_view stream = state->stream;
     const std::vector<cudf::column_view> key_columns{columnViewOf(keys, join.key_element_type, "the keys of a left block")};
 
     auto [probe_side, build_side] = guarded(
-        "probing the hash table with " + std::to_string(num_rows) + " rows",
+        "probing the hash table with " + std::to_string(keys.rows) + " rows",
         [&] { return join.hash_join->inner_join(cudf::table_view(key_columns), std::nullopt, stream); });
 
     if (probe_side->size() != build_side->size())
@@ -194,51 +165,35 @@ size_t CudfHashJoinProbe::probe(const char * host_keys, size_t num_rows)
     return num_matches;
 }
 
-void CudfHashJoinProbe::copyMatchesOut(HostColumnView probe_row_indices, GPUSpan<HostColumnView> payloads)
+DeviceColumnView CudfHashJoinProbe::probeRowIndices() const
 {
     if (!state->probed)
-        throw CudfError("a probe's result was copied out before the probe ran");
-
-    const CudfHashJoin::State & join = state->join;
-    checkCount(payloads.size(), join.payload_element_types.size(), "payload destinations");
-
-    const size_t num_matches = state->probe_indices ? state->probe_indices->size() : 0;
-    if (num_matches == 0)
-        return;
+        throw CudfError("a probe's result was asked for before the probe ran");
 
     static_assert(sizeof(cudf::size_type) == sizeof(uint32_t), "the probe-side row indices are handed back as they are");
 
-    if (probe_row_indices.element_type != GPUElementType::UInt32)
-        throw CudfError("the probe-side row indices are copied out into a column that is not UInt32");
-    checkCount(probe_row_indices.rows, num_matches, "rows of room for the probe-side row indices");
+    if (!state->probe_indices)
+        return {GPUElementType::UInt32, nullptr, 0};
 
-    checkCuda(
-        cudaMemcpyAsync(
-            probe_row_indices.data,
-            state->probe_indices->data(),
-            num_matches * sizeof(cudf::size_type),
-            cudaMemcpyDeviceToHost,
-            state->stream),
-        "cannot copy the probe-side row indices back");
+    return {GPUElementType::UInt32, reinterpret_cast<const char *>(state->probe_indices->data()), state->probe_indices->size()};
+}
 
-    if (!join.payload_element_types.empty())
-    {
-        if (!state->gathered_payloads)
-            throw CudfError("the device kept no gathered payload for a result of " + std::to_string(num_matches) + " rows");
+DeviceColumnView CudfHashJoinProbe::gatheredPayload(size_t index) const
+{
+    if (!state->probed)
+        throw CudfError("a probe's result was asked for before the probe ran");
 
-        const cudf::table_view gathered = state->gathered_payloads->view();
+    const CudfHashJoin::State & join = state->join;
+    if (index >= join.payload_element_types.size())
+        throw CudfError("payload column " + std::to_string(index) + " of " + std::to_string(join.payload_element_types.size()));
 
-        for (size_t i = 0; i < payloads.size(); ++i)
-        {
-            if (payloads[i].element_type != join.payload_element_types[i])
-                throw CudfError("payload column " + std::to_string(i) + " is copied out into a column of another type");
+    if (!state->gathered_payloads)
+        return {join.payload_element_types[index], nullptr, 0};
 
-            copyColumnToHost(
-                gathered.column(static_cast<cudf::size_type>(i)), payloads[i], "a gathered column of the right table", state->stream);
-        }
-    }
-
-    checkCuda(cudaStreamSynchronize(state->stream), "cannot wait for the joined rows to be copied back");
+    return deviceViewOf(
+        state->gathered_payloads->view().column(static_cast<cudf::size_type>(index)),
+        join.payload_element_types[index],
+        "a gathered column of the right table");
 }
 
 }

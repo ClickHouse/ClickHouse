@@ -47,7 +47,7 @@ public:
 
     static bool canJoinOnDevice(const IDataType & key_type, const DataTypes & payload_types);
 
-    HashTable(const IDataType & key_type, const DataTypes & payload_types_, size_t stage_bytes = 64 * 1024 * 1024);
+    HashTable(const IDataType & key_type_, const DataTypes & payload_types_, size_t stage_bytes_ = 64 * 1024 * 1024);
 
     ~HashTable();
 
@@ -69,28 +69,34 @@ public:
     Matches noMatches() const;
 
 private:
-    /// What one probe at a time passes through: its stream on the device, and pinned host memory
-    /// for the keys going up and the matches coming back.
+    /// What one probe at a time passes through: a stream of its own on the device, and the pipe
+    /// the keys go up by. The members go in the reverse order of their construction, the stream
+    /// last, after everything queued on it.
     struct Probe
     {
+        DeviceStream stream;
+        ColumnUploadPipe keys;
         CudfHashJoinProbe device;
-        PinnedBuffer keys;
-        PinnedBuffer probe_row_indices;
-        std::vector<PinnedBuffer> payloads;
 
-        Probe(const CudfHashJoin & join, size_t num_payloads) : device(join), payloads(num_payloads) { }
+        Probe(const CudfHashJoin & join, const IDataType & key_column_type, size_t key_stage_bytes)
+            : keys(key_column_type, key_stage_bytes, stream.get())
+            , device(join, stream.get())
+        {
+        }
     };
 
     std::unique_ptr<Probe> takeProbe();
     void returnProbe(std::unique_ptr<Probe> probe);
 
+    const DataTypePtr key_type;
     const GPUElementType key_element_type;
     const DataTypes payload_types;
     const std::vector<GPUElementType> payload_element_types;
     const size_t row_bytes;
+    const size_t stage_bytes;
 
-    PlainUploadPipe build_key_pipe;
-    std::vector<PlainUploadPipe> build_payload_pipes;
+    ColumnUploadPipe build_key_pipe;
+    std::vector<ColumnUploadPipe> build_payload_pipes;
 
     std::unique_ptr<CudfHashJoin> hash_join;
 

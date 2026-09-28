@@ -7,6 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -142,6 +144,25 @@ GPUElementType reducibleElementTypeOrThrow(const IDataType & argument_type, cons
         aggregationName(aggregation));
 }
 
+bool isStringKey(const IDataType & type)
+{
+    return isString(type);
+}
+
+std::vector<GPUColumnType> groupByKeysOrThrow(const DataTypes & key_types)
+{
+    std::vector<GPUColumnType> keys;
+    keys.reserve(key_types.size());
+    for (const auto & key_type : key_types)
+    {
+        if (isStringKey(*key_type))
+            keys.push_back({.kind = GPUColumnKind::Variable, .element_type = GPUElementType::UInt8});
+        else
+            keys.push_back({.kind = GPUColumnKind::Fixed, .element_type = elementTypeOrThrow(*key_type)});
+    }
+    return keys;
+}
+
 bool canGroupByReduceOnDevice(
     const DataTypes & key_types,
     const DataTypes & argument_types,
@@ -154,6 +175,33 @@ bool canGroupByReduceOnDevice(
 
     if (key_types.size() > max_group_by_keys || argument_types.size() > max_group_by_values)
         return false;
+
+    /// A variable-width key - a `String` - takes the `GROUP BY` to cuDF's, which the keys need not
+    /// fit a word for, and which reduces integers only: it sums a `Float32` into a `Float32`, where
+    /// ClickHouse sums it into a `Float64`, and in no fixed order.
+    const bool by_variable = std::any_of(key_types.begin(), key_types.end(), [](const auto & type) { return isStringKey(*type); });
+    if (by_variable)
+    {
+        for (const auto & key_type : key_types)
+        {
+            if (isStringKey(*key_type))
+                continue;
+            const auto key_element_type = elementTypeOf(*key_type);
+            if (!key_element_type || !isInteger(*key_element_type))
+                return false;
+        }
+
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            const auto element_type = elementTypeOf(*argument_types[i]);
+            if (!element_type || !isInteger(*element_type))
+                return false;
+            if (!canReduceOnDevice(*argument_types[i], *result_types[i], aggregations[i]))
+                return false;
+        }
+
+        return true;
+    }
 
     /// The device packs the keys of a row into one integer of `max_group_by_key_bytes`, which a
     /// float could only join by its bytes, where ClickHouse groups by its value.

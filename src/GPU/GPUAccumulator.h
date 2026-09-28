@@ -7,6 +7,7 @@
 #include <GPU/GPUTypeMapping.h>
 #include <GPU/GPUTypes.h>
 #include <GPU/GPUUploadPipe.h>
+#include <GPU/CudfGroupBy.cuh>
 #include <GPU/RecordGroupBy.cuh>
 #include <GPU/CudfReduction.cuh>
 
@@ -55,7 +56,7 @@ public:
 private:
     static constexpr size_t max_batch_rows = (1UL << 31) - 1;
 
-    PlainUploadPipe & plainPipeOrThrow();
+    ColumnUploadPipe & plainPipeOrThrow();
 
     void reduceBatchOnDevice();
 
@@ -66,7 +67,7 @@ private:
     const size_t batch_bytes;
 
     std::unique_ptr<CudfReduction> reduction;
-    /// A `CompressedUploadPipe` when there is a codec, a `PlainUploadPipe` otherwise.
+    /// A `CompressedUploadPipe` when there is a codec, a `ColumnUploadPipe` otherwise.
     std::unique_ptr<IUploadPipe> pipe;
 };
 
@@ -132,6 +133,31 @@ public:
 
     void finishPart(size_t reader, size_t num_rows);
 
+    /** Offsets of the variable-width key at `key_index` of the part that `reader` is reading, as
+      * they are read from its sizes. The column of the key itself takes the bytes of its values, as
+      * compressed blocks or as they are. A part's offsets are one more than its rows: the first is
+      * 0, and each after it is where a row ends among the bytes of the part's values - so the
+      * device knows how many rows the bytes that have arrived cover.
+      */
+    void addVariableOffsets(size_t reader, size_t key_index, std::span<const UInt64> offsets);
+
+    /// How long, in microseconds, the reading threads waited for room in the device thread's
+    /// queue, summed over them, and how long the device thread waited for work or for an upload to
+    /// land. Which of them grows says who is behind the other.
+    struct Waits
+    {
+        UInt64 readers_microseconds = 0;
+        UInt64 device_microseconds = 0;
+    };
+
+    Waits waits() const
+    {
+        return {
+            .readers_microseconds = readers_wait_microseconds.load(std::memory_order_relaxed),
+            .device_microseconds = device_wait_microseconds.load(std::memory_order_relaxed),
+        };
+    }
+
     size_t finalize();
 
     void copyGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns);
@@ -179,11 +205,24 @@ private:
     {
         std::vector<StagedColumn> staging;
         std::vector<DeviceColumn> device_columns;
+        /// Per variable-width key, the offsets its column of offsets holds on the device, kept on the host
+        /// as they land, to tell how many rows the bytes on the device cover.
+        std::vector<std::vector<UInt64>> variable_offsets;
         size_t grouped_rows = 0;
         size_t dropped_rows = 0;
     };
 
-    size_t stagedRows() const { return key_pipes.front().stagedRows(); }
+    size_t stagedRows() const { return value_pipes.front().stagedRows(); }
+    size_t stagedVariableBytes() const;
+
+    size_t variableOffsetsColumnOf(size_t key_index) const;
+
+    /// The columns a reader stages and holds on the device: the keys, the values, the columns of
+    /// the filter, and then the offsets of each variable-width key.
+    size_t numColumns() const { return group_keys.size() + values.size() + filter_element_types.size() + variable_key_indices.size(); }
+
+    /// Which variable-width key the column of offsets at `column_index` belongs to, if it is one.
+    std::optional<size_t> variableOrdinalOfOffsetsColumn(size_t column_index) const;
 
     void sendBatchToDevice();
 
@@ -224,7 +263,18 @@ private:
 
     void dropGroupedRows(Reader & reader);
 
+    void copyVariableGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns);
+
+    /// Groups a batch by variable-width keys on their own stream, which waits for the compute stream to have
+    /// filled the batch and which the compute stream waits for before it refills it.
+    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceColumnView> & value_columns, size_t num_rows);
+
+    const std::vector<GPUColumnType> group_keys;
+    /// The element type of each key's column on the device; a variable-width key keeps its bytes there,
+    /// as `UInt8`.
     const std::vector<GPUElementType> key_element_types;
+    /// The positions among the keys of the variable-width keys, in order.
+    const std::vector<size_t> variable_key_indices;
     const std::vector<GPUGroupByValue> values;
     /// The columns a `WHERE` evaluated on the device reads, after the keys and the values.
     const std::vector<GPUElementType> filter_element_types;
@@ -232,10 +282,15 @@ private:
     const size_t batch_rows;
     const bool compressed;
 
-    std::vector<PlainUploadPipe> key_pipes;
-    std::vector<PlainUploadPipe> value_pipes;
+    std::vector<ColumnUploadPipe> key_pipes;
+    std::vector<ColumnUploadPipe> value_pipes;
 
+    /// One of them: `RecordGroupBy` when every key is a fixed-width integer, `CudfGroupBy` when a
+    /// key is a string.
     std::unique_ptr<RecordGroupBy> group_by;
+    /// The stream `CudfGroupBy` runs on, which outlives it.
+    std::unique_ptr<DeviceStream> variable_group_stream;
+    std::unique_ptr<CudfGroupBy> variable_group_by;
 
     std::optional<size_t> num_groups;
 
@@ -258,6 +313,9 @@ private:
     std::mutex device_error_mutex;
     std::exception_ptr device_error;
     std::atomic<bool> device_failed{false};
+
+    std::atomic<UInt64> readers_wait_microseconds{0};
+    std::atomic<UInt64> device_wait_microseconds{0};
 
     ThreadFromGlobalPool device_thread;
 };

@@ -2,6 +2,7 @@
 
 #if USE_GPU
 
+#include <GPU/GPUColumns.h>
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUTypeMapping.h>
 
@@ -9,7 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
-#include <cstring>
+#include <string_view>
 
 namespace ProfileEvents
 {
@@ -29,6 +30,12 @@ namespace DB::GPU
 
 namespace
 {
+
+void checkMatches(const DeviceColumnView & column, size_t num_matches, std::string_view what)
+{
+    if (column.rows != num_matches)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The device returned {} {} for {} matches", column.rows, what, num_matches);
+}
 
 size_t rowBytesOf(GPUElementType key_element_type, const std::vector<GPUElementType> & payload_element_types)
 {
@@ -55,16 +62,18 @@ bool HashTable::canJoinOnDevice(const IDataType & key_type, const DataTypes & pa
     return true;
 }
 
-HashTable::HashTable(const IDataType & key_type, const DataTypes & payload_types_, size_t stage_bytes)
-    : key_element_type(elementTypeOrThrow(key_type))
+HashTable::HashTable(const IDataType & key_type_, const DataTypes & payload_types_, size_t stage_bytes_)
+    : key_type(key_type_.getPtr())
+    , key_element_type(elementTypeOrThrow(*key_type))
     , payload_types(payload_types_)
     , payload_element_types(elementTypesOrThrow(payload_types))
     , row_bytes(rowBytesOf(key_element_type, payload_element_types))
-    , build_key_pipe(key_type, stage_bytes)
+    , stage_bytes(stage_bytes_)
+    , build_key_pipe(*key_type, stage_bytes)
     , hash_join(onDevice(
           [&] { return std::make_unique<CudfHashJoin>(key_element_type, payload_element_types); },
           "Cannot set up a hash join on {} with {} payload columns on the device",
-          key_type.getName(),
+          key_type->getName(),
           payload_types.size()))
 {
     build_payload_pipes.reserve(payload_types.size());
@@ -121,15 +130,18 @@ void HashTable::finishBuild()
     std::vector<DeviceColumnView> payloads;
     payloads.reserve(build_payload_pipes.size());
     for (auto & pipe : build_payload_pipes)
-        payloads.push_back(pipe.flush().view());
+        payloads.push_back(pipe.flush());
 
-    const DeviceColumnView keys = build_key_pipe.flush().view();
+    const DeviceColumnView keys = build_key_pipe.flush();
     if (keys.rows != build_rows)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "The device holds {} keys of the right table, expected {}", keys.rows, build_rows);
 
     onDevice(
         [&] { hash_join->build(keys, payloads); }, "Cannot build a hash table over {} rows of the right table on a GPU", build_rows);
+
+    /// The probes run on streams of their own, which do not wait for the compute stream.
+    synchronizeDevice();
 
     ready.store(true, std::memory_order_release);
 
@@ -160,7 +172,8 @@ std::unique_ptr<HashTable::Probe> HashTable::takeProbe()
     }
 
     return onDevice(
-        [&] { return std::make_unique<Probe>(*hash_join, payload_types.size()); }, "Cannot set up a probe of the GPU's hash table");
+        [&] { return std::make_unique<Probe>(*hash_join, *key_type, stage_bytes); },
+        "Cannot set up a probe of the GPU's hash table");
 }
 
 void HashTable::returnProbe(std::unique_ptr<Probe> probe)
@@ -186,43 +199,33 @@ HashTable::Matches HashTable::probe(const IColumn & key_column)
     /// returned: its destructor waits for the stream.
     std::unique_ptr<Probe> probe = takeProbe();
 
-    probe->keys.clear();
-    probe->keys.append(rawValuesOf(key_column, num_rows, sizeOf(key_element_type)));
+    probe->keys.stage(key_column);
+    const DeviceColumnView keys = probe->keys.flush();
 
     const size_t num_matches = onDevice(
-        [&] { return probe->device.probe(probe->keys.data(), num_rows); },
-        "Cannot probe the GPU's hash table with {} rows of the left table",
-        num_rows);
+        [&] { return probe->device.probe(keys); }, "Cannot probe the GPU's hash table with {} rows of the left table", num_rows);
 
     if (num_matches != 0)
     {
-        probe->probe_row_indices.clear();
-        const HostColumnView probe_row_indices{
-            GPUElementType::UInt32, probe->probe_row_indices.grow(num_matches * sizeof(UInt32)), num_matches};
+        ColumnDownload download(probe->stream.get());
 
-        std::vector<HostColumnView> payloads;
-        payloads.reserve(payload_element_types.size());
+        const DeviceColumnView device_indices
+            = onDevice([&] { return probe->device.probeRowIndices(); }, "Cannot view the probe-side row indices on the device");
+        checkMatches(device_indices, num_matches, "probe-side row indices");
+        download.add(device_indices, *matches.probe_row_indices);
+
         for (size_t i = 0; i < payload_element_types.size(); ++i)
         {
-            probe->payloads[i].clear();
-            payloads.push_back(
-                {payload_element_types[i], probe->payloads[i].grow(num_matches * sizeOf(payload_element_types[i])), num_matches});
+            const DeviceColumnView device_payload
+                = onDevice([&] { return probe->device.gatheredPayload(i); }, "Cannot view gathered payload column {} on the device", i);
+            checkMatches(device_payload, num_matches, "gathered payload rows");
+            download.add(device_payload, *matches.build_payload_columns[i]);
         }
 
-        onDevice(
-            [&] { probe->device.copyMatchesOut(probe_row_indices, payloads); }, "Cannot copy {} joined rows back from the device", num_matches);
-
-        const HostColumnView indices_column = resizeForElementType(*matches.probe_row_indices, num_matches, GPUElementType::UInt32);
-        memcpy(indices_column.data, probe_row_indices.data, num_matches * sizeof(UInt32));
-
-        for (size_t i = 0; i < payloads.size(); ++i)
-        {
-            const HostColumnView payload_column
-                = resizeForElementType(*matches.build_payload_columns[i], num_matches, payload_element_types[i]);
-            memcpy(payload_column.data, payloads[i].data, num_matches * sizeOf(payload_element_types[i]));
-        }
+        download.finish();
     }
 
+    probe->keys.reset();
     returnProbe(std::move(probe));
 
     ProfileEvents::increment(ProfileEvents::GPUJoinMicroseconds, watch.elapsedMicroseconds());

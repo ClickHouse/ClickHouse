@@ -56,7 +56,7 @@ nvcompStatus_t decompressAsync(
     size_t temp_bytes,
     void * const * device_value_ptrs,
     nvcompStatus_t * device_statuses,
-    cudaStream_t stream)
+    rmm::cuda_stream_view stream)
 {
     switch (codec)
     {
@@ -238,7 +238,7 @@ void Decompressor::release()
 
 void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * destination)
 {
-    const cudaStream_t stream = StreamRegistry::get().decompression;
+    const rmm::cuda_stream_view stream = StreamRegistry::get().decompression;
 
     size_t num_blocks = 0;
     size_t decompressed_total = 0;

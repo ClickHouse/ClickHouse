@@ -68,6 +68,7 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
+    M(CLASS_NAME, GPUDecompressionMode) \
     M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, FloatAuto) \

@@ -9571,9 +9571,14 @@ Compute supported aggregations on a CUDA GPU instead of on the CPU.
 
 What is supported so far is `sum` over a column of a fixed-width numeric type (`UInt8` to
 `UInt64`, `Int8` to `Int64`, `Float32`, `Float64`), with or without `GROUP BY`, in a query over a
-single local `MergeTree` table. A `GROUP BY` key has to be a fixed-width integer: floats are
-excluded from the keys, because cuDF groups them by IEEE equality, which would put `0.0` and `-0.0`
-in one group where ClickHouse puts them in two.
+single local `MergeTree` table. A `GROUP BY` key has to be a fixed-width integer or a `String`:
+floats are excluded from the keys, because cuDF groups them by IEEE equality, which would put `0.0`
+and `-0.0` in one group where ClickHouse puts them in two. A `GROUP BY` with a `String` key is
+grouped by cuDF's own `groupby` and reduces only integer columns, since cuDF sums a `Float32` into a
+`Float32` where ClickHouse sums it into a `Float64`. Over compressed blocks
+(`ReadFromGPUCompressedColumns`) its parts must keep the sizes of the strings in a stream of their
+own, as `string_serialization_version = 'with_size_stream'` writes them, and it takes no `PREWHERE`
+to the device.
 
 Everything else - another aggregate function, a `Nullable`, `Decimal` or `LowCardinality` argument
 or key, `ROLLUP`, `CUBE`, `GROUPING SETS`, `WITH TOTALS`, `group_by_use_nulls`, several tables, a
@@ -9678,6 +9683,33 @@ Possible values:
 - 1 - Every column is expanded on the device.
 - 0 - Every column is expanded on the CPU and sent whole.
 - A fraction in between - the threshold on a column's compression ratio.
+
+Applies when `gpu_aggregation_decompression` is `ratio`, and is where `auto` starts.
+)", EXPERIMENTAL) \
+    DECLARE(GPUDecompressionMode, gpu_aggregation_decompression, GPUDecompressionMode::RATIO, R"(
+Who expands a column of a part - the device or the CPU - in an aggregation that
+`allow_experimental_gpu_aggregation` runs over compressed blocks (`ReadFromGPUCompressedColumns`).
+
+Which one is faster depends on which of them has time to spare: expanding on the device keeps it
+from grouping, and expanding on the CPU takes reading threads and sends the column over the link
+at full width (see `gpu_aggregation_device_decompression_max_ratio`). A fixed threshold is right
+for one workload and one machine only, and `auto` finds it while the query runs.
+
+Possible values:
+
+- `ratio` - A column is expanded on the device when it is compressed to at most
+  `gpu_aggregation_device_decompression_max_ratio` of its size, and on the CPU otherwise.
+- `auto` - Like `ratio`, but for a `GROUP BY` the threshold starts at
+  `gpu_aggregation_device_decompression_max_ratio` and moves after every part read: toward the
+  device when the device waited for the reading threads to hand it work, toward the CPU when the
+  reading threads waited for the device to take it. A part is read by the threshold as it was
+  when the part was begun. An aggregation without `GROUP BY` reduces every part on its own, with
+  nothing to wait on, and keeps to the starting threshold.
+- `device` - Every column is expanded on the device.
+- `host` - Every column is expanded on the CPU and sent whole.
+
+The number of reading threads is chosen by the starting threshold when `gpu_aggregation_readers`
+is 0, so `auto` that moves work to the CPU may want more of them set explicitly.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

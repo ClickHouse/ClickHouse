@@ -133,6 +133,17 @@ void PinnedBuffer::append(std::string_view bytes)
     memcpy(grow(bytes.size()), bytes.data(), bytes.size());
 }
 
+void PinnedBuffer::appendFromDevice(const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream)
+{
+    if (bytes == 0)
+        return;
+
+    checkCuda(
+        cudaMemcpyAsync(grow(bytes), device_bytes, bytes, cudaMemcpyDeviceToHost, stream),
+        "Cannot copy {} bytes back from the device",
+        bytes);
+}
+
 char * PinnedBuffer::grow(size_t bytes)
 {
     reserve(used + bytes);
@@ -216,6 +227,47 @@ char * DeviceBuffer::grow(size_t bytes)
 }
 
 
+DeviceStream::DeviceStream()
+{
+    initializeDevice();
+    checkCuda(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), "Cannot create a CUDA stream");
+}
+
+DeviceStream::~DeviceStream()
+{
+    if (stream == nullptr)
+        return;
+
+    /// Nothing can be reported from here, and the work queued on the stream is waited for anyway.
+    cudaStreamSynchronize(stream);
+    cudaStreamDestroy(stream);
+}
+
+DeviceStream::DeviceStream(DeviceStream && other) noexcept
+    : stream(std::exchange(other.stream, nullptr))
+{
+}
+
+DeviceStream & DeviceStream::operator=(DeviceStream && other) noexcept
+{
+    if (this != &other)
+    {
+        if (stream != nullptr)
+        {
+            cudaStreamSynchronize(stream);
+            cudaStreamDestroy(stream);
+        }
+        stream = std::exchange(other.stream, nullptr);
+    }
+    return *this;
+}
+
+void DeviceStream::synchronize() const
+{
+    checkCuda(cudaStreamSynchronize(stream), "Cannot wait for a CUDA stream");
+}
+
+
 DeviceEvent::DeviceEvent()
 {
     initializeDevice();
@@ -249,7 +301,7 @@ void DeviceEvent::record()
     record(StreamRegistry::get().compute);
 }
 
-void DeviceEvent::record(cudaStream_t stream)
+void DeviceEvent::record(rmm::cuda_stream_view stream)
 {
     checkCuda(cudaEventRecord(event, stream), "Cannot mark a point in a device stream");
 }
@@ -259,7 +311,7 @@ void DeviceEvent::wait() const
     checkCuda(cudaEventSynchronize(event), "Cannot wait for the device to reach a point in its stream");
 }
 
-void DeviceEvent::waitOn(cudaStream_t stream) const
+void DeviceEvent::waitOn(rmm::cuda_stream_view stream) const
 {
     checkCuda(cudaStreamWaitEvent(stream, event, 0), "Cannot make a device stream wait for a point in another");
 }

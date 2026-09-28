@@ -583,4 +583,10 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"wildcard", FileLikeEngineDefaultPartitionStrategy::WILDCARD},
      {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
+
+IMPLEMENT_SETTING_ENUM(GPUDecompressionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"ratio",  GPUDecompressionMode::RATIO},
+     {"auto",   GPUDecompressionMode::AUTO},
+     {"device", GPUDecompressionMode::DEVICE},
+     {"host",   GPUDecompressionMode::HOST}})
 }

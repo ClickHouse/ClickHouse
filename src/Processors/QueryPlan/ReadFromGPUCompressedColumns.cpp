@@ -20,10 +20,13 @@
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 
+#include <algorithm>
 #include <atomic>
+#include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -58,6 +61,7 @@ struct SharedState
     ReadSettings read_settings;
     size_t batch_bytes;
     size_t num_readers = 1;
+    GPUDecompressionMode decompression = GPUDecompressionMode::RATIO;
     double device_decompression_max_ratio = 1;
 
     std::atomic<size_t> next_part{0};
@@ -68,8 +72,19 @@ using SharedStatePtr = std::shared_ptr<SharedState>;
 /// Whether a column of a part is compressed well enough for the device to expand it. Expanding
 /// costs the device about as long per byte as the link takes to carry one, and keeps it from
 /// grouping meanwhile, so a column that compression barely shrinks is cheaper sent whole.
-bool expandsOnDevice(const IMergeTreeDataPart & part, const String & column_name, double max_ratio)
+bool expandsOnDevice(const IMergeTreeDataPart & part, const String & column_name, GPUDecompressionMode mode, double max_ratio)
 {
+    switch (mode)
+    {
+        case GPUDecompressionMode::DEVICE:
+            return true;
+        case GPUDecompressionMode::HOST:
+            return false;
+        case GPUDecompressionMode::RATIO:
+        case GPUDecompressionMode::AUTO:
+            break;
+    }
+
     if (max_ratio >= 1)
         return true;
 
@@ -119,22 +134,82 @@ size_t automaticReaders(const SharedState & state)
     {
         for (const auto & key : state.keys)
         {
-            if (!expandsOnDevice(*part, key.name, state.device_decompression_max_ratio))
+            if (!expandsOnDevice(*part, key.name, state.decompression, state.device_decompression_max_ratio))
                 return expanding_readers;
         }
         for (const auto & column : state.columns)
         {
-            if (!expandsOnDevice(*part, column.column.name, state.device_decompression_max_ratio))
+            if (!expandsOnDevice(*part, column.column.name, state.decompression, state.device_decompression_max_ratio))
                 return expanding_readers;
         }
         for (const auto & column : filterColumnsOf(state))
         {
-            if (!expandsOnDevice(*part, column.name, state.device_decompression_max_ratio))
+            if (!expandsOnDevice(*part, column.name, state.decompression, state.device_decompression_max_ratio))
                 return expanding_readers;
         }
     }
     return 2;
 }
+
+/** The threshold on a column's compression ratio that `gpu_aggregation_decompression = 'auto'`
+  * reads the parts of a `GROUP BY` by. It starts where `gpu_aggregation_device_decompression_max_ratio`
+  * is and moves after every part toward whichever side waited on the other since the last move:
+  * when the device thread waited for work, the reading threads are behind and more columns are
+  * left to the device to expand; when the reading threads waited for room in the device thread's
+  * queue, the device is behind and more columns are expanded by the reading threads.
+  */
+class AdaptiveDecompressionRatio
+{
+public:
+    AdaptiveDecompressionRatio(double initial, size_t num_readers_)
+        : num_readers(num_readers_)
+        , ratio(std::clamp(initial, 0.0, 1.0))
+    {
+    }
+
+    double current() const
+    {
+        std::lock_guard lock(mutex);
+        return ratio;
+    }
+
+    void update(const GPU::GroupByGPUAccumulator::Waits & waits)
+    {
+        std::lock_guard lock(mutex);
+
+        /// Every reader waits when the device is behind, so their waits are compared per reader.
+        const UInt64 readers_waited = (waits.readers_microseconds - last.readers_microseconds) / num_readers;
+        const UInt64 device_waited = waits.device_microseconds - last.device_microseconds;
+        last = waits;
+
+        const double previous = ratio;
+        if (device_waited >= std::max(min_wait_microseconds, 2 * readers_waited))
+            ratio = std::min(1.0, ratio + step);
+        else if (readers_waited >= std::max(min_wait_microseconds, 2 * device_waited))
+            ratio = std::max(0.0, ratio - step);
+
+        if (ratio != previous)
+            LOG_TRACE(
+                log,
+                "The device waited {} us and each reader {} us since the last part, so columns compressed to at most {} of their size are "
+                "expanded on the device from now on",
+                device_waited,
+                readers_waited,
+                ratio);
+    }
+
+private:
+    static constexpr double step = 0.125;
+    /// Less than this is noise, whoever waited it.
+    static constexpr UInt64 min_wait_microseconds = 1000;
+
+    const size_t num_readers;
+    const LoggerPtr log = getLogger("GPUCompressedColumns");
+
+    mutable std::mutex mutex;
+    double ratio TSA_GUARDED_BY(mutex);
+    GPU::GroupByGPUAccumulator::Waits last TSA_GUARDED_BY(mutex);
+};
 
 class GPUCompressedColumnsSource : public ISource
 {
@@ -194,7 +269,7 @@ private:
         GPU::GPUAccumulator * accumulator = nullptr;
         size_t bytes_read = 0;
 
-        if (expandsOnDevice(part, column.column.name, state->device_decompression_max_ratio))
+        if (expandsOnDevice(part, column.column.name, state->decompression, state->device_decompression_max_ratio))
         {
             MergeTreeCompressedBlockReader reader(part, column.column, state->read_settings);
 
@@ -278,6 +353,8 @@ public:
               typesOf(filterColumnsOf(*state)),
               state->filter ? std::optional(state->filter->program) : std::nullopt)
     {
+        if (state->decompression == GPUDecompressionMode::AUTO)
+            adaptive_ratio.emplace(state->device_decompression_max_ratio, num_readers);
     }
 
     String getName() const override { return "GPUCompressedGroupBy"; }
@@ -369,10 +446,17 @@ private:
 
     /// Reads a column of a part as compressed blocks for the device to expand, or as values
     /// expanded on the host, a piece at a time.
+    ///
+    /// A variable-width key - a `String`, the one kind a part is read as - is two streams: its bytes,
+    /// in the column's own file, which are read like the
+    /// values of any other column, and their sizes, in the `.size` stream, which are read on the
+    /// host ahead of the bytes and go to the device as the offsets the bytes end at. Its rows read
+    /// are those whose bytes all are.
     struct ColumnReader
     {
         ColumnReader(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device)
-            : element_size(column.type->getSizeOfValueInMemory())
+            : is_variable(GPU::columnTypeOf(*column.type).value_or(GPU::GPUColumnType{}).kind == GPU::GPUColumnKind::Variable)
+            , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
         {
             if (on_device)
             {
@@ -382,10 +466,19 @@ private:
             else
             {
                 raw = std::make_unique<CompressedReadBufferFromFile>(MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings));
-                expected_bytes = part.rows_count * element_size;
+                expected_bytes = is_variable ? part.getColumnSize(column.name).data_uncompressed : part.rows_count * element_size;
+            }
+
+            if (is_variable)
+            {
+                ISerialization::SubstreamPath sizes_path;
+                sizes_path.push_back(ISerialization::Substream::StringSizes);
+                sizes = std::make_unique<CompressedReadBufferFromFile>(
+                    MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings, sizes_path));
             }
         }
 
+        const bool is_variable;
         std::optional<MergeTreeCompressedBlockReader> blocks;
         std::unique_ptr<CompressedReadBufferFromFile> raw;
         size_t element_size;
@@ -396,9 +489,79 @@ private:
         size_t staged_bytes = 0;
         bool done = false;
 
-        size_t rowsRead() const { return bytes_read / element_size; }
+        /// Of a variable-width key: the reader of its sizes, where the rows whose sizes are read and whose
+        /// bytes are not all read yet end, and how many rows of either there are.
+        std::unique_ptr<CompressedReadBufferFromFile> sizes;
+        std::deque<UInt64> pending_ends;
+        UInt64 last_end = 0;
+        size_t rows_sized = 0;
+        size_t variable_rows_read = 0;
+        bool sizes_done = false;
+        bool bytes_done = false;
+
+        size_t rowsRead() const { return is_variable ? variable_rows_read : bytes_read / element_size; }
         size_t remainingBytes() const { return expected_bytes > staged_bytes ? expected_bytes - staged_bytes : 0; }
+
+        /// A variable-width key reads the sizes of rows beyond the bytes read before it reads more bytes,
+        /// and only sizes once the bytes have ended.
+        bool readsSizesNext() const
+        {
+            return is_variable && !sizes_done && (bytes_done || pending_ends.empty() || last_end <= bytes_read);
+        }
+
+        void countVariableRowsRead()
+        {
+            while (!pending_ends.empty() && pending_ends.front() <= bytes_read)
+            {
+                pending_ends.pop_front();
+                ++variable_rows_read;
+            }
+            done = sizes_done && bytes_done;
+        }
+
+        /// The file of the column's values, or of a variable-width key's bytes, has ended.
+        void finishBytes()
+        {
+            if (!is_variable)
+            {
+                done = true;
+                return;
+            }
+
+            bytes_done = true;
+            countVariableRowsRead();
+        }
     };
+
+    /// How many sizes of a variable-width key are read on the host at a time.
+    static constexpr size_t sizes_piece_rows = 64 * 1024;
+
+    void readVariableSizes(size_t reader_index, size_t key_index, ColumnReader & column)
+    {
+        std::vector<UInt64> ends(sizes_piece_rows);
+        const size_t read = column.sizes->readBig(reinterpret_cast<char *>(ends.data()), ends.size() * sizeof(UInt64));
+        if (read % sizeof(UInt64) != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The sizes of variable-width key {} end in the middle of a size, after {} bytes", key_index, read);
+
+        const size_t num_rows = read / sizeof(UInt64);
+        if (num_rows == 0)
+        {
+            column.sizes_done = true;
+            column.countVariableRowsRead();
+            return;
+        }
+
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            column.last_end += ends[i];
+            ends[i] = column.last_end;
+            column.pending_ends.push_back(column.last_end);
+        }
+        column.rows_sized += num_rows;
+
+        accumulator.addVariableOffsets(reader_index, key_index, std::span<const UInt64>(ends.data(), num_rows));
+        column.countVariableRowsRead();
+    }
 
     /// Reads the parts on `num_readers` threads, each taking the next part not yet taken. The
     /// first failure stops the others, and is what is thrown here.
@@ -453,15 +616,28 @@ private:
         std::vector<std::unique_ptr<ColumnReader>> readers;
         readers.reserve(state->keys.size() + state->columns.size() + filter_columns.size());
 
-        const double max_ratio = state->device_decompression_max_ratio;
+        const double max_ratio = adaptive_ratio ? adaptive_ratio->current() : state->device_decompression_max_ratio;
+        const auto on_device = [&](const String & column_name)
+        {
+            return expandsOnDevice(part, column_name, state->decompression, max_ratio);
+        };
+
         for (const auto & key : state->keys)
-            readers.push_back(std::make_unique<ColumnReader>(part, key, state->read_settings, expandsOnDevice(part, key.name, max_ratio)));
+            readers.push_back(std::make_unique<ColumnReader>(part, key, state->read_settings, on_device(key.name)));
         for (const auto & column : state->columns)
-            readers.push_back(std::make_unique<ColumnReader>(
-                part, column.column, state->read_settings, expandsOnDevice(part, column.column.name, max_ratio)));
+            readers.push_back(std::make_unique<ColumnReader>(part, column.column, state->read_settings, on_device(column.column.name)));
         for (const auto & column : filter_columns)
-            readers.push_back(
-                std::make_unique<ColumnReader>(part, column, state->read_settings, expandsOnDevice(part, column.name, max_ratio)));
+            readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name)));
+
+        /// A variable-width key's offsets start from the 0 its first row starts at.
+        for (size_t i = 0; i < state->keys.size(); ++i)
+        {
+            if (readers[i]->is_variable)
+            {
+                const UInt64 start = 0;
+                accumulator.addVariableOffsets(reader_index, i, std::span<const UInt64>(&start, 1));
+            }
+        }
 
         while (true)
         {
@@ -475,7 +651,11 @@ private:
                 break;
 
             ColumnReader & column = *readers[behind];
-            if (column.raw)
+            if (column.readsSizesNext())
+            {
+                readVariableSizes(reader_index, behind, column);
+            }
+            else if (column.raw)
             {
                 /// Every value is staged, and the buffer holds exactly them. Growing it only to learn
                 /// that the file has ended would copy it; a byte past the end is counted instead, so
@@ -484,7 +664,7 @@ private:
                 {
                     char past_end;
                     column.bytes_read += column.raw->readBig(&past_end, 1);
-                    column.done = true;
+                    column.finishBytes();
                     continue;
                 }
 
@@ -493,19 +673,21 @@ private:
                 accumulator.commitRawBytes(reader_index, behind, read);
                 if (read == 0)
                 {
-                    column.done = true;
+                    column.finishBytes();
                     continue;
                 }
 
                 column.bytes_read += read;
                 column.staged_bytes += read;
+                if (column.is_variable)
+                    column.countVariableRowsRead();
             }
             else
             {
                 const auto block = column.blocks->next();
                 if (!block)
                 {
-                    column.done = true;
+                    column.finishBytes();
                     continue;
                 }
 
@@ -519,6 +701,8 @@ private:
                     column.remainingBytes());
                 column.bytes_read += block->decompressed_bytes;
                 column.staged_bytes += block->compressed_bytes;
+                if (column.is_variable)
+                    column.countVariableRowsRead();
             }
 
             checkNotCancelled();
@@ -526,6 +710,22 @@ private:
 
         for (size_t i = 0; i < readers.size(); ++i)
         {
+            if (readers[i]->is_variable)
+            {
+                if (readers[i]->rows_sized != part.rows_count || readers[i]->variable_rows_read != part.rows_count
+                    || readers[i]->bytes_read != readers[i]->last_end)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Variable-width column {} of part {} holds {} sizes adding up to {} bytes and {} bytes, where the part has {} rows",
+                        i,
+                        part.name,
+                        readers[i]->rows_sized,
+                        readers[i]->last_end,
+                        readers[i]->bytes_read,
+                        part.rows_count);
+                continue;
+            }
+
             if (readers[i]->bytes_read != part.rows_count * readers[i]->element_size)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -538,6 +738,9 @@ private:
         }
 
         accumulator.finishPart(reader_index, part.rows_count);
+
+        if (adaptive_ratio)
+            adaptive_ratio->update(accumulator.waits());
     }
 
     void checkNotCancelled() const
@@ -554,6 +757,8 @@ private:
     QueryStatusPtr query_status;
     const size_t num_readers;
     GPU::GroupByGPUAccumulator accumulator;
+    /// Only under `gpu_aggregation_decompression = 'auto'`.
+    std::optional<AdaptiveDecompressionRatio> adaptive_ratio;
     bool generated = false;
 
     std::mutex reader_error_mutex;
@@ -574,6 +779,7 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     size_t batch_bytes_,
     size_t num_streams_,
     size_t num_readers_,
+    GPUDecompressionMode decompression_,
     double device_decompression_max_ratio_)
     : ISourceStep(std::move(output_header_))
     , keys(std::move(keys_))
@@ -585,6 +791,7 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     , batch_bytes(batch_bytes_)
     , num_streams(num_streams_)
     , num_readers(num_readers_)
+    , decompression(decompression_)
     , device_decompression_max_ratio(device_decompression_max_ratio_)
 {
     if (filter && keys.empty())
@@ -601,6 +808,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->storage_snapshot = storage_snapshot;
     state->context = context;
     state->read_settings = context->getReadSettings();
+    state->decompression = decompression;
     state->device_decompression_max_ratio = device_decompression_max_ratio;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);

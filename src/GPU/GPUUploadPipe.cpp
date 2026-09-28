@@ -17,6 +17,19 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
+DeviceColumn::DeviceColumn(GPUElementType element_type_)
+    : DeviceColumn(element_type_, StreamRegistry::get().compute)
+{
+}
+
+DeviceColumn::DeviceColumn(GPUElementType element_type_, rmm::cuda_stream_view stream_)
+    : element_type(element_type_)
+    , stream(stream_)
+    , values(stream)
+    , spare(stream)
+{
+}
+
 void DeviceColumn::appendCompressed(
     Decompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks)
 {
@@ -38,26 +51,37 @@ void DeviceColumn::dropFront(size_t num_rows)
 
     spare.clear();
     checkCuda(
-        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, StreamRegistry::get().compute),
+        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, stream),
         "Cannot move {} bytes to the front of a device column",
         tail);
     std::swap(values, spare);
 }
 
-bool PlainUploadPipe::canUpload(const IDataType & type)
+bool ColumnUploadPipe::canUpload(const IDataType & type)
 {
-    return elementTypeOf(type).has_value();
+    return columnTypeOf(type).has_value();
 }
 
-PlainUploadPipe::PlainUploadPipe(const IDataType & type, size_t stage_bytes_)
-    : element_type(elementTypeOrThrow(type))
-    , element_size(sizeOf(element_type))
+ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_)
+    : ColumnUploadPipe(type, stage_bytes_, StreamRegistry::get().compute)
+{
+}
+
+ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, rmm::cuda_stream_view stream_)
+    : layout(ColumnLayout::of(columnTypeOrThrow(type)))
     , stage_bytes(stage_bytes_)
-    , device(element_type)
+    , stream(stream_)
+    , staging(layout.buffers.size())
+    , elements_taken(layout.buffers.size())
 {
+    device.reserve(layout.buffers.size());
+    for (size_t i = 0; i < layout.buffers.size(); ++i)
+        device.emplace_back(stream);
+
+    startOffsets();
 }
 
-PlainUploadPipe::~PlainUploadPipe()
+ColumnUploadPipe::~ColumnUploadPipe()
 {
     try
     {
@@ -69,96 +93,139 @@ PlainUploadPipe::~PlainUploadPipe()
     }
 }
 
-void PlainUploadPipe::stage(const IColumn & column)
+void ColumnUploadPipe::startOffsets()
+{
+    for (size_t i = 0; i < layout.buffers.size(); ++i)
+    {
+        if (layout.buffers[i].offsets_into)
+            checkCuda(cudaMemsetAsync(device[i].grow(sizeof(UInt64)), 0, sizeof(UInt64), stream), "Cannot start the offsets of a column");
+    }
+}
+
+void ColumnUploadPipe::makeStagingWritable()
+{
+    if (!in_flight)
+        return;
+
+    copied.wait();
+    in_flight = false;
+
+    for (auto & buffer : staging)
+        buffer.clear();
+    staging_bytes = 0;
+}
+
+void ColumnUploadPipe::stage(const IColumn & column)
 {
     const size_t num_rows = column.size();
     if (num_rows == 0)
         return;
 
-    const std::string_view raw = rawValuesOf(column, num_rows, element_size);
+    const std::vector<std::string_view> block = layout.buffersOf(column);
 
-    if (currentSlot().staged.size() + raw.size() > stage_bytes)
+    size_t block_bytes = 0;
+    for (const auto & buffer : block)
+        block_bytes += buffer.size();
+
+    if (staging_bytes != 0 && staging_bytes + block_bytes > stage_bytes)
         sendStagedToDevice();
 
-    if (raw.size() > stage_bytes)
+    makeStagingWritable();
+
+    for (size_t i = 0; i < block.size(); ++i)
     {
-        device.appendPlain(raw);
-        staged_bytes += raw.size();
-        return;
+        const auto & into = layout.buffers[i].offsets_into;
+        if (!into)
+        {
+            staging[i].append(block[i]);
+            continue;
+        }
+
+        /// The block's offsets are within the block; the column's are within all the blocks.
+        const UInt64 moved_by = elements_taken[*into];
+        const auto * from = reinterpret_cast<const UInt64 *>(block[i].data());
+        auto * to = reinterpret_cast<UInt64 *>(staging[i].grow(block[i].size()));
+        for (size_t row = 0; row < block[i].size() / sizeof(UInt64); ++row)
+            to[row] = from[row] + moved_by;
     }
 
-    currentSlot().staged.append(raw);
-    staged_bytes += raw.size();
+    for (size_t i = 0; i < block.size(); ++i)
+        elements_taken[i] += block[i].size() / layout.buffers[i].element_size;
+
+    staging_bytes += block_bytes;
+    staged_rows += num_rows;
+    staged_bytes += block_bytes;
 }
 
-std::span<char> PlainUploadPipe::reserveRaw(size_t max_bytes)
+std::span<char> ColumnUploadPipe::reserveRaw(size_t max_bytes)
 {
-    if (currentSlot().staged.size() >= stage_bytes)
+    if (layout.type.kind != GPUColumnKind::Fixed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Raw values for a pipe of a column that is not of fixed-width values");
+
+    if (staging_bytes >= stage_bytes)
         sendStagedToDevice();
 
-    PinnedBuffer & staged = currentSlot().staged;
-    staged.reserve(stage_bytes);
-    return {staged.data() + staged.size(), std::min(max_bytes, stage_bytes - staged.size())};
+    makeStagingWritable();
+
+    PinnedBuffer & buffer = staging.front();
+    buffer.reserve(stage_bytes);
+    return {buffer.data() + buffer.size(), std::min(max_bytes, stage_bytes - buffer.size())};
 }
 
-void PlainUploadPipe::commitRaw(size_t bytes)
+void ColumnUploadPipe::commitRaw(size_t bytes)
 {
-    currentSlot().staged.grow(bytes);
+    staging.front().grow(bytes);
+    staging_bytes += bytes;
+    elements_taken.front() += bytes / layout.buffers.front().element_size;
     staged_bytes += bytes;
+    staged_rows = staged_bytes / layout.buffers.front().element_size;
 }
 
-void PlainUploadPipe::sendStagedToDevice()
+void ColumnUploadPipe::sendStagedToDevice()
 {
-    Slot & slot = currentSlot();
-
-    if (slot.staged.empty())
+    /// What is in flight has been sent; what the buffers hold then is only kept until it lands.
+    if (staging_bytes == 0 || in_flight)
         return;
 
-    device.appendPlain(slot.staged.bytes());
+    for (size_t i = 0; i < staging.size(); ++i)
+        device[i].append(staging[i].bytes());
 
-    slot.copied.record();
-    slot.in_flight = true;
-
-    current_slot = (current_slot + 1) % num_slots;
-
-    Slot & next = currentSlot();
-    if (next.in_flight)
-    {
-        next.copied.wait();
-        next.in_flight = false;
-    }
-
-    next.staged.clear();
+    copied.record(stream);
+    in_flight = true;
 }
 
-const DeviceColumn & PlainUploadPipe::flush()
+DeviceColumnView ColumnUploadPipe::flush()
 {
     sendStagedToDevice();
-    return device;
+
+    std::vector<char *> data;
+    data.reserve(device.size());
+    for (auto & buffer : device)
+        data.push_back(buffer.data());
+
+    return layout.viewOf(data, staged_rows, elements_taken);
 }
 
-void PlainUploadPipe::waitForUploads()
+void ColumnUploadPipe::waitForUploads()
 {
-    for (auto & slot : slots)
-    {
-        if (!slot.in_flight)
-            continue;
+    if (!in_flight)
+        return;
 
-        slot.copied.wait();
-        slot.in_flight = false;
-    }
+    copied.wait();
+    in_flight = false;
 }
 
-void PlainUploadPipe::reset()
+void ColumnUploadPipe::reset()
 {
-    for (auto & slot : slots)
-    {
-        if (!slot.in_flight)
-            slot.staged.clear();
-    }
+    makeStagingWritable();
 
-    device.dropFront(device.rows());
-    staged_bytes = device.bytes();
+    for (auto & buffer : device)
+        buffer.clear();
+    startOffsets();
+
+    staged_rows = 0;
+    staged_bytes = 0;
+    std::fill(elements_taken.begin(), elements_taken.end(), 0);
 }
 
 
@@ -196,10 +263,10 @@ void CompressedUploadPipe::sendStagedToDevice()
     staged.clear();
 }
 
-const DeviceColumn & CompressedUploadPipe::flush()
+DeviceColumnView CompressedUploadPipe::flush()
 {
     sendStagedToDevice();
-    return device;
+    return device.view();
 }
 
 void CompressedUploadPipe::reset()

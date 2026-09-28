@@ -1,5 +1,7 @@
 #pragma once
 
+#include <rmm/cuda_stream_view.hpp>
+
 #include <cstddef>
 #include <cstdint>
 
@@ -7,8 +9,11 @@
   *
   * The `Cudf*` files talk to cuDF and are compiled by nvcc against libstdc++; everything else is
   * compiled with the rest of ClickHouse by clang against libc++. The two meet in the `I*`
-  * interfaces, whose signatures name only the types of this header: nothing of either standard
-  * library crosses between them, and the cuDF side only ever sees device pointers.
+  * interfaces, whose signatures name only the types of this header and `rmm::cuda_stream_view`,
+  * which holds a `cudaStream_t` and nothing else: nothing of either standard library crosses
+  * between them, and the cuDF side only ever sees device pointers and streams. The host side
+  * takes nothing of rmm but that type, and never calls what of it throws - `synchronize` - since
+  * an exception built against libstdc++ is not one it can read.
   *
   * Exceptions do cross. Everything linked into the binary - both sides, cuDF, rmm - resolves its
   * `__cxa_*`, personality and unwinder symbols against ClickHouse's own libc++abi and libunwind,
@@ -89,12 +94,44 @@ struct GPUGroupByValue
     GPUAggregationKind aggregation;
 };
 
-/// A column of fixed-width values in device memory, as the cuDF side receives it.
+/** How a column lies in memory - which buffers it is made of - as both sides take it.
+  *
+  * - `Fixed`: `rows` values of `element_type` in `data`.
+  * - `Variable`: values of varying width, their bytes one after another in `data`, and `rows + 1`
+  *   offsets into them in `offsets`: the value of row `i` is from `offsets[i]` up to `offsets[i + 1]`.
+  *   A `String` is one.
+  *
+  * A kind of column more is a layout on the host side (`GPUColumns.h`) and a view of cuDF's on the
+  * other (`Cudf.cuh`); the pipes and the copies back are the same for every kind.
+  */
+enum class GPUColumnKind : int
+{
+    Fixed = 0,
+    Variable = 1,
+};
+
+/// The type of a column as the device takes it: its kind, and for `Fixed` its values' type.
+struct GPUColumnType
+{
+    GPUColumnKind kind = GPUColumnKind::Fixed;
+    GPUElementType element_type = GPUElementType::UInt8;
+
+    bool operator==(const GPUColumnType &) const = default;
+};
+
+/// A column in device memory, as the cuDF side receives it and gives it back. For `Variable`,
+/// `offsets[0]` need not be 0 - it is where the first row starts - and `bytes` is how many bytes
+/// the rows span from there, which a view handed to the device side may leave 0.
 struct DeviceColumnView
 {
     GPUElementType element_type;
     const char * data = nullptr;
     size_t rows = 0;
+    GPUColumnKind kind = GPUColumnKind::Fixed;
+    const uint64_t * offsets = nullptr;
+    size_t bytes = 0;
+
+    GPUColumnType type() const { return {kind, element_type}; }
 };
 
 struct HostColumnView

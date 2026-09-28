@@ -29,6 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <set>
 #include <unordered_map>
 
@@ -53,6 +54,7 @@ namespace Setting
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
     extern const SettingsUInt64 gpu_aggregation_readers;
     extern const SettingsFloat gpu_aggregation_device_decompression_max_ratio;
+    extern const SettingsGPUDecompressionMode gpu_aggregation_decompression;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
@@ -280,7 +282,8 @@ std::optional<ReadColumns> matchReducedColumns(
 
     for (const auto & read_column : read_header)
     {
-        if (!GPU::elementTypeOf(*read_column.type))
+        const bool string_key = key_position_by_read_name.contains(read_column.name) && GPU::isStringKey(*read_column.type);
+        if (!GPU::elementTypeOf(*read_column.type) && !string_key)
             GPU_COMPRESSED_REFUSE("a column of a type the device has no element type for");
 
         if (key_position_by_read_name.contains(read_column.name))
@@ -562,6 +565,17 @@ std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading
         {
             if (!part_stores(key.name))
                 GPU_COMPRESSED_REFUSE("a part that does not store a key column with the table's type and the default serialization");
+
+            /// The device reads a string key's bytes from its own file and their sizes from the
+            /// `.size` stream beside it, which parts written before `string_serialization_version`
+            /// was `with_size_stream` do not have: their sizes are inline, a varint before each string.
+            if (GPU::isStringKey(*key.type))
+            {
+                ISerialization::SubstreamPath sizes_path;
+                sizes_path.push_back(ISerialization::Substream::StringSizes);
+                if (!IMergeTreeDataPart::getStreamNameForColumn(key, sizes_path, ".bin", part->checksums, part->storage.getSettings()))
+                    GPU_COMPRESSED_REFUSE("a part that keeps the sizes of a string key inline rather than in a stream of their own");
+            }
         }
 
         for (const auto & column : columns.columns)
@@ -619,6 +633,10 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!filter)
         return false;
 
+    if (filter->filter
+        && std::any_of(columns->keys.begin(), columns->keys.end(), [](const auto & key) { return GPU::isStringKey(*key.type); }))
+        GPU_COMPRESSED_REFUSE("a PREWHERE in a read grouped by strings, which the device groups without a filter");
+
     if (!reading->getAnalyzedResult())
         reading->setAnalyzedResult(reading->selectRangesToRead());
 
@@ -673,6 +691,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
         reading->getNumStreams(),
         context->getSettingsRef()[Setting::gpu_aggregation_readers],
+        context->getSettingsRef()[Setting::gpu_aggregation_decompression],
         context->getSettingsRef()[Setting::gpu_aggregation_device_decompression_max_ratio]);
 
     source_node.step->setStepDescription(

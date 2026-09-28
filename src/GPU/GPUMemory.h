@@ -5,6 +5,7 @@
 #if USE_GPU
 
 #include <cuda_runtime_api.h>
+#include <rmm/cuda_stream_view.hpp>
 
 #include <cstddef>
 #include <string_view>
@@ -27,6 +28,10 @@ public:
     void reserve(size_t bytes);
 
     void append(std::string_view bytes);
+
+    /// Queues a copy of `bytes` bytes from the device on `stream` to the end of the buffer. They
+    /// land when the stream reaches the copy; until then the buffer is not to be read or grown.
+    void appendFromDevice(const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream);
 
     char * grow(size_t bytes);
 
@@ -51,7 +56,7 @@ class DeviceBuffer
 {
 public:
     DeviceBuffer() = default;
-    explicit DeviceBuffer(cudaStream_t stream_) : stream(stream_) { }
+    explicit DeviceBuffer(rmm::cuda_stream_view stream_) : stream(stream_) { }
     ~DeviceBuffer();
 
     DeviceBuffer(DeviceBuffer && other) noexcept;
@@ -74,10 +79,34 @@ public:
     bool empty() const { return used == 0; }
 
 private:
-    cudaStream_t stream = cudaStreamLegacy;
+    rmm::cuda_stream_view stream{cudaStreamLegacy};
     char * memory = nullptr;
     size_t capacity = 0;
     size_t used = 0;
+};
+
+
+/// A non-blocking stream of the device's own, for work that must not queue behind the shared
+/// streams of `StreamRegistry`. Destroying it waits for what was queued on it.
+class DeviceStream
+{
+public:
+    DeviceStream();
+    ~DeviceStream();
+
+    DeviceStream(DeviceStream && other) noexcept;
+    DeviceStream & operator=(DeviceStream && other) noexcept;
+
+    DeviceStream(const DeviceStream &) = delete;
+    DeviceStream & operator=(const DeviceStream &) = delete;
+
+    rmm::cuda_stream_view get() const { return rmm::cuda_stream_view{stream}; }
+
+    void synchronize() const;
+
+private:
+    /// Owned, so kept as the handle it is created and destroyed by.
+    cudaStream_t stream = nullptr;
 };
 
 
@@ -94,11 +123,11 @@ public:
     DeviceEvent & operator=(const DeviceEvent &) = delete;
 
     void record();
-    void record(cudaStream_t stream);
+    void record(rmm::cuda_stream_view stream);
 
     void wait() const;
 
-    void waitOn(cudaStream_t stream) const;
+    void waitOn(rmm::cuda_stream_view stream) const;
 
     bool isComplete() const;
 

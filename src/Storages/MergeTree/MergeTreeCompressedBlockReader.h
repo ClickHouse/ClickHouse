@@ -22,11 +22,18 @@ public:
         size_t decompressed_bytes;
     };
 
+    /// Reads the stream of `column` at `substream_path`: the column's own file when it is empty.
     MergeTreeCompressedBlockReader(
-        const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings);
+        const IMergeTreeDataPart & part,
+        const NameAndTypePair & column,
+        const ReadSettings & read_settings,
+        const ISerialization::SubstreamPath & substream_path = {});
 
-    static std::unique_ptr<ReadBufferFromFileBase>
-    openColumnFile(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings);
+    static std::unique_ptr<ReadBufferFromFileBase> openColumnFile(
+        const IMergeTreeDataPart & part,
+        const NameAndTypePair & column,
+        const ReadSettings & read_settings,
+        const ISerialization::SubstreamPath & substream_path = {});
 
     std::optional<Block> next();
 

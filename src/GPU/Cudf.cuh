@@ -77,16 +77,25 @@ void checkCuda(cudaError_t status, const std::string & what);
 
 cudf::data_type cudfTypeOf(GPUElementType element_type);
 
-/// Views the column for cuDF, having checked that it is of the type expected of it.
+/// Views the column for cuDF, having checked that it is of the type expected of it: a column of
+/// fixed-width values as one of `expected_type`, a variable-width column as cuDF's strings, with
+/// `INT64` offsets.
+cudf::column_view columnViewOf(DeviceColumnView column, GPUColumnType expected_type, const std::string & what);
+
+/// The same for a column of fixed-width values.
 cudf::column_view columnViewOf(DeviceColumnView column, GPUElementType expected_type, const std::string & what);
 
 void checkNoNulls(const cudf::column_view & column, const std::string & what);
 
-/// Queues a copy of a result column into host memory, having checked that it is the plain run of
-/// values of the width and length the destination is sized for. The caller synchronizes.
-void copyColumnToHost(const cudf::column_view & column, HostColumnView destination, const std::string & what);
+/// Views a result column for the host side, having checked that it is a plain run of values of
+/// `expected_type`, without nulls and from its first row. The column keeps the memory.
+DeviceColumnView deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what);
 
-/// The same, queued on `stream` instead of the compute stream.
-void copyColumnToHost(const cudf::column_view & column, HostColumnView destination, const std::string & what, cudaStream_t stream);
+/// Views a result column of cuDF's strings as a variable-width column for the host side, with its
+/// offsets as `offsets`, which are the
+/// column's own made `INT64` - cuDF may have left them `INT32`. The offsets start at 0. Reads how
+/// many bytes the values span on `stream`.
+DeviceColumnView deviceViewOfVariable(
+    const cudf::column_view & column, const cudf::column_view & offsets, const std::string & what, rmm::cuda_stream_view stream);
 
 }

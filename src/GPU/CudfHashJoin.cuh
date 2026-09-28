@@ -2,6 +2,8 @@
 
 #include <GPU/GPUTypes.h>
 
+#include <cuda_runtime_api.h>
+
 namespace DB::GPU
 {
 
@@ -26,8 +28,9 @@ public:
     CudfHashJoin(const CudfHashJoin &) = delete;
     CudfHashJoin & operator=(const CudfHashJoin &) = delete;
 
-    /// Builds over the right table, which stays where it is, and waits for the device to finish.
-    /// Can be called once, and before any probe.
+    /// Queues the build over the right table, which stays where it is, on the compute stream. Can
+    /// be called once, and before any probe; the probes run on streams of their own, so the caller
+    /// waits for the compute stream before the first.
     void build(DeviceColumnView keys, GPUSpan<DeviceColumnView> payloads);
 
 private:
@@ -37,27 +40,27 @@ private:
     State * state = nullptr;
 };
 
-/** One probe of a `CudfHashJoin` at a time, on a non-blocking stream of its own: the keys of a
-  * left block go up, the matches stay on the device until `copyMatchesOut`, and nothing waits for
-  * any other probe. A probe is used by one thread at a time; the join must outlive it.
+/** One probe of a `CudfHashJoin` at a time, on a stream the caller owns: the keys of a left block
+  * are already on the device, and the matches stay there, in memory of the probe's, until the next
+  * probe. A probe is used by one thread at a time; the join and the stream must outlive it.
   */
 class CudfHashJoinProbe
 {
 public:
-    explicit CudfHashJoinProbe(const CudfHashJoin & join);
+    CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream);
     ~CudfHashJoinProbe();
 
     CudfHashJoinProbe(const CudfHashJoinProbe &) = delete;
     CudfHashJoinProbe & operator=(const CudfHashJoinProbe &) = delete;
 
-    /// Sends `num_rows` keys of the join's key type from `host_keys`, which must be pinned, probes
-    /// with them, keeps the matches on the device, and answers how many there are.
-    size_t probe(const char * host_keys, size_t num_rows);
+    /// Probes with `keys`, whose upload the caller has queued on the probe's stream, and answers
+    /// how many pairs match. The count comes back to the host, so this waits for the device.
+    size_t probe(DeviceColumnView keys);
 
-    /// Copies the last probe's matches into pinned host memory and waits for them: the probe-side
-    /// row index of each matching pair, as `UInt32`, and the right table's payload columns gathered
-    /// to the same order.
-    void copyMatchesOut(HostColumnView probe_row_indices, GPUSpan<HostColumnView> payloads);
+    /// The last probe's matches: the probe-side row index of each matching pair, as `UInt32`, and
+    /// the right table's payload columns gathered to the same order. Valid until the next probe.
+    DeviceColumnView probeRowIndices() const;
+    DeviceColumnView gatheredPayload(size_t index) const;
 
 private:
     struct State;

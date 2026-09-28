@@ -5,6 +5,7 @@
 
 #if USE_GPU
 
+#include <Core/SettingsEnums.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageSnapshot.h>
@@ -52,6 +53,7 @@ public:
         size_t batch_bytes_,
         size_t num_streams_,
         size_t num_readers_,
+        GPUDecompressionMode decompression_,
         double device_decompression_max_ratio_);
 
     String getName() const override { return "ReadFromGPUCompressedColumns"; }
@@ -75,6 +77,8 @@ private:
     size_t num_streams;
     /// Threads that read parts for a keyed aggregation, each a part at a time.
     size_t num_readers;
+    /// Who expands a column of a part: see `gpu_aggregation_decompression`.
+    GPUDecompressionMode decompression;
     /// A column of a part compressed to at most this fraction of its size is expanded on the
     /// device; one compressed worse is expanded on the CPU and sent as it is.
     double device_decompression_max_ratio;

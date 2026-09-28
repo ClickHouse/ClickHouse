@@ -44,10 +44,16 @@ const StreamRegistry & StreamRegistry::get()
     {
         initializeDevice();
 
+        /// The streams live as long as the process, so their handles are not kept to destroy them.
+        cudaStream_t upload_stream = nullptr;
+        cudaStream_t decompression_stream = nullptr;
+        checkCuda(cudaStreamCreateWithFlags(&upload_stream, cudaStreamNonBlocking), "Cannot create a stream for uploads");
+        checkCuda(cudaStreamCreateWithFlags(&decompression_stream, cudaStreamNonBlocking), "Cannot create a stream for decompression");
+
         StreamRegistry made;
-        made.compute = cudaStreamLegacy;
-        checkCuda(cudaStreamCreateWithFlags(&made.upload, cudaStreamNonBlocking), "Cannot create a stream for uploads");
-        checkCuda(cudaStreamCreateWithFlags(&made.decompression, cudaStreamNonBlocking), "Cannot create a stream for decompression");
+        made.compute = rmm::cuda_stream_view{cudaStreamLegacy};
+        made.upload = rmm::cuda_stream_view{upload_stream};
+        made.decompression = rmm::cuda_stream_view{decompression_stream};
         return made;
     }();
     return registry;

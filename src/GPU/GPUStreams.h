@@ -1,15 +1,15 @@
 #pragma once
 
-#include <cuda_runtime_api.h>
+#include <rmm/cuda_stream_view.hpp>
 
 namespace DB::GPU
 {
 
 struct StreamRegistry
 {
-    cudaStream_t compute = nullptr;
-    cudaStream_t upload = nullptr;
-    cudaStream_t decompression = nullptr;
+    rmm::cuda_stream_view compute;
+    rmm::cuda_stream_view upload;
+    rmm::cuda_stream_view decompression;
 
     static const StreamRegistry & get();
 };
