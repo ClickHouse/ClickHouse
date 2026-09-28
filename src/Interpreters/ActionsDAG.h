@@ -279,7 +279,7 @@ public:
     /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
     /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
     /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched. Returns whether it folded.
+    /// representation-observing parents elsewhere in the DAG are never touched
     bool foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)

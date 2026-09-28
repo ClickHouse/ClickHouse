@@ -170,7 +170,7 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
     return 0;
 }
 
-/// Only a dropped filter column makes its `materialize` wrapper unobservable (#78166)
+/// only a dropped filter column hides its `materialize` wrapper (#78166)
 size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
 {
     auto * filter = typeid_cast<FilterStep *>(node->step.get());
@@ -181,8 +181,7 @@ size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes 
     const auto & filter_column_name = filter->getFilterColumnName();
     const bool folded = dag.foldFilterPredicateThroughMaterialize(filter_column_name);
 
-    /// A dropped always-true filter that computes nothing else is a no-op. As a `FilterStep` it is never
-    /// pushed down over a join and splits the join graph, which changes the join order (TPC-DS `query_11`).
+    /// a no-op always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
     const auto * filter_node = dag.tryFindInOutputs(filter_column_name);
     if (filter_node && filter_node->type == ActionsDAG::ActionType::COLUMN && ConstantFilterDescription(*filter_node->column).always_true)
     {
@@ -193,6 +192,8 @@ size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes 
         {
             auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(actions));
             expression->setStepDescription(*filter);
+            if (filter->isInputRemovalPrevented())
+                expression->setPreventInputRemoval();
             node->step = std::move(expression);
             return 1;
         }

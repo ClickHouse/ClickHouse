@@ -1053,7 +1053,7 @@ bool hasDummyInside(const ColumnConstPtr & col)
 
 struct FoldResult
 {
-    /// One row in the shape runtime produces: a full column below `materialize`, a `ColumnConst` otherwise
+    /// one row; full under `materialize`, as at runtime
     ColumnPtr column;
     bool deterministic;
     /// The fold result must render as `[HIDDEN]` when any folded constant is a masked secret,
@@ -1076,9 +1076,7 @@ const std::unordered_set<std::string> & foldablePredicateFunctions()
     return functions;
 }
 
-/// Evaluate a predicate over const COLUMN leaves on a single row. `materialize` is executed rather than
-/// stripped, so every function sees the argument representation it gets at runtime: a `ColumnConst`
-/// String takes a different path in `less(String, Enum)` than a full one (#121723).
+/// evaluates on one row; `materialize` is executed, not stripped, so functions see runtime argument shapes (#121723)
 /// If the evaluation throws, the predicate is left unfolded and runtime keeps its exact behavior,
 /// including `short_circuit_function_evaluation` semantics for `and` / `or` arguments.
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache);

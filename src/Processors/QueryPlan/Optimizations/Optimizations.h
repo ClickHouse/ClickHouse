@@ -126,8 +126,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
-/// Fold a dropped filter column that is constant through `materialize`, e.g. in a UNION branch,
-/// and drop a dropped always-true filter that computes nothing else
+/// fold a dropped constant filter through `materialize`, and replace a no-op always-true filter
 size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Replace chain `FilterStep -> FilterStep` to single FilterStep

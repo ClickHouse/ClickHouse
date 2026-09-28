@@ -1,5 +1,4 @@
--- A folded always-true filter must not stay as a `FilterStep` between joins: it split the join graph
--- and changed the join order of TPC-DS `query_11`. One join step over all three tables means one graph.
+-- a folded always-true filter must not split the join graph (TPC-DS `query_11`): one join step over all three tables
 CREATE TABLE jt_a (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE jt_b (k UInt64, d UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE jt_c (d UInt64) ENGINE = MergeTree ORDER BY d;
