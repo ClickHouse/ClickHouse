@@ -329,7 +329,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             known_manifest_schema_id = schema_id;
     }
 
-    Int32 manifest_schema_id;
+    Int32 manifest_schema_id = 0;
     if (known_manifest_schema_id.has_value())
     {
         manifest_schema_id = *known_manifest_schema_id;
