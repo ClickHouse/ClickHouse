@@ -4,6 +4,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
 
 namespace DB
@@ -26,15 +27,8 @@ struct PrometheusQueryEvaluationSettings
 {
     StorageID time_series_storage_id = StorageID::createEmpty();
 
-    /// Set when the PromQL target is a Distributed table over per-shard TimeSeries tables.
-    /// Empty cluster_name means a plain local TimeSeries table and the existing local path is used.
-    String cluster_name;
-    StorageID remote_time_series_storage_id = StorageID::createEmpty();
-
-    /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
-    /// generated cluster() call's own declaration so a caller's query-level setting still overrides them.
-    bool skip_unavailable_shards = false;
-    String skip_unavailable_shards_mode;
+    /// Set when the target is a Distributed table over per-shard TimeSeries tables.
+    std::optional<PrometheusQueryDistributedTarget> distributed;
 
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
 

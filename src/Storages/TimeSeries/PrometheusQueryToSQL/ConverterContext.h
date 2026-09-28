@@ -5,6 +5,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRangeGetter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -18,10 +19,7 @@ struct ConverterContext
     const StorageID time_series_storage_id;
 
     /// Set when the target is a Distributed table over per-shard TimeSeries tables, see PrometheusQueryEvaluationSettings.
-    const String cluster_name;
-    const StorageID remote_time_series_storage_id;
-    const bool skip_unavailable_shards;
-    const String skip_unavailable_shards_mode;
+    const std::optional<PrometheusQueryDistributedTarget> distributed;
 
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
 

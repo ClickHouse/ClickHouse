@@ -44,7 +44,7 @@ namespace
         shard_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         shard_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
-        const auto & remote_storage_id = context.remote_time_series_storage_id;
+        const auto & remote_storage_id = context.distributed->remote_time_series_storage_id;
         auto selector_function = makeASTFunction("timeSeriesSelector");
         /// An empty database name means each shard uses its own default database.
         if (remote_storage_id.hasDatabase())
@@ -70,12 +70,12 @@ namespace
         /// wrapper's fan-out semantics and the caller's own setting still overrides them normally.
         auto cluster_settings = make_intrusive<ASTSetQuery>();
         cluster_settings->is_standalone = false;
-        cluster_settings->changes.emplace_back("skip_unavailable_shards", context.skip_unavailable_shards);
-        cluster_settings->changes.emplace_back("skip_unavailable_shards_mode", context.skip_unavailable_shards_mode);
+        cluster_settings->changes.emplace_back("skip_unavailable_shards", context.distributed->skip_unavailable_shards);
+        cluster_settings->changes.emplace_back("skip_unavailable_shards_mode", context.distributed->skip_unavailable_shards_mode);
 
         cluster_builder.from_table_function = makeASTFunction(
             "cluster",
-            make_intrusive<ASTLiteral>(context.cluster_name),
+            make_intrusive<ASTLiteral>(context.distributed->cluster_name),
             makeASTFunction("view", shard_builder.getSelectQuery()),
             std::move(cluster_settings));
 
@@ -114,7 +114,7 @@ namespace
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
 
-        if (!context.cluster_name.empty())
+        if (context.distributed)
         {
             res.select_query = fromRangeSelectorOnCluster(instant_selector_text, min_time, max_time, filter_stale_markers, context);
             return res;

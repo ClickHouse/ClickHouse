@@ -8,6 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
 namespace DB
 {
@@ -128,6 +129,7 @@ private:
     ConstStoragePtr time_series_storage;
     /// Read once: the generated query and the response reader must name the same outer samples column.
     UInt64 outer_samples_version;
+    std::optional<PrometheusQueryDistributedTarget> distributed_target;
     FormatSettings format_settings;
     LoggerPtr log;
 };

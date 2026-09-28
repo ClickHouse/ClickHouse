@@ -214,7 +214,8 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     /// check comes first so the engine error cannot fingerprint a table the caller cannot read.
     context_->checkAccess(AccessType::SELECT, time_series_storage->getStorageID());
     /// The shard-local tables' versions are checked by the selector on each shard.
-    if (!resolvePrometheusQueryTarget(*time_series_storage))
+    distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    if (!distributed_target)
         checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
 
     const auto metadata = time_series_storage->getInMemoryMetadataPtr(context_, false);
@@ -230,13 +231,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    if (auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage))
-    {
-        evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
-        evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
-        evaluation_settings.skip_unavailable_shards = distributed_target->skip_unavailable_shards;
-        evaluation_settings.skip_unavailable_shards_mode = std::move(distributed_target->skip_unavailable_shards_mode);
-    }
+    evaluation_settings.distributed = distributed_target;
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same outer samples column,
     /// so the data types are taken from the target's own metadata in both cases.
@@ -258,7 +253,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, time_scale);
     /// Applied only when the query actually reads the table, as on the table-function path.
-    if (!evaluation_settings.cluster_name.empty() && prometheusQueryReadsTimeSeries(*query_tree))
+    if (evaluation_settings.distributed && prometheusQueryReadsTimeSeries(*query_tree))
         checkPrometheusQueryDistributedRead(*time_series_storage, getContext());
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
@@ -298,7 +293,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
-    if (!evaluation_settings.cluster_name.empty())
+    if (evaluation_settings.distributed)
     {
         query_context->setSetting("prefer_localhost_replica", true);
         query_context->setSetting("enable_parallel_replicas", false);

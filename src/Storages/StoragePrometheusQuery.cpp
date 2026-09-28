@@ -174,13 +174,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
-    if (distributed_target)
-    {
-        evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
-        evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
-        evaluation_settings.skip_unavailable_shards = distributed_target->skip_unavailable_shards;
-        evaluation_settings.skip_unavailable_shards_mode = std::move(distributed_target->skip_unavailable_shards_mode);
-    }
+    evaluation_settings.distributed = std::move(distributed_target);
     evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
     evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
@@ -225,7 +219,7 @@ void StoragePrometheusQuery::readImpl(
     size_t /* num_streams */)
 {
     /// The shard-local tables' versions are checked by the selector on each shard.
-    if (config.evaluation_settings.cluster_name.empty())
+    if (!config.evaluation_settings.distributed)
         checkTimeSeriesVersionSupportedByPromQL(
             *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context)));
 
@@ -243,7 +237,7 @@ void StoragePrometheusQuery::readImpl(
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
-    if (!config.evaluation_settings.cluster_name.empty())
+    if (config.evaluation_settings.distributed)
     {
         query_context->setSetting("prefer_localhost_replica", true);
         query_context->setSetting("enable_parallel_replicas", false);
