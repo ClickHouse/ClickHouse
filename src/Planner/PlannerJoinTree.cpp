@@ -2082,8 +2082,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         }
                     }
 
+                    /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
+                    /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that
+                    /// executes the plan rebuilds the read without it and would return the rows the policy
+                    /// excludes. For a storage whose PREWHERE support depends on the columns (e.g. `Memory`)
+                    /// that node cannot tell whether the policy was pushed down, so keep the policy as an
+                    /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
+                    /// user's conditions never see the excluded rows.
+                    if (select_query_options.build_logical_plan && storage->supportedPrewhereColumns().has_value())
+                        where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (can_push_down_filter)
+                    else if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                     {
