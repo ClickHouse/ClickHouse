@@ -36,6 +36,9 @@ multiheader_struct = struct.Struct("!iBi")
 reply_header_struct = struct.Struct("!iqi")
 stat_struct = struct.Struct("!qqqqiiiqiiq")
 
+# Protocol version Keeper sends when it rejects a connection.
+KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -86,7 +89,9 @@ def read_buffer(bytes, offset):
         return bytes[index : index + length], offset
 
 
-def handshake(node_name=node1.name, session_timeout=1000, session_id=0):
+def handshake(
+    node_name=node1.name, session_timeout=1000, session_id=0, full_reply=False
+):
     client = None
     try:
         client = get_keeper_socket(node_name)
@@ -130,6 +135,12 @@ def handshake(node_name=node1.name, session_timeout=1000, session_id=0):
             read_only = False
 
         print("negotiated_timeout - session_id", negotiated_timeout, session_id)
+        if full_reply:
+            (reply_length,) = int_struct.unpack_from(data, 0)
+            rest = data[int_struct.size + reply_length :]
+            while chunk := client.recv(1_000):
+                rest += chunk
+            return proto_version, negotiated_timeout, session_id, rest
         return negotiated_timeout, session_id
     finally:
         if client is not None:
@@ -156,21 +167,22 @@ def test_handshake_to_continue_session_is_expired(started_cluster):
     )
     assert negotiated_timeout == 8000 and session_id > 0
     # Keeper cannot restore a session, so a request to continue one must not be answered with a new session.
-    assert handshake(node1.name, session_timeout=8000, session_id=session_id) == (0, 0)
+    # The expired reply is the last thing the server sends before it closes the connection.
+    assert handshake(
+        node1.name, session_timeout=8000, session_id=session_id, full_reply=True
+    ) == (0, 0, 0, b"")
 
     try:
         node2.stop_clickhouse()
         node3.stop_clickhouse()
         keeper_utils.wait_until_quorum_lost(cluster, node1)
         # A rejected client gets no session id that it would send back as the session to continue.
-        negotiated_timeout, rejected_session_id = handshake(
-            node1.name, session_timeout=8000, session_id=0
-        )
-        assert negotiated_timeout > 0 and rejected_session_id == 0
-        assert handshake(node1.name, session_timeout=8000, session_id=session_id) == (
-            0,
-            0,
-        )
+        assert handshake(
+            node1.name, session_timeout=8000, session_id=0, full_reply=True
+        ) == (KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, 8000, 0, b"")
+        assert handshake(
+            node1.name, session_timeout=8000, session_id=session_id, full_reply=True
+        ) == (0, 0, 0, b"")
     finally:
         node2.start_clickhouse()
         node3.start_clickhouse()
