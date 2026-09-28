@@ -1,6 +1,6 @@
 <clickhouse>
     <open_policy_agent>
-        <uri>http://opa:8181/v1/data/clickhouse/allow</uri>
+        <uri>http://127.0.0.1:8181/v1/data/clickhouse/allow</uri>
         <default_catalog>testcatalog</default_catalog>
         <exempt_users>
             <user>default</user>

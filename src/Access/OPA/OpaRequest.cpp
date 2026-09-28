@@ -109,7 +109,11 @@ String OpaRequest::serialize(const OpaRequestContext & request_context) const
     context_object->set("softwareStack", software_stack);
 
     Poco::JSON::Object::Ptr action = new Poco::JSON::Object();
-    action->set("operation", operation);
+
+    Poco::JSON::Array::Ptr operations_array = new Poco::JSON::Array();
+    for (const auto & operation : operations)
+        operations_array->add(operation);
+    action->set("operations", operations_array);
 
     if (resource)
         action->set("resource", serializeResource(*resource));

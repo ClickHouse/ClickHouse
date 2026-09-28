@@ -7,6 +7,7 @@
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Access/OPA/OpaAccessChecker.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Databases/DatabaseFactory.h>
@@ -894,6 +895,39 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         if (flags & precalc.introspection_flags)
             return access_denied(ErrorCodes::FUNCTION_NOT_ALLOWED, "{}: Introspection functions are disabled, "
                                  "because setting 'allow_introspection_functions' is set to 0");
+    }
+
+    /// Consulted last, once every native check has passed, so that a policy can only take access
+    /// away. This also keeps the number of requests down: a check that native grants already refuse
+    /// never reaches OPA.
+    if (auto opa_configuration = access_control->getOpaConfiguration())
+    {
+        const AccessRightsElement element{flags, args...};
+        const OpaAccessChecker checker{std::move(opa_configuration)};
+
+        /// Read the identity before talking to OPA. Both accessors take this object's mutex, and the
+        /// request must not be issued while it is held.
+        const String current_user_name = getUserName();
+
+        if (checker.governs(current_user_name, element))
+        {
+            OpaRequestContext request_context;
+            request_context.user = current_user_name;
+            request_context.query_id = context->getCurrentQueryId();
+            if (auto info = getRolesInfo())
+                request_context.groups = info->getEnabledRolesNames();
+
+            /// A transport failure, a malformed response or an unreachable server propagates instead
+            /// of being turned into an allow. Losing the policy engine must not silently lose the
+            /// restrictions it was enforcing.
+            if (!checker.isAllowed(element, request_context))
+            {
+                return access_denied(
+                    ErrorCodes::ACCESS_DENIED,
+                    "{}: Not enough privileges. The Open Policy Agent policy denied {}",
+                    element.toStringWithoutOptions());
+            }
+        }
     }
 
     return access_granted();

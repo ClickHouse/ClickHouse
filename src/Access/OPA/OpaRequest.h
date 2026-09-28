@@ -51,10 +51,14 @@ struct OpaResource
 /// A whole request body, mirroring `{"input": {"context": ..., "action": ...}}`.
 struct OpaRequest
 {
-    /// A ClickHouse grant keyword, such as `SELECT` or `CREATE TABLE`. Using the names ClickHouse
-    /// already has avoids inventing a second vocabulary; a policy adapter maps them to whatever
-    /// the shared rules expect.
-    String operation;
+    /// The ClickHouse grant keywords the check requires, such as `SELECT` or `CREATE TABLE`. Using
+    /// the names ClickHouse already has avoids inventing a second vocabulary; a policy adapter maps
+    /// them to whatever the shared rules expect.
+    ///
+    /// This is a list rather than a single name because one ClickHouse check can require several
+    /// privileges at once, and all of them have to be allowed. Sending only the first would let a
+    /// policy authorize a check it never saw in full.
+    Names operations;
 
     std::optional<OpaResource> resource;
     /// The object being created, for an operation that produces a new name, such as `RENAME TABLE`.
