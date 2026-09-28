@@ -42,10 +42,12 @@ void checkNoBypassedReadRestriction(
 
 /// SELECT on the wrapper, no row policy or filter the rewrite would skip, READ ON REMOTE and a local shard's own grants,
 /// all before the probe; then every replica's target must be a TimeSeries table of the wrapper's samples type.
-void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
+void checkPrometheusQueryDistributedRead(
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context);
 
 /// The same probe for a write, which also refuses an unreachable replica or a missing table or type (it would take
 /// samples unchecked) and insert_shard_id / insert_distributed_one_random_shard: the sharding key alone routes a batch.
-void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
+void checkPrometheusQueryDistributedWrite(
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context);
 
 }

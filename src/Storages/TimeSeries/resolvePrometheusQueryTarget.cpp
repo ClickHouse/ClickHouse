@@ -425,15 +425,13 @@ void checkNoBypassedReadRestriction(
     }
 }
 
-void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context)
+void checkPrometheusQueryDistributedRead(
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
 {
     /// The planner never sees the wrapper (the rewrite hands it a cluster() call), so its SELECT grant
     /// is checked explicitly: again here, before a probe that runs on the server's own context.
     const auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
-    const auto target = resolvePrometheusQueryTarget(storage);
-    if (!target)
-        return;
 
     /// A plain SELECT through the wrapper applies both; the generated read never names the wrapper.
     /// The shard-local table's own policy and filters are each shard's to check, in the selector.
@@ -453,20 +451,17 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
     if (cluster->getLocalShardCount())
     {
-        if (const auto local_id = context->tryResolveStorageID(target->remote_time_series_storage_id))
+        if (const auto local_id = context->tryResolveStorageID(target.remote_time_series_storage_id))
             context->checkAccess(AccessType::SELECT, local_id);
     }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
-    checkShardTargets(storage, *target, context, cluster, /* for_write = */ false);
+    checkShardTargets(storage, target, context, cluster, /* for_write = */ false);
 }
 
-void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
+void checkPrometheusQueryDistributedWrite(
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
 {
-    const auto target = resolvePrometheusQueryTarget(storage);
-    if (!target)
-        return;
-
     /// The sink honours both as for any INSERT (the second only without a key); here a batch goes where the key sends it or nowhere.
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::insert_shard_id] || settings[Setting::insert_distributed_one_random_shard])
@@ -479,7 +474,7 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
     /// A shard that is this server itself is written in-process on the caller's context, and the sink skips a shard
     /// whose split is empty, so its own insert asks for the INSERT grant there exactly when this batch needs it.
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
-    checkShardTargets(storage, *target, context, cluster, /* for_write = */ true);
+    checkShardTargets(storage, target, context, cluster, /* for_write = */ true);
 }
 
 }

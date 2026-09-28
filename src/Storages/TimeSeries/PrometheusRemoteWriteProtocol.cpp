@@ -331,7 +331,7 @@ Names columnsToWrite(
 
 /// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the async
 /// insert queue, would be flushed after the shard-target check, into whatever answers to the name by then.
-void forceDeliveryToShards(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextMutablePtr & context)
+void forceDeliveryToShards(const StorageInMemoryMetadata & metadata, const char * samples_column, const ContextMutablePtr & context)
 {
     context->setSetting("distributed_foreground_insert", true);
     context->setSetting("async_insert", false);
@@ -347,7 +347,6 @@ void forceDeliveryToShards(const IStorage & storage, const StorageInMemoryMetada
     /// check on the initiator runs first, so a table swapped in under the name after it is not taken.
     context->setSetting("insert_expected_table_engine", String("TimeSeries"));
     /// Named as the wrapper declares it, which is the name the sink sends and the probe holds every shard to.
-    const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(storage, metadata));
     const auto & samples_type = metadata.columns.get(samples_column).type;
     context->setSetting("insert_expected_column_types", Field{Map{Tuple{String(samples_column), samples_type->getName()}}});
 }
@@ -466,12 +465,13 @@ void PrometheusRemoteWriteProtocol::write(
     auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
     chassert(block.getNames() == columns_to_write);
 
-    if (distributed_target)
-        forceDeliveryToShards(*time_series_storage, *metadata, getContext());
-
     /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
     /// own shard choice; checked here, not on construction, with no request body read in between.
-    checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
+    if (distributed_target)
+    {
+        forceDeliveryToShards(*metadata, samples_column_name, getContext());
+        checkPrometheusQueryDistributedWrite(*time_series_storage, *distributed_target, getContext());
+    }
 
     FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
     try

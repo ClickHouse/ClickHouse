@@ -136,7 +136,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         /// Grant before existence: this table function's own CREATE TEMPORARY TABLE is enforced when it
         /// executes, which is after the check below would have reported on the shard-local targets.
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
-        checkPrometheusQueryDistributedRead(*time_series_storage, context);
+        checkPrometheusQueryDistributedRead(*time_series_storage, *distributed_target, context);
     }
 
     PrometheusQueryEvaluationMode mode = {};

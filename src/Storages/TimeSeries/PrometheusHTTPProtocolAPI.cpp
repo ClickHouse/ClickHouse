@@ -253,8 +253,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, time_scale);
     /// Applied only when the query actually reads the table, as on the table-function path.
-    if (evaluation_settings.distributed && prometheusQueryReadsTimeSeries(*query_tree))
-        checkPrometheusQueryDistributedRead(*time_series_storage, getContext());
+    if (distributed_target && prometheusQueryReadsTimeSeries(*query_tree))
+        checkPrometheusQueryDistributedRead(*time_series_storage, *distributed_target, getContext());
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     if (params.type == Type::Instant)
