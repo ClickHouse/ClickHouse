@@ -2910,8 +2910,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.push_back(column_name);
 
         String apply_column_name_prefix;
-        /// `APPLY (expr, 'prefix')` puts the prefix on the column's projection name, which keeps the
-        /// qualifier the scope needs to tell same-named columns apart (`f_t2.a`).
+        /// Prefix the projection name: it carries the qualifier (`f_t2.a`) that tells same-named columns apart.
         String apply_prefixed_projection_name = result_projection_names.back();
 
         const auto & column_transformers = matcher_node_typed.getColumnTransformers().getNodes();
