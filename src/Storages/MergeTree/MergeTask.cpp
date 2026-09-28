@@ -1482,6 +1482,11 @@ NameSet MergeTask::getColumnsFullyExpiredByTTL(const GlobalRuntimeContext & glob
     if (global_ctx.ttl_merges_blocker->isCancelled() || !global_ctx.future_part->patch_parts.empty())
         return result;
 
+    /// Only a wide part can omit a column (see `removeEmptyColumnsFromPart`). A compact part keeps the
+    /// column, so the merge clears it by `TTLColumnAlgorithm`, which keeps the TTL info of the column.
+    if (global_ctx.future_part->part_format.part_type != MergeTreeDataPartType::Wide)
+        return result;
+
     /// The renames that are pending for each source part, computed only when needed.
     std::vector<std::optional<NameSet>> pending_rename_targets(global_ctx.future_part->parts.size());
     auto is_pending_rename_target = [&](size_t part_index, const String & column)
