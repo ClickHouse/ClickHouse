@@ -147,7 +147,9 @@ def test_one_grpc_listener_for_ipv6_wildcard_listen_host():
         r"Listening for Arrow Flight compatibility protocol: \[::\]:8888"
     )
 
-    for port in (9000, 9100, 8888):
+    # The native protocol listener is the dual-stack `::` socket; gRPC may pick either wildcard.
+    wait_for_listeners(node, 9000, lambda addresses: addresses == ["::"], "the `::` listener")
+    for port in (9100, 8888):
         wait_for_listeners(node, port, is_single_wildcard, "a single wildcard listener")
 
     # The dual-stack listener must serve IPv4 too.

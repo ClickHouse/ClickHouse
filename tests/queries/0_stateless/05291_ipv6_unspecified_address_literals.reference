@@ -1,0 +1,13 @@
+CREATE USER u HOST IP '::'
+CREATE USER u HOST IP '::'
+CREATE USER u HOST IP '::'
+CREATE USER u HOST IP '::'
+Invalid address
+::	::
+0:0:0:0:0:0:0:0	::
+0::0	::
+::0.0.0.0	::
+::1	::1
+:::	
+::%no-such-interface	
+not-an-ip	
