@@ -70,7 +70,7 @@ echo "-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes k
 promql_client -q "label_replace(sort_by_label_desc(up, 'instance'), 'zone', 'z', 'instance', '.*')"
 
 echo "-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map"
-promql_client -q "sum by (instance) (sort(up))" | sort
+promql_client -q "sum by (instance) (sort(up))" | LC_ALL=C sort
 
 echo "-- quantile(0.5, sort(up)): same for the quantile aggregation operator; median of 1,2,10,20 is 6"
 promql_client -q "quantile(0.5, sort(up))"
