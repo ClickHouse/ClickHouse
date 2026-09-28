@@ -130,6 +130,7 @@ void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
 
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
+void registerReadFromSealedViewStep(QueryPlanStepRegistry & registry);
 
 
 void QueryPlanStepRegistry::registerPlanSteps()
@@ -178,6 +179,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
 
 
     registerReadFromStorageStep(registry);
+    registerReadFromSealedViewStep(registry);
 }
 
 }
