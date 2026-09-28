@@ -1,6 +1,7 @@
--- A null-safe `<=>` key is a key of the join hash table but not of a runtime filter, so the hash table statistics
--- count distinct pairs. The runtime filter on the other key must be sized by that count, but never skipped as predicted too dense.
 -- https://github.com/ClickHouse/ClickHouse/issues/122167
+-- For `ON left.a = right.a AND left.b <=> right.b`, the runtime filter is built on `a` only,
+-- but the hash table statistics count distinct `(a, b)` pairs, which are many more than the distinct values of `a`.
+-- The filter must still be built and used, not skipped as too dense.
 
 DROP TABLE IF EXISTS t_rf_nse_left;
 DROP TABLE IF EXISTS t_rf_nse_right;
