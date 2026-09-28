@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A `STREAM` read cannot be serialized into a distributed plan fragment, so distributed Cascades
 -- planning rejects it up front. Lives outside `04330_cascades_activation_gating` only because a
 -- test that uses `enable_streaming_queries` must carry `_streaming_queries_` in its name.

@@ -44,6 +44,7 @@ from ast import literal_eval as make_tuple
 from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
 from errno import EPERM, ESRCH
+from functools import cache
 from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
@@ -212,6 +213,17 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
+
+# A flaky check gives every worker the *same* changed test, so one heavy test contends with
+# `--jobs N` copies of itself instead of with N unrelated tests. Measured on
+# `03927_autopr_input_bytes_estimation_prewhere_filter`, whose p50 under any `asan` lane on
+# master is 33s: in the `amd_asan_ubsan` flaky check it takes 307-383s, and the other five
+# AutoPR estimation tests of the same job are 4.1x to 5.6x their own master p50. That is the
+# check's shape, not a property of the test, which is why a `long` test is already exempt from
+# the `TEST_MAX_RUN_TIME_IN_SECONDS` verdict below. Without the same exemption in wall-clock
+# terms the default `--timeout` killed it anyway, so a pull request that merely edits such a
+# test draws a red at ~600.3s: #96844, #119350 and #100736 all hit exactly that.
+FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER = 3
 
 
 def detect_cgroup_version():
@@ -773,6 +785,57 @@ def clickhouse_execute_json(
 # Should we capture client's stacktraces via SIGTSTP
 CAPTURE_CLIENT_STACKTRACE = False
 
+# How long `kill_process_group` lets a sanitized build print its report before
+# killing the group.
+SANITIZER_REPORT_GRACE_SECONDS = 60
+
+
+def client_stacktrace_delay_seconds():
+    return 0.5 if RELEASE_NON_SANITIZED else 10
+
+
+def worker_cleanup_grace_seconds():
+    """The diagnostic sleeps of ONE `kill_process_group` invocation, which a parent
+    must allow before it kills a worker mid-cleanup. Not a bound on the whole
+    cleanup: the client stacktrace collection that follows those sleeps is not
+    counted, nor is the 0.1s between that call's SIGTERM and SIGKILL, and a worker
+    holding children in more than one process group pays these sleeps per group."""
+    grace = SANITIZER_REPORT_GRACE_SECONDS if SANITIZED else 0
+    if CAPTURE_CLIENT_STACKTRACE:
+        grace += client_stacktrace_delay_seconds()
+    return grace
+
+
+# Allowance for the parts of the cleanup that do not sleep, and the floor under
+# every single wait.
+WORKER_STOP_MARGIN_SECONDS = 10
+
+
+def terminate_workers(processes):
+    """SIGTERM every worker, then wait for them to finish `kill_process_group`
+    before SIGKILLing the stragglers. The wait must outlast the sleeps of a single
+    such invocation, or a worker is killed part-way through it and leaves its own
+    children alive and its sanitizer report unfinished. It is not a bound on a
+    worker holding children in several process groups: `cleanup_child_processes`
+    then sleeps once per group, and the later groups are still cut short, though
+    never earlier than the flat 10s wait this replaced.
+
+    Workers clean up concurrently, so the grace is one deadline for all of them
+    rather than a budget each, but no wait ever drops below the margin, which
+    covers a worker that was slow to start its cleanup. Every wait stays bounded,
+    so a wedged worker cannot hang the run."""
+    for p in processes:
+        if p.is_alive():
+            p.terminate()
+    deadline = monotonic() + worker_cleanup_grace_seconds() + WORKER_STOP_MARGIN_SECONDS
+    for p in processes:
+        p.join(timeout=max(deadline - monotonic(), WORKER_STOP_MARGIN_SECONDS))
+        if p.is_alive():
+            print(f"Force killing process {p.name} (pid {p.pid})")
+            p.kill()
+    for p in processes:
+        p.join(timeout=5)
+
 
 def kill_process_group(pgid, fatal_log):
     try:
@@ -781,8 +844,10 @@ def kill_process_group(pgid, fatal_log):
             print(
                 '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
             )
-            print("Wait 60 seconds to let sanitizers print the report...")
-            sleep(60)
+            print(
+                f"Wait {SANITIZER_REPORT_GRACE_SECONDS} seconds to let sanitizers print the report..."
+            )
+            sleep(SANITIZER_REPORT_GRACE_SECONDS)
 
         print(f"Killing process group {pgid}")
         print(f"Processes in process group {pgid}:")
@@ -793,7 +858,7 @@ def kill_process_group(pgid, fatal_log):
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            stacktrace_delay = client_stacktrace_delay_seconds()
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
@@ -833,20 +898,12 @@ def kill_process_group(pgid, fatal_log):
         # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
         # not be enough, but at least something)
         sleep(0.1)
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except OSError as e:
-            # SIGTERM above succeeded, so we have permission to signal this group.
-            # EPERM here is a macOS-specific behavior: killpg returns EPERM when
-            # the group contains zombie processes (already exited after SIGTERM
-            # but not yet reaped). Linux ignores zombies in killpg instead.
-            if e.errno in (ESRCH, EPERM):
-                print(f"Got {e.strerror} while sending SIGKILL to {pgid}. Ignoring.")
-            else:
-                raise
+        os.killpg(pgid, signal.SIGKILL)
     except OSError as e:
-        if e.errno == ESRCH:
-            print(f"Got ESRCH while killing {pgid}. Ignoring.")
+        # EPERM is how macOS reports a group whose members have all exited but are not
+        # reaped yet: its `killpg` skips zombies, so it finds nothing it may signal.
+        if e.errno in (ESRCH, EPERM):
+            print(f"Got {e.strerror} while killing {pgid}. Ignoring.")
         else:
             raise
     print(f"Process group {pgid} should be killed")
@@ -1003,6 +1060,11 @@ def get_processlist_size(args):
 # aggregating, so it is the only one that needs the per-user limit lifted.
 HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
+# One attempt, no retries: this dump runs under a caller that kills the process
+# group on its own deadline, so it has to fail with time left for the hung check
+# to report what it saw.
+HUNG_CHECK_STACKTRACES_RETRIES = 1
+
 
 def get_processlist_with_stacktraces(args):
     if args.replicated_database:
@@ -1031,6 +1093,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     if args.shared_catalog:
         return clickhouse_execute(
@@ -1058,6 +1121,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     return clickhouse_execute(
         args,
@@ -1080,6 +1144,7 @@ def get_processlist_with_stacktraces(args):
             "allow_introspection_functions": 1,
         },
         timeout=120,
+        max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
     )
 
 
@@ -1101,6 +1166,26 @@ def get_transactions_list(args):
     except Exception as e:
         return f"Cannot get list of transactions: {e}"
 
+
+# lldb's shared-library-event breakpoint is a software int3 in the inferior's
+# text, and only the debugger that wrote it restores it. Dropping it keeps the
+# server's text intact however the debugger ends. Internal breakpoint ids are
+# negative, handed out by decrementing and never reused, so no fixed range
+# covers them and they are read from lldb's own list. The JIT and sanitizer
+# hooks are internal too, hence the symbol test. The printed line is the audit
+# trail: an empty "dropped" means the int3 is still in the text.
+LLDB_DROP_RENDEZVOUS_BREAKPOINT = (
+    "script t=lldb.target; "
+    "r=lldb.SBCommandReturnObject(); "
+    "lldb.debugger.GetCommandInterpreter()"
+    '.HandleCommand("breakpoint list --internal", r); '
+    'ids=[int(l.split(":")[0]) for l in (r.GetOutput() or "").splitlines() '
+    'if l[:1] == "-" and l.split(":")[0][1:].isdigit()]; '
+    'hit=[i for i in ids if "dl_debug_state" in str(t.FindBreakpointByID(i)'
+    ".GetLocationAtIndex(0).GetAddress().GetSymbol().GetName())]; "
+    'print("internal breakpoints %s, dropped %s"'
+    " % (ids, [i for i in hit if t.BreakpointDelete(i)]))"
+)
 
 # Per-PID lldb budget: the release value is also the fallback for a caller that
 # cannot tell which flavor the server is.
@@ -1140,7 +1225,9 @@ def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # print_c_stacktraces save the full dump to c_stacktraces.log and preview
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -p {pid}"
+        f" -o '{LLDB_DROP_RENDEZVOUS_BREAKPOINT}'"
+        " -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=timeout,
         keep_output_on_error=True,
     )
@@ -1578,7 +1665,6 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
-    OLD_ANALYZER = "old-analyzer"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
     LINUX_ONLY = "supported only on Linux"
 
@@ -1793,10 +1879,8 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "optimize_move_to_prewhere_if_final": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
-        # NOTE: optimize_move_to_prewhere_if_final is excluded because it triggers
-        # "Logical error: Input-output header mismatch after removing unused columns
-        # after pushing down filters to prewhere" (a real code bug).
         "optimize_rewrite_array_exists_to_has": lambda: random.random() < 0.5,
         "optimize_skip_unused_shards": lambda: random.random() < 0.5,
         "optimize_trivial_approximate_count_query": lambda: random.random() < 0.5,
@@ -1878,7 +1962,6 @@ class SettingsRandomizer:
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
         # More query plan optimizations
-        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
@@ -1904,7 +1987,7 @@ class SettingsRandomizer:
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
-        "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
+        "text_index_postings_intersection_algorithm": lambda: random.choice(["auto", "bruteforce", "leapfrog"]),
         # Independent DISTINCT per MergeTree partition
         "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
         "force_distinct_partitions_independently": lambda: random.random() < 0.3,
@@ -2038,9 +2121,9 @@ class MergeTreeSettingsRandomizer:
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
         "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -2058,7 +2141,7 @@ class MergeTreeSettingsRandomizer:
         "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
-        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
+        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking", "pfor"]),
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),
@@ -2072,8 +2155,19 @@ class MergeTreeSettingsRandomizer:
         ),
     }
 
+    # Settings that depend on previously randomized settings.
+    # Each entry: setting_name -> (dependency_setting, generator_fn)
+    # generator_fn receives the resolved value of the dependency setting.
+    # Skipped when the dependency was not randomized.
+    dependent_settings = {
+        "object_shared_data_target_chunk_rows": (
+            "index_granularity",
+            lambda ig: random.randint(max(1, ig // 10), ig * 10),
+        ),
+    }
+
     @staticmethod
-    def get_random_settings(args):
+    def get_random_settings(args, tags):
         random_settings = {}
         # Tiny granules multiply the number of marks per part (marks ~ rows /
         # index_granularity), which is disproportionately expensive on slow
@@ -2084,13 +2178,19 @@ class MergeTreeSettingsRandomizer:
             or BuildFlags.DEBUG in args.build_flags
             or BuildFlags.WITH_COVERAGE in args.build_flags
         )
+        # A `long` test already writes enough data to sit close to the per-test
+        # timeout, so the same multiplier blows past it even on a release build:
+        # `03209_json_type_merges_small` went from 2 seconds to over 600 with
+        # `index_granularity = 1`. Raise the bounds for those tests as well; tiny
+        # granules stay covered by every test that is not tagged `long`.
+        coarse_granularity = slow_build or (tags and "long" in tags)
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting in args.changed_merge_tree_settings:
                 continue
 
-            if slow_build and setting == "index_granularity":
+            if coarse_granularity and setting == "index_granularity":
                 value = random.randint(100, 65536)
-            elif slow_build and setting == "index_granularity_bytes":
+            elif coarse_granularity and setting == "index_granularity_bytes":
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
@@ -2107,6 +2207,13 @@ class MergeTreeSettingsRandomizer:
                 continue
 
             random_settings[setting] = value
+
+        for setting, (dep, gen) in MergeTreeSettingsRandomizer.dependent_settings.items():
+            if setting in args.changed_merge_tree_settings:
+                continue
+            if dep not in random_settings:
+                continue
+            random_settings[setting] = gen(random_settings[dep])
 
         return random_settings
 
@@ -2290,34 +2397,17 @@ def load_diagnostics_results(diagnostics_dir):
     return results
 
 
-# unlike functools.cache() ignore args
-# (since args can be non-hashable)
-def cache_ignore_args(func):
-    cached_result = None
-    has_result = False
-
-    def wrapper(*args, **kwargs):
-        nonlocal cached_result, has_result
-        if not has_result:
-            cached_result = func(*args, **kwargs)
-            has_result = True
-        return cached_result
-
-    return wrapper
-
-
-@cache_ignore_args
-def is_old_analyzer_used(args):
-    return (
-        clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip()
-        == b"false"
-    )
+# Reported from the parent: the same message from `preexec_fn` would go to the per-test
+# stderr file, which the test command's own `2> {stderr}` then truncates.
+@cache
+def report_cgroups_unavailable():
+    print("Cgroups are not available, memory limit will not be applied", file=sys.stderr)
 
 
 def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int):
     def preexec_fn():
         if CGROUP_VERSION is None:
-            print(f"Cgroups are not available, memory limit will not be applied", file=sys.stderr)
+            # Already reported once from the parent by report_cgroups_unavailable().
             return
 
         try:
@@ -2968,6 +3058,7 @@ class TestCase:
         self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
+        self.is_concurrent: bool = is_concurrent
         self.tags: Set[str] = suite.all_tags[case]
         self.random_settings_limits = (
             suite.all_random_settings_limits[case]
@@ -3020,7 +3111,9 @@ class TestCase:
 
         base_mt_settings = {}
         if allow_random_mt_settings:
-            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(args)
+            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(
+                args, self.tags
+            )
             self.apply_random_settings_limits(base_mt_settings)
 
         # User-specified fixed dicts
@@ -3063,6 +3156,24 @@ class TestCase:
         )
 
         self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+
+    def get_timeout(self, args) -> int:
+        """Wall-clock budget for one run of this test.
+
+        `long` tests of a flaky check get a multiple of `--timeout`, for the reason spelled out
+        at `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER`, but only where copies of the same test
+        can actually run at once: in the parallel worker pool without `--no-self-parallel`.
+        The sequential runner and the targeted check (`--no-self-parallel`) never contend a test
+        with itself, and neither do the ordinary jobs, so they keep `--timeout` as is.
+        """
+        if (
+            args.flaky_check
+            and not args.no_self_parallel
+            and self.is_concurrent
+            and "long" in self.tags
+        ):
+            return args.timeout * FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER
+        return args.timeout
 
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
@@ -3113,9 +3224,6 @@ class TestCase:
 
         if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
-
-        if "no-old-analyzer" in tags and is_old_analyzer_used(args):
-            return FailureReason.OLD_ANALYZER
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
@@ -3451,9 +3559,8 @@ class TestCase:
             if proc.returncode is None:
                 f = io.StringIO()
                 with redirect_stdout(f):
-                    kill_process_group(
-                        os.getpgid(proc.pid), self.fatal_sanitizer_prefix
-                    )
+                    # `start_new_session=True`, so the leader's pid is the pgid
+                    kill_process_group(proc.pid, self.fatal_sanitizer_prefix)
                 kill_output = f.getvalue()
 
         description = ""
@@ -3922,11 +4029,12 @@ class TestCase:
             ),
         }
 
-        # >> append to stderr (but not stdout since it is not used there),
-        # because there are also output of per test database creation
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
+        # A `.sh` test budgets itself against the harness through this variable, so it has to
+        # carry the budget this test will actually get, not the `--timeout` default.
+        tests_env["CLICKHOUSE_TEST_TIMEOUT"] = str(self.get_timeout(args))
         if args.trace:
             tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
@@ -3941,18 +4049,30 @@ class TestCase:
         preexec_fn = None
         cgroup_name = None
         if args.memory_limit:
+            if CGROUP_VERSION is None:
+                report_cgroups_unavailable()
             cgroup_name = f"clickhouse-test-{os.getpid()}"
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
-        # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        # Pre-create both files: a fatal `preexec_fn` exits before bash execs, so the
+        # command's own redirects never run and the post-`wait` normalization would raise.
+        # See tests/clickhouse-test-process-management.md for the mechanism.
+        open(self.stdout_file, "wb").close()
+        open(self.stderr_file, "wb").close()
+        # A per-test wrapper must not inherit our stdout or stderr: it is in its own session,
+        # so one that outlives us would wedge the CI pipeline we head. `ab` because the
+        # command's own `2> {stderr}` holds a second descriptor with its own offset.
+        with open(self.stderr_file, "ab") as wrapper_stderr:
+            # pylint:disable-next=consider-using-with; TODO: fix
+            proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn,
+                         stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
         _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
         write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
-            proc.wait(args.timeout)
+            proc.wait(self.get_timeout(args))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -4269,7 +4389,7 @@ class TestCase:
             return
 
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
-        timeout = max(args.timeout - time_passed, 20)
+        timeout = max(self.get_timeout(args) - time_passed, 20)
 
         try:
             self._cleanup_database(args, timeout)
@@ -4934,6 +5054,8 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
         multiprocessing.sharedctypes.Synchronized,
+        multiprocessing.sharedctypes.Synchronized,
+        int,
         multiprocessing.managers.ListProxy,
         int,
         multiprocessing.sharedctypes.Synchronized,
@@ -4951,6 +5073,8 @@ def run_tests_array(
         exit_code,
         stop_testing,
         workers_to_shed,
+        live_workers,
+        min_workers,
         restarted_tests,
         process_index,
         total_failures_shared,
@@ -5020,22 +5144,61 @@ def run_tests_array(
         proc_name = multiprocessing.current_process().name
         print(f"Running {about}{num_tests} {test_suite.suite} tests ({proc_name}).")
 
+    # A worker-local queue (--no-self-parallel) is a plain list; a shared queue
+    # is a manager proxy, so every access to it is a round trip to another
+    # process.
+    queue_is_local = isinstance(all_tests, list)
+
     while True:
-        # Check whether this worker has been asked to shed (stop after finishing
-        # its previous test). The check happens before popping the next test so
-        # no work is lost — the remaining workers will pick up the queue.
+        # Decide whether to take another test, under the lock that also guards
+        # `live_workers`, so that leaving the pool is atomic with respect to
+        # every other worker's decision. `live_workers` is decremented here, at
+        # the moment a worker decides to stop, and never counts one that has
+        # decided - which is what makes the parent's cap exact.
+        #
+        # The parent caps the requests it issues by the same floor, but it reads
+        # its count between two of its own five-second samples, so a worker that
+        # left the pool in between - or during the very query that takes the
+        # sample - is still counted there. Only this check, taken at the instant
+        # a worker would act on the request, can tell that the pool is already at
+        # the floor, and it declines then, leaving the request pending for
+        # whenever the pool is larger again. Without it a `--no-self-parallel`
+        # run, where every worker owns its queue, could be told to stop its last
+        # busy worker and end with that worker's queue unrun and nothing to
+        # report it, since a shed worker is not a failure.
+        #
+        # The shed check comes before taking the next test so no work is lost -
+        # the remaining workers pick the queue up.
+        case = None
         with workers_to_shed.get_lock():
-            if workers_to_shed.value > 0:
+            if workers_to_shed.value > 0 and live_workers.value > min_workers:
                 workers_to_shed.value -= 1
+                live_workers.value -= 1
                 break
 
-        if all_tests:
+            if queue_is_local:
+                # Taking the test belongs in the same critical section: a worker
+                # that took one is still working and a worker that found its
+                # queue empty is gone, and the pool must not be seen in both
+                # states at once. The queue is this worker's own list, so the
+                # lock - which is on every worker's path between two tests -
+                # only covers a list access.
+                if not all_tests:
+                    live_workers.value -= 1
+                    break
+                case = all_tests.pop(0)
+
+        if case is None:
+            # Shared queue: keep the round trip out of the lock. It does not need
+            # the care above, because a worker only reaches the end of a shared
+            # queue once it is empty - there is nothing left for the worker that
+            # would stop in its place to run.
             try:
                 case = all_tests.pop(0)
             except IndexError:
+                with workers_to_shed.get_lock():
+                    live_workers.value -= 1
                 break
-        else:
-            break
 
         if stop_testing.is_set():
             if is_concurrent:
@@ -5113,7 +5276,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 60)
+                signal.alarm(int(test_case.get_timeout(args) * 1.1) + 60)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -6001,6 +6164,10 @@ def do_run_tests(
             random.shuffle(test_suite.parallel_tests)
 
         workers_to_shed = multiprocessing.Value('i', 0)
+        # Workers that have not yet decided to stop, guarded by the lock of
+        # `workers_to_shed` so that a worker leaving the pool and a worker
+        # taking a shed request cannot be observed out of order.
+        live_workers = multiprocessing.Value('i', 0)
         total_failures_shared = multiprocessing.Value('i', 0)
 
         if args.no_self_parallel:
@@ -6018,14 +6185,26 @@ def do_run_tests(
 
         batch_size = len(test_suite.parallel_tests) // jobs
 
-        processes = []
-        for i in range(jobs):
-            if args.no_self_parallel:
-                queue = worker_queues[i]
-                queue_size = len(queue)
-            else:
-                queue = shared_queue
-                queue_size = batch_size
+        # Shedding is a one-way door when every worker owns its queue: a worker
+        # that stops takes its remaining tests with it, and starting it again
+        # would re-run the ones it already did. Those runs (--no-self-parallel is
+        # only used together with --flaky-check) are bounded by a time limit and
+        # not by a test count, so a pool that drains only costs reruns, and it may
+        # drain to a single worker as it always has. A shared queue instead has to
+        # finish a fixed set of tests within the job's own timeout, and dropping
+        # from `jobs` to one worker multiplies what is left of the run by `jobs` -
+        # turning a server that survived into a job killed mid-suite. Keep half of
+        # the pool there: halving the load is the largest cut whose worst case,
+        # paid from the very first test, still fits a budget sized at twice the
+        # median run. The half is rounded up, so an odd pool keeps the contract
+        # too - `jobs // 2` would let `jobs = 3` shed down to one worker, a 3x
+        # worst case, and `jobs` is clamped to the number of selected tests, so
+        # an ordinarily even configuration can still come out odd here.
+        MIN_WORKERS = 1 if args.no_self_parallel else max(1, (jobs + 1) // 2)
+
+        def start_worker(process_index, queue, queue_size):
+            with workers_to_shed.get_lock():
+                live_workers.value += 1
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=(
@@ -6038,8 +6217,10 @@ def do_run_tests(
                         exit_code,
                         stop_testing,
                         workers_to_shed,
+                        live_workers,
+                        MIN_WORKERS,
                         restarted_tests,
-                        i,  # process index
+                        process_index,
                         total_failures_shared,
                         progress_counter,
                         total_tests,
@@ -6049,15 +6230,52 @@ def do_run_tests(
             )
             processes.append(process)
             process.start()
+            return process
+
+        processes = []
+        for i in range(jobs):
+            if args.no_self_parallel:
+                start_worker(i, worker_queues[i], len(worker_queues[i]))
+            else:
+                start_worker(i, shared_queue, batch_size)
 
         # How often (seconds) to query server memory usage.
         MEMORY_CHECK_INTERVAL = 5.0
-        # After shedding a worker, wait this long before the next check to give
-        # memory time to drop before potentially shedding another worker.
+        # After changing the worker count, wait this long before the next check to
+        # give memory time to settle before changing it again.
         MEMORY_SHED_COOLDOWN = 30.0
         # Fraction of max_server_memory_usage at which we start shedding workers.
         MEMORY_PRESSURE_THRESHOLD = 0.8
+        # Fraction at or below which a worker shed earlier is started again. The
+        # gap to MEMORY_PRESSURE_THRESHOLD is what keeps the pool stable: with a
+        # single threshold, a fraction hovering around it sheds one more worker
+        # every cooldown and puts none of them back, so the pool drains to its
+        # floor however brief each excursion above the threshold is. Five points
+        # of the limit is a wide enough band to be a real drop in usage rather
+        # than noise (~4.5 GiB on a sanitizer job, whose limit is 0.7 of a 128
+        # GiB host) while still narrow enough to reach in the band this actually
+        # oscillates in - the observed runs hover just above the shed threshold,
+        # not far below it.
+        MEMORY_RECOVERY_THRESHOLD = 0.75
         last_memory_check = time()
+        # Shed requests issued so far, and how many of the workers that honoured
+        # one have been started again. `workers_to_shed` only counts the requests
+        # no worker has picked up yet, so `shed_requests - workers_to_shed.value`
+        # is the number of workers that have taken one and are therefore
+        # committed to stopping.
+        shed_requests = 0
+        workers_restored = 0
+
+        def reap_finished_workers():
+            for p in processes[:]:
+                if not p.is_alive():
+                    # Check if process was killed with exception
+                    if p.exitcode is not None and p.exitcode != 0:
+                        print(
+                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
+                        )
+                        runner_process_killed.set()
+                    processes.remove(p)
 
         hung_check_monitor = HungCheckMonitor(args)
 
@@ -6065,29 +6283,110 @@ def do_run_tests(
             sleep(0.1)
             sys.stdout.flush()
 
-            # Periodically check memory pressure and reduce concurrency if needed.
-            # In normal mode workers share a single queue, so shedding one
-            # does not lose work.  In --flaky-check mode each worker has its
-            # own queue, so its remaining tests will not run — acceptable under
-            # memory pressure.
+            # Periodically check memory pressure and follow it in both
+            # directions: shed a worker while the server is close to its limit,
+            # and start a shed one again once it is not. In normal mode workers
+            # share a single queue, so shedding one does not lose work and any
+            # worker can pick up where it left off. In --no-self-parallel mode
+            # each worker has its own queue, so its remaining tests will not run
+            # and it is never started again - acceptable under memory pressure.
             now = time()
-            if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
+            if now - last_memory_check >= MEMORY_CHECK_INTERVAL:
                 last_memory_check = now
+                # Drop the workers that have already exited before deciding, so
+                # that what is printed alongside the decision is what the pool
+                # looks like now rather than what it looked like an iteration
+                # ago. The decision itself reads `live_workers`, which does not
+                # depend on this.
+                reap_finished_workers()
                 memory_fraction = get_server_memory_fraction(args)
+                pool_changed = False
                 if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
                     # Cap outstanding shed requests so we never drain the pool
-                    # to zero: only increment if the number of workers that will
-                    # still be running after all pending sheds is greater than 1.
+                    # past its floor. `live_workers` counts the workers that have
+                    # not yet decided to stop - a worker leaves that count in the
+                    # same critical section in which it takes a shed request or
+                    # finds its queue empty - so subtracting the requests nobody
+                    # has taken yet gives exactly how many workers are left once
+                    # every request issued has been honoured.
+                    #
+                    # A count read off `processes` cannot say that: a worker
+                    # stays there until it has actually exited, and one that
+                    # exits on its own between two of these five-second samples
+                    # is counted here until the next reap. With
+                    # `--no-self-parallel` the tests are dealt out by hash, so a
+                    # worker whose share comes out empty exits immediately -
+                    # under `--flaky-check`, the only user of that mode, every
+                    # rerun of a selected test hashes into the same queue, so
+                    # most of the pool can be gone while `processes` still lists
+                    # it, and the last worker carrying the run would be told to
+                    # stop, leaving its queue unrun with nothing to report it.
+                    #
+                    # The request is still only an ask: the pool can shrink
+                    # between this decision and the moment a worker acts on it,
+                    # so the worker re-checks the same floor under the same lock
+                    # before honouring one.
                     with workers_to_shed.get_lock():
-                        if len(processes) - workers_to_shed.value > 1:
+                        workers_left = live_workers.value - workers_to_shed.value
+                        if workers_left > MIN_WORKERS:
                             workers_to_shed.value += 1
+                            shed_requests += 1
+                            pool_changed = True
                             print(
                                 f"Server memory at {memory_fraction:.0%} of limit — "
                                 f"signalling one worker to stop after its current test "
-                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                                f"({live_workers.value} live, {workers_to_shed.value} pending shed)"
                             )
-                    # Use a longer cooldown so memory has time to drop before
-                    # we consider shedding another worker.
+                elif (
+                    memory_fraction is not None
+                    and memory_fraction <= MEMORY_RECOVERY_THRESHOLD
+                    and not args.no_self_parallel
+                    and not stop_testing.is_set()
+                ):
+                    # Read the queue length outside the lock: it is a manager
+                    # proxy, so `len` is a round trip to another process, and the
+                    # lock is on a worker's path between two tests.
+                    queue_left = len(shared_queue)
+                    start_replacement = False
+                    with workers_to_shed.get_lock():
+                        workers_stopped = shed_requests - workers_to_shed.value
+                        if workers_to_shed.value > 0:
+                            # Nobody has picked this request up yet: withdrawing
+                            # it is cheaper than letting a worker stop and then
+                            # starting another one in its place.
+                            workers_to_shed.value -= 1
+                            shed_requests -= 1
+                            pool_changed = True
+                            print(
+                                f"Server memory back at {memory_fraction:.0%} of limit — "
+                                f"withdrawing a shed request that no worker has taken "
+                                f"({live_workers.value} live, {workers_to_shed.value} pending shed)"
+                            )
+                        elif workers_stopped > workers_restored and queue_left > 0:
+                            workers_restored += 1
+                            start_replacement = True
+                    if start_replacement:
+                        # Started outside the lock, since starting a worker takes
+                        # it too.
+                        #
+                        # The process index only names this worker's profile
+                        # file, so give the replacement one of its own rather
+                        # than reuse the index of a worker that may still be
+                        # writing. `jobs + 1` belongs to the sequential runner
+                        # below, hence the offset past it.
+                        start_worker(
+                            jobs + 1 + workers_restored, shared_queue, batch_size
+                        )
+                        pool_changed = True
+                        print(
+                            f"Server memory back at {memory_fraction:.0%} of limit — "
+                            f"starting a worker in place of a shed one "
+                            f"({live_workers.value} live, "
+                            f"{workers_stopped - workers_restored} still shed)"
+                        )
+                if pool_changed:
+                    # Use a longer cooldown so memory has time to settle before
+                    # we consider changing the pool again.
                     last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
 
             # Stop the whole run once the global time limit is reached. This is
@@ -6140,30 +6439,12 @@ def do_run_tests(
                     print("Stopping tests, terminating all processes...")
                     # Wait briefly for test results to be written
                     sleep(5)
-                    for p in processes:
-                        if p.is_alive():
-                            p.terminate()
-                    # Wait for processes to exit, then force-kill stragglers
-                    for p in processes:
-                        p.join(timeout=10)
-                        if p.is_alive():
-                            print(f"Force killing process {p.name} (pid {p.pid})")
-                            p.kill()
-                    for p in processes:
-                        p.join(timeout=5)
+                    terminate_workers(processes)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
                 raise_stop_from_carrier(stop_exit_code)
 
-            for p in processes[:]:
-                if not p.is_alive():
-                    # Check if process was killed with exception
-                    if p.exitcode is not None and p.exitcode != 0:
-                        print(
-                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
-                        )
-                        runner_process_killed.set()
-                    processes.remove(p)
+            reap_finished_workers()
 
         # The reap above is the loop's exit condition, so a cause claimed after
         # the check at the top of the iteration is only observable here.
@@ -6184,6 +6465,8 @@ def do_run_tests(
                 exit_code,
                 stop_testing,
                 multiprocessing.Value('i', 0),  # sequential runner is never shed
+                multiprocessing.Value('i', 1),  # itself, and it is the only one
+                0,  # no floor to stay above: nothing sheds it
                 restarted_tests,
                 jobs + 1,
                 seq_total_failures,
@@ -6822,6 +7105,8 @@ ORDER BY (test_name, callee_offset)
                     print(" done")
                     break
                 print(". ", end="")
+                # Paces the probes; the zero-hung path breaks above.
+                sleep(1)
         except Exception as e:
             print(
                 colored(
@@ -6857,6 +7142,13 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
+                    # stdout is a pipe and the dumps below can outlast the deadline.
+                    sys.stdout.flush()
+                    # The query that failed is an expensive aggregate over
+                    # system.stack_trace via HTTP; the plain read goes over TCP,
+                    # and the C stacks need no answer from the server at all.
+                    print_sql_stacktraces(args)
+                    print_c_stacktraces(args)
                     exit_code.value = 1
                     hung_check_failed = True
                 else:
@@ -6920,9 +7212,6 @@ ORDER BY (test_name, callee_offset)
             clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         except Exception as e:
             print("Cannot flush final coverage: ", str(e))
-        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
-        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
-        print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
         try:
             ic_rows = int(
                 clickhouse_execute(
@@ -7805,13 +8094,10 @@ if __name__ == "__main__":
         args.client += " --no-secure"
 
     if args.cloud:
-        enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
         enable_pr = os.getenv("CLOUD_ENABLE_PARALLEL_REPLICAS", "0")
-        print("analyzer:", enable_analyzer)
         print("pr:", enable_pr)
         query_params = {
-            # These two are enabled by default in dev env
-            "allow_experimental_analyzer": enable_analyzer,
+            # Enabled by default in dev env
             "allow_experimental_parallel_reading_from_replicas": enable_pr,
             "allow_suspicious_types_in_order_by": 1,
             "distributed_ddl_output_mode": "none",
@@ -7827,8 +8113,6 @@ if __name__ == "__main__":
             # Test 00765_locate.sql
             "function_locate_has_mysql_compatible_argument_order": 1,
             "input_format_try_infer_datetimes_only_datetime64": "false",
-            # check setting if analyzer enabled, so we will test 2 outcomes
-            # it's behaviour doesn't depend on analyzer
             "database_replicated_allow_replicated_engine_arguments": 0,
         }
         cloud_settings = " ".join([f"--{k}={v}" for k, v in query_params.items()])

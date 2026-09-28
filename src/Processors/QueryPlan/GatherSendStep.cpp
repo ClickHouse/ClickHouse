@@ -70,10 +70,14 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* filter_column_name */ std::nullopt,
                 /* blocks_are_granules_size */ false));
     }
-    else
+
+    /// A serializer on every stream; the sink takes packets only. After the merge above one stream is
+    /// left, and its serializer is the only one.
+    pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        pipeline.resize(1);
-    }
+        return settings.exchange_lookup->createSerializer(header, exchange_id);
+    });
+    pipeline.resize(1);
 
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
