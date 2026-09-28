@@ -1,7 +1,7 @@
 -- histogram_quantile with a computed phi
 []	0.14444444444444443
 []	0.14444444444444443
-[]	0.5000000000000001
+[]	0.23333333333333334
 []	-inf
 []	inf
 []	nan
@@ -40,3 +40,5 @@ nan
 [(100,3),(101,3),(102,3)]
 [(100,1),(101,2),(102,3)]
 -- a comparison of scalars still needs bool
+-- vector matching needs two instant vectors
+3

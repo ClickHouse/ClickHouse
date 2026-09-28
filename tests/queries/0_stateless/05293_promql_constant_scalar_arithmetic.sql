@@ -22,7 +22,7 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
 SELECT '-- histogram_quantile with a computed phi';
 SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(1./6., req_bucket)', 100);
 SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(0.16666666666666666, req_bucket)', 100);
-SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(1 - 0.5, req_bucket)', 100);
+SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(1 - 0.75, req_bucket)', 100);
 SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(-(1 / 2), req_bucket)', 100);
 SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(1 + 1, req_bucket)', 100);
 SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(0 / 0, req_bucket)', 100);
@@ -59,5 +59,12 @@ SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM promethe
 
 SELECT '-- a comparison of scalars still needs bool';
 SELECT value FROM prometheusQuery(ts, '1 > 2', 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+
+SELECT '-- vector matching needs two instant vectors';
+SELECT value FROM prometheusQuery(ts, '1 + on() 2', 100);
+SELECT value FROM prometheusQuery(ts, '1 + on(foo) 2', 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT value FROM prometheusQuery(ts, '1 + ignoring(foo) 2', 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT value FROM prometheusQuery(ts, '1 == bool on(foo) 2', 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT tags, value FROM prometheusQuery(ts, 'histogram_quantile(1 + on(foo) 0, req_bucket)', 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 DROP TABLE ts;

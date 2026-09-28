@@ -133,8 +133,9 @@ SQLQueryPiece applyMathBinaryOperator(
     const auto & operator_name = operator_node->operator_name;
 
     /// An operator on two constant scalars is computed here, so the result is a constant too.
+    /// Vector matching is left to applySimpleBinaryOperator(), which rejects it for scalars.
     if ((left_argument.store_method == StoreMethod::CONST_SCALAR) && (right_argument.store_method == StoreMethod::CONST_SCALAR)
-        && (operator_node->result_type == ResultType::SCALAR))
+        && (operator_node->result_type == ResultType::SCALAR) && operator_node->labels.empty())
     {
         auto res = left_argument;
         res.node = operator_node;
