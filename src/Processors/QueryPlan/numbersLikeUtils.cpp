@@ -112,6 +112,13 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     if (query.arrayJoinExpressionList().first)
         return false;
 
+    /// With a `JOIN` the outer `LIMIT` counts joined rows, not rows of this source: an `INNER` join
+    /// (or any join that filters) can drop the first rows of the source, so stopping it after
+    /// `limit + offset` rows loses the rows that would have matched later. The source may sit on
+    /// either side of the join, and a comma join is represented as a join as well.
+    if (query.hasJoin())
+        return false;
+
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
     return !query.distinct
