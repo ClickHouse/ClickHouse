@@ -281,7 +281,6 @@ static ASTPtr extractExtraCredentials(ASTs & args)
 }
 
 /// Returns the number of arguments before the trailing `identifier = value` arguments.
-/// A constant expression such as `1 = 1` has no identifier key and stays positional.
 static size_t countPositionalArguments(const ASTs & args)
 {
     size_t count = args.size();
