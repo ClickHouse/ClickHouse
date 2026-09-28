@@ -211,16 +211,6 @@ UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
     return TimeSeriesSettings{}[TimeSeriesSetting::recent_samples_ttl_seconds];
 }
 
-UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query)
-{
-    if (query.storage && query.storage->settings)
-    {
-        if (const auto * value = query.storage->settings->changes.tryGet("version"))
-            return SettingFieldUInt64{*value}.value;
-    }
-    return TimeSeriesVersion::LATEST;
-}
-
 bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query)
 {
     return query.storage && query.storage->settings

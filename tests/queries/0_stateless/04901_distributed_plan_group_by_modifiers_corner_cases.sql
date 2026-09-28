@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Corner cases for GROUP BY modifiers under `make_distributed_plan`: aggregates whose serialized
 -- form carries no argument names (with parameters, several arguments, zero arguments), key types
 -- that change under `group_by_use_nulls` (`LowCardinality`), empty input, duplicate grouping sets,

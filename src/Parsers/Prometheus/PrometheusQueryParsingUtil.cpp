@@ -511,8 +511,16 @@ namespace
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool tryParseDurationFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseDurationFormat(
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        std::optional<Int64> * res_duration_ms = nullptr)
     {
+        if (res_duration_ms)
+            *res_duration_ms = std::nullopt;
         bool has_time_units = false;
         Int64 seconds = 0;
         Int64 milliseconds = 0;
@@ -684,13 +692,31 @@ namespace
             result = static_cast<ScalarType>(seconds) + static_cast<ScalarType>(milliseconds) / 1000;
         }
 
+        if (res_duration_ms)
+        {
+            Int64 total_ms = 0;
+            if (DecimalUtils::tryMultiplyAdd<Int64>(seconds, 1000, milliseconds, total_ms))
+                *res_duration_ms = total_ms;
+        }
+
         return true;
     }
 
     template <typename T>
     bool tryParseNumber(
-        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool allow_octal_literals)
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        bool allow_octal_literals,
+        bool * is_duration = nullptr,
+        std::optional<Int64> * res_duration_ms = nullptr)
     {
+        if (is_duration)
+            *is_duration = false;
+        if (res_duration_ms)
+            *res_duration_ms = std::nullopt;
         size_t pos = 0;
 
         /// Parse a sign.
@@ -724,7 +750,24 @@ namespace
         }
         else if (isDurationFormat(unsigned_input))
         {
-            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos);
+            std::optional<Int64> parsed_ms;
+            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos, res_duration_ms ? &parsed_ms : nullptr);
+            if (ok && is_duration)
+                *is_duration = true;
+            if (ok && res_duration_ms && parsed_ms)
+            {
+                if (negative)
+                {
+                    if (*parsed_ms == std::numeric_limits<Int64>::min())
+                        *res_duration_ms = std::nullopt;
+                    else
+                        *res_duration_ms = -*parsed_ms;
+                }
+                else
+                {
+                    *res_duration_ms = parsed_ms;
+                }
+            }
         }
         else
         {
@@ -746,10 +789,17 @@ namespace
 }
 
 
-bool PrometheusQueryParsingUtil::tryParseScalar(std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseScalar(
+    std::string_view input,
+    ScalarType & res_scalar,
+    String * error_message,
+    size_t * error_pos,
+    bool * res_is_duration,
+    std::optional<Int64> * res_duration_ms)
 {
-    /// Here `scale` is set to `0` because it's unused when parsing a floating-point number.
-    return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true);
+    /// Scale is 0 because it is unused when parsing a floating-point number.
+    return tryParseNumber(
+        input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true, res_is_duration, res_duration_ms);
 }
 
 bool PrometheusQueryParsingUtil::tryParseTimestamp(
@@ -765,19 +815,19 @@ bool PrometheusQueryParsingUtil::tryParseTimestamp(
 
 bool PrometheusQueryParsingUtil::tryParseDuration(
     std::string_view input,
-    UInt32 timestamp_scale,
+    UInt32 duration_scale,
     DurationType & res_duration,
     String * error_message,
     size_t * error_pos,
     bool allow_octal_literals)
 {
-    return tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, allow_octal_literals);
+    return tryParseNumber(input, duration_scale, res_duration, error_message, error_pos, allow_octal_literals);
 }
 
 
 /// Parses a time range which is used in range selectors.
 bool PrometheusQueryParsingUtil::tryParseSelectorRange(
-    std::string_view input, UInt32 timestamp_scale, DurationType & res_range, String * error_message, size_t * error_pos)
+    std::string_view input, UInt32 time_scale, DurationType & res_range, String * error_message, size_t * error_pos)
 {
     /// Check opening and closing brackets.
     if (!input.starts_with('['))
@@ -814,7 +864,7 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
     }
 
     if (!tryParseDuration(
-            input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
+            input.substr(start_pos, end_pos - start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += start_pos;
@@ -827,7 +877,7 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
 /// Parses a time range with an optional step which are used in subqueries.
 bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     std::string_view input,
-    UInt32 timestamp_scale,
+    UInt32 time_scale,
     DurationType & res_range,
     std::optional<DurationType> & res_step,
     String * error_message,
@@ -887,7 +937,7 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     }
 
     if (!tryParseDuration(
-            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
+            input.substr(range_start_pos, range_end_pos - range_start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += range_start_pos;
@@ -899,7 +949,7 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     if (step_start_pos != step_end_pos)
     {
         if (!tryParseDuration(
-                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
+                input.substr(step_start_pos, step_end_pos - step_start_pos), time_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
         {
             if (error_pos)
                 *error_pos += step_start_pos;

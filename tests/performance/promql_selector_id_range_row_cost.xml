@@ -27,7 +27,7 @@
     <!-- 12800 series of one metric, 4096 samples each at 15s: 52.4M rows in the samples table.
          The samples share one 17-hour window, which keeps the default recent-samples target
          (partitioned by 5-hour interval) under max_partitions_per_insert_block. -->
-    <fill_query do_not_check_in_pr="119225">
+    <fill_query>
         INSERT INTO promql_row_cost_ts (metric_name, tags, samples)
         SELECT
             'rowcost_metric',

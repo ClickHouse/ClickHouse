@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import string
 import tempfile
 import threading
@@ -171,6 +172,31 @@ def started_cluster():
             tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
             with_minio=True,
             with_azurite=True,
+            stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
+            # A released version old enough that this PR will certainly not be backported to it, so the
+            # comparison stays meaningful: it has Delta writes (>= 25.10) but no write-schema cast, so it
+            # demonstrates the old "write the value as-is" behaviour before `restart_with_latest_version`.
+            # Enables writes via a profile config (not `enable_writes.xml`, which carries the 26.9-only
+            # `allow_delta_lake_create_table` setting the old binary would reject at startup): the old binary
+            # does not apply the per-query writes-enable setting on the write path, so it must be a profile default.
+            "node_old_writes",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes_old.xml",
+            ],
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="26.6",
+            with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
         )
@@ -488,6 +514,142 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_delta_lake_engine_secret_masked(started_cluster):
+    # A `CREATE TABLE ... ENGINE = DeltaLake('<url>', '<key>', '<secret>')` must mask the S3 secret access key
+    # as `[HIDDEN]` in `SHOW CREATE TABLE` and `system.tables`. Masking is applied when the query is formatted
+    # (`FunctionSecretArgumentsFinder`), but the DeltaLake engine attaches eagerly (reads the location during
+    # CREATE), so a real Delta table must exist for the CREATE to succeed and appear in `SHOW CREATE` /
+    # `system.tables` -- hence the Spark/MinIO setup below.
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_delta_secret_masked")
+
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(10)"
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    )
+    delta_path = f"/{TABLE_NAME}"
+    write_delta_from_file(spark, parquet_data_path, delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/"
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake('{url}', 'minio', '{minio_secret_key}')
+        """
+    )
+
+    for query in (
+        f"SHOW CREATE TABLE {TABLE_NAME}",
+        f"SELECT create_table_query FROM system.tables WHERE name = '{TABLE_NAME}' AND database = currentDatabase()",
+    ):
+        result = instance.query(query)
+        assert "[HIDDEN]" in result, result
+        assert minio_secret_key not in result, result
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_write_cast_upgrade_compatibility(started_cluster):
+    node = started_cluster.instances["node_old_writes"]
+    table_name = randomize_table_name("test_write_cast_upgrade")
+
+    # Existing Delta table whose column is stored as int8 (Delta `byte`).
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    schema = pa.schema([("a", pa.int8())])
+    table = pa.Table.from_arrays([pa.array([1, 2], type=pa.int8())], schema=schema)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
+
+    try:
+        # Attach on the OLD version with a declared column (Int32) wider than the Delta type (int8). The old
+        # version has no write-schema cast, so the out-of-range INSERT writes the value as-is and succeeds.
+        # Writes and the kernel are enabled via the node's profile config (see `enable_writes_old.xml`).
+        node.query(
+            f"CREATE TABLE {table_name} (a Int32) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')"
+        )
+        node.query(f"INSERT INTO {table_name} VALUES (1000)")
+
+        # Upgrade to the current build; the table definition (Int32 column) is reloaded from metadata.
+        node.restart_with_latest_version()
+
+        # New version, default (delta_lake_accurate_write_cast = 1): the write-schema cast Int32 -> int8 now
+        # throws on the out-of-range value instead of silently truncating.
+        error = node.query_and_get_error(f"INSERT INTO {table_name} VALUES (1000)")
+        assert "cannot be safely converted" in error, error
+
+        # New version with the setting off (as `compatibility` below 26.9 selects): the plain cast is used, so
+        # the INSERT succeeds again, preserving the old permissive behaviour.
+        node.query(
+            f"INSERT INTO {table_name} VALUES (1000)",
+            settings={"delta_lake_accurate_write_cast": 0},
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
+def test_partition_key_cast_overflow(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_partition_key_cast_overflow")
+
+    # Existing partitioned Delta table: partition column `p` stored as int8 (Delta `byte`).
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    schema = pa.schema([("p", pa.int8()), ("x", pa.string())])
+    table = pa.Table.from_arrays(
+        [pa.array([1, 2], type=pa.int8()), pa.array(["a", "b"], type=pa.string())],
+        schema=schema,
+    )
+    write_deltalake_with_retry(path, table, storage_options=storage_options, partition_by=["p"])
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
+    write = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+
+    # Attach with the partition column declared Int32 (wider than the Delta int8).
+    instance.query(
+        f"CREATE TABLE {table_name} (p Int32, x String) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
+        settings=write,
+    )
+    try:
+        # Default (accurate): an out-of-range partition key is rejected instead of being committed verbatim
+        # and read back as -24.
+        error = instance.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (1000, 'c')", settings=write
+        )
+        assert "cannot be safely converted" in error, error
+
+        # With the setting off (plain cast) the partition value is truncated, so the INSERT succeeds.
+        instance.query(
+            f"INSERT INTO {table_name} VALUES (1000, 'c')",
+            settings={**write, "delta_lake_accurate_write_cast": 0},
+        )
+        assert (
+            int(instance.query(f"SELECT count() FROM {table_name}", settings=write)) == 3
+        )
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
 def test_single_log_file_azure_connection_string(started_cluster):
@@ -2515,10 +2677,8 @@ deltaLake(
         )
     )
 
-@pytest.mark.parametrize(
-    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
-)
-def test_cluster_function(started_cluster, new_analyzer, storage_type):
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_cluster_function(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
@@ -2551,11 +2711,11 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
         instance.query(
-            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function}"
         )
         assert 5 == int(
             instance.query(
-                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+                f"SELECT count() FROM {table_function}"
             )
         )
         assert "1\taa\n"
@@ -2563,7 +2723,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         "3\tcc\n"
         "4\taa\n"
         "5\tbb\n" == instance.query(
-            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+            f"SELECT * FROM {table_function} ORDER BY a"
         )
 
 
@@ -3832,7 +3992,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         def insert(i):
             try:
                 instance.query(
-                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)"
                 )
                 success[i] += 1
             except Exception as e:
@@ -4673,6 +4833,204 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     assert int(parquet_count) >= 1, (
         f"committed data files removed after late cancel: {parquet_count}"
     )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
+    # A DeltaLake commit that fails must stay the error the client sees, even when
+    # removing the data files the failed INSERT had already uploaded itself fails, and
+    # that removal failure must be reported with the data file it was left on. Two
+    # faults are injected at once: delta_lake_commit_fail_before_log_write throws
+    # before the commit writes its log entry (the commit fails), and
+    # local_object_storage_network_error_during_remove throws on the first data-file
+    # removal. The first INSERT is a control: it commits, so the committed data files
+    # are known and the failed INSERT can be held to changing nothing.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
+    table_name = randomize_table_name("test_commit_failure_cleanup")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    # One row per data file, one row per block: the unpartitioned sink rolls a new data
+    # file per block and the partitioned one opens a sink per partition value, so both
+    # write 3 data files. With a single data file the cleanup loop runs only one
+    # iteration, which exercises neither sink's multi-file path.
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    def failpoint_enabled():
+        return instance.query(
+            f"SELECT enabled FROM system.fail_points WHERE name = '{failpoint}'"
+        ).strip()
+
+    # Version 0 was written from an empty table, so no data file exists yet.
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, so every later count is measured
+    # against a known number of committed data files.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, f"control insert wrote {len(committed)} data files: {committed}"
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        assert failpoint_enabled() == "1"
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do.
+        fired = failpoint_enabled() == "0"
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
+
+    assert fired, "the removal failpoint never fired, so the cleanup path was not exercised"
+
+    # O1: the client is told why nothing was written (the commit failed), not why a
+    # cleanup step failed afterwards.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert commit_error in error, f"unexpected insert error: {error}"
+
+    # O2: the removal that failed is reported, naming the data file it was left on. The
+    # message is the full one only the commit-failure cleanup emits; the cancel path logs a
+    # different one. The path has to follow the message immediately: the injected removal
+    # exception carries the path too, so matching it anywhere on the line would also pass if
+    # the handler logged no path at all.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    assert re.search(
+        re.escape(f"{message}: ") + rf"\S*{re.escape(table_name)}_data/\S+\.parquet",
+        removal_log,
+    ), f"the failed data-file removal was not logged with its path: {removal_log}"
+
+    # O3: the failed INSERT committed nothing, and left the committed data files alone.
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+    assert parquet_paths() == committed
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partitioned):
+    # The cleanup after a failed DeltaLake commit must attempt every data file the INSERT
+    # had uploaded, not stop on the first removal that fails. Observing that needs a
+    # removal fault that persists across calls: with a fault that fires once the later
+    # removals succeed, so a handler that gave up after the first failure would leave the
+    # same files on disk and the same single log line as one that continued, which is what
+    # the sibling test above cannot tell apart. The oracle here is the number of distinct
+    # data files named in the handler's own log lines: one per data file when every removal
+    # is attempted, one in total when the loop stops at the first failure.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_every_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
+    table_name = randomize_table_name("test_commit_failure_every_file")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, which fixes how many data files an
+    # INSERT of this shape writes.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, (
+        f"control insert wrote {len(committed)} data files: {committed}"
+    )
+
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
+        # REGULAR, so it stays armed until disabled and every removal in the window fails.
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
+
+    # O1: the client is still told why nothing was written, not why a cleanup step failed.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert commit_error in error, f"unexpected insert error: {error}"
+
+    # O2: one failed removal is logged per data file, each naming a different one. The
+    # table name anchors the match so the two parametrizations cannot read each other's
+    # lines, and cancelBuffers() logs a different message, so it cannot inflate the count.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    logged_paths = set(
+        re.findall(
+            re.escape(f"{message}: ") + rf"(\S*{re.escape(table_name)}_data/\S+\.parquet)",
+            removal_log,
+        )
+    )
+    assert len(logged_paths) == 3, (
+        f"the handler logged {len(logged_paths)} failed removals, expected one per data file "
+        f"(a handler that stopped at the first failure logs one): {removal_log}"
+    )
+
+    # The injected fault throws after the unlink, so the uncommitted files are gone either
+    # way: this stays an invariant guard, not the discriminating oracle.
+    assert parquet_paths() == committed
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
@@ -5758,8 +6116,7 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
 
-@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
-def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
+def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_insert_select_cluster_pruning")
 
@@ -5824,7 +6181,7 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
         """,
         query_id=query_id,
-        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
+        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0},
     )
 
     # The cluster INSERT path runs the SELECT on a remote replica, which writes
@@ -5888,7 +6245,6 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         settings={
             "allow_experimental_delta_kernel_rs": 1,
             "delta_lake_enable_engine_predicate": 0,
-            "allow_experimental_analyzer": allow_experimental_analyzer,
         },
     )
 
@@ -6185,3 +6541,58 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
         f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
+
+
+def test_create_table_concurrent_race_attaches(started_cluster):
+    # Two CREATE TABLE statements for the SAME location race to write commit 0. Creator A pauses right
+    # after its `_delta_log` existence check via the delta_lake_create_table_pause failpoint; while it is
+    # paused, creator B (a different table name, so no DDL-guard serialization) creates the table and writes
+    # commit 0. When A resumes, its own commit loses the race, the kernel reports the conflict, and
+    # `DeltaLakeMetadataDeltaKernel::createTable` must attach to the now-existing table instead of failing.
+    # Regression for the lost-race attach path in createTable.
+    instance = started_cluster.instances["node1"]
+    failpoint = "delta_lake_create_table_pause"
+    table_path = f"/var/lib/clickhouse/user_files/{randomize_table_name('concurrent_create')}"
+    table_a = randomize_table_name("t_dl_race_a")
+    table_b = randomize_table_name("t_dl_race_b")
+
+    # PAUSEABLE_ONCE: only the first creator to reach the window (A) pauses; B passes straight through.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    # A thread assertion does not fail the test on its own, so hand any worker error back to the main thread.
+    create_error = []
+
+    def run_create_a():
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"CREATE TABLE {table_a} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
+            )
+            assert error == "", f"CREATE A should attach to the concurrently-created table, not fail: {error}"
+        except BaseException as e:  # noqa: BLE001
+            create_error.append(e)
+
+    thread = threading.Thread(target=run_create_a)
+    thread.start()
+    try:
+        # Bounded wait so a never-hit failpoint fails the test instead of hanging.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        # B wins the race and writes commit 0 while A is paused.
+        instance.query(
+            f"CREATE TABLE {table_b} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
+        )
+        # Resume A; its commit now loses the race and must fall back to attaching.
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        thread.join()
+
+    if create_error:
+        raise create_error[0]
+
+    # Both tables point at the same Delta table and read consistently.
+    instance.query(f"INSERT INTO {table_b} VALUES (1, 'a')")
+    assert instance.query(f"SELECT count() FROM {table_a}").strip() == "1"
+    assert instance.query(f"SELECT count() FROM {table_b}").strip() == "1"
+
+    instance.query(f"DROP TABLE {table_a}")
+    instance.query(f"DROP TABLE {table_b}")
