@@ -869,7 +869,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
     ///
     /// A merge cancelled after selection has `need_remove_expired_values` cleared above and must
-    /// not drop rows, so it falls through to the normal pipeline, which applies no TTL.
+    /// not drop rows, so it falls through to the normal pipeline, which runs no TTL algorithm.
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
         && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
@@ -3628,7 +3628,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// TTL step: still runs after the merge even in vertical TTL mode, where rows are already
     /// filtered by the merging algorithm, so it only updates TTL info without removing rows;
-    /// without `need_remove_expired_values` it applies no TTL and only fills the expired columns.
+    /// without `need_remove_expired_values` it runs no TTL algorithm and only fills the expired columns.
     if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
     {
         auto ttl_step = std::make_unique<TTLStep>(
