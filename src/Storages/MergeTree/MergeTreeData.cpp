@@ -6447,8 +6447,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    /// A renamed column keeps its rows, and renaming a column of the old sorting key is refused above, so the new
-    /// sorting key can use a renamed column only in an added expression. `checkProperties` sees it as a new column.
+    /// A renamed column keeps its rows, and renaming a column of the old sorting key is refused above,
+    /// so the new sorting key can use a renamed column only in an added expression.
     if (!is_secondary_replay)
     {
         for (const auto & command : commands)
