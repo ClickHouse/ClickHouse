@@ -105,8 +105,19 @@ void registerBackupEngineS3(BackupFactory & factory)
             {
                 S3::S3AuthSettings auth_settings;
 
-                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", params.backup_info.function_arg->formatForErrorMessage());
+                /// The rejected argument is never echoed, so both failure modes report the same way:
+                /// a nested map like `headers(..)` is masked only by its enclosing formatter, so
+                /// formatting one alone prints its values, and evaluating one can throw quoting it.
+                try
+                {
+                    if (!StorageS3Configuration::collectCredentials(
+                            params.backup_info.function_arg, auth_settings, params.context))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+                }
+                catch (const Exception &)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+                }
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);

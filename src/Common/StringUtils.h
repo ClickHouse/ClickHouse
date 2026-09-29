@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>
@@ -263,6 +264,12 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
 inline bool equalsCaseInsensitive(char a, char b)
 {
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
+}
+
+inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size()
+        && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
 }
 
 
