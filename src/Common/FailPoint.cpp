@@ -234,7 +234,6 @@ static struct InitFiu
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
     ONCE(plain_object_storage_fail_after_copy_on_file_move) \
-    ONCE(plain_object_storage_drop_temp_source_on_file_move_undo) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \

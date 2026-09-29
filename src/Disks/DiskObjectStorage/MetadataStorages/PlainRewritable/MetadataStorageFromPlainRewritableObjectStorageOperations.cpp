@@ -44,7 +44,6 @@ namespace FailPoints
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
     extern const char plain_object_storage_fail_after_copy_on_file_move[];
-    extern const char plain_object_storage_drop_temp_source_on_file_move_undo[];
 }
 
 namespace
@@ -668,36 +667,22 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     /// The source is removed only after it was saved, so before that there is nothing to restore.
     if (source_saved)
     {
-        /// Stands for anything that removes the temporary copy behind the back of this operation.
-        fiu_do_on(FailPoints::plain_object_storage_drop_temp_source_on_file_move_undo, {
-            object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
-        });
-
         undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
         {
             if (object_storage->exists(StoredObject(remote_path_from)))
                 return;
 
-            std::filesystem::path restore_from = tmp_remote_path_from;
             if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
-            {
-                /// Without a target, a blob under the target key can only be the copy this move published before it
-                /// removed the source, so it still holds the source.
-                if (had_existing_target || !object_storage->exists(StoredObject(remote_path_to)))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                        "temporary key '{}' the move copied it to{}",
-                        path_from,
-                        remote_path_from,
-                        tmp_remote_path_from,
-                        had_existing_target ? "" : fmt::format(", and there is no copy under the target key '{}'", remote_path_to));
-
-                restore_from = remote_path_to;
-            }
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
+                    "temporary key '{}' the move copied it to",
+                    path_from,
+                    remote_path_from,
+                    tmp_remote_path_from);
 
             object_storage->copyObject(
-                /*object_from=*/StoredObject(restore_from),
+                /*object_from=*/StoredObject(tmp_remote_path_from),
                 /*object_to=*/StoredObject(remote_path_from),
                 read_settings,
                 write_settings);

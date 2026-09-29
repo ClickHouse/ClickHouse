@@ -248,8 +248,7 @@ public:
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. Restore remote_path_from from tmp_remote_path_from, if the source was saved there. If that copy is lost
-     *     and the target did not exist, restore it from remote_path_to, where the move published it.
+     *  1. Restore remote_path_from from tmp_remote_path_from, if the source was saved there.
      *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if the target did not exist.
      *  3. Remove the temporary copies.
      */
