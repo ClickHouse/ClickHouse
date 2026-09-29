@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+-- no-object-storage: remote reads allocate prefetch buffers that can exceed the 200M limit
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1, use_primary_key_cache = 0;
 
@@ -6,9 +8,12 @@ INSERT INTO test SELECT randomString(1000) FROM numbers(10000);
 SELECT round(primary_key_bytes_in_memory, -7), round(primary_key_bytes_in_memory_allocated, -7) FROM system.parts WHERE database = currentDatabase() AND table = 'test' FORMAT Vertical;
 
 DETACH TABLE test;
+SET max_memory_usage = '50M';
 ATTACH TABLE test;
 
 SELECT primary_key_bytes_in_memory, primary_key_bytes_in_memory_allocated FROM system.parts WHERE database = currentDatabase() AND table = 'test' FORMAT Vertical;
+
+SET max_memory_usage = '200M';
 
 -- Run a query that doesn use indexes
 SELECT s != '' FROM test LIMIT 1;
