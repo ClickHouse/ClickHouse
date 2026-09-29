@@ -133,7 +133,9 @@ public:
         unexpected("tryGetObjectMetadata");
     }
     void removeObjectIfExists(const StoredObject &) override { unexpected("removeObjectIfExists"); }
-    void removeObjectsIfExist(const StoredObjects &) override { unexpected("removeObjectsIfExist"); }
+    void removeObjectsIfExist(
+        const StoredObjects &,
+        StoredObjects *) override { unexpected("removeObjectsIfExist"); }
     void copyObject( /// NOLINT
         const StoredObject &,
         const StoredObject &,
@@ -161,7 +163,10 @@ constexpr auto committed_content = "{\"format-version\":2}";
 
 bool commitAgainst(int write_error_code, std::optional<std::string> stored_content, bool read_throws = false)
 {
-    Iceberg::IcebergPathResolver resolver("/table", "/table");
+    Iceberg::IcebergPathResolver resolver(
+        "/table",
+        "/table",
+        Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
     GeneratedMetadataFileWithInfo metadata_file_info{
         .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
         .version = 2,

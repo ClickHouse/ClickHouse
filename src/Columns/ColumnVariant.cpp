@@ -455,6 +455,11 @@ bool ColumnVariant::isNullAt(size_t n) const
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
 }
 
+bool ColumnVariant::hasOnlyTypeDefaults() const
+{
+    return hasOnlyNulls();
+}
+
 std::string_view ColumnVariant::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -858,6 +863,8 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
+    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ false);
+
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
@@ -868,17 +875,6 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
     getOffsets().push_back(variants[local_discr]->size());
     variants[local_discr]->deserializeAndInsertFromArena(in, settings);
-}
-
-void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
-{
-    Discriminator global_discr = 0;
-    readBinaryLittleEndian<Discriminator>(global_discr, in);
-
-    if (global_discr == NULL_DISCRIMINATOR)
-        return;
-
-    variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
 
 char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
@@ -1881,7 +1877,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         auto & discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
         {
-            if (null_map[i] ^ inverted)
+            if (!!null_map[i] != inverted)
             {
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.
@@ -2028,4 +2024,17 @@ void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
 }
 
 
+ColumnPlanes ColumnVariant::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Variant, getLocalDiscriminators().data(), getOffsets().data());
+    const size_t num_variants = variants.size();
+    planes.children.reserve(num_variants);
+    planes.local_to_global.reserve(num_variants);
+    for (size_t i = 0; i < num_variants; ++i)
+    {
+        planes.children.push_back(&getVariantByGlobalDiscriminator(i));
+        planes.local_to_global.push_back(globalDiscriminatorByLocal(static_cast<Discriminator>(i)));
+    }
+    return planes;
+}
 }

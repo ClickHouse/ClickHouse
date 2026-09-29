@@ -2,12 +2,12 @@
 -- silently disable itself for `FINAL` + descending order.
 --
 -- `wouldReadInOrderBeUseful` matches the storage's sorting key against the
--- requested sort description and mirrors the FINAL-time gating of
+-- requested sort description but is unaware of FINAL-time gating in
 -- `ReadFromMergeTree::requestReadingInOrder`, which rejects
--- `direction != 1 && query_info.isFinal()`. If the probe ignored that gate,
--- the deferral would fire, the second pass would still reject the read, and
--- both optimizations would be lost. This test pins the relevant settings on
--- and checks that an inner `Sort + Limit` is injected.
+-- `direction != 1 && query_info.isFinal()`. Without the FINAL+descending gate
+-- in `topKThroughJoin`, the deferral would fire, the second pass would still
+-- reject the read, and both optimizations would be lost. This test pins the
+-- relevant settings on and checks that an inner `Sort + Limit` is injected.
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;

@@ -277,7 +277,7 @@ que permite limpiar la caché de esquemas para todas las fuentes o para una fuen
 Intentemos inferir la estructura de un conjunto de datos de ejemplo de S3 `github-2022.ndjson.gz` y veamos cómo funciona la caché de inferencia de esquemas:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -319,7 +319,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 ```
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -366,7 +366,7 @@ Como puede ver, la segunda consulta se completó casi al instante.
 Probemos a cambiar algunos ajustes que pueden afectar al esquema inferido:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐

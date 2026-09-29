@@ -2,10 +2,16 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+#include <base/hex.h>
 #include <fmt/ranges.h>
+
+#include <cmath>
 
 
 namespace DB
@@ -22,23 +28,73 @@ namespace
 {
     using Node = PrometheusQueryTree::Node;
 
+    String quotePromQLString(std::string_view str)
+    {
+        String result;
+        result.reserve(str.size() + 2);
+        result.push_back('"');
+
+        for (size_t i = 0; i < str.size();)
+        {
+            const auto c = static_cast<UInt8>(str[i]);
+
+            if (c >= 0x80)
+            {
+                const size_t sequence_length = UTF8::seqLength(c);
+                if (sequence_length <= str.size() - i
+                    && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data() + i), sequence_length))
+                {
+                    result.append(str.data() + i, sequence_length);
+                    i += sequence_length;
+                    continue;
+                }
+            }
+
+            switch (c)
+            {
+                case '"':
+                case '\\':
+                    result.push_back('\\');
+                    result.push_back(static_cast<char>(c));
+                    break;
+                case '\a': result.append("\\a"); break;
+                case '\b': result.append("\\b"); break;
+                case '\f': result.append("\\f"); break;
+                case '\n': result.append("\\n"); break;
+                case '\r': result.append("\\r"); break;
+                case '\t': result.append("\\t"); break;
+                case '\v': result.append("\\v"); break;
+                default:
+                    if (c < 0x20 || c == 0x7F || c >= 0x80)
+                    {
+                        result.append("\\x");
+                        result += getHexUIntLowercase(c);
+                    }
+                    else
+                    {
+                        result.push_back(static_cast<char>(c));
+                    }
+                    break;
+            }
+
+            ++i;
+        }
+
+        result.push_back('"');
+        return result;
+    }
+
     bool isLegacyLabelName(std::string_view label)
     {
         if (label.empty())
             return false;
 
-        auto is_alpha = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        };
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-
-        if (!is_alpha(label.front()) && label.front() != '_')
+        if (!isAlphaASCII(label.front()) && label.front() != '_')
             return false;
 
         for (char c : label.substr(1))
         {
-            if (!is_alpha(c) && !is_digit(c) && c != '_')
+            if (!isAlphaNumericASCII(c) && c != '_')
                 return false;
         }
 
@@ -50,18 +106,12 @@ namespace
         if (metric.empty())
             return false;
 
-        auto is_alpha = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        };
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-
-        if (!is_alpha(metric.front()) && metric.front() != '_' && metric.front() != ':')
+        if (!isAlphaASCII(metric.front()) && metric.front() != '_' && metric.front() != ':')
             return false;
 
         for (char c : metric.substr(1))
         {
-            if (!is_alpha(c) && !is_digit(c) && c != '_' && c != ':')
+            if (!isAlphaNumericASCII(c) && c != '_' && c != ':')
                 return false;
         }
 
@@ -103,19 +153,57 @@ namespace
 
     String formatLabelName(const String & label)
     {
-        return canPrintLabelNameUnquoted(label) ? label : doubleQuoteString(label);
+        return canPrintLabelNameUnquoted(label) ? label : quotePromQLString(label);
     }
 
     String formatMetricName(const String & metric)
     {
-        return canPrintMetricNameUnquoted(metric) ? metric : doubleQuoteString(metric);
+        return canPrintMetricNameUnquoted(metric) ? metric : quotePromQLString(metric);
+    }
+
+    /// Prints a duration in the units the parser accepts, longest first, the way Prometheus prints one.
+    /// A year or a week is used only when it divides the duration exactly, because 90d reads better than 12w6d.
+    String formatDuration(PrometheusQueryTree::DurationType duration, UInt32 scale)
+    {
+        static constexpr struct { std::string_view name; UInt64 length_ms; bool exact_only; } units[]
+            = {{"y", 365ULL * 24 * 60 * 60 * 1000, true}, {"w", 7ULL * 24 * 60 * 60 * 1000, true},
+               {"d", 24ULL * 60 * 60 * 1000, false}, {"h", 60ULL * 60 * 1000, false},
+               {"m", 60ULL * 1000, false}, {"s", 1000ULL, false}, {"ms", 1ULL, false}};
+
+        /// A duration finer than a millisecond has no spelling in the grammar, so it keeps the plain numeric form.
+        if (scale < 3)
+            return DB::toString(duration, scale);
+        const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(scale - 3);
+        if (duration.value % divisor)
+            return DB::toString(duration, scale);
+
+        const Int64 milliseconds = duration.value / divisor;
+        if (milliseconds == 0)
+            return "0s";
+
+        String str;
+        if (milliseconds < 0)
+            str += "-";
+        /// Negated as unsigned, so the most negative duration is not undefined behaviour.
+        UInt64 rest = milliseconds < 0 ? (0 - static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
+        for (const auto & unit : units)
+        {
+            if (unit.exact_only && (rest % unit.length_ms))
+                continue;
+            if (const UInt64 count = rest / unit.length_ms)
+            {
+                str += std::to_string(count);
+                str += unit.name;
+                rest -= count * unit.length_ms;
+            }
+        }
+        return str;
     }
 
     template <typename NodeType>
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
     {
         auto new_node = std::make_unique<NodeType>(*node);
-        auto * ptr = new_node.get();
         for (const auto * & child : new_node->children)
         {
             auto * new_child = child->clone(node_list);
@@ -124,7 +212,7 @@ namespace
         }
         new_node->parent = nullptr;
         node_list.emplace_back(std::move(new_node));
-        return ptr;
+        return static_cast<NodeType *>(node_list.back().get());
     }
 }
 
@@ -189,20 +277,20 @@ PrometheusQueryTree & PrometheusQueryTree::operator=(const PrometheusQueryTree &
         if (src.root)
             new_root = src.root->clone(new_node_list);
 
-        *this = PrometheusQueryTree{std::move(new_node_list), new_root, src.timestamp_scale};
+        *this = PrometheusQueryTree{std::move(new_node_list), new_root, src.time_scale};
     }
     return *this;
 }
 
-PrometheusQueryTree::PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 timestamp_scale_)
+PrometheusQueryTree::PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 time_scale_)
     : node_list(std::move(node_list_))
     , root(root_)
-    , timestamp_scale(timestamp_scale_)
+    , time_scale(time_scale_)
 {
 }
 
-PrometheusQueryTree::PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 timestamp_scale_)
-    : timestamp_scale(timestamp_scale_)
+PrometheusQueryTree::PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 time_scale_)
+    : time_scale(time_scale_)
 {
     node_list.emplace_back(std::move(single_node_));
     root = node_list.back().get();
@@ -212,7 +300,7 @@ PrometheusQueryTree & PrometheusQueryTree::operator=(PrometheusQueryTree && src)
 {
     node_list = std::exchange(src.node_list, {});
     root = std::exchange(src.root, nullptr);
-    timestamp_scale = std::exchange(src.timestamp_scale, 0);
+    time_scale = std::exchange(src.time_scale, 0);
     return *this;
 }
 
@@ -259,7 +347,7 @@ String PrometheusQueryTree::InstantSelector::dumpNode(const PrometheusQueryTree 
 String PrometheusQueryTree::RangeSelector::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}RangeSelector:", makeIndent(indent));
-    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.time_scale));
     str += fmt::format("\n{}", getInstantSelector()->dumpNode(tree, indent + 1));
     return str;
 }
@@ -267,9 +355,9 @@ String PrometheusQueryTree::RangeSelector::dumpNode(const PrometheusQueryTree & 
 String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}Subquery:", makeIndent(indent));
-    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.time_scale));
     if (step)
-        str += fmt::format("\n{}step: {}", makeIndent(indent + 1), ::DB::toString(*step, tree.timestamp_scale));
+        str += fmt::format("\n{}step: {}", makeIndent(indent + 1), ::DB::toString(*step, tree.time_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
@@ -283,7 +371,7 @@ String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, s
             break;
         case AtModifier::Timestamp:
             chassert(at_timestamp);
-            str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
+            str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.time_scale));
             break;
         case AtModifier::Start:
             str += fmt::format("\n{}at: start()", makeIndent(indent + 1));
@@ -293,7 +381,7 @@ String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, s
             break;
     }
     if (offset_value)
-        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.timestamp_scale));
+        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.time_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
@@ -358,35 +446,35 @@ String PrometheusQueryTree::AggregationOperator::dumpNode(const PrometheusQueryT
 }
 
 
-void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp_scale_)
+void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 time_scale_)
 {
     String error_message;
     size_t error_pos = 0;
-    if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, &error_message, &error_pos))
+    if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, time_scale_, *this, &error_message, &error_pos))
         return;
 
     throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY, "{} at position {} while parsing PromQL query: {}",
                     error_message, error_pos, promql_query_);
 }
 
-bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
+bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 time_scale_, String * error_message_, size_t * error_pos_)
 {
-    return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
+    return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, time_scale_, *this, error_message_, error_pos_);
 }
 
-
-namespace
-{
-    String quotePromQLString(std::string_view str)
-    {
-        return doubleQuoteString(str);
-    }
-}
 
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
     {
+        /// Literal written with time units is printed in canonical spelling, or verbatim on overflow.
+        if (is_duration)
+        {
+            if (duration_ms.has_value())
+                return formatDuration(DurationType{*duration_ms}, 3);
+            if (!duration_str.empty())
+                return duration_str;
+        }
         return ::DB::toString(scalar);
     }
     else if (std::isinf(scalar))
@@ -450,7 +538,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 && !matcher.label_value.empty();
             if (is_quoted_metric_name)
             {
-                str += doubleQuoteString(matcher.label_value);
+                str += quotePromQLString(matcher.label_value);
             }
             else
             {
@@ -482,7 +570,7 @@ String PrometheusQueryTree::RangeSelector::toString(const PrometheusQueryTree & 
 {
     String str = getInstantSelector()->toString(tree);
     str += "[";
-    str += DB::toString(range, tree.timestamp_scale);
+    str += formatDuration(range, tree.time_scale);
     str += "]";
     return str;
 }
@@ -499,10 +587,10 @@ String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree)
         str += ")";
 
     str += "[";
-    str += DB::toString(range, tree.timestamp_scale);
+    str += formatDuration(range, tree.time_scale);
     str += ":";
     if (step)
-        str += DB::toString(*step, tree.timestamp_scale);
+        str += formatDuration(*step, tree.time_scale);
     str += "]";
 
     return str;
@@ -518,7 +606,7 @@ String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) c
         case AtModifier::Timestamp:
             chassert(at_timestamp);
             str += " @ ";
-            str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
+            str += DB::toString(Decimal64{*at_timestamp}, tree.time_scale);
             break;
         case AtModifier::Start:
             str += " @ start()";
@@ -530,7 +618,7 @@ String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) c
     if (offset_value)
     {
         str += " offset ";
-        str += DB::toString(Decimal64{*offset_value}, tree.timestamp_scale);
+        str += formatDuration(DurationType{*offset_value}, tree.time_scale);
     }
     return str;
 }
@@ -597,7 +685,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";
@@ -618,7 +706,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
             {
                 if (need_comma)
                     str += ", ";
-                str += label;
+                str += formatLabelName(label);
                 need_comma = true;
             }
             str += ")";
@@ -691,7 +779,7 @@ String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryT
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";

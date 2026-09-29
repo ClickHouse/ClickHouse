@@ -133,6 +133,11 @@ public:
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
 
+    /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
+    /// and no statistics are collected. A step that returns true must also attach a
+    /// `RuntimeDataflowStatisticsCollector` in `transformPipeline` when `dataflow_cache_updater` is set,
+    /// otherwise, should it end up at the replica-output boundary, the cached `output_bytes` stays 0 and
+    /// the transfer to the initiator is priced at zero.
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);

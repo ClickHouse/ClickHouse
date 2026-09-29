@@ -1,0 +1,5 @@
+m05100_over_local	TableProxy
+m05100_over_view	TableProxy
+through a lazily loaded Merge over the view
+a lazily loaded Merge over a local table still works
+100

@@ -55,6 +55,7 @@
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
+    M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
@@ -70,8 +71,8 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
-    M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
-    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
+    M(MemoryTracking, "Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.") \
+    M(MemoryTrackingUncorrected, "The value the global memory tracker would have had with no corrections from a measurement applied: a plain counter to which allocations are added and from which deallocations are subtracted. It is a snapshot taken by the background memory worker on every tick (see `memory_worker_period_ms`), so it lags the counter by at most one tick, and it stays `0` when the worker is not running. The difference between the two is the current gap between the plain counter and the measured usage: besides the accounting drift, it includes the memory that the process uses but that never went through the counter, such as the pages retained by the allocator.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(MaxAllocatedEphemeralLockSequentialNumber, "The maximum sequential number allocated for ephemeral lock znodes in ZooKeeper. Primarily influenced by the block numbers.") \
@@ -100,6 +101,9 @@
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
+    M(BackgroundQueryThreads, "Number of threads in the background query thread pool.") \
+    M(BackgroundQueryThreadsActive, "Number of threads in the background query thread pool running a task.") \
+    M(BackgroundQueryThreadsScheduled, "Number of queued or active jobs in the background query thread pool.") \
     M(BackupsThreads, "Number of threads in the thread pool for BACKUP.") \
     M(BackupsThreadsActive, "Number of threads in thread pool for BACKUP running a task.") \
     M(BackupsThreadsScheduled, "Number of queued or active jobs for BACKUP.") \
@@ -227,6 +231,7 @@
     M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
     M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
     M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
+    M(IcebergCompactionCleanupTasks, "Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -283,12 +288,18 @@
     M(FormatParsingThreads, "Number of threads in the thread pool used for parsing input.") \
     M(FormatParsingThreadsActive, "Number of threads in the thread pool used for parsing input running a task.") \
     M(FormatParsingThreadsScheduled, "Number of queued or active jobs in the thread pool used for parsing input.") \
+    M(IcebergManifestDecodeThreads, "Number of threads in the thread pool used for decoding Iceberg data manifest files.") \
+    M(IcebergManifestDecodeThreadsActive, "Number of threads in the thread pool used for decoding Iceberg data manifest files running a task.") \
+    M(IcebergManifestDecodeThreadsScheduled, "Number of queued or active jobs in the thread pool used for decoding Iceberg data manifest files.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
     M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
+    M(OptimizeFinalThreads, "Number of threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
+    M(OptimizeFinalThreadsActive, "Number of active threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
+    M(OptimizeFinalThreadsScheduled, "Number of queued or active jobs in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
@@ -413,6 +424,10 @@
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
     M(EncryptionHeaderCacheEntries, "Total number of entries in the encryption header cache") \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheEntries, "Number of entries in the deduplication caches of the metric families tables of TimeSeries tables") \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the metric families tables of TimeSeries tables") \
+    M(TimeSeriesTagsDeduplicationCacheEntries, "Number of entries in the deduplication caches of the tags tables of TimeSeries tables") \
+    M(TimeSeriesTagsDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
@@ -448,6 +463,7 @@
     M(SharedMergeTreeThreads, "Number of threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeBlobRefCounterNodes, "Number of blob reference-count nodes (one per data blob shared by 2+ blob-list parts) in the cluster-shared `_blob_manager/refcount` Keeper subtrees, measured periodically by the blob-manager stats task and summed over the server's Keeper-metadata disks.") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
     M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
     M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
@@ -555,9 +571,14 @@
     M(StatelessWorkerInUse, "Number of stateless workers currently in use by running queries.") \
     M(StatelessWorkerIdle, "Number of stateless workers currently held by the server but not used by any running query.") \
     M(StatelessWorkerServerActiveTasks, "Number of query execution tasks currently active on a stateless worker (accepted from a tenant and not yet released).") \
+    M(StatelessWorkerDiscoveryFreeWorkers, "Number of stateless workers that are registered and available to be leased, as tracked by the stateless worker discovery service.") \
+    M(StatelessWorkerDiscoveryLeasedWorkers, "Number of stateless workers currently leased to tenants, as tracked by the stateless worker discovery service.") \
+    M(StatelessWorkerDiscoveryDyingWorkers, "Number of stateless workers that have been evicted and are awaiting removal, as tracked by the stateless worker discovery service.") \
+    M(StatelessWorkerDiscoveryTenants, "Number of tenants registered with the stateless worker discovery service.") \
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
+    M(StreamingExchangeSinksWithFullSendQueue, "Number of streaming exchange sinks that take no chunks because their queue of packets waiting for the socket is full.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \

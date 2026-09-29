@@ -48,6 +48,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+LoggerPtr getMergeTreeRangeReaderLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeRangeReader");
+    return log;
+}
+
 static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
 {
     if (!column)
@@ -180,12 +186,12 @@ size_t MergeTreeRangeReader::DelayedStream::position() const
     return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
 
-size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t num_rows)
+size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, size_t num_rows)
 {
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(
-            current_mark, continue_reading, num_rows, 0, columns);
+            current_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -201,7 +207,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t n
     return 0;
 }
 
-size_t MergeTreeRangeReader::DelayedStream::read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows)
+size_t MergeTreeRangeReader::DelayedStream::read(MutableColumns & columns, size_t from_mark, size_t offset, size_t num_rows)
 {
     size_t num_rows_before_from_mark = index_granularity->getMarkStartingRow(from_mark);
     /// We already stand accurately in required position,
@@ -223,7 +229,7 @@ size_t MergeTreeRangeReader::DelayedStream::read(Columns & columns, size_t from_
     return read_rows;
 }
 
-size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
+size_t MergeTreeRangeReader::DelayedStream::finalize(MutableColumns & columns)
 {
     /// We need to skip some rows before reading
     if (current_offset && !continue_reading)
@@ -246,7 +252,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
         /// so have to read them and throw out.
         if (current_offset)
         {
-            Columns tmp_columns;
+            MutableColumns tmp_columns;
             tmp_columns.resize(columns.size());
             readRows(tmp_columns, current_offset);
         }
@@ -297,7 +303,7 @@ void MergeTreeRangeReader::Stream::checkNoDelayedRows() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected no delayed rows (got {}).", stream.numDelayedRows());
 }
 
-size_t MergeTreeRangeReader::Stream::readRows(Columns & columns, size_t num_rows)
+size_t MergeTreeRangeReader::Stream::readRows(MutableColumns & columns, size_t num_rows)
 {
     size_t rows_read = stream.read(columns, current_mark, offset_after_current_mark, num_rows);
 
@@ -323,7 +329,7 @@ void MergeTreeRangeReader::Stream::toNextMark()
     offset_after_current_mark = 0;
 }
 
-size_t MergeTreeRangeReader::Stream::read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule)
+size_t MergeTreeRangeReader::Stream::read(MutableColumns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule)
 {
     checkEnoughSpaceInCurrentGranule(num_rows);
 
@@ -370,7 +376,7 @@ void MergeTreeRangeReader::Stream::skip(size_t num_rows)
     }
 }
 
-size_t MergeTreeRangeReader::Stream::finalize(Columns & columns)
+size_t MergeTreeRangeReader::Stream::finalize(MutableColumns & columns)
 {
     size_t read_rows = stream.finalize(columns);
 
@@ -1125,7 +1131,8 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
 {
     ReadResult result(log);
-    result.columns.resize(merge_tree_reader->getResultColumnCount());
+    /// Read into uniquely-owned mutable columns; move them into the shared result.columns once reading is finished.
+    MutableColumns read_columns(merge_tree_reader->getResultColumnCount());
 
     /// The stream could be unfinished by the previous read request because of max_rows limit.
     /// In this case it will have some rows from the previously started range. We need to save current_mark
@@ -1154,7 +1161,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             if (stream.isFinished())
             {
-                size_t finalized = stream.finalize(result.columns);
+                size_t finalized = stream.finalize(read_columns);
                 result.debug_rows_from_finalize_in_loop += finalized;
                 result.addRows(finalized);
                 if (current_mark && *current_mark < stream.last_mark)
@@ -1189,7 +1196,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             bool last = rows_to_read == space_left;
             UInt64 starting_offset = stream.currentPartOffset();
             UInt64 granule_offset = stream.current_mark;
-            size_t read_rows = stream.read(result.columns, rows_to_read, !last);
+            size_t read_rows = stream.read(read_columns, rows_to_read, !last);
             result.debug_rows_from_read_in_loop += read_rows;
             result.addRows(read_rows);
             result.addGranule(rows_to_read, {starting_offset, granule_offset});
@@ -1198,10 +1205,16 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     }
 
     {
-        size_t finalized = stream.finalize(result.columns);
+        size_t finalized = stream.finalize(read_columns);
         result.debug_rows_from_finalize_post_loop += finalized;
         result.addRows(finalized);
     }
+
+    /// Reading is finished: hand the columns over as shared ColumnPtr.
+    result.columns.reserve(read_columns.size());
+    for (auto & column : read_columns)
+        result.columns.push_back(std::move(column));
+
     size_t last_mark = stream.isFinished() ? stream.last_mark : stream.current_mark;
     if (current_mark && current_mark < last_mark)
         result.addReadRange(MarkRange{*current_mark, last_mark});
@@ -1211,11 +1224,14 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// When no columns were physically read (e.g., constant PREWHERE expression),
-    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
-    /// from the index granularity. Use it so the reading chain can continue
-    /// to subsequent readers that read actual data columns.
-    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
+
+    /// A step that materializes no on-disk column (constant PREWHERE, or a filter over a column
+    /// absent from the part) reports no rows read, though the granule sizes taken from the index
+    /// are correct and those rows flow on through the chain. Only this front step accumulates it.
+    if (result.numReadRows() == 0)
+        result.addRows(result.total_rows_per_granule);
+
+    result.num_rows = result.numReadRows();
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1472,7 +1488,8 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
         return columns;
     }
 
-    columns.resize(merge_tree_reader->numColumnsInResult());
+    /// Read into uniquely-owned mutable columns; move them into the shared result once reading is finished.
+    MutableColumns read_columns(merge_tree_reader->numColumnsInResult());
 
     const auto & rows_per_granule = result.rows_per_granule;
     const auto & started_ranges = result.started_ranges;
@@ -1485,7 +1502,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
         if (next_range_to_start < started_ranges.size()
             && i == started_ranges[next_range_to_start].num_granules_read_before_start)
         {
-            num_rows += stream.finalize(columns);
+            num_rows += stream.finalize(read_columns);
             const auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
             stream = Stream(range.begin, range.end, merge_tree_reader);
@@ -1494,13 +1511,13 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
         /// If it's not the last granule, skip remaining (filtered-out) rows to align to the next mark.
         /// This is necessary because prewhere filtering may reduce rows_per_granule[i].
         bool last = i + 1 == size;
-        num_rows += stream.read(columns, rows_per_granule[i], !last);
+        num_rows += stream.read(read_columns, rows_per_granule[i], !last);
     }
 
     /// The last granule may be incomplete by nature, not due to PREWHERE filtering,
     /// so we must skip an exact number of rows instead of jumping to the next mark.
     stream.skip(result.num_rows_to_skip_in_last_granule);
-    num_rows += stream.finalize(columns);
+    num_rows += stream.finalize(read_columns);
 
     /// num_rows may be zero if current step only contains virtual columns to read.
     if (num_rows == 0)
@@ -1509,6 +1526,10 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     if (num_rows != result.total_rows_per_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
                         num_rows, result.total_rows_per_granule);
+
+    columns.reserve(read_columns.size());
+    for (auto & column : read_columns)
+        columns.push_back(std::move(column));
 
     fillVirtualColumns(columns, result);
 

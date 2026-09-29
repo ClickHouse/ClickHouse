@@ -4,15 +4,17 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
+#include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
+#include <cstring>
 
 namespace DB
 {
@@ -138,6 +140,7 @@ public:
 
     explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
@@ -147,7 +150,6 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    bool isExperimental() const override { return true; }
     String getDescription() const override;
 
 private:
@@ -1312,6 +1314,10 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
     : float_width(float_width_)
     , variant(variant_)
 {
+}
+
+ASTPtr CompressionCodecALP::getCodecDescription() const
+{
     ASTs arguments;
     if (variant != Variant::DEFAULT)
     {
@@ -1327,7 +1333,7 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
         arguments.push_back(make_intrusive<ASTIdentifier>(variant_str));
     }
 
-    setCodecDescription("ALP", arguments);
+    return makeCodecDescription("ALP", arguments);
 }
 
 uint8_t CompressionCodecALP::getMethodByte() const
@@ -1337,7 +1343,8 @@ uint8_t CompressionCodecALP::getMethodByte() const
 
 void CompressionCodecALP::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+    getCodecDescription()->updateTreeHash(hash, /* ignore_aliases */ true);
+    hash.update(float_width);
 }
 
 String CompressionCodecALP::getDescription() const

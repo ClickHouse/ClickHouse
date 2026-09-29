@@ -59,14 +59,10 @@ WHERE notHas(arr, x) IS DISTINCT FROM NOT has(arr, x);
 -- The rewrite is a query tree pass, which exists only in the analyzer.
 SET enable_analyzer = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT materialize(4) AS x WHERE notHas([1, 2], x);
-SELECT materialize(4) AS x
-FROM system.one AS __table1
-WHERE notIn(materialize(4), _CAST([1, 2], \'Array(UInt8)\'))
+SELECT materialize(4) AS x\nFROM system.one AS __table1\nWHERE notIn(materialize(4), _CAST([1, 2], \'Array(UInt8)\'))
 -- A NULL array element blocks the rewrite (`has` and `in` treat NULLs differently), so `notHas` stays.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT materialize(4) AS x WHERE notHas([1, NULL], x);
-SELECT materialize(4) AS x
-FROM system.one AS __table1
-WHERE notHas(_CAST([1, NULL], \'Array(Nullable(UInt8))\'), materialize(4))
+SELECT materialize(4) AS x\nFROM system.one AS __table1\nWHERE notHas(_CAST([1, NULL], \'Array(Nullable(UInt8))\'), materialize(4))
 DROP TABLE IF EXISTS test_not_has;
 CREATE TABLE test_not_has (x UInt64) ENGINE = MergeTree
 ORDER BY x

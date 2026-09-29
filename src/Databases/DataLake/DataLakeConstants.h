@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <Core/Types.h>
 #include <Core/Field.h>
+#include <optional>
 
 namespace DataLake
 {
@@ -18,7 +19,7 @@ static constexpr auto FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES = "Other";
 
 static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
 
-using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
+using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     /// Catalog credentials
@@ -27,6 +28,7 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     /// AWS credentials
     {"aws_access_key_id", DEFAULT_MASKING_RULE},
     {"aws_secret_access_key", DEFAULT_MASKING_RULE},
+    {"aws_external_id", DEFAULT_MASKING_RULE},
     /// Legacy storage_* aliases (declared in DataLakeStorageSettings.h, originally for the Glue catalog)
     {"storage_catalog_credential", DEFAULT_MASKING_RULE},
     {"storage_auth_header", DEFAULT_MASKING_RULE},
