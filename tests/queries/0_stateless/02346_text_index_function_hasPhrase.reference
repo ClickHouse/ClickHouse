@@ -55,6 +55,18 @@
 [1]
 [1]
 [1]
+-- the array tokenizer makes each element one token
+-- an element matches as a whole token, and the index answers it
+[1]
+[1]
+-- adjacent elements
+[1]
+[1]
+-- a token that no element holds
+[2]
+-- the array tokenizer with support_phrase_search
+[1]
+[1]
 -- Array phrase
 [1]
 [1]

@@ -353,8 +353,7 @@ Prior to searching, the function tokenizes both the `input` and the `phrase` arg
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
-If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and
-their tokens form a single sequence per row, so a phrase may span two elements.
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
 If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
 including duplicates; a `String` `phrase` is tokenized. Empty phrase elements are ignored, because no tokenizer produces
 an empty token.

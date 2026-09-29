@@ -343,7 +343,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "hasPhrase")
-        return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return has_positions && !is_array_tokenizer ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -1508,11 +1508,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             SplitByRegexpTokenizer::getExternalName(),
+            ArrayTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
 #if USE_ICU
             IcuTokenizer::getExternalName(),
@@ -1521,6 +1522,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
+
+        /// An `array` tokenizer index stores every token of a row at position 0, so its positions cannot
+        /// answer a phrase. Fall back to the granule-level token test, which the row-level function refines.
+        const bool use_positions = has_positions && !is_array_tokenizer;
 
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
         if (value_field.getType() == Field::Types::Array)
@@ -1542,7 +1547,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
             VectorWithMemoryTracking<String> unique_tokens(dedup.begin(), dedup.end());
 
-            if (has_positions)
+            if (use_positions)
             {
                 auto query = std::make_shared<TextSearchQuery>(
                     function_name,
@@ -1567,7 +1572,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.
-        if (has_positions)
+        if (use_positions)
         {
             /// phrase_tokens keeps order and duplicates for positional search; unique_tokens is the
             /// sorted distinct set used for granule-level filtering (all tokens must exist).
