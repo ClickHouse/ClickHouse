@@ -115,10 +115,10 @@ public:
     void decorrelateActions() { actions_dag.decorrelate(); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     bool canGetRequiredColumns() const override { return true; }
-    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const override;
+    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
     bool canRemoveColumnsFromOutput() const override;
 
     void setPreventInputRemoval() { prevent_input_removal = true; }
@@ -137,7 +137,7 @@ private:
         FilterDAGOutputPruningPlan pruning;
     };
 
-    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;
+    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;
 
     ActionsDAG actions_dag;
     String filter_column_name;

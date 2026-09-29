@@ -200,11 +200,11 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool canGetRequiredColumns() const override { return true; }
-    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const override;
+    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
@@ -230,7 +230,6 @@ protected:
     {
         RemoveUnusedColumnsResult result;
 
-        bool remove_inputs = false;
         /// Set when no output is left and the step has to put its dummy column back.
         bool adds_dummy_output = false;
         /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
@@ -239,13 +238,13 @@ protected:
         /// Whether removeUnusedActions would erase any node.
         bool removes_any_action = false;
 
-        /// The DAG outputs that survive, as positions in `getOutputs()`. The dummy column, when one is
-        /// added, has no position of its own; the result counts it in `added_output_count`. An output not
-        /// in here goes away, and leaves `actions_after_join` with it.
-        const std::vector<size_t> & keptDAGOutputPositions() const { return result.kept_output_positions; }
+        /// The DAG outputs that survive, as positions in `getOutputs()`; the complement of the result's
+        /// `dropped_output_positions`. The dummy column, when one is added, has no position of its own: it
+        /// is appended after them. An output not in here goes away, and leaves `actions_after_join` with it.
+        std::vector<size_t> kept_output_positions;
     };
 
-    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;
+    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;

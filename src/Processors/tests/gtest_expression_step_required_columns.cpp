@@ -8,6 +8,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 
+#include <fmt/ranges.h>
+
 using namespace DB;
 
 namespace
@@ -61,87 +63,103 @@ std::unique_ptr<FilterStep> makeFilterStep(bool remove_filter_column)
     return std::make_unique<FilterStep>(input_header, std::move(dag), "f", remove_filter_column);
 }
 
+/// A child that kept `positions` of `header`, and appended `appended` after them.
+IQueryPlanStep::PrunedInput prunedChild(const Block & header, const std::vector<size_t> & positions, const ColumnsWithTypeAndName & appended = {})
+{
+    Block pruned_header;
+    for (size_t position : positions)
+        pruned_header.insert(header.getByPosition(position));
+    for (const auto & column : appended)
+        pruned_header.insert(column);
+    return {IQueryPlanStep::complementPositions(header.columns(), positions), std::make_shared<const Block>(std::move(pruned_header))};
+}
+
+/// The columns at `positions` of `header`, by name.
+String namesAt(const Block & header, const std::vector<size_t> & positions)
+{
+    Names names;
+    for (size_t position : positions)
+        names.push_back(header.getByPosition(position).name);
+    return fmt::format("{}", fmt::join(names, ", "));
+}
+
+/// Asks the step what it needs, prunes it with a child that keeps exactly that, and checks that the step
+/// outputs exactly the required columns and reads exactly what it asked for.
 template <typename Step>
-void checkAnswersMatch(
-    const std::function<std::unique_ptr<Step>()> & make_step,
-    const std::vector<size_t> & required_output_positions,
-    bool remove_inputs)
+void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, const std::vector<size_t> & required_output_positions)
 {
     const auto step = make_step();
     const auto before = step->getOutputHeader()->dumpStructure();
     const auto dag_before = step->getExpression().dumpDAG();
+    const auto output_before = *step->getOutputHeader();
+    const auto input_header = *step->getInputHeaders().front();
 
-    const auto predicted = step->getRequiredColumns(required_output_positions, remove_inputs);
+    const auto needed = step->getRequiredColumns(required_output_positions);
 
     /// The question must not change the step.
     EXPECT_EQ(step->getOutputHeader()->dumpStructure(), before);
     EXPECT_EQ(step->getExpression().dumpDAG(), dag_before);
+    ASSERT_EQ(needed.required_input_positions.size(), 1u);
 
-    const auto applied = make_step()->removeUnusedColumns(required_output_positions, remove_inputs);
+    const auto & required_inputs = needed.required_input_positions.front();
+    const auto applied = step->removeUnusedColumns(required_output_positions, {prunedChild(input_header, required_inputs)});
 
-    EXPECT_EQ(predicted.step_changed, applied.step_changed);
-    EXPECT_EQ(predicted.inputs_changed, applied.inputs_changed);
-    EXPECT_EQ(predicted.required_input_positions, applied.required_input_positions);
-    EXPECT_EQ(predicted.kept_output_positions, applied.kept_output_positions);
-    EXPECT_EQ(predicted.added_output_count, applied.added_output_count);
+    EXPECT_EQ(applied.dropped_output_positions, IQueryPlanStep::complementPositions(output_before.columns(), required_output_positions));
+    EXPECT_EQ(applied.required_input_positions.front(), required_inputs);
+    EXPECT_EQ(applied.inputs_changed, needed.inputs_changed);
+    EXPECT_EQ(step->getOutputHeader()->dumpNames(), namesAt(output_before, required_output_positions));
 }
 
 }
 
-TEST(ExpressionStepRequiredColumns, MatchesRemoveUnusedColumns)
+TEST(ExpressionStepRequiredColumns, PrunesToTheRequiredColumns)
 {
-    for (bool remove_inputs : {true, false})
-    {
-        /// Keep one DAG output, the other output and the pass-through go away.
-        checkAnswersMatch<ExpressionStep>(makeStep, {0}, remove_inputs);
-        /// Keep a DAG output and the pass-through.
-        checkAnswersMatch<ExpressionStep>(makeStep, {0, 2}, remove_inputs);
-        /// Keep the pass-through only.
-        checkAnswersMatch<ExpressionStep>(makeStep, {2}, remove_inputs);
-        /// Keep everything: nothing to do.
-        checkAnswersMatch<ExpressionStep>(makeStep, {0, 1, 2}, remove_inputs);
+    /// Keep one DAG output, the other output and the pass-through go away.
+    checkPruning<ExpressionStep>(makeStep, {0});
+    /// Keep a DAG output and the pass-through.
+    checkPruning<ExpressionStep>(makeStep, {0, 2});
+    /// Keep the pass-through only.
+    checkPruning<ExpressionStep>(makeStep, {2});
+    /// Keep everything: nothing to do.
+    checkPruning<ExpressionStep>(makeStep, {0, 1, 2});
 
-        checkAnswersMatch<ExpressionStep>(makeStepWithDuplicateNames, {0}, remove_inputs);
-        checkAnswersMatch<ExpressionStep>(makeStepWithDuplicateNames, {1}, remove_inputs);
-    }
+    checkPruning<ExpressionStep>(makeStepWithDuplicateNames, {0});
+    checkPruning<ExpressionStep>(makeStepWithDuplicateNames, {1});
 }
 
-TEST(FilterStepRequiredColumns, MatchesRemoveUnusedColumns)
+TEST(FilterStepRequiredColumns, PrunesToTheRequiredColumns)
 {
-    for (bool remove_inputs : {true, false})
-    {
-        /// Output header is (x, c): the filter column is erased, so the caller's positions have to be
-        /// mapped back over it.
-        const auto make_without_filter_column = [] { return makeFilterStep(/*remove_filter_column=*/true); };
-        checkAnswersMatch<FilterStep>(make_without_filter_column, {0}, remove_inputs);
-        checkAnswersMatch<FilterStep>(make_without_filter_column, {1}, remove_inputs);
-        checkAnswersMatch<FilterStep>(make_without_filter_column, {0, 1}, remove_inputs);
+    /// Output header is (x, c): the filter column is erased, so the caller's positions have to be mapped
+    /// back over it.
+    const auto make_without_filter_column = [] { return makeFilterStep(/*remove_filter_column=*/true); };
+    checkPruning<FilterStep>(make_without_filter_column, {0});
+    checkPruning<FilterStep>(make_without_filter_column, {1});
+    checkPruning<FilterStep>(make_without_filter_column, {0, 1});
 
-        /// Output header is (f, x, c). Not asking for f makes the step drop it from the header, while
-        /// the DAG still has to compute it to filter.
-        const auto make_with_filter_column = [] { return makeFilterStep(/*remove_filter_column=*/false); };
-        checkAnswersMatch<FilterStep>(make_with_filter_column, {0}, remove_inputs);
-        checkAnswersMatch<FilterStep>(make_with_filter_column, {1}, remove_inputs);
-        checkAnswersMatch<FilterStep>(make_with_filter_column, {2}, remove_inputs);
-        checkAnswersMatch<FilterStep>(make_with_filter_column, {0, 1, 2}, remove_inputs);
-    }
+    /// Output header is (f, x, c). Not asking for f makes the step drop it from the header, while the DAG
+    /// still has to compute it to filter.
+    const auto make_with_filter_column = [] { return makeFilterStep(/*remove_filter_column=*/false); };
+    checkPruning<FilterStep>(make_with_filter_column, {0});
+    checkPruning<FilterStep>(make_with_filter_column, {1});
+    checkPruning<FilterStep>(make_with_filter_column, {2});
+    checkPruning<FilterStep>(make_with_filter_column, {0, 1, 2});
 }
 
 TEST(FilterStepRequiredColumns, KeepsTheFilterInputAndDropsTheRest)
 {
     const auto step = makeFilterStep(/*remove_filter_column=*/true);
+    const auto input_header = *step->getInputHeaders().front();
 
     /// Output header is (x, c). Asking for c only still needs a, because the filter reads it.
-    const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
-    ASSERT_TRUE(result.step_changed);
-    ASSERT_TRUE(result.inputs_changed);
-    ASSERT_EQ(result.required_input_positions.size(), 1u);
-    EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({0, 2}));
+    const auto needed = step->getRequiredColumns({1});
+    ASSERT_TRUE(needed.step_changed);
+    ASSERT_TRUE(needed.inputs_changed);
+    ASSERT_EQ(needed.required_input_positions.size(), 1u);
+    EXPECT_EQ(needed.required_input_positions.front(), std::vector<size_t>({0, 2}));
 
-    /// The question left the step alone, so applying it now must give the same answer.
-    const auto applied = step->removeUnusedColumns({1}, /*remove_inputs=*/true);
-    EXPECT_EQ(applied.required_input_positions, result.required_input_positions);
+    step->removeUnusedColumns({1}, {prunedChild(input_header, needed.required_input_positions.front())});
     EXPECT_EQ(step->getOutputHeader()->dumpNames(), "c");
+    EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, c");
 }
 
 TEST(ExpressionStepRequiredColumns, ReportsThePositionEachInputReads)
@@ -149,12 +167,12 @@ TEST(ExpressionStepRequiredColumns, ReportsThePositionEachInputReads)
     const auto step = makeStep();
 
     /// Output 1 is an alias of b, which reads header position 1.
-    const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
-    ASSERT_TRUE(result.step_changed);
-    ASSERT_TRUE(result.inputs_changed);
-    ASSERT_EQ(result.required_input_positions.size(), 1u);
-    EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({1}));
-    EXPECT_EQ(result.kept_output_positions, std::vector<size_t>({1}));
+    const auto needed = step->getRequiredColumns({1});
+    ASSERT_TRUE(needed.step_changed);
+    ASSERT_TRUE(needed.inputs_changed);
+    ASSERT_EQ(needed.required_input_positions.size(), 1u);
+    EXPECT_EQ(needed.required_input_positions.front(), std::vector<size_t>({1}));
+    EXPECT_EQ(needed.dropped_output_positions, std::vector<size_t>({0, 2}));
 }
 
 TEST(ExpressionStepRequiredColumns, DuplicateNamesKeepTheirOwnPosition)
@@ -163,29 +181,63 @@ TEST(ExpressionStepRequiredColumns, DuplicateNamesKeepTheirOwnPosition)
 
     /// Output 1 is an alias of the second input, which reads header position 1. Resolving the surviving
     /// input by name would answer 0 and feed the expression the wrong column.
-    const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
-    ASSERT_TRUE(result.step_changed);
-    ASSERT_TRUE(result.inputs_changed);
-    ASSERT_EQ(result.required_input_positions.size(), 1u);
-    EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({1}));
+    const auto needed = step->getRequiredColumns({1});
+    ASSERT_TRUE(needed.step_changed);
+    ASSERT_TRUE(needed.inputs_changed);
+    ASSERT_EQ(needed.required_input_positions.size(), 1u);
+    EXPECT_EQ(needed.required_input_positions.front(), std::vector<size_t>({1}));
 }
 
-/// Asked for every output, the step changes nothing, and says so with every position rather than with
-/// empty lists.
-TEST(ExpressionStepRequiredColumns, ReportsEverythingWhenNothingChanges)
+/// Asked for every output, the step needs every input, and pruning it with a child that did not change
+/// changes nothing.
+TEST(ExpressionStepRequiredColumns, ChangesNothingWhenEverythingIsRequired)
 {
     const auto step = makeStep();
-    const auto output_columns = step->getOutputHeader()->columns();
-    const auto input_columns = step->getInputHeaders().front()->columns();
+    const auto input_header = step->getInputHeaders().front();
 
-    std::vector<size_t> all_outputs(output_columns);
+    std::vector<size_t> all_outputs(step->getOutputHeader()->columns());
     std::iota(all_outputs.begin(), all_outputs.end(), 0);
 
-    const auto result = step->getRequiredColumns(all_outputs, /*remove_inputs=*/false);
-    EXPECT_FALSE(result.step_changed);
-    EXPECT_FALSE(result.inputs_changed);
-    EXPECT_EQ(result.kept_output_positions, all_outputs);
-    EXPECT_EQ(result.added_output_count, 0u);
-    ASSERT_EQ(result.required_input_positions.size(), 1u);
-    EXPECT_EQ(result.required_input_positions.front().size(), input_columns);
+    const auto needed = step->getRequiredColumns(all_outputs);
+    EXPECT_FALSE(needed.step_changed);
+    EXPECT_FALSE(needed.inputs_changed);
+    EXPECT_TRUE(needed.dropped_output_positions.empty());
+    ASSERT_EQ(needed.required_input_positions.size(), 1u);
+    EXPECT_EQ(needed.required_input_positions.front().size(), input_header->columns());
+
+    const auto applied = step->removeUnusedColumns(all_outputs, {IQueryPlanStep::PrunedInput::unchanged(input_header)});
+    EXPECT_FALSE(applied.step_changed);
+    EXPECT_FALSE(applied.inputs_changed);
+}
+
+/// A child can keep more than it was asked for - a FINAL read keeps its sorting key - and append columns
+/// of its own - a join its dummy column. The step consumes them, and outputs the required columns only.
+TEST(ExpressionStepRequiredColumns, ConsumesWhatTheChildKeepsBeyondTheAsk)
+{
+    const auto step = makeStep();
+    const auto input_header = *step->getInputHeaders().front();
+
+    /// Asked for x only, the step needs a; the child keeps a, b and c, and appends z.
+    const auto needed = step->getRequiredColumns({0});
+    EXPECT_EQ(needed.required_input_positions.front(), std::vector<size_t>({0}));
+
+    const auto applied = step->removeUnusedColumns({0}, {prunedChild(input_header, {0, 1, 2}, {column("z")})});
+    EXPECT_TRUE(applied.step_changed);
+    EXPECT_FALSE(applied.inputs_changed);
+    EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, b, c, z");
+    EXPECT_EQ(step->getOutputHeader()->dumpNames(), "x");
+}
+
+TEST(FilterStepRequiredColumns, ConsumesWhatTheChildKeepsBeyondTheAsk)
+{
+    const auto step = makeFilterStep(/*remove_filter_column=*/true);
+    const auto input_header = *step->getInputHeaders().front();
+
+    /// Output header is (x, c). Asked for x, the step needs a and b; the child keeps c as well.
+    const auto needed = step->getRequiredColumns({0});
+    EXPECT_EQ(needed.required_input_positions.front(), std::vector<size_t>({0, 1}));
+
+    step->removeUnusedColumns({0}, {prunedChild(input_header, {0, 1, 2})});
+    EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, b, c");
+    EXPECT_EQ(step->getOutputHeader()->dumpNames(), "x");
 }
