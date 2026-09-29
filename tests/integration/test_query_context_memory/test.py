@@ -23,6 +23,42 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.mark.parametrize("protocol", ["native", "http"])
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+def test_select_one_accounts_for_inherited_context(protocol, batching_limit):
+    user = "context_memory_" + uuid.uuid4().hex
+    query_id = str(uuid.uuid4())
+    payload_size = 8 * 1024 * 1024
+    node.query(
+        f"CREATE USER {user} SETTINGS log_comment = '" + "x" * payload_size + "'",
+        settings={"max_query_size": 2 * payload_size, "log_queries": 0},
+    )
+    node.query(f"GRANT SELECT ON *.* TO {user}")
+    try:
+        settings = {
+            "log_comment": "",
+            "max_untracked_memory": batching_limit,
+            "log_queries": 1,
+        }
+        if protocol == "native":
+            result = node.query("SELECT 1", user=user, query_id=query_id, settings=settings)
+        else:
+            result = node.http_query(
+                "SELECT 1", user=user, params={**settings, "query_id": query_id}
+            )
+        assert result == "1\n"
+        node.query("SYSTEM FLUSH LOGS")
+        row = node.query(
+            "SELECT memory_usage, length(log_comment) FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).strip().split("\t")
+        # The initial copy happened before the protocol cleared the setting.
+        assert int(row[0]) >= payload_size, row
+        assert int(row[1]) == 0, row
+    finally:
+        node.query(f"DROP USER {user}")
+
+
 @pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
 def test_inherited_context_memory_is_recorded_before_protocol_override(batching_limit):
     peak_payload_size = 8 * 1024 * 1024

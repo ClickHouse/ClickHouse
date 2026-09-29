@@ -881,7 +881,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
             }
         }
 
-        auto query_scope = QueryScope::createForQueryContext();
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
@@ -891,7 +890,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        query_scope.attachToQueryContext(query_context);
+        QueryScope query_scope = QueryScope::create(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
