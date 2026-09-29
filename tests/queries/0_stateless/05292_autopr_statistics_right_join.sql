@@ -1,17 +1,23 @@
--- A physical `RIGHT` join must reach the cost model rather than be skipped.
+-- Coverage of the physical `RIGHT`-kind path through AutoPR. **This test passes on master too** - it is not
+-- a regression test for anything, and measured 3/3 green against master's `considerEnablingParallelReplicas.cpp`.
 --
--- The plan hash the two plans are matched on folds `A RIGHT JOIN B` and `B LEFT JOIN A` together:
--- `calculateHashTableCacheKeys` swaps a `RIGHT` join's children and rewrites the kind to `LEFT`. Anything
--- that walks the two plans by plan-child position - which is how the coordinated read is paired with the
--- read to instrument - therefore has to pair children in that same canonical order, or it pairs the two
--- plans' relations the wrong way round. `collectCoordinatedReads` does that through `canonicalChild`.
+-- Why it cannot be one. The plan hash the two plans are matched on folds `A RIGHT JOIN B` and
+-- `B LEFT JOIN A` together: `calculateHashTableCacheKeys` swaps a `RIGHT` join's children and rewrites the
+-- kind to `LEFT`. So a walk that pairs the two plans by plan-child position has to pair children in that
+-- same canonical order, which `collectCoordinatedReads` does through `canonicalChild`. Separating that from
+-- the old kind-based rule needs the single-node plan and the replicas plan to settle on opposite spellings
+-- of one join, and both are built from the same query - eight shapes were probed with the divergence itself
+-- instrumented (primary-key filters on either side, each swap setting) and none diverged. On the shape below
+-- the two rules agree: with the swap pinned off the kind is `RIGHT`, so `children[isRight(kind) ? 1 : 0]`
+-- picks child 1, and that is also where the marker is, so nothing here tells them apart.
 --
--- What this test does NOT do: it does not fail without that remap. Reaching the mismatch needs the
--- single-node plan and the replicas plan to settle on opposite spellings of the same join, and both are
--- built from one query - eight shapes were probed (primary-key filters on either side, each swap setting)
--- and none diverged. What it does lock in is that a `RIGHT`-kind plan is handled at all, which is the
--- visible symptom if the pairing ever goes wrong: statistics are collected for the shape, and the second
--- spelling reaches the cost model on them.
+-- What it does guard, against future breakage rather than a past bug:
+--   * a `RIGHT`-kind plan reaches the cost model instead of being skipped;
+--   * the two spellings still fold to one hash - `kind_left_reused_them` below is the only test of that,
+--     and that fold is the premise `canonicalChild` exists to respect;
+--   * the second spelling adopts parallel replicas on the first one's statistics, and answers correctly.
+--
+-- The tests that do fail on master are `05262` and `05291`, both 6/6.
 --
 -- Note the two spellings cannot be compared by recorded bytes the way `05262` compares an `INNER` join:
 -- they fold to one hash, so only the first of them collects and the other reuses the entry.
