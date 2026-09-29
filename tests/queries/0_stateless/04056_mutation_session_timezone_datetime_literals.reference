@@ -20,3 +20,58 @@ update set dt	2	946735200
 update set dt64	1	946735200
 update set dt64	2	946735200
 explicit tz	1	2000-01-01 01:02:03
+in one selected	[1]
+in one survivors	[9]
+in many selected	[1]
+in many survivors	[9]
+in array selected	[1]
+in array survivors	[9]
+not in selected	[9]
+not in survivors	[1]
+null in selected	[1]
+null in survivors	[9]
+in update selected	[1]
+in update changed	[1]
+qualified selected	[1]
+qualified survivors	[9]
+qualified in selected	[1]
+qualified in survivors	[9]
+in dt64 selected	[1]
+in dt64 survivors	[9]
+lightweight selected	[1]
+lightweight survivors	[9]
+in empty selected	[]
+in empty survivors	[1,9]
+in empty rewritten	0
+in explicit selected	[1]
+in explicit survivors	[9]
+in explicit rewritten	0
+sub selected	[1]
+sub survivors	[9]
+sub qual selected	[1]
+sub qual survivors	[9]
+sub rewritten	0
+in mixed selected	[1,9]
+in mixed survivors	[]
+lambda shadow in selected	[1]
+lambda shadow in survivors	[9]
+lambda shadow rewritten	0
+lambda tuple selected	[1]
+lambda tuple survivors	[9]
+lambda tuple rewritten	1
+lambda datetime array selected	[1]
+lambda datetime array survivors	[9]
+lambda datetime array rewritten	1
+lambda field selected	[1]
+lambda field survivors	[9]
+lambda field rewritten	0
+lambda column selected	[1]
+lambda column survivors	[9]
+lambda column rewritten	1
+lambda scope pop selected	[1]
+lambda scope pop survivors	[9]
+lambda scope pop rewrites	1
+tokyo selected	[5]
+tokyo survivors	[1,9]
+tokyo mixed selected	[5,9]
+tokyo mixed survivors	[1]
