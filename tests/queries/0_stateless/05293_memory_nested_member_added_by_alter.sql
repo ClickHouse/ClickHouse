@@ -1,6 +1,7 @@
 -- A member of a `Nested` added by `ALTER TABLE ... ADD COLUMN` to a `Memory` table is missing from the blocks inserted
 -- before the `ALTER`. For those rows it is read as arrays of default values with the sizes of the other members of the
--- same `Nested` that the table still has, whichever other columns the query reads.
+-- same `Nested` that the table still has, whichever other columns the query reads. An array whose name has no dot is not
+-- a member.
 
 DROP TABLE IF EXISTS t_memory_nested_member;
 CREATE TABLE t_memory_nested_member (k UInt64, o Nested(p UInt64), n Nested(a UInt64)) ENGINE = Memory;
@@ -52,3 +53,15 @@ SELECT k, n.c, n.c.size0 FROM t_memory_nested_member_dropped ORDER BY k;
 ALTER TABLE t_memory_nested_member_dropped DROP COLUMN `n.b`;
 SELECT k, n.c, n.c.size0 FROM t_memory_nested_member_dropped ORDER BY k;
 DROP TABLE t_memory_nested_member_dropped;
+
+SELECT 'not a member';
+DROP TABLE IF EXISTS t_memory_nested_member_plain;
+CREATE TABLE t_memory_nested_member_plain (k UInt64, n Array(UInt64)) ENGINE = Memory;
+INSERT INTO t_memory_nested_member_plain VALUES (1, [1, 2, 3]);
+ALTER TABLE t_memory_nested_member_plain ADD COLUMN `n.a` Array(UInt64);
+INSERT INTO t_memory_nested_member_plain VALUES (2, [1, 2, 3], [4]);
+ALTER TABLE t_memory_nested_member_plain ADD COLUMN `n.b` Array(UInt64);
+SELECT k, n.a, length(n.a) FROM t_memory_nested_member_plain ORDER BY k;
+SELECT k, n.b, length(n.b) FROM t_memory_nested_member_plain ORDER BY k;
+SELECT k, n, n.a, n.b FROM t_memory_nested_member_plain ORDER BY k;
+DROP TABLE t_memory_nested_member_plain;

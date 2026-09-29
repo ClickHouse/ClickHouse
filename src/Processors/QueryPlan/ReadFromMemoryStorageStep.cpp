@@ -183,77 +183,86 @@ private:
         return tryGetColumnFromBlock(src, name_and_type);
     }
 
-    /// Fills the entries of `columns` (`columns_to_read` read from `src`) that `src` lacks. All arrays of one `Nested` in a
-    /// stored block have equal sizes (checked on insert), so a missing array gets the sizes of an array of its `Nested` from
-    /// `nested_arrays` that `src` has, and a missing subcolumn of such an array is taken from the filled array.
+    /// The array of `src` that gives the sizes of `column` when `src` lacks it: the first array of its `Nested` from
+    /// `nested_arrays` that `src` stores. None for a column that is not an array member of a `Nested`: only dotted names are
+    /// members, and only members are checked to have equal sizes on insert.
+    const ColumnWithTypeAndName * findSizesSource(const Block & src, const NameAndTypePair & column) const
+    {
+        if (nested_arrays.empty() || !isArray(column.getTypeInStorage()))
+            return nullptr;
+
+        const String name_in_storage = column.getNameInStorage();
+        const auto [nested_name, member_name] = Nested::splitName(name_in_storage);
+        if (member_name.empty() || src.has(name_in_storage))
+            return nullptr;
+
+        for (const auto & array_name : nested_arrays)
+        {
+            if (Nested::splitName(std::string_view(array_name)).first != nested_name)
+                continue;
+
+            const auto * stored = src.findByName(array_name);
+            if (stored && stored->column && isArray(stored->type))
+                return stored;
+        }
+
+        return nullptr;
+    }
+
+    /// Fills the entries of `columns` (`columns_to_read` read from `src`) that `src` lacks, from `src` alone. All members of
+    /// one `Nested` in a stored block have equal sizes (checked on insert), so a missing member gets the sizes of the array
+    /// that `findSizesSource` picks, and a missing subcolumn of such a member is taken from the filled array.
     void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
     {
-        const size_t num_columns = columns.size();
-        /// Stays empty (no allocation) unless some missing array has a source.
-        std::vector<const ColumnWithTypeAndName *> sizes_sources;
-
-        if (!nested_arrays.empty())
-        {
-            auto column_it = columns_to_read.begin();
-            for (size_t i = 0; i < num_columns; ++i, ++column_it)
-            {
-                if (columns[i] || !isArray(column_it->getTypeInStorage()))
-                    continue;
-
-                const String name_in_storage = column_it->getNameInStorage();
-                if (src.has(name_in_storage))
-                    continue;
-
-                const String nested_name = Nested::splitName(name_in_storage).first;
-                for (const auto & array_name : nested_arrays)
-                {
-                    if (Nested::splitName(std::string_view(array_name)).first != nested_name)
-                        continue;
-
-                    const auto * stored = src.findByName(array_name);
-                    if (stored && stored->column && isArray(stored->type))
-                    {
-                        if (sizes_sources.empty())
-                            sizes_sources.resize(num_columns);
-                        sizes_sources[i] = stored;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (sizes_sources.empty())
-        {
-            fillMissingColumns(columns, src.rows(), columns_to_read, columns_to_read, {}, nullptr);
-            return;
-        }
-
         NamesAndTypesList columns_to_fill;
+        /// For each entry of `columns_to_fill`: its position in `columns`, and the requested subcolumn to extract from it if
+        /// the entry was replaced by its column in storage.
+        std::vector<std::pair<size_t, const NameAndTypePair *>> positions;
         NamesAndTypesList sources;
+        Columns source_columns;
         NameSet source_names;
-        auto column_it = columns_to_read.begin();
-        for (size_t i = 0; i < num_columns; ++i, ++column_it)
-        {
-            if (sizes_sources[i] && column_it->isSubcolumn())
-                columns_to_fill.emplace_back(column_it->getNameInStorage(), column_it->getTypeInStorage());
-            else
-                columns_to_fill.push_back(*column_it);
 
-            if (sizes_sources[i] && source_names.insert(sizes_sources[i]->name).second)
+        auto column_it = columns_to_read.begin();
+        for (size_t i = 0; i < columns.size(); ++i, ++column_it)
+        {
+            if (columns[i])
+                continue;
+
+            const auto * source = findSizesSource(src, *column_it);
+            if (source && column_it->isSubcolumn())
             {
-                sources.emplace_back(sizes_sources[i]->name, sizes_sources[i]->type);
-                columns.push_back(sizes_sources[i]->column->decompress());
+                columns_to_fill.emplace_back(column_it->getNameInStorage(), column_it->getTypeInStorage());
+                positions.emplace_back(i, &*column_it);
+            }
+            else
+            {
+                columns_to_fill.push_back(*column_it);
+                positions.emplace_back(i, nullptr);
+            }
+
+            if (source && source_names.insert(source->name).second)
+            {
+                sources.emplace_back(source->name, source->type);
+                source_columns.push_back(source->column->decompress());
             }
         }
 
-        columns_to_fill.insert(columns_to_fill.end(), sources.begin(), sources.end());
-        fillMissingColumns(columns, src.rows(), columns_to_fill, columns_to_fill, {}, nullptr);
-        columns.resize(num_columns);
+        if (positions.empty())
+            return;
 
-        column_it = columns_to_read.begin();
-        for (size_t i = 0; i < num_columns; ++i, ++column_it)
-            if (sizes_sources[i] && column_it->isSubcolumn())
-                columns[i] = column_it->getTypeInStorage()->getSubcolumn(column_it->getSubcolumnName(), columns[i]);
+        /// Only the missing entries and their sources, so no other column of the read lends its offsets.
+        Columns filled(positions.size());
+        filled.insert(filled.end(), source_columns.begin(), source_columns.end());
+        columns_to_fill.insert(columns_to_fill.end(), sources.begin(), sources.end());
+        fillMissingColumns(filled, src.rows(), columns_to_fill, columns_to_fill, {}, nullptr);
+
+        for (size_t j = 0; j < positions.size(); ++j)
+        {
+            const auto & [position, subcolumn] = positions[j];
+            columns[position] = subcolumn
+                ? subcolumn->getTypeInStorage()->getSubcolumn(subcolumn->getSubcolumnName(), filled[j])
+                : std::move(filled[j]);
+        }
     }
 
     void fillPhysicalColumns(const Block & src, Columns & result_columns) const
@@ -424,7 +433,7 @@ private:
     InitializerFunc initializer_func;
     MaterializedCTEPtr materialized_cte;
     MemorySourceFilterPtr filter;
-    /// The arrays of the table in the `Nested` of a requested array; see `fillColumnsMissingFromBlock`.
+    /// The arrays of the table that are members of the `Nested` of a requested member; see `findSizesSource`.
     const Names nested_arrays;
 };
 
@@ -555,22 +564,28 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
-/// The arrays of the table in the `Nested` of a requested array. A block written before a requested array was added takes its
-/// array sizes from one of them.
+/// The arrays of the table that are members of the `Nested` of a requested member. A block written before a requested member
+/// was added takes its array sizes from one of them.
 static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
 {
     NameSet nested_names;
     for (const auto & column : physical_columns)
-        if (isArray(column.getTypeInStorage()))
-            nested_names.insert(Nested::splitName(column.getNameInStorage()).first);
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.getNameInStorage());
+        if (isArray(column.getTypeInStorage()) && !member_name.empty())
+            nested_names.insert(std::move(nested_name));
+    }
 
     Names result;
     if (nested_names.empty())
         return result;
 
     for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
-        if (isArray(column.type) && nested_names.contains(Nested::splitName(column.name).first))
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.name);
+        if (isArray(column.type) && !member_name.empty() && nested_names.contains(nested_name))
             result.push_back(column.name);
+    }
 
     return result;
 }
