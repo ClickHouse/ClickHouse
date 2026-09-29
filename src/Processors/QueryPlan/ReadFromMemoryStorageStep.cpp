@@ -5,7 +5,10 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -24,6 +27,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 
 #include <fmt/ranges.h>
 
@@ -210,21 +214,14 @@ private:
     }
 
     /// Fills the entries of `columns` (`columns_to_read` read from `src`) that `src` lacks, from `src` alone. All members of
-    /// one `Nested` in a stored block have equal sizes (checked on insert), so a missing member gets the sizes of the array
-    /// that `findSizesSource` picks, and a missing subcolumn of such a member is taken from the filled array. The entries
-    /// without such an array are filled apart, so no stored array lends its offsets to a column that is not a member.
+    /// one `Nested` in a stored block have equal sizes (checked on insert), so a missing member is an array of default elements
+    /// with the sizes of the array that `findSizesSource` picks, and a missing subcolumn of such a member is taken from that
+    /// array. The other entries get the default value of their type.
     void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
     {
-        /// The missing entries with a sizes source (a subcolumn replaced by its column in storage), followed by their distinct
-        /// sources, and the missing entries without one. For each entry: its position in `columns`, and the requested
-        /// subcolumn to extract from it if the entry was replaced by its column in storage.
-        NamesAndTypesList columns_with_sizes;
-        std::vector<std::pair<size_t, const NameAndTypePair *>> positions_with_sizes;
-        NamesAndTypesList sources;
-        Columns source_columns;
-        NameSet source_names;
         NamesAndTypesList columns_without_sizes;
         std::vector<size_t> positions_without_sizes;
+        std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> decompressed_sources;
 
         auto column_it = columns_to_read.begin();
         for (size_t i = 0; i < columns.size(); ++i, ++column_it)
@@ -232,30 +229,29 @@ private:
             if (columns[i])
                 continue;
 
-            const auto * source = findSizesSource(src, *column_it);
-            if (!source)
+            const ColumnArray * source_array = nullptr;
+            if (const auto * source = findSizesSource(src, *column_it))
+            {
+                auto & source_column = decompressed_sources[source];
+                if (!source_column)
+                    source_column = source->column->decompress();
+                source_array = typeid_cast<const ColumnArray *>(source_column.get());
+            }
+
+            if (!source_array)
             {
                 columns_without_sizes.push_back(*column_it);
                 positions_without_sizes.push_back(i);
                 continue;
             }
 
-            if (column_it->isSubcolumn())
-            {
-                columns_with_sizes.emplace_back(column_it->getNameInStorage(), column_it->getTypeInStorage());
-                positions_with_sizes.emplace_back(i, &*column_it);
-            }
-            else
-            {
-                columns_with_sizes.push_back(*column_it);
-                positions_with_sizes.emplace_back(i, nullptr);
-            }
-
-            if (source_names.insert(source->name).second)
-            {
-                sources.emplace_back(source->name, source->type);
-                source_columns.push_back(source->column->decompress());
-            }
+            /// Only the outer sizes: the deeper levels of a member are its own.
+            const auto & type_in_storage = column_it->getTypeInStorage();
+            const auto & offsets = source_array->getOffsets();
+            auto elements = assert_cast<const DataTypeArray &>(*type_in_storage).getNestedType()
+                ->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())->convertToFullColumnIfConst();
+            ColumnPtr column = ColumnArray::create(elements, source_array->getOffsetsPtr());
+            columns[i] = column_it->isSubcolumn() ? type_in_storage->getSubcolumn(column_it->getSubcolumnName(), column) : column;
         }
 
         if (!positions_without_sizes.empty())
@@ -264,22 +260,6 @@ private:
             fillMissingColumns(filled, src.rows(), columns_without_sizes, columns_without_sizes, {}, nullptr);
             for (size_t j = 0; j < positions_without_sizes.size(); ++j)
                 columns[positions_without_sizes[j]] = std::move(filled[j]);
-        }
-
-        if (!positions_with_sizes.empty())
-        {
-            Columns filled(positions_with_sizes.size());
-            filled.insert(filled.end(), source_columns.begin(), source_columns.end());
-            columns_with_sizes.insert(columns_with_sizes.end(), sources.begin(), sources.end());
-            fillMissingColumns(filled, src.rows(), columns_with_sizes, columns_with_sizes, {}, nullptr);
-
-            for (size_t j = 0; j < positions_with_sizes.size(); ++j)
-            {
-                const auto & [position, subcolumn] = positions_with_sizes[j];
-                columns[position] = subcolumn
-                    ? subcolumn->getTypeInStorage()->getSubcolumn(subcolumn->getSubcolumnName(), filled[j])
-                    : std::move(filled[j]);
-            }
         }
     }
 
