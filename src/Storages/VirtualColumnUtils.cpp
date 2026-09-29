@@ -731,8 +731,7 @@ static void collectConjuncts(const ActionsDAG::Node & node, std::vector<const Ac
         conjuncts.push_back(&value);
 }
 
-/// A function's result name is derived from its arguments, so it is never hashed, not even as an argument
-/// name; alias and column names are, as arguments of a function that may read them.
+/// A function's result name is derived from its arguments, so it is never hashed, not even as an argument name.
 static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash)
 {
     const auto & value = skipAliases(node);
@@ -752,9 +751,8 @@ static bool updateConditionHash(const ActionsDAG::Node & node, SipHash & hash)
         return true;
     }
 
-    /// `formatRow*` write the argument names they were built with into the result, and a function outside
-    /// `FunctionFactory` is opaque: a lambda capture's name omits its body, and a user-defined function may read
-    /// its arguments' names.
+    /// `formatRow*` write the argument names they were built with into the result. Functions outside `FunctionFactory`
+    /// include lambda captures, whose names omit the body, and user-defined functions, which may read their arguments' names.
     const auto & function_name = value.function_base->getName();
     if (function_name == "formatRow" || function_name == "formatRowNoNewline" || !FunctionFactory::instance().hasNameOrAlias(function_name))
         return false;

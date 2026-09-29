@@ -74,8 +74,7 @@ FormatFilterInfo::FormatFilterInfo(
     bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
     if (use_query_condition_cache && filter_actions_dag)
     {
-        /// A row group PREWHERE empties is recorded as not matching the hashed condition, so each PREWHERE
-        /// conjunct must be a conjunct of that condition.
+        /// A row group PREWHERE empties is recorded as not matching the hashed condition, so PREWHERE must be covered by it.
         bool prewhere_covered = true;
         if (prewhere_info)
         {
