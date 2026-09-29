@@ -658,6 +658,7 @@ do
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
+    sed -n "s/^double-timeout\t/$test_name\t/p" < "$test_file" >> "analyze/double-timeout-queries.tsv"
 done
 
 # for each query run, prepare array of metrics from query log
@@ -732,6 +733,9 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
         on query_logs.query_id = query_runs.query_id
             and query_logs.version = query_runs.version
     where (test, query_index) not in partial_queries
+        -- Censored times of `--long` double timeouts must not enter the metrics.
+        and (test, query_index) not in (select test, query_index
+            from file('analyze/double-timeout-queries.tsv', TSV, 'test text, query_index int'))
     ;
 
 -- This is just for convenience -- human-readable + easy to make plots.
