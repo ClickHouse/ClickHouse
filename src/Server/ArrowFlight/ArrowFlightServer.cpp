@@ -1169,9 +1169,9 @@ arrow::Status ArrowFlightServer::DoPut(
         /// release and can hit `SESSION_IS_LOCKED` on `DoPut` alone. Release before writing to close that window.
         /// `AuthMiddleware::completeSessionEarly` runs the prepared-statement expiration refresh together with the
         /// release, so the refresh stays ordered before the next request on this session can start, and
-        /// `CallCompleted` skips its own refresh and release. A request that carries
-        /// `x-clickhouse-session-close` must keep the session acquired until `CallCompleted` runs
-        /// `Session::closeSession`, which would be skipped once the session has been handed back.
+        /// `CallCompleted` skips its own refresh and release. For a request that carries
+        /// `x-clickhouse-session-close`, it instead closes the session and its session-scoped prepared
+        /// statements, so a client reacting to the response can immediately reuse the `session_id`.
         auto release_session_before_response = [&]
         {
             auth.completeSessionEarly();

@@ -531,3 +531,52 @@ def test_session_close_does_not_affect_other_user_same_session_id():
     result = client2.execute(stmt2)
     assert result.column(0).to_pylist() == [2]
     stmt2.close()
+
+
+def test_doput_session_close_response_implies_session_closed():
+    """A `DoPut` carrying `x-clickhouse-session-close: 1` closes the session before writing
+    its response, so the response reaching the client already implies the session is gone:
+    a follow-up request with `x-clickhouse-session-check: 1` deterministically gets
+    `SESSION_NOT_FOUND`, and reusing the same `session_id` without the check starts a
+    fresh session."""
+    session_id = 'close_' + ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+
+    client = get_client("user_ps1", "pass1", session_id=session_id)
+    # Create the named session.
+    client.execute_update("SELECT 1")
+
+    close_client = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        insecure=True,
+        disable_server_verification=True,
+        username="user_ps1",
+        password="pass1",
+        metadata={
+            'x-clickhouse-session-id': session_id,
+            'x-clickhouse-session-close': '1',
+        },
+        features={'metadata-reflection': 'true'},
+    )
+    close_client.execute_update("SELECT 1")
+
+    # The session must already be closed once the response is back.
+    check_client = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        insecure=True,
+        disable_server_verification=True,
+        username="user_ps1",
+        password="pass1",
+        metadata={
+            'x-clickhouse-session-id': session_id,
+            'x-clickhouse-session-check': '1',
+        },
+        features={'metadata-reflection': 'true'},
+    )
+    with pytest.raises(pa.lib.ArrowInvalid, match="Session .* not found"):
+        check_client.execute_update("SELECT 1")
+
+    # Reusing the same session id without the check starts a fresh session.
+    reuse_client = get_client("user_ps1", "pass1", session_id=session_id)
+    reuse_client.execute_update("SELECT 42")

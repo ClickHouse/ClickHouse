@@ -48,9 +48,17 @@ void AuthMiddleware::refreshAndReleaseSession()
 
 void AuthMiddleware::completeSessionEarly()
 {
-    if (!session || session_id.empty() || isSessionCloseRequested() || session_completed)
+    if (!session || session_id.empty() || session_completed)
         return;
-    refreshAndReleaseSession();
+    if (session_close)
+    {
+        calls_data.closeSessionPreparedStatements(session_id, username);
+        session->closeSession(session_id);
+    }
+    else
+    {
+        refreshAndReleaseSession();
+    }
     session_completed = true;
 }
 

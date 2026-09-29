@@ -50,17 +50,12 @@ public:
     const std::string & getSessionId() const { return session_id; }
     std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
-    /// True when the request carries `x-clickhouse-session-close: 1`. The session must then stay
-    /// acquired until `CallCompleted` runs `Session::closeSession`, so handlers that want to hand the
-    /// session back to the pool early must skip the early release for these requests.
-    bool isSessionCloseRequested() const { return session_close; }
-
-    /// Hands the session back to the pool from inside a handler that writes its response before
-    /// returning (e.g. `DoPut` with `WriteMetadata`). Runs the same prepared-statement expiration
-    /// refresh as `CallCompleted` and releases the session, so the refresh stays ordered before any
-    /// next request can acquire the session; `CallCompleted` then skips its own refresh and release.
-    /// No-op for session-less requests and for requests with `x-clickhouse-session-close`, which must
-    /// keep the session acquired until `CallCompleted` runs `Session::closeSession`.
+    /// Completes the session from inside a handler that writes its response before
+    /// returning (e.g. `DoPut` with `WriteMetadata`), so that the response reaching
+    /// the client already implies the session is free: releases the session for regular
+    /// requests, closes it together with its session-scoped prepared statements for
+    /// requests with `x-clickhouse-session-close`. `CallCompleted` then skips its own
+    /// release/close. No-op for session-less requests and when called twice.
     void completeSessionEarly();
 
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
