@@ -1,0 +1,164 @@
+---
+title: 'تحديثات المنصة'
+sidebarTitle: 'تحديثات المنصة'
+slug: /products/bring-your-own-cloud/connector/platform-updates
+description: 'اعتماد حزم المنصة التي تقترحها ClickHouse Cloud لعنقود مُدار: ما المقصود بالحزمة، وكيف تتم عملية الموافقة، وما الأذونات التي تمنحها'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor', 'platform']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+يُشغّل العنقود المُدار طبقة منصة صغيرة تعتمد عليها خدمات ClickHouse. تقترح ClickHouse Cloud تحديثات على تلك الطبقة، ولا يطبّق المنفّذ أي شيء منها حتى توافق على كل تحديث باستخدام بيانات اعتماد العنقود الخاصة بك.
+
+## ما المقصود بتحديث المنصة {#what-a-platform-update-is}
+
+تتكوّن طبقة المنصة من ثلاثة مكوّنات: وحدة تحكم اللقطات، وClickHouse Operator، وجامعات المراقبة. وتُثبَّت بهذا الترتيب لأن كل مكوّن يعتمد على تعريفات الموارد المخصّصة الخاصة بالمكوّن الذي يسبقه. وتستخدم الخدمات StorageClass باسم `gp3-encrypted` (وحدات تخزين gp3 مشفّرة) يأتي معها.
+
+حزمة المنصة هي البيان (manifest) الذي تُولّده ClickHouse Cloud لبيئتك. وهي تثبّت إصدارات المخطط (chart) والصورة لتلك المكوّنات وتحدّد اسم السجل (registry) الذي تُسحَب منه. وتُعرَّف كل حزمة بقيمة sha256 لذلك البيان. ترسلها ClickHouse Cloud إلى المُنفِّذ عبر قناة الأوامر، فيُجهّزها المُنفِّذ بانتظار موافقتك.
+
+تُطبَّق الحزمة على نصفين:
+
+* **نصف الأذونات** هو كل ما يمنح الوصول أو يحدّد شكله: مساحات الأسماء وCustomResourceDefinitions وServiceAccounts وClusterRoles وClusterRoleBindings وRoles وRoleBindings وتهيئات webhook وadmission وPriorityClasses وStorageClass. وأنت وحدك من يطبّقه، باستخدام بيانات اعتمادك، عبر تنفيذ `clicklink clctl platform approve`.
+* **نصف عبء العمل** هو ما يعمل فعليًا: Deployments وServices وConfigMaps وSecrets وJobs وPodDisruptionBudgets. ويطبّقه المُنفِّذ بهوية مخصّصة باسم `pcm-platform` لا تستطيع الكتابة إلا إلى هذه الأنواع، وذلك فقط ما دام الرمز قصير الأجل الذي أنشأته موافقتك صالحًا.
+
+لا يطبّق المُنفِّذ أبدًا حزمة لم توافق عليها. فهو يرفض أي مزامنة للمنصة يكون نصف الأذونات فيها مفقودًا، أو تختلف قيمة sha256 الخاصة بها عن المعتمدة، أو انتهت صلاحية رمزها. ويُبيّن الرفض أن الموافقة مطلوبة ويذكر قيمة sha256 للحزمة المُجهَّزة. كذلك يفشل بالطريقة نفسها إنشاءُ خدمة يتطلّب تعريف مورد مخصّص لا توفّره منصتك الحالية، مع الأمر نفسه الواجب تنفيذه.
+
+## الموافقة على تحديث المنصة {#approve-a-platform-update}
+
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="سير عمل الموافقة على منصة ClickHouse Connector" />
+
+### بيانات اعتماد السجل {#registry-credentials}
+
+تعتمد مصادقة السجل على وضع توزيع الصور المسجَّل لبيئتك:
+
+* **الوصول المباشر إلى سجل ClickHouse.** نفّذ الموافقة على جهاز EC2 الافتراضي الخاص بالموصل. يتولى كل من `approve` ومزامنة المنصة التي يجريها المنفّذ دور ساحب ECR للقراءة فقط الخاص ببيئتك باستخدام بيانات اعتماد من خدمة البيانات الوصفية لمثيل EC2. ويسجّل هذا الدور الدخول إلى سجل المخططات، كما يستخدمه المنفّذ للتحقق من وجود صور المنصة. ولا تُغني ملفات تعريف AWS أو بيانات اعتماد البيئة أو بيانات اعتماد SSO على محطة العمل عن ملف تعريف المثيل. ويبقى ملف kubeconfig هو مصدر بيانات اعتماد مسؤول العنقود المنفصلة التي تطبّق نصف الأذونات.
+* **المخططات في سجل ECR آخر، بما في ذلك مرآتك الخاصة.** يستخدم تسجيل الدخول إلى المخطط بيانات اعتماد AWS المتاحة من البيئة للعملية التي تشغّل `approve` أو المنفّذ، ويجب أن تمتلك تلك البيانات صلاحية القراءة من ذلك السجل.
+
+لا تستخدم إجراء محطة عمل Kubernetes أدناه إلا في عمليات النشر التي تعتمد سجلًا مرآةً مع تفعيل موافقة منصة Kubernetes. أما في حالة الوصول المباشر، فاطلب أولًا من فريق الحساب الخاص بك تأكيد توفر بيئة تنفيذ مدعومة تتضمن ملف تعريف مثيل EC2 المطلوب.
+
+<Steps>
+  <Step title="ابحث عن الحزمة المرحلية" id="find-the-staged-bundle">
+    ترسل ClickHouse Cloud كل bundle مقترحة إلى executor أولًا. يجهّزها executor باعتبارها الـ bundle الـ pending ويبلّغ عن قيمة sha256 الخاصة بها في نبضة الاتصال. وتوجد bundle مجهّزة واحدة في كل مرة، إذ يحل أي اقتراح أحدث محلها. ثم يرفض executor عملية المزامنة ويسجّل أمرًا failed تنتهي نتيجته بالأمر الواجب تنفيذه.
+
+    ```bash
+    clicklink clctl commands list --status failed --action sync_platform
+    ```
+
+    ينتهي الحقل `result` بـ `run: clctl platform approve (pending bundle sha <sha256>)`. أما على Kubernetes فيكون الاستدلال `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`. وأي عملية إنشاء تصادف تعريف custom resource مفقودًا تتضمّن السطر `clctl platform approve` نفسه. ويظهر ضمن أمرها الفاشل وضمن الخطأ الذي يطبعه `clicklink clctl instances create --wait`. كما يُعلمك فريق حسابك عند اقتراح أي تحديث للمنصة.
+
+    اقرأ الحزمة المُجهَّزة قبل الموافقة عليها، فهي تحتوي على المانيفست وقيمة sha256 الخاصة به.
+
+    <Tabs>
+      <Tab title="جهاز افتراضي يعمل بنظام Linux" id="inspect-vm">
+        يجهّز المنفّذ الحزمة كملف بجوار حزم الوصول الخاصة به على مضيف الموصّل:
+
+        ```bash
+        sudo cat /etc/clicklink/access/executor/platform-pending.json
+        ```
+      </Tab>
+
+      <Tab title="Kubernetes" id="inspect-kubernetes">
+        يجهّز pod المنفّذ الحزمة على وحدة تخزين الحالة الخاصة به ويقدّمها عبر واجهة برمجة التطبيقات المحلية. افتح port-forward واقرأها:
+
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # مساحة أسماء الموصّل التي اخترتها عند التهيئة
+        kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+        curl -s http://127.0.0.1:9999/v1/platform/pending
+        ```
+
+        تُجيب واجهة برمجة التطبيقات بالرمز `404` مع الرسالة `no platform bundle is staged` إلى أن يصل أول اقتراح. اترك port-forward مفتوحًا للخطوة التالية.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="تنفيذ الموافقة" id="run-approve">
+    `approve` بدون أي flags يقرأ الحزمة المجهّزة ويحسب قيم hash لها، فتوافق تمامًا على ما استلمه الـ executor. وهو يُصيّر كل مخطط تمامًا كما سيُصيّره الـ executor، ويطبّق شطر الـ permission باستخدام الـ kube context الذي تختاره. كما يُنشئ identity الـ `pcm-platform` إذا لزم الأمر ويُصدر الـ token الخاص به. ولا يُرسل أي request إلى connector endpoint الخاص بك.
+
+    يحتاج `approve` إلى kube context يمتلك صلاحيات cluster-admin على العنقود المُدار (`--context <name>` إذا كان kubeconfig يحتوي على عدة سياقات) وإلى [بيانات اعتماد السجل](#registry-credentials) الخاصة بوضع توزيع الصور في بيئتك. أما `--dry-run` فيُصيّر شطر الـ permission ويسرده دون تطبيق أو إصدار أي شيء؛ ومع ذلك فهو يحتاج إلى الوصول إلى السجل لتصيير المخططات.
+
+    <Tabs>
+      <Tab title="جهاز افتراضي يعمل بنظام Linux" id="approve-vm">
+        نفّذ الأمر على host الـ connector، بصفة root، حيث جهّز الـ executor الحزمة:
+
+        ```bash
+        sudo clicklink clctl platform approve --config /etc/clicklink/config.yaml
+        ```
+
+        يكتب `approve` الـ token في `/etc/clicklink/access/executor/_platform`، بجانب باقي credentials الـ executor. وهو يبني الحزمة الجديدة إلى جانب الحزمة الحالية ولا يستبدلها بها إلا بعد أن يصبح الـ token الخاص بها موجودًا، بحيث لا تمسّ عملية approve فاشلة أي token ما يزال صالحًا.
+      </Tab>
+
+      <Tab title="Kubernetes" id="approve-kubernetes">
+        في حالة النشر بسجل مرآة مع تفعيل موافقة المنصة على Kubernetes، يقرأ `approve` الحزمة المجهّزة عبر الـ port-forward من الخطوة السابقة. وهو يسلّم حزمة الـ token على هيئة Secret في نطاق أسماء الـ connector، ويربطه المخطط داخل الـ pod. نفّذه من workstation يصل kubeconfig الخاص به إلى العنقود، مع نسخة من تهيئة الـ connector و[الوصول إلى السجل](#registry-credentials). فالمخطط يُصيّر التهيئة في ConfigMap الخاص بالـ executor؛ ويحتاجها `approve` فقط من أجل prefix نطاق الأسماء، ولا يقرأ منها أي credentials.
+
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # نطاق أسماء الـ connector الذي اخترته عند init
+        kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+          -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+        clicklink clctl platform approve --config clicklink-config.yaml \
+          --secret-namespace "${CONNECTOR_NAMESPACE}"
+        ```
+
+        يقرأ `approve` الحزمة المجهّزة من `http://127.0.0.1:9999` افتراضيًا؛ مرّر `--endpoint` إذا كان الـ port-forward لديك يستخدم منفذًا محليًا آخر. وبدون port-forward فإنه يتوقف ويطبع أمر `kubectl port-forward` الذي ينبغي تشغيله. تُحفظ الحزمة في الـ Secret المسمى `clicklink-platform-bundle` (استخدم `--secret-name` لتغييره، بما يطابق `executor.platformBundleSecret` في المخطط). ويراها pod الـ executor بمجرد أن يحدّث الـ kubelet نقطة الربط، في غضون دقيقة تقريبًا.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="تأكيد" id="confirm">
+    ينتهي `approve` بما يلي:
+
+    ```text
+    Approved: <n> permission object(s) applied, platform token valid until <expiry>.
+    The executor may now apply the <n> workload object(s) of this bundle inside <namespaces>.
+    ```
+
+    في Kubernetes يظهر سطر ثالث: `Bundle written to Secret <namespace>/<name>; the executor pod sees it once the kubelet refreshes the mount, within about a minute.`
+
+    يعيد ClickHouse Cloud إرسال المزامنة بمجرد أن تُظهر نبضة heartbeat التالية للـ executor الموافقة. وينتظر حتى 20 دقيقة لمزامنة قيد التنفيذ بالفعل، ويتخطى أي executor مضى على آخر نبضة له أكثر من 5 دقائق. وبعد 3 محاولات لحزمة واحدة يتوقف، فيعيد فريق حسابك تشغيلها. ويطبّق الـ executor الجزء الخاص بعبء العمل ويُبلّغ عن المنصة بحالة `synced`. تابِع اكتمال المزامنة عبر:
+
+    ```bash
+    clicklink clctl commands list --action sync_platform
+    ```
+
+    تتحوّل حالة أحدث أمر `sync_platform` إلى `completed`. كما يُبلِّغ الـ executor عن حالة المنصّة وإصدارات المكوّنات إلى ClickHouse Cloud مع كل نبضة (heartbeat)، بحيث يرى فريق حسابك النتيجة نفسها.
+  </Step>
+</Steps>
+
+## نافذة الموافقة {#the-approval-window}
+
+تُصدر الموافقة رمزًا لهوية `pcm-platform`، صالحًا لمدة ساعتين افتراضيًا (يمكن تغيير ذلك عبر `--ttl`). ولا يجدّده المنفّذ مطلقًا. وبمجرد انتهاء صلاحيته، لا يعود بإمكان المنفّذ الوصول إلى طبقة المنصة، ويرفض عملية مزامنة المنصة التالية مع إظهار رسالة الموافقة مجددًا. وهذا سلوك مقصود بالتصميم ولا يعتمد على الاتصال: فالموافقة الممنوحة أثناء عدم اتصال الموصّل تنتهي صلاحيتها وفق ساعتها الخاصة.
+
+نفّذ `approve` مجددًا في الحالات التالية:
+
+* انتهاء صلاحية الرمز قبل اكتمال المزامنة؛
+* اقتراح ClickHouse Cloud حزمة مختلفة. فتجزئة sha256 التي وافقت عليها تُسجَّل على ServiceAccount المسمى `pcm-platform`، ويرفض المنفّذ مزامنة أي حزمة أخرى إلى أن توافق عليها؛
+* إبلاغ عملية إنشاء خدمة عن تعريف مورد مخصص مفقود.
+
+الموافقة على الحزمة نفسها مرة أخرى عملية آمنة وتستبدل الرمز. وتبقى الحزمة المجهّزة في مكانها بعد المزامنة، لذا لا تتطلب الموافقة المتكررة اقتراحًا جديدًا.
+
+## ما الذي تمنحه الموافقة {#what-the-approval-grants}
+
+أنت من يطبّق نصف الأذونات، ولذلك فهو يحمل صلاحيتك؛ ولا يطبّق المنفّذ أي شيء منه. ويختم `approve` هذا النصف ببصمة sha256 الخاصة بالحزمة، ويتحقق المنفّذ، قبل المساس بأي شيء، من أن كل كائن أذونات في الحزمة المُرسلة إليه موجود وموافق عليه.
+
+أما نصف عبء العمل فيطبّقه المنفّذ بهوية `pcm-platform`. وتستطيع هذه الهوية إنشاء وتحديث Secrets وConfigMaps وServices وDeployments وJobs وPodDisruptionBudgets، داخل مساحات الأسماء المنصّة فقط، وهو ما تفرضه سياسة قبول. كما تستطيع قراءة الكائنات التي تحتاجها لفحصها التمهيدي (البودات والأحداث ومساحات الأسماء وServiceAccounts وأنواع الأذونات المذكورة أعلاه). ولا تستطيع:
+
+* الكتابة إلى أي نوع على نطاق العنقود أو أي كائن RBAC؛
+* تنفيذ `escalate` أو `bind` أو `impersonate`؛
+* إصدار أو تجديد الرمز الخاص بها.
+
+أما هوية دورة حياة الخدمة الخاصة بالمنفّذ، `pcm-executor`، فهي منفصلة ومحصورة في مساحات الأسماء الخدمات. ولا تستطيع الكتابة إلى مساحات الأسماء المنصّة، غير أن عمليات القراءة الخاصة بها ليست محصورة بحارس البادئة. وللاطلاع على القائمة الكاملة لكلتا الهويتين، راجع [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
+
+## إعادة تعيين عنقود اختباري {#resetting-a-test-cluster}
+
+الأمر `clicklink clctl platform reset` مخصّص للعناقيد الاختبارية: فهو يزيل تثبيت مكوّنات المنصة بحيث يمكن إجراء تثبيتها الأول من جديد. وقبل إجراء أي تغيير، يسرد عناقيد ClickHouse في مساحات الأسماء التي يملكها هذا الموصل، ويرفض المتابعة إذا كان هناك أي خدمة.
+
+وفي حال كان العنقود فارغًا، يزيل تثبيت إصدارات المنصة بترتيب عكسي لتبعياتها، ثم يحذف حزمة رموز المنصة الخاصة بالـ executor: الدليل المحلي على جهاز افتراضي، أو الـ Secret المحدّد عبر `--secret-namespace <connector-namespace>` على Kubernetes. أما CustomResourceDefinitions وRBAC وStorageClass فتبقى كما هي. نفّذ `approve` مرة أخرى قبل مزامنة المنصة التالية.
+
+```bash
+sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run
+```
+
+يأخذ `reset` بيان المنصة المُصيَّر كملف (`--bundle`)، ولا يقرأ الحزمة المُجهَّزة. أما `--dry-run` فيتحقق من الخدمات ويطبع الخطة دون إجراء أي تغيير على العنقود.
