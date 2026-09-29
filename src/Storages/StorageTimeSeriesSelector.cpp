@@ -966,6 +966,7 @@ void StorageTimeSeriesSelector::readImpl(
 {
     /// Also checked here: a table created AS this function is configured once, not on the reader's context.
     context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
+    checkNoBypassedReadRestriction(config.time_series_storage_id, context, "A PromQL selector", "it reads the inner tables directly");
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();

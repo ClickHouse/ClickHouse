@@ -259,6 +259,33 @@ def test_a_stored_selector_table_needs_the_select_grant_on_its_source():
         node.query("DROP TABLE IF EXISTS stored_selector")
 
 
+def test_a_stored_selector_table_keeps_the_source_row_policy_and_filters():
+    """A table created AS timeSeriesSelector reads the inner tables directly, so a row policy or an
+    additional_table_filters entry on its source is refused when it is read, as a direct call is."""
+    node.query(
+        f"CREATE TABLE stored_policy_selector AS timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})"
+    )
+    try:
+        # It reads before the restriction, so the refusals below are not vacuous.
+        assert int(node.query("SELECT count() FROM stored_policy_selector")) > 0
+
+        node.query(
+            "CREATE ROW POLICY stored_selector_policy ON shard_0.ts_local USING metric_name = 'nothing' TO ALL"
+        )
+        refused = node.query_and_get_error("SELECT count() FROM stored_policy_selector")
+        assert "while a row policy applies to it" in refused, refused
+        node.query("DROP ROW POLICY stored_selector_policy ON shard_0.ts_local")
+
+        refused = node.query_and_get_error(
+            "SELECT count() FROM stored_policy_selector "
+            "SETTINGS additional_table_filters = {'shard_0.ts_local': 'metric_name != \\'m\\''}"
+        )
+        assert "with an additional_table_filters entry for it" in refused, refused
+    finally:
+        node.query("DROP ROW POLICY IF EXISTS stored_selector_policy ON shard_0.ts_local")
+        node.query("DROP TABLE IF EXISTS stored_policy_selector")
+
+
 def test_a_stored_prometheus_query_table_checks_its_reader():
     """A table created AS prometheusQuery is configured once, so its reader is held to the wrapper's
     SELECT grant and row policy when it is read, as a prometheusQuery call is."""
