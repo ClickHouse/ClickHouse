@@ -287,6 +287,13 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
         return;
     }
 #endif
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        transposeImpl_x86_64_v3<T, full>(src, dst, num_bits, tail);
+        return;
+    }
+#endif
     {
         transposeImpl<T, full>(src, dst, num_bits, tail);
     }
@@ -403,6 +410,13 @@ ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bit
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         reverseTransposeImpl_x86_64_v4<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
+        return;
+    }
+#endif
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        reverseTransposeImpl_x86_64_v3<T, full>(src, buf, num_bits, tail);
         return;
     }
 #endif

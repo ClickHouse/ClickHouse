@@ -138,6 +138,13 @@ private:
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyImpl_x86_64_v3(data, ptr, row_begin, row_end);
+            return;
+        }
+#endif
 
         addManyImpl(data, ptr, row_begin, row_end);
     }
@@ -180,6 +187,13 @@ private:
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyConditionalImpl_x86_64_v3<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
             return;
         }
 #endif

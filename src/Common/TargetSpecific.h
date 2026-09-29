@@ -20,10 +20,15 @@
  * USE_MULTITARGET_CODE will be set to 0. Use #if USE_MULTITARGET_CODE whenever you
  * use anything from this namespaces.
  *
+ * The `Default` code is compiled for the baseline given by `X86_ARCH_LEVEL` (see `cmake/cpu_features.cmake`).
+ * At the default level 3 it already uses AVX2, so dispatchers usually only need to pick the `x86_64_v4`
+ * variant. Compatibility builds at level 1 or 2 have an SSE-only `Default`; there `MULTITARGET_NEEDS_V3`
+ * is 1 and dispatchers must also try `isArchSupported(TargetArch::x86_64_v3)` before falling back.
+ *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but doesn't specify any additional
- * copile options. Functions and classes inside this macros are available regardless
- * of USE_MUTLITARGE_CODE.
+ * compile options. Functions and classes inside this macros are available regardless
+ * of USE_MULTITARGET_CODE.
  *
  * Example of usage:
  *
@@ -33,11 +38,11 @@
  * }
  * ) // DECLARE_DEFAULT_CODE
  *
- * DECLARE_AVX2_SPECIFIC_CODE (
+ * DECLARE_X86_64_V3_SPECIFIC_CODE (
  * int funcImpl() {
  *     return 2;
  * }
- * ) // DECLARE_AVX2_SPECIFIC_CODE
+ * ) // DECLARE_X86_64_V3_SPECIFIC_CODE
  *
  * int func() {
  * #if USE_MULTITARGET_CODE
@@ -118,6 +123,17 @@ String toString(TargetArch arch);
 
 #define USE_MULTITARGET_CODE 1
 
+/// 1 when the whole binary is built below x86-64-v3 (`X86_ARCH_LEVEL` 1 or 2, see `src/CMakeLists.txt`), i.e. the
+/// `Default` code has no AVX2 and the `_x86_64_v3` variants are the only AVX2 bodies a v3-capable CPU can run.
+/// `MULTITARGET_FUNCTION_X86_V4` then also emits `name##_x86_64_v3`, and dispatchers select it under
+/// `#if MULTITARGET_NEEDS_V3` with `isArchSupported(TargetArch::x86_64_v3)`. At level 3 this is 0 and nothing
+/// changes, including for the TUs pinned to `-march=x86-64-v2` (that is why it is not derived from `__AVX2__`).
+#if defined(MULTITARGET_DEFAULT_BELOW_V3) && MULTITARGET_DEFAULT_BELOW_V3
+#    define MULTITARGET_NEEDS_V3 1
+#else
+#    define MULTITARGET_NEEDS_V3 0
+#endif
+
 /// Function-specific attributes using arch= for cleaner specification
 /// This matches -march= compiler flags and avoids long feature lists
 ///
@@ -131,11 +147,11 @@ String toString(TargetArch arch);
 ///
 /// We explicitly override with `no-prefer-256-bit` to enable 512-bit vectorization for AVX-512 targets.
 ///
-/// `X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE` is needed for TUs explicitly pinned to `-march=x86-64-v2`
-/// (e.g. `FunctionsHashingMisc.cpp`, `arrayDistance.cpp`, `arrayNorm.cpp`, see their CMakeLists.txt
-/// overrides). At v2 the `Default` namespace inherits v2 codegen (SSE2/XMM), so without a per-function
-/// v3 specialization there is no AVX2/YMM body to call at all. Selecting it needs no runtime check:
-/// multi-target code is only built when the whole binary targets x86-64-v3 (see `src/CMakeLists.txt`).
+/// `X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE` is needed wherever the `Default` namespace inherits v2 codegen
+/// (SSE2/XMM) and there would otherwise be no AVX2/YMM body to call at all: TUs explicitly pinned to
+/// `-march=x86-64-v2` (e.g. `FunctionsHashingMisc.cpp`, `arrayDistance.cpp`, see their CMakeLists.txt
+/// overrides) and whole builds at `X86_ARCH_LEVEL` 1 or 2 (`MULTITARGET_NEEDS_V3`). The v3 body must always
+/// be selected behind `isArchSupported(TargetArch::x86_64_v3)`: a level-2 binary runs on CPUs without AVX2.
 /// Same rationale applies to `MULTITARGET_FUNCTION_X86_V4_V3` below.
 #define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
 #define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
@@ -209,6 +225,7 @@ END_TARGET_SPECIFIC_CODE
 #else
 
 #define USE_MULTITARGET_CODE 0
+#define MULTITARGET_NEEDS_V3 0
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
@@ -289,21 +306,9 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
-#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
-    FUNCTION_HEADER \
-    \
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##_x86_64_v4 \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    name \
-    FUNCTION_BODY \
-
 /// Generates `_x86_64_v4`, `_x86_64_v3`, and `Default` versions of `name`. Used by callers that need a
 /// per-function v3 specialization in addition to v4 — required for TUs explicitly pinned to
-/// `-march=x86-64-v2` via `set_source_files_properties` (see `arrayDistance.cpp`, `arrayNorm.cpp`),
+/// `-march=x86-64-v2` via `set_source_files_properties` (see `arrayDistance.cpp`),
 /// where the `Default` namespace inherits v2 codegen and the runtime dispatcher would otherwise have
 /// no AVX2/YMM body to pick. Callers must call `name##_x86_64_v4` / `name##_x86_64_v3` from a
 /// dispatcher guarded by `isArchSupported(TargetArch::x86_64_v4)` / `isArchSupported(TargetArch::x86_64_v3)`.
@@ -325,6 +330,54 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
+/// Generates `_x86_64_v4` and `Default` versions of `name`. The `Default` body is assumed to be AVX2 already,
+/// which holds at the default x86-64-v3 level. In a build below v3 (`MULTITARGET_NEEDS_V3`) it additionally
+/// generates `_x86_64_v3`, and the dispatcher must select it under `#if MULTITARGET_NEEDS_V3`:
+///
+///     #if USE_MULTITARGET_CODE
+///         if (isArchSupported(TargetArch::x86_64_v4)) { return name_x86_64_v4(...); }
+///     #endif
+///     #if MULTITARGET_NEEDS_V3
+///         if (isArchSupported(TargetArch::x86_64_v3)) { return name_x86_64_v3(...); }
+///     #endif
+///         return name(...);
+/// Spelled out rather than forwarded to `MULTITARGET_FUNCTION_X86_V4_V3`: the arguments are macro-expanded
+/// before a forwarding call, and the expanded body contains top-level commas.
+#if MULTITARGET_NEEDS_V3
+
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v4 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v3 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#else
+
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v4 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#endif
 
 #else
 

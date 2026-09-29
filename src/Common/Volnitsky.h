@@ -391,9 +391,10 @@ protected:
 
     /// Whether search() bypasses Volnitsky's n-gram hash and uses the fallback searcher directly.
     /// Case-sensitive search uses StringZilla `sz_find`, which beats the hash on every SIMD target (x86 SSE+
-    /// and ARM NEON). Case-insensitive uses a cache searcher that only beats the hash with the AVX2 kernel;
-    /// on ARM NEON and SSE-only the hash wins for selective needles, so it is kept there. AVX2 availability
-    /// is what matters, independent of multitarget dispatch (which is off at non-v3 baselines).
+    /// and ARM NEON); StringZilla picks its kernel at runtime on its own, so it is also taken whenever our
+    /// multitarget dispatch is compiled in. Case-insensitive uses a cache searcher that only beats the hash
+    /// with the AVX2 kernel; on ARM NEON and SSE-only the hash wins for selective needles, so it is kept
+    /// there. Compile-time AVX2 availability is what matters for it, independent of multitarget dispatch.
 #if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
     static constexpr bool case_sensitive_can_bypass = true;
 #else

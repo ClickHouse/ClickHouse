@@ -425,6 +425,16 @@ struct OperationApplier
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            if (!use_result_data_as_input)
+                doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
+            while (!in.empty())
+                doBatchedApplyAVX2<true>(in, result_data.data(), result_data.size());
+            return;
+        }
+#endif
         {
             if (!use_result_data_as_input)
                 doBatchedApply<false>(in, result_data.data(), result_data.size());
@@ -472,6 +482,13 @@ struct OperationApplier
         BATCH_BODY(doBatchedApplyAVX512BW)
     }
 #endif
+#if MULTITARGET_NEEDS_V3
+    template <bool CarryResult, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
+    {
+        BATCH_BODY(doBatchedApplyAVX2)
+    }
+#endif
 
 #undef BATCH_BODY
 };
@@ -489,6 +506,13 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 #if USE_MULTITARGET_CODE
     template <bool, typename Columns, typename Result>
     static void doBatchedApplyAVX512BW(Columns &, Result &, size_t)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
+    }
+#endif
+#if MULTITARGET_NEEDS_V3
+    template <bool, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns &, Result &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
@@ -553,6 +577,13 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             if (isArchSupported(TargetArch::x86_64_v4))
             {
                 applyImpl_x86_64_v4<T, Result>(x, *column, result);
+                return;
+            }
+#endif
+#if MULTITARGET_NEEDS_V3
+            if (isArchSupported(TargetArch::x86_64_v3))
+            {
+                applyImpl_x86_64_v3<T, Result>(x, *column, result);
                 return;
             }
 #endif

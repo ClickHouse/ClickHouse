@@ -44,6 +44,13 @@ ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter 
         return true;
     }
 #endif
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        convertColumnToBoolImpl_x86_64_v3<T>(data, res);
+        return true;
+    }
+#endif
     convertColumnToBoolImpl<T>(data, res);
 
     return true;

@@ -349,6 +349,13 @@ public:
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v3::FunctionGeoDistance<method>>(context);
+            return;
+        }
+#endif
         impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
