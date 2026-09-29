@@ -276,6 +276,9 @@ public:
     /// lifetime of the views an override reports.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
+    /// Whether this table has a unique-key constraint.
+    virtual bool hasUniqueKey() const;
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.

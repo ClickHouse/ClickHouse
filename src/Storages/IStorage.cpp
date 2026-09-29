@@ -28,6 +28,7 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
@@ -416,6 +417,11 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
+}
+
+bool IStorage::hasUniqueKey() const
+{
+    return metadata.get()->hasUniqueKey();
 }
 
 VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const

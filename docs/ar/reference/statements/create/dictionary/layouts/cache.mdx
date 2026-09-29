@@ -15,6 +15,26 @@ doc_type: 'reference'
 
 عند البحث عن قيمة في القاموس، يُبحث أولًا في cache. ولكل block من البيانات، تُطلب جميع المفاتيح التي لا توجد في cache أو التي انتهت صلاحيتها من المصدر باستخدام `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. ثم تُكتب البيانات المستلمة إلى cache.
 
+ينطبق ذلك عند البحث عن مفتاح — باستخدام `dictGet` ودوال القاموس الأخرى. أما قراءة القاموس **كجدول** باستخدام `SELECT ... FROM <dictionary>` فتختلف: فلأن cache لا يحتفظ بسجل بالمفاتيح الموجودة، تُعدِّد القراءة فقط الخلايا الموجودة في cache في تلك اللحظة والتي تحمل قيمة، ويكون `WHERE` على المفتاح عامل تصفية عاديًا لتلك الخلايا، وليس قائمة مفاتيح لجلبها. ولا يمكن اكتشاف مفتاح غير موجود في cache بهذه الطريقة، مهما كان ما ينص عليه `WHERE`. كما أن المفتاح الذي *جرى* البحث عنه ولم يُعثر عليه في المصدر لا يكون مرئيًا أيضًا: إذ يتذكر cache هذا الإخفاق كخلية افتراضية، وتتخطى قراءة الجدول الخلايا الافتراضية. كما أن الخلايا الموجودة ليست بمنأى عن المصدر: فالخلية منتهية الصلاحية تُقرأ عبر المسار نفسه الذي يسلكه `dictGet`، ولذلك يُعاد طلبها من المصدر — بشكل متزامن، أو بشكل غير متزامن إذا كان `allow_read_expired_keys` مفعّلًا.
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+لذا فإن قاموس cache مُصمَّم ليُستخدم عبر دوال القاموس. إذا كنت بحاجة إلى أن يصل البحث عن مفاتيح عشوائية إلى المصدر دائمًا، فاستخدم `dictGet` مع تخطيط [direct](/ar/reference/statements/create/dictionary/layouts/direct)، الذي يستعلم من المصدر عند كل عملية بحث ولا يخزّن شيئًا في cache. لاحظ أن قراءة قاموس `direct` كجدول ليست جلبًا بالمفتاح أيضًا: إذ يُحمِّل `SELECT ... FROM <dictionary> WHERE key IN (...)` المصدر بأكمله ثم يُجري التصفية بعد ذلك، لأن ClickHouse لا يدفع عامل تصفية المفتاح إلى داخل القاموس. ولقراءة قاموس كجدول، استخدم تخطيطًا يحتفظ به كاملًا، مثل [flat](/ar/reference/statements/create/dictionary/layouts/flat) أو [hashed](/ar/reference/statements/create/dictionary/layouts/hashed).
+
 إذا لم يُعثر على المفاتيح في القاموس، فستُنشأ مهمة لتحديث cache وتُضاف إلى قائمة انتظار التحديث. ويمكن التحكم في خصائص قائمة انتظار التحديث باستخدام الإعدادات `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
 بالنسبة إلى قواميس cache، يمكن ضبط [lifetime](/ar/reference/statements/create/dictionary/lifetime) لانتهاء صلاحية البيانات في cache. وإذا مرّ وقت أطول من `lifetime` منذ تحميل البيانات في خلية معيّنة، فلن تُستخدم قيمة الخلية ويصبح المفتاح منتهي الصلاحية. ويُعاد طلب المفتاح في المرة التالية التي يلزم فيها استخدامه. ويمكن تهيئة هذا السلوك باستخدام الإعداد `allow_read_expired_keys`.
