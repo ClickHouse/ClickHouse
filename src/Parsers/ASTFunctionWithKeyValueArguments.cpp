@@ -71,22 +71,6 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
-
-    /// A value in brackets is parser-produced as an `ASTExpressionList` of `ASTPair`, e.g. `headers(header(...))`.
-    /// Any other shape would be formatted as SQL that cannot be parsed back (e.g. in the dictionary metadata),
-    /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS`.
-    if (second_with_brackets)
-    {
-        const auto * list = child->as<ASTExpressionList>();
-        if (!list)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'second' of ASTPair in brackets must be a list of key-value pairs during AST JSON deserialization");
-        for (const auto & element : list->children)
-            if (!element || !element->as<ASTPair>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'second' of ASTPair in brackets must contain only key-value pairs during AST JSON deserialization");
-    }
-
     set(second, child);
 }
 
