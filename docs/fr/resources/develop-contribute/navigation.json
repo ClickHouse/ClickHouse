@@ -44,7 +44,7 @@
       ]
     },
     {
-      "group": "Développement d'intégrations",
+      "group": "Développement d’intégrations",
       "pages": [
         "fr/resources/develop-contribute/integrations/index",
         "fr/resources/develop-contribute/integrations/building-integrations",
@@ -60,6 +60,6 @@
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Développement et contribution",
+  "item": "Développement et contributions",
   "root": "fr/resources/develop-contribute/index"
 }

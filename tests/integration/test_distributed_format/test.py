@@ -361,8 +361,111 @@ def test_long_directory_name_rejected_before_local_write(started_cluster):
 
     assert node.query("select count() from test.local_mixed_path").strip() == "0"
 
+    # With the local replica queued rather than written to, the shard has two destinations and the
+    # short one comes first, so a rejection driven by the second must leave no directory behind.
+    queued_dirs = (
+        "select count() from system.distribution_queue "
+        "where database = 'test' and table = 'distr_mixed_path'"
+    )
+    error = node.query_and_get_error(
+        "insert into test.distr_mixed_path values (1)",
+        settings=dict(settings, prefer_localhost_replica="0"),
+    )
+    assert "ARGUMENT_OUT_OF_BOUND" in error
+    assert node.query(queued_dirs).strip() == "0"
+    assert node.query("select count() from test.local_mixed_path").strip() == "0"
+
+    # The compact format bounds both names, so the same INSERT queues one directory per destination.
+    # That is what makes the count above a live assertion rather than a vacuous zero.
+    node.query("system stop distributed sends test.distr_mixed_path")
+    node.query(
+        "insert into test.distr_mixed_path values (1)",
+        settings=dict(
+            settings,
+            prefer_localhost_replica="0",
+            use_compact_format_in_distributed_parts_names="1",
+        ),
+    )
+    assert node.query(queued_dirs).strip() == "2", node.query(queued_dirs)
+
     node.query("drop table test.distr_mixed_path sync")
     node.query("drop table test.local_mixed_path sync")
+
+
+def test_long_directory_name_default_database(started_cluster):
+    # The directory name is `user[:password]@host:port#default_database`, so a long
+    # `default_database` exceeds NAME_MAX with every other field unremarkable. See #112719.
+    node.query("drop table if exists test.local_long_db sync")
+    node.query(
+        "create table test.local_long_db (x UInt64) engine = MergeTree order by x"
+    )
+
+    settings = {
+        "distributed_foreground_insert": "0",
+        "prefer_localhost_replica": "0",
+        "use_compact_format_in_distributed_parts_names": "0",
+    }
+
+    def create_distributed(table, cluster_name):
+        node.query(f"drop table if exists test.{table} sync")
+        node.query(
+            f"create table test.{table} (x UInt64) engine = "
+            f"Distributed('{cluster_name}', test, local_long_db)"
+        )
+        # Sends are stopped so a queued file stays queued for the assertions below.
+        node.query(f"system stop distributed sends test.{table}")
+
+    def queued(table):
+        return node.query(
+            "select data_files > 0 from system.distribution_queue "
+            f"where database = 'test' and table = '{table}'"
+        ).strip()
+
+    # A name of exactly 255 bytes is still accepted.
+    create_distributed(
+        "distr_db_at_limit", "test_cluster_long_default_database_at_limit"
+    )
+    node.query("insert into test.distr_db_at_limit values (1)", settings=settings)
+    assert queued("distr_db_at_limit") == "1"
+
+    # One byte over the limit is rejected. The reported length pins both cases, since the two
+    # clusters differ by a single database byte.
+    create_distributed(
+        "distr_db_over_limit", "test_cluster_long_default_database_over_limit"
+    )
+    error = node.query_and_get_error(
+        "insert into test.distr_db_over_limit values (1)", settings=settings
+    )
+    assert "ARGUMENT_OUT_OF_BOUND" in error
+    assert "The max length of a directory name" in error
+    assert "distr_db_over_limit" in error
+    assert "test_cluster_long_default_database_over_limit" in error
+    assert "is 255, current length is 256" in error
+
+    # The compact format names the directory after the shard and replica index, so the same
+    # cluster works with it.
+    node.query(
+        "insert into test.distr_db_over_limit values (1)",
+        settings=dict(settings, use_compact_format_in_distributed_parts_names="1"),
+    )
+    assert queued("distr_db_over_limit") == "1"
+
+    # The name embeds the password, so the message must not disclose it. The same name without
+    # the password is 242 bytes, so a rejection at 256 is only reached because it counts.
+    create_distributed(
+        "distr_db_password", "test_cluster_long_default_database_password"
+    )
+    error = node.query_and_get_error(
+        "insert into test.distr_db_password values (1)", settings=settings
+    )
+    assert "ARGUMENT_OUT_OF_BOUND" in error
+    assert "is 255, current length is 256" in error
+    assert "secret_112719" not in error
+
+    node.query("drop table test.distr_db_password sync")
+    node.query("drop table test.distr_db_over_limit sync")
+    node.query("drop table test.distr_db_at_limit sync")
+    node.query("drop table test.local_long_db sync")
 
 
 @cluster_param

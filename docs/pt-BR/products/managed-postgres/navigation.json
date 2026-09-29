@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Funcionalidades",
+      "group": "Recursos",
       "pages": [
         "pt-BR/products/managed-postgres/connection",
         "pt-BR/products/managed-postgres/settings",
@@ -29,6 +29,14 @@
             "pt-BR/products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
         },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "pt-BR/products/managed-postgres/extensions/chdb/introduction",
+            "pt-BR/products/managed-postgres/extensions/chdb/chdb",
+            "pt-BR/products/managed-postgres/extensions/chdb/chdb_hook"
+          ]
+        },
         "pt-BR/products/managed-postgres/upgrades",
         "pt-BR/products/managed-postgres/openapi",
         "pt-BR/products/managed-postgres/terraform"
@@ -41,20 +49,22 @@
       ]
     },
     {
-      "group": "Integração do ClickHouse",
+      "group": "Integração com ClickHouse",
       "pages": [
-        "pt-BR/products/managed-postgres/clickhouse-integration"
+        "pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "pt-BR/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
       "group": "Migrações",
       "pages": [
         "pt-BR/products/managed-postgres/migrations/overview",
-        "pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "pt-BR/products/managed-postgres/migrations/logical-replication",
-        "pt-BR/products/managed-postgres/migrations/peerdb",
         "pt-BR/products/managed-postgres/migrations/clickpipes",
         "pt-BR/products/managed-postgres/migrations/data-validation",
+        "pt-BR/products/managed-postgres/migrations/logical-replication",
+        "pt-BR/products/managed-postgres/migrations/neon",
+        "pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "pt-BR/products/managed-postgres/migrations/peerdb",
         "pt-BR/products/managed-postgres/migrations/faq"
       ]
     },
@@ -70,7 +80,7 @@
       ]
     },
     {
-      "group": "FAQ",
+      "group": "Perguntas frequentes",
       "pages": [
         "pt-BR/products/managed-postgres/faq"
       ]

@@ -13,30 +13,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
+void formatAuthenticationValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
 {
-    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
-    {
-        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
-        valid_until.format(ostr, settings);
-    }
+    ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
+    valid_until.format(ostr, settings);
+}
 
-    void formatGrants(const AccessRightsElements & grants, WriteBuffer & ostr)
-    {
-        ostr << " GRANTS (";
-        if (grants.empty())
-            /// The clause is present (checked by the caller with structurallyEmpty()) but grants nothing,
-            /// e.g. `GRANTS (USAGE ON *.*)`. `formatElementsWithoutOptions` skips zero-flag elements, which
-            /// would produce an empty and unparseable `GRANTS ()`, so emit the canonical no-privileges form.
-            ostr << "USAGE ON *.*";
-        else
-            /// Render precisely: auth-method grants must never be widened by the backward-compatibility
-            /// rewrites, otherwise a narrow token grant such as `ALTER USER ON alice` would round-trip as
-            /// `ALTER USER ON *.*` through `SHOW CREATE USER`, backup, restart, or `ATTACH USER` and become
-            /// broader. Older replicas cannot parse this clause anyway, so there is no compatibility to keep.
-            grants.formatElementsWithoutOptions(ostr, /*precise=*/true);
-        ostr << ")";
-    }
+void formatAuthenticationGrants(const AccessRightsElements & grants, WriteBuffer & ostr)
+{
+    ostr << " GRANTS (";
+    if (grants.empty())
+        /// The clause is present (checked by the caller with structurallyEmpty()) but grants nothing,
+        /// e.g. `GRANTS (USAGE ON *.*)`. `formatElementsWithoutOptions` skips zero-flag elements, which
+        /// would produce an empty and unparseable `GRANTS ()`, so emit the canonical no-privileges form.
+        ostr << "USAGE ON *.*";
+    else
+        /// Render precisely: auth-method grants must never be widened by the backward-compatibility
+        /// rewrites, otherwise a narrow token grant such as `ALTER USER ON alice` would round-trip as
+        /// `ALTER USER ON *.*` through `SHOW CREATE USER`, backup, restart, or `ATTACH USER` and become
+        /// broader. Older replicas cannot parse this clause anyway, so there is no compatibility to keep.
+        grants.formatElementsWithoutOptions(ostr, /*precise=*/true);
+    ostr << ")";
 }
 
 ASTPtr ASTAuthenticationData::clone() const
@@ -103,12 +100,12 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
         if (valid_until)
         {
-            formatValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
+            formatAuthenticationValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
         }
 
         if (!grants.structurallyEmpty())
         {
-            formatGrants(grants, ostr);
+            formatAuthenticationGrants(grants, ostr);
         }
 
         return;
@@ -285,12 +282,12 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (valid_until)
     {
-        formatValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
+        formatAuthenticationValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
     }
 
     if (!grants.structurallyEmpty())
     {
-        formatGrants(grants, ostr);
+        formatAuthenticationGrants(grants, ostr);
     }
 }
 

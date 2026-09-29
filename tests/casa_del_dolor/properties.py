@@ -116,6 +116,9 @@ possible_properties = {
     ),
     "asynchronous_metrics_enable_heavy_metrics": true_false_lambda,
     "asynchronous_metrics_keeper_metrics_only": true_false_lambda,
+    "asynchronous_metrics_key_values_mode": lambda: random.choice(
+        ["key_values", "legacy_names", "both"]
+    ),
     "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30, 5),
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,
