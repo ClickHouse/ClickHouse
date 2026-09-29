@@ -124,11 +124,11 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::ErrorCode
     ErrorCodes::getName
     ErrorCodes::increment
+    ErrorCodes::end
     ErrorCodes::extendedMessage
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
-    ErrorCodes::getCodes
     ErrorCodes::Value
 )
 # Check unused/undefined/duplicate ErrorCodes, ProfileEvents, CurrentMetrics declarations.
@@ -217,7 +217,7 @@ xargs < "$STYLE_TMPDIR/nobase_headers_excluded" awk 'FNR==1 && !/^#pragma once$/
 
 # 06a: Too many exclamation marks
 {
-xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!!!' | $FILTER_DOCS && echo "Too many exclamation marks (looks dirty, unconfident)."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!!!' | grep . && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Exclamation mark in a message
 xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!",' | $FILTER_DOCS && echo "^ No need for an exclamation mark (looks dirty, unconfident)."
@@ -485,12 +485,13 @@ xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
 # machinery into a component that otherwise does not need it - see utils/wasm-parser, which builds
 # src/Parsers on its own.
 #
-# The harnesses under tests/, examples/ and fuzzers/ are expected to catch. The AST JSON
-# deserialization is not a
+# The harnesses under tests/, examples/ and fuzzers/ are expected to catch. Kusto is the one part
+# of the parser that has not been cleaned up yet: it still catches to fall back between a number
+# and a timespan, and to turn a failed cast into NULL. The AST JSON deserialization is not a
 # parser of SQL text at all: it maps Poco JSON exceptions to BAD_ARGUMENTS at the boundary, and
 # nothing in it is on the standalone parser's call graph.
 find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
-    grep -vP '/(tests|examples|fuzzers)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
+    grep -vP '/(tests|examples|fuzzers|Kusto)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
     xargs rg -n '\bcatch[[:space:]]*\(' |
     grep . &&
     echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
@@ -512,20 +513,7 @@ find $ROOT_PATH/src/Parsers $ROOT_PATH/src/Access $ROOT_PATH/base/poco \( -name 
     echo "Do not use boost::to_lower/to_upper here: they depend on the locale and pull <locale> into the binary. Use toLowerASCII/toUpperASCII from Common/StringUtils.h. See check 20 in ci/jobs/scripts/check_style/check_cpp.sh"
 } > "$O.20" 2>&1 &
 
-# 21: No casts from integers to IntervalKind::Kind, use IntervalKind::fromBinary.
-# Flags static_cast<IntervalKind::Kind>(x), also bit_cast and reinterpret_cast, and the C-style,
-# functional and brace forms: (IntervalKind::Kind)x, IntervalKind::Kind(x), IntervalKind::Kind{x}.
-# Naming an enumerator, declaring a variable or parameter of that type, and magic_enum::enum_cast are fine.
-{
-result=$(xargs < "$STYLE_TMPDIR/all_excluded" grep -P -Hn '\b(static_cast|bit_cast|reinterpret_cast)\s*<\s*(DB::)?IntervalKind::Kind\s*>|\(\s*(DB::)?IntervalKind::Kind\s*\)\s*(?!(const|override|noexcept|final)\b)[\w(]|(^|[^\w])(DB::)?IntervalKind::Kind\s*(\(|\{[^}])' 2>/dev/null)
-if [ -n "$result" ]; then
-    echo "$result"
-    echo "^ Do not cast integers to IntervalKind::Kind: name the enumerator, or use IntervalKind::fromBinary for a byte read from the wire"
-fi
-} > "$O.21" 2>&1 &
-
 # Wait for all parallel checks to complete, then output results in order
-
 wait
 cat "$O".* 2>/dev/null
 

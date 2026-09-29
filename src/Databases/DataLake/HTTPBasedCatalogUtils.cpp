@@ -5,10 +5,6 @@
 #include <Core/Types.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Common/RemoteHostFilter.h>
-#include <IO/ConnectionTimeouts.h>
-#include <Poco/StreamCopier.h>
-#include <Poco/Net/HTTPRequest.h>
 
 namespace DB::ErrorCodes
 {
@@ -105,54 +101,5 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     }
 }
 
-AccessToken requestOAuthToken(const DB::ContextPtr & context, const Poco::URI & url, const std::string & body)
-{
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
-    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
-
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-    request.setContentType("application/x-www-form-urlencoded");
-    request.setContentLength(body.size());
-    request.set("Accept", "application/json");
-
-    session->sendRequest(request) << body;
-
-    Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
-
-    std::string json_str;
-    Poco::StreamCopier::copyToString(rs, json_str);
-
-    /// The body of a failed response is an OAuth error object, safe to show.
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token request failed with status {} ({}): {}",
-            static_cast<int>(response.getStatus()), response.getReason(), json_str);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token"))
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token response has no `access_token` field: {}",
-            json_str);
-
-    AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
-        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
-    }
-
-    return token;
-}
 
 }

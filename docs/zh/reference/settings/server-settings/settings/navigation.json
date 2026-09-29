@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Server Settings",
+  "group": "服务器设置",
   "pages": [
     "zh/reference/settings/server-settings/settings",
     "zh/reference/settings/server-settings/settings/access-control",

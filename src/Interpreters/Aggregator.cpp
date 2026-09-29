@@ -36,7 +36,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -302,6 +301,7 @@ size_t getMinBytesForPrefetch()
     /// is cache resident and prefetching is pure overhead.
     return getL2CacheSize();
 }
+
 
 }
 
@@ -723,8 +723,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .current_metric = CurrentMetrics::TemporaryFilesForAggregation,
         .bytes_compressed = ProfileEvents::ExternalAggregationCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
-        .num_files = ProfileEvents::ExternalAggregationWritePart,
-        .spilled_to_disk_operator = "aggregation"}) : nullptr)
+        .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,
@@ -1178,11 +1177,8 @@ void Aggregator::executeImpl(
             /// below calls `getKeyHolder` a second time for every row, so a method that materializes
             /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
             /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
-            /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
-            /// smaller threshold.
-            const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
+                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -1763,8 +1759,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     state.resetCache();
 
     [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
-    /// Assign at the branch tails so `no_more_keys` is not live across either loop.
-    bool all_places_are_non_null = false;
 
     /// For all rows.
     if (!no_more_keys)
@@ -1881,8 +1875,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
         }
-
-        all_places_are_non_null = !top_k;
     }
     else
     {
@@ -1897,8 +1889,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                 aggregate_data = overflow_row;
             places[i] = aggregate_data;
         }
-
-        all_places_are_non_null = false;
     }
 
     if constexpr (top_k)
@@ -1921,7 +1911,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             key_start,
             has_only_one_value,
             all_keys_are_const,
-            all_places_are_non_null,
             use_jit);
 }
 
@@ -1934,7 +1923,6 @@ void Aggregator::executeAggregateInstructions(
     size_t key_start,
     bool has_only_one_value_since_last_reset,
     bool all_keys_are_const,
-    bool all_places_are_non_null,
     bool use_compiled_functions [[maybe_unused]]) const
 {
 #if USE_EMBEDDED_COMPILER
@@ -1987,7 +1975,7 @@ void Aggregator::executeAggregateInstructions(
         }
         else
         {
-            addBatch(row_begin, row_end, inst, places, aggregates_pool, all_places_are_non_null);
+            addBatch(row_begin, row_end, inst, places, aggregates_pool);
         }
     }
 
@@ -2051,8 +2039,7 @@ void Aggregator::addBatch(
     size_t row_begin, size_t row_end,
     const AggregateFunctionInstruction * inst,
     AggregateDataPtr * places,
-    Arena * arena,
-    bool all_places_are_non_null)
+    Arena * arena)
 {
     if (inst->offsets)
         inst->batch_that->addBatchArray(
@@ -2063,12 +2050,6 @@ void Aggregator::addBatch(
             arena);
     else if (inst->has_sparse_arguments)
         inst->batch_that->addBatchSparse(
-            row_begin, row_end, places,
-            inst->state_offset,
-            inst->batch_arguments,
-            arena);
-    else if (all_places_are_non_null)
-        inst->batch_that->addBatchWithNonNullPlaces(
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
@@ -4549,8 +4530,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
-            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4638,33 +4618,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
-            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
-
-    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
-    /// `StringHashTable::reserve` splits the hint evenly over its four size-class sub-maps,
-    /// while a real key set concentrates in one of them, so it is not reserved.
-    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
-    size_t input_keys = 0;
-    if constexpr (can_reserve)
-    {
-        for (const auto & variants : data)
-            input_keys += getDataVariant<Method>(*variants).data.impls[bucket].size();
-
-        /// A bucket that is about to be abandoned must not add a buffer to the unwinding query.
-        if (is_cancelled.load(std::memory_order_seq_cst))
-            return;
-
-        /// The counters are published input-first with the result released and read here
-        /// result-first with an acquire, so every observed result contribution comes with its
-        /// input contribution; extra input contributions only lower the ratio.
-        const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
-        const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
-        if (seen_input_keys)
-            dst.reserve(std::min(
-                input_keys,
-                static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
-    }
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
@@ -4689,12 +4643,6 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 prefetch,
                 is_cancelled);
         }
-    }
-
-    if constexpr (can_reserve)
-    {
-        res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
-        res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
     }
 }
 
