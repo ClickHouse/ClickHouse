@@ -1317,6 +1317,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// A `remote()` / `cluster()` destination has an ad-hoc cluster with no name to put there, so skip the
     /// distributed execution instead of forwarding a query that every shard would answer with the whole
     /// source.
+    /// A source the user already wrote as `*Cluster` keeps its own name in that case - see
+    /// `IStorageCluster::updateQueryToSendIfNeeded`.
     const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
     const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
     if (needs_cluster_function && cluster_name.empty())

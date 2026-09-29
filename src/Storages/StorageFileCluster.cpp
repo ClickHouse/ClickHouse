@@ -134,7 +134,8 @@ void StorageFileCluster::updateQueryToSendIfNeeded(
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
-    expression_list->children.front() = make_intrusive<ASTLiteral>(target_cluster_name);
+    if (!target_cluster_name.empty())
+        expression_list->children.front() = make_intrusive<ASTLiteral>(target_cluster_name);
 }
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(

@@ -62,6 +62,10 @@ public:
     /// distributed `INSERT ... SELECT` in `InterpreterInsertQuery` and `StorageDistributed`, which forward
     /// the query the same way.
     ///
+    /// An empty `target_cluster_name` means the caller has no name to give (an ad-hoc `remote()` / `cluster()`
+    /// destination). A function the user already wrote as `*Cluster` then keeps the name it carries, which is
+    /// what it did before the destination's cluster started being named here.
+    ///
     /// `target_cluster_name` is the cluster whose nodes will run the query, and it becomes the first argument of
     /// the `*Cluster` variant, so it has to be resolvable there. It is this storage's own cluster when the source
     /// drives the fan-out (`read`, and `INSERT INTO <replicated table> SELECT`), and the destination's cluster when

@@ -22,3 +22,7 @@
 0	0
 --- forwarded cluster-function queries of explicit ---
 2	0
+--- explicitly written s3Cluster into an ad-hoc remote() destination ---
+60	30
+--- forwarded queries of the ad-hoc destination ---
+2	2	0

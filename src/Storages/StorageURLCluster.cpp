@@ -146,7 +146,8 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
         /// the cluster whose nodes will actually run the query - the two differ when the destination drives
         /// the fan-out, and those nodes reject a name their own `remote_servers` does not define even though
         /// they take their share of the work from the initiator rather than dispatching by it.
-        args.front() = make_intrusive<ASTLiteral>(target_cluster_name);
+        if (!target_cluster_name.empty())
+            args.front() = make_intrusive<ASTLiteral>(target_cluster_name);
     }
 }
 

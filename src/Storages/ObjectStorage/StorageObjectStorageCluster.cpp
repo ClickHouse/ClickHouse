@@ -375,9 +375,12 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         /// destination drives the fan-out, and those nodes reject a name their own `remote_servers` does not
         /// define even though they take their share of the work from the initiator rather than dispatching
         /// by it.
+        ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
+        if (!target_cluster_name.empty())
+            cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
+        args.insert(args.begin(), std::move(cluster_name_arg));
     }
     if (settings_temporary_storage)
     {

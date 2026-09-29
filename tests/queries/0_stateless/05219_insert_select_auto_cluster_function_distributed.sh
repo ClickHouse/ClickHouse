@@ -224,6 +224,46 @@ do
             AND event_time >= now() - INTERVAL 10 MINUTE"
 done
 
+# An ad-hoc `remote()` destination has no cluster name to put into the rewritten function. A source the
+# user already wrote as `*Cluster` carries one, so it keeps it and the query is still forwarded; only a
+# plain source, which would need a name synthesized, skips the distributed execution. Replacing the
+# carried name with an empty one made the shards reject the forwarded query with CLUSTER_DOESNT_EXIST.
+QUERY_ID_ADHOC="05219_adhoc_${QUERY_ID_SUFFIX}"
+
+echo "--- explicitly written s3Cluster into an ad-hoc remote() destination ---"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE local_05219"
+$CLICKHOUSE_CLIENT --query_id "${QUERY_ID_ADHOC}" -q "
+    INSERT INTO FUNCTION remote('127.0.0.{1,2}', currentDatabase(), 'local_05219')
+    SELECT * FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '${S3_DIR}/part_{1..3}.tsv', 'TSV', 'x UInt32')
+    SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1, log_queries = 1"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+echo "--- forwarded queries of the ad-hoc destination ---"
+$CLICKHOUSE_CLIENT -q "
+    WITH initial AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND query_id = '${QUERY_ID_ADHOC}'
+            AND is_initial_query = 1
+            AND type = 'QueryFinish'
+            AND event_date >= yesterday()
+            AND event_time >= now() - INTERVAL 10 MINUTE
+    )
+    SELECT
+        count() AS shards,
+        countIf(query LIKE '%Cluster(''test_cluster_one_shard_three_replicas_localhost''%') AS kept_source_cluster,
+        countIf(query LIKE '%Cluster('''')%') AS empty_cluster
+    FROM system.query_log
+    WHERE initial_query_id IN (SELECT query_id FROM initial)
+        AND is_initial_query = 0
+        AND query_kind = 'Insert'
+        AND type = 'QueryFinish'
+        AND event_date >= yesterday()
+        AND event_time >= now() - INTERVAL 10 MINUTE"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE dist_05219;
     DROP TABLE local_05219;
