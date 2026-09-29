@@ -39,7 +39,7 @@ SELECT count() FROM timeSeriesHistograms(ts_hist);
 
 SELECT '-- INSERT through the outer histograms column, read back via timeSeriesHistograms()';
 INSERT INTO ts_hist (metric_name, tags, histograms) VALUES
-    ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], [2]), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5], 0, 0, [], [])]);
+    ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], []), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5], 0, 0, [], [])]);
 SELECT timestamp, flags, schema, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values,
     count_int, zero_count_int, positive_values_int, negative_values_int
     FROM timeSeriesHistograms(ts_hist) ORDER BY timestamp;
@@ -54,7 +54,7 @@ SELECT '-- min_time and max_time in the tags table come from histogram timestamp
 SELECT min(min_time), max(max_time) FROM timeSeriesTags(ts_hist) WHERE metric_name = 'test_histogram_seconds';
 
 SELECT '-- histograms without a metric name are rejected';
-INSERT INTO ts_hist (metric_name, tags, histograms) VALUES ('', map(), [('2024-01-01 00:00:03.000', 0, 0, 0., 1, 1, 0, [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_hist (metric_name, tags, histograms) VALUES ('', map(), [('2024-01-01 00:00:03.000', 0, 0, 0., 1, 1, 0, [], [], [], [], [], 1, 0, [], [])]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- a histogram-enabled definition survives DETACH/ATTACH unchanged';
 DETACH TABLE ts_hist;
@@ -126,27 +126,27 @@ SELECT '-- the SQL insert surface rejects payloads readers cannot decode';
 CREATE TABLE ts_validate ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 
 -- Spans cover 2 buckets but only 1 value is given.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., 0., [(0, 2)], [1.], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, 0, 0., 1., 1., 0., [(0, 2)], [1.], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- A negative bucket count.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., 0., [(0, 1)], [-1.], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, 0, 0., 1., 1., 0., [(0, 1)], [-1.], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- An undefined bucket schema (between the custom-bucket value and the exponential range).
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -20, 0., 1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, -20, 0., 1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- Custom bucket bounds on an exponential schema.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., 0., [], [], [], [], [1., 2.], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, 0, 0., 1., 1., 0., [], [], [], [], [1., 2.], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- Custom buckets reaching past the bounds they declare.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 2., 3., 0., [(0, 2)], [1., 1.], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, -53, 0., 2., 3., 0., [(0, 2)], [1., 1.], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- Custom buckets with negative buckets.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 1., 1., 0., [], [], [(0, 1)], [1.], [1., 2.], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, -53, 0., 1., 1., 0., [], [], [(0, 1)], [1.], [1., 2.], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- A custom-bucket histogram with a negative bucket index (no -Inf lower bound exists there).
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 1., 1., 0., [(-1, 1)], [1.], [], [], [1., 2.], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, -53, 0., 1., 1., 0., [(-1, 1)], [1.], [], [], [1., 2.], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- An unknown flag bit.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 8, 0, 0., 1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 9, 0, 0., 1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- A negative count.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., -1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, 0, 0., -1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- A negative zero count.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., -1., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, 0, 0., 1., 1., -1., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 -- A negative zero threshold.
-INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, -0.001, 1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 1, 0, -0.001, 1., 1., 0., [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 
 -- The same payloads with the invariants held are accepted.
 INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 2., 3., 0., [(0, 2)], [1., 1.], [], [], [1., 2.], 2, 0, [1, 1], [])]);

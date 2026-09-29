@@ -26,15 +26,30 @@ SQLQueryPiece dropHistogramValues(SQLQueryPiece && query_piece, ConverterContext
                         getPromQLText(query_piece, context), query_piece.store_method);
     }
 
-    /// SELECT group, values
+    /// The float arm can hold an older float sample at a step where a newer histogram wins, so keep a value only where
+    /// the newest sample is a float (`sample_kinds` = 0), as `finalizeSQL` does for instant vectors. A row without such
+    /// a step represents no series (see `replaceStaleMarkersWithNulls`).
+    /// SELECT group, arrayMap((x, k) -> if(k = 0, x, NULL), values, sample_kinds) AS values
     /// FROM <histogram_grid>
+    /// WHERE has(sample_kinds, 0)
     SelectQueryBuilder builder;
 
     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+    builder.select_list.push_back(makeASTFunction(
+        "arrayMap",
+        makeASTLambda({"x", "k"}, makeASTFunction(
+            "if",
+            makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(UInt64{0})),
+            make_intrusive<ASTIdentifier>("x"),
+            make_intrusive<ASTLiteral>(Field{}))),
+        make_intrusive<ASTIdentifier>(ColumnNames::Values),
+        make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+    builder.select_list.back()->setAlias(ColumnNames::Values);
 
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
     builder.from_table = context.subqueries.back().name;
+
+    builder.where = makeASTFunction("has", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds), make_intrusive<ASTLiteral>(UInt64{0}));
 
     query_piece.select_query = builder.getSelectQuery();
     query_piece.store_method = StoreMethod::VECTOR_GRID;

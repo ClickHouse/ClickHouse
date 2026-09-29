@@ -33,12 +33,8 @@
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
-#include <algorithm>
 #include <bit>
 #include <chrono>
-#include <cmath>
-#include <optional>
-#include <utility>
 
 
 namespace ProfileEvents
@@ -105,33 +101,6 @@ size_t getTotalSpanLength(const google::protobuf::RepeatedPtrField<prometheus::B
     return total;
 }
 
-/// The range of bucket indexes the spans reach, following the same accumulation as span expansion
-/// (`expandHistogramSpans`). Returns nullopt when the spans cover no buckets at all.
-std::optional<std::pair<Int64, Int64>> getSpanBucketIndexRange(
-    const google::protobuf::RepeatedPtrField<prometheus::BucketSpan> & spans)
-{
-    std::optional<std::pair<Int64, Int64>> range;
-    Int64 idx = 0;
-    bool first_span = true;
-    for (const auto & span : spans)
-    {
-        idx += span.offset();
-        if (!first_span)
-            ++idx;
-        first_span = false;
-        for (UInt64 k = 0; k < span.length(); ++k)
-        {
-            if (range)
-                range = {std::min(range->first, idx), std::max(range->second, idx)};
-            else
-                range = {idx, idx};
-            ++idx;
-        }
-        --idx;
-    }
-    return range;
-}
-
 /// Appends decoded bucket values (absolute counts) of one direction of a native histogram.
 /// Int histograms carry deltas which are decoded to absolutes here; float histograms carry absolutes.
 /// The absolute counts are also appended verbatim to `out_int_values`, which provides an exact
@@ -142,7 +111,6 @@ void appendHistogramBuckets(
     const google::protobuf::RepeatedField<Int64> & deltas,
     const google::protobuf::RepeatedField<double> & counts,
     bool is_float,
-    bool is_stale_marker,
     std::string_view what,
     ColumnInt32 & out_span_offsets,
     ColumnUInt32 & out_span_lengths,
@@ -168,17 +136,9 @@ void appendHistogramBuckets(
 
     if (is_float)
     {
+        /// The float counts arrive verbatim, `validateTimeSeriesHistogramSample` checks them.
         for (double count : counts)
-        {
-            /// The int flavor is checked after delta decoding below; the float one arrives verbatim.
-            if (count < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a negative {} bucket count: {}", what, count);
-            if (std::isnan(count) && !is_stale_marker)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a NaN {} bucket count but is not a stale marker", what);
             out_values.insertValue(count);
-        }
     }
     else
     {
@@ -280,51 +240,13 @@ ColumnPtr makeHistogramsColumn(
             Float64 sum = histogram.sum();
             bool is_stale_marker = isPrometheusStaleMarker(sum);
 
-            /// Only the float arms can be negative or NaN: the int ones are unsigned on the wire.
-            /// NaN counts are allowed only in a stale marker (whose sum carries the stale NaN).
-            if (count < 0 || zero_count < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a negative {}: {}",
-                    count < 0 ? "count" : "zero count", count < 0 ? count : zero_count);
-            if (!is_stale_marker && (std::isnan(count) || std::isnan(zero_count)))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a NaN {} but is not a stale marker", std::isnan(count) ? "count" : "zero count");
-
             if (histogram.reset_hint() < prometheus::Histogram::UNKNOWN || histogram.reset_hint() > prometheus::Histogram::GAUGE)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an unknown counter reset hint: {}", static_cast<int>(histogram.reset_hint()));
-            /// Only -53 (custom buckets) and the exponential range are defined; the values in
-            /// between are not, and readers reject them, so do not accept them here either.
-            const bool custom_buckets = histogram.schema() == -53;
-            if (!custom_buckets && (histogram.schema() < -4 || histogram.schema() > 8))
+            /// Checked before the narrowing to `Int8`; `validateTimeSeriesHistogramSample` then rejects the undefined schemas in between.
+            if (histogram.schema() < -53 || histogram.schema() > 8)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an out-of-range bucket schema: {}", histogram.schema());
-
-            /// `custom_values` holds the upper bounds of the custom buckets, so a bucket index may
-            /// reach one past the last bound (that bucket's upper bound is +Inf). Anything beyond
-            /// stores fine but fails when the series is read back, so reject it at ingest.
-            if (custom_buckets)
-            {
-                if (!histogram.negative_spans().empty() || !histogram.negative_deltas().empty()
-                    || !histogram.negative_counts().empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Native histogram with custom buckets must not have negative buckets");
-
-                if (auto range = getSpanBucketIndexRange(histogram.positive_spans()))
-                {
-                    if (range->first < 0 || range->second > histogram.custom_values_size())
-                        throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Native histogram with custom buckets reaches bucket indexes {}..{}, "
-                            "which are not covered by its {} custom bucket bounds",
-                            range->first, range->second, histogram.custom_values_size());
-                }
-            }
-            else if (histogram.custom_values_size() != 0)
-            {
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has an exponential bucket schema ({}) but carries {} custom bucket bounds",
-                    histogram.schema(), histogram.custom_values_size());
-            }
 
             UInt8 histogram_flags = 0;
             if (is_float)
@@ -345,12 +267,12 @@ ColumnPtr makeHistogramsColumn(
             zero_counts_int->insertValue(is_float ? 0 : histogram.zero_count_int());
 
             appendHistogramBuckets(
-                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, is_stale_marker, "positive",
+                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, "positive",
                 *positive_span_offsets, *positive_span_lengths, *positive_spans_offsets,
                 *positive_values, *positive_values_offsets,
                 *positive_int_values, *positive_int_values_offsets);
             appendHistogramBuckets(
-                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, is_stale_marker, "negative",
+                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, "negative",
                 *negative_span_offsets, *negative_span_lengths, *negative_spans_offsets,
                 *negative_values, *negative_values_offsets,
                 *negative_int_values, *negative_int_values_offsets);
@@ -401,8 +323,13 @@ ColumnPtr makeHistogramsColumn(
     tuple_columns[TimeSeriesHistogramsTupleIndex::NegativeValuesInt]
         = ColumnArray::create(std::move(negative_int_values), std::move(negative_int_values_offsets));
 
+    /// The semantic checks shared with an `INSERT` into the outer `histograms` column.
+    auto histograms_tuple = ColumnTuple::create(std::move(tuple_columns));
+    for (size_t i = 0; i != num_histograms; ++i)
+        validateTimeSeriesHistogramSample(*histograms_tuple, i);
+
     out_num_histograms = num_histograms;
-    return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(histograms_offsets));
+    return ColumnArray::create(std::move(histograms_tuple), std::move(histograms_offsets));
 }
 
 Block makeTimeSeriesBlock(
