@@ -373,7 +373,8 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     /// have few rows. Until then, a new partition takes a number from `first_new_group` on.
     const size_t first_new_group = places.size();
     size_t num_new_groups = 0;
-    PaddedPODArray<UInt32> rows_of_new_groups;
+    /// Whether a new partition has one row. Not a number of rows, which could wrap around to one.
+    PaddedPODArray<UInt8> new_group_has_one_row;
 
     for (size_t bucket = 0; bucket < num_buckets; ++bucket)
     {
@@ -411,11 +412,11 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
             {
                 checkNumberOfGroups(first_new_group + num_new_groups + 1);
                 it->getMapped() = static_cast<UInt32>(first_new_group + num_new_groups++);
-                rows_of_new_groups.push_back(1);
+                new_group_has_one_row.push_back(true);
             }
             else if (it->getMapped() >= first_new_group)
             {
-                ++rows_of_new_groups[it->getMapped() - first_new_group];
+                new_group_has_one_row[it->getMapped() - first_new_group] = false;
             }
             groups[i] = it->getMapped();
             is_first[i] = inserted;
@@ -434,8 +435,8 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     /// A new partition of one row does not take a group: its row is aggregated when it is output, in a state that
     /// is reused, which saves the memory of a group for each row when most partitions have one row.
     size_t num_single_row_groups = 0;
-    for (auto rows : rows_of_new_groups)
-        num_single_row_groups += rows == 1;
+    for (auto has_one_row : new_group_has_one_row)
+        num_single_row_groups += has_one_row;
     total_single_row_groups += num_single_row_groups;
 
     /// The groups are created at once, and the partitions take them in the order of the rows.
@@ -459,7 +460,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
             UInt32 group = groups[position];
             if (last && group >= first_new_group)
             {
-                if (rows_of_new_groups[group - first_new_group] == 1)
+                if (new_group_has_one_row[group - first_new_group])
                 {
                     group = single_row_group;
                 }
