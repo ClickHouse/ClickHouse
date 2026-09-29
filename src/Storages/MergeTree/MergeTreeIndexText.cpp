@@ -1858,8 +1858,10 @@ bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
 
     /// Rarely repeating values gain nothing, while `ranges` costs O(dictionary), and the dictionary is per block.
     static constexpr size_t min_documents_per_value = 8;
+    static constexpr size_t max_dictionary_size = 65536;
     const IColumnUnique & dictionary = column_low_cardinality->getDictionary();
-    if (dictionary.size() * min_documents_per_value > elements_begin(start_row + rows_read) - elements_begin(start_row))
+    if (dictionary.size() > max_dictionary_size
+        || dictionary.size() * min_documents_per_value > elements_begin(start_row + rows_read) - elements_begin(start_row))
         return false;
 
     /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, `not_seen` before that.
