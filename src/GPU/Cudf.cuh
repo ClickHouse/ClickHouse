@@ -27,8 +27,6 @@ void initializeCudf();
 
 std::string describeForeign(const std::exception & exception);
 
-void releaseForeign(const std::exception & exception);
-
 template <typename Body>
 auto guarded(const std::string & doing, Body && body)
 {
@@ -42,7 +40,6 @@ auto guarded(const std::string & doing, Body && body)
             throw;
 
         const std::string description = describeForeign(exception);
-        releaseForeign(exception);
         throwGPUError(doing + ": " + description);
     }
 }
