@@ -13,6 +13,7 @@ cluster = ClickHouseCluster(__file__)
 # goes through `Context::checkTransactionsAreAllowed`.
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/custom_local_disks.xml"],
     with_zookeeper=True,
     # That constructor also refuses to start unless Keeper advertises these three flags, and
     # the harness randomizes any flag a test does not pin.
@@ -398,6 +399,8 @@ def test_tmp_metadata(started_cluster):
 # directory through `__meta/<dir>/prefix.path`, so a part can be published by moving a directory in
 # and adding that one mapping file. `table_disk = true` puts the parts at the disk root rather than
 # under `store/<uuid>/`, which is what lets a fresh reader be pointed at a fabricated layout.
+# Custom local disks must live inside `custom_local_disks_base_directory`, which
+# `configs/custom_local_disks.xml` sets to this directory.
 REFRESH_DISK_ROOT = "/var/lib/clickhouse/plt_refresh"
 
 # Fresh disk name and directory per reader: a custom disk is cached by name for the lifetime of the
