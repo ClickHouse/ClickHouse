@@ -1,8 +1,6 @@
 -- A constant `TTL ... DELETE WHERE` on a part with several rows: the TTL is recorded when any row of
 -- the part matches, not only the first one, so the expired TTL deletes exactly the matching rows.
 
-DROP TABLE IF EXISTS t_ttl_const_where;
-DROP TABLE IF EXISTS t_ttl_const_where_nullable;
 SET allow_suspicious_ttl_expressions = 1;
 SET session_timezone = 'UTC';
 SET async_insert = 0;
