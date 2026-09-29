@@ -1,6 +1,6 @@
--- A dictionary definition in the AST JSON format must have a shape that the SQL parser produces.
--- The other shapes either stopped the server when the dictionary was created, or were stored as a
--- definition that does not parse back, so the server could not load it at the next start.
+-- A dictionary definition in the AST JSON format is rejected when its key-value brackets, primary key, defaults or
+-- attributes have a shape that the SQL parser does not produce: such definitions could stop the server or be stored in
+-- a form that the server cannot load at the next start.
 
 SET enable_json_ast_dialect = 1;
 
@@ -47,6 +47,9 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UI
 SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
     '"default_value":{"type":"Literal"', '"default_value":{"type":"Asterisk"')); -- { serverError BAD_ARGUMENTS }
 
--- A definition without attributes.
+-- A definition without attributes, and one with an empty attribute list.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
     '"dictionary_attributes_list":', '"unused_dictionary_attributes_list":')); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
+    '"dictionary_attributes_list":{"type":"ExpressionList","children":', '"dictionary_attributes_list":{"type":"ExpressionList","unused_children":')); -- { serverError BAD_ARGUMENTS }
