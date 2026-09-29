@@ -173,11 +173,8 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     required_dag_index_set.insert(filter_col_pre_erase_pos);
     plan.required_dag_positions.assign(required_dag_index_set.begin(), required_dag_index_set.end());
 
-    if (plan.required_dag_positions.size() != old_dag_outputs_size)
-        plan.result.changed = true;
-
-    if (remove_filter_column != plan.remove_filter_column)
-        plan.result.changed = true;
+    plan.removes_any_output = plan.required_dag_positions.size() != old_dag_outputs_size;
+    plan.changes_filter_column_flag = remove_filter_column != plan.remove_filter_column;
 
     /// What removeUnusedActions would keep once the outputs are pruned. It folds constants before it
     /// collects the nodes to keep, and folding clears the children of a folded node, so stop at such a
@@ -197,13 +194,6 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
 
     plan.removes_any_action = surviving_nodes.size() < analyzed_dag.getNodes().size();
-    if (plan.fold_filter_predicate)
-        plan.result.changed = true;
-    if (plan.removes_any_action)
-        plan.result.changed = true;
-
-    if (!remove_inputs && !plan.dropped_passthrough_header_positions.empty())
-        plan.result.changed = true;
 
     if (remove_inputs)
     {
@@ -228,16 +218,26 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
 
         for (size_t position = 0; position < is_required_input.size(); ++position)
             if (is_required_input[position])
-                plan.result.required_input_positions.push_back(position);
+                plan.required_input_positions.push_back(position);
 
-        plan.result.input_positions_changed
-            = surviving_input_count != inputs.size() || !plan.dropped_passthrough_header_positions.empty();
-
-        if (plan.result.input_positions_changed)
-            plan.result.changed = true;
+        plan.removes_any_input = surviving_input_count != inputs.size();
     }
 
     return plan;
+}
+
+FilterDAGOutputPruningResult FilterDAGOutputPruningPlan::toResult() const
+{
+    FilterDAGOutputPruningResult result;
+
+    /// A dropped pass-through leaves the header below, where inputs may be removed, and otherwise becomes an
+    /// input of the DAG, which is a change of the step all the same.
+    result.input_positions_changed = remove_inputs && (removes_any_input || !dropped_passthrough_header_positions.empty());
+    result.changed = removes_any_output || changes_filter_column_flag || fold_filter_predicate || removes_any_action
+        || !dropped_passthrough_header_positions.empty() || result.input_positions_changed;
+    result.required_input_positions = required_input_positions;
+
+    return result;
 }
 
 void applyFilterDAGOutputPruning(
@@ -283,7 +283,7 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
 
     applyFilterDAGOutputPruning(dag, remove_filter_column, input_header, plan);
 
-    return plan.result;
+    return plan.toResult();
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)
@@ -595,13 +595,14 @@ FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_p
         required_output_positions,
         prevent_input_removal ? false : remove_inputs);
 
-    plan.result.step_changed = plan.pruning.result.changed || output_header->columns() != required_output_positions.size();
+    const auto pruning = plan.pruning.toResult();
+    plan.result.step_changed = pruning.changed || output_header->columns() != required_output_positions.size();
     /// Nothing else goes away, so when nothing changes these are all the positions.
     plan.result.kept_output_positions = required_output_positions;
-    plan.result.inputs_changed = plan.pruning.result.input_positions_changed;
+    plan.result.inputs_changed = pruning.input_positions_changed;
 
     if (plan.result.inputs_changed)
-        plan.result.required_input_positions.push_back(plan.pruning.result.required_input_positions);
+        plan.result.required_input_positions.push_back(pruning.required_input_positions);
     else
         plan.result.required_input_positions = keepEverything().required_input_positions;
 
