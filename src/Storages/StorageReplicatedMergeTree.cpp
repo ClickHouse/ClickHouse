@@ -1605,8 +1605,7 @@ bool StorageReplicatedMergeTree::dropReplica(
         }
         else
         {
-            /// A part in the old header format has `columns` and `checksums` children and must not be seen without them:
-            /// the flat removal deletes such a part in one request with them, the recursive removal below would not.
+            /// A part in the old header format must not be seen without its `columns` and `checksums` children.
             zookeeper->tryRemoveChildrenRecursive(fs::path(remote_replica_path) / "parts", /* probably flat */ true);
         }
         for (const auto & node : flat_nodes)
