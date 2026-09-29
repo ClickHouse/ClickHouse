@@ -8,6 +8,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressionMethod.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -105,8 +106,8 @@ private:
 /// target), the first `hidden_probes` probes after the write still report it absent, and the
 /// read-back fails when `read_throws` is set. That is exactly the input the commit has to
 /// distinguish: the error alone cannot tell a lost race from a response lost after the store
-/// accepted the object. `version-hint.text` holds `hint`, and its first `hint_probe_failures`
-/// probes throw.
+/// accepted the object. `version-hint.text` holds `hint`, its first `hint_probe_failures` probes
+/// throw, and its first `hint_conflicts` writes lose to another writer that advances it by one.
 struct StoreState
 {
     int write_error_code = ErrorCodes::NETWORK_ERROR;
@@ -116,6 +117,7 @@ struct StoreState
     bool read_throws = false;
     std::optional<std::string> hint;
     size_t hint_probe_failures = 0;
+    size_t hint_conflicts = 0;
 };
 
 class ReconcilingObjectStorage : public IObjectStorage
@@ -133,7 +135,15 @@ public:
         const WriteSettings & write_settings) override
     {
         if (isVersionHint(object))
+        {
+            if (state.hint_conflicts > 0)
+            {
+                --state.hint_conflicts;
+                state.hint = std::to_string(parse<Int32>(state.hint.value_or("0")) + 1);
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Another writer advanced the version hint first");
+            }
             return std::make_unique<StringWriter>(state.hint);
+        }
 
         /// The commit must ask for the metadata file to be created exclusively: without the
         /// condition the write is a plain overwrite and one of two concurrent writers is lost.
@@ -227,15 +237,18 @@ private:
 
 constexpr auto committed_content = "{\"format-version\":2}";
 
-bool commit(const std::shared_ptr<ReconcilingObjectStorage> & storage, CompressionMethod compression_method = CompressionMethod::None)
+bool commit(
+    const std::shared_ptr<ReconcilingObjectStorage> & storage,
+    CompressionMethod compression_method = CompressionMethod::None,
+    Int32 version = 2)
 {
     Iceberg::IcebergPathResolver resolver(
         "/table",
         "/table",
         Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
     GeneratedMetadataFileWithInfo metadata_file_info{
-        .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
-        .version = 2,
+        .path = Iceberg::IcebergPathFromMetadata::deserialize(fmt::format("/table/metadata/v{}.metadata.json", version)),
+        .version = version,
         .compression_method = compression_method,
     };
 
@@ -318,6 +331,19 @@ TEST(IcebergCommitPropagation, VersionHintAdvancesPastATransientProbeFailure)
     auto storage = std::make_shared<ReconcilingObjectStorage>(state);
     EXPECT_TRUE(commit(storage));
     EXPECT_EQ(storage->hint().value_or("<absent>"), "2");
+}
+
+TEST(IcebergCommitPropagation, VersionHintConvergesPastConcurrentWriters)
+{
+    /// Every lost race finds the hint advanced by another writer, which is progress, so it must not use up
+    /// the attempts of the writer that committed the highest version.
+    StoreState state;
+    state.stored_content = committed_content;
+    state.hint = "1";
+    state.hint_conflicts = 4;
+    auto storage = std::make_shared<ReconcilingObjectStorage>(state);
+    EXPECT_TRUE(commit(storage, CompressionMethod::None, /*version=*/ 6));
+    EXPECT_EQ(storage->hint().value_or("<absent>"), "6");
 }
 
 TEST(IcebergCommitPropagation, ContentOfAnotherWriterIsALostRace)

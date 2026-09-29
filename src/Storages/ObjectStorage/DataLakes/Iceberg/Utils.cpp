@@ -466,8 +466,10 @@ static void convergeVersionHint(
 {
     auto log = getLogger("IcebergVersionHint");
     std::string last_error;
+    std::optional<Int32> seen_version;
+    size_t attempts_without_progress = 0;
 
-    for (size_t attempt = 0; attempt < VERSION_HINT_CONVERGENCE_ATTEMPTS; ++attempt)
+    for (size_t attempt = 0; attempts_without_progress < VERSION_HINT_CONVERGENCE_ATTEMPTS; ++attempt)
     {
         try
         {
@@ -517,6 +519,11 @@ static void convergeVersionHint(
             if (old_version >= committed_version)
                 return;
 
+            /// A hint advanced by another writer since the previous attempt is progress, not a failure to converge.
+            if (seen_version && old_version > *seen_version)
+                attempts_without_progress = 0;
+            seen_version = old_version;
+
             /// Write just the version number for Spark/spec compatibility.
             Iceberg::writeMessageToFile(
                 std::to_string(committed_version),
@@ -530,6 +537,7 @@ static void convergeVersionHint(
         catch (...)
         {
             /// A lost hint-write race or a transient read; both can resolve on a later attempt.
+            ++attempts_without_progress;
             last_error = getCurrentExceptionMessage(false);
             LOG_DEBUG(log, "Attempt {} to advance version hint {} failed: {}", attempt + 1, storage_version_hint_path, last_error);
         }
@@ -537,7 +545,8 @@ static void convergeVersionHint(
 
     LOG_WARNING(
         log,
-        "Version hint {} did not reach version {} in {} attempts. Readers using the hint may observe an older snapshot: {}",
+        "Version hint {} did not reach version {} in {} attempts without progress. "
+        "Readers using the hint may observe an older snapshot: {}",
         storage_version_hint_path, committed_version, VERSION_HINT_CONVERGENCE_ATTEMPTS, last_error);
 }
 
