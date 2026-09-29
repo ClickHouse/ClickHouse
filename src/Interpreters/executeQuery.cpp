@@ -104,6 +104,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsSecrets.h>
 
@@ -1143,13 +1144,6 @@ void logExceptionBeforeStart(
 
 void normalizeAnalyzerSettings(ASTPtr ast)
 {
-    auto field_to_bool = [](const Field & f) -> bool
-    {
-        if (f.getType() == Field::Types::String)
-            return stringToBool(f.safeGet<String>());
-        return f.safeGet<bool>();
-    };
-
     std::vector<ASTPtr> nodes_to_process{ ast };
     while (!nodes_to_process.empty())
     {
@@ -1174,7 +1168,7 @@ void normalizeAnalyzerSettings(ASTPtr ast)
         {
             for (auto & change : set_query->changes)
             {
-                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !field_to_bool(change.value))
+                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !SettingFieldBool{change.value}.value)
                     change.value = Field(true);
             }
         }

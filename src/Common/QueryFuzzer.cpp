@@ -8506,7 +8506,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_role->settings.reset();
             else
             {
-                create_role->new_name.clear();
+                create_role->new_name.reset();
                 create_role->alter_settings.reset();
             }
         }
@@ -8933,7 +8933,7 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     {
         addColumnLike(ast);
     }
-    else if (typeid_cast<ASTIdentifier *>(ast.get()))
+    else if (const auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()); identifier && !identifier->isParam())
     {
         addColumnLike(ast);
     }
