@@ -15,11 +15,10 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"after_processing_move_connection_string", [](const DB::Field & value) -> std::optional<std::string>
     {
-        /// Not a String means there is nothing to mask; see the `nats_url` rule for why a rule
-        /// must not throw.
+        /// A value that is not a String is hidden whole; see the `nats_url` rule.
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
-            return {};
+            return DEFAULT_MASKING_RULE(value);
         DB::maskConnectionStringKey(masked_value, "AccountKey=");
         DB::maskConnectionStringKey(masked_value, "SharedAccessSignature=");
         return fmt::format("'{}'", masked_value);

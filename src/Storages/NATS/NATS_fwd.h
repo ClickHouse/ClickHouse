@@ -22,9 +22,10 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         /// A masking rule must not throw: it runs before the setting is validated, so the value
         /// need not be a String. `SETTINGS nats_url = 4222` used to throw `BAD_GET` here, which
         /// aborted the masking of every other setting in the same statement.
+        /// A value of another type is hidden whole: a Map or an Array prints the strings inside it.
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
-            return {};
+            return DEFAULT_MASKING_RULE(value);
         /// libnats takes the scheme as optional and ends the userinfo at the LAST '@' of the whole
         /// value (`contrib/nats-io/src/url.c`, `natsUrl_Create`), so no URI authority bounds it.
         if (masked_value.contains('@'))

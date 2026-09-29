@@ -15,11 +15,10 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     {"rabbitmq_password", DEFAULT_MASKING_RULE},
     {"rabbitmq_address", [](const DB::Field & value) -> std::optional<std::string>
     {
-        /// Not a String means there is nothing to mask; see the `nats_url` rule for why a rule
-        /// must not throw.
+        /// A value that is not a String is hidden whole; see the `nats_url` rule.
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
-            return {};
+            return DEFAULT_MASKING_RULE(value);
         /// AMQP-CPP ends the login at the FIRST '@' after the scheme, unbounded by the `/?#` that closes
         /// an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`), so no URI masker bounds it.
         if (masked_value.contains('@'))

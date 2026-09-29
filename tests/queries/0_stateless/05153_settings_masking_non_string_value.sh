@@ -40,3 +40,14 @@ for _ in {1..60}; do
     sleep 0.5
 done
 echo "$LOGGED"
+
+# 4. Only a String can be searched for the credential, and a Map can carry one, so a value of another
+# type is hidden whole, in the statement and in the error that rejects it.
+MAP_CANARY="c05153mapvalue"
+for setting in nats_url rabbitmq_address after_processing_move_connection_string \
+    format_avro_schema_registry_url url_base s3_base; do
+    LOGGED=$($CLICKHOUSE_CLIENT --send_logs_level=error -q "SET $setting = {'u':'u:$MAP_CANARY@h'}" 2>&1 |
+        grep -F '<Error> executeQuery')
+    echo "$LOGGED" | grep -oE "in query: [^)]*" | head -1
+    echo "$LOGGED" | grep -o "$MAP_CANARY" | wc -l
+done

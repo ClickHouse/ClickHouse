@@ -1,5 +1,17 @@
 (UNKNOWN_SETTING)
 (UNKNOWN_SETTING)
 (UNKNOWN_SETTING)
-in query: SET nats_password = '[HIDDEN]', nats_url = 4222
+in query: SET nats_password = '[HIDDEN]', nats_url = '[HIDDEN]'
 1	1
+in query: SET nats_url = '[HIDDEN]'
+0
+in query: SET rabbitmq_address = '[HIDDEN]'
+0
+in query: SET after_processing_move_connection_string = '[HIDDEN]'
+0
+in query: SET format_avro_schema_registry_url = '[HIDDEN]'
+0
+in query: SET url_base = '[HIDDEN]'
+0
+in query: SET s3_base = '[HIDDEN]'
+0

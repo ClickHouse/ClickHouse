@@ -26,8 +26,11 @@ std::optional<String> renderSecretSettingValue(const String & setting_name, cons
     /// Bool `true`, and the AST JSON path can carry any `Field` type. This runs before any settings
     /// validation - `executeQueryImpl` masks the query for logging first - so demanding a String here
     /// would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
+    /// A value of another type is hidden whole: a Map or an Array prints the strings inside it.
     String str;
-    if (value.tryGet<String>(str) && maskSettingValue(setting_name, str))
+    if (!value.tryGet<String>(str))
+        return SETTINGS_TO_HIDE.contains(setting_name) ? std::optional<String>("'[HIDDEN]'") : std::nullopt;
+    if (maskSettingValue(setting_name, str))
         return quoteString(str);
 
     return {};
