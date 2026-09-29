@@ -2635,23 +2635,31 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assertDigest(local_context);
 }
 
-/// The inner tables that `dropInnerTableIfAny` of `table` drops.
-static Strings getInnerTableNames(const IStorage & table, const ContextPtr & context)
+/// Adds the inner tables that `dropInnerTableIfAny` of `table` drops, and their own inner tables, to `names`.
+static void addInnerTableNames(const IDatabase & database, const IStorage & table, const ContextPtr & context, Strings & names)
 {
-    Strings names;
+    Strings inner_names;
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&table); view && view->hasInnerTable())
     {
-        names.push_back(view->getTargetTableId().table_name);
+        inner_names.push_back(view->getTargetTableId().table_name);
         if (view->isRefreshable() && !view->isAppendRefreshStrategy())
-            names.push_back(".tmp" + names.front());
+            inner_names.push_back(".tmp" + inner_names.front());
     }
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&table); time_series && time_series->hasInnerTables())
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
             if (time_series->isInnerTable(kind))
-                names.push_back(time_series->tryGetTargetTableID(kind, context).table_name);
+                inner_names.push_back(time_series->tryGetTargetTableID(kind, context).table_name);
     }
-    return names;
+
+    for (auto & name : inner_names)
+    {
+        if (auto inner_table = database.tryGetTable(name, context))
+        {
+            names.push_back(std::move(name));
+            addInnerTableNames(database, *inner_table, context, names);
+        }
+    }
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -2675,9 +2683,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     /// so the metadata of those inner tables is removed in the transaction.
     Strings replaced_inner_tables;
     if (exchange && txn->isInitialQuery() && txn->isCreateOrReplaceQuery())
-        for (auto & name : getInnerTableNames(*getTable(to_table_name, local_context), local_context))
-            if (isTableExist(name, local_context))
-                replaced_inner_tables.push_back(std::move(name));
+        addInnerTableNames(*this, *getTable(to_table_name, local_context), local_context, replaced_inner_tables);
 
     std::lock_guard lock{metadata_mutex};
 
