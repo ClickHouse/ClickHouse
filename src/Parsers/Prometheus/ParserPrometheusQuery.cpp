@@ -8,6 +8,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserTransactionControl.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <base/find_symbols.h>
@@ -98,7 +99,12 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (set_role_p.parse(pos, node, expected))
             return true;
         ParserSetQuery set_p;
-        return set_p.parse(pos, node, expected);
+        if (set_p.parse(pos, node, expected))
+            return true;
+        /// SET TRANSACTION SNAPSHOT is a transaction statement, which ParserSetQuery declines,
+        /// so it goes next, as in ParserQuery.
+        ParserTransactionControl transaction_control_p;
+        return transaction_control_p.parse(pos, node, expected);
     }
 
     if (table_name.empty())

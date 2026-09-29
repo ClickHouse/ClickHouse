@@ -11,6 +11,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserTransactionControl.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
@@ -57,8 +58,9 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`). Only an input that
     /// unambiguously starts a SET statement is taken from the foreign text, so that the
     /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
-    /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...`,
-    /// which the transpiler below can still take as foreign text. A SET that stops right after the
+    /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...` and
+    /// ParserTransactionControl takes only `SET TRANSACTION SNAPSHOT <number>`, so e.g.
+    /// `SET TRANSACTION ISOLATION LEVEL ...` still goes to the transpiler. A SET that stops right after the
     /// `SET <word>` shorthand with more input left falls through as well when `<word>` is a foreign
     /// prefix (see `isForeignSetPrefix`): e.g. MySQL `SET SESSION sql_mode = ...` would otherwise be
     /// taken as the shorthand `SET SESSION` (`SESSION = true`) followed by junk. Any other SET that
@@ -92,6 +94,12 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             pos = set_begin;
             node = nullptr;
         }
+
+        /// SET TRANSACTION SNAPSHOT is a transaction statement, which ParserSetQuery declines,
+        /// so it goes next, as in ParserQuery.
+        ParserTransactionControl transaction_control_p;
+        if (transaction_control_p.parse(pos, node, expected))
+            return true;
     }
 
     if (!feature_enabled)

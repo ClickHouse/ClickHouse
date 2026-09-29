@@ -51,6 +51,12 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
     -q "SET ROLE NONE" && echo OK
 
+# Test that `SET TRANSACTION SNAPSHOT` is handled as ClickHouse SQL too, before the feature gate and the
+# transpiler: without `allow_experimental_polyglot_dialect` it still reaches the server, which rejects
+# it only because there is no open transaction
+$CLICKHOUSE_CLIENT --dialect polyglot --polyglot_dialect sqlite \
+    -q "SET TRANSACTION SNAPSHOT 1" 2>&1 | grep -om1 'INVALID_TRANSACTION'
+
 # Test that `SET` without a setting name reaches the dialect parser instead of being
 # rejected by the ClickHouse lexer before it gets there
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \

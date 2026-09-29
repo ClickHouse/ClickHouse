@@ -54,6 +54,11 @@ promql_client -q 'SET max_threads = 1' && echo OK
 echo "-- SET ROLE is dispatched as a role statement, not a ROLE = true setting shorthand"
 promql_client -q 'SET ROLE NONE' && echo OK
 
+# There is no open transaction, so the server rejects the statement; its error code shows that it
+# was parsed as a ClickHouse transaction statement instead of failing to parse as a SET.
+echo "-- SET TRANSACTION SNAPSHOT is dispatched as a transaction statement"
+promql_client -q 'SET TRANSACTION SNAPSHOT 1' 2>&1 | grep -o "INVALID_TRANSACTION" | head -1
+
 # The dialect lexer keeps `~` as an ordinary token, so the message is a plain syntax error rather
 # than the SQL lexer's "Unrecognized token"; committed SETs must still fail SQL-side, not as PromQL.
 echo "-- a malformed SET still gets an SQL-side syntax error"
