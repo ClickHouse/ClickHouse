@@ -19,5 +19,8 @@
 []	1970-01-01 00:02:00.000	1
 -- a range selector omits the stale-marker histogram: empty result
 -- range query over the stale-marker histogram: no step has a sample, the series is dropped
+-- abs over the mixed series whose newest sample is a histogram: the older float sample is not used, empty result
+-- abs over the mixed series whose newest sample is a float: the float is used
+[('job','c')]	1970-01-01 00:02:00.000	42
 -- range query over a mixed series: both arms are still emitted (SampleStream semantics)
 [('__name__','mixed_hist_newer'),('job','d')]	[('1970-01-01 00:01:40.000',3.25),('1970-01-01 00:01:50.000',3.25),('1970-01-01 00:02:00.000',3.25)]	[('1970-01-01 00:01:50.000',(0,0,0.001,7,11.5,0,[(0,2)],[4,3],[],[],[],0,0,[],[])),('1970-01-01 00:02:00.000',(0,0,0.001,7,11.5,0,[(0,2)],[4,3],[],[],[],0,0,[],[]))]

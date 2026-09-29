@@ -73,6 +73,13 @@ SELECT tags, timestamp, value FROM prometheusQuery('ts_nh', 'last_over_time(stal
 SELECT '-- range query over the stale-marker histogram: no step has a sample, the series is dropped';
 SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh', 'stale_hist', 100, 120, 10);
 
+SELECT '-- abs over the mixed series whose newest sample is a histogram: the older float sample is not used, empty result';
+SELECT tags, timestamp, value FROM prometheusQuery('ts_nh', 'abs(mixed_hist_newer)', 120);
+SELECT tags, timestamp, value FROM prometheusQuery('ts_nh', 'abs(last_over_time(mixed_hist_newer[1m]))', 120);
+
+SELECT '-- abs over the mixed series whose newest sample is a float: the float is used';
+SELECT tags, timestamp, value FROM prometheusQuery('ts_nh', 'abs(mixed_float_newer)', 120);
+
 SELECT '-- range query over a mixed series: both arms are still emitted (SampleStream semantics)';
 SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh', 'mixed_hist_newer', 100, 120, 10);
 
