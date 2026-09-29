@@ -5561,9 +5561,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
 
-    /// The one-argument `merge` reads the current database, which the servers this query is sent to do not share, so make
-    /// it explicit in the query tree. A secondary query keeps the form it was sent in, so that its `IN` set names, which are
-    /// hashed from the query tree, match the sender's.
+    /// The one-argument `merge` reads the current database, which the servers this query is sent to do not share.
+    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
     if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
         merge_storage && table_function_node_typed.getArguments().getNodes().size() == 1
         && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
