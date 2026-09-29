@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import http.client
 import os
 import uuid
 
@@ -44,6 +45,26 @@ def send_storage_request(
         f"Response: {response.text}"
     )
     return response
+
+
+def send_chunked_storage_request(node, method, path, chunks):
+    # Encoded up front and sent in one write: the whole request reaches the server before it
+    # answers, even when it rejects the body without reading it to the end.
+    body = (
+        b"".join(b"%x\r\n%b\r\n" % (len(chunk), chunk) for chunk in chunks)
+        + b"0\r\n\r\n"
+    )
+    connection = http.client.HTTPConnection(node.ip_address, 9182, timeout=30)
+    try:
+        connection.request(
+            method,
+            f"/api/v1/storage{path}",
+            body=body,
+            headers={"Transfer-Encoding": "chunked"},
+        )
+        return connection.getresponse().status
+    finally:
+        connection.close()
 
 
 def test_keeper_http_storage_create_get_exists(started_cluster):
@@ -164,4 +185,69 @@ def test_keeper_http_storage_list_remove(started_cluster):
         f"/{prefix}test_storage_list/not_found",
         params={"children": "true"},
         expected_response_code=404,
+    )
+
+
+def test_keeper_http_storage_max_request_size(started_cluster):
+    # Only node3 sets `max_request_size`.
+    max_request_size = 1024
+    prefix = str(uuid.uuid4())
+    at_limit = b"a" * max_request_size
+    over_limit = b"b" * (max_request_size + 1)
+
+    send_storage_request(
+        node3, "POST", f"/{prefix}_over", over_limit, expected_response_code=413
+    )
+    send_storage_request(node3, "GET", f"/{prefix}_over", expected_response_code=404)
+
+    send_storage_request(
+        node3, "POST", f"/{prefix}_node", at_limit, expected_response_code=201
+    )
+    send_storage_request(
+        node3,
+        "PUT",
+        f"/{prefix}_node",
+        over_limit,
+        params={"version": 0},
+        expected_response_code=413,
+    )
+    response = send_storage_request(
+        node3, "GET", f"/{prefix}_node", params={"children": "true"}
+    )
+    assert response.json()["stat"]["version"] == 0
+    assert send_storage_request(node3, "GET", f"/{prefix}_node").content == at_limit
+
+    send_storage_request(
+        node3, "PUT", f"/{prefix}_node", at_limit.upper(), params={"version": 0}
+    )
+    assert (
+        send_storage_request(node3, "GET", f"/{prefix}_node").content
+        == at_limit.upper()
+    )
+
+    assert (
+        send_chunked_storage_request(
+            node3, "POST", f"/{prefix}_chunked_over", [b"d" * max_request_size, b"d"]
+        )
+        == 413
+    )
+    send_storage_request(
+        node3, "GET", f"/{prefix}_chunked_over", expected_response_code=404
+    )
+    assert (
+        send_chunked_storage_request(
+            node3, "POST", f"/{prefix}_chunked", [b"c" * 1000, b"c" * 24]
+        )
+        == 201
+    )
+    assert (
+        send_storage_request(node3, "GET", f"/{prefix}_chunked").content
+        == b"c" * max_request_size
+    )
+
+    send_storage_request(
+        node1, "POST", f"/{prefix}_unlimited", over_limit, expected_response_code=201
+    )
+    assert (
+        send_storage_request(node1, "GET", f"/{prefix}_unlimited").content == over_limit
     )
