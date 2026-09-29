@@ -1189,6 +1189,33 @@ The trailing slash is mandatory.
 <SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
 Amount of untracked memory, in bytes, each thread may hold without touching the shared per-CPU budget. It amortizes the cost of the per-CPU bookkeeping for small allocations and is the slack added on top of `max_per_cpu_untracked_memory * number_of_cpus` in the worst case. A value of `0` removes the slack: every allocation updates the shared per-CPU counter (most precise, but more contention). Linux only.
 
+## placement {#placement}
+
+The cloud availability zone and region the server runs in. The availability zone is used by the ZooKeeper client to prefer hosts in the same zone (`prefer_local_availability_zone` in the [zookeeper](/reference/settings/server-settings/settings/zookeeper#zookeeper) section), and by ClickHouse Keeper, which publishes it in the `/keeper/availability_zone` node.
+
+If the `placement` section is absent, the availability zone and region are empty.
+
+The following settings are available:
+
+| Setting                       | Description                                                                                                                                                       | Default Value                      |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
+| `use_imds`                    | Get the availability zone from the instance metadata service of the cloud provider: AWS first, then GCP. When enabled, all other settings are ignored and the region is empty. | `false`                            |
+| `availability_zone`           | The availability zone.                                                                                                                                            | Empty                              |
+| `availability_zone_from_file` | The file to read the availability zone from when `availability_zone` is empty. If the file does not exist, the availability zone is empty.                       | `/run/instance-metadata/node-zone` |
+| `region`                      | The region.                                                                                                                                                       | Empty                              |
+| `region_from_file`            | The file to read the region from when `region` is empty. If the file does not exist, the region is empty.                                                         | `/run/instance-metadata/node-region` |
+
+The placement is read once, at server startup.
+
+**Example**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
