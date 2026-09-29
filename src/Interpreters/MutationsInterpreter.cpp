@@ -140,10 +140,10 @@ void checkNoRowPolicyForSetOperands(
                 if (!resolved.resolved_identifier && throw_if_unresolved)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
-                        "Table {} on the right side of IN does not exist on the initiator. The initiator must check whether it is a "
-                        "Set table with a row policy, because the other hosts run the query without the initiating user. Run the query "
-                        "on a host that has this table. Alternatively, let every host check the table as the initiating user. For "
-                        "that, enable the server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
+                        "Table {} on the right side of IN does not exist on the initiator. The other hosts do not run the query as "
+                        "the initiating user. So the initiator must check whether the table is a Set table with a row policy. Run the "
+                        "query on a host that has this table. Alternatively, let every host check the table as the initiating user. "
+                        "For that, enable the server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
                         "distributed_ddl_entry_format_version to at least {}",
                         table_identifier->formatForErrorMessage(),
                         DDLLogEntry::INITIATOR_USER_VERSION);

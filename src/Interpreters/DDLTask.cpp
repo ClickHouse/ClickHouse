@@ -332,9 +332,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (submitting_user_context)
     {
-        /// Replay the access rights of the session, as `AsynchronousInsertQueue` does: the external roles, the
-        /// grant limit of the credential and its expiry. Then restore the current roles of the session without
-        /// the grant check, because the external roles are not granted locally.
+        /// Give the query the access rights of the submitting session, as `AsynchronousInsertQueue` does. The current roles
+        /// include the external roles, which are not granted locally, so set the current roles without the grant check.
         query_context->setUser(
             *submitting_user_context->getUserID(),
             submitting_user_context->getExternalRoles(),

@@ -201,7 +201,7 @@ def assert_replicated_data_unchanged():
 def test_replicated_mutation_checks_set_row_policy_through_view(
     replicated_set_with_row_policy, mutation
 ):
-    # The DDL worker of a `Replicated` database would run the mutation with full access.
+    # The DDL worker has full access, so it must run the mutation as `view_mutator`.
     error = initiator.query_and_get_error(
         mutation.format("k IN (SELECT number FROM replicated_view_rp.v)"),
         user="view_mutator",
@@ -216,7 +216,7 @@ def test_replicated_mutation_checks_set_row_policy_through_view(
 def test_replicated_mutation_checks_set_row_policy_behind_temporary_table(
     replicated_set_with_row_policy, mutation
 ):
-    # The session sees its temporary `set_rp`, the DDL worker sees the `Set` table.
+    # The session sees its temporary `set_rp`, but the DDL worker sees the `Set` table.
     error = initiator.query_and_get_error(
         "CREATE TEMPORARY TABLE set_rp (k UInt64); " + mutation.format("k IN set_rp"),
         user="view_mutator",
@@ -395,7 +395,7 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
     assert_missing_on_initiator_error(
         unresolved_source_error, "default.remote_only_set_rp"
     )
-    # The initiator cannot tell the engine of a table it does not have.
+    # The initiator does not have this table and cannot see its engine, so it refuses a `MergeTree` table too.
     unresolved_merge_tree_error = initiator.query_and_get_error(
         "ALTER TABLE default.remote_cluster_data_rp ON CLUSTER worker_only "
         "DELETE WHERE (k, v) IN remote_cluster_data_rp",
