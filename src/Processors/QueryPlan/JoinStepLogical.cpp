@@ -691,14 +691,6 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
     return result;
 }
 
-bool JoinStepLogical::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        return false;
-
-    return canRemoveUnusedColumns() && output_header->columns() > 1;
-}
-
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();

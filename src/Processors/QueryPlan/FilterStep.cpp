@@ -600,16 +600,6 @@ FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_posi
     return result;
 }
 
-bool FilterStep::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
-
-    if (!remove_filter_column && output_header->columns() == 1)
-        return false;
-
-    return canRemoveUnusedColumns();
-}
 
 QueryPlanStepPtr FilterStep::clone() const
 {
