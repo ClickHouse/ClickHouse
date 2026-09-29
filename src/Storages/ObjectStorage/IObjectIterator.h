@@ -20,6 +20,9 @@ extern const int LOGICAL_ERROR;
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+
 struct ObjectInfo
 {
     RelativePathWithMetadata relative_path_with_metadata;
@@ -55,6 +58,10 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
+    /// Polymorphic copy. Used when splitting files into buckets so derived metadata
+    /// (e.g. Iceberg equality / position deletes and deletion vectors) is not sliced away.
+    virtual ObjectInfoPtr clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
@@ -63,7 +70,6 @@ struct ObjectInfo
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
 
-using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectInfos = std::vector<ObjectInfoPtr>;
 class ExpressionActions;
 
