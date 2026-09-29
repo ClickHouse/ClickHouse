@@ -28,14 +28,19 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE || defined(__SSSE3__)
 #    include <immintrin.h>
+#endif
+
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
 #endif
 
 #if USE_EMBEDDED_COMPILER
@@ -871,19 +876,6 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 }
 )
 
-namespace
-{
-template <typename T, typename Container>
-void resize(Container & res_data, size_t reserve_size)
-{
-#if defined(MEMORY_SANITIZER)
-    res_data.resize_fill(reserve_size, static_cast<T>(0)); // MSan doesn't recognize that all allocated memory is written by AVX-512 intrinsics.
-#else
-    res_data.resize(reserve_size);
-#endif
-}
-}
-
 DECLARE_X86_ICELAKE_SPECIFIC_CODE(
 /// Compresses into a register and stores all 64 bytes: `vpcompress*` with a memory destination is microcoded on
 /// AMD Zen 4, 25x slower. The caller keeps at least 64 elements of room after `dst`.
@@ -919,7 +911,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
         if (reserve_size - current_offset < SIMD_ELEMENTS)
         {
             reserve_size += alloc_size;
-            resize<T>(res_data, reserve_size);
+            res_data.resize(reserve_size);
             alloc_size *= 2;
         }
 
@@ -958,6 +950,112 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 }
 )
 
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+namespace
+{
+using UInt8x16 = UInt8 __attribute__((vector_size(16)));
+
+/// Returns `source[control[i]]` in lane `i`; every index must be less than 16.
+ALWAYS_INLINE UInt8x16 shuffleBytes(UInt8x16 source, UInt8x16 control)
+{
+#if defined(__SSSE3__)
+    return std::bit_cast<UInt8x16>(_mm_shuffle_epi8(std::bit_cast<__m128i>(source), std::bit_cast<__m128i>(control)));
+#else
+    return std::bit_cast<UInt8x16>(vqtbl1q_u8(std::bit_cast<uint8x16_t>(source), std::bit_cast<uint8x16_t>(control)));
+#endif
+}
+
+/// One shuffle handles 8 rows of 1-byte elements (a 256-entry table of 16 bytes would be too large for 16 rows),
+/// otherwise the 16 / `ELEMENT_WIDTH` rows of a 16-byte vector.
+template <size_t ELEMENT_WIDTH>
+constexpr size_t COMPRESS_ROWS = ELEMENT_WIDTH == 1 ? 8 : 16 / ELEMENT_WIDTH;
+
+/// For each mask of `COMPRESS_ROWS` rows, the shuffle control that moves the selected elements to the front.
+template <size_t ELEMENT_WIDTH>
+alignas(16) constexpr auto compress_table = []
+{
+    constexpr size_t rows = COMPRESS_ROWS<ELEMENT_WIDTH>;
+    std::array<std::array<UInt8, 16>, 1 << rows> table{};
+    for (size_t mask = 0; mask < table.size(); ++mask)
+    {
+        size_t out = 0;
+        for (size_t row = 0; row < rows; ++row)
+        {
+            if ((mask >> row) & 1)
+            {
+                for (size_t byte = 0; byte < ELEMENT_WIDTH; ++byte)
+                    table[mask][out++] = static_cast<UInt8>(row * ELEMENT_WIDTH + byte);
+            }
+        }
+    }
+    return table;
+}();
+
+/// The same loop as the AVX-512 version, with the compression done by a table-driven byte shuffle.
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
+void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+{
+    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
+    static constexpr size_t ROWS = COMPRESS_ROWS<ELEMENT_WIDTH>;
+    static constexpr size_t BYTES = ROWS * ELEMENT_WIDTH;
+    static constexpr UInt64 ROWS_MASK = (1ULL << ROWS) - 1;
+
+    size_t current_offset = res_data.size();
+    size_t reserve_size = res_data.size();
+    size_t alloc_size = SIMD_ELEMENTS * 2;
+    /// A local copy: the compiler cannot keep `res_data.data()` in a register across byte stores that may alias it.
+    T * res = res_data.data();
+
+    while (filt_pos < filt_end_aligned)
+    {
+        /// Every block writes at most `SIMD_ELEMENTS` elements from `current_offset`, including the unused tail of the last store.
+        if (reserve_size - current_offset < SIMD_ELEMENTS)
+        {
+            reserve_size += alloc_size;
+            res_data.resize(reserve_size);
+            res = res_data.data();
+            alloc_size *= 2;
+        }
+
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (mask == static_cast<UInt64>(-1))
+        {
+            memcpy(res + current_offset, data_pos, SIMD_ELEMENTS * ELEMENT_WIDTH);
+            current_offset += SIMD_ELEMENTS;
+        }
+        else if (static_cast<size_t>(std::popcount(mask)) <= SIMD_ELEMENTS / ROWS)
+        {
+            /// Few selected rows: copying them one by one is cheaper than one shuffle per `ROWS` rows.
+            while (mask)
+            {
+                res[current_offset++] = data_pos[std::countr_zero(mask)];
+                mask = blsr(mask);
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < SIMD_ELEMENTS; i += ROWS, mask >>= ROWS)
+            {
+                const UInt64 rows_mask = mask & ROWS_MASK;
+                UInt8x16 source{};
+                memcpy(&source, data_pos + i, BYTES);
+                UInt8x16 control;
+                memcpy(&control, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control));
+                UInt8x16 compressed = shuffleBytes(source, control);
+                memcpy(res + current_offset, &compressed, BYTES);
+                current_offset += std::popcount(rows_mask);
+            }
+        }
+
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
+    }
+    res_data.resize_exact(current_offset);
+}
+}
+#endif
+
 template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
@@ -983,10 +1081,15 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     static constexpr size_t SIMD_ELEMENTS = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
+    [[maybe_unused]] static constexpr bool SIMD_COMPRESS_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
 #if USE_MULTITARGET_CODE
-    static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
-    if (VBMI2_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
+    if (SIMD_COMPRESS_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
         TargetSpecific::x86_64_icelake::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    else
+#endif
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    if constexpr (SIMD_COMPRESS_CAPABLE)
+        doFilterAlignedShuffle<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
     {
