@@ -23,10 +23,11 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// by two rules:
 /// - the lane the merge waits for gets its next slice whenever it has none issued, so the merge is never
 ///   blocked on a lane nobody reads;
-/// - the lanes the merge needs next, in the order of the pool's queue, get slices until the read-ahead
-///   depth is reached. The depth starts at one slice and doubles with every slice that came back with
-///   most of its rows filtered out: reading, not merging, is the bottleneck then.
-/// A slice counts as issued until the merge has taken its last row, so the depth bounds the rows held in
+/// - the lanes the merge needs next, in the order of the pool's queue, get slices while the marks issued
+///   so far stay under the read-ahead budget. The budget is zero at first and doubles with every slice
+///   that came back with most of its rows filtered out: reading, not merging, is the bottleneck then, and
+///   the longer the granules keep coming back empty, the further ahead the reading runs.
+/// A slice counts as issued until the merge has taken its last row, so the budget bounds the rows held in
 /// the router as well as the sources reading on behalf of the merge.
 class MergeTreeInOrderSliceRouter final : public IProcessor
 {
@@ -43,6 +44,7 @@ private:
     struct SliceBuffer
     {
         std::deque<Chunk> chunks;
+        size_t marks = 0;
         bool finished = false;
     };
 
@@ -72,7 +74,7 @@ private:
     void pushToLane(size_t lane);
     void finishLane(size_t lane);
     void dropSlice(size_t lane, SliceBuffers::iterator slice);
-    size_t readAheadDepth() const;
+    size_t readAheadMarks() const;
     std::optional<size_t> pickIdleSource(size_t lane) const;
     void assignSlice(size_t source, size_t lane);
     void scheduleSlices();
@@ -87,8 +89,8 @@ private:
     std::vector<Lane> lanes;
     std::vector<std::optional<Assignment>> assignments;
     size_t num_finished_lanes = 0;
-    /// Slices in the lanes' buffers: assigned and not yet taken by the merge in full.
-    size_t issued_slices = 0;
+    /// Marks of the slices in the lanes' buffers: assigned and not yet taken by the merge in full.
+    size_t issued_marks = 0;
     /// Slices that ended with most of their rows filtered out.
     size_t misses = 0;
     bool initialized = false;

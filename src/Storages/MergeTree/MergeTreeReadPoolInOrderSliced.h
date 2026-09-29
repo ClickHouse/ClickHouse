@@ -52,12 +52,15 @@ public:
     {
         size_t lane;
         size_t first_mark;
+        size_t marks;
         /// Rows in the slice before any filtering, to tell a slice whose rows were mostly filtered out.
         size_t rows;
     };
 
     size_t numSources() const { return num_sources; }
     size_t numLanes() const { return boundaries.size(); }
+    /// Marks in a slice of a lane that has been read for a while; the first slices of a lane are smaller.
+    size_t maxSliceMarks() const { return max_slice_marks; }
 
     /// Primary key values at the first mark of the lane, one row; empty if the index has no value there.
     const Block & laneBoundary(size_t lane) const { return boundaries[lane]; }

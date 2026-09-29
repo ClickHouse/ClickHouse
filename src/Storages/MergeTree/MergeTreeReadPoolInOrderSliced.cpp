@@ -227,6 +227,7 @@ MergeTreeReadPoolInOrderSliced::SliceDescription MergeTreeReadPoolInOrderSliced:
     SliceDescription description{
         .lane = lane,
         .first_mark = ranges.front().begin,
+        .marks = ranges.getNumberOfMarks(),
         .rows = per_part_infos[lane]->data_part_info->getIndexGranularity().getRowsCountInRanges(ranges),
     };
 

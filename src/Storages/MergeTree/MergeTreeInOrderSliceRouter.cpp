@@ -176,8 +176,8 @@ void MergeTreeInOrderSliceRouter::consumeInput(size_t source)
 
 void MergeTreeInOrderSliceRouter::dropSlice(size_t lane, SliceBuffers::iterator slice)
 {
+    issued_marks -= slice->second.marks;
     lanes[lane].slices.erase(slice);
-    --issued_slices;
 }
 
 void MergeTreeInOrderSliceRouter::finishLane(size_t lane_idx)
@@ -185,7 +185,8 @@ void MergeTreeInOrderSliceRouter::finishLane(size_t lane_idx)
     auto & lane = lanes[lane_idx];
     lane.finished = true;
     ++num_finished_lanes;
-    issued_slices -= lane.slices.size();
+    for (const auto & [first_mark, slice] : lane.slices)
+        issued_marks -= slice.marks;
     lane.slices.clear();
     pool->finishLane(lane_idx);
 }
@@ -236,11 +237,14 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
     lane.wants_data = true;
 }
 
-size_t MergeTreeInOrderSliceRouter::readAheadDepth() const
+size_t MergeTreeInOrderSliceRouter::readAheadMarks() const
 {
+    /// Marks, not slices: the slices of a lane grow with every miss as well, so a query answered by the
+    /// first granules of a lane never reads past the slice the merge waits for, whatever the thread count.
     if (misses == 0)
-        return 1;
-    return std::min(assignments.size(), size_t(2) << std::min<size_t>(misses - 1, 16));
+        return 0;
+    const size_t all_sources_busy = assignments.size() * pool->maxSliceMarks();
+    return std::min(all_sources_busy, size_t(1) << std::min<size_t>(misses, 40));
 }
 
 std::optional<size_t> MergeTreeInOrderSliceRouter::pickIdleSource(size_t lane) const
@@ -267,7 +271,8 @@ void MergeTreeInOrderSliceRouter::assignSlice(size_t source, size_t lane_idx)
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Slice starting at mark {} of lane {} was assigned twice", description.first_mark, lane_idx);
 
-    ++issued_slices;
+    it->second.marks = description.marks;
+    issued_marks += description.marks;
     assignments[source] = Assignment{.lane = lane_idx, .first_mark = description.first_mark, .rows_in_marks = description.rows};
     source_inputs[source]->setNeeded();
 }
@@ -295,8 +300,8 @@ void MergeTreeInOrderSliceRouter::scheduleSlices()
         return;
 
     /// Read ahead in the order the merge is going to need the data.
-    const size_t depth = readAheadDepth();
-    while (issued_slices < depth)
+    const size_t budget = readAheadMarks();
+    while (issued_marks < budget)
     {
         auto lane = pool->nextLane();
         if (!lane)
