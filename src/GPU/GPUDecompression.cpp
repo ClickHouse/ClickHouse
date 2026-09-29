@@ -113,9 +113,8 @@ Decompressor::Decompressor()
     , device_arguments(StreamRegistry::get().decompression)
     , device_results(StreamRegistry::get().decompression)
     , device_temp(StreamRegistry::get().decompression)
+    , values(StreamRegistry::get().decompression)
 {
-    for (Slot & slot : slots)
-        slot.values = DeviceBuffer(StreamRegistry::get().decompression);
 }
 
 Decompressor::Decompressor(Decompressor && other) noexcept
@@ -129,14 +128,10 @@ Decompressor::Decompressor(Decompressor && other) noexcept
     , device_temp(std::move(other.device_temp))
     , expanded(std::move(other.expanded))
     , expected_bytes(std::move(other.expected_bytes))
-    , current_slot(other.current_slot)
+    , values(std::move(other.values))
+    , values_copied_out(std::move(other.values_copied_out))
+    , values_in_use(std::exchange(other.values_in_use, false))
 {
-    for (size_t i = 0; i < num_slots; ++i)
-    {
-        slots[i].values = std::move(other.slots[i].values);
-        slots[i].copied_out = std::move(other.slots[i].copied_out);
-        slots[i].in_use = std::exchange(other.slots[i].in_use, false);
-    }
 }
 
 Decompressor::~Decompressor()
@@ -145,11 +140,8 @@ Decompressor::~Decompressor()
     {
         if (in_flight)
             expanded.wait();
-        for (Slot & slot : slots)
-        {
-            if (slot.in_use)
-                slot.copied_out.wait();
-        }
+        if (values_in_use)
+            values_copied_out.wait();
     }
     catch (...)
     {
@@ -202,13 +194,12 @@ void Decompressor::start(GPUCodec codec, std::span<const Piece> pieces)
     for (const Piece & piece : pieces)
         total += decompressedBytesOf(piece.blocks);
 
-    Slot & slot = slots[current_slot];
-    if (slot.in_use)
+    if (values_in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was taken again before being released");
 
-    slot.copied_out.waitOn(StreamRegistry::get().decompression);
-    slot.values.clear();
-    started_destination = slot.values.grow(total);
+    values_copied_out.waitOn(StreamRegistry::get().decompression);
+    values.clear();
+    started_destination = values.grow(total);
 
     queue(codec, pieces, started_destination);
     in_flight = true;
@@ -221,19 +212,17 @@ const char * Decompressor::finish()
 
     waitAndCheck();
     in_flight = false;
-    slots[current_slot].in_use = true;
+    values_in_use = true;
     return started_destination;
 }
 
 void Decompressor::release()
 {
-    Slot & slot = slots[current_slot];
-    if (!slot.in_use)
+    if (!values_in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was released without being taken");
 
-    slot.copied_out.record(StreamRegistry::get().compute);
-    slot.in_use = false;
-    current_slot = (current_slot + 1) % num_slots;
+    values_copied_out.record(StreamRegistry::get().compute);
+    values_in_use = false;
 }
 
 void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * destination)

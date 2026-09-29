@@ -54,15 +54,6 @@ public:
     void release();
 
 private:
-    struct Slot
-    {
-        DeviceBuffer values;
-        DeviceEvent copied_out;
-        bool in_use = false;
-    };
-
-    static constexpr size_t num_slots = 2;
-
     void queue(GPUCodec codec, std::span<const Piece> pieces, char * destination);
 
     void waitAndCheck();
@@ -81,8 +72,9 @@ private:
     DeviceEvent expanded;
     std::vector<size_t> expected_bytes;
 
-    Slot slots[num_slots];
-    size_t current_slot = 0;
+    DeviceBuffer values;
+    DeviceEvent values_copied_out;
+    bool values_in_use = false;
 };
 
 }
