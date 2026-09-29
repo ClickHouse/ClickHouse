@@ -1,5 +1,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -84,11 +85,39 @@ FormatFilterInfo::FormatFilterInfo(
             prewhere_covered = prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node);
         }
 
+        /// `getMatchedBuckets` treats `rows_pass == 0` as unmatched, and the Parquet reader applies
+        /// `row_level_filter` before that count. A row policy must be part of the key, or a later read
+        /// without that policy reuses row groups the policy alone eliminated.
+        bool row_policy_covered = true;
+        UInt64 dag_hash = filter_actions_dag->getHash();
+        if (row_level_filter)
+        {
+            const auto * policy_node = row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name);
+            row_policy_covered = policy_node && VirtualColumnUtils::isDeterministic(policy_node);
+            if (row_policy_covered)
+            {
+                SipHash hash;
+                hash.update(dag_hash);
+                hash.update(row_level_filter->actions.getHash());
+                dag_hash = hash.get64();
+            }
+        }
+
+        /// Format-side key version. Entries written before the row policy was mixed in used the `WHERE`
+        /// hash alone and can hide row groups. `MergeTree` hashes its own key and is unaffected.
+        constexpr UInt64 format_query_condition_cache_key_version = 1;
+        {
+            SipHash hash;
+            hash.update(dag_hash);
+            hash.update(format_query_condition_cache_key_version);
+            dag_hash = hash.get64();
+        }
+
         const auto & outputs = filter_actions_dag->getOutputs();
-        if (prewhere_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
+        if (prewhere_covered && row_policy_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
         {
             condition_hash = queryConditionCacheHash(
-                filter_actions_dag->getHash(), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
+                dag_hash, queryConditionCacheSettingsSalt(context_->getSettingsRef()));
         }
     }
 }

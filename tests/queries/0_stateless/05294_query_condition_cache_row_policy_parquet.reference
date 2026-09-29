@@ -1,0 +1,10 @@
+row_groups:
+2
+hide user (x = 0), expect 10000:
+10000
+show user (always-true policy), same WHERE, expect 20000:
+20000
+hide user again, expect 10000:
+10000
+repeated hide query was a cache hit (expect 1):
+1
