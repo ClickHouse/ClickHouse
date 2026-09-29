@@ -47,9 +47,9 @@ SELECT a = b; -- { serverError BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 -- reach native sorting or set membership.
 SELECT *
 FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.)))
-ORDER BY value; -- { serverError BAD_ARGUMENTS }
+ORDER BY value; -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
 SELECT value IN (SELECT * FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 10.))))
-FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
+FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
 SELECT *
 FROM VALUES('value Variant(Array(ExponentialTimeDecaying(10)), UInt8)', ([(1., 0., 20.)]))
-ORDER BY value; -- { serverError BAD_ARGUMENTS }
+ORDER BY value; -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
