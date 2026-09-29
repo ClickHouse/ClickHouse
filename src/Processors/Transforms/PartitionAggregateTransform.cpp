@@ -158,7 +158,7 @@ void PartitionAggregateTransform::aggregateChunk(Chunk & chunk, MutableColumnPtr
     /// The rows of partitions of one row are aggregated when they are output.
     IColumn::Filter in_groups;
     ColumnPtr filtered_groups;
-    if (has_single_row_groups && std::find(all_group_data.begin(), all_group_data.end(), single_row_group) != all_group_data.end())
+    if (total_single_row_groups && std::find(all_group_data.begin(), all_group_data.end(), single_row_group) != all_group_data.end())
     {
         in_groups.resize(all_group_data.size());
         for (size_t row = 0; row < all_group_data.size(); ++row)
@@ -430,7 +430,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     size_t num_single_row_groups = 0;
     for (auto rows : rows_of_new_groups)
         num_single_row_groups += rows == 1;
-    has_single_row_groups = has_single_row_groups || num_single_row_groups;
+    total_single_row_groups += num_single_row_groups;
 
     /// The groups are created at once, and the partitions take them in the order of the rows.
     PaddedPODArray<UInt32> created_groups(num_new_groups);
@@ -722,9 +722,10 @@ Chunk PartitionAggregateTransform::generate()
     {
         groupChunks(/*last=*/ true);
 
-        /// With a row or two in each partition, the results are taken for each row from the states, instead of
-        /// being taken for each partition and then copied to the rows, which takes more memory.
-        results_for_each_row = places.size() * 2 > num_input_rows;
+        /// With two rows or less in each group, the results are taken for each row from the states, instead of
+        /// being taken for each group and then copied to the rows, which takes more memory. The rows of partitions
+        /// of one row have no group.
+        results_for_each_row = places.size() * 2 >= num_input_rows - total_single_row_groups;
         if (!results_for_each_row)
         {
             for (size_t i = 0; i < functions.size(); ++i)
@@ -778,7 +779,7 @@ Chunk PartitionAggregateTransform::generate()
     columns.pop_back();
     const auto & group_data = assert_cast<const ColumnUInt32 &>(*groups).getData();
 
-    const size_t num_single_rows = has_single_row_groups ? std::count(group_data.begin(), group_data.end(), single_row_group) : 0;
+    const size_t num_single_rows = total_single_row_groups ? std::count(group_data.begin(), group_data.end(), single_row_group) : 0;
     if (results_for_each_row || num_single_rows)
     {
         SingleRowStates single_row_states(*this);

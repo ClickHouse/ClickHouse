@@ -7,12 +7,24 @@
         <substitution>
             <name>key</name>
             <values>
+                <!-- few partitions in each stream: they are grouped as the rows come -->
                 <value>k100</value>
                 <value>k10000</value>
                 <value>k1000000</value>
-                <!-- a partition for every row -->
+                <!-- more partitions in each stream than are grouped as the rows come, of three rows each -->
+                <value>k10000000</value>
+                <!-- a partition for every row: the partitions of one row take no state -->
                 <value>v</value>
+                <!-- two rows in each partition, or one or two: the results are taken for each row -->
+                <value>intDiv(v, 2)</value>
+                <value>intDiv(v * 2, 3)</value>
+                <!-- the bytes of a `String` key are taken as they are -->
                 <value>s</value>
+                <value>s_unique</value>
+                <!-- keys packed into 16 and 32 bytes, and serialized -->
+                <value>k10000, k100</value>
+                <value>k10000, k100, k1000000</value>
+                <value>k10000, s</value>
             </values>
         </substitution>
     </substitutions>
@@ -22,18 +34,21 @@
         <query_plan_reuse_storage_ordering_for_window_functions>0</query_plan_reuse_storage_ordering_for_window_functions>
     </settings>
 
-    <create_query>CREATE TABLE t_window_hash (k100 UInt64, k10000 UInt64, k1000000 UInt64, s String, v UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_window_hash (k100 UInt64, k10000 UInt64, k1000000 UInt64, k10000000 UInt64, s String, s_unique String, v UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
-    <fill_query>INSERT INTO t_window_hash SELECT number % 100, intHash64(number) % 10000, intHash64(number + 1) % 1000000, toString(intHash64(number) % 10000), number FROM numbers_mt(30000000)</fill_query>
+    <fill_query>INSERT INTO t_window_hash SELECT number % 100, intHash64(number) % 10000, intHash64(number + 1) % 1000000, intHash64(number + 2) % 10000000, toString(intHash64(number) % 10000), toString(number), number FROM numbers_mt(30000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_window_hash FINAL</fill_query>
 
-    <!-- From 100 partitions to one for every row, and a String key. -->
-    <query>SELECT v, sum(v) OVER (PARTITION BY {key}), count() OVER (PARTITION BY {key}) FROM t_window_hash FORMAT Null</query>
-    <query>SELECT v, sum(v) OVER (PARTITION BY {key}), count() OVER (PARTITION BY {key}) FROM t_window_hash FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
+    <query>SELECT v, sum(v) OVER w, count() OVER w FROM t_window_hash WINDOW w AS (PARTITION BY {key}) FORMAT Null</query>
+    <query>SELECT v, sum(v) OVER w, count() OVER w FROM t_window_hash WINDOW w AS (PARTITION BY {key}) FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
 
-    <!-- Several keys and several functions in one window. -->
-    <query>SELECT v, max(v) OVER w, min(v) OVER w, avg(v) OVER w FROM t_window_hash WINDOW w AS (PARTITION BY k10000, k100) FORMAT Null</query>
-    <query>SELECT v, max(v) OVER w, min(v) OVER w, avg(v) OVER w FROM t_window_hash WINDOW w AS (PARTITION BY k10000, k100) FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
+    <!-- States that own memory, with many rows in each partition: each state takes the rows of its partition at once. -->
+    <query>SELECT v, uniq(v) OVER w, quantileExact(0.5)(v) OVER w FROM t_window_hash WINDOW w AS (PARTITION BY k10000) FORMAT Null</query>
+    <query>SELECT v, uniq(v) OVER w, quantileExact(0.5)(v) OVER w FROM t_window_hash WINDOW w AS (PARTITION BY k10000) FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
+
+    <!-- A result that is an array, copied to each row of its partition. -->
+    <query>SELECT v, length(groupArray(k100) OVER w) FROM t_window_hash WINDOW w AS (PARTITION BY k1000000) FORMAT Null</query>
+    <query>SELECT v, length(groupArray(k100) OVER w) FROM t_window_hash WINDOW w AS (PARTITION BY k1000000) FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
 
     <!-- Every column passes through the window: the sort moves all of them, the hashing only scatters them. -->
     <query>SELECT *, sum(v) OVER (PARTITION BY k10000) FROM t_window_hash FORMAT Null</query>

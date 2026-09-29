@@ -167,7 +167,8 @@ private:
     PaddedPODArray<AggregateDataPtr> row_places;
     /// For `SingleRowStates`, reused for every chunk.
     PaddedPODArray<char> single_row_states_buffer;
-    bool has_single_row_groups = false;
+    /// The number of partitions of one row, which have no group.
+    size_t total_single_row_groups = 0;
 
     bool defer_grouping = false;
     /// The bucket of each deferred row.
