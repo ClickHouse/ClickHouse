@@ -10,3 +10,5 @@ comment column	id	from alter
 comment column	v	
 same alter	id	set before
 same alter	v	set after
+refreshable	id	id comment
+refreshable	v	v comment
