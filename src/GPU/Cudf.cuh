@@ -18,13 +18,6 @@
 namespace DB::GPU
 {
 
-[[noreturn]] inline void throwGPUError(const std::string & message)
-{
-    throwGPUError(message.c_str());
-}
-
-void initializeCudf();
-
 std::string describeForeign(const std::exception & exception);
 
 template <typename Body>
@@ -40,7 +33,7 @@ auto guarded(const std::string & doing, Body && body)
             throw;
 
         const std::string description = describeForeign(exception);
-        throwGPUError(doing + ": " + description);
+        throwGPUError((doing + ": " + description).c_str());
     }
 }
 
