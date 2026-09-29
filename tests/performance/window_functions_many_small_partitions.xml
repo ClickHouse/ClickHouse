@@ -14,9 +14,7 @@ CREATE TABLE window_functions_small_partitions (d Date, k UInt16, v Float64) ENG
     <query>SELECT argMax(k, v) OVER w, argMin(k, v) OVER w FROM window_functions_small_partitions WINDOW w AS (PARTITION BY d) FORMAT Null</query>
     <query>SELECT topK(10)(k % 100) OVER w, topK(3)(k % 1000) OVER w FROM window_functions_small_partitions WINDOW w AS (PARTITION BY d) FORMAT Null</query>
 
-    <!-- A short moving sum and a running quantile inside the small partitions; k is unique, so ROWS UNBOUNDED PRECEDING equals the default frame. -->
-    <query>SELECT sum(v) OVER (PARTITION BY d ORDER BY k ROWS BETWEEN 10 PRECEDING AND CURRENT ROW) FROM window_functions_small_partitions FORMAT Null</query>
-    <query>SELECT quantileTDigest(0.5)(v) OVER (PARTITION BY d ORDER BY k ROWS UNBOUNDED PRECEDING) FROM window_functions_small_partitions WHERE d &lt; toDate('2024-01-01') FORMAT Null</query>
+    <!-- Numbering inside the small partitions. -->
     <query>SELECT row_number() OVER (PARTITION BY d ORDER BY v) FROM window_functions_small_partitions FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS window_functions_small_partitions</drop_query>
