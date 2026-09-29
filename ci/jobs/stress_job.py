@@ -465,7 +465,7 @@ class ReplicaFailures:
     memory-limit verdict; otherwise the one expected-only / "Unknown error" fallback; empty
     when nothing could be parsed at all. The flags say which tier `results` came from,
     because the caller treats the tiers differently: a crash - named or not - is a bug that
-    no OOM downgrade may bury, an out-of-memory verdict passes the run outright, and an
+    no OOM downgrade may bury, an out-of-memory verdict can pass the run, and an
     expected-only line names a run that something else already declared failed and is not
     a failure of its own.
     """
@@ -482,19 +482,18 @@ class ReplicaFailures:
     # `expected_only`, and the line is a sanitizer OOM report rather than the kill line.
     expected_only_oom: bool = False
     # `results` holds the memory-limit verdict: the server refused an allocation over its
-    # own cap and said so. Ranked below every crash for that reason, and out of memory in
-    # the same sense the sanitizer report is.
+    # own cap and said so. Ranked below every crash for that reason.
     memory_limit: bool = False
 
-    @property
-    def reports_oom(self) -> bool:
+    def reports_oom(self, server_died: bool) -> bool:
         """Whether the tier `results` came from is an out-of-memory verdict.
 
-        Both ways the parser can reach one: the sanitizer's report among the expected-only
-        lines, and the server's own memory cap. Neither is a bug, and running out of
-        memory passes a stress run - so the caller must not tell the two tiers apart.
+        The sanitizer's OOM report is the dying process's own account, so it stands alone.
+        The memory cap does not: one over-budget query logs it while the server stays
+        healthy, and the logs span every incarnation (`clickhouse-server.err.log` is
+        neither archived nor rotated), so it counts only beside `server_died`.
         """
-        return self.expected_only_oom or self.memory_limit
+        return self.expected_only_oom or (self.memory_limit and server_died)
 
 
 # Ranking inside the expected-only tier, which needs one of its own because every verdict
@@ -756,9 +755,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             # run for a report in a current log or dmesg. The parser reaches one the scan
             # above cannot: a report that rotated out of the current log, and the server's
             # own memory cap, which leaves no SIGKILL and no dmesg line to find at all.
-            # `server_died` says only that the process crashed, not why, so this is
-            # checked independently of the `not server_died` guard above.
-            if failures.reports_oom:
+            # The cap is the weaker of the two and needs `server_died` beside it; see
+            # `ReplicaFailures.reports_oom`.
+            if failures.reports_oom(server_died):
                 is_oom = True
                 print(
                     "Only an out-of-memory verdict in the server logs: "
