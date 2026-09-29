@@ -111,8 +111,6 @@ class Issue:
     ci_action: str = ""
     test_pattern: str = ""
     job_pattern: str = ""
-    # Dedup key written by ai_fuzz_triage.py; empty for issues from other sources.
-    fuzz_fingerprint: str = ""
 
     def is_infrastructure(self):
         return "infrastructure" in self.labels
@@ -138,7 +136,6 @@ class Issue:
             "ci_action": "",
             "test_pattern": "",
             "job_pattern": "",
-            "fuzz_fingerprint": "",
         }
 
         if not body:
@@ -150,7 +147,6 @@ class Issue:
             "ci_action": r"CI action:\s*([^\n]*)",
             "test_pattern": r"Test pattern:\s*([^\n]*)",
             "job_pattern": r"Job pattern:\s*([^\n]*)",
-            "fuzz_fingerprint": r"Fuzz fingerprint:\s*([^\n]*)",
         }
 
         for field_name, pattern in patterns.items():
@@ -351,7 +347,6 @@ class Issue:
             ci_action=body_fields["ci_action"],
             test_pattern=body_fields["test_pattern"],
             job_pattern=body_fields["job_pattern"],
-            fuzz_fingerprint=body_fields["fuzz_fingerprint"],
         )
 
     def create_on_gh(self, repo_name):
