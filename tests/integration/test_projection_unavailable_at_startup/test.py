@@ -11,6 +11,7 @@ later startup. That is the state a server upgrade leaves behind.
 """
 
 import os
+import uuid
 
 import pytest
 
@@ -602,10 +603,28 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1"
     )
     assert "Maximum limit of 1 projection(s) exceeded" in error
+    error = node.query_and_get_error(
+        f"ATTACH TABLE dl.t6_unique_attach UUID '{uuid.uuid4()}' "
+        "ENGINE = MergeTree ORDER BY a UNIQUE KEY (a) AS dl.t6",
+        settings={"enable_unique_key": 1},
+    )
+    assert "Projections are not supported on tables with UNIQUE KEY" in error
+    error = node.query_and_get_error(
+        f"ATTACH TABLE dl.t9_limit_attach UUID '{uuid.uuid4()}' "
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1 AS dl.t9"
+    )
+    assert "Maximum limit of 1 projection(s) exceeded" in error
     assert node.query(
         "SELECT count() FROM system.tables WHERE database = 'dl' "
-        "AND name IN ('t6_unique_copy', 't9_limit_copy')"
+        "AND name IN ('t6_unique_copy', 't9_limit_copy', "
+        "'t6_unique_attach', 't9_limit_attach')"
     ).strip() == "0"
+    node.query(
+        f"ATTACH TABLE dl.t6_valid_attach UUID '{uuid.uuid4()}' "
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1 AS dl.t6"
+    )
+    assert projections("t6_valid_attach") == "0"
+    assert declarations_on_disk("t6_valid_attach") == 1
 
     # A local `CREATE AS` must retain the declaration even though this server cannot analyze it
     # until the projection setting is restored. It is absent from `system.projections` meanwhile.

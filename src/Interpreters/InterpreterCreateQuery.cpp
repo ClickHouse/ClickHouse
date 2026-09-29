@@ -2550,12 +2550,12 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, bool attach_short_syntax, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
-    if (mode == LoadingStrictnessLevel::CREATE)
+    if (isFreshTableDefinition(mode, attach_short_syntax))
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage))
         {
             const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
@@ -2630,7 +2630,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 mode,
                 is_restore_from_backup);
             preserve_unavailable_projections(res);
-            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2853,7 +2853,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     preserve_unavailable_projections(res);
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, create.attach_short_syntax, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -3371,7 +3371,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+        validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
         return res;
     };
 
