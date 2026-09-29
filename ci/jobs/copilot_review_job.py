@@ -32,14 +32,9 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.parse
 
-from ci.jobs.scripts.agent_cli import (
-    AGENT_MODEL,
-    ROBOT_NAMES,
-    codex_login,
-    gh_auth_with_robot_token,
-    repo_from_pr_url,
-)
+from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
@@ -52,13 +47,32 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
 
+# Robot gh tokens the Copilot CLI authenticates against GitHub with. Each
+# attempt picks one in a randomised rotation so a single robot's rate limit
+# or token issue does not fail every attempt.
+ROBOT_NAMES = [
+    "/ci/robot-ch-test-poll-copilot",
+    "/ci/robot-ch-test-poll-1-copilot",
+]
+
+# OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
+# via `codex login --with-api-key`.
+OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
+
 
 def _join_prompt(*sections):
     return "\n\n".join(section.rstrip() for section in sections if section).rstrip() + "\n"
 
 
+def _repo_from_pr_url(pr_url):
+    path_parts = urllib.parse.urlparse(pr_url).path.strip("/").split("/")
+    if len(path_parts) >= 4 and path_parts[2] == "pull":
+        return f"{path_parts[0]}/{path_parts[1]}"
+    return ""
+
+
 def _pr_repository(info):
-    return repo_from_pr_url(info.pr_url) or info.repo_name
+    return _repo_from_pr_url(info.pr_url) or info.repo_name
 
 
 def _pre_review_instructions():
@@ -211,11 +225,26 @@ def _drop_stale_review_file():
             print(f"WARNING: Failed to remove stale {REVIEW_FILE}: {e}")
 
 
+def _gh_auth_with_robot_token(gh_config_dir, robot_name):
+    """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
+    print(f"Using robot: {robot_name}")
+    token = Secret.Config(
+        name=robot_name,
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ).get_value()
+    subprocess.run(
+        ["gh", "auth", "login", "--with-token"],
+        input=token, text=True, check=True,
+        env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
+    )
+
+
 def _run_copilot_once(prompt, robot_name):
     """Run a single attempt of `gh auth login` + `copilot` for one robot."""
     _drop_stale_review_file()
     with tempfile.TemporaryDirectory() as gh_config_dir:
-        gh_auth_with_robot_token(gh_config_dir, robot_name)
+        _gh_auth_with_robot_token(gh_config_dir, robot_name)
         return Result.from_commands_run(
             name="copilot review",
             # --allow-all: enable all permissions; --allow-all-tools alone hits
@@ -227,7 +256,7 @@ def _run_copilot_once(prompt, robot_name):
             # </dev/null: ensure stdin is definitively non-interactive
             command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model {AGENT_MODEL} --effort xhigh < /dev/null",
+                    f"--add-dir . --model gpt-5.4 --effort xhigh < /dev/null",
             with_info=True,
         )
 
@@ -235,20 +264,33 @@ def _run_copilot_once(prompt, robot_name):
 def _run_codex_once(prompt, _robot_name):
     """Run a single attempt of `codex login` + `codex exec`.
 
-    `CODEX_HOME` is scoped to a per-attempt temporary directory under
-    `./ci/tmp` (not `/tmp`, which codex refuses to use for helper binaries)
-    so the API key never lands on global runner state.
+    Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
+    `OPENAI_API_KEY` directly when invoked — you have to run
+    `codex login --with-api-key` first, which reads the key from stdin and
+    writes it into `auth.json`. `CODEX_HOME` is scoped to a per-attempt
+    temporary directory under `./ci/tmp` (not `/tmp`, which codex refuses
+    to use for helper binaries) so the API key never lands on global runner
+    state.
 
     The agent's own `gh` calls run as the app authenticated before the job, so
     no robot token takes part in this attempt.
     """
     _drop_stale_review_file()
     with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
-        codex_login(codex_home)
+        openai_key = Secret.Config(
+            name=OPENAI_KEY_SECRET,
+            type=Secret.Type.AWS_SSM_PARAMETER,
+            region="us-east-1",
+        ).get_value()
+        subprocess.run(
+            ["codex", "login", "--with-api-key"],
+            input=openai_key, text=True, check=True,
+            env={**os.environ, "CODEX_HOME": codex_home},
+        )
 
         return Result.from_commands_run(
             name="codex review",
-            # -m AGENT_MODEL: same model the Copilot CLI uses, so
+            # -m gpt-5.4: same model the Copilot CLI uses, so
             #   review quality stays comparable across backends.
             # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
             #   read-only elsewhere; sufficient for the review output.
@@ -261,7 +303,7 @@ def _run_codex_once(prompt, _robot_name):
             # --color never: no ANSI codes in the job log.
             command=f"CODEX_HOME={shlex.quote(codex_home)} "
                     f"codex exec "
-                    f"-m {AGENT_MODEL} -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "

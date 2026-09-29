@@ -2,7 +2,7 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass, field, fields as dataclass_fields
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -396,13 +396,8 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
     @classmethod
     def from_dict(cls, obj: dict):
         """Custom deserialization to handle nested TestCaseIssue objects"""
-        # The catalog is shared through S3, so a job may read one written by a
-        # newer commit: drop fields this version of `Issue` does not know.
-        known = {f.name for f in dataclass_fields(Issue)}
         active_issues = [
-            Issue(**{k: v for k, v in issue.items() if k in known})
-            if isinstance(issue, dict)
-            else issue
+            Issue(**issue) if isinstance(issue, dict) else issue
             for issue in obj.get("active_test_issues", [])
         ]
         return cls(
