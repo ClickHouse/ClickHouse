@@ -1314,7 +1314,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns());
+        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns(*metadata_snapshot));
 }
 
 static void assertIndexColumnsType(const Block & header)
