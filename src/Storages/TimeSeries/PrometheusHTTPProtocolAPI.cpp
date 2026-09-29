@@ -193,12 +193,12 @@ String unescapePrometheusLabelName(const String & name)
 }
 }
 
+/// The caller checks SELECT on the table before constructing this.
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext{context_}
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
-    /// The caller checks SELECT on the table before constructing this.
     distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!distributed_target)
@@ -278,15 +278,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
-    if (evaluation_settings.distributed)
-    {
-        query_context->setSetting("prefer_localhost_replica", true);
-        query_context->setSetting("enable_parallel_replicas", false);
-        /// Ship the query text: a serialized plan binds an unqualified name on the initiator,
-        /// and shards do not apply their own row policies to a shipped plan (#112891).
-        query_context->setSetting("serialize_query_plan", false);
-    }
+    if (distributed_target)
+        pinDistributedReadSettings(query_context);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 

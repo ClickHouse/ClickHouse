@@ -208,14 +208,11 @@ void checkTableDeclaresOuterColumnTypes(
         if (!declared)
             throw Exception(
                 ErrorCodes::INCOMPATIBLE_SCHEMA,
-                "Table {} does not declare column `{}`, which remote write fills as {}{}",
+                "Table {} does not declare column `{}`, which remote write fills as {}: a Distributed table taking "
+                "remote write must declare the outer columns of a TimeSeries table",
                 storage_id.getNameForLogs(),
                 column_name,
-                expected_type,
-                /// The hint helps only for a metadata column: a request without metadata names none of them.
-                column_name == TimeSeriesColumnNames::MetricName || column_name == TimeSeriesColumnNames::Tags
-                    ? ""
-                    : ": declare `metric_family`, `type`, `unit` and `help` on it, or send the samples without metadata");
+                expected_type);
         const auto & declared_type = declared->type;
         if (declared_type->getName() != expected_type)
             throw Exception(
@@ -466,9 +463,8 @@ void PrometheusRemoteWriteProtocol::write(
     }
     catch (const Exception & e)
     {
-        /// A shard-local table that went away between the check and the INSERT is as transient as a
-        /// shard that stopped answering, but `UNKNOWN_TABLE` is a 404, which Prometheus drops instead
-        /// of resending. Reported the way the check reports a shard with no verified target.
+        /// A shard-local table gone since the check is as transient as an unreachable shard, but
+        /// `UNKNOWN_TABLE` is a 404, which Prometheus drops instead of resending.
         if (!distributed_target || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE))
             throw;
         throw Exception(

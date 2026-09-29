@@ -425,23 +425,17 @@ void checkNoBypassedReadRestriction(
 void checkPrometheusQueryDistributedRead(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
 {
-    const auto storage_id = storage.getStorageID();
-
     /// A plain SELECT through the wrapper applies both; the generated read never names the wrapper.
     /// The shard-local table's own policy and filters are each shard's to check, in the selector.
-    checkNoBypassedReadRestriction(
-        storage_id, context, "A prometheus query over a Distributed table", "the read is rewritten to the shard-local TimeSeries tables");
+    checkNoBypassedReadRestriction(storage.getStorageID(), context, "A prometheus query over a Distributed table",
+        "the read is rewritten to the shard-local TimeSeries tables");
 
     /// Grant before existence: the probe below runs on the server's own context, so the grant the generated
     /// cluster() call enforces only later is required here, before it can report on a shard-local target.
     context->checkAccess(AccessType::READ, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::REMOTE));
 
-    /// The read pins prefer_localhost_replica on and parallel replicas off, so a shard that is this server itself
-    /// runs in-process on the caller's context: the selector's own grant is asked for here, before the probe.
-    /// It has no remote sibling to fall back to either: SelectStreamFactory falls back only when a local table
-    /// named by id is absent, while this read names a view() table function, whose local execution resolves the
-    /// selector and so asks for this same grant, or fails, on this server.
-    /// A name that resolves to nothing is left to the probe, which reports it as a target the read has not got.
+    /// A shard that is this server itself is read in-process on the caller's context, with no remote fallback, so
+    /// its selector's grant is asked for before the probe; a name that resolves to nothing is left to the probe.
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
     if (cluster->getLocalShardCount())
     {
@@ -451,6 +445,15 @@ void checkPrometheusQueryDistributedRead(
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
     checkShardTargets(storage, target, context, cluster, /* for_write = */ false);
+}
+
+void pinDistributedReadSettings(const ContextMutablePtr & context)
+{
+    /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
+    context->setSetting("prefer_localhost_replica", true);
+    context->setSetting("enable_parallel_replicas", false);
+    /// Ship the query text: a serialized plan binds an unqualified name on the initiator (#112891).
+    context->setSetting("serialize_query_plan", false);
 }
 
 void checkPrometheusQueryDistributedWrite(

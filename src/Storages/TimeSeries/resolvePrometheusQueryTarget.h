@@ -45,6 +45,9 @@ void checkNoBypassedReadRestriction(
 void checkPrometheusQueryDistributedRead(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context);
 
+/// Pins the settings a read over a Distributed target relies on, on the context that runs the generated query.
+void pinDistributedReadSettings(const ContextMutablePtr & context);
+
 /// The same probe for a write, which also refuses an unreachable replica or a missing table or type (it would take
 /// samples unchecked) and insert_shard_id / insert_distributed_one_random_shard: the sharding key alone routes a batch.
 void checkPrometheusQueryDistributedWrite(

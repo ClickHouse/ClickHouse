@@ -715,14 +715,12 @@ def test_remote_write_refuses_a_wrapper_retyping_a_metadata_column():
 
 
 def test_remote_write_refuses_a_wrapper_without_the_metric_name():
-    """A samples-only write names `metric_name`, so a wrapper that does not declare it is refused
-    before the shards are asked anything, and without the metadata hint that would not help."""
+    """A samples-only write names `metric_name`, so a wrapper not declaring it is refused first."""
     before = rows_on_the_retyped_shards()
     response = write("/no_metric_name/write", "no_metric_name_metric")
     assert response.status_code >= 500, response.text
     assert "INCOMPATIBLE_SCHEMA" in response.text
     assert "prom_no_metric_name" in response.text
     assert "does not declare column `metric_name`" in response.text
-    assert "without metadata" not in response.text
     node.query("SYSTEM FLUSH DISTRIBUTED prom_no_metric_name")
     assert rows_on_the_retyped_shards() == before
