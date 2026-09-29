@@ -9905,7 +9905,7 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     /* ####################################################### */ \
     /* AI function settings */ \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
-Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
+Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions, embedding, and reranking API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
         {"26.4", 60, 60, "New setting"}) \
     DECLARE(UInt64, ai_function_max_retries, 1, R"(
@@ -9924,14 +9924,14 @@ If true (default), an AI function call that fails permanently after exhausting a
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
+This limit is only enforced for providers that report token usage in their response: a `usage` object (OpenAI, Anthropic, vLLM) or, for the reranking functions (`aiRelevance`), `meta.billed_units.input_tokens` (Cohere-compatible endpoints). Providers that omit token usage (notably HuggingFace TEI, and Cohere rerank endpoints that report only `search_units`) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
         {"26.10", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 1000000, 1000000, "New setting"}) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
+This limit is only enforced for providers that report token usage in their response: a `usage` object (OpenAI, Anthropic, vLLM) or, for the reranking functions (`aiRelevance`), `meta.billed_units.output_tokens` (Cohere-compatible endpoints). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA, \
         {"26.10", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 500000, 500000, "New setting"}) \
