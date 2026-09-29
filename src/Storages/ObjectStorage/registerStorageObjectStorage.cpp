@@ -246,7 +246,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern (or a glob built from the partition columns with `hive_partition_strategy_strict_read_glob`). Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -372,7 +372,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`. With `hive_partition_strategy_strict_read_glob`, the read glob is built from the partition columns instead (`table_root/key1=*/.../keyN=*/*.<format>`), so only objects laid out exactly as the table writes them are read.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.

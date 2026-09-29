@@ -9594,6 +9594,14 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
 )", 0, \
         {"26.8", false, true, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage, instead of running without the Hive partition columns."}) \
+    DECLARE(Bool, hive_partition_strategy_strict_read_glob, false, R"(
+Build the read glob of object storage tables with `partition_strategy = 'hive'` from the partition columns — `table_root/key1=*/.../keyN=*/*.<format>` — instead of the recursive `table_root/**.<format>`. Only objects laid out exactly as the table itself writes them are read: staging output and marker objects of Hive-ecosystem writers under the same root (`_temporary/...`, `.spark-staging-<id>/...`, `_SUCCESS`) are excluded structurally, and the shorter listing prefix skips them during listing. Note that files at a different depth or with differently named partition directories are silently ignored, where the recursive glob reads them or fails loudly with a hive partitioning parse error. The setting takes effect when the table is instantiated (`CREATE`, `ATTACH`, server startup).
+
+Possible values:
+- 0 — read using the recursive glob.
+- 1 — read only paths matching the partition columns layout.
+)", 0, \
+        {"26.10", false, false, "New setting: build the read glob of tables with `partition_strategy = 'hive'` from the partition columns instead of a recursive glob, so only objects laid out as the table writes them are read."}) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.

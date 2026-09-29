@@ -145,7 +145,8 @@ namespace
             header,
             context,
             "parquet",
-            /* partition_columns_in_data_file */false);
+            /* partition_columns_in_data_file */false,
+            /* strict_read_glob */false);
     }
 }
 
