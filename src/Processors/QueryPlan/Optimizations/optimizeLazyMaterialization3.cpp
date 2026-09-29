@@ -641,18 +641,10 @@ private:
         if (node->children.size() != 1)
             return false;
 
-        if (auto * expression = typeid_cast<ExpressionStep *>(step))
-        {
-            /// Such a step keeps every input, including the ones a child no longer produces.
-            if (expression->isInputRemovalPrevented() || !expression->canRemoveUnusedColumns())
-                return false;
-        }
-        else if (auto * filter = typeid_cast<FilterStep *>(step))
-        {
-            if (filter->isInputRemovalPrevented() || !filter->canRemoveUnusedColumns())
-                return false;
-        }
-        else
+        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
+            return false;
+
+        if (!step->canRemoveUnusedColumns())
             return false;
 
         return checkSteps(node->children.front(), joins);
