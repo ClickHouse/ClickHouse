@@ -15,26 +15,17 @@ namespace ErrorCodes
 MergeTreeInOrderSliceRouter::MergeTreeInOrderSliceRouter(
     SharedHeader header,
     std::shared_ptr<MergeTreeReadPoolInOrderSliced> pool_,
-    ExpressionActionsPtr virtual_row_conversions_,
-    size_t limit_,
-    size_t max_block_size_rows_)
+    ExpressionActionsPtr virtual_row_conversions_)
     : IProcessor(InputPorts(pool_->numSources(), header), OutputPorts(pool_->numLanes(), header))
     , pool(std::move(pool_))
     , virtual_row_conversions(std::move(virtual_row_conversions_))
-    , limit(limit_)
-    , buffer_budget_rows(2 * max_block_size_rows_)
     , lanes(pool->numLanes())
     , assignments(pool->numSources())
-    , boundary_position(pool->numLanes())
 {
     for (auto & input : inputs)
         source_inputs.push_back(&input);
     for (auto & output : outputs)
         lane_outputs.push_back(&output);
-
-    const auto & order = pool->lanesByBoundary();
-    for (size_t position = 0; position < order.size(); ++position)
-        boundary_position[order[position]] = position;
 }
 
 void MergeTreeInOrderSliceRouter::initialize()
@@ -148,58 +139,68 @@ void MergeTreeInOrderSliceRouter::consumeInput(size_t source)
         return;
 
     auto & lane = lanes[assignment->lane];
-    auto & slice = lane.slices.at(assignment->first_mark);
+
+    /// The merge finished the lane while the slice was being read: nothing waits for its rows.
+    if (lane.finished)
+    {
+        if (slice_ended)
+        {
+            input.setNotNeeded();
+            assignment.reset();
+        }
+        return;
+    }
+
+    auto slice = lane.slices.find(assignment->first_mark);
+    if (slice == lane.slices.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Slice starting at mark {} of lane {} is not issued", assignment->first_mark, assignment->lane);
 
     if (!slice_ended)
     {
         assignment->rows_read += chunk.getNumRows();
-        lane.buffered_rows += chunk.getNumRows();
-        slice.chunks.push_back(std::move(chunk));
+        slice->second.chunks.push_back(std::move(chunk));
         return;
     }
 
-    slice.finished = true;
+    slice->second.finished = true;
+    if (slice->second.chunks.empty())
+        dropSlice(assignment->lane, slice);
     input.setNotNeeded();
 
-    /// Most rows of the slice were filtered out: the lane is bound by reading, not by merging.
-    /// One miss on the first, tiny slice of a lane is weak evidence, so looking into other lanes
-    /// starts with the second miss.
+    /// Most rows of the slice were filtered out: reading is the bottleneck, not merging.
     if (assignment->rows_read * 4 < assignment->rows_in_marks)
-    {
         ++misses;
-        speculation_open = misses >= 2;
-        if (lane.activated)
-            lane.max_sources = std::min(lane.max_sources * 2, assignments.size());
-    }
 
     assignment.reset();
 }
 
-MergeTreeInOrderSliceRouter::SliceBuffer * MergeTreeInOrderSliceRouter::headSliceWithData(size_t lane)
+void MergeTreeInOrderSliceRouter::dropSlice(size_t lane, SliceBuffers::iterator slice)
 {
-    auto & slices = lanes[lane].slices;
-    while (!slices.empty() && slices.begin()->second.finished && slices.begin()->second.chunks.empty())
-        slices.erase(slices.begin());
+    lanes[lane].slices.erase(slice);
+    --issued_slices;
+}
 
-    if (slices.empty() || slices.begin()->second.chunks.empty())
-        return nullptr;
-
-    return &slices.begin()->second;
+void MergeTreeInOrderSliceRouter::finishLane(size_t lane_idx)
+{
+    auto & lane = lanes[lane_idx];
+    lane.finished = true;
+    ++num_finished_lanes;
+    issued_slices -= lane.slices.size();
+    lane.slices.clear();
+    pool->finishLane(lane_idx);
 }
 
 void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
 {
     auto & lane = lanes[lane_idx];
     auto & output = *lane_outputs[lane_idx];
-    lane.starving = false;
+    lane.wants_data = false;
     if (lane.finished)
         return;
 
     if (output.isFinished())
     {
-        lane.finished = true;
-        ++num_finished_lanes;
-        pool->releaseLaneReaders(lane_idx);
+        finishLane(lane_idx);
         return;
     }
 
@@ -213,12 +214,14 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
         return;
     }
 
-    if (SliceBuffer * slice = headSliceWithData(lane_idx))
+    /// Rows leave a lane through its first issued slice only, so the lane stays in mark order.
+    auto head = lane.slices.begin();
+    if (head != lane.slices.end() && !head->second.chunks.empty())
     {
-        Chunk chunk = std::move(slice->chunks.front());
-        slice->chunks.pop_front();
-        lane.buffered_rows -= chunk.getNumRows();
-        lane.delivered_rows += chunk.getNumRows();
+        Chunk chunk = std::move(head->second.chunks.front());
+        head->second.chunks.pop_front();
+        if (head->second.finished && head->second.chunks.empty())
+            dropSlice(lane_idx, head);
         output.push(std::move(chunk));
         return;
     }
@@ -226,160 +229,83 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
     if (lane.slices.empty() && !pool->laneHasUnreadMarks(lane_idx))
     {
         output.finish();
-        lane.finished = true;
-        ++num_finished_lanes;
-        pool->releaseLaneReaders(lane_idx);
+        finishLane(lane_idx);
         return;
     }
 
-    /// The merge waits for this lane and nothing is ready for it.
-    lane.activated = true;
-    lane.starving = true;
+    lane.wants_data = true;
 }
 
-bool MergeTreeInOrderSliceRouter::laneWantsMore(size_t lane) const
+size_t MergeTreeInOrderSliceRouter::readAheadDepth() const
 {
-    /// Read ahead only while the consumer accepts rows, like a plain source that cannot read its next
-    /// block before the previous one was pulled. With buffering downstream this still reads ahead one
-    /// buffer per lane; without it, a lane the merge is not asking for is left alone.
-    return lanes[lane].activated && !lanes[lane].finished && lane_outputs[lane]->canPush()
-        && lanes[lane].buffered_rows < buffer_budget_rows;
+    if (misses == 0)
+        return 1;
+    return std::min(assignments.size(), size_t(2) << std::min<size_t>(misses - 1, 16));
 }
 
-size_t MergeTreeInOrderSliceRouter::sourcesOf(size_t lane) const
+std::optional<size_t> MergeTreeInOrderSliceRouter::pickIdleSource(size_t lane) const
 {
-    size_t count = 0;
-    for (size_t source = 0; source < assignments.size(); ++source)
-        if (pool->sourceLane(source) == lane)
-            ++count;
-    return count;
-}
-
-size_t MergeTreeInOrderSliceRouter::speculativeSlicesInFlight() const
-{
-    size_t count = 0;
-    for (const auto & assignment : assignments)
-        if (assignment && !lanes[assignment->lane].activated)
-            ++count;
-    return count;
-}
-
-bool MergeTreeInOrderSliceRouter::coverageAllows(size_t lane) const
-{
-    if (limit == 0)
-        return true;
-
-    /// Rows held before the lane's boundary already satisfy the LIMIT: the lane is not going to be needed.
-    size_t rows_before = 0;
-    for (size_t other : pool->lanesByBoundary())
-    {
-        if (other == lane)
-            break;
-        rows_before += lanes[other].delivered_rows + lanes[other].buffered_rows;
-    }
-    return rows_before < limit;
-}
-
-std::optional<size_t> MergeTreeInOrderSliceRouter::pickIdleSource(bool allow_rebinding) const
-{
-    std::optional<size_t> victim;
-    auto victim_rank = [this](size_t source)
-    {
-        size_t lane = *pool->sourceLane(source);
-        return std::make_pair(!lanes[lane].activated, boundary_position[lane]);
-    };
-
+    /// A source that read the lane last still holds its readers, so it continues the lane for free.
+    std::optional<size_t> idle;
     for (size_t source = 0; source < assignments.size(); ++source)
     {
         if (assignments[source])
             continue;
-
-        auto lane = pool->sourceLane(source);
-        if (!lane || !pool->laneHasUnreadMarks(*lane))
+        if (pool->lastTaskLane(source) == lane)
             return source;
-
-        /// Idle but bound to a lane that does not want to be read right now. Prefer taking it from a lane
-        /// the merge never asked for, then from the lane needed last.
-        if (allow_rebinding && (!victim || victim_rank(source) > victim_rank(*victim)))
-            victim = source;
+        if (!idle)
+            idle = source;
     }
-    return victim;
+    return idle;
 }
 
 void MergeTreeInOrderSliceRouter::assignSlice(size_t source, size_t lane_idx)
 {
-    auto description = pool->assignSlice(source);
+    auto description = pool->assignSlice(source, lane_idx);
 
-    auto & lane = lanes[lane_idx];
-    auto [it, inserted] = lane.slices.try_emplace(description.first_mark);
+    auto [it, inserted] = lanes[lane_idx].slices.try_emplace(description.first_mark);
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Slice starting at mark {} of lane {} was assigned twice", description.first_mark, lane_idx);
 
-    lane.touched = true;
+    ++issued_slices;
     assignments[source] = Assignment{.lane = lane_idx, .first_mark = description.first_mark, .rows_in_marks = description.rows};
     source_inputs[source]->setNeeded();
 }
 
 void MergeTreeInOrderSliceRouter::scheduleSlices()
 {
-    /// Sources continue the lane they are bound to.
-    for (size_t source = 0; source < assignments.size(); ++source)
+    /// The lane the merge is blocked on is read whatever the read-ahead depth: those rows are never waste.
+    bool merge_waits = false;
+    for (size_t lane = 0; lane < lanes.size(); ++lane)
     {
-        if (assignments[source])
+        if (!lanes[lane].wants_data)
             continue;
 
-        auto lane = pool->sourceLane(source);
-        if (lane && pool->laneHasUnreadMarks(*lane) && laneWantsMore(*lane))
-            assignSlice(source, *lane);
-    }
-
-    /// A lane the merge is blocked on gets a source before any lane reads ahead, even if that means
-    /// taking the source from a lane that is merely reading ahead.
-    for (size_t lane : pool->lanesByBoundary())
-    {
-        if (!lanes[lane].starving || lanes[lane].finished || !pool->laneHasUnreadMarks(lane) || sourcesOf(lane) > 0)
+        merge_waits = true;
+        if (!lanes[lane].slices.empty() || !pool->laneHasUnreadMarks(lane))
             continue;
 
-        auto source = pickIdleSource(/*allow_rebinding=*/ true);
+        auto source = pickIdleSource(lane);
         if (!source)
             return;
-
-        pool->bindSource(*source, lane);
         assignSlice(*source, lane);
     }
 
-    /// Lanes the merge asked for get more sources, up to their cap, in the order the merge needs them.
-    for (size_t lane : pool->lanesByBoundary())
-    {
-        while (laneWantsMore(lane) && pool->laneHasUnreadMarks(lane) && sourcesOf(lane) < lanes[lane].max_sources)
-        {
-            auto source = pickIdleSource(/*allow_rebinding=*/ true);
-            if (!source)
-                return;
-
-            pool->bindSource(*source, lane);
-            assignSlice(*source, lane);
-        }
-    }
-
-    if (!speculation_open)
+    if (!merge_waits)
         return;
 
-    /// Untouched lanes get one slice each so that their first rows are ready when the merge reaches them.
-    for (size_t lane : pool->lanesByBoundary())
+    /// Read ahead in the order the merge is going to need the data.
+    const size_t depth = readAheadDepth();
+    while (issued_slices < depth)
     {
-        if (lanes[lane].touched || lanes[lane].finished)
-            continue;
-
-        if (speculativeSlicesInFlight() >= assignments.size() || !coverageAllows(lane))
+        auto lane = pool->nextLane();
+        if (!lane)
             return;
 
-        auto source = pickIdleSource(/*allow_rebinding=*/ false);
+        auto source = pickIdleSource(*lane);
         if (!source)
             return;
-
-        pool->bindSource(*source, lane);
-        assignSlice(*source, lane);
+        assignSlice(*source, *lane);
     }
 }
 

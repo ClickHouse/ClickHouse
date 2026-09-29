@@ -10,7 +10,7 @@ SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
 SET materialize_statistics_on_insert = 0;
 SET max_block_size = 1024;
--- Slices of 8 marks, so that a part is read as several slices and segments.
+-- Slices of at most 4 marks, so that a part is read as several slices.
 SET merge_tree_min_rows_for_concurrent_read = 512;
 SET merge_tree_min_bytes_for_concurrent_read = 1;
 

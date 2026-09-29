@@ -1155,8 +1155,7 @@ Pipe ReadFromMergeTree::readInOrderSliced(
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    pipe.addTransform(std::make_shared<MergeTreeInOrderSliceRouter>(
-        pipe.getSharedHeader(), pool, virtual_row_conversion, read_limit, block_size.max_block_size_rows));
+    pipe.addTransform(std::make_shared<MergeTreeInOrderSliceRouter>(pipe.getSharedHeader(), pool, virtual_row_conversion));
     return pipe;
 }
 

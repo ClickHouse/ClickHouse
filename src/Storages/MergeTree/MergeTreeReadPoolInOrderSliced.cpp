@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrderSliced.h>
 
 #include <algorithm>
-#include <numeric>
 
 namespace DB
 {
@@ -35,8 +34,8 @@ MarkRanges cutMarks(MarkRanges & from, size_t max_marks)
 /// columns, so only a few are kept.
 constexpr size_t max_parked_readers_per_lane = 2;
 
-/// Lanes without a known boundary go last.
-int compareBoundaries(const Block & lhs, const Block & rhs)
+/// Keys that are not known (empty blocks) go last.
+int compareKeys(const Block & lhs, const Block & rhs)
 {
     if (lhs.columns() == 0 || rhs.columns() == 0)
         return static_cast<int>(lhs.columns() == 0) - static_cast<int>(rhs.columns() == 0);
@@ -50,6 +49,12 @@ int compareBoundaries(const Block & lhs, const Block & rhs)
     return 0;
 }
 
+}
+
+bool MergeTreeReadPoolInOrderSliced::QueuedLaneLess::operator()(const QueuedLane & lhs, const QueuedLane & rhs) const
+{
+    const int result = compareKeys(lhs.key, rhs.key);
+    return result != 0 ? result < 0 : lhs.lane < rhs.lane;
 }
 
 MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
@@ -86,33 +91,29 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     , updater(std::move(updater_))
     , num_sources(num_sources_)
     , max_slice_marks(std::max<size_t>(1, pool_settings.min_marks_for_concurrent_read))
-    , bound_lane(num_sources_)
+    , primary_key_header(primary_key_header_)
     , last_task_lane(num_sources_)
     , pending(num_sources_)
 {
-    lanes.reserve(parts_ranges.size());
-    boundaries.reserve(parts_ranges.size());
-    for (size_t lane = 0; lane < parts_ranges.size(); ++lane)
+    std::lock_guard lock(mutex);
+
+    const size_t num_lanes = parts_ranges.size();
+    lanes.reserve(num_lanes);
+    boundaries.reserve(num_lanes);
+    queue_position.resize(num_lanes);
+    for (size_t lane = 0; lane < num_lanes; ++lane)
     {
         lanes.push_back(Lane{.unread = parts_ranges[lane].ranges});
-        boundaries.push_back(buildBoundary(lane, primary_key_header_));
+        boundaries.push_back(lanes.back().unread.empty() ? Block{} : keyAtMark(lane, lanes.back().unread.front().begin));
+        enqueueLane(lane);
     }
-
-    lanes_by_boundary.resize(lanes.size());
-    std::iota(lanes_by_boundary.begin(), lanes_by_boundary.end(), 0);
-    std::stable_sort(lanes_by_boundary.begin(), lanes_by_boundary.end(), [this](size_t lhs, size_t rhs)
-    {
-        return compareBoundaries(boundaries[lhs], boundaries[rhs]) < 0;
-    });
 }
 
-Block MergeTreeReadPoolInOrderSliced::buildBoundary(size_t lane, const Block & primary_key_header) const
+Block MergeTreeReadPoolInOrderSliced::keyAtMark(size_t lane, size_t mark) const
 {
-    const auto & part = parts_ranges[lane];
-    if (primary_key_header.columns() == 0 || part.ranges.empty())
+    if (primary_key_header.columns() == 0)
         return {};
 
-    const size_t mark = part.ranges.front().begin;
     const auto & index = per_part_infos[lane]->data_part_info->getIndexPtr();
     if (index->size() < primary_key_header.columns())
         return {};
@@ -137,16 +138,45 @@ MarkRanges MergeTreeReadPoolInOrderSliced::readerExtent(size_t lane, size_t firs
     return extent;
 }
 
+void MergeTreeReadPoolInOrderSliced::enqueueLane(size_t lane)
+{
+    const auto & unread = lanes[lane].unread;
+    if (unread.empty())
+        return;
+
+    auto [it, inserted] = queue.insert(QueuedLane{.key = keyAtMark(lane, unread.front().begin), .lane = lane});
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lane {} is already queued", lane);
+    queue_position[lane] = it;
+}
+
+void MergeTreeReadPoolInOrderSliced::dequeueLane(size_t lane)
+{
+    if (auto & position = queue_position[lane])
+    {
+        queue.erase(*position);
+        position.reset();
+    }
+}
+
+std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLane() const
+{
+    std::lock_guard lock(mutex);
+    if (queue.empty())
+        return std::nullopt;
+    return queue.begin()->lane;
+}
+
 bool MergeTreeReadPoolInOrderSliced::laneHasUnreadMarks(size_t lane) const
 {
     std::lock_guard lock(mutex);
     return !lanes[lane].unread.empty();
 }
 
-std::optional<size_t> MergeTreeReadPoolInOrderSliced::sourceLane(size_t source) const
+std::optional<size_t> MergeTreeReadPoolInOrderSliced::lastTaskLane(size_t source) const
 {
     std::lock_guard lock(mutex);
-    return bound_lane[source];
+    return last_task_lane[source];
 }
 
 bool MergeTreeReadPoolInOrderSliced::hasPendingSlice(size_t source) const
@@ -155,9 +185,11 @@ bool MergeTreeReadPoolInOrderSliced::hasPendingSlice(size_t source) const
     return pending[source].has_value();
 }
 
-void MergeTreeReadPoolInOrderSliced::releaseLaneReaders(size_t lane)
+void MergeTreeReadPoolInOrderSliced::finishLane(size_t lane)
 {
     std::lock_guard lock(mutex);
+    dequeueLane(lane);
+    lanes[lane].unread.clear();
     lanes[lane].parked_readers.clear();
 }
 
@@ -173,43 +205,32 @@ bool MergeTreeReadPoolInOrderSliced::isFinished() const
     return finished;
 }
 
-void MergeTreeReadPoolInOrderSliced::bindSource(size_t source, size_t lane)
-{
-    std::lock_guard lock(mutex);
-
-    if (pending[source])
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source {} has a slice assigned and cannot be bound to another lane", source);
-
-    bound_lane[source] = lane;
-}
-
-MergeTreeReadPoolInOrderSliced::SliceDescription MergeTreeReadPoolInOrderSliced::assignSlice(size_t source)
+MergeTreeReadPoolInOrderSliced::SliceDescription MergeTreeReadPoolInOrderSliced::assignSlice(size_t source, size_t lane)
 {
     std::lock_guard lock(mutex);
 
     if (finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign a slice to source {}: the pool is finished", source);
-
-    const auto & lane = bound_lane[source];
-    if (!lane)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source {} is not bound to a lane", source);
     if (pending[source])
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Source {} already has a slice assigned", source);
 
-    auto & lane_state = lanes[*lane];
+    auto & lane_state = lanes[lane];
     if (lane_state.unread.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lane {} has no marks left", *lane);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lane {} has no marks left", lane);
 
+    dequeueLane(lane);
     const size_t ramp_marks = size_t(1) << std::min<size_t>(lane_state.slices_cut, 16);
     MarkRanges ranges = cutMarks(lane_state.unread, std::min(max_slice_marks, ramp_marks));
     ++lane_state.slices_cut;
+    enqueueLane(lane);
 
     SliceDescription description{
+        .lane = lane,
         .first_mark = ranges.front().begin,
-        .rows = per_part_infos[*lane]->data_part_info->getIndexGranularity().getRowsCountInRanges(ranges),
+        .rows = per_part_infos[lane]->data_part_info->getIndexGranularity().getRowsCountInRanges(ranges),
     };
 
-    pending[source] = PendingSlice{.ranges = std::move(ranges)};
+    pending[source] = PendingSlice{.lane = lane, .ranges = std::move(ranges)};
     return description;
 }
 
@@ -226,10 +247,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
         if (!slice)
             return nullptr;
 
-        if (!bound_lane[task_idx])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source {} has a slice assigned but is not bound to a lane", task_idx);
-
-        lane = *bound_lane[task_idx];
+        lane = slice->lane;
         info = per_part_infos[lane];
         ranges = std::move(slice->ranges);
         slice.reset();

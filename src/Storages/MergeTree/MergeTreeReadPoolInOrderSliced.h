@@ -4,6 +4,7 @@
 
 #include <mutex>
 #include <optional>
+#include <set>
 
 namespace DB
 {
@@ -11,13 +12,16 @@ namespace DB
 /// Read pool for reading in the order of the primary key with more parallelism than one thread per part.
 ///
 /// Every part is a lane. Slices are cut from the front of the lane's unread marks, and a slice is one
-/// MergeTreeReadTask. A source is bound to a lane and takes its next slice whenever it finishes one, so a
-/// lane read by a single source is read sequentially with one set of readers and one range request on
-/// remote storage. Several sources bound to the same lane take its slices in turn, and
-/// MergeTreeInOrderSliceRouter reassembles them in mark order.
+/// MergeTreeReadTask. Lanes with unread marks are queued by the primary key at their next unread mark, so
+/// the head of the queue is the slice the merge is going to need next, whichever part it belongs to. The
+/// slices of a lane start with one mark and double up to `min_marks_for_concurrent_read`: the first rows
+/// of a part arrive after one granule, and a lane the merge stays on is read in large slices.
 ///
-/// The pool does no scheduling of its own. The router decides which lane a source reads next and
-/// calls bindSource / assignSlice from its prepare; getTask then hands the assigned slice to the source.
+/// The pool does no scheduling of its own. MergeTreeInOrderSliceRouter decides in its prepare which
+/// lanes are read and how far ahead of the merge, and calls assignSlice for an idle source; getTask then
+/// hands the slice to that source, and the router reassembles the slices of a lane in mark order. Readers
+/// follow the lane, not the source: a source that switches lanes leaves its readers parked in the lane
+/// for whichever source reads it next.
 class MergeTreeReadPoolInOrderSliced : public MergeTreeReadPoolBase
 {
 public:
@@ -46,6 +50,7 @@ public:
 
     struct SliceDescription
     {
+        size_t lane;
         size_t first_mark;
         /// Rows in the slice before any filtering, to tell a slice whose rows were mostly filtered out.
         size_t rows;
@@ -54,30 +59,28 @@ public:
     size_t numSources() const { return num_sources; }
     size_t numLanes() const { return boundaries.size(); }
 
-    /// Lane indexes in the order the merge will need them: by the primary key value at the first mark.
-    const std::vector<size_t> & lanesByBoundary() const { return lanes_by_boundary; }
-
     /// Primary key values at the first mark of the lane, one row; empty if the index has no value there.
     const Block & laneBoundary(size_t lane) const { return boundaries[lane]; }
+
+    /// The lane whose next unread mark has the smallest primary key: the lane the merge needs next among
+    /// the lanes that still have unread marks.
+    std::optional<size_t> nextLane() const;
 
     /// Marks of the lane not yet cut into a slice.
     bool laneHasUnreadMarks(size_t lane) const;
 
-    /// The lane the source takes its slices from.
-    std::optional<size_t> sourceLane(size_t source) const;
+    /// The lane of the last task the source got, i.e. the lane its current readers belong to.
+    std::optional<size_t> lastTaskLane(size_t source) const;
 
-    /// Makes the source take its next slices from the lane. The readers a source used for another lane
-    /// are parked in that lane and picked up by whichever source reads it next.
-    void bindSource(size_t source, size_t lane);
-
-    /// Cuts the next slice of the source's lane; getTask of that source returns it.
-    SliceDescription assignSlice(size_t source);
+    /// Cuts the next slice of the lane and hands it to the source; getTask of that source returns it.
+    SliceDescription assignSlice(size_t source, size_t lane);
 
     /// True between assignSlice and the getTask call that takes the slice.
     bool hasPendingSlice(size_t source) const;
 
-    /// Drops the readers parked in a lane that is not going to be read anymore.
-    void releaseLaneReaders(size_t lane);
+    /// The lane is not going to be read anymore: its unread marks leave the queue and its parked readers
+    /// are dropped.
+    void finishLane(size_t lane);
 
     /// No slice is going to be assigned anymore. A source that finds no task after this ends its stream
     /// instead of waiting for the router.
@@ -96,26 +99,45 @@ private:
 
     struct PendingSlice
     {
+        size_t lane;
         MarkRanges ranges;
     };
 
-    Block buildBoundary(size_t lane, const Block & primary_key_header) const;
+    /// A lane with unread marks, ordered by the primary key at its next unread mark.
+    struct QueuedLane
+    {
+        Block key;
+        size_t lane;
+    };
+
+    struct QueuedLaneLess
+    {
+        bool operator()(const QueuedLane & lhs, const QueuedLane & rhs) const;
+    };
+
+    using LaneQueue = std::set<QueuedLane, QueuedLaneLess>;
+
+    /// Primary key values at the mark of the lane, one row; empty if the index has no value there.
+    Block keyAtMark(size_t lane, size_t mark) const;
     /// Marks of the lane from first_mark to its end: the extent of readers created for a slice, so that
     /// the same readers can continue with the following slices of the lane.
     MarkRanges readerExtent(size_t lane, size_t first_mark) const;
+    void enqueueLane(size_t lane) TSA_REQUIRES(mutex);
+    void dequeueLane(size_t lane) TSA_REQUIRES(mutex);
 
     const RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     const size_t num_sources;
     const size_t max_slice_marks;
+    const Block primary_key_header;
 
     /// Immutable after construction.
     std::vector<Block> boundaries;
-    std::vector<size_t> lanes_by_boundary;
 
     mutable std::mutex mutex;
     std::vector<Lane> lanes TSA_GUARDED_BY(mutex);
-    /// The lane each source takes its slices from.
-    std::vector<std::optional<size_t>> bound_lane TSA_GUARDED_BY(mutex);
+    LaneQueue queue TSA_GUARDED_BY(mutex);
+    /// Where each lane with unread marks sits in the queue.
+    std::vector<std::optional<LaneQueue::iterator>> queue_position TSA_GUARDED_BY(mutex);
     /// The lane of the last task each source got, i.e. the lane its current readers belong to.
     std::vector<std::optional<size_t>> last_task_lane TSA_GUARDED_BY(mutex);
     std::vector<std::optional<PendingSlice>> pending TSA_GUARDED_BY(mutex);
