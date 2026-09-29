@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
 #include <base/getL2CacheSize.h>
+#include <Common/CacheLine.h>
 #include <Common/Exception.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -25,8 +26,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
-
-static constexpr UInt64 BYTES_IN_CACHE_LINE = 64;
 
 namespace
 {
@@ -163,7 +162,7 @@ size_t RowDataStore::cacheMissReduction(const RowLayout & layout)
     size_t columnar_cache_lines = 0;
     for (const auto & field : layout)
         columnar_cache_lines += field.is_nullable ? 2 : 1;
-    const size_t row_store_cache_lines = (rowLengthOf(layout) + BYTES_IN_CACHE_LINE - 1) / BYTES_IN_CACHE_LINE;
+    const size_t row_store_cache_lines = (rowLengthOf(layout) + CH_CACHE_LINE_SIZE - 1) / CH_CACHE_LINE_SIZE;
     return columnar_cache_lines - row_store_cache_lines;
 }
 
@@ -243,7 +242,7 @@ size_t rowStoreBatchSize(size_t row_length)
 {
     chassert(row_length != 0);
     const size_t batch_bytes = std::clamp<size_t>(getL2CacheSize() / 4, MIN_BYTES_IN_BATCH, MAX_BYTES_IN_BATCH);
-    return std::max<size_t>(1, batch_bytes / std::max<size_t>(row_length, BYTES_IN_CACHE_LINE));
+    return std::max<size_t>(1, batch_bytes / std::max<size_t>(row_length, CH_CACHE_LINE_SIZE));
 }
 
 bool isRowStorageUseful(const ColumnPtr & column)
