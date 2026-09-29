@@ -104,6 +104,8 @@ public:
     /// `View`, `ObjectStorageCluster`, etc.) at the top level.
     bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
+    const String & getSourceDatabaseNameOrRegexp() const { return database_name_or_regexp.source_database_name_or_regexp; }
+
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
         const String & source_database_name_or_regexp,
