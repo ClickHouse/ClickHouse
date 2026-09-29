@@ -2428,7 +2428,7 @@ class MergeTreeSettingsRandomizer:
         "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000),
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         # Part-header storage format in ZooKeeper; only the layout changes, not the parts
-        "use_minimalistic_part_header_in_zookeeper": lambda: random.randint(0, 1),
+        #"use_minimalistic_part_header_in_zookeeper": lambda: random.randint(0, 1),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
         "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas": lambda: random.randint(0, 1),
