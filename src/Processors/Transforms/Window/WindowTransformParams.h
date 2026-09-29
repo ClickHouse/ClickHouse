@@ -22,6 +22,7 @@ struct WindowTransformParams
     const WindowDescription window_description;
     const std::vector<size_t> partition_by_indices;
     const std::vector<size_t> order_by_indices;
+    const std::vector<size_t> peer_key_indices;
     const std::vector<bool> should_materialize;
     const RangeOffsetComparator range_offset_comparator;
 
