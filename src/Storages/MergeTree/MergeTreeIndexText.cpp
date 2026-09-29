@@ -1859,6 +1859,7 @@ bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
     /// Rarely repeating values gain nothing, while `ranges` costs O(dictionary), and the dictionary is per block.
     static constexpr size_t min_documents_per_value = 8;
     static constexpr size_t max_dictionary_size = 65536;
+    static constexpr size_t max_cached_tokens = 1 << 23;
     const IColumnUnique & dictionary = column_low_cardinality->getDictionary();
     if (dictionary.size() > max_dictionary_size
         || dictionary.size() * min_documents_per_value > elements_begin(start_row + rows_read) - elements_begin(start_row))
@@ -1885,10 +1886,15 @@ bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
                 forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token_start, size_t token_length)
                 {
                     addToken({token_start, token_length}, token_position++, context);
-                    builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
+                    if (builders.size() < max_cached_tokens)
+                        builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
                     return false;
                 });
                 end = builders.size();
+
+                /// A full `builders` may lack tokens of this value, so it is tokenized again at its next occurrence.
+                if (end == max_cached_tokens)
+                    begin = end = not_seen;
 
                 /// Growing the map moves the builders.
                 if (tokens_map.getBufferSizeInCells() != buffer_size)
