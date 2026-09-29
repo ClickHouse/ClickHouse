@@ -25,7 +25,7 @@ protected:
     virtual std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const = 0;
 
     /// Inserts a rule-produced physical expression into its group and appends it to `result` when
-    /// it was actually inserted (a structural duplicate is dropped). Marks the expression with
+    /// it was actually inserted (a fully-equal duplicate is dropped). Marks the expression with
     /// this rule so it is not re-applied to its own product.
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
         Memo & memo, std::vector<GroupExpressionPtr> & result) const;

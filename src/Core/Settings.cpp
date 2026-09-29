@@ -10397,6 +10397,12 @@ Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New experimental setting."}) \
+    DECLARE(Bool, cascades_memo_deduplication, false, R"(
+Deduplicate Cascades memo groups on logical expression identity: a plan subtree, or a stage split off by a rule, that computes the same relation as a group already in the memo joins that group instead of creating a new one, so it is explored and costed once. Repeated subqueries, self-joins and re-fired two-stage splits are the cases that benefit.
+Only relation-defining state participates in the identity, so two subtrees differing in a physical knob (thread counts, block sizes, spill settings) share one group and become costed alternatives inside it. A step type, or a step instance, without a logical digest never merges - the fail-closed direction, where a missed deduplication only costs search effort.
+Takes effect only together with `make_distributed_plan = 1` and `enable_cascades_optimizer = 1`. Experimental.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting."}) \
     DECLARE(Bool, cascades_aggregation_pushdown, true, R"(
 Consider pushing partial aggregation below a join (eager aggregation) as a cost-based alternative in the Cascades optimizer.
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.

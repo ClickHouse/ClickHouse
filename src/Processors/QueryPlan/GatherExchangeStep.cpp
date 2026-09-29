@@ -14,4 +14,22 @@ std::pair<QueryPlanStepPtr, QueryPlanStepPtr> GatherExchangeStep::createSinkAndS
     return {std::move(sink), std::move(source)};
 }
 
+namespace
+{
+/// Full digest tags for `GatherExchangeStep`, numbered after the base's; never reused.
+enum GatherExchangeStepIdentityTag : UInt64
+{
+    SOURCE_BUCKET_COUNT_TAG = LogicalExchangeStep::FIRST_DERIVED_FULL_DIGEST_TAG,
+};
+}
+
+void GatherExchangeStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    writeExchangeBaseFullDigest(writer);
+
+    /// How many buckets are gathered into one; `makeDistributed` prices and wires the exchange on it.
+    /// `getResultBucketCount()` needs no tag: it is the constant 1 for this class.
+    writer.addVarUInt(SOURCE_BUCKET_COUNT_TAG, source_bucket_count);
+}
+
 }

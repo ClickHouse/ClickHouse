@@ -74,7 +74,9 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
     GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(std::move(swapped_join_step));
     expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
     expression_with_swapped_inputs->setApplied(*this, {});  /// Mark the swapped join; otherwise the rule would keep swapping it back.
-    if (!memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs))
+    /// Through the memo, so a swapped join that is logically equal to an expression of ANOTHER group
+    /// is counted as a duplicate-group detection instead of passing unnoticed.
+    if (!memo.addLogicalExpressionToGroup(expression->group_id, expression_with_swapped_inputs))
         return {};
 
     return {expression_with_swapped_inputs};

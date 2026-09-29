@@ -8,6 +8,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <fmt/format.h>
 #include <algorithm>
 #include <unordered_map>
@@ -41,6 +42,11 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
 
     input_headers[idx] = input_header;
     updateOutputHeader();
+}
+
+void IQueryPlanStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    writer.addWholeObjectWitness(this);
 }
 
 void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)

@@ -39,6 +39,8 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
+class StepDigestWriter;
+
 using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
@@ -82,6 +84,26 @@ public:
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
+
+    /// Full digest: the step's whole content, a total obligation of every step type. The default
+    /// writes one whole-object witness of `this` - pointer identity expressed inside the digest
+    /// mechanism, O(1) and never throwing, so two distinct instances are never judged equal without
+    /// a field audit. An override writes canonical content after a complete field audit: the wire
+    /// encoding (`StepDigestWriter::addStepWireEncoding`, guarded per instance, since it can throw)
+    /// plus the audited non-wire fields, falling back to the whole-object witness on an instance the
+    /// guard rejects. Overrides are monotone: witness -> content only ever adds merges.
+    /// Must write the same tags in the same order every call.
+    /// See Processors/QueryPlan/StepIdentity.h.
+    virtual void writeFullDigest(StepDigestWriter & writer) const;
+
+    /// Logical digest: the relation-defining fields only (same rows, same header, given the same
+    /// inputs). Keys future memo-wide group deduplication, so it is opt-in per audited step type
+    /// and fail-closed per instance. Physical knobs (threads, block sizes, buffering, spill) are
+    /// excluded by design - variants coexist in one group as costed alternatives.
+    virtual bool hasLogicalDigest() const { return false; }
+    /// Writes the whole logical content - the logical digest embeds no wire bytes. Called only when
+    /// `hasLogicalDigest()`; must write the same tags in the same order every time.
+    virtual void writeLogicalDigest(StepDigestWriter & /*writer*/) const {}
 
     virtual QueryPlanStepPtr clone() const;
 

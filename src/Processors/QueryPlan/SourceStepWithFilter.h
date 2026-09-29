@@ -68,6 +68,9 @@ public:
     virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
 
+    /// Filters added but not yet folded into `filter_actions_dag` by `applyFilters`.
+    bool hasPendingFilters() const { return !filter_dags.empty(); }
+
     /// TopN dynamic filtering (`tryOptimizeTopK`): a source that can filter rows and skip data
     /// using the running threshold of the query's top-K heap (e.g. a Parquet reader) opts in by
     /// overriding both. `supportsTopKDynamicFilter` receives the resolved sort column (in terms of

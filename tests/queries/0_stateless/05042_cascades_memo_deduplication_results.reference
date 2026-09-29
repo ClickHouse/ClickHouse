@@ -1,0 +1,16 @@
+-- self-join
+500	4502000
+500	4502000
+-- the same aggregated subquery on both sides of a join
+1000	99990000
+1000	99990000
+-- equal UNION ALL branches
+2000	99990000
+2000	99990000
+-- top-N over a repeated aggregation
+999	54990
+998	54980
+997	54970
+999	54990
+998	54980
+997	54970

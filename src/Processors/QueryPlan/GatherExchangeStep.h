@@ -42,6 +42,8 @@ public:
 
     std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
 
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
 private:
     void updateOutputHeader() override
     {

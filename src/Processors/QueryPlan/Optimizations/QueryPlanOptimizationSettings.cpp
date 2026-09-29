@@ -23,6 +23,7 @@ namespace Setting
     extern const SettingsBool allow_window_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
+    extern const SettingsBool cascades_memo_deduplication;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -324,6 +325,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
+    cascades_memo_deduplication = from[Setting::cascades_memo_deduplication];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
