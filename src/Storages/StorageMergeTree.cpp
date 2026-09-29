@@ -3195,10 +3195,7 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
-        if (deduplication_log)
-        {
-            deduplication_log->dropPart(part->info);
-        }
+        dropDeduplicationLogParts({part});
 
         /// Need to destroy part objects before clearing them from filesystem.
         part.reset();
