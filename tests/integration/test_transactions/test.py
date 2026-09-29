@@ -1,4 +1,5 @@
 import pytest
+from kazoo.security import OPEN_ACL_UNSAFE, make_digest_acl
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
@@ -150,7 +151,7 @@ def test_startup_fails_on_other_keeper_errors(start_cluster):
     # Only an unavailable Keeper is tolerated at startup; any other Keeper error still keeps a server
     # with transactions enabled from starting. A persistent node with a child where this replica's
     # ephemeral `_active` node belongs makes TransactionSession::createActiveNode fail with
-    # ZNODEEXISTS, which is not a hardware error.
+    # ZNODEEXISTS.
     zk = cluster.get_kazoo_client("zoo1")
     replicas = "/clickhouse/txn/replicas"
     zk.sync(replicas)
@@ -166,6 +167,26 @@ def test_startup_fails_on_other_keeper_errors(start_cluster):
     finally:
         if zk.exists(active):
             zk.delete(active, recursive=True)
+        zk.stop()
+        zk.close()
+        if node.get_process_pid("clickhouse") is None:
+            node.start_clickhouse()
+
+
+def test_startup_fails_when_keeper_denies_access(start_cluster):
+    # Keeper denying access to the log (ZNOAUTH) is not an unavailable Keeper: credentials that do
+    # not match the log's ACL fail the same way on every retry, so the server must not start.
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.add_auth("digest", "txn_owner:secret")
+    log_path = "/clickhouse/txn/log"
+    try:
+        node.stop_clickhouse()
+        zk.set_acls(log_path, [make_digest_acl("txn_owner", "secret", all=True)])
+        node.start_clickhouse(expected_to_fail=True)
+        assert int(node.count_in_log(f"Not authenticated, path {log_path}")) >= 1
+        assert int(node.count_in_log("Cannot initialize the transaction log at startup")) == 0
+    finally:
+        zk.set_acls(log_path, OPEN_ACL_UNSAFE)
         zk.stop()
         zk.close()
         if node.get_process_pid("clickhouse") is None:

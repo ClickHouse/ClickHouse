@@ -3498,7 +3498,9 @@ try
             catch (const Coordination::Exception & e)
             {
                 /// An unavailable Keeper must not keep the server from starting; the next use retries.
-                if (!Coordination::isHardwareError(e.code))
+                using enum Coordination::Error;
+                if (e.code != ZCONNECTIONLOSS && e.code != ZSESSIONEXPIRED && e.code != ZOPERATIONTIMEOUT
+                    && e.code != ZOUTOFMEMORY)
                     throw;
                 tryLogCurrentException(log, "Cannot initialize the transaction log at startup");
             }
