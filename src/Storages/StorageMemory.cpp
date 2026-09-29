@@ -527,46 +527,18 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     /// Inserts commit under the same lock, so their blocks are either converted here or know about this `ALTER`.
     std::lock_guard lock(mutex);
 
-    if (params.isSettingsAlter())
-    {
-        auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
-        auto changed_settings = *memory_settings;
-        changed_settings.applyChanges(settings_changes.changes);
-        changed_settings.sanityCheck();
-
-        /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
-        /// the old data needs to be removed.
-        if (!(*memory_settings)[MemorySetting::max_bytes_to_keep] || (*memory_settings)[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
-            || !(*memory_settings)[MemorySetting::max_rows_to_keep] || (*memory_settings)[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep])
-        {
-            auto new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
-            while (!new_data->blocks.empty()
-                   && ((changed_settings[MemorySetting::max_bytes_to_keep] && new_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
-                       || (changed_settings[MemorySetting::max_rows_to_keep] && new_data->rows > changed_settings[MemorySetting::max_rows_to_keep])))
-            {
-                Block oldest_block = new_data->blocks.front();
-                UInt64 rows_to_remove = oldest_block.rows();
-                UInt64 bytes_to_remove = oldest_block.allocatedBytes();
-                if (new_data->bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
-                    || new_data->rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
-                {
-                    break; // stop - removing next block will put us under min_bytes / min_rows threshold
-                }
-
-                // delete old block from current storage table
-                new_data->rows -= rows_to_remove;
-                new_data->bytes -= bytes_to_remove;
-                new_data->blocks.erase(new_data->blocks.begin());
-            }
-
-            data.set(std::move(new_data));
-        }
-        *memory_settings = std::move(changed_settings);
-    }
-
-    /// The blocks are converted before `alterTable` commits the new definition, so that only the
+    /// The new settings and blocks are prepared before `alterTable` commits the new definition, so that only the
     /// publication remains after it. Without physical columns the `ALTER` is rejected by `alterTable`.
-    std::unique_ptr<BlocksWithCounts> converted_data;
+    std::optional<MemorySettings> changed_settings;
+    if (std::any_of(params.begin(), params.end(), [](const AlterCommand & command) { return command.isSettingsAlter(); }))
+    {
+        changed_settings.emplace(*memory_settings);
+        changed_settings->applyChanges(new_metadata.settings_changes->as<ASTSetQuery &>().changes);
+        changed_settings->sanityCheck();
+    }
+    const MemorySettings & new_settings = changed_settings ? *changed_settings : *memory_settings;
+
+    std::unique_ptr<BlocksWithCounts> new_data;
     ColumnChangesEntry column_changes_entry;
     const auto physical_columns = new_metadata.getColumns().getAllPhysical();
     if (!column_changes_of_alter.empty() && !physical_columns.empty())
@@ -575,25 +547,54 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         column_changes_entry.metadata_version = new_metadata.getMetadataVersion();
         column_changes_entry.changes = column_changes_of_alter;
 
-        converted_data = std::make_unique<BlocksWithCounts>(*(data.get()));
-        converted_data->bytes = 0;
-        for (auto & block : converted_data->blocks)
+        new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
+        new_data->bytes = 0;
+        for (auto & block : new_data->blocks)
         {
-            applyColumnChanges(block, column_changes_entry, (*memory_settings)[MemorySetting::compress]);
-            converted_data->bytes += block.allocatedBytes();
+            applyColumnChanges(block, column_changes_entry, new_settings[MemorySetting::compress]);
+            new_data->bytes += block.allocatedBytes();
         }
-        converted_data->columns_version = column_changes_entry.metadata_version;
+        new_data->columns_version = column_changes_entry.metadata_version;
         column_changes.reserve(column_changes.size() + 1);
+    }
+
+    /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
+    /// the old data needs to be removed.
+    if (changed_settings
+        && (!(*memory_settings)[MemorySetting::max_bytes_to_keep] || (*memory_settings)[MemorySetting::max_bytes_to_keep] > new_settings[MemorySetting::max_bytes_to_keep]
+            || !(*memory_settings)[MemorySetting::max_rows_to_keep] || (*memory_settings)[MemorySetting::max_rows_to_keep] > new_settings[MemorySetting::max_rows_to_keep]))
+    {
+        if (!new_data)
+            new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
+        while (!new_data->blocks.empty()
+               && ((new_settings[MemorySetting::max_bytes_to_keep] && new_data->bytes > new_settings[MemorySetting::max_bytes_to_keep])
+                   || (new_settings[MemorySetting::max_rows_to_keep] && new_data->rows > new_settings[MemorySetting::max_rows_to_keep])))
+        {
+            Block oldest_block = new_data->blocks.front();
+            UInt64 rows_to_remove = oldest_block.rows();
+            UInt64 bytes_to_remove = oldest_block.allocatedBytes();
+            if (new_data->bytes - bytes_to_remove < new_settings[MemorySetting::min_bytes_to_keep]
+                || new_data->rows - rows_to_remove < new_settings[MemorySetting::min_rows_to_keep])
+            {
+                break; // stop - removing next block will put us under min_bytes / min_rows threshold
+            }
+
+            // delete old block from current storage table
+            new_data->rows -= rows_to_remove;
+            new_data->bytes -= bytes_to_remove;
+            new_data->blocks.erase(new_data->blocks.begin());
+        }
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    chassert(converted_data || column_changes_of_alter.empty());
-    if (converted_data)
-    {
-        data.set(std::move(converted_data));
+    chassert(!column_changes_entry.changes.empty() || column_changes_of_alter.empty());
+    if (new_data)
+        data.set(std::move(new_data));
+    if (!column_changes_entry.changes.empty())
         column_changes.push_back(std::move(column_changes_entry));
-    }
+    if (changed_settings)
+        *memory_settings = std::move(*changed_settings);
     setInMemoryMetadata(new_metadata);
 }
 

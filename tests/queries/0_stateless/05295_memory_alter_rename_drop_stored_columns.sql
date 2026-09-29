@@ -126,6 +126,26 @@ SELECT 'compressed fill', count(), sum(b) FROM mem_compress_fill;
 SELECT 'compressed fill bytes', total_bytes < 100000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_compress_fill';
 DROP TABLE mem_compress_fill;
 
+-- A `MODIFY SETTING` in the same ALTER as other commands takes effect as well.
+DROP TABLE IF EXISTS mem_mixed_alter;
+CREATE TABLE mem_mixed_alter (a UInt64) ENGINE = Memory;
+INSERT INTO mem_mixed_alter SELECT number FROM numbers(100000) SETTINGS max_block_size = 100000;
+ALTER TABLE mem_mixed_alter ADD COLUMN b UInt64, DROP COLUMN a, MODIFY SETTING compress = 1;
+SELECT 'mixed alter', count(), sum(b) FROM mem_mixed_alter;
+SELECT 'mixed alter bytes', total_bytes < 100000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_mixed_alter';
+DROP TABLE mem_mixed_alter;
+
+-- A rejected ALTER does not apply its settings; an accepted one removes the oldest rows beyond `max_rows_to_keep`.
+CREATE TEMPORARY TABLE tmp_mixed (a UInt8, e UInt8 ALIAS 7) ENGINE = Memory;
+INSERT INTO tmp_mixed SELECT 1;
+INSERT INTO tmp_mixed SELECT 2;
+INSERT INTO tmp_mixed SELECT 3;
+ALTER TABLE tmp_mixed DROP COLUMN a, MODIFY SETTING max_rows_to_keep = 1; -- { serverError EMPTY_LIST_OF_COLUMNS_PASSED }
+SELECT 'rejected mixed alter', count(), sum(a) FROM tmp_mixed;
+ALTER TABLE tmp_mixed ADD COLUMN b UInt8, MODIFY SETTING max_rows_to_keep = 1;
+SELECT 'accepted mixed alter', count(), sum(a) FROM tmp_mixed;
+DROP TEMPORARY TABLE tmp_mixed;
+
 -- A restored column that the table does not have is not kept: the restored rows keep their count, and a column added
 -- later with its name gets default values.
 DROP TABLE IF EXISTS mem_backup_src;
