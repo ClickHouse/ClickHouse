@@ -296,27 +296,18 @@ private:
     class RestoreAccessStorage;
 
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
+    /// Inserts into `storage`, or into the storage a regular insert picks when it is null.
     bool insertImpl(
-        IAccessStorage * storage,
+        const StoragePtr & storage,
         const UUID & id,
         const AccessEntityPtr & entity,
         bool replace_if_exists,
         bool throw_if_exists,
         UUID * conflicting_id);
-    bool insertImplUnlocked(
-        IAccessStorage * storage,
-        const UUID & id,
-        const AccessEntityPtr & entity,
-        bool replace_if_exists,
-        bool throw_if_exists,
-        UUID * conflicting_id) TSA_REQUIRES(access_entities_mutex);
     bool isShadowedInsertionUnlocked(const IAccessStorage & destination, const IAccessEntity & entity) const
         TSA_REQUIRES(access_entities_mutex);
     bool checkNameCollisionInOtherStorage(
-        IAccessStorage & storage,
-        const AccessEntityPtr & entity,
-        bool throw_if_exists,
-        UUID * conflicting_id) const TSA_REQUIRES(access_entities_mutex);
+        IAccessStorage & storage, const AccessEntityPtr & entity, bool throw_if_exists, UUID * conflicting_id) const;
     void checkFeatureTierForMoveUnlocked(
         const std::vector<UUID> & ids,
         const String & source_storage_name,

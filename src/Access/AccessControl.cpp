@@ -257,15 +257,15 @@ private:
 class AccessControl::RestoreAccessStorage : public IAccessStorage
 {
 public:
-    RestoreAccessStorage(AccessControl & access_control_, IAccessStorage & destination_)
-        : IAccessStorage(destination_.getStorageName())
+    RestoreAccessStorage(AccessControl & access_control_, StoragePtr destination_)
+        : IAccessStorage(destination_->getStorageName())
         , access_control(access_control_)
-        , destination(destination_)
+        , destination(std::move(destination_))
     {
     }
 
-    const char * getStorageType() const override { return destination.getStorageType(); }
-    bool isReadOnly() const override { return destination.isReadOnly(); }
+    const char * getStorageType() const override { return destination->getStorageType(); }
+    bool isReadOnly() const override { return destination->isReadOnly(); }
     bool isReadOnly(const UUID & id) const override { return access_control.isReadOnly(id); }
     bool exists(const UUID & id) const override { return access_control.exists(id); }
 
@@ -282,7 +282,7 @@ protected:
     bool insertImpl(
         const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override
     {
-        return access_control.insertImpl(&destination, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+        return access_control.insertImpl(destination, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
     }
 
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override
@@ -292,7 +292,7 @@ protected:
 
 private:
     AccessControl & access_control;
-    IAccessStorage & destination;
+    StoragePtr destination;
 };
 
 
@@ -621,21 +621,39 @@ bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, 
 }
 
 bool AccessControl::insertImpl(
-    IAccessStorage * storage,
+    const StoragePtr & storage,
     const UUID & id,
     const AccessEntityPtr & entity,
     bool replace_if_exists,
     bool throw_if_exists,
     UUID * conflicting_id)
 {
-    bool inserted = false;
     {
         std::lock_guard lock{access_entities_mutex};
-        inserted = insertImplUnlocked(storage, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+        if (storage && !replace_if_exists && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
+            return false;
+
+        auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
+        auto existing_id = storage_for_insertion->find(entity->getType(), entity->getName());
+
+        /// A name collision, and in particular a no-op `CREATE ... IF NOT EXISTS`, is not validated as an insertion.
+        if (isAnyFeatureTierRestricted(*this) && (replace_if_exists || !existing_id))
+        {
+            PendingAccessEntities pending;
+            pending[id] = entity;
+            /// A replacement drops the entity that holds the name, which need not be `id`.
+            if (existing_id && *existing_id != id)
+                pending[*existing_id] = nullptr;
+            checkFeatureTierForPendingAccessEntities(
+                *this, pending, /* current= */ {}, isShadowedInsertionUnlocked(*storage_for_insertion, *entity));
+            FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+        }
+
+        if (!storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
+            return false;
     }
-    if (inserted)
-        changes_notifier->sendNotifications();
-    return inserted;
+    changes_notifier->sendNotifications();
+    return true;
 }
 
 bool AccessControl::checkNameCollisionInOtherStorage(
@@ -669,49 +687,6 @@ bool AccessControl::isShadowedInsertionUnlocked(const IAccessStorage & destinati
             return true;
     }
     return false;
-}
-
-bool AccessControl::insertImplUnlocked(
-    IAccessStorage * storage,
-    const UUID & id,
-    const AccessEntityPtr & entity,
-    bool replace_if_exists,
-    bool throw_if_exists,
-    UUID * conflicting_id)
-{
-    if (storage && !replace_if_exists
-        && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
-        return false;
-
-    StoragePtr selected_storage;
-    if (!storage)
-        selected_storage = getStorageForInsertion(entity);
-    auto & storage_for_insertion = storage ? *storage : *selected_storage;
-    auto existing_id = storage_for_insertion.find(entity->getType(), entity->getName());
-
-    /// Preserve the storage's collision behavior and, in particular, do not validate a no-op
-    /// `CREATE ... IF NOT EXISTS` as if it inserted a new entity.
-    if (existing_id && !replace_if_exists)
-    {
-        if (storage)
-            return storage->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
-        return MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
-    }
-
-    if (isAnyFeatureTierRestricted(*this))
-    {
-        PendingAccessEntities pending;
-        pending[id] = entity;
-        /// A replacement drops the entity that holds the name, which need not be `id`.
-        if (replace_if_exists && existing_id && *existing_id != id)
-            pending[*existing_id] = nullptr;
-        checkFeatureTierForPendingAccessEntities(
-            *this, pending, /* current= */ {}, isShadowedInsertionUnlocked(storage_for_insertion, *entity));
-        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
-    }
-
-    return storage ? storage->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id)
-                   : MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
@@ -793,34 +768,18 @@ std::vector<UUID> AccessControl::insertInto(
     const String & storage_name, const std::vector<AccessEntityPtr> & entities, bool replace_if_exists, bool throw_if_exists)
 {
     auto storage = getStorageByName(storage_name);
+
+    /// Before inserting anything: an exception must not leave a prefix of a multi-entity `CREATE` in the storage.
+    for (const auto & entity : entities)
+        checkNameCollisionInOtherStorage(*storage, entity, /* throw_if_exists= */ true, /* conflicting_id= */ nullptr);
+
     std::vector<UUID> inserted_ids;
-    inserted_ids.reserve(entities.size());
-
-    try
+    for (const auto & entity : entities)
     {
-        std::lock_guard lock{access_entities_mutex};
-
-        /// Check all cross-storage collisions before inserting anything. An exception must not leave
-        /// a prefix of a multi-entity `CREATE` statement in the destination storage.
-        for (const auto & entity : entities)
-            checkNameCollisionInOtherStorage(*storage, entity, /* throw_if_exists= */ true, /* conflicting_id= */ nullptr);
-
-        for (const auto & entity : entities)
-        {
-            auto id = generateRandomID();
-            if (insertImplUnlocked(storage.get(), id, entity, replace_if_exists, throw_if_exists, nullptr))
-                inserted_ids.push_back(id);
-        }
+        auto id = generateRandomID();
+        if (insertImpl(storage, id, entity, replace_if_exists, throw_if_exists, nullptr))
+            inserted_ids.push_back(id);
     }
-    catch (...)
-    {
-        if (!inserted_ids.empty())
-            changes_notifier->sendNotifications();
-        throw;
-    }
-
-    if (!inserted_ids.empty())
-        changes_notifier->sendNotifications();
     return inserted_ids;
 }
 
@@ -983,7 +942,7 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
         {
             auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
             const auto & restore_settings = restorer.getRestoreSettings();
-            RestoreAccessStorage restore_storage(*this, *destination);
+            RestoreAccessStorage restore_storage(*this, destination);
             restoreAccessEntitiesFromBackup(restore_storage, entities_to_restore, restore_settings);
         });
 }
