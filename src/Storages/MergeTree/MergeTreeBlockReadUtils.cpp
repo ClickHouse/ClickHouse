@@ -321,7 +321,7 @@ void MergeTreeBlockSizePredictor::startBlock()
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & result_sample_block, const Columns & result_columns, const Block & read_sample_block, size_t num_rows, double decay)
 {
-if (result_columns.size() != result_sample_block.columns())
+    if (result_columns.size() != result_sample_block.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
                         "Have {} in sample block and {} columns in list",
                         toString(result_sample_block.columns()), toString(result_columns.size()));
