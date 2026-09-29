@@ -64,8 +64,7 @@ namespace
         }
     }
 
-    /// A definition restored from a backup may predate the rules that the core is a lambda and that its
-    /// argument list is a plain tuple.
+    /// A definition restored from a backup may predate the rules that the core is a `lambda` and its argument list a plain `tuple`.
     void validateSQLFunction(ASTPtr function, const String & name, bool is_restore)
     {
         ASTFunction * lambda_function = function->as<ASTFunction>();
