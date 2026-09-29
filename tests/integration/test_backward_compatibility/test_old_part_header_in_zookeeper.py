@@ -1,6 +1,7 @@
 import time
 
 import pytest
+from kazoo.exceptions import NoNodeError
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
@@ -36,10 +37,15 @@ def cleanup():
 
 def part_nodes(zk, replica):
     path = f"{ZK_PATH}/replicas/{replica}/parts"
-    return {
-        name: (zk.get(f"{path}/{name}")[0], sorted(zk.get_children(f"{path}/{name}")))
-        for name in zk.get_children(path)
-    }
+    nodes = {}
+    for name in zk.get_children(path):
+        try:
+            data, _ = zk.get(f"{path}/{name}")
+            nodes[name] = (data, sorted(zk.get_children(f"{path}/{name}")))
+        except NoNodeError:
+            # The cleanup thread removed an outdated part after it was listed
+            continue
+    return nodes
 
 
 def create_replica(replica):
