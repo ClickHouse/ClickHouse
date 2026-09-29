@@ -942,7 +942,7 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 )", 0, \
         {"26.1", 0, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."}) \
     DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
