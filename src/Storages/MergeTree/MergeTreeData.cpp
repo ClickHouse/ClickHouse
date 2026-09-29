@@ -1219,10 +1219,14 @@ void MergeTreeData::checkProperties(
                                 "You can add expressions that use only the newly added columns",
                                 backQuoteIfNeed(col));
 
-            if (new_metadata.columns.getDefaults().contains(col))
+            /// A subcolumn (for example, an element of a Tuple) has the default expression of its storage column.
+            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
+            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+
+            if (const auto column_default = new_metadata.columns.getDefault(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Newly added column {} has a default expression, so adding expressions that use "
-                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
+                                "Newly added column {} has a {} expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(name_in_storage), toString(column_default->kind));
         }
     }
 
@@ -4535,9 +4539,14 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
-    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
-    /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
+    /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
+    writePartRemovalLog(parts);
+}
 
+void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts) const
+try
+{
+    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     auto table_id = getStorageID();
     if (auto part_log = getContext()->getPartLog())
     {
@@ -4568,6 +4577,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log->add([&](PartLogElement & element) { element = part_log_elem; });
         }
     }
+}
+catch (...)
+{
+    tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
 
@@ -5083,14 +5096,22 @@ void MergeTreeData::dropAllData()
         /// Parts removal process can be important and on the next try it's better to try to remove
         /// them instead of remove recursive call.
         LOG_WARNING(log, "dropAllData: got exception removing parts from disk, removing successfully removed parts from memory.");
+        DataPartsVector removed_parts;
         for (const auto & part : all_parts)
         {
             if (!part_names_failed.contains(part->name))
+            {
                 data_parts_indexes.erase(part->info);
+                removed_parts.push_back(part);
+            }
         }
+        writePartRemovalLog(removed_parts);
 
         throw;
     }
+
+    /// The parts of a dropped table never reach removePartsFinally(), so log their removal here.
+    writePartRemovalLog(all_parts);
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
