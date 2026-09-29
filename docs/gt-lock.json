@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-29T10:52:42.230Z",
+          "updatedAt": "2026-09-29T12:06:59.174Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-29T10:52:42.043Z",
+          "updatedAt": "2026-09-29T12:06:58.967Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-29T10:52:42.606Z",
+          "updatedAt": "2026-09-29T12:06:59.589Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-29T10:52:41.838Z",
+          "updatedAt": "2026-09-29T12:06:58.747Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-29T10:52:42.417Z",
+          "updatedAt": "2026-09-29T12:06:59.376Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-29T10:52:42.789Z",
+          "updatedAt": "2026-09-29T12:06:59.794Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-29T10:52:43.167Z",
+          "updatedAt": "2026-09-29T12:07:00.222Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-29T10:52:42.983Z",
+          "updatedAt": "2026-09-29T12:07:00.002Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -40882,47 +40882,47 @@
     },
     {
       "fileId": "d056a0b322fd52145842a4140d2c36435ec8e09af128cb0ac942514e54763d91",
-      "versionId": "102fbdd6dcf331da5cb9d37e1796e0e9a89d8666b2c71deba2578b7217ad54b7",
+      "versionId": "48413a4ee72852e982d36f677dd70ae3dd8ded7a70f1470df2fb3d30af7e3837",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-09-28T19:27:45.157Z",
-          "fileName": "ja/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "e39eceab5943c20fc6eab7a27eae4b6f4eabf0db23bc20264d7e2a2aa0d2354c"
-        },
-        "ko": {
-          "updatedAt": "2026-09-28T19:27:45.158Z",
-          "fileName": "ko/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "8bd50bf8efc25ec9d64f93816990449d3d9648065dad781868bd6948051030be"
-        },
-        "fr": {
-          "updatedAt": "2026-09-28T19:27:45.158Z",
-          "fileName": "fr/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "32f887b7f68c86162946ea3c952543540cf9e1115e19e90d67ee8ce2c062f0c4"
-        },
         "pt-BR": {
-          "updatedAt": "2026-09-28T19:27:45.158Z",
+          "updatedAt": "2026-09-29T12:07:03.720Z",
           "fileName": "pt-BR/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "0d370e8bec423c7c31d107feb40396a1770e8cad7c4632250e03492f7ae86d32"
-        },
-        "es": {
-          "updatedAt": "2026-09-28T19:27:45.159Z",
-          "fileName": "es/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "2328edfc20ad03fe3f03d94e322dfa66ce9f6040978cdfd1beca9993b9e34037"
-        },
-        "zh": {
-          "updatedAt": "2026-09-28T19:27:45.159Z",
-          "fileName": "zh/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "da05757bc1a10f084a2ad11d55b2901895d43114d28b47bf25be29bd046d4fbf"
-        },
-        "ar": {
-          "updatedAt": "2026-09-28T19:27:45.160Z",
-          "fileName": "ar/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "c4f87ac4342994773b9b97d7ba520e5a147dffbc331ff229ec128e307df0e0cd"
+          "postProcessHash": "5b858c32530e5a5599972e0ba66e16c4ec382b8266c8c5b41a25cf6d9d8d92ae"
         },
         "ru": {
-          "updatedAt": "2026-09-28T19:27:45.161Z",
+          "updatedAt": "2026-09-29T12:07:03.720Z",
           "fileName": "ru/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "7ce2fb010e7fc0d158917322c135c06632c7302b2c9a7655b27d522e8e67b230"
+          "postProcessHash": "ebd02c52f975bb5a5156125e4600841905ef78fb9a69a8df68886c15c4ff638e"
+        },
+        "ko": {
+          "updatedAt": "2026-09-29T12:07:03.721Z",
+          "fileName": "ko/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "2bd58fcdddaddd35fda564b5cfec1aec72348d6c1ecf5966c07af9c0322f0d52"
+        },
+        "zh": {
+          "updatedAt": "2026-09-29T12:07:03.722Z",
+          "fileName": "zh/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "9fe893584f446fc9e53a4cc4b5da94dfc5ad27a76bd5898095bdcda8d93b5781"
+        },
+        "es": {
+          "updatedAt": "2026-09-29T12:07:03.722Z",
+          "fileName": "es/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "e68ead6d77ea4b1c532d10a1c87c0cf73eceae7dc02437a1cc60199bdd8c4201"
+        },
+        "fr": {
+          "updatedAt": "2026-09-29T12:07:03.722Z",
+          "fileName": "fr/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "06650a532cf6f8446876a698c3545b61aee79d8a9030a94271351fb2b81d2fcb"
+        },
+        "ja": {
+          "updatedAt": "2026-09-29T12:07:03.723Z",
+          "fileName": "ja/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "cd3fdcf71c77e4254247ea573076dc0900b58043245bb44552b8e9c0dbc028ce"
+        },
+        "ar": {
+          "updatedAt": "2026-09-29T12:07:03.724Z",
+          "fileName": "ar/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "ddbc6c74f28057f0f11e56b5f5fe70a4389cc9858fc47b985dad2f79d93d0a35"
         }
       },
       "fileName": "integrations/connectors/tools/gui.mdx"
