@@ -35,6 +35,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -3672,6 +3673,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 vector_search_parameters,
                 top_k_filter_info,
                 allow_top_k_prewhere_query_condition_cache_,
+                result.sampling.use_sampling,
                 mutations_snapshot,
                 *indexes,
                 context_,
@@ -5225,6 +5227,18 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
+        reader_settings.use_query_condition_cache = false;
+
+    /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
+    /// in the read, not only on the part being read. The per-part `appliesMutationsBeforePrewhere` guard
+    /// of the write paths is therefore not enough: a part without mutations of its own may record its
+    /// granules as empty under a threshold tightened by rows that an on-fly mutation or a patch part
+    /// rewrote in another part. The part names stay the same until the mutation is materialized, so a
+    /// later read that does not apply it (`apply_mutations_on_fly = 0`, `apply_patch_parts = 0`, or any
+    /// read after `KILL MUTATION`) would skip rows. A read with such a snapshot never consults the cache
+    /// (see `filterPartsByQueryConditionCache`), so don't write from it either. See issue #122564.
+    if (top_k_filter_info && mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         reader_settings.use_query_condition_cache = false;
 
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
@@ -7026,6 +7040,17 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 
     SelectQueryInfo query_info;
     query_info.table_expression_modifiers.emplace(has_final, sample_size_ratio, sample_offset_ratio);
+
+    /// The limits are not serialized, and `ISource` falls back to an empty list, so without this the byte
+    /// limits and the read-speed and timeout checks would not be enforced for a read in a shipped plan
+    /// fragment (plan-based parallel replicas and `make_distributed_plan`). Derive them from the settings
+    /// that arrived with the query, the same way `resolveStorages` does for `ReadFromTableStep`. This is done
+    /// at deserialization rather than on the built pipeline, so it covers every execution path of a shipped
+    /// plan, and a subquery read that index analysis in `readFromParts` builds a set from is limited too.
+    /// The stage is not the initiator's, which keeps the minimal-speed limits to it.
+    auto storage_limits = std::make_shared<StorageLimitsList>();
+    storage_limits->emplace_back(buildStorageLimits(*ctx.context, SelectQueryOptions(QueryProcessingStage::FetchColumns)));
+    query_info.storage_limits = std::move(storage_limits);
 
     if (has_row_level_filter)
         query_info.row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
