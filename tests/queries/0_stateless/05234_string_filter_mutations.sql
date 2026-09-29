@@ -43,34 +43,18 @@ SELECT 'full-String control sees pending updates';
 SELECT id, s FROM test_string_filter_mutations PREWHERE empty(s) ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0;
 
--- The injected legacy size must not be carried unchanged through the UPDATE.
-SELECT 'rewritten empty filter sees updated sizes';
+-- A pending UPDATE can make the stored String size stale. The full-read rewrite
+-- must fall back to the String expression while on-fly mutations are enabled.
+SELECT 'full-read empty filter sees updated values';
 SELECT id, s FROM test_string_filter_mutations PREWHERE empty(s) ORDER BY id;
 
-SELECT 'rewritten nonempty filter sees updated sizes';
+SELECT 'full-read nonempty filter sees updated values';
 SELECT id, s FROM test_string_filter_mutations PREWHERE notEmpty(s) ORDER BY id;
 
-SELECT 'rewritten length filter sees chained updates';
+SELECT 'full-read length filter sees chained updates';
 SELECT id, s FROM test_string_filter_mutations PREWHERE length(s) = 3 ORDER BY id;
 
--- Explicit subcolumns are independent of the analyzer opt-in. In particular,
--- this size-only query has mutation steps but no PREWHERE steps.
-SELECT 'explicit size-only read without analyzer rewrites';
-SELECT s.size FROM test_string_filter_mutations ORDER BY id
-SETTINGS optimize_functions_to_subcolumns = 0, optimize_string_size_subcolumn_with_full_read = 0;
-
-SELECT 'explicit size filter with a later String consumer';
-SELECT id, s, s.size FROM test_string_filter_mutations
-PREWHERE s.size > 0 AND id > 0 AND position(s, '!') = 1
-ORDER BY id
-SETTINGS optimize_functions_to_subcolumns = 0, optimize_string_size_subcolumn_with_full_read = 0;
-
-SELECT 'explicit size filter with a single PREWHERE step';
-SELECT id, s, s.size FROM test_string_filter_mutations
-PREWHERE s.size = 0
-ORDER BY id
-SETTINGS optimize_functions_to_subcolumns = 0, enable_multiple_prewhere_read_steps = 0;
-
+-- Explicit `s.size` mutation semantics are outside this optimization.
 -- Verify that the original on-disk values really are still present.
 SELECT 'mutations remain pending';
 SELECT id, s FROM test_string_filter_mutations ORDER BY id

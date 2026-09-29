@@ -57,6 +57,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
@@ -923,7 +924,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// skip index on that subcolumn prune granules), while the full column is still
 /// read for matching rows in SELECT. String rewrites additionally require
 /// `optimize_string_size_subcolumn_with_full_read` because splitting reads may add work
-/// when the size filter does not reject whole granules. For legacy String parts where .size is virtual,
+/// when the size filter does not reject whole granules. The full-read exception is also disabled
+/// for on-fly mutations: a pending UPDATE can change the String while its stored `.size` still
+/// describes the pre-mutation value. For legacy String parts where .size is virtual,
 /// the MergeTree read planner co-reads the parent String in PREWHERE to avoid
 /// scanning the regular String stream again after filtering.
 /// The second pass applies this permission at identifier granularity, so another
@@ -1589,7 +1592,8 @@ private:
             if (transformers_optimize_in_filter_with_full_column.contains(transformer_key)
                 && !in_where_prewhere_stack.empty() && in_where_prewhere_stack.back()
                 && (transformer_key.first != TypeIndex::String
-                    || getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]))
+                    || (getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]
+                        && !getSettings()[Setting::apply_mutations_on_fly])))
                 identifiers_with_filter_optimization.insert(qualified_name);
         }
     }
@@ -1710,7 +1714,8 @@ public:
                 && !in_where_prewhere_stack.empty()
                 && in_where_prewhere_stack.back()
                 && (column.type->getTypeId() != TypeIndex::String
-                    || getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]))
+                    || (getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]
+                        && !getSettings()[Setting::apply_mutations_on_fly])))
                 should_optimize = true;
 
             if (!should_optimize)

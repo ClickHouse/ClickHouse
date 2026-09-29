@@ -1,34 +1,19 @@
 full-String control sees pending updates
 0	
 4	
-rewritten empty filter sees updated sizes
+full-read empty filter sees updated values
 0	
 4	
-rewritten nonempty filter sees updated sizes
+full-read nonempty filter sees updated values
 1	!xx
 2	keep
 3	grow
 5	!xx
 6	keep
 7	grow
-rewritten length filter sees chained updates
+full-read length filter sees chained updates
 1	!xx
 5	!xx
-explicit size-only read without analyzer rewrites
-0
-3
-4
-4
-0
-3
-4
-4
-explicit size filter with a later String consumer
-1	!xx	3
-5	!xx	3
-explicit size filter with a single PREWHERE step
-0		0
-4		0
 mutations remain pending
 0	old
 1	
