@@ -7,10 +7,14 @@ attach rejected
 1
 alter_add rejected
 0
+create_v2_without_codec_setting rejected
 1
 1
 1
 1
+1
+1
+create_v3_without_codec_setting rejected
 1
 1
 1

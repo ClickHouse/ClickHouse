@@ -973,10 +973,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// A full-definition `ATTACH` and a RESTORE supply definitions to validate against the
         /// initiating session's codec settings. RESTORE uses SECONDARY_CREATE for other checks,
-        /// so include it explicitly. Replicated DDL replay and metadata recovery must not repeat
-        /// the session-dependent validation after the definition has been accepted.
+        /// so include it explicitly. Format 3+ distributed DDL was normalized on the initiator.
+        /// Format 2 ships the original query and codec settings, so validate it on the worker.
+        /// Format 1 cannot ship codec settings and rejects fresh codec declarations before enqueue.
+        const bool normalized_distributed_replay = !is_restore_from_backup
+            && getContext()->isDDLOrOnClusterInternal()
+            && getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value
+                >= DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION;
         bool validate_projection_codecs = (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
             && !getContext()->isRecoveryFromStoredMetadata()
+            && !normalized_distributed_replay
             && !getContext()->getClientInfo().is_replicated_database_internal;
         if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
             validate_projection_codecs &= metadata_txn->isInitialQuery();
