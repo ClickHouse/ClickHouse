@@ -145,9 +145,9 @@ namespace
 
 void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
 {
-    namespace Index = TimeSeriesHistogramsTupleIndex;
+    namespace Idx = TimeSeriesHistogramsTupleIndex;
 
-    const UInt8 flags = static_cast<UInt8>(tuple.getColumn(Index::Flags).getUInt(row));
+    const UInt8 flags = static_cast<UInt8>(tuple.getColumn(Idx::Flags).getUInt(row));
     constexpr UInt8 known_flags
         = TimeSeriesHistogramFlags::IsFloat | TimeSeriesHistogramFlags::CounterResetHintMask | TimeSeriesHistogramFlags::StaleMarker;
     if (flags & ~known_flags)
@@ -155,15 +155,15 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
     const bool is_float = flags & TimeSeriesHistogramFlags::IsFloat;
     const bool is_stale_marker = flags & TimeSeriesHistogramFlags::StaleMarker;
 
-    const Int64 schema = tuple.getColumn(Index::Schema).getInt(row);
+    const Int64 schema = tuple.getColumn(Idx::Schema).getInt(row);
     const bool custom_buckets = (schema == HISTOGRAM_CUSTOM_BUCKETS_SCHEMA);
     if (!custom_buckets && (schema < HISTOGRAM_EXPONENTIAL_SCHEMA_MIN || schema > HISTOGRAM_EXPONENTIAL_SCHEMA_MAX))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has an out-of-range bucket schema: {}", schema);
 
     /// NaN counts are allowed only in a stale marker (whose sum carries the stale NaN).
-    const Float64 count = tuple.getColumn(Index::Count).getFloat64(row);
-    const Float64 zero_count = tuple.getColumn(Index::ZeroCount).getFloat64(row);
-    const Float64 zero_threshold = tuple.getColumn(Index::ZeroThreshold).getFloat64(row);
+    const Float64 count = tuple.getColumn(Idx::Count).getFloat64(row);
+    const Float64 zero_count = tuple.getColumn(Idx::ZeroCount).getFloat64(row);
+    const Float64 zero_threshold = tuple.getColumn(Idx::ZeroThreshold).getFloat64(row);
     if (count < 0 || zero_count < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Native histogram has a negative {}: {}", (count < 0) ? "count" : "zero count", (count < 0) ? count : zero_count);
@@ -174,11 +174,11 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has a negative zero threshold: {}", zero_threshold);
 
     const auto positive_index_range = checkHistogramBuckets(
-        tuple.getColumn(Index::PositiveSpans), tuple.getColumn(Index::PositiveValues), row, is_stale_marker, "positive");
+        tuple.getColumn(Idx::PositiveSpans), tuple.getColumn(Idx::PositiveValues), row, is_stale_marker, "positive");
     checkHistogramBuckets(
-        tuple.getColumn(Index::NegativeSpans), tuple.getColumn(Index::NegativeValues), row, is_stale_marker, "negative");
+        tuple.getColumn(Idx::NegativeSpans), tuple.getColumn(Idx::NegativeValues), row, is_stale_marker, "negative");
 
-    const auto [custom_values_begin, custom_values_end] = getArrayRowRange(tuple.getColumn(Index::CustomValues), row);
+    const auto [custom_values_begin, custom_values_end] = getArrayRowRange(tuple.getColumn(Idx::CustomValues), row);
     const size_t num_custom_values = custom_values_end - custom_values_begin;
     if (!custom_buckets)
     {
@@ -189,8 +189,8 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
     else
     {
         /// The custom-bucket rules of `Histogram.Validate` in Prometheus model/histogram/histogram.go.
-        const auto [negative_spans_begin, negative_spans_end] = getArrayRowRange(tuple.getColumn(Index::NegativeSpans), row);
-        const auto [negative_values_begin, negative_values_end] = getArrayRowRange(tuple.getColumn(Index::NegativeValues), row);
+        const auto [negative_spans_begin, negative_spans_end] = getArrayRowRange(tuple.getColumn(Idx::NegativeSpans), row);
+        const auto [negative_values_begin, negative_values_end] = getArrayRowRange(tuple.getColumn(Idx::NegativeValues), row);
         if ((negative_spans_begin != negative_spans_end) || (negative_values_begin != negative_values_end))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram with custom buckets must not have negative buckets");
 
@@ -199,7 +199,7 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
                 "Native histogram with custom buckets must not use the zero bucket, but has zero count {} and zero threshold {}",
                 zero_count, zero_threshold);
 
-        const auto & custom_values = typeid_cast<const ColumnArray &>(tuple.getColumn(Index::CustomValues)).getData();
+        const auto & custom_values = typeid_cast<const ColumnArray &>(tuple.getColumn(Idx::CustomValues)).getData();
         Float64 previous_bound = -std::numeric_limits<Float64>::infinity();
         for (size_t i = custom_values_begin; i != custom_values_end; ++i)
         {
@@ -221,22 +221,22 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
     }
 
     /// A tuple of an older, shorter layout has no exact integer carriers (see `TimeSeriesSink::consumeTagsAndSamples`).
-    if (tuple.tupleSize() < Index::Size)
+    if (tuple.tupleSize() < Idx::Size)
         return;
 
-    const UInt64 count_int = tuple.getColumn(Index::CountInt).getUInt(row);
-    const UInt64 zero_count_int = tuple.getColumn(Index::ZeroCountInt).getUInt(row);
+    const UInt64 count_int = tuple.getColumn(Idx::CountInt).getUInt(row);
+    const UInt64 zero_count_int = tuple.getColumn(Idx::ZeroCountInt).getUInt(row);
     if (is_float)
     {
-        const auto [positive_int_begin, positive_int_end] = getArrayRowRange(tuple.getColumn(Index::PositiveValuesInt), row);
-        const auto [negative_int_begin, negative_int_end] = getArrayRowRange(tuple.getColumn(Index::NegativeValuesInt), row);
+        const auto [positive_int_begin, positive_int_end] = getArrayRowRange(tuple.getColumn(Idx::PositiveValuesInt), row);
+        const auto [negative_int_begin, negative_int_end] = getArrayRowRange(tuple.getColumn(Idx::NegativeValuesInt), row);
         if (count_int != 0 || zero_count_int != 0 || positive_int_begin != positive_int_end || negative_int_begin != negative_int_end)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Native histogram is a float histogram but has exact integer counts, which only an integer histogram can have");
     }
     else if (count != static_cast<Float64>(count_int) || zero_count != static_cast<Float64>(zero_count_int)
-        || !exactCountsMatch(tuple.getColumn(Index::PositiveValues), tuple.getColumn(Index::PositiveValuesInt), row)
-        || !exactCountsMatch(tuple.getColumn(Index::NegativeValues), tuple.getColumn(Index::NegativeValuesInt), row))
+        || !exactCountsMatch(tuple.getColumn(Idx::PositiveValues), tuple.getColumn(Idx::PositiveValuesInt), row)
+        || !exactCountsMatch(tuple.getColumn(Idx::NegativeValues), tuple.getColumn(Idx::NegativeValuesInt), row))
     {
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Native histogram is an integer histogram but its exact integer counts do not match its counts");
