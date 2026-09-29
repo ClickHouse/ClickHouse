@@ -1,0 +1,55 @@
+---
+slug: /clickstack/observability/overview
+title: 'ClickHouse Observability'
+sidebarTitle: 'Overview'
+description: 'Overview of fully managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
+---
+
+**ClickHouse Observability** is a fully managed observability platform built on ClickHouse, unifying logs, traces, metrics and session in a single high-performance solution. Designed for monitoring and debugging complex systems, it enables developers and SREs to trace issues end-to-end without switching between tools or manually stitching together data using timestamps or correlation IDs.
+
+At its core is a simple but powerful idea: all observability data should be ingested as wide, rich events. These events are stored in ClickHouse tables by data type - logs, traces, metrics, and sessions - but remain fully queryable and cross-correlatable at the database level.
+
+The platform is built to handle high-cardinality workloads efficiently by leveraging ClickHouse's column-oriented architecture and fully parallelized execution engine. This enables sub-second queries across massive datasets, fast aggregations over wide time ranges, and deep inspection of individual traces.
+
+## Features {#features}
+
+The stack includes several key features designed for debugging and root cause analysis:
+
+- Correlate/search logs, metrics, session replays, and traces all in one place
+- Blazing-fast searches & visualizations optimized for ClickHouse
+- Intuitive full-text search and property search syntax (ex. `level:err`), SQL optional.
+- Set up alerts in just a few clicks
+- Dashboard high cardinality events without a complex query language
+- Native JSON string querying
+- Live tail logs and traces to always get the freshest events
+- OpenTelemetry (OTel) supported out of the box
+- Monitor health and performance from HTTP requests to DB queries (APM)
+- Event deltas for identifying anomalies and performance regressions
+- Log pattern recognition
+- Open pages directly with [deep links](/clickstack/observability/url-parameters) using URL query parameters
+
+## How it works {#how-it-works}
+
+Send logs, metrics, and traces to the managed OTLP endpoint, then explore them in the observability UI. The service handles ingestion, storage, scaling, and queries. You remain responsible for instrumenting your applications and collecting telemetry from your environment.
+
+## Principles {#clickstack-principles}
+
+The platform is designed with a set of core principles that prioritize ease of use, performance, and flexibility at every layer of the observability stack:
+
+### User-friendly and purpose-built {#user-friendly-purpose-built}
+
+The UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
+
+### End-to-end observability {#end-to-end-observability}
+
+The platform provides full-stack visibility, from front-end user sessions to backend infrastructure metrics, application logs, and distributed traces. This unified view enables deep correlation and analysis across the entire system.
+
+### Built for ClickHouse {#built-for-clickhouse}
+
+Every layer of the stack is designed to make full use of ClickHouse's capabilities. Queries are optimized to leverage ClickHouse's analytical functions and columnar engine, ensuring fast search and aggregation over massive volumes of data.
+
+### OpenTelemetry-native {#open-telemetry-native}
+
+The platform is natively integrated with OpenTelemetry, accepting telemetry through a managed OTLP endpoint.
