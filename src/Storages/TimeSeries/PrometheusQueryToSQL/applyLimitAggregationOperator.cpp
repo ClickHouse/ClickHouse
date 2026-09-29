@@ -182,6 +182,9 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     auto res = vector_arg;
     res.node = operator_node;
+    /// These operators emit the chosen series in their own order (topk/bottomk by value, see finalizeSQL()),
+    /// so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
 
     /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: Step 1
     /// aggregates it to choose which series to keep, and Step 3 joins it with the chosen series

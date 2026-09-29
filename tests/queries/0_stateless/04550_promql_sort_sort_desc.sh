@@ -61,6 +61,12 @@ promql_client -q "abs(sort(up - 25))"
 echo "-- label_replace(sort_desc(up), ...): label changes keep the order fixed by sort_desc()"
 promql_client -q "label_replace(sort_desc(up), 'note', 'x', 'instance', '.*')"
 
+echo "-- topk(2, sort(up)): the outer topk() orders its result by value (30, 20), not by the inner sort()"
+promql_client -q "topk(2, sort(up))"
+
+echo "-- sort(topk(2, up)): the outer sort() orders the result of topk() ascending (20, 30)"
+promql_client -q "sort(topk(2, up))"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"
