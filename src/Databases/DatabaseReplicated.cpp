@@ -46,6 +46,8 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -2633,6 +2635,25 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assertDigest(local_context);
 }
 
+/// The inner tables that `dropInnerTableIfAny` of `table` drops.
+static Strings getInnerTableNames(const IStorage & table, const ContextPtr & context)
+{
+    Strings names;
+    if (const auto * view = typeid_cast<const StorageMaterializedView *>(&table); view && view->hasInnerTable())
+    {
+        names.push_back(view->getTargetTableId().table_name);
+        if (view->isRefreshable() && !view->isAppendRefreshStrategy())
+            names.push_back(".tmp" + names.front());
+    }
+    else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&table); time_series && time_series->hasInnerTables())
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->isInnerTable(kind))
+                names.push_back(time_series->tryGetTargetTableID(kind, context).table_name);
+    }
+    return names;
+}
+
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
@@ -2649,6 +2670,14 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
     waitDatabaseStarted();
+
+    /// `CREATE OR REPLACE` drops the replaced table with its inner tables after this transaction is committed,
+    /// so the metadata of those inner tables is removed in the transaction.
+    Strings replaced_inner_tables;
+    if (exchange && txn->isInitialQuery() && txn->isCreateOrReplaceQuery())
+        for (auto & name : getInnerTableNames(*getTable(to_table_name, local_context), local_context))
+            if (isTableExist(name, local_context))
+                replaced_inner_tables.push_back(std::move(name));
 
     std::lock_guard lock{metadata_mutex};
 
@@ -2684,6 +2713,9 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
             if (!txn->isCreateOrReplaceQuery())
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
+
+        for (const auto & name : replaced_inner_tables)
+            txn->addOp(zkutil::makeRemoveRequest(zookeeper_path + "/metadata/" + escapeForFileName(name), -1));
 
         /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
         if (txn->isCreateOrReplaceQuery())
