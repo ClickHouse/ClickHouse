@@ -829,6 +829,8 @@ SELECT count() FROM (SELECT aiRelevance(x, x) AS result FROM tab);
 -- 20. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
 -- The HTTP call fails (no provider on localhost:1); `ai_function_throw_on_error = 0`
 -- swallows the error so the INSERT still succeeds, with `[]` / "" / NULL for the row.
+-- These only guard evaluation on the INSERT path; they are not usage recommendations
+-- (e.g. `aiRelevance` is meant for query-time ranking, not persisted scores).
 -- =============================================================================
 
 SET ai_function_throw_on_error = 0;

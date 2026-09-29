@@ -295,9 +295,9 @@ private:
 
     /// Parameters accepted in the optional trailing `Map(String, String)` argument. This is the complete
     /// spec passed to `resolveAIParams`, not extras merged with `FunctionBaseAI::commonParams`.
-    /// `model` resolves map override -> named collection -> required. Letting the named collection
-    /// supply a default is safe because a relevance score is consumed within a single query rather than
-    /// persisted and compared across calls.
+    /// `model` resolves map override -> named collection -> required, like the text functions. A relevance
+    /// score is relative to a query supplied at read time, so the intended use is query-time ranking where
+    /// the model is fixed for the query; persisted scores are not an intended use case.
     static AIParamSpecs paramSpecs()
     {
         return {
