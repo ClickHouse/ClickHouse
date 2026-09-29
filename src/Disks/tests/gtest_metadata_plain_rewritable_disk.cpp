@@ -29,7 +29,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 class MetadataPlainRewritableDiskTest : public testing::Test
@@ -2431,13 +2431,8 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAReplacedFile)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/target").front().remote_path), "the target file");
 }
 
-/// `LOGICAL_ERROR` aborts debug and sanitizer builds, so there only the report is checked.
 static void expectCommitReportsDivergence(const MetadataTransactionPtr & tx, const std::string & missing_blob)
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    EXPECT_DEATH(tx->commit(DB::NoCommitOptions{}), "diverged");
-    (void)missing_blob;
-#else
     try
     {
         tx->commit(DB::NoCommitOptions{});
@@ -2445,12 +2440,11 @@ static void expectCommitReportsDivergence(const MetadataTransactionPtr & tx, con
     }
     catch (const Exception & e)
     {
-        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR) << e.message();
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
         EXPECT_THAT(e.message(), testing::HasSubstr("diverged"));
         EXPECT_THAT(e.message(), testing::HasSubstr(missing_blob));
         EXPECT_THAT(e.message(), testing::Not(testing::HasSubstr("did not complete")));
     }
-#endif
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlob)

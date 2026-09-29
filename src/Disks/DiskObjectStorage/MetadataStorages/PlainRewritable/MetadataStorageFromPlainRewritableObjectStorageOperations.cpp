@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int CORRUPTED_DATA;
 };
 
 namespace FailPoints
@@ -67,7 +68,7 @@ void copyBlobOfListedFile(
         /// Some object storages (Azure) throw their own exception types.
         if (!object_storage.exists(StoredObject(remote_path)))
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::CORRUPTED_DATA,
                 "The metadata lists the file '{}', but its blob '{}' does not exist: metadata and object storage diverged "
                 "before this transaction. Copying the blob to the temporary key '{}' failed with: {}",
                 path,
