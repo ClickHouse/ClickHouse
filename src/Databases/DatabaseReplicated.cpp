@@ -1804,8 +1804,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             ++moved_tables;
         };
 
-        bool is_keeper_map = table->as<StorageKeeperMap>() != nullptr;
-        if (drop_broken_tables || (!table->storesDataOnDisk() && !is_keeper_map))
+        const auto * keeper_map = table->as<StorageKeeperMap>();
+        bool drop_deletes_keeper_data = keeper_map && !keeper_map->isPathUsedByAnotherTable();
+        if (drop_broken_tables || (!table->storesDataOnDisk() && !drop_deletes_keeper_data))
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
@@ -1832,7 +1833,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             tables_metadata_digest = new_digest;
             assertDigest(getContext());
         }
-        else if (!table->supportsReplication() && !is_keeper_map)
+        else if (!table->supportsReplication() && !keeper_map)
         {
             move_table_to_database(table_name, to_db_name);
         }

@@ -1483,6 +1483,15 @@ std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
     return fs::path(zk_data_path) / key;
 }
 
+bool StorageKeeperMap::isPathUsedByAnotherTable() const
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::isPathUsedByAnotherTable");
+    Strings tables;
+    if (getClient()->tryGetChildren(zk_tables_path, tables) != Coordination::Error::ZOK)
+        return false;
+    return std::ranges::any_of(tables, [&](const String & table) { return table != table_unique_id; });
+}
+
 UInt64 StorageKeeperMap::keysLimit() const
 {
     return keys_limit;

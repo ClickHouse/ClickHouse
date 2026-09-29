@@ -4,7 +4,8 @@
 # Tag no-fasttest: needs Keeper.
 
 # Replica recovery of a Replicated database keeps the data of KeeperMap tables whose definition in Keeper differs
-# from the local one: altered there, renamed there, or dropped there.
+# from the local one: altered there, renamed there, or dropped there. A table dropped there while another table uses
+# the same Keeper path is dropped, and that table keeps the data.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,6 +16,17 @@ ZK_PATH="/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rdb"
 CLIENT="${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none"
 # The queries that rewrite Keeper nodes must run as written (the stress profile fuzzes every query).
 ZK_WRITER="${CLICKHOUSE_CLIENT} --ast_fuzzer_runs=0 --ast_fuzzer_any_query=0"
+
+function print_copy()
+{
+    local copy
+    copy=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}_broken_replicated_tables' AND startsWith(name, '$1_')")
+    if [ -n "${copy}" ]; then
+        ${CLICKHOUSE_CLIENT} -q "SELECT '$1 copy', count() FROM ${DB}_broken_replicated_tables.${copy}"
+    else
+        echo "$1 copy: none"
+    fi
+}
 
 function count_recoveries()
 {
@@ -28,15 +40,18 @@ function count_recoveries()
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_broken_tables SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_broken_replicated_tables SYNC"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS km_twin SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}', 's1', 'r1')"
 
-for t in km_altered km_renamed km_dropped; do
+for t in km_altered km_renamed km_dropped km_shared; do
     ${CLIENT} -q "CREATE TABLE ${DB}.$t (k UInt64, v String) ENGINE = KeeperMap('/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/$t') PRIMARY KEY k"
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.$t SELECT number, toString(number) FROM numbers(50)"
     ${CLICKHOUSE_CLIENT} -q "SELECT '$t before', count() FROM ${DB}.$t"
 done
+# Another table on the Keeper path of km_shared, like the one another replica re-creates there after dropping km_shared.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE km_twin (k UInt64, v String) ENGINE = KeeperMap('/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/km_shared') PRIMARY KEY k"
 
-# What the other replicas would have after an ALTER, a RENAME and a DROP this replica missed.
+# What the other replicas would have after an ALTER, a RENAME and the DROPs this replica missed.
 ${ZK_WRITER} -q "
     INSERT INTO system.zookeeper (path, name, value)
     SELECT path, name, concat(trimRight(value), '\nCOMMENT \'altered\'\n') FROM system.zookeeper
@@ -47,6 +62,7 @@ ${ZK_WRITER} -q "
     WHERE path = '${ZK_PATH}/metadata' AND name = 'km_renamed'"
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rm '${ZK_PATH}/metadata/km_renamed'"
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rm '${ZK_PATH}/metadata/km_dropped'"
+${CLICKHOUSE_KEEPER_CLIENT} -q "rm '${ZK_PATH}/metadata/km_shared'"
 
 RECOVERIES_BEFORE=$(count_recoveries)
 # The digest 42 makes the replica recover itself when the database is attached.
@@ -63,12 +79,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'km_altered', count() FROM ${DB}.km_altered"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'km_renamed exists', count() FROM system.tables WHERE database = '${DB}' AND name = 'km_renamed'"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'km_renamed2', count() FROM ${DB}.km_renamed2"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'km_dropped exists', count() FROM system.tables WHERE database = '${DB}' AND name = 'km_dropped'"
-KM_DROPPED_COPY=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}_broken_replicated_tables' AND startsWith(name, 'km_dropped_')")
-if [ -n "${KM_DROPPED_COPY}" ]; then
-    ${CLICKHOUSE_CLIENT} -q "SELECT 'km_dropped copy', count() FROM ${DB}_broken_replicated_tables.${KM_DROPPED_COPY}"
-else
-    echo "km_dropped copy: none"
-fi
+print_copy km_dropped
+print_copy km_shared
+${CLICKHOUSE_CLIENT} -q "SELECT 'km_twin', count() FROM km_twin"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_broken_tables SYNC"
