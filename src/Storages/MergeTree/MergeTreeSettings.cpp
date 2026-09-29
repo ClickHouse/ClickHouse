@@ -1383,7 +1383,7 @@ Possible values:
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
 The minimum number of bytes that should be free in disk space in order to
