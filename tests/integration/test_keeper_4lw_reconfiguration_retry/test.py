@@ -181,20 +181,18 @@ def test_retry_count_is_honored(started_cluster):
 def test_retries_stop_at_max_total_wait_time(started_cluster):
     waits_before = len(waits_logged(5))
     result, elapsed, before = add_unreachable_member(
-        5, retry=100, max_action_wait_time_ms=1000, max_total_wait_time_ms=2500
+        5, retry=100, max_action_wait_time_ms=1000, max_total_wait_time_ms=1200
     )
-    assert result["status"] == "error", result
-    m = re.search(r"attempts made (\d+)", result["message"])
-    assert m, (result, elapsed)
-    made = int(m.group(1))
-    assert 2 <= made <= 4, (result, elapsed)
     attempts = attempts_logged_since(5, before)
-    assert attempts == made, (result, elapsed, attempts)
-    # Making all 101 attempts would take about 101 seconds.
-    assert elapsed < 30, (result, elapsed, attempts)
-    # The last attempt waits only for what is left of max_total_wait_time_ms.
     waits = waits_logged(5)[waits_before:]
-    assert len(waits) == made and sum(waits) <= 2500, (result, elapsed, waits)
+    info = (result, elapsed, attempts, waits)
+    assert result["status"] == "error", info
+    assert "with retries count 100, attempts made 2" in result["message"], info
+    assert attempts == 2, info
+    # The second attempt waits only for what is left of max_total_wait_time_ms.
+    assert len(waits) == 2 and waits[0] == 1000 and 0 < waits[1] <= 200, info
+    # Waiting a full second again, or making all 101 attempts, would take at least 2 seconds.
+    assert elapsed < 1.8, info
 
     result, elapsed, before = add_unreachable_member(
         6, retry=100, max_action_wait_time_ms=0
