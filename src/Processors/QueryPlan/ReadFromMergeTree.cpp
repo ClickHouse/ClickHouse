@@ -843,6 +843,8 @@ Pipe ReadFromMergeTree::readInOrder(
     UInt64 read_limit,
     std::optional<size_t> split_index)
 {
+    // @jgsogo: DEBUG here, line by line. Check block_size
+
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
@@ -4664,6 +4666,7 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     if (query_info.prewhere_info)
     {
+        // @jgsogo: Here we are adding the columns that come from the PREWHERE
         for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
             columns_to_keep.insert(input->result_name);
     }
@@ -4994,6 +4997,7 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
+    // @jgsogo: DEBUG line by line
     auto & result = getAnalysisResult();
 
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
@@ -6437,6 +6441,8 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 
 ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
+    // @jgsogo: DEBUG this method line by line.
+
     if (output_header == nullptr)
         return {};
 
@@ -6546,6 +6552,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
+    // @jgsogo: DEBUG values of all_column_names and required_source_columns
 
     return {true, {}, std::move(kept_output_positions)};
 }

@@ -64,6 +64,12 @@ const Block & MergeTreeReadersChain::getSampleBlock() const
     return range_readers.empty() ? empty_block : range_readers.back().getSampleBlock();
 }
 
+const Block & MergeTreeReadersChain::getReadSampleBlock() const
+{
+    static const Block empty_block;
+    return range_readers.empty() ? empty_block : range_readers.back().getReadSampleBlock();
+}
+
 bool MergeTreeReadersChain::isCurrentRangeFinished() const
 {
     return range_readers.empty() ? true : range_readers.front().isCurrentRangeFinished();
