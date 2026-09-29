@@ -625,24 +625,20 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
     const AccessControl & access_control,
     const PendingAccessEntities & pending,
     const PendingAccessEntities & current,
-    bool force,
     bool new_users_are_shadowed)
 {
     if (!isAnyFeatureTierRestricted(access_control))
         return {};
 
-    if (!force)
+    bool relevant = false;
+    for (const auto & [id, entity] : pending)
     {
-        bool relevant = false;
-        for (const auto & [id, entity] : pending)
-        {
-            auto current_it = current.find(id);
-            auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
-            relevant |= mayChangeSettingsInEffect(old_entity, entity);
-        }
-        if (!relevant)
-            return {};
+        auto current_it = current.find(id);
+        auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
+        relevant |= mayChangeSettingsInEffect(old_entity, entity);
     }
+    if (!relevant)
+        return {};
 
     auto graph = std::make_shared<AccessGraph>(access_control);
     return [&access_control, graph, new_users_are_shadowed](
@@ -659,9 +655,7 @@ void checkFeatureTierForPendingAccessEntities(
     const PendingAccessEntities & current,
     bool new_users_are_shadowed)
 {
-    auto checker
-        = prepareFeatureTierAccessEntityChecker(access_control, pending, current, /* force= */ false, new_users_are_shadowed);
-    if (checker)
+    if (auto checker = prepareFeatureTierAccessEntityChecker(access_control, pending, current, new_users_are_shadowed))
         checker(pending, current);
 }
 

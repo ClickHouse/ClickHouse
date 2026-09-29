@@ -193,8 +193,6 @@ private:
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name, bool check_feature_tier = true) const;
 
-    /// A checker refusing the change if `allow_feature_tier` disables `tier`, nothing if it allows it.
-    std::optional<Checker> getTierChecker(std::string_view setting_name, SettingsTierType tier) const;
     Checker getMergeTreeChecker(std::string_view short_name) const;
 
     std::string_view resolveSettingNameWithCache(std::string_view name) const;

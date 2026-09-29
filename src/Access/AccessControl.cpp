@@ -724,21 +724,16 @@ bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, 
         FeatureTierAccessEntityChecker feature_tier_checker;
         if (check_feature_tier)
         {
-            auto old_entity = tryRead(id);
-            if (old_entity)
-            {
-                /// Replicated storage retries can already invoke `update_func` more than once, and this
-                /// preliminary validation adds another invocation. It must be a pure transformation.
-                auto new_entity = update_func(old_entity, id);
-                feature_tier_checker = prepareFeatureTierAccessEntityChecker(
-                    *this, PendingAccessEntities{{id, new_entity}}, PendingAccessEntities{{id, old_entity}});
-            }
-            else
-            {
-                /// A replicated storage can know about an entity before its local cache catches up.
-                feature_tier_checker
-                    = prepareFeatureTierAccessEntityChecker(*this, /* pending= */ {}, /* current= */ {}, /* force= */ true);
-            }
+            /// An entity this instance cannot read, as a replicated one its cache has not caught up with yet,
+            /// is not updated unchecked.
+            auto old_entity = read(id, throw_if_not_exists);
+            if (!old_entity)
+                return false;
+            /// Replicated storage retries can already invoke `update_func` more than once, and this
+            /// preliminary validation adds another invocation. It must be a pure transformation.
+            auto new_entity = update_func(old_entity, id);
+            feature_tier_checker = prepareFeatureTierAccessEntityChecker(
+                *this, PendingAccessEntities{{id, new_entity}}, PendingAccessEntities{{id, old_entity}});
         }
 
         /// A regular storage calls the update function while holding its own mutex. Pause before entering it

@@ -72,7 +72,6 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
     const AccessControl & access_control,
     const PendingAccessEntities & pending,
     const PendingAccessEntities & current = {},
-    bool force = false,
     bool new_users_are_shadowed = false);
 
 /// Refuses the pending write if it changes a setting whose tier `allow_feature_tier` disables for a

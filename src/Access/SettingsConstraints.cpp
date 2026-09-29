@@ -491,8 +491,9 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
 
     if (access_control && isAnyFeatureTierRestricted(*access_control))
     {
-        if (auto tier_checker = getTierChecker(setting_name, MergeTreeSettings::tryGetTierOfBuiltin(setting_name).value_or(SettingsTierType::PRODUCTION)))
-            return tier_checker->check(change, new_value, reaction, SettingSource::QUERY);
+        auto tier = MergeTreeSettings::tryGetTierOfBuiltin(setting_name).value_or(SettingsTierType::PRODUCTION);
+        if (auto reason = getFeatureTierRestriction(*access_control, setting_name, tier))
+            return Checker(*reason, ErrorCodes::READONLY).check(change, new_value, reaction, SettingSource::QUERY);
     }
 
     return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
@@ -651,8 +652,8 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name is a `MergeTreeSettings` setting.
     if (check_feature_tier && access_control && isAnyFeatureTierRestricted(*access_control))
     {
-        if (auto tier_checker = getTierChecker(setting_name, settingGetTier(resolved_name)))
-            return *tier_checker;
+        if (auto reason = getFeatureTierRestriction(*access_control, setting_name, settingGetTier(resolved_name)))
+            return Checker(*reason, ErrorCodes::READONLY);
     }
 
     auto it = constraints.find(resolved_name);
@@ -715,18 +716,6 @@ bool SettingsConstraints::allowsValueFromCompatibility(std::string_view setting_
     SettingChange change(setting_name, value);
     return Checker(it->second, Settings::resolveName).check(change, value, CLAMP_ON_VIOLATION, SettingSource::PROFILE)
         && change.value == value;
-}
-
-/// Callers reach this only for a setting a query really changes, so a value the server itself set is
-/// never refused.
-std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(std::string_view setting_name, SettingsTierType tier) const
-{
-    if (!access_control)
-        return {};
-
-    if (auto reason = getFeatureTierRestriction(*access_control, setting_name, tier))
-        return Checker(*reason, ErrorCodes::READONLY);
-    return {};
 }
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
