@@ -40,8 +40,6 @@ UInt64	2
 UInt64	2	Array(UInt64)	[1,1]
 1	2	2
 Dynamic	1
---- shared Nested offsets ---
-Array(Dynamic)	[1,2]
-UInt64	2
-2	2
-['{"size0":1}','{"size0":2}']	[10,20]
+--- the most specific declared prefix resolves the rest ---
+2
+Dynamic

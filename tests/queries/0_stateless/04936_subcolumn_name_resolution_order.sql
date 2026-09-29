@@ -106,14 +106,13 @@ SELECT length(m), length(d), length(s) FROM t_other;
 SELECT toTypeName(n.null), isNull(n) FROM t_other;
 DROP TABLE t_other;
 
-SELECT '--- shared Nested offsets ---';
+SELECT '--- the most specific declared prefix resolves the rest ---';
 
-DROP TABLE IF EXISTS t_nested;
-CREATE TABLE t_nested (n Nested(j JSON, k UInt64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO t_nested VALUES ([('{"size0":1}'), ('{"size0":2}')], [10, 20]);
+DROP TABLE IF EXISTS t_dotted_prefix;
+CREATE TABLE t_dotted_prefix (c Tuple(`a` JSON, `a.b` JSON)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_dotted_prefix VALUES (('{"b":{"some":{"path":1}}}', '{"some":{"path":2}}'));
 
-SELECT toTypeName(`n.j`.size0), toString(`n.j`.size0) FROM t_nested;
-SELECT toTypeName(`n.k`.size0), `n.k`.size0 FROM t_nested;
-SELECT length(`n.j`), length(`n.k`) FROM t_nested;
-SELECT `n.j`, `n.k` FROM t_nested;
-DROP TABLE t_nested;
+-- `a` can resolve `b.some.path` and `a.b` can resolve `some.path`; the declared `a.b` is the answer.
+SELECT c.a.b.some.path FROM t_dotted_prefix;
+SELECT toTypeName(c.a.b.some.path) FROM t_dotted_prefix;
+DROP TABLE t_dotted_prefix;

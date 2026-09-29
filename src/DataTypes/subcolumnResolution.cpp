@@ -205,11 +205,14 @@ std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
 
             found_path = copyPathPrefix(path, prefix_len);
         }
-        /// On a prefix match the rest of the name may be a dynamic subcolumn of this substream.
-        else if (!dynamic_parent_path && subcolumn_name.starts_with(name + ".") && path[prefix_len - 1].data.type)
+        /// On a prefix match the rest of the name may be a dynamic subcolumn of this substream. Of
+        /// several matching prefixes the most specific one wins, and it leaves the shortest rest: for
+        /// `a.b.some.path` of Tuple(`a` JSON, `a.b` JSON) the declared `a.b` answers, not `a`.
+        else if (subcolumn_name.starts_with(name + ".") && path[prefix_len - 1].data.type)
         {
             auto name_in_parent = subcolumn_name.substr(name.size() + 1);
-            if (path[prefix_len - 1].data.type->canResolveDynamicSubcolumn(name_in_parent))
+            if ((!dynamic_parent_path || name_in_parent.size() < dynamic_subcolumn_name.size())
+                && path[prefix_len - 1].data.type->canResolveDynamicSubcolumn(name_in_parent))
             {
                 dynamic_parent_path = copyPathPrefix(path, prefix_len);
                 dynamic_subcolumn_name = name_in_parent;
