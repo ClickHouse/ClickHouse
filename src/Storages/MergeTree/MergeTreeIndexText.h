@@ -492,13 +492,8 @@ struct MergeTreeIndexTextGranuleBuilder
     void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
     void addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context);
-    /// Adds the rows by tokenizing each `LowCardinality` dictionary value once; false if not applicable, adding nothing.
-    bool tryAddLowCardinalityDocuments(
-        const IColumn & column,
-        const IColumn::Offsets * offsets,
-        size_t start_row,
-        size_t rows_read,
-        const PostingListBuildContext & context);
+    /// Adds the rows of a `LowCardinality` column or of an array of them, tokenizing each dictionary value once if possible.
+    void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }

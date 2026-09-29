@@ -1842,32 +1842,25 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
     ++current_row;
 }
 
-bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
-    const IColumn & column,
-    const IColumn::Offsets * offsets,
-    size_t start_row,
-    size_t rows_read,
-    const PostingListBuildContext & context)
+void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
+    ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
 {
-    const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
-    /// A stateful tokenizer can return no tokens for a value tokenized again right after itself.
-    if (!column_low_cardinality || postprocessor_drop_filter || tokenizer->isStateful())
-        return false;
+    const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
+    const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(column_array ? column_array->getData() : *column);
+    const IColumnUnique & dictionary = column_low_cardinality.getDictionary();
+    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[row - 1] : row; };
 
-    auto elements_begin = [&](size_t row) { return offsets ? (*offsets)[row - 1] : row; };
-
-    /// Rarely repeating values gain nothing, while `ranges` costs O(dictionary), and the dictionary is per block.
     static constexpr size_t min_documents_per_value = 8;
     static constexpr size_t max_dictionary_size = 65536;
     static constexpr size_t max_cached_tokens = 1 << 23;
-    const IColumnUnique & dictionary = column_low_cardinality->getDictionary();
-    if (dictionary.size() > max_dictionary_size
-        || dictionary.size() * min_documents_per_value > elements_begin(start_row + rows_read) - elements_begin(start_row))
-        return false;
+    /// A stateful tokenizer may return other tokens for a value it tokenizes again, and with a drop filter `addToken`
+    /// may leave a token without a builder. The cache costs O(dictionary) and a lookup per token, so values must repeat.
+    const bool use_cache = !tokenizer->isStateful() && !postprocessor_drop_filter && dictionary.size() <= max_dictionary_size
+        && dictionary.size() * min_documents_per_value <= elements_begin(start_row + rows_read) - elements_begin(start_row);
 
     /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, `not_seen` before that.
     static constexpr size_t not_seen = std::numeric_limits<size_t>::max();
-    std::vector<std::pair<size_t, size_t>> ranges(dictionary.size(), {not_seen, not_seen});
+    std::vector<std::pair<size_t, size_t>> ranges(use_cache ? dictionary.size() : 0, {not_seen, not_seen});
     std::vector<PostingListBuilder *> builders;
     size_t buffer_size = tokens_map.getBufferSizeInCells();
 
@@ -1875,10 +1868,18 @@ bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
     {
         for (size_t i = elements_begin(row); i < elements_begin(row + 1); ++i)
         {
-            const size_t index = column_low_cardinality->getIndexAt(i);
-            auto & [begin, end] = ranges[index];
+            const size_t index = column_low_cardinality.getIndexAt(i);
+            if (dictionary.isNullAt(index))
+                continue;
 
-            if (begin == not_seen && !dictionary.isNullAt(index))
+            if (!use_cache)
+            {
+                addDocument(dictionary.getDataAt(index), context);
+                continue;
+            }
+
+            auto & [begin, end] = ranges[index];
+            if (begin == not_seen)
             {
                 const std::string_view value = dictionary.getDataAt(index);
                 begin = builders.size();
@@ -1913,7 +1914,6 @@ bool MergeTreeIndexTextGranuleBuilder::tryAddLowCardinalityDocuments(
         }
         incrementCurrentRow();
     }
-    return true;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -2024,7 +2024,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromMap(preprocessed_column, offset, rows_read, context);
     }
-    else if (!granule_builder.tryAddLowCardinalityDocuments(*preprocessed_column, nullptr, offset, rows_read, context))
+    else if (preprocessed_column->lowCardinality())
+    {
+        granule_builder.addDocumentsFromLowCardinality(preprocessed_column, offset, rows_read, context);
+    }
+    else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
 
@@ -2052,8 +2056,11 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
 
     if constexpr (tokenize)
     {
-        if (granule_builder.tryAddLowCardinalityDocuments(column_data, &column_offsets, start_row, rows_read, context))
+        if (column_data.lowCardinality())
+        {
+            granule_builder.addDocumentsFromLowCardinality(column, start_row, rows_read, context);
             return;
+        }
     }
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)

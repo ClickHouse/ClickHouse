@@ -30,11 +30,11 @@ SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(curr
 
 SELECT 'Search vs full scan';
 SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3');
-SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3') SETTINGS use_skip_indexes = 0;
 SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299');
-SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299') SETTINGS use_skip_indexes = 0;
 SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3');
-SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3') SETTINGS use_skip_indexes = 0;
 
 SELECT 'MATERIALIZE INDEX';
 
@@ -44,11 +44,11 @@ SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(curr
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 
 SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3');
-SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'w3') SETTINGS use_skip_indexes = 0;
 SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299');
-SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasToken(lc, 'v299') SETTINGS use_skip_indexes = 0;
 SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3');
-SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3') SETTINGS use_skip_indexes = 0;
 
 SELECT 'Arrays with NULL and empty elements, a value repeated within a row, and empty arrays';
 
@@ -70,7 +70,7 @@ SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(curr
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab_array, idx_s);
 
 SELECT count(), sum(id) FROM tab_array WHERE hasAnyTokens(lc, ['e3']);
-SELECT count(), sum(id) FROM tab_array WHERE hasAnyTokens(lc, ['e3']) SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count(), sum(id) FROM tab_array WHERE hasAnyTokens(lc, ['e3']) SETTINGS use_skip_indexes = 0;
 
 SELECT 'Stateful tokenizer';
 CREATE TABLE tab_sparse_grams

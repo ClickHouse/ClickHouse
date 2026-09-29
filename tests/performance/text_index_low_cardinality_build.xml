@@ -20,6 +20,8 @@
     CREATE TABLE text_index_lc_build_src_{distinct} (s String, tags Array(String)) ENGINE = Memory;
   </create_query>
 
+  <fill_query>SYSTEM STOP MERGES text_index_lc_build_{distinct}</fill_query>
+  <fill_query>SYSTEM STOP MERGES text_index_lc_array_build_{distinct}</fill_query>
   <fill_query>
     INSERT INTO text_index_lc_build_src_{distinct} SELECT
         concat('service-', toString(cityHash64(number) % {distinct})),

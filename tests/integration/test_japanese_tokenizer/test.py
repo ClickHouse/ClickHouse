@@ -94,7 +94,7 @@ def test_text_index_low_cardinality(started_cluster):
 
     for token in ["エンジン", "文章", "テスト"]:
         query = f"SELECT count() FROM jp_lc WHERE hasAnyTokens(s, '{token}', 'japanese')"
-        full_scan = query + " SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0"
+        full_scan = query + " SETTINGS use_skip_indexes = 0"
         assert node.query(query) == node.query(full_scan), token
 
     node.query("DROP TABLE jp_lc")
