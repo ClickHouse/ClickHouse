@@ -14,25 +14,29 @@ integration:
 You can sign up for the Private Preview waitlist [here](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 </Note>
 
-This article describes the GCP IAM permissions ClickPipes requires to authenticate with Google Cloud Pub/Sub and consume data from your topics, and how to set up a service account that grants exactly those permissions.
+This article describes the GCP IAM permissions ClickPipes requires to authenticate with Google Cloud Pub/Sub, consume data from your topics, and grant access to the service account used by ClickPipes.
 
 ## Prerequisites {#prerequisite}
 
 To follow this guide, you will need:
 - An active ClickHouse Cloud service
 - A GCP project containing the Pub/Sub topic you want to ingest from
-- IAM permissions in that project to create service accounts and grant roles
+- IAM permissions in that project to grant roles
+- For service account key authentication, IAM permissions to create service accounts and keys
 
 ## Authentication model {#authentication-model}
 
-ClickPipes for Pub/Sub authenticates with GCP using a [service account JSON key](https://cloud.google.com/iam/docs/keys-create-delete). When you create a pipe, you upload the key file; ClickPipes encrypts it at rest and uses it at runtime to:
+ClickPipes for Pub/Sub supports two authentication methods:
+
+- **Service account key:** You create a Google service account and upload its [JSON key](https://cloud.google.com/iam/docs/keys-create-delete) in the ClickPipes UI or provide it through the API. ClickPipes encrypts the key at rest.
+- **GCP workload identity (Private Preview):** ClickPipes uses short-lived credentials for a ClickPipes-managed Google service account. No customer service account key is stored. This method requires a ClickHouse Cloud service and ClickPipes deployment running on GCP and is currently available through OpenAPI and Terraform only.
+
+With either method, the service account is used to:
 
 - list and read topics in your project,
 - create and delete the [managed subscription](/integrations/clickpipes/pubsub/overview#managed-subscriptions) ClickPipes uses to consume messages,
 - consume messages from that subscription, and
 - (optionally) read native Pub/Sub schemas from the schema registry.
-
-There is no workload identity or inline credential paste option — the service account JSON key is the only supported authentication method today.
 
 ## Required permissions {#required-permissions}
 
@@ -97,9 +101,23 @@ Append `pubsub.schemas.get` to the `--permissions` list if you ingest from topic
 
 If you prefer to skip the custom role, you can grant `roles/pubsub.editor` instead.
 
+### Use GCP workload identity (Private Preview) {#use-workload-identity}
+
+Retrieve the ClickPipes-managed service account from the service context by following the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity).
+
+Bind the custom role you created, or `roles/pubsub.editor`, to that service account:
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:CLICKPIPES_SERVICE_ACCOUNT" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+Create the ClickPipe with [OpenAPI](/integrations/clickpipes/programmatic-access/openapi#create-pubsub) or [Terraform](/integrations/clickpipes/programmatic-access/terraform#pubsub), with `authentication` set to `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Do not provide a service account key with this authentication method.
+
 ### Create a service account {#create-service-account}
 
-Create a dedicated service account for the ClickPipe:
+For service account key authentication, create a dedicated service account for the ClickPipe:
 
 ```bash
 gcloud iam service-accounts create clickpipes-pubsub \

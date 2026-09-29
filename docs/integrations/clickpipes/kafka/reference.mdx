@@ -21,8 +21,28 @@ import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/Experi
 | Confluent Cloud | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud logo" width="32" /> | Streaming | Stable | Unlock the combined power of Confluent and ClickHouse Cloud through our direct integration. |
 | Redpanda | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda logo" width="32" /> | Streaming | Stable | Configure ClickPipes and start ingesting streaming data from Redpanda into ClickHouse Cloud. |
 | AWS MSK | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK logo" width="32" /> | Streaming | Stable | Configure ClickPipes and start ingesting streaming data from AWS MSK into ClickHouse Cloud. |
+| Google Managed Service for Apache Kafka | <img src="/images/icons/cloud-providers/google-cloud-color.svg" alt="Google Cloud logo" width="32" /> | Streaming | Private Preview | Connect to Google Managed Kafka using GCP workload identity. |
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs logo" width="32" /> | Streaming | Stable | Configure ClickPipes and start ingesting streaming data from Azure Event Hubs into ClickHouse Cloud. |
 | WarpStream | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream logo" width="32" /> | Streaming | Stable | Configure ClickPipes and start ingesting streaming data from WarpStream into ClickHouse Cloud. |
+
+## GCP workload identity {#gcp-workload-identity}
+
+<Note>
+Google Managed Kafka and GCP workload identity authentication are in Private Preview. They are currently available through OpenAPI and Terraform only. Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve and authorize the ClickPipes-managed service account.
+</Note>
+
+For Google Managed Kafka, ClickPipes can authenticate as a ClickPipes-managed Google service account without storing a customer service account key. This requires a ClickHouse Cloud service and ClickPipes deployment running on GCP.
+
+Grant the ClickPipes service account `roles/managedkafka.client` in the project containing the Managed Kafka cluster. At broker connection time, this provides the `managedkafka.clusters.connect` permission required for SASL authentication. It does not replace Kafka ACLs.
+
+If your cluster has ACLs for the selected resources, grant the service account principal (`User:<service-account-email>`) these operations:
+
+| Kafka resource | Operations |
+|----------------|------------|
+| Selected topics | `READ`, `DESCRIBE` |
+| ClickPipes consumer groups | `READ`, `DESCRIBE` |
+
+You can scope the consumer group ACL to the `clickpipes-` prefix. Workload identity requires TLS and is supported only with the Google Managed Kafka source type (`gcmk`).
 
 ## Isolation Level {#isolation-level}
 

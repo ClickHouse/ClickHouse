@@ -36,6 +36,7 @@ All ClickPipes endpoints are scoped to a ClickHouse Cloud service:
 |--------|------|-------------|
 | `GET` | `/organizations/{organizationId}/services/{serviceId}/clickpipes` | List all ClickPipes |
 | `POST` | `/organizations/{organizationId}/services/{serviceId}/clickpipes` | Create a ClickPipe |
+| `GET` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/context` | Get service capabilities and the GCP workload identity principal |
 | `GET` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}` | Get a ClickPipe |
 | `PATCH` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}` | Update a ClickPipe |
 | `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}` | Delete a ClickPipe |
@@ -97,13 +98,17 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
+## GCP workload identity (Private Preview) {#gcp-workload-identity}
+
+Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity#openapi) to retrieve the ClickPipes-managed service account and grant it access to your source before using the workload identity examples below.
+
 ## Creating ClickPipes {#creating-clickpipes}
 
 The `POST /clickpipes` request body varies by source type. The examples below show the structure for each supported ClickPipe type. For the authoritative JSON schemas, refer to the [API reference](/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 ### Kafka {#create-kafka}
 
-Supported Kafka-compatible sources: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
+Supported Kafka-compatible sources: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`, and Private Preview `gcmk`.
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -140,6 +145,22 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
+
+For Google Managed Kafka, grant the workload identity principal `roles/managedkafka.client` on the cluster project and configure the required Kafka ACLs. Then use this source object without a `credentials` field:
+
+```json
+{
+  "kafka": {
+    "type": "gcmk",
+    "format": "JSONEachRow",
+    "brokers": "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092",
+    "topics": "events",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+Google Managed Kafka workload identity requires TLS.
 
 ### Amazon Kinesis {#create-kinesis}
 
@@ -229,6 +250,55 @@ curl -u "$KEY_ID:$KEY_SECRET" \
         "format": "JSONEachRow",
         "authentication": "SERVICE_ACCOUNT",
         "serviceAccountKey": "<base64_encoded_service_account_json>"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+To use workload identity instead of a service account key, grant the principal `roles/storage.objectViewer` on the source bucket and use this source object:
+
+```json
+{
+  "objectStorage": {
+    "type": "gcs",
+    "url": "gs://my-bucket/data/*.json",
+    "format": "JSONEachRow",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+For unordered ingestion, also grant the principal `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the notification subscription. Set `isContinuous` to `true` and use a fully-qualified `queueUrl` in the form `projects/<project-id>/subscriptions/<subscription-id>`.
+
+### Google Cloud Pub/Sub {#create-pubsub}
+
+The following example uses workload identity. Grant the principal the [required Pub/Sub permissions](/integrations/clickpipes/pubsub/auth#required-permissions) before creating the ClickPipe.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Pub/Sub ClickPipe",
+    "source": {
+      "pubsub": {
+        "format": "JSONEachRow",
+        "projectId": "my-gcp-project",
+        "topic": "events",
+        "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+        "seekType": "latest"
       }
     },
     "destination": {
@@ -418,4 +488,26 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     }
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+To use workload identity instead of a service account key, grant the principal the [required BigQuery and GCS permissions](/integrations/clickpipes/bigquery/overview#permissions) and use this source object:
+
+```json
+{
+  "bigquery": {
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+    "projectId": "my-gcp-project",
+    "snapshotStagingPath": "gs://my-staging-bucket/staging/",
+    "settings": {
+      "replicationMode": "snapshot"
+    },
+    "tableMappings": [
+      {
+        "sourceDatasetName": "my_dataset",
+        "sourceTable": "my_table",
+        "targetTable": "my_bigquery_table"
+      }
+    ]
+  }
+}
 ```

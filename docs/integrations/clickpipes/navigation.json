@@ -204,6 +204,13 @@
       ]
     },
     {
+      "group": "Security and access",
+      "icon": "shield-check",
+      "pages": [
+        "integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
       "group": "Networking",
       "icon": "network-wired",
       "pages": [

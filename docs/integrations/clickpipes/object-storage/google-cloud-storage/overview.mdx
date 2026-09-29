@@ -45,7 +45,7 @@ See [Configuring unordered mode for continuous ingestion](/integrations/clickpip
 It's possible to configure a GCS ClickPipe to ingest files that don't have an implicit order by setting up a [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) subscription that receives notifications from the bucket. This allows ClickPipes to listen for object created events and ingest any new files regardless of the file naming convention.
 
 <Note>
-Unordered mode is **not** supported for public buckets. It requires **Service Account** authentication and a [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription connected to the bucket.
+Unordered mode is **not** supported for public buckets. It requires service account authentication, using either an uploaded key or GCP workload identity, and a [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription connected to the bucket.
 </Note>
 
 In this mode, the GCS ClickPipe does an initial load of **all files** in the selected path, and then listens for `OBJECT_FINALIZE` notifications via the Pub/Sub subscription that match the specified path. Any message for a previously seen file, file not matching the path, or event of a different type will be **ignored**. To ingest only files delivered through the subscription, enable **Skip initial load**. When enabled, ClickPipes skips the initial scan of existing files in the selected path and processes only files delivered through the Pub/Sub subscription.
@@ -116,6 +116,12 @@ When using [unordered mode](#continuous-ingestion-any-order), the service accoun
 #### Service account {#service-account}
 
 Service Account authentication is required when using [unordered mode](#continuous-ingestion-any-order) with Pub/Sub notifications. Select **Service Account** as the authentication method and upload the service account key JSON file.
+
+#### GCP workload identity (Private Preview) {#gcp-workload-identity}
+
+GCP workload identity lets ClickPipes authenticate as a ClickPipes-managed Google service account without storing your service account key. It requires a ClickHouse Cloud service and ClickPipes deployment running on GCP and is currently available through OpenAPI and Terraform only.
+
+Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve the managed service account from the ClickPipes service context. Grant it `roles/storage.objectViewer` on the source bucket, and create the pipe with `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` authentication. For unordered ingestion, also grant it `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the existing notification subscription and use its fully-qualified name: `projects/<project-id>/subscriptions/<subscription-id>`.
 
 #### HMAC credentials {#hmac-credentials}
 

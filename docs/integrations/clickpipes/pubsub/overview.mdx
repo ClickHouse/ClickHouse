@@ -19,7 +19,7 @@ You can sign up for the Private Preview waitlist [here](https://clickhouse.com/c
 Pub/Sub ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
 ## Prerequisite {#prerequisite}
-You have familiarized yourself with the [ClickPipes intro](/integrations/clickpipes/home), have access to a GCP project containing the topic you want to ingest from, and have created a service account with the appropriate Pub/Sub permissions. Follow the [Pub/Sub IAM permissions guide](/integrations/clickpipes/pubsub/auth) for the exact set of permissions ClickPipes requires.
+You have familiarized yourself with the [ClickPipes intro](/integrations/clickpipes/home), have access to a GCP project containing the topic you want to ingest from, and can grant the appropriate Pub/Sub permissions to the service account used by ClickPipes. Follow the [Pub/Sub IAM permissions guide](/integrations/clickpipes/pubsub/auth) for authentication options and the exact set of required permissions.
 
 ## Creating your first ClickPipe {#creating-your-first-clickpipe}
 
@@ -209,6 +209,8 @@ ClickPipes for Pub/Sub provides **at-least-once** delivery. A Pub/Sub message is
 
 ## Authentication {#authentication}
 
-ClickPipes for Pub/Sub authenticates with GCP using a service account JSON key. You upload the key file when creating the pipe; ClickPipes encrypts it at rest and uses it at runtime to consume messages and manage the lifecycle of the managed subscription.
+The ClickPipes UI uses a service account JSON key. You upload the key file when creating the pipe; ClickPipes encrypts it at rest and uses it at runtime to consume messages and manage the lifecycle of the managed subscription.
+
+GCP workload identity is also available in Private Preview through OpenAPI and Terraform. It uses a ClickPipes-managed Google service account and does not store a customer service account key. See the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) for setup instructions.
 
 For the exact list of IAM permissions required and a recommended custom-role definition, see the [Pub/Sub IAM permissions guide](/integrations/clickpipes/pubsub/auth).
