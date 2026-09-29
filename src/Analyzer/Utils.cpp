@@ -1495,7 +1495,8 @@ namespace
 /// exactly, with no `Float64` in between and no dependency on the time zone of the shard. Every
 /// `date_time_input_format` reads a Unix timestamp with 9 or 10 digits of whole seconds, so in that range the
 /// leaf is written as one and does not depend on the format. Outside it (before 1973-03-03, after 2286-11-20)
-/// the best-effort parsers do not read a Unix timestamp: `basic` gets the Unix timestamp, and `best_effort` and
+/// the best-effort parsers do not read a Unix timestamp: `basic` gets the Unix timestamp, or a date-time in the
+/// time zone of the type when `basic` does not read the Unix timestamp either, and `best_effort` and
 /// `best_effort_us` get an ISO 8601 date-time in UTC.
 String dateTime64AsExactText(DateTime64 value, const DataTypeDateTime64 & type, FormatSettings::DateTimeInputFormat date_time_input_format)
 {
@@ -1535,7 +1536,18 @@ String dateTime64AsExactText(DateTime64 value, const DataTypeDateTime64 & type, 
     String text;
     if (date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
     {
-        text = std::move(timestamp);
+        /// `basic` reads a whole-seconds part with few digits, like the `0` of `0.001`, as a date, so there
+        /// the leaf is written as a date-time in the time zone of the type, which the shard reads it in.
+        if (reads_back(timestamp, FormatSettings::DateTimeInputFormat::Basic))
+        {
+            text = std::move(timestamp);
+        }
+        else
+        {
+            WriteBufferFromOwnString local_out;
+            writeDateTimeText(value, scale, local_out, time_zone);
+            text = local_out.str();
+        }
     }
     else
     {
