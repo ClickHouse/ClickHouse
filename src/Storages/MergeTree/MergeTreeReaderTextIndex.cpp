@@ -543,7 +543,6 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (auto rows_range = getRowsRangeForMark(from_mark - 1))
         cleanupPostingsBlocks(*rows_range);
 
-    /// Columns whose posting lists the index analysis folded completely.
     if (read_rows > 0)
     {
         for (size_t i = 0; i < res_columns.size(); ++i)
@@ -617,7 +616,6 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         if (search_query->getTokens().empty() && search_query->getPatterns().empty())
             continue;
 
-        /// Filled once for all rows read, see `readRows`.
         if (getFoldedPostings(i))
             continue;
 
@@ -775,7 +773,6 @@ const PostingList * MergeTreeReaderTextIndex::getFoldedPostings(size_t column_id
     if (search_query->getSearchMode() == TextSearchMode::Phrase)
         return nullptr;
 
-    /// No search tokens: nothing matches.
     if (search_query->getTokens().empty() && search_query->getPatterns().empty())
         return &empty_postings;
 
@@ -783,7 +780,6 @@ const PostingList * MergeTreeReaderTextIndex::getFoldedPostings(size_t column_id
     if (query_builder.is_failed)
         return &empty_postings;
 
-    /// Postings of some tokens are read per mark, see `buildPostingsForQuery`.
     if (query_builder.needReadPostings())
         return nullptr;
 
