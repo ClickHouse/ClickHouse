@@ -41,6 +41,52 @@ def random_session_id():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
 
+PROBE_POLL_INTERVAL = 0.1
+PROBE_EXPIRE_DEADLINE = 30.0
+PROBE_ALIVE_WINDOW = 3.0
+
+
+def _make_probe_client():
+    # A same-user client on its own session. Every request on a prepared
+    # statement's owning session refreshes its expiration
+    # (AuthMiddleware::CallCompleted -> refreshSessionPreparedStatements),
+    # so the handle may only be observed from a foreign session.
+    return get_client("user_ps1", "pass1", random_session_id())
+
+
+def _handle_gone(probe, handle):
+    try:
+        probe.get_prepared_statement_schema(handle)
+    except pa.lib.ArrowKeyError as e:
+        if "Prepared statement handle not found" in str(e):
+            return True
+        raise
+    return False
+
+
+def wait_prepared_statement_expires(handle, deadline=PROBE_EXPIRE_DEADLINE):
+    probe = _make_probe_client()
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
+        if _handle_gone(probe, handle):
+            return
+        time.sleep(PROBE_POLL_INTERVAL)
+    pytest.fail(f"prepared statement {handle!r} was not expired within {deadline} s")
+
+
+def assert_prepared_statement_alive(handle, seconds=PROBE_ALIVE_WINDOW):
+    probe = _make_probe_client()
+    start = time.monotonic()
+    end = start + seconds
+    while time.monotonic() < end:
+        if _handle_gone(probe, handle):
+            pytest.fail(
+                f"prepared statement {handle!r} disappeared after "
+                f"{time.monotonic() - start:.1f} s of the {seconds} s window"
+            )
+        time.sleep(PROBE_POLL_INTERVAL)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -61,8 +107,7 @@ def test_session_timeout_drives_prepared_statement_expiration():
     result = client.execute(stmt)
     assert result.column(0).to_pylist() == [1]
 
-    # Wait for the session timeout to expire.
-    time.sleep(2)
+    wait_prepared_statement_expires(stmt.handle)
 
     with pytest.raises(pa.lib.ArrowKeyError, match="Prepared statement handle not found"):
         client.execute(stmt)
@@ -86,8 +131,7 @@ def test_do_put_early_release_keeps_refresh_order():
         # The next request on the session refreshes the expiration to now + 30s.
         client_long.execute("SELECT 1")
 
-        # Wait past the short timeout; the longer refresh must still be in effect.
-        time.sleep(2)
+        assert_prepared_statement_alive(stmt.handle)
 
         result = client_long.execute(stmt)
         assert result.column(0).to_pylist() == [1]
