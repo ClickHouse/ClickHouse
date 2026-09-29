@@ -2,7 +2,9 @@
 
 #if USE_GPU
 
+#include <GPU/CudfGroupBy.cuh>
 #include <GPU/GPUColumns.h>
+#include <GPU/OffsetsKernels.cuh>
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUTypeMapping.h>
 
@@ -33,12 +35,6 @@ DeviceFixedColumnBuffer::DeviceFixedColumnBuffer(GPUElementType element_type_, r
 {
 }
 
-void DeviceFixedColumnBuffer::appendCompressed(
-    SyncDecompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks)
-{
-    decompressor.decompress(codec, host_compressed, blocks, values.grow(decompressedBytesOf(blocks)));
-}
-
 void DeviceFixedColumnBuffer::dropFront(size_t num_rows)
 {
     const size_t bytes = num_rows * sizeOf(element_type);
@@ -64,6 +60,8 @@ DeviceVariableColumnBuffer::DeviceVariableColumnBuffer(rmm::cuda_stream_view str
     : stream(stream_)
     , offsets(stream)
     , chars(stream)
+    , pending_sizes(stream)
+    , spare(stream)
 {
     startOffsets();
 }
@@ -80,13 +78,93 @@ void DeviceVariableColumnBuffer::append(std::string_view host_row_ends, std::str
 
     offsets.append(host_row_ends);
     chars.append(host_chars);
+
+    settled_rows = sizedRows();
+    settled_bytes = chars.size();
+}
+
+void DeviceVariableColumnBuffer::appendSizes(const char * device_sizes, size_t bytes)
+{
+    /// After the rest of the size the last call ended with, which also puts the sizes where they are aligned.
+    checkCuda(
+        cudaMemcpyAsync(pending_sizes.grow(bytes), device_sizes, bytes, cudaMemcpyDeviceToDevice, stream),
+        "Cannot gather {} bytes of the sizes of a column of values of varying width",
+        bytes);
+
+    const size_t count = pending_sizes.size() / sizeof(uint64_t);
+    if (count == 0)
+        return;
+
+    const size_t start = sizedRows();
+    offsets.grow(count * sizeof(uint64_t));
+    offsetsFromSizes(reinterpret_cast<const uint64_t *>(pending_sizes.data()), count, reinterpret_cast<uint64_t *>(offsets.data()) + start, stream);
+
+    const size_t tail = pending_sizes.size() - count * sizeof(uint64_t);
+    if (tail == 0)
+    {
+        pending_sizes.clear();
+        return;
+    }
+
+    spare.clear();
+    checkCuda(
+        cudaMemcpyAsync(spare.grow(tail), pending_sizes.data() + count * sizeof(uint64_t), tail, cudaMemcpyDeviceToDevice, stream),
+        "Cannot keep {} bytes of a size of a column of values of varying width",
+        tail);
+    std::swap(pending_sizes, spare);
+}
+
+void DeviceVariableColumnBuffer::settle()
+{
+    const CoveredRows covered = rowsCoveredBy(reinterpret_cast<const uint64_t *>(offsets.data()), sizedRows(), chars.size(), stream);
+    settled_rows = covered.rows;
+    settled_bytes = covered.bytes;
+}
+
+void DeviceVariableColumnBuffer::dropFront(size_t num_rows)
+{
+    if (num_rows > settled_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Dropping {} rows of a device column of {}", num_rows, settled_rows);
+    if (num_rows == 0)
+        return;
+
+    uint64_t dropped_bytes = 0;
+    checkCuda(
+        cudaMemcpy(&dropped_bytes, reinterpret_cast<const uint64_t *>(offsets.data()) + num_rows, sizeof(uint64_t), cudaMemcpyDeviceToHost),
+        "Cannot copy an offset back from the device");
+
+    const size_t kept_offsets = (sizedRows() - num_rows + 1) * sizeof(uint64_t);
+    spare.clear();
+    auto * kept = reinterpret_cast<uint64_t *>(spare.grow(kept_offsets));
+    subtractFromOffsets(reinterpret_cast<const uint64_t *>(offsets.data()) + num_rows, kept_offsets / sizeof(uint64_t), dropped_bytes, kept, stream);
+    std::swap(offsets, spare);
+
+    const size_t kept_chars = chars.size() - dropped_bytes;
+    spare.clear();
+    if (kept_chars != 0)
+        checkCuda(
+            cudaMemcpyAsync(spare.grow(kept_chars), chars.data() + dropped_bytes, kept_chars, cudaMemcpyDeviceToDevice, stream),
+            "Cannot move {} bytes to the front of a device column",
+            kept_chars);
+    std::swap(chars, spare);
+
+    settled_rows -= num_rows;
+    settled_bytes -= dropped_bytes;
 }
 
 void DeviceVariableColumnBuffer::clear()
 {
     offsets.clear();
     chars.clear();
+    pending_sizes.clear();
+    settled_rows = 0;
+    settled_bytes = 0;
     startOffsets();
+}
+
+size_t DeviceVariableColumnBuffer::unsettledBytes() const
+{
+    return (chars.size() - settled_bytes) + (sizedRows() - settled_rows) * sizeof(uint64_t) + pending_sizes.size();
 }
 
 DeviceColumnView DeviceVariableColumnBuffer::view() const
@@ -94,8 +172,8 @@ DeviceColumnView DeviceVariableColumnBuffer::view() const
     return DeviceVariableColumn{
         .offsets = reinterpret_cast<const uint64_t *>(offsets.data()),
         .chars = chars.data(),
-        .rows = rows(),
-        .chars_bytes = chars.size(),
+        .rows = settled_rows,
+        .chars_bytes = settled_bytes,
     };
 }
 
@@ -288,51 +366,105 @@ void ColumnUploadPipe::reset()
 
 
 CompressedUploadPipe::CompressedUploadPipe(const IDataType & type, size_t stage_bytes_, GPUCodec codec_)
-    : element_type(elementTypeOrThrow(type))
-    , element_size(sizeOf(element_type))
+    : column_type(columnTypeOrThrow(type))
     , stage_bytes(stage_bytes_)
     , codec(codec_)
-    , device(element_type)
+    , device(deviceColumnFor(column_type, StreamRegistry::get().compute))
 {
 }
 
 void CompressedUploadPipe::stageCompressedBlock(std::string_view payload, size_t decompressed_bytes)
 {
-    if (!blocks.empty() && staged.size() + payload.size() > stage_bytes)
+    stageBlock(staged_data, payload, decompressed_bytes);
+}
+
+void CompressedUploadPipe::stageCompressedSizesBlock(std::string_view payload, size_t decompressed_bytes)
+{
+    if (!std::holds_alternative<DeviceVariableColumnBuffer>(device))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of a column of values of fixed width");
+    stageBlock(staged_sizes, payload, decompressed_bytes);
+}
+
+void CompressedUploadPipe::stageBlock(StagedBlocks & staged, std::string_view payload, size_t decompressed_bytes)
+{
+    if (!staged.blocks.empty() && staged.bytes.size() + payload.size() > stage_bytes)
         sendStagedToDevice();
 
-    blocks.push_back({
-        .offset = staged.size(),
+    staged.blocks.push_back({
+        .offset = staged.bytes.size(),
         .compressed_bytes = payload.size(),
         .decompressed_bytes = decompressed_bytes,
     });
-
-    staged.append(payload);
+    staged.bytes.append(payload);
+    staged.expanded_bytes += decompressed_bytes;
     staged_bytes += decompressed_bytes;
+}
+
+size_t CompressedUploadPipe::stagedRows() const
+{
+    return std::visit(
+        [&](const auto & column)
+        {
+            if constexpr (std::is_same_v<std::decay_t<decltype(column)>, DeviceFixedColumnBuffer>)
+                return staged_bytes / column.elementSize();
+            else
+                return column.rows() + (column.unsettledBytes() + staged_sizes.expanded_bytes) / sizeof(uint64_t);
+        },
+        device);
 }
 
 void CompressedUploadPipe::sendStagedToDevice()
 {
-    if (blocks.empty())
-        return;
+    const auto expand = [&](StagedBlocks & staged, char * destination)
+    {
+        decompressor.decompress(codec, staged.bytes.bytes(), staged.blocks, destination);
+        staged.bytes.clear();
+        staged.blocks.clear();
+        staged.expanded_bytes = 0;
+    };
 
-    device.appendCompressed(decompressor, codec, staged.bytes(), blocks);
-    blocks.clear();
-    staged.clear();
+    if (auto * fixed = std::get_if<DeviceFixedColumnBuffer>(&device))
+    {
+        if (!staged_data.blocks.empty())
+            expand(staged_data, fixed->grow(staged_data.expanded_bytes));
+        return;
+    }
+
+    auto & variable = std::get<DeviceVariableColumnBuffer>(device);
+    if (!staged_data.blocks.empty())
+        expand(staged_data, variable.growChars(staged_data.expanded_bytes));
+    if (!staged_sizes.blocks.empty())
+    {
+        const size_t bytes = staged_sizes.expanded_bytes;
+        expanded_sizes.clear();
+        expand(staged_sizes, expanded_sizes.grow(bytes));
+        variable.appendSizes(expanded_sizes.data(), bytes);
+    }
 }
 
 const IDeviceColumn & CompressedUploadPipe::flush()
 {
     sendStagedToDevice();
-    return device;
+    if (auto * variable = std::get_if<DeviceVariableColumnBuffer>(&device))
+        variable->settle();
+    return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
 }
 
 void CompressedUploadPipe::reset()
 {
-    staged.clear();
-    blocks.clear();
-    device.dropFront(device.rows());
-    staged_bytes = device.bytes();
+    staged_data = StagedBlocks{};
+    staged_sizes = StagedBlocks{};
+
+    std::visit(
+        [&](auto & column)
+        {
+            column.dropFront(column.rows());
+            if constexpr (std::is_same_v<std::decay_t<decltype(column)>, DeviceFixedColumnBuffer>)
+                staged_bytes = column.bytes();
+            else
+                staged_bytes = column.unsettledBytes();
+        },
+        device);
 }
 
 }

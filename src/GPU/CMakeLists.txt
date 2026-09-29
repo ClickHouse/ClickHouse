@@ -1,5 +1,6 @@
 add_library (clickhouse_gpu_cudf STATIC
     Cudf.cu
+    OffsetsKernels.cu
 )
 
 gpu_island_target (clickhouse_gpu_cudf)
