@@ -299,7 +299,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     hashing.set.prepareForInsert(input_chunk);
 
     /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation
-    /// and its row masks. Generic spill input also needs a fingerprint column.
+    /// and its row masks. Some spill key representations also need a fingerprint column.
     /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs uncompressed,
     /// compressed, and file buffers. Oversized values and codec overhead can exceed this estimate.
     const size_t fingerprint_bytes = hashing.set.getKeyRepresentation() == DistinctKeyRepresentation::Hash128

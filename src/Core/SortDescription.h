@@ -151,6 +151,11 @@ public:
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
 
+/// Whether comparison can declare distinct hashed values equal for this type or one of its children.
+/// This includes signed floating-point zeros and distinct `NaN` payloads. Runtime-polymorphic types
+/// are included because they may contain such values.
+bool comparisonCanMergeDistinctValues(const IDataType & type);
+
 /// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
 /// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
 /// values are not adjacent; it stops the prefix (in-order DISTINCT / LIMIT BY rely on value-adjacency).

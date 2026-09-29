@@ -252,23 +252,24 @@ TEST(DistinctSetFilterExtraction, NullableKey)
     checkExtractionRoundTrip(header, {{make_column({1, {}, 2, {}, 1, 42})}});
 }
 
-TEST(DistinctSetFilterExtraction, FloatBitPatternsSurviveExtraction)
+TEST(DistinctSetFilterExtraction, FloatBitPatternsUseFingerprintExtraction)
 {
-    /// 0. and -0. are different distinct values (binary comparison); the extraction must preserve both.
+    /// Comparison merges signed zeros, so external DISTINCT must extract their hash fingerprints.
     const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")};
 
     DistinctSetFilter filter(header, {}, SizeLimits{});
     auto column = makeNumberColumn<ColumnFloat64, Float64>({0., -0., 0., -0.});
     Chunk filtered = filter.filter(Chunk({column}, 4));
     ASSERT_EQ(filtered.getNumRows(), 2u);
+    EXPECT_EQ(filter.getKeyRepresentation(), DistinctKeyRepresentation::Hash128);
 
     auto extractor = std::move(filter).extractKeys();
     auto batch = extractor->next(2, /*max_bytes=*/ 0);
     ASSERT_EQ(batch.size(), 1u);
     EXPECT_TRUE(extractor->next(2, /*max_bytes=*/ 0).empty());
-    const auto & extracted = assert_cast<const ColumnFloat64 &>(*batch[0]).getData();
+    const auto & extracted = assert_cast<const ColumnUInt128 &>(*batch[0]).getData();
     ASSERT_EQ(extracted.size(), 2u);
-    EXPECT_NE(std::signbit(extracted[0]), std::signbit(extracted[1]));
+    EXPECT_NE(extracted[0], extracted[1]);
 }
 
 TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)
