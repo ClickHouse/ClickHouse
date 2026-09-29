@@ -5,8 +5,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Checks if a function name is a native-histogram function (histogram_count, histogram_sum,
-/// histogram_avg, histogram_stddev, or histogram_stdvar).
+/// Checks if a function name is a native-histogram function (histogram_count or histogram_sum).
 bool isNativeHistogramFunction(std::string_view function_name);
 
 /// Applies a native-histogram function to its arguments (see isNativeHistogramFunction).

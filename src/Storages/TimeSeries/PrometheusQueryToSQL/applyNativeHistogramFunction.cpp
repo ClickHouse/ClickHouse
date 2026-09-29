@@ -53,10 +53,7 @@ namespace
     const char * getCHFunctionName(std::string_view function_name)
     {
         static const std::unordered_map<std::string_view, const char *> impl_map = {
-            {"histogram_avg", "timeSeriesHistogramAvg"},
             {"histogram_count", "timeSeriesHistogramCount"},
-            {"histogram_stddev", "timeSeriesHistogramStddev"},
-            {"histogram_stdvar", "timeSeriesHistogramStdvar"},
             {"histogram_sum", "timeSeriesHistogramSum"},
         };
 
