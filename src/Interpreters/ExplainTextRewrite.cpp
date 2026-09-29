@@ -73,6 +73,10 @@ void applyPage(ASTPtr & query, const ASTExplainTextAction & action)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "PAGE is not supported with a fractional LIMIT literal");
     }
 
+    if (const auto * literal = limit->as<ASTLiteral>();
+        literal && literal->value.getType() == Field::Types::Int64 && literal->value.safeGet<Int64>() < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PAGE is not supported with a negative LIMIT literal");
+
     const auto & page_literal = action.getOperand()->as<const ASTLiteral &>();
     const UInt64 page = page_literal.value.safeGet<UInt64>();
     if (page == 1)

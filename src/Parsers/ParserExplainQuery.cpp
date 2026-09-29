@@ -210,7 +210,9 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (parenthesized_source)
         {
             ++pos;
-            auto source_end = pos;
+            /// find the closing parenthesis on a private stream so errors inside the source are not reported at it
+            Tokens bracket_tokens(pos->begin, end);
+            Pos source_end(bracket_tokens, pos);
             size_t depth{1};
             while (!source_end->isEnd() && !source_end->isError())
             {
@@ -234,16 +236,18 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             const bool parsed = source_parser.parse(source_pos, query, expected);
             pos.backtracks = std::max(pos.backtracks, source_pos.backtracks);
 
-            if (!parsed)
+            if (parsed)
+                rejectExplainTextInlineData(query);
+
+            /// advance the shared stream to where the source parser stopped reading
+            const bool complete = parsed && source_pos->type == TokenType::EndOfStream;
+            const char * read_end = complete ? source_end->begin : source_pos.max().begin;
+            while (pos->begin < read_end)
+                ++pos;
+
+            if (!complete)
                 return false;
 
-            rejectExplainTextInlineData(query);
-
-            if (source_pos->type != TokenType::EndOfStream)
-                return false;
-
-            source_end.backtracks = pos.backtracks;
-            pos = source_end;
             ++pos;
 
             /// a leading parenthesis may also open the first branch of a set operation, as in
@@ -539,7 +543,7 @@ In the bare form with actions, output options before the first action belong to 
 
 `SETTINGS` parsed as part of the source `SELECT` remain source settings. To apply settings to `EXPLAIN TEXT`, put them after the source's closing parenthesis or after the action list.
 
-Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, including parametrised aliases such as `AS {name:Identifier}`, even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected when given in the outer `SETTINGS` clause because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead. A clause hoisted onto an enclosing `EXECUTE AS` reaches the session settings instead and is ignored like any other effective setting.
+Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, including a parametrised alias such as `AS {name:Identifier}` (the parser drops one inside parentheses or function arguments, so it does not appear in the result either), even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected when given in the outer `SETTINGS` clause because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead. A clause hoisted onto an enclosing `EXECUTE AS` reaches the session settings instead and is ignored like any other effective setting.
 
 In bare syntax, action keywords take precedence over implicit aliases when they form a complete action. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting, while `EXPLAIN TEXT SELECT 1 PAGE` (no page number) formats `SELECT 1 AS PAGE`. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
 

@@ -156,6 +156,12 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     actions = nullptr;
 
     auto source_begin = pos;
+
+    /// Look ahead on a private token stream with a private `Expected`. A syntax error is reported
+    /// at the rightmost token read from the shared stream, so scanning it to the end of the
+    /// statement would move every error in the source to the end of the query.
+    Tokens lookahead_tokens(source_begin->begin, end);
+    Expected lookahead_expected;
     std::vector<IParser::Pos> candidates;
 
     size_t round_depth{0};
@@ -163,7 +169,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     size_t curly_depth{0};
     TokenType previous_type{TokenType::EndOfStream};
 
-    auto scan = pos;
+    IParser::Pos scan(lookahead_tokens, pos);
     while (!scan->isEnd() && !scan->isError())
     {
         const bool at_top_level = round_depth == 0 && square_depth == 0 && curly_depth == 0;
@@ -210,19 +216,13 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     for (auto candidate : candidates)
     {
         candidate.backtracks = pos.backtracks;
-        pos = candidate;
+        auto actions_pos = candidate;
 
         ASTPtr candidate_actions;
-        const bool parsed_actions = actions_parser.parse(pos, candidate_actions, expected);
-        const bool valid_actions_end = parsed_actions && canFollowExplainTextActions(*pos);
-        const bool missing_comma = parsed_actions && isExplainTextActionLeadingToken(*pos);
-        auto actions_end = pos;
-
-        /// Return to the source beginning and charge the candidate
-        /// against the shared parser backtrack budget.
-        auto rewind = source_begin;
-        rewind.backtracks = pos.backtracks;
-        pos = rewind;
+        const bool parsed_actions = actions_parser.parse(actions_pos, candidate_actions, lookahead_expected);
+        const bool valid_actions_end = parsed_actions && canFollowExplainTextActions(*actions_pos);
+        const bool missing_comma = parsed_actions && isExplainTextActionLeadingToken(*actions_pos);
+        pos.backtracks = std::max(pos.backtracks, actions_pos.backtracks);
 
         if (!valid_actions_end && !missing_comma)
             continue;
@@ -230,11 +230,10 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         const char * prefix_end = candidate->begin;
         Tokens prefix_tokens(source_begin->begin, prefix_end);
         IParser::Pos prefix_pos(prefix_tokens, pos);
-
         ParserQuery source_parser(prefix_end, allow_settings_after_format_in_insert);
 
         ASTPtr candidate_query;
-        const bool parsed_query = source_parser.parse(prefix_pos, candidate_query, expected)
+        const bool parsed_query = source_parser.parse(prefix_pos, candidate_query, lookahead_expected)
                                 && prefix_pos->type == TokenType::EndOfStream;
 
         pos.backtracks = std::max(pos.backtracks, prefix_pos.backtracks);
@@ -244,14 +243,11 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
 
         /// confirm a complete source prefix then diagnose a missing separator
         if (missing_comma)
-        {
-            const auto & unexpected_token = *actions_end;
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(unexpected_token.begin, unexpected_token.size()));
-        }
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(actions_pos->begin, actions_pos->size()));
 
-        auto committed_end = actions_end;
-        committed_end.backtracks = std::max(committed_end.backtracks, pos.backtracks);
-        pos = committed_end;
+        /// move the shared stream past the actions read on a lookahead stream
+        while (pos->begin < actions_pos->begin)
+            ++pos;
 
         query = std::move(candidate_query);
         actions = std::move(candidate_actions);
