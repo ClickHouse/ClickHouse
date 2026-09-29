@@ -207,6 +207,11 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             return std::make_shared<PartitionAggregateTransform>(header, output_header, key_positions, window_functions, spill_settings);
         });
 
+        /// Like after `WindowTransform`: the streams are fewer than the threads if the scatter is skipped or there is
+        /// one thread, and the partitions can make them uneven.
+        if (streams_fan_out)
+            pipeline.resize(num_threads);
+
         assertBlocksHaveEqualStructure(pipeline.getHeader(), *output_header,
             "WindowStep transform for '" + window_description.window_name + "'");
         return;
