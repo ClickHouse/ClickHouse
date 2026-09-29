@@ -73,6 +73,8 @@ private:
     bool receiveHello(const Stopwatch & handshake_watch);
     /// Waits for `events` on the socket; false once cancelled, `Poco::TimeoutException` naming `what` past the deadline.
     bool waitForSocket(Int16 events, const Stopwatch & handshake_watch, std::string_view what);
+    /// This source is cancelled, or on the initiator the query is, e.g. by a failure recorded elsewhere.
+    bool isQueryCancelled() const;
 
     /// Read as many bytes as we can from the socket without blocking and update position accordingly.
     void readFromSocket(char * buffer, size_t buffer_size, size_t & position);

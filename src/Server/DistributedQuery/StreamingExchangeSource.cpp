@@ -169,7 +169,7 @@ bool StreamingExchangeSource::waitForSocket(Int16 events, const Stopwatch & hand
     const Int64 timeout_ms = StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS * 1000;
     while (true)
     {
-        if (isCancelled())
+        if (isQueryCancelled())
             return false;
         const Int64 remaining_ms = timeout_ms - static_cast<Int64>(handshake_watch.elapsedMilliseconds());
         if (remaining_ms <= 0)
@@ -180,8 +180,10 @@ bool StreamingExchangeSource::waitForSocket(Int16 events, const Stopwatch & hand
         pollfd fds[] = {
             {.fd = socket->sockfd(), .events = events, .revents = 0},
             {.fd = output_update_wakeup.fd(), .events = POLLIN, .revents = 0},
+            /// `poll` skips a negative fd: a worker has no query state.
+            {.fd = cancellation ? cancellation->getCancelledFd() : -1, .events = POLLIN, .revents = 0},
         };
-        if (::poll(fds, 2, static_cast<int>(remaining_ms)) < 0)
+        if (::poll(fds, std::size(fds), static_cast<int>(remaining_ms)) < 0)
         {
             if (errno == EINTR)
                 continue;
@@ -190,9 +192,14 @@ bool StreamingExchangeSource::waitForSocket(Int16 events, const Stopwatch & hand
         if (fds[1].revents)
             output_update_wakeup.drain();
         /// A cancel wins over a socket that became ready at the same time.
-        if (fds[0].revents && !isCancelled())
+        if (fds[0].revents && !isQueryCancelled())
             return true;
     }
+}
+
+bool StreamingExchangeSource::isQueryCancelled() const
+{
+    return isCancelled() || (cancellation && cancellation->isCancelled());
 }
 
 void StreamingExchangeSource::onCancel() noexcept
@@ -403,8 +410,11 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
             if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED || !isCancelled())
                 throw;
         }
-        if (isCancelled())
+        if (isQueryCancelled())
         {
+            /// The driving source reports a failure recorded elsewhere, unless it is done (see `tryGenerate`).
+            if (cancellation && !isCancelled() && !cancellation->isCancelledByPipeline() && cancellation->isExecutionFinished())
+                cancellation->rethrowIfFailed();
             LOG_TRACE(log, "Exchange stream {} was cancelled during the handshake", stream_name);
             finished_reading = true;
             return {};
