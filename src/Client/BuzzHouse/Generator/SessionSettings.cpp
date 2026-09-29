@@ -627,6 +627,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_partition_pruning", trueOrFalseSetting},
        {"use_primary_key", trueOrFalseSetting},
        {"use_query_condition_cache", trueOrFalseSetting},
+       {"use_puffin_files_cache", trueOrFalseSetting},
        {"use_query_condition_cache_for_top_k", trueOrFalseSetting},
        {"use_reader_executor", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},

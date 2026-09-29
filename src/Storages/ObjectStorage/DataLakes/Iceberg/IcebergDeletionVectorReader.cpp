@@ -1,25 +1,74 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDeletionVectorReader.h>
 
+#include <Core/Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
 #include <roaring/roaring64map.hh>
 
 #include <limits>
 
-namespace DB::ErrorCodes
+namespace ProfileEvents
+{
+extern const Event PuffinFilesRead;
+}
+
+namespace DB
+{
+namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
+namespace Setting
+{
+extern const SettingsBool use_puffin_files_cache;
+}
+}
+
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+std::unique_ptr<roaring::Roaring64Map> readIcebergDeletionVectorUncached(
+    const String & file_path,
+    Int64 content_offset,
+    Int64 content_size_in_bytes,
+    const ObjectStoragePtr & object_storage,
+    ContextPtr context,
+    LoggerPtr log)
+{
+    RelativePathWithMetadata object_info(file_path);
+    /// The blob is a small range inside a Puffin file shared by many data files. Read only that
+    /// range, and skip the whole-file prefetch: it starts at byte 0 and the seek below would
+    /// block on it before discarding it.
+    auto read_settings = context->getReadSettings();
+    read_settings.remote_fs_settings.prefetch = false;
+    auto read_buffer = createReadBuffer(object_info, object_storage, context, log, read_settings);
+    read_buffer->seek(content_offset, SEEK_SET);
+    read_buffer->setReadUntilPosition(static_cast<size_t>(content_offset + content_size_in_bytes));
+
+    String blob(static_cast<size_t>(content_size_in_bytes), '\0');
+    read_buffer->readStrict(blob.data(), blob.size());
+    ProfileEvents::increment(ProfileEvents::PuffinFilesRead);
+
+    /// The envelope and bitmap decoding are shared with the Puffin input format.
+    auto bitmap = std::make_unique<roaring::Roaring64Map>();
+    forEachDeletionVectorPosition(blob, [&](UInt64 position) { bitmap->add(position); });
+    return bitmap;
+}
+
+}
 
 std::unique_ptr<roaring::Roaring64Map> readIcebergDeletionVector(
     const String & file_path,
@@ -36,23 +85,29 @@ std::unique_ptr<roaring::Roaring64Map> readIcebergDeletionVector(
     if (content_size_in_bytes > std::numeric_limits<Int64>::max() - content_offset)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg deletion vector content range overflows: offset {}, size {}", content_offset, content_size_in_bytes);
 
-    RelativePathWithMetadata object_info(file_path);
-    /// The blob is a small range inside a Puffin file shared by many data files. Read only that
-    /// range, and skip the whole-file prefetch: it starts at byte 0 and the seek below would
-    /// block on it before discarding it.
-    auto read_settings = context->getReadSettings();
-    read_settings.remote_fs_settings.prefetch = false;
-    auto read_buffer = createReadBuffer(object_info, object_storage, context, log, read_settings);
-    read_buffer->seek(content_offset, SEEK_SET);
-    read_buffer->setReadUntilPosition(static_cast<size_t>(content_offset + content_size_in_bytes));
+    auto read_blob = [&]()
+    {
+        return readIcebergDeletionVectorUncached(file_path, content_offset, content_size_in_bytes, object_storage, context, log);
+    };
 
-    String blob(static_cast<size_t>(content_size_in_bytes), '\0');
-    read_buffer->readStrict(blob.data(), blob.size());
+    if (!context->getSettingsRef()[Setting::use_puffin_files_cache])
+        return read_blob();
 
-    /// The envelope and bitmap decoding are shared with the Puffin input format.
-    auto bitmap = std::make_unique<roaring::Roaring64Map>();
-    forEachDeletionVectorPosition(blob, [&](UInt64 position) { bitmap->add(position); });
-    return bitmap;
+    auto cache = context->tryGetPuffinFilesCache();
+    if (!cache)
+        return read_blob();
+
+    const auto metadata = object_storage->getObjectMetadata(file_path, /*with_tags=*/ false);
+    const auto key = PuffinFilesCache::tryCreateKey(
+        PuffinFilesCache::makeStorageIdentity(*object_storage),
+        file_path,
+        metadata,
+        content_offset,
+        content_size_in_bytes);
+    if (!key)
+        return read_blob();
+
+    return cache->getOrSetDeletionVector(*key, read_blob);
 }
 
 }

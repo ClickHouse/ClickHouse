@@ -113,6 +113,7 @@ class UncompressedCache;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
+class PuffinFilesCache;
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
 class TextIndexHeaderCache;
@@ -1713,6 +1714,11 @@ public:
     std::shared_ptr<ParquetMetadataCache> tryGetParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
 #endif
+
+    void setPuffinFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updatePuffinFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<PuffinFilesCache> tryGetPuffinFilesCache() const;
+    void clearPuffinFilesCache() const;
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
     const std::unordered_set<String> & getAllowedDisksForTableEngines() const { return allowed_disks; }

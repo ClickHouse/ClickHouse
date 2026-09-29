@@ -318,6 +318,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PAIMON METADATA CACHE", Type::CLEAR_PAIMON_METADATA_CACHE},
             {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
+            {"DROP PUFFIN FILES CACHE", Type::CLEAR_PUFFIN_FILES_CACHE},
             {"DROP POINT IN POLYGON CACHE", Type::CLEAR_POINT_IN_POLYGON_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
             {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
@@ -1242,6 +1243,10 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
+
+## SYSTEM CLEAR|DROP PUFFIN FILES CACHE {#drop-puffin-files-cache}
+
+Clears the cache of parsed Iceberg deletion vectors loaded from Puffin files. The cache is configured with the server settings `puffin_files_cache_size`, `puffin_files_cache_max_entries`, `puffin_files_cache_policy`, and `puffin_files_cache_size_ratio`. Queries consult it when `use_puffin_files_cache` is enabled.
 
 ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
 
