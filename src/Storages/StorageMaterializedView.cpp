@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
     extern const int TOO_MANY_MATERIALIZED_VIEWS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
 namespace ActionLocks
@@ -124,29 +125,55 @@ namespace
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
     }
 
-    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    /// Returns nullptr instead of throwing when `can_throw` is false.
+    ASTTableExpression * tryGetIncrementalSourceTableExpression(const ASTPtr & select_with_union, bool can_throw)
     {
         auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
         if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a single SELECT query");
+        }
 
         auto * select = union_query->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!select)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a plain SELECT query");
+        }
 
         auto tables = select->tables();
         if (!tables || tables->children.size() != 1)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires exactly one source table (no joins)");
+        }
 
         auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
         if (!table_element || !table_element->table_expression)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a source table");
+        }
 
         auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
         if (!table_expr || !table_expr->database_and_table_name)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh source must be a table, not a subquery or table function");
+        }
 
-        return *table_expr;
+        return table_expr;
+    }
+
+    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    {
+        return *tryGetIncrementalSourceTableExpression(select_with_union, /*can_throw*/ true);
     }
 
     size_t countTableExpressions(const IAST & ast)
@@ -1196,6 +1223,38 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
 {
     if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)
         refresher->start();
+}
+
+void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & context)
+{
+    auto & catalog = DatabaseCatalog::instance();
+    for (const auto & dependent_id : catalog.getReferentialDependents(table_id))
+    {
+        auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, context));
+        if (!view)
+            continue;
+        auto metadata = view->getInMemoryMetadataPtr(context, false);
+        const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
+        if (!refresh_strategy || !refresh_strategy->isIncremental())
+            continue;
+
+        auto * source_table_expr = tryGetIncrementalSourceTableExpression(metadata->getSelectQuery().select_query, /*can_throw*/ false);
+        if (!source_table_expr)
+            continue;
+        const auto * identifier = source_table_expr->database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            continue;
+        auto source_id = identifier->getTableId();
+        if (source_id.database_name.empty())
+            source_id.database_name = view->getStorageID().database_name;
+
+        /// The cursor is in the source's block-number space, so another table under the same name would be read from a stale cursor.
+        if (source_id.database_name == table_id.database_name && source_id.table_name == table_id.table_name)
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS,
+                "Cannot rename or exchange table {}, because it is the source of incremental refreshable materialized view {}. "
+                "Drop the view first",
+                table_id.getNameForLogs(), view->getStorageID().getNameForLogs());
+    }
 }
 
 StorageID StorageMaterializedView::getTargetTableId() const

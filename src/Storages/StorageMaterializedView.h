@@ -102,6 +102,9 @@ public:
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
 
+    /// Throws if `table_id` is the source of an incremental refreshable view: the view's cursor would be applied to another table.
+    static void checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & context);
+
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
