@@ -77,7 +77,7 @@ namespace
             {"avg",
              {
                 [](ASTPtr && v) -> ASTPtr
-                { return makeASTFunction("avgForEach", std::move(v)); },
+                { return makeASTFunction("avgPrometheusForEach", std::move(v)); },
             }},
 
             {"count",
