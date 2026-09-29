@@ -2,6 +2,7 @@
 
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <base/DecomposedFloat.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
@@ -114,15 +115,60 @@ void addPrometheusHistogramsToTimeSeries(
         sorted_samples.push_back({timestamp_ms, histograms.getOffset(i)});
     }
 
+    const auto compare_different_type_counts = [&columns](const Sample & float_sample, const Sample & int_sample)
+    {
+        chassert(columns.is_float[float_sample.payload_row]);
+        chassert(!columns.is_float[int_sample.payload_row]);
+
+        const Float64 float_count = columns.count_float[float_sample.payload_row];
+        if (isNaN(float_count))
+            return -1;
+
+        const UInt64 int_count = columns.count_int[int_sample.payload_row];
+
+        return DecomposedFloat64(float_count).compare(int_count);
+    };
+
+    const auto compare_count = [&](const Sample & lhs, const Sample & rhs)
+    {
+        const size_t lhs_row = lhs.payload_row;
+        const size_t rhs_row = rhs.payload_row;
+        if (columns.is_float[lhs_row])
+        {
+            /// Both sides have float counts, so we compare them.
+            if (columns.is_float[rhs_row])
+            {
+                return CompareHelper<Float64>::compare(
+                    columns.count_float[lhs_row],
+                    columns.count_float[rhs_row],
+                    /* nan_direction_hint = */ -1);
+            }
+
+            /// `lhs` is float, `rhs` is int
+            return compare_different_type_counts(lhs, rhs);
+        }
+
+        /// `lhs` is int, `rhs` is float
+        if (columns.is_float[rhs_row])
+        {
+            return -compare_different_type_counts(rhs, lhs);
+        }
+
+        /// Both sides are int
+        return CompareHelper<UInt64>::compare(columns.count_int[lhs_row], columns.count_int[rhs_row], /* nan_direction_hint = */ 0);
+    };
+
     /// By timestamp, and for each timestamp the winning sample first: the greatest count, then the greatest in the order of the columns.
     std::sort(sorted_samples.begin(), sorted_samples.end(), [&](const Sample & lhs, const Sample & rhs)
     {
         if (lhs.timestamp_ms != rhs.timestamp_ms)
             return lhs.timestamp_ms < rhs.timestamp_ms;
-        const int count_comparison = CompareHelper<Float64>::compare(
-            columns.getCount(lhs.payload_row), columns.getCount(rhs.payload_row), /* nan_direction_hint = */ -1);
+        const int count_comparison = compare_count(lhs, rhs);
         if (count_comparison != 0)
             return count_comparison > 0;
+
+        /// The first column to be compared is `is_float`, so a float histogram wins against an integer one with the same count.
+        /// The choice is arbitrary, but the ordering should be deterministic and should not depend on the samples order.
         return payload.compareAt(lhs.payload_row, rhs.payload_row, payload, /* nan_direction_hint = */ -1) > 0;
     });
 

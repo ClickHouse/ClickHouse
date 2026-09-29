@@ -116,13 +116,11 @@ namespace
     {
         for (size_t i = 0; i != bounds.size(); ++i)
         {
-            if (std::isnan(bounds[i]))
-                fail("custom_values must not contain NaN");
+            if (!std::isfinite(bounds[i]))
+                fail("custom_values must be finite, but custom_values[{}] = {}", i, bounds[i]);
             if ((i > 0) && (bounds[i] <= bounds[i - 1]))
                 fail("custom_values must be strictly increasing, but custom_values[{}] = {} follows {}", i, bounds[i], bounds[i - 1]);
         }
-        if (!bounds.empty() && (bounds.back() == std::numeric_limits<Float64>::infinity()))
-            fail("the last +Inf bound must not be explicitly defined in custom_values");
 
         size_t total_length = 0;
         size_t total_span = 0;

@@ -71,6 +71,8 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, 
     VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [-53], [[2, 1]]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, histograms.custom_values)
     VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [-53], [[1, inf]]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, histograms.custom_values)
+    VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [-53], [[-inf, 1]]); -- { serverError INCORRECT_DATA }
 -- Every span of custom buckets has a non-negative offset.
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, histograms.count_int, histograms.positive_spans, histograms.positive_values_int, histograms.custom_values)
     VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [-53], [1], [[(-1, 1)]], [[1]], [[1]]); -- { serverError INCORRECT_DATA }

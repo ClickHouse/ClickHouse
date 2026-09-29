@@ -98,9 +98,6 @@ struct TimeSeriesHistogramsColumnsView
     size_t numNegativeBuckets(size_t row) const { return is_float[row] ? negative_values_float.sizeAt(row) : negative_values_int.sizeAt(row); }
     bool zeroCountIsZero(size_t row) const { return is_float[row] ? (zero_count_float[row] == 0) : (zero_count_int[row] == 0); }
 
-    /// The count of the observations, of the flavour the row uses.
-    Float64 getCount(size_t row) const { return is_float[row] ? count_float[row] : static_cast<Float64>(count_int[row]); }
-
     /// The views, one per column of the registry: a column added there must be added here too.
     const ScalarView<UInt8> is_float;
     const ScalarView<UInt8> counter_reset_hint;
