@@ -61,6 +61,13 @@ void fillVariable(IColumn & column, size_t rows, std::string_view offsets, std::
     if (!strings || !strings->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot put strings from the device into a column of {}", column.getName());
 
+    if (rows == 0)
+    {
+        if (!offsets.empty() || !chars.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of offsets and {} bytes of chars for no strings", offsets.size(), chars.size());
+        return;
+    }
+
     if (offsets.size() != (rows + 1) * sizeof(UInt64))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of offsets for {} strings", offsets.size(), rows);
 
@@ -130,8 +137,7 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
                 fillFixed(*to[i], view.fixed.element_type, view.fixed.rows, landed[i].first.bytes());
                 break;
             case GPUColumnKind::Variable:
-                if (view.variable.rows != 0)
-                    fillVariable(*to[i], view.variable.rows, landed[i].first.bytes(), landed[i].chars.bytes());
+                fillVariable(*to[i], view.variable.rows, landed[i].first.bytes(), landed[i].chars.bytes());
                 break;
         }
     }
