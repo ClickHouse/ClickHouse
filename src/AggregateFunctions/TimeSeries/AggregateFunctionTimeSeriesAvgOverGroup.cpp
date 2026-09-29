@@ -1,8 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -13,11 +13,16 @@
 namespace DB
 {
 
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
+}
+
+namespace Setting
+{
+    extern const SettingsBool enable_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_table;
 }
 
 namespace
@@ -37,7 +42,7 @@ void kahanAdd(Float64 x, Float64 & sum, Float64 & compensation)
 }
 
 /// The average as PromQL `avg` computes it: a compensated sum that turns into a compensated mean once the sum would overflow.
-struct AvgPrometheusData
+struct TimeSeriesAvgOverGroupData
 {
     /// The sum of the values, or their mean once `is_mean` is set.
     Float64 value = 0;
@@ -76,7 +81,7 @@ struct AvgPrometheusData
         kahanAdd(x / n, value, compensation);
     }
 
-    void merge(const AvgPrometheusData & rhs)
+    void merge(const TimeSeriesAvgOverGroupData & rhs)
     {
         if (rhs.count == 0)
             return;
@@ -121,23 +126,23 @@ struct AvgPrometheusData
     }
 };
 
-template <typename T>
-class AggregateFunctionAvgPrometheus final : public IAggregateFunctionDataHelper<AvgPrometheusData, AggregateFunctionAvgPrometheus<T>>
+class AggregateFunctionTimeSeriesAvgOverGroup final
+    : public IAggregateFunctionDataHelper<TimeSeriesAvgOverGroupData, AggregateFunctionTimeSeriesAvgOverGroup>
 {
 public:
-    explicit AggregateFunctionAvgPrometheus(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<AvgPrometheusData, AggregateFunctionAvgPrometheus<T>>(
+    explicit AggregateFunctionTimeSeriesAvgOverGroup(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<TimeSeriesAvgOverGroupData, AggregateFunctionTimeSeriesAvgOverGroup>(
             argument_types_, {}, std::make_shared<DataTypeFloat64>())
     {
     }
 
-    String getName() const override { return "avgPrometheus"; }
+    String getName() const override { return "timeSeriesAvgOverGroup"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).add(static_cast<Float64>(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]));
+        this->data(place).add(assert_cast<const ColumnFloat64 &>(*columns[0]).getData()[row_num]);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -169,55 +174,70 @@ public:
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionAvgPrometheus(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionTimeSeriesAvgOverGroup(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
+    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0
+        && (*settings)[Setting::enable_time_series_table] == 0)
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+            "Aggregate function {} is in private preview and disabled by default. "
+            "Enable it with setting enable_time_series_aggregate_functions",
+            name);
+
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionAvgPrometheus>(*argument_types[0], argument_types));
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+    if (!WhichDataType(argument_types[0]).isFloat64())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, expected Float64",
                         argument_types[0]->getName(), name);
-    return res;
+    return std::make_shared<AggregateFunctionTimeSeriesAvgOverGroup>(argument_types);
 }
 
 }
 
-void registerAggregateFunctionAvgPrometheus(AggregateFunctionFactory & factory);
-void registerAggregateFunctionAvgPrometheus(AggregateFunctionFactory & factory)
+void registerAggregateFunctionTimeSeriesAvgOverGroup(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeSeriesAvgOverGroup(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the arithmetic mean the way the `avg` aggregation operator of PromQL does.
+Calculates the arithmetic mean of the values.
 
 The values are summed with the Kahan-Babuska-Neumaier compensated summation algorithm.
-If the sum would overflow, the function continues with an incremental mean, so the average of large finite values stays finite.
-Slower than [`avg`](/reference/functions/aggregate-functions/avg).
+If the sum would overflow, the function continues with an incremental mean, so the average of large finite values stays finite
+where [`avg`](/reference/functions/aggregate-functions/avg) returns `inf`. The function is slower than `avg`.
+
+This function implements the `avg()` aggregation operator of PromQL.
+
+<Note>
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions = 1`.
+</Note>
     )";
-    FunctionDocumentation::Syntax syntax = "avgPrometheus(x)";
-    FunctionDocumentation::Arguments arguments = {{"x", "Input values.", {"(U)Int*", "Float*"}}};
+    FunctionDocumentation::Syntax syntax = "timeSeriesAvgOverGroup(x)";
+    FunctionDocumentation::Arguments arguments = {{"x", "Input values.", {"Float64"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the arithmetic mean, or `NaN` if the input is empty.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
     {
         "The sum overflows",
         R"(
-SELECT avg(x), avgPrometheus(x) FROM values('x Float64', 1e308, 1e308);
+SET enable_time_series_aggregate_functions = 1;
+SELECT avg(x), timeSeriesAvgOverGroup(x) FROM values('x Float64', 1e308, 1e308);
         )",
         R"(
-┌─avg(x)─┬─avgPrometheus(x)─┐
-│    inf │            1e308 │
-└────────┴──────────────────┘
+┌─avg(x)─┬─timeSeriesAvgOverGroup(x)─┐
+│    inf │                     1e308 │
+└────────┴───────────────────────────┘
         )"
     },
     {
         "Compensated summation",
         R"(
-SELECT avg(x), avgPrometheus(x) FROM values('x Float64', 1, 1e100, 1, -1e100);
+SET enable_time_series_aggregate_functions = 1;
+SELECT avg(x), timeSeriesAvgOverGroup(x) FROM values('x Float64', 1, 1e100, 1, -1e100);
         )",
         R"(
-┌─avg(x)─┬─avgPrometheus(x)─┐
-│      0 │              0.5 │
-└────────┴──────────────────┘
+┌─avg(x)─┬─timeSeriesAvgOverGroup(x)─┐
+│      0 │                       0.5 │
+└────────┴───────────────────────────┘
         )"
     }
     };
@@ -225,7 +245,7 @@ SELECT avg(x), avgPrometheus(x) FROM values('x Float64', 1, 1e100, 1, -1e100);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("avgPrometheus", {createAggregateFunctionAvgPrometheus, documentation});
+    factory.registerFunction("timeSeriesAvgOverGroup", {createAggregateFunctionTimeSeriesAvgOverGroup, documentation});
 }
 
 }

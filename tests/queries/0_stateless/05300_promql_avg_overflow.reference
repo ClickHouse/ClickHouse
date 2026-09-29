@@ -1,4 +1,4 @@
--- avgPrometheus
+-- timeSeriesAvgOverGroup
 inf	1e308
 -inf	-1e308
 inf	0
@@ -8,7 +8,7 @@ inf
 nan
 nan
 nan
-4.5	4.5	-15.5
+4.5	-15.5
 nan
 4
 [1e308,2,NULL]

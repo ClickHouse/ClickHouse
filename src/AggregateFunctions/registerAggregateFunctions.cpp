@@ -11,7 +11,6 @@ struct Settings;
 
 class AggregateFunctionFactory;
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
-void registerAggregateFunctionAvgPrometheus(AggregateFunctionFactory &);
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
@@ -128,7 +127,6 @@ void registerAggregateFunctions()
         auto & factory = AggregateFunctionFactory::instance();
 
         registerAggregateFunctionAvg(factory);
-        registerAggregateFunctionAvgPrometheus(factory);
         registerAggregateFunctionAvgWeighted(factory);
         registerAggregateFunctionCount(factory);
         registerAggregateFunctionDeltaSum(factory);
