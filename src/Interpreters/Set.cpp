@@ -723,12 +723,25 @@ bool isWorthBuildingRoaring(const Container & data)
 }
 
 /// Adds each value of the sorted `data` once; equal values are adjacent.
+/// Distinct values are passed to `addMany` in chunks, which is faster than one `add` per value.
 template <typename Container>
 void addDistinctSorted(roaring::Roaring64Map & bitmap, const Container & data)
 {
+    static constexpr size_t chunk_size = 1024;
+    uint64_t chunk[chunk_size];
+    size_t chunk_used = 0;
     for (size_t i = 0; i < data.size(); ++i)
-        if (i == 0 || data[i] != data[i - 1])
-            bitmap.add(static_cast<uint64_t>(data[i]));
+    {
+        if (i != 0 && data[i] == data[i - 1])
+            continue;
+        chunk[chunk_used++] = static_cast<uint64_t>(data[i]);
+        if (chunk_used == chunk_size)
+        {
+            bitmap.addMany(chunk_used, chunk);
+            chunk_used = 0;
+        }
+    }
+    bitmap.addMany(chunk_used, chunk);
 }
 
 }
