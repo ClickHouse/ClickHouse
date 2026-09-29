@@ -1802,7 +1802,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     return false;
 }
 
-/// Uses the index for `position(s, 'x') > 0` the same way as for `s LIKE '%x%'`.
+/// If `function_node` is `position(s, 'x') > 0` or another comparison that is true exactly when a substring search
+/// function finds a constant needle, builds `out` as for `s LIKE '%x%'` (`s ILIKE '%x%'` for the case-insensitive
+/// functions). Returns false if it is not such a comparison, or if the index cannot serve that `LIKE`.
 bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     const auto comparison_name = function_node.getFunctionName();
@@ -1857,7 +1859,8 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     if (!search_function.getArgumentAt(1).tryGetConstant(needle, needle_type) || needle.getType() != Field::Types::String)
         return false;
 
-    /// `LIKE` does not check these, and gives wrong results for them.
+    /// Not checked by the `like` branch of `traverseFunctionNode`: `stringLikeToTokens` runs the preprocessor over the
+    /// escaped pattern, which only `lower`/`upper` keep intact, and splits a needle cut inside a UTF-8 character wrongly.
     const auto & needle_string = needle.safeGet<String>();
     if ((has_preprocessor && !preprocessor->isASCIILowerOrUpper())
         || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
