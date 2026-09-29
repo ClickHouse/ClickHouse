@@ -55,13 +55,23 @@ SELECT timeSeriesTopKMasks(1, 1::UInt64, 'x', [1.]); -- { serverError ILLEGAL_TY
 SELECT '--- PromQL: a tie is decided the same way however the parts are laid out ---';
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
-DROP TABLE IF EXISTS tie_ts;
-CREATE TABLE tie_ts ENGINE = TimeSeries;
-SYSTEM STOP MERGES tie_ts;
--- One part per series, so the read order is not the insertion order of a single part.
-INSERT INTO tie_ts (metric_name, tags, samples) VALUES ('m', map('host','h1'), [(toDateTime64(100,3), 1)]);
-INSERT INTO tie_ts (metric_name, tags, samples) VALUES ('m', map('host','h2'), [(toDateTime64(100,3), 1)]);
-INSERT INTO tie_ts (metric_name, tags, samples) VALUES ('m', map('host','h3'), [(toDateTime64(100,3), 2)]);
-SELECT * FROM prometheusQuery(tie_ts, 'bottomk(1, m)', 100) ORDER BY ALL;
-SELECT * FROM prometheusQuery(tie_ts, 'topk(2, m)', 100) ORDER BY ALL;
-DROP TABLE tie_ts;
+DROP TABLE IF EXISTS tie_ts_12;
+DROP TABLE IF EXISTS tie_ts_21;
+CREATE TABLE tie_ts_12 ENGINE = TimeSeries;
+CREATE TABLE tie_ts_21 ENGINE = TimeSeries;
+SYSTEM STOP MERGES tie_ts_12;
+SYSTEM STOP MERGES tie_ts_21;
+-- One part per series, h1 and h2 inserted in opposite orders. With one thread the parts are read in that order,
+-- so a tie broken by read order gives h1 for one table and h2 for the other.
+INSERT INTO tie_ts_12 (metric_name, tags, samples) VALUES ('m', map('host','h1'), [(toDateTime64(100,3), 1)]);
+INSERT INTO tie_ts_12 (metric_name, tags, samples) VALUES ('m', map('host','h2'), [(toDateTime64(100,3), 1)]);
+INSERT INTO tie_ts_12 (metric_name, tags, samples) VALUES ('m', map('host','h3'), [(toDateTime64(100,3), 2)]);
+INSERT INTO tie_ts_21 (metric_name, tags, samples) VALUES ('m', map('host','h2'), [(toDateTime64(100,3), 1)]);
+INSERT INTO tie_ts_21 (metric_name, tags, samples) VALUES ('m', map('host','h1'), [(toDateTime64(100,3), 1)]);
+INSERT INTO tie_ts_21 (metric_name, tags, samples) VALUES ('m', map('host','h3'), [(toDateTime64(100,3), 2)]);
+SELECT * FROM prometheusQuery(tie_ts_12, 'bottomk(1, m)', 100) ORDER BY ALL SETTINGS max_threads = 1;
+SELECT * FROM prometheusQuery(tie_ts_21, 'bottomk(1, m)', 100) ORDER BY ALL SETTINGS max_threads = 1;
+SELECT * FROM prometheusQuery(tie_ts_12, 'topk(2, m)', 100) ORDER BY ALL SETTINGS max_threads = 1;
+SELECT * FROM prometheusQuery(tie_ts_21, 'topk(2, m)', 100) ORDER BY ALL SETTINGS max_threads = 1;
+DROP TABLE tie_ts_12;
+DROP TABLE tie_ts_21;
