@@ -161,6 +161,14 @@ INSERT INTO d_vsta SELECT number, tuple(toUInt8(3)::Variant(UInt64, UInt8)) FROM
 INSERT INTO d_vsta SELECT number + 1000, tuple(toUInt8(4)::Variant(UInt64, UInt8)) FROM numbers(0, 1000);
 INSERT INTO d_vsta SELECT number + 2000, tuple(toUInt64(900)::Variant(UInt64, UInt8)) FROM numbers(0, 1000);
 
+-- The first part holds two finite rows and NaN otherwise, so its first block publishes a NaN
+-- threshold for a LIMIT above 2; every better row is read after it.
+CREATE TABLE d_thr (id UInt64, v Float64) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES d_thr;
+INSERT INTO d_thr SELECT number, multiIf(number = 0, 1.0, number = 1, 2.0, nan) FROM numbers(0, 1000);
+INSERT INTO d_thr SELECT number, 0.0001 * (number - 999) FROM numbers(1000, 9000);
+
 -- ==================== SPARSE fixtures ====================
 
 CREATE TABLE s_arr (id UInt64, v Array(Nullable(UInt64))) ENGINE = MergeTree ORDER BY id
@@ -280,6 +288,14 @@ INSERT INTO i_lc SELECT number, toLowCardinality(toNullable(number + 100)), toLo
 INSERT INTO i_lc SELECT number, toLowCardinality(toNullable(number + 100)), toLowCardinality(number + 100), toLowCardinality(toFloat64(number + 100)) FROM numbers(1000, 1000);
 INSERT INTO i_lc SELECT number, if(number % 100 = 0, CAST(NULL, 'LowCardinality(Nullable(UInt64))'), toLowCardinality(toNullable(number + 100))), toLowCardinality(number + 100), if(number % 100 = 0, toLowCardinality(nan), toLowCardinality(toFloat64(number + 100))) FROM numbers(2000, 1000);
 
+-- Eight granules holding only NaN, then finite values.
+CREATE TABLE i_lead (id UInt64, v Float64, INDEX idx_v v TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES i_lead;
+INSERT INTO i_lead SELECT number, nan FROM numbers(0, 512);
+INSERT INTO i_lead SELECT number, toFloat64(number) FROM numbers(512, 9488);
+
 -- The fixture only bites with more than one part.
 SELECT 'parts', min(c) > 1 FROM (SELECT count() AS c FROM system.parts WHERE database = currentDatabase() AND active GROUP BY table);
 -- The JSON fixture must really carry NaN, not a null that formats the same way.
@@ -320,6 +336,13 @@ SELECT 'f64 DNL ON ', v, id FROM s_f64 ORDER BY v DESC NULLS LAST, id DESC LIMIT
 SELECT 'f64 DNL OFF', v, id FROM s_f64 ORDER BY v DESC NULLS LAST, id DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'bf  ANL ON ', v, id FROM s_bf ORDER BY v ASC NULLS LAST, id DESC LIMIT 3;
 SELECT 'bf  ANL OFF', v, id FROM s_bf ORDER BY v ASC NULLS LAST, id DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+
+-- A NaN threshold still has to let every better row through, here under the default NULLS LAST
+-- (issue #116705, case 7). The block size decides what the first block holds, so it is pinned.
+SELECT 'thr ANL ON ', v FROM d_thr ORDER BY v ASC NULLS LAST LIMIT 3 SETTINGS max_block_size = 1000;
+SELECT 'thr ANL OFF', v FROM d_thr ORDER BY v ASC NULLS LAST LIMIT 3 SETTINGS max_block_size = 1000, use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'thr DNL ON ', v FROM d_thr ORDER BY v DESC NULLS LAST LIMIT 3 SETTINGS max_block_size = 1000;
+SELECT 'thr DNL OFF', v FROM d_thr ORDER BY v DESC NULLS LAST LIMIT 3 SETTINGS max_block_size = 1000, use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
 -- A root Tuple never reaches the generic comparison: FunctionComparison dispatches it to
 -- executeTuple, which composes partial per-element IEEE comparisons.
@@ -379,6 +402,10 @@ SELECT 'skip1 ON ', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use
 SELECT 'skip1 OFF', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'skip0 ON ', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0;
 SELECT 'skip0 OFF', v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+-- A granule of NaN alone has NaN as both bounds, which ranks above every finite granule, so under
+-- DESC NULLS LAST it must not take the place of the granules holding the answer (issue #116705, case 3).
+SELECT 'lead DNL ON ', v FROM i_lead ORDER BY v DESC NULLS LAST LIMIT 6 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1;
+SELECT 'lead DNL OFF', v FROM i_lead ORDER BY v DESC NULLS LAST LIMIT 6 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
 -- getExtremes reports neither the NULL nor the NaN that a NULLS FIRST answer has to return first, so
 -- a dictionary holding either must not reach this path.

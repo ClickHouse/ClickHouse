@@ -40,6 +40,18 @@ bf  ANL ON 	nan	2998
 bf  ANL OFF	50	0
 bf  ANL OFF	nan	2999
 bf  ANL OFF	nan	2998
+thr ANL ON 	0.0001
+thr ANL ON 	0.0002
+thr ANL ON 	0.00030000000000000003
+thr ANL OFF	0.0001
+thr ANL OFF	0.0002
+thr ANL OFF	0.00030000000000000003
+thr DNL ON 	2
+thr DNL ON 	1
+thr DNL ON 	0.9
+thr DNL OFF	2
+thr DNL OFF	1
+thr DNL OFF	0.9
 tup ANL ON 	(50,0)	0
 tup ANL ON 	(nan,0)	2999
 tup ANL ON 	(nan,0)	2998
@@ -108,6 +120,18 @@ skip1 ON 	nan
 skip1 OFF	nan
 skip0 ON 	nan
 skip0 OFF	nan
+lead DNL ON 	9999
+lead DNL ON 	9998
+lead DNL ON 	9997
+lead DNL ON 	9996
+lead DNL ON 	9995
+lead DNL ON 	9994
+lead DNL OFF	9999
+lead DNL OFF	9998
+lead DNL OFF	9997
+lead DNL OFF	9996
+lead DNL OFF	9995
+lead DNL OFF	9994
 lcn ANF ON 	\N
 lcn ANF OFF	\N
 lcfd ANF ON 	nan
