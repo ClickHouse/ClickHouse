@@ -126,94 +126,124 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
-    stack.push({.node = &root});
-
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
 
-    while (!stack.empty())
+    /// Applies the local optimizations bottom-up until none applies any more. Returns false where EXPLAIN is to stop
+    /// at the limit of optimizations.
+    const auto apply_local_optimizations = [&]() -> bool
     {
-        auto & frame = stack.top();
+        std::stack<Frame> stack;
+        stack.push({.node = &root});
 
-        /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
-        /// If traverse_depth_limit > 1, then traverse with (limit - 1)
-        if (frame.depth_limit != 1)
+        while (!stack.empty())
         {
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
+            auto & frame = stack.top();
+
+            /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
+            /// If traverse_depth_limit > 1, then traverse with (limit - 1)
+            if (frame.depth_limit != 1)
             {
-                stack.push({
-                    .node = frame.node->children[frame.next_child],
-                    .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
-                });
+                /// Traverse all children first.
+                if (frame.next_child < frame.node->children.size())
+                {
+                    stack.push({
+                        .node = frame.node->children[frame.next_child],
+                        .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
+                    });
 
-                ++frame.next_child;
-                continue;
-            }
-        }
-
-        /// An optimization applied to a child node may have changed a grandchild's
-        /// output header (e.g., filter push-down modifies a filter step's DAG, which
-        /// changes its output constness). The intermediate child step's cached input
-        /// header becomes stale. Refresh it before running optimizations on this node,
-        /// so that steps like mergeExpressions see consistent headers.
-        for (size_t i = 0; i < frame.node->children.size(); ++i)
-        {
-            auto child_output = frame.node->children[i]->step->getOutputHeader();
-            if (!blocksHaveEqualStructure(*frame.node->step->getInputHeaders()[i], *child_output))
-                frame.node->step->updateInputHeader(std::move(child_output), i);
-        }
-
-        size_t max_update_depth = 0;
-
-        /// Apply all optimizations.
-        for (const auto & optimization : getOptimizations())
-        {
-            if (!(optimization_settings.*(optimization.is_enabled)))
-                continue;
-
-            /// Just in case, skip optimization if it is not initialized.
-            if (!optimization.apply)
-                continue;
-
-            if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
-            {
-                if (optimization_settings.is_explain)
-                    return;
-
-                throw Exception(
-                    ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                    "Too many optimizations applied to query plan. Current limit {}",
-                    max_optimizations_to_apply);
+                    ++frame.next_child;
+                    continue;
+                }
             }
 
-
-            /// Try to apply optimization.
-            auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
-            if (update_depth)
+            /// An optimization applied to a child node may have changed a grandchild's
+            /// output header (e.g., filter push-down modifies a filter step's DAG, which
+            /// changes its output constness). The intermediate child step's cached input
+            /// header becomes stale. Refresh it before running optimizations on this node,
+            /// so that steps like mergeExpressions see consistent headers.
+            for (size_t i = 0; i < frame.node->children.size(); ++i)
             {
+                auto child_output = frame.node->children[i]->step->getOutputHeader();
+                if (!blocksHaveEqualStructure(*frame.node->step->getInputHeaders()[i], *child_output))
+                    frame.node->step->updateInputHeader(std::move(child_output), i);
+            }
+
+            size_t max_update_depth = 0;
+
+            /// Apply all optimizations.
+            for (const auto & optimization : getOptimizations())
+            {
+                if (!(optimization_settings.*(optimization.is_enabled)))
+                    continue;
+
+                /// Just in case, skip optimization if it is not initialized.
+                if (!optimization.apply)
+                    continue;
+
+                if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
+                {
+                    if (optimization_settings.is_explain)
+                        return false;
+
+                    throw Exception(
+                        ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                        "Too many optimizations applied to query plan. Current limit {}",
+                        max_optimizations_to_apply);
+                }
+
+
+                /// Try to apply optimization.
+                auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
+                if (update_depth)
+                {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
+                    checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
 #endif
-                ++total_applied_optimizations;
+                    ++total_applied_optimizations;
+                }
+                max_update_depth = std::max<size_t>(max_update_depth, update_depth);
             }
-            max_update_depth = std::max<size_t>(max_update_depth, update_depth);
+
+            /// Traverse `max_update_depth` layers of tree again.
+            if (max_update_depth)
+            {
+                frame.depth_limit = max_update_depth;
+                frame.next_child = 0;
+                continue;
+            }
+
+            /// Nothing was applied.
+            stack.pop();
         }
 
-        /// Traverse `max_update_depth` layers of tree again.
-        if (max_update_depth)
+        return true;
+    };
+
+    if (!apply_local_optimizations())
+        return;
+
+    /// Removing unused columns looks at the whole plan at once, so it runs after the local optimizations, and they run
+    /// again after it has removed anything, since fewer columns can let more of them apply.
+    while (optimization_settings.remove_unused_columns && removeUnusedColumns(root))
+    {
+        ++total_applied_optimizations;
+        if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
         {
-            frame.depth_limit = max_update_depth;
-            frame.next_child = 0;
-            continue;
+            if (optimization_settings.is_explain)
+                return;
+
+            throw Exception(
+                ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                "Too many optimizations applied to query plan. Current limit {}",
+                max_optimizations_to_apply);
         }
 
-        /// Nothing was applied.
-        stack.pop();
+        if (!apply_local_optimizations())
+            return;
     }
 }
 

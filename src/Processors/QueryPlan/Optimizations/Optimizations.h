@@ -205,16 +205,11 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 /// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
 /// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
 /// the JOIN condition, then the column may become unused in the plan.
-/// This optimization traverses the query plan and attempts to remove such unused columns from the steps if they
-/// support the optimization (canRemoveUnusedColumns method).
-/// It might happen that a child step supports removing unused columns, but it cannot remove any more columns
-/// (canRemoveColumnsFromOutput method returns false, e.g. JoinStepLogical always needs to keep at least one column for
-/// its output). In this case or when the children step doesn't support the optimization at all, then the inputs of the
-/// optimized step doesn't change.
-/// If the children support the optimization but cannot produce the expected output (e.g. JoinStepLogical can remove
-/// arbitrary number of columns as long as at least one column remains in the output), then the optimization adds an
-/// expression step to convert between the child's new output and the input of the parent node.
-size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+/// One walk over the plan: going down, each step that supports it (canRemoveUnusedColumns) is asked what it needs
+/// of its children for the columns its parent needs; coming back up, it removes the rest, its children already
+/// pruned. A column a child keeps beyond what it was asked for is consumed by the step above it. A step that does
+/// not support it needs everything of its children. Returns whether anything changed.
+bool removeUnusedColumns(QueryPlan::Node & root);
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
@@ -270,7 +265,6 @@ inline const auto & getOptimizations()
         {tryConvertAnyJoinToSemiOrAntiJoin,
          "convertAnyJoinToSemiOrAntiJoin",
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
-        {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     });

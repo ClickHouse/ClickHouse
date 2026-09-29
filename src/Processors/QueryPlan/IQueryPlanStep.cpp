@@ -7,11 +7,13 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -61,22 +63,82 @@ IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::keepEverything() const
         std::iota(positions.begin(), positions.end(), 0);
     }
 
-    if (output_header)
-    {
-        result.kept_output_positions.resize(output_header->columns());
-        std::iota(result.kept_output_positions.begin(), result.kept_output_positions.end(), 0);
-    }
-
     return result;
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/)
+std::vector<size_t> IQueryPlanStep::complementPositions(size_t count, const std::vector<size_t> & positions)
+{
+    std::vector<size_t> complement;
+    complement.reserve(count - std::min(count, positions.size()));
+
+    size_t next = 0;
+    for (size_t position = 0; position < count; ++position)
+    {
+        if (next < positions.size() && positions[next] == position)
+            ++next;
+        else
+            complement.push_back(position);
+    }
+
+    if (next != positions.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Position {} is out of range or not sorted, the header has {} columns", positions[next], count);
+
+    return complement;
+}
+
+IQueryPlanStep::PrunedInput IQueryPlanStep::PrunedInput::unchanged(const SharedHeader & header)
+{
+    return {.dropped_positions = {}, .header = header};
+}
+
+bool IQueryPlanStep::alignInputsWithPrunedChild(
+    ActionsDAG & dag, const std::vector<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned)
+{
+    std::vector<bool> kept(old_header.columns(), true);
+    for (size_t position : pruned.dropped_positions)
+        kept.at(position) = false;
+
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), old_header);
+
+    std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+    ColumnsWithTypeAndName to_consume;
+    for (size_t position = 0; position < old_header.columns(); ++position)
+    {
+        const auto usage = usages.at(position);
+        if (!kept[position])
+        {
+            if (usage == InputColumnUsage::ReadNeeded || usage == InputColumnUsage::PassesThroughNeeded)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The child dropped column {}, which the step needs", old_header.getByPosition(position).name);
+            continue;
+        }
+
+        if (!header_columns.passesThrough(position))
+            kept_inputs.insert(dag.getInputs()[header_columns.read_by[position]]);
+        else if (usage == InputColumnUsage::PassesThroughDropped)
+            to_consume.push_back(old_header.getByPosition(position));
+    }
+
+    const size_t kept_count = old_header.columns() - pruned.dropped_positions.size();
+    for (size_t position = kept_count; position < pruned.header->columns(); ++position)
+        to_consume.push_back(pruned.header->getByPosition(position));
+
+    bool changed = dag.removeUnusedActions(kept_inputs);
+    for (const auto & column : to_consume)
+        dag.addInput(column.name, column.type);
+
+    return changed || !to_consume.empty();
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, const std::vector<PrunedInput> & /*inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult
-IQueryPlanStep::getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/) const
+IQueryPlanStep::getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getRequiredColumns is not implemented for step {}", getName());
 }

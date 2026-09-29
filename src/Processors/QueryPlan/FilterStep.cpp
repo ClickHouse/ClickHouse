@@ -241,11 +241,9 @@ FilterDAGOutputPruningResult FilterDAGOutputPruningPlan::toResult() const
     return result;
 }
 
-void applyFilterDAGOutputPruning(
-    ActionsDAG & dag,
-    bool & remove_filter_column,
-    const Block & input_header,
-    const FilterDAGOutputPruningPlan & plan)
+/// The part of the pruning that concerns the outputs: the fold of the predicate, the outputs that remain,
+/// and the filter column flag.
+static void applyFilterDAGOutputPruningToOutputs(ActionsDAG & dag, bool & remove_filter_column, const FilterDAGOutputPruningPlan & plan)
 {
     if (plan.fold_filter_predicate)
         dag.foldFilterPredicateThroughMaterialize(plan.filter_output_position);
@@ -258,6 +256,15 @@ void applyFilterDAGOutputPruning(
     dag_outputs = std::move(new_dag_outputs);
 
     remove_filter_column = plan.remove_filter_column;
+}
+
+void applyFilterDAGOutputPruning(
+    ActionsDAG & dag,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const FilterDAGOutputPruningPlan & plan)
+{
+    applyFilterDAGOutputPruningToOutputs(dag, remove_filter_column, plan);
 
     const auto removed_any_action = dag.removeUnusedActions(plan.remove_inputs);
     chassert(removed_any_action == plan.removes_any_action);
@@ -575,7 +582,7 @@ bool FilterStep::canRemoveUnusedColumns() const
 }
 
 FilterStep::RequiredColumnsPlan
-FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const
+FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
@@ -594,12 +601,11 @@ FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_p
         remove_filter_column,
         *input_headers.front(),
         required_output_positions,
-        prevent_input_removal ? false : remove_inputs);
+        !prevent_input_removal);
 
     const auto pruning = plan.pruning.toResult();
     plan.result.step_changed = pruning.changed || output_header->columns() != required_output_positions.size();
-    /// Nothing else goes away, so when nothing changes these are all the positions.
-    plan.result.kept_output_positions = required_output_positions;
+    plan.result.dropped_output_positions = complementPositions(output_header->columns(), required_output_positions);
     plan.result.inputs_changed = pruning.input_positions_changed;
 
     if (plan.result.inputs_changed)
@@ -610,37 +616,33 @@ FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_p
     return plan;
 }
 
-FilterStep::RemoveUnusedColumnsResult
-FilterStep::getRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const
+FilterStep::RemoveUnusedColumnsResult FilterStep::getRequiredColumns(const std::vector<size_t> & required_output_positions) const
 {
-    return analyzeRequiredColumns(required_output_positions, remove_inputs).result;
+    return analyzeRequiredColumns(required_output_positions).result;
 }
 
-FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+FilterStep::RemoveUnusedColumnsResult
+FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs)
 {
-    const auto plan = analyzeRequiredColumns(required_output_positions, remove_inputs);
-    if (!plan.result.step_changed)
-        return plan.result;
+    const auto plan = analyzeRequiredColumns(required_output_positions);
+    const auto & pruned = inputs.at(0);
+    const auto input_header = input_headers.front();
 
-    const auto & input_header = input_headers.front();
-    applyFilterDAGOutputPruning(actions_dag, remove_filter_column, *input_header, plan.pruning);
+    applyFilterDAGOutputPruningToOutputs(actions_dag, remove_filter_column, plan.pruning);
 
-    if (actions_dag.getInputs().size() > input_header->columns())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
+    bool changed = plan.pruning.changes_output_header || plan.pruning.fold_filter_predicate;
+    changed |= alignInputsWithPrunedChild(actions_dag, plan.pruning.input_columns, *input_header, pruned);
 
-    if (!plan.result.inputs_changed)
-    {
-        updateOutputHeader();
-        return plan.result;
-    }
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = complementPositions(output_header->columns(), required_output_positions);
+    result.required_input_positions.push_back(complementPositions(input_header->columns(), pruned.dropped_positions));
+    result.inputs_changed = !pruned.dropped_positions.empty();
+    result.step_changed = changed || !blocksHaveEqualStructure(*input_header, *pruned.header);
 
-    Block new_input_header{};
-    for (size_t position : plan.result.required_input_positions.front())
-        new_input_header.insert(input_header->getByPosition(position));
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
 
-    updateInputHeader(std::make_shared<const Block>(std::move(new_input_header)), 0);
-
-    return plan.result;
+    return result;
 }
 
 bool FilterStep::canRemoveColumnsFromOutput() const
