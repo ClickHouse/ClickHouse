@@ -246,7 +246,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    /// The settings are copied only to carry a map, and there is one only with the reader executor.
+    /// Copied only to carry a map.
     std::optional<MergeTreeReaderSettings> settings_with_map;
     if (const auto & map = read_request_map ? read_request_map : read_info->read_request_map)
     {

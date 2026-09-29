@@ -102,9 +102,7 @@ protected:
         std::vector<MarkRanges> patches_ranges,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
-    /// `read_request_map` is set when only a part of `read_info->read_request_map` goes to this reader, as the ranges the
-    /// coordinator of parallel replicas assigns to this replica. The readers of the task get it without the ranges the
-    /// refiner has dropped (`mapWithoutDroppedRanges`), and a reader reused for the task takes it.
+    /// `read_request_map` narrows the part's map, e.g. to the assignment of parallel replicas.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
@@ -126,13 +124,10 @@ protected:
     /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
 
-    /// `read_request_map`, or the map of the part when it is null, without the ranges the refiner has dropped from the
-    /// part so far. The refiner works task by task, so the ranges of later tasks stay in the map until it drops them.
-    /// Without a refiner or without maps, returns `read_request_map`.
+    /// `read_request_map`, or the part's map, without the ranges the refiner has dropped from the part so far.
     MarkRangesPtr mapWithoutDroppedRanges(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & read_request_map) const;
 
-    /// The maps of the patch readers for `map`, a map of the readers of the part narrower than its own, so that they also
-    /// leave out the patch ranges of what this reader does not read. Empty when the part's own patch maps apply.
+    /// The patch maps matching a narrowed `map`; empty when the part's own patch maps apply.
     std::vector<MarkRangesPtr> patchMapsFor(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & map) const;
 
     MergeTreeReadRangesRefinerPtr ranges_refiner;
@@ -144,19 +139,17 @@ protected:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
 
 private:
-    /// The narrowed maps of a part, kept so that its tasks share one map until it changes.
+    /// Cached narrowed maps of a part, so that its tasks share one map until it changes.
     struct PartMaps
     {
-        /// The base of `map`: the map of the part, or with parallel replicas the current assignment. Held, not only
-        /// compared, so that the next assignment cannot reuse its address.
+        /// Held, not only compared, so that a new assignment cannot reuse its address.
         MarkRangesPtr map_base;
-        /// The ranges the refiner has dropped from the part so far, in the order it dropped them.
+        /// In the order the refiner dropped them.
         MarkRanges dropped;
-        /// The last map built: `map_base` without the first `dropped_in_map` entries of `dropped`.
+        /// `map` is `map_base` without the first `dropped_in_map` entries of `dropped`.
         size_t dropped_in_map = 0;
         MarkRangesPtr map;
-        /// The last patch maps built, one for each of the part's patch parts in their own marks, and the map of the part
-        /// they come from.
+        /// `patch_maps` come from `patch_maps_source`.
         MarkRangesPtr patch_maps_source;
         std::vector<MarkRangesPtr> patch_maps;
     };

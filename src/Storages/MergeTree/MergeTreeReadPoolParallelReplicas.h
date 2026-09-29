@@ -37,7 +37,7 @@ public:
 private:
     /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
     /// when the buffer is empty). Returns false if there is no more work.
-    /// Outputs the whole assignment of the part as the request map of the task.
+    /// Outputs the part's assignment as the map of the task.
     bool cutRangesToRead(size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read, MarkRangesPtr & read_request_map);
 
     /// Cuts up to need_marks more marks, or returns false if the assignment buffer
@@ -60,7 +60,7 @@ private:
     size_t mark_segment_size{0};
 
     RangesInDataPartsDescription buffered_ranges;
-    /// The ranges of `buffered_ranges.front()` as the coordinator assigned them, before any cut.
+    /// `buffered_ranges.front()` as assigned, before any cut.
     MarkRangesPtr front_read_request_map;
     bool no_more_tasks_available{false};
 

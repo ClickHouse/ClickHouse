@@ -187,7 +187,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     if (read_settings.reader_executor.enabled)
     {
-        /// This source reads all its ranges with one set of readers, so the ranges are the maps of its readers.
+        /// One set of readers reads all ranges of this source.
         auto info = std::make_shared<MergeTreeReadTaskInfo>(*read_task_info);
         info->read_request_map = std::make_shared<const MarkRanges>(mark_ranges);
         for (const auto & ranges : patch_ranges)

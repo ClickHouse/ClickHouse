@@ -63,7 +63,7 @@ private:
         MergeTreeReaderStream * getOrCreate(const String & stream_name, const StreamFactory & factory);
         MergeTreeReaderStream * find(const String & stream_name) const;
         void release(const String & stream_name);
-        /// The streams that exist now. Valid only while no task runs, since a running task can `release` them.
+        /// Valid only while no task runs: a running task can `release` streams.
         std::vector<MergeTreeReaderStream *> getAll() const;
 
         bool isPrefetched(const String & stream_name) const;

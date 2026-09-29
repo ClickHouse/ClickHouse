@@ -69,7 +69,6 @@ void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
 
 ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
 {
-    /// For the caller the view is the whole file, so the default map is the view's own slice.
     const ByteRange file{0, right_bound - left_bound};
     ByteRangeSet result;
     if (ranges.empty())

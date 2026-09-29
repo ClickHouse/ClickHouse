@@ -69,8 +69,7 @@ private:
 
     mutable std::mutex mutex;
     std::vector<size_t> per_part_marks_in_range;
-    /// The ranges assigned to this replica for each part and not yet cut, as they were at the first cut after
-    /// the last assignment. Null until then.
+    /// Each part's uncut assigned ranges at the first cut after the last assignment.
     std::vector<MarkRangesPtr> per_part_read_request_maps;
 };
 

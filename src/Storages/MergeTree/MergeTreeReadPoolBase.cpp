@@ -248,7 +248,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
-    /// Only the reader executor uses the map, so without it there is none, and no reader copies or converts one.
+    /// Only the reader executor uses maps.
     if (reader_settings.read_settings.reader_executor.enabled)
         read_task_info.read_request_map = std::make_shared<const MarkRanges>(part_with_ranges.ranges);
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, mutations_snapshot, getContext()
@@ -392,7 +392,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     ranges_in_patch_parts.optimize();
     patch_join_cache->init(ranges_in_patch_parts);
 
-    /// The ranges of `Join` patches depend on all parts of the query, so they are final only after `optimize`.
+    /// The ranges of `Join` patches are final only after `optimize`.
     for (size_t i = 0; i < infos.size(); ++i)
     {
         auto & info = *infos[i];
@@ -594,7 +594,7 @@ MarkRangesPtr MergeTreeReadPoolBase::mapWithoutDroppedRanges(const MergeTreeRead
         part.dropped_in_map = 0;
     }
 
-    /// Cuts are refined in any order, so the entries not yet left out of the map are sorted before subtracting.
+    /// Cuts are refined in any order.
     if (part.dropped.size() > part.dropped_in_map)
     {
         MarkRanges new_drops(part.dropped.begin() + part.dropped_in_map, part.dropped.end());

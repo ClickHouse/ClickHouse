@@ -424,7 +424,7 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 
 std::optional<size_t> MergeTreeReaderStreamSingleColumn::getLeftOffset(size_t mark)
 {
-    /// The same streams for which `getRightOffset` gives the file size: marks do not delimit what they read.
+    /// As in `getRightOffset`: marks do not delimit what these streams read.
     if (marks_count == 0 || settings.is_metadata_file || settings.is_single_value_per_part)
         return std::nullopt;
 

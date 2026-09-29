@@ -133,9 +133,9 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
-    /// All mark ranges the query reads from this part: the request map of the part's readers.
+    /// All mark ranges the query reads from this part.
     MarkRangesPtr read_request_map;
-    /// The same for each of `patch_parts`: the ranges the patch readers of this part read. Empty = whole patch parts.
+    /// The same for each of `patch_parts`; empty = the whole patch parts.
     std::vector<MarkRangesPtr> patch_read_request_maps;
 };
 
@@ -165,7 +165,6 @@ public:
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
-        /// `patch_request_maps` is empty or holds one map for each patch reader.
         void updateRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
     };
 
@@ -237,8 +236,7 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
-    /// `read_request_map` is set when the pool knows only a part of `read_info->read_request_map` goes to this reader,
-    /// and `patch_read_request_maps` then holds the matching maps of the patch readers.
+    /// `read_request_map` narrows the part's map; `patch_read_request_maps` then holds the matching patch maps.
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
