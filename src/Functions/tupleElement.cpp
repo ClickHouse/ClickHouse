@@ -337,11 +337,19 @@ private:
 
     ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
     {
+        /// The source subcolumn is not a path, it's read as is.
+        if (object_type.hasSource() && element_name == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+            return object_type.getSubcolumn(element_name, object_column);
+
         return object_type.getSubcolumn(getObjectCombinedSubcolumnName(element_name), object_column);
     }
 
     DataTypePtr getObjectElementType(const DataTypeObject & object_type, const String & element_name) const
     {
+        /// The source subcolumn is not a path, it's read as is.
+        if (object_type.hasSource() && element_name == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+            return object_type.getSubcolumnType(element_name);
+
         return object_type.getSubcolumnType(getObjectCombinedSubcolumnName(element_name));
     }
 

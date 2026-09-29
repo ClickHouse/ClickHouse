@@ -1,0 +1,5 @@
+JSON(with_source=1)
+JSON
+JSON(with_source=1, max_dynamic_types=8, max_dynamic_paths=16, a UInt32, SKIP b, SKIP REGEXP \'c.*\')
+JSON(with_source=1, a UInt32)
+JSON

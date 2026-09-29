@@ -46,8 +46,12 @@ public:
 };
 
 /// Build a tree for insertion JSON element into a column with provided data type.
+/// json_source_filled_by_caller is applied only to the JSON type on the top level: it means that the
+/// caller stores the original JSON text in the source subcolumn itself, so the node should not create
+/// it from the JSON element. Nested JSON types always create it, because only their element is known.
 template <typename JSONParser>
-std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message);
+std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(
+    const DataTypePtr & type, const char * source_for_exception_message, bool json_source_filled_by_caller = false);
 
 template <typename JSONParser>
 void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);

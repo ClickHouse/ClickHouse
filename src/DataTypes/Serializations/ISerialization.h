@@ -312,6 +312,7 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
+            ObjectSource,
 
             MapKeyValue,
             ObjectDistinctPaths,
