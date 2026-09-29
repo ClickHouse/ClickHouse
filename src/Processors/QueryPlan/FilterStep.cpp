@@ -59,7 +59,6 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
 {
     FilterDAGOutputPruningPlan plan;
     plan.remove_inputs = remove_inputs;
-    plan.filter_column_name = filter_column_name;
     plan.remove_filter_column = remove_filter_column;
 
     const auto & old_outputs = dag.getOutputs();
@@ -110,7 +109,7 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     /// the header splits them into the columns to keep and the columns to drop.
     const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), input_header);
 
-    std::vector<bool> is_required_input(input_header.columns(), false);
+    plan.input_columns.resize(header_columns.size());
     size_t passthrough_index = 0;
     size_t next_required_passthrough = 0;
     for (size_t position = 0; position < header_columns.size(); ++position)
@@ -122,10 +121,10 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
             && required_passthrough_indices[next_required_passthrough] == passthrough_index)
         {
             ++next_required_passthrough;
-            is_required_input[position] = true;
+            plan.input_columns[position] = IQueryPlanStep::InputColumn::PassesThroughNeeded;
         }
         else
-            plan.dropped_passthrough_header_positions.push_back(position);
+            plan.input_columns[position] = IQueryPlanStep::InputColumn::PassesThroughDropped;
 
         ++passthrough_index;
     }
@@ -158,7 +157,7 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
         if (has_materialize)
         {
             folded_dag = dag.clone();
-            folded_dag->foldFilterPredicateThroughMaterialize(filter_column_name);
+            folded_dag->foldFilterPredicateThroughMaterialize(filter_col_pre_erase_pos);
             /// The fold only ever replaces the filter output by a constant.
             plan.fold_filter_predicate = folded_dag->getOutputs()[filter_col_pre_erase_pos]->type == ActionsDAG::ActionType::COLUMN
                 && old_outputs[filter_col_pre_erase_pos]->type != ActionsDAG::ActionType::COLUMN;
@@ -173,8 +172,9 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     required_dag_index_set.insert(filter_col_pre_erase_pos);
     plan.required_dag_positions.assign(required_dag_index_set.begin(), required_dag_index_set.end());
 
-    plan.removes_any_output = plan.required_dag_positions.size() != old_dag_outputs_size;
-    plan.changes_filter_column_flag = remove_filter_column != plan.remove_filter_column;
+    plan.filter_output_position = filter_col_pre_erase_pos;
+    plan.changes_output_header
+        = plan.required_dag_positions.size() != old_dag_outputs_size || remove_filter_column != plan.remove_filter_column;
 
     /// What removeUnusedActions would keep once the outputs are pruned. It folds constants before it
     /// collects the nodes to keep, and folding clears the children of a folded node, so stop at such a
@@ -195,47 +195,48 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
 
     plan.removes_any_action = surviving_nodes.size() < analyzed_dag.getNodes().size();
 
-    if (remove_inputs)
-    {
-        /// Every input reads a header position of its own, so record the position of each surviving
-        /// input rather than re-deriving it from the name once the others are gone. A clone keeps the
-        /// inputs in their order.
-        std::vector<size_t> input_header_read_positions(dag.getInputs().size());
-        for (size_t position = 0; position < header_columns.size(); ++position)
-            if (!header_columns.passesThrough(position))
-                input_header_read_positions[header_columns.read_by[position]] = position;
-
-        const auto & inputs = analyzed_dag.getInputs();
-        size_t surviving_input_count = 0;
-        for (size_t position = 0; position < inputs.size(); ++position)
-        {
-            if (!surviving_nodes.contains(inputs[position]))
-                continue;
-
-            ++surviving_input_count;
-            is_required_input[input_header_read_positions[position]] = true;
-        }
-
-        for (size_t position = 0; position < is_required_input.size(); ++position)
-            if (is_required_input[position])
-                plan.required_input_positions.push_back(position);
-
-        plan.removes_any_input = surviving_input_count != inputs.size();
-    }
+    /// Every input reads a header position of its own, so the column it reads is needed exactly when the
+    /// input survives. A clone keeps the inputs in their order. While inputs may not be removed, every
+    /// input is a root, and so survives.
+    const auto & inputs = analyzed_dag.getInputs();
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (!header_columns.passesThrough(position))
+            plan.input_columns[position] = surviving_nodes.contains(inputs[header_columns.read_by[position]])
+                ? IQueryPlanStep::InputColumn::ReadNeeded
+                : IQueryPlanStep::InputColumn::ReadDropped;
 
     return plan;
 }
 
+std::vector<size_t> FilterDAGOutputPruningPlan::droppedPassThroughPositions() const
+{
+    std::vector<size_t> positions;
+    for (size_t position = 0; position < input_columns.size(); ++position)
+        if (input_columns[position] == IQueryPlanStep::InputColumn::PassesThroughDropped)
+            positions.push_back(position);
+    return positions;
+}
+
 FilterDAGOutputPruningResult FilterDAGOutputPruningPlan::toResult() const
 {
+    using InputColumn = IQueryPlanStep::InputColumn;
+
+    const bool drops_a_passthrough = std::ranges::contains(input_columns, InputColumn::PassesThroughDropped);
+    const bool drops_an_input = std::ranges::contains(input_columns, InputColumn::ReadDropped);
+
     FilterDAGOutputPruningResult result;
 
     /// A dropped pass-through leaves the header below, where inputs may be removed, and otherwise becomes an
     /// input of the DAG, which is a change of the step all the same.
-    result.input_positions_changed = remove_inputs && (removes_any_input || !dropped_passthrough_header_positions.empty());
-    result.changed = removes_any_output || changes_filter_column_flag || fold_filter_predicate || removes_any_action
-        || !dropped_passthrough_header_positions.empty() || result.input_positions_changed;
-    result.required_input_positions = required_input_positions;
+    result.input_positions_changed = remove_inputs && (drops_an_input || drops_a_passthrough);
+    result.changed = changes_output_header || fold_filter_predicate || removes_any_action
+        || drops_a_passthrough || result.input_positions_changed;
+
+    /// Only where inputs may be removed does the header below shrink to these.
+    if (remove_inputs)
+        for (size_t position = 0; position < input_columns.size(); ++position)
+            if (input_columns[position] == InputColumn::ReadNeeded || input_columns[position] == InputColumn::PassesThroughNeeded)
+                result.required_input_positions.push_back(position);
 
     return result;
 }
@@ -247,7 +248,7 @@ void applyFilterDAGOutputPruning(
     const FilterDAGOutputPruningPlan & plan)
 {
     if (plan.fold_filter_predicate)
-        dag.foldFilterPredicateThroughMaterialize(plan.filter_column_name);
+        dag.foldFilterPredicateThroughMaterialize(plan.filter_output_position);
 
     auto & dag_outputs = dag.getOutputs();
     ActionsDAG::NodeRawConstPtrs new_dag_outputs;
@@ -265,7 +266,7 @@ void applyFilterDAGOutputPruning(
     /// convert unrequired pass-through inputs into DAG inputs so they stop being pass-throughs.
     if (!plan.remove_inputs)
     {
-        for (size_t position : plan.dropped_passthrough_header_positions)
+        for (size_t position : plan.droppedPassThroughPositions())
             dag.addInput(input_header.getByPosition(position));
     }
 }

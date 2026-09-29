@@ -181,7 +181,7 @@ IQueryPlanStep::RemoveUnusedColumnsResult ExpressionStep::RequiredColumnsPlan::t
     for (size_t position = 0; position < input_columns.size(); ++position)
     {
         const auto column = input_columns[position];
-        if (!remove_inputs || column == InputColumn::ReadAndNeeded || column == InputColumn::PassesThroughNeeded)
+        if (!remove_inputs || column == InputColumn::ReadNeeded || column == InputColumn::PassesThroughNeeded)
             required_input_positions.push_back(position);
     }
 
@@ -258,7 +258,7 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
         {
             const auto * input = actions_dag.getInputs()[header_columns.read_by[position]];
             const bool is_needed = surviving_nodes.contains(input);
-            plan.input_columns[position] = is_needed ? InputColumn::ReadAndNeeded : InputColumn::ReadNotNeeded;
+            plan.input_columns[position] = is_needed ? InputColumn::ReadNeeded : InputColumn::ReadDropped;
             unread_input_count += !is_needed;
             continue;
         }
