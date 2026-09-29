@@ -118,7 +118,7 @@ namespace
 /// `BAD_ARGUMENTS` for an address it cannot parse safely.
 String validateNATSAddress(const String & address, const RemoteHostFilter & remote_host_filter)
 {
-    if (address.find('\0') != String::npos)
+    if (address.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS address must not contain NUL characters");
 
     String host_and_port = address;

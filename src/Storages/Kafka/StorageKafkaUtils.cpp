@@ -951,7 +951,7 @@ String validateBrokerList(const String & broker_list, const ContextPtr & context
     /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable
     /// ASCII - is rejected instead of repaired.
 
-    if (broker_list.find('\0') != String::npos)
+    if (broker_list.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka broker list must not contain NUL characters");
 
     Names brokers;
