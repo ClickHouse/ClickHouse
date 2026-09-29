@@ -232,11 +232,6 @@ namespace
 
             if (num_histograms > 0)
             {
-                /// The remote-write path checks these invariants on the protobuf; the SQL surface
-                /// needs the same, so readers never meet a payload they cannot decode.
-                for (size_t j = hist_start; j != hist_end; ++j)
-                    validateTimeSeriesHistogramSample(hist_tuples, j);
-
                 out_id_column.insertManyFrom(id_column, id_index, num_histograms);
                 for (size_t j = 0; j != out_columns.size(); ++j)
                     out_columns[j]->insertRangeFrom(hist_tuples.getColumn(j), hist_start, num_histograms);
@@ -716,6 +711,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with {} elements for the {} column data, got {}",
                 histograms_tuple_type.getElements().size(), TimeSeriesColumnNames::Histograms, hist_arrays->getData().getName());
         total_histograms = getTotalSamples(hist_arrays->getOffsets());
+
+        /// The same checks as the Prometheus remote-write protocol runs, before any target table gets a row of this block.
+        for (size_t i = 0; i != total_histograms; ++i)
+            validateTimeSeriesHistogramSample(*hist_tuples, i);
     }
 
     PaddedPODArray<UInt8> filter;
@@ -830,6 +829,39 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     if (tags_block.has(TimeSeriesColumnNames::AllTags))
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
+    /// Assemble the histograms block before pushing anything: a histogram without a metric name or tags
+    /// must reject the block before any target table gets a row of it.
+    Block histograms_block;
+    if (total_histograms)
+    {
+        auto histograms_id_column = id_type->createColumn();
+        histograms_id_column->reserve(total_histograms);
+
+        MutableColumns histogram_columns;
+        histogram_columns.reserve(hist_tuples->tupleSize());
+        for (size_t i = 0; i != hist_tuples->tupleSize(); ++i)
+        {
+            auto column = hist_tuples->getColumn(i).cloneEmpty();
+            column->reserve(total_histograms);
+            histogram_columns.push_back(std::move(column));
+        }
+
+        fillHistogramsColumns(
+            filter,
+            *id_column, *hist_tuples, hist_arrays->getOffsets(),
+            *histograms_id_column, histogram_columns);
+
+        const auto & histograms_col_type = block.getByName(TimeSeriesColumnNames::Histograms).type;
+        const auto & histograms_tuple_type = assert_cast<const DataTypeTuple &>(
+            *assert_cast<const DataTypeArray &>(*histograms_col_type).getNestedType());
+        const auto & element_names = histograms_tuple_type.getElementNames();
+
+        histograms_block.insert(ColumnWithTypeAndName{std::move(histograms_id_column), id_type, TimeSeriesColumnNames::ID});
+        for (size_t i = 0; i != histogram_columns.size(); ++i)
+            histograms_block.insert(ColumnWithTypeAndName{
+                std::move(histogram_columns[i]), histograms_tuple_type.getElement(i), element_names[i]});
+    }
+
     /// Step 4. Push the tags block without the time series already written to the "tags" table.
     if (tags_deduplication_cache)
         tags_block = tags_deduplication_cache->filterOutWrittenRows(
@@ -875,39 +907,9 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             recent_samples_pipeline->push(std::move(samples_block));
     }
 
-    /// Step 6. Assemble and push the histograms block.
+    /// Step 6. Push the histograms block.
     if (total_histograms)
-    {
-        auto histograms_id_column = id_type->createColumn();
-        histograms_id_column->reserve(total_histograms);
-
-        MutableColumns histogram_columns;
-        histogram_columns.reserve(hist_tuples->tupleSize());
-        for (size_t i = 0; i != hist_tuples->tupleSize(); ++i)
-        {
-            auto column = hist_tuples->getColumn(i).cloneEmpty();
-            column->reserve(total_histograms);
-            histogram_columns.push_back(std::move(column));
-        }
-
-        fillHistogramsColumns(
-            filter,
-            *id_column, *hist_tuples, hist_arrays->getOffsets(),
-            *histograms_id_column, histogram_columns);
-
-        const auto & histograms_col_type = block.getByName(TimeSeriesColumnNames::Histograms).type;
-        const auto & histograms_tuple_type = assert_cast<const DataTypeTuple &>(
-            *assert_cast<const DataTypeArray &>(*histograms_col_type).getNestedType());
-        const auto & element_names = histograms_tuple_type.getElementNames();
-
-        Block histograms_block;
-        histograms_block.insert(ColumnWithTypeAndName{std::move(histograms_id_column), id_type, TimeSeriesColumnNames::ID});
-        for (size_t i = 0; i != histogram_columns.size(); ++i)
-            histograms_block.insert(ColumnWithTypeAndName{
-                std::move(histogram_columns[i]), histograms_tuple_type.getElement(i), element_names[i]});
-
         histograms_pipeline->push(std::move(histograms_block));
-    }
 }
 
 
