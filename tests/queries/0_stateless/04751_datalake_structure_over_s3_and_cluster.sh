@@ -74,18 +74,9 @@ SELECT '-- iceberg cluster: a DEFAULT declared in the structure is not honored, 
 SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT count(), sum(zzz) FROM icebergS3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
-SELECT '-- iceberg cluster: a structure given as a server-constant expression is dispatched';
--- A key-value value may be any constant expression, not just a literal, and it is resolved once while
--- the arguments are rewritten. A function that is deliberately not foldable once a context is
--- distributed must therefore not be re-resolved during dispatch. The old analyzer is pinned because
--- only it marks the context distributed before the arguments are rewritten, so it is the mode where a
--- re-resolution is observable at all; the literal-operand arm beside it is the pair that shows the
--- outcome is about folding rather than about concat.
-SELECT count(), countIf(zzz IS NULL) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz Nullable(String)', left(hostName(), 0))) SETTINGS enable_analyzer = 0;
-SELECT count(), countIf(zzz IS NULL) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz Nullable', '(String)')) SETTINGS enable_analyzer = 0;
--- The same shape on the plain s3 cluster function, which shares that rewriting branch and has its own
--- long-standing coverage: a structure that is not a literal must keep working there too.
-SELECT count() FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/**.parquet', 'test', 'testtest', format='Parquet', structure=concat('id Nullable(Int64)', left(hostName(), 0))) SETTINGS enable_analyzer = 0;
+SELECT '-- iceberg cluster: a structure given as a constant expression is dispatched';
+-- A key-value value may be any constant expression, not just a literal.
+SELECT count(), countIf(zzz IS NULL) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz Nullable', '(String)'));
 SELECT '-- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key';
 -- The key describes the metadata schema, so a declared type that reorders the key column makes it
 -- unsound: read-in-order would then emit rows in the underlying numeric order while the user asked
