@@ -885,18 +885,20 @@ void resize(Container & res_data, size_t reserve_size)
 }
 
 DECLARE_X86_ICELAKE_SPECIFIC_CODE(
+/// Compresses into a register and stores all 64 bytes: `vpcompress*` with a memory destination is microcoded on
+/// AMD Zen 4, 25x slower. The caller keeps at least 64 elements of room after `dst`.
 template <size_t ELEMENT_WIDTH>
 inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
 {
     __m512i vsrc = _mm512_loadu_si512(src);
     if constexpr (ELEMENT_WIDTH == 1)
-        _mm512_mask_compressstoreu_epi8(dst, static_cast<__mmask64>(mask), vsrc);
+        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi8(static_cast<__mmask64>(mask), vsrc));
     else if constexpr (ELEMENT_WIDTH == 2)
-        _mm512_mask_compressstoreu_epi16(dst, static_cast<__mmask32>(mask), vsrc);
+        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi16(static_cast<__mmask32>(mask), vsrc));
     else if constexpr (ELEMENT_WIDTH == 4)
-        _mm512_mask_compressstoreu_epi32(dst, static_cast<__mmask16>(mask), vsrc);
+        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi32(static_cast<__mmask16>(mask), vsrc));
     else if constexpr (ELEMENT_WIDTH == 8)
-        _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
+        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi64(static_cast<__mmask8>(mask), vsrc));
 }
 
 template <typename T, typename Container, size_t SIMD_ELEMENTS>
