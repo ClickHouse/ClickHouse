@@ -1771,6 +1771,18 @@ void StorageObjectStorageQueue::alter(
 
             changed_settings.push_back(setting);
         }
+
+        /// The new definition is written below and must load on `ATTACH`, so its settings are loaded and validated
+        /// the same way before anything is changed. The changed values then have the types of their settings.
+        auto new_storage_def = make_intrusive<ASTStorage>();
+        new_storage_def->set(new_storage_def->engine, makeASTFunction(getName()));
+        new_storage_def->set(new_storage_def->settings, new_metadata.settings_changes->clone());
+        ObjectStorageQueueSettings new_queue_settings;
+        new_queue_settings.loadFromQuery(*new_storage_def, /*is_attach=*/ true, table_id);
+        validateSettings(new_queue_settings, /*is_attach=*/ true);
+        for (auto & change : changed_settings)
+            change.value = new_queue_settings.get(change.name);
+
         if (requires_detached_mv)
         {
             LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
