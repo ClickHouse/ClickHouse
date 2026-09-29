@@ -2037,7 +2037,8 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
             : executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        /// The element-wise result can be a constant (for example a NULL), the data of an array cannot.
+        return ColumnArray::create(res->convertToFullColumnIfConst(), typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -2329,9 +2330,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
+        /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
+        /// `canThrow` (which falls back to this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+                && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
+                    || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -3720,7 +3724,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                         auto * lval = nativeCast(b, arguments[0], result_type);
                         auto * rval = nativeCast(b, arguments[1], result_type);
-                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                        result = OpSpec::compile(b, lval, rval, is_signed_v<typename ResultDataType::FieldType>);
                         return true;
                     }
                 }
@@ -4340,10 +4344,18 @@ public:
         {
             /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
             /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-            division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
+            ///
+            /// A `LowCardinality` wrapper hides the nullability from `isNullable`, so strip it: with a
+            /// `LowCardinality(Nullable(...))` denominator the NULL-masking variant was not selected and
+            /// the NULL rows divided by the nested default `0`, throwing `Division by zero` on data
+            /// where the plain `Nullable(...)` denominator returns NULL.
+            const auto left_type = recursiveRemoveLowCardinality(arguments[0].type);
+            const auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
+
+            division_by_nullable = !left_type->onlyNull() && !right_type->onlyNull() && right_type->isNullable()
                 && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
                     || (IsOperation<Op>::div_floating
-                        && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
+                        && (isDecimalOrNullableDecimal(left_type) || isDecimalOrNullableDecimal(right_type))));
         }
 
         auto make_adaptor = [&](auto function)

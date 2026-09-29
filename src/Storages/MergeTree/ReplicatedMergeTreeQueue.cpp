@@ -1838,8 +1838,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
             return false;
 
-        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data)
-                                                                           : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
+        /// min_unreserved_disk_space_for_merge is a selection-time limit, but the executing replica's
+        /// disks can be tighter than the assigning replica's were, so the queue re-derives the limit for
+        /// background merges. Entries ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION were
+        /// selected without the headroom and carry bypass_min_unreserved_space, because honouring it
+        /// here would postpone them forever (see #80006).
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS
+            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(
+                data, /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space)
+            : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
           * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
           * because it may be ordered by OPTIMIZE or early with different settings.
@@ -1866,6 +1873,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                               (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
+                }
+
+                /// A TTLDrop merge deletes every row only when an unconditional rows TTL is the
+                /// table's only TTL. With a GROUP BY, WHERE or column TTL rows survive and the
+                /// merge rewrites them, so it does need room for what its source parts hold.
+                if (entry.merge_type == MergeType::TTLDrop)
+                {
+                    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+                    if (metadata_snapshot->hasOnlyRowsTTL())
+                        ignore_max_size = true;
                 }
             }
 
