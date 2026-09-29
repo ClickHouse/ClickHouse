@@ -24,5 +24,6 @@ control: length, rows	40000
 control: length, index used	1
 -- text index on JSON paths
 json path	1
+rand, index used	0
 control: rows	40000
 control: index used	1

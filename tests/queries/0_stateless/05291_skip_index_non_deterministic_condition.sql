@@ -64,6 +64,7 @@ INSERT INTO t_json SELECT number, if(intDiv(number, 8) % 2 = 0, '{"a": 1}', '{"z
 
 SELECT '-- text index on JSON paths';
 SELECT 'json path', count() > 40000 FROM t_json WHERE if(j.a::Int64 = 1, 1, rand() % 1000 = 0);
+SELECT 'rand, index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json WHERE if(j.a::Int64 = 1, 1, rand() % 1000 = 0) SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: ji%';
 SELECT 'control: rows', count() FROM t_json WHERE j.a::Int64 = 1;
 SELECT 'control: index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json WHERE j.a::Int64 = 1 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: ji%';
 
