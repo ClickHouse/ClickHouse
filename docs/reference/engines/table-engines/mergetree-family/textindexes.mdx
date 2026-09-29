@@ -546,9 +546,9 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
-| [hasTokenPrefix](/reference/functions/regular-functions/string-search-functions#hasTokenPrefix)       | no⁵ | all⁵ | no⁵ |
-| [hasTokenLike](/reference/functions/regular-functions/string-search-functions#hasTokenLike)           | no⁵ | all⁵ | no⁵ |
-| [hasTokenMatch](/reference/functions/regular-functions/string-search-functions#hasTokenMatch)         | no⁵ | all⁵ | no⁵ |
+| [hasTokenPrefix](/reference/functions/regular-functions/string-search-functions)       | no⁵ | all⁵ | no⁵ |
+| [hasTokenLike](/reference/functions/regular-functions/string-search-functions)           | no⁵ | all⁵ | no⁵ |
+| [hasTokenMatch](/reference/functions/regular-functions/string-search-functions)         | no⁵ | all⁵ | no⁵ |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
 `LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
@@ -850,12 +850,12 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
 #### `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` {#functions-example-hastokenprefix-hastokenlike-hastokenmatch}
 
-Functions [`hasTokenPrefix`](/reference/functions/regular-functions/string-search-functions#hasTokenPrefix), [`hasTokenLike`](/reference/functions/regular-functions/string-search-functions#hasTokenLike) and [`hasTokenMatch`](/reference/functions/regular-functions/string-search-functions#hasTokenMatch) return true if any token of the column starts with a prefix, matches a `LIKE` pattern, or matches a regular expression.
+Functions [`hasTokenPrefix`](/reference/functions/regular-functions/string-search-functions), [`hasTokenLike`](/reference/functions/regular-functions/string-search-functions) and [`hasTokenMatch`](/reference/functions/regular-functions/string-search-functions) return true if any token of the column starts with a prefix, matches a `LIKE` pattern, or matches a regular expression.
 
 Unlike `LIKE`, `startsWith` and `match`, which apply the pattern to the whole value, these functions apply it to each token separately.
 The tokens of the index dictionary that match the pattern are therefore exactly the tokens the function looks for:
 ClickHouse finds them by a scan of the dictionary (a seek to the range of matching tokens for `hasTokenPrefix`), reads their posting lists, and answers the query with a [direct read](#direct-read).
-If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
+If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
 
 Like `hasAnyTokens`, the functions use the tokenizer of the index if their optional third argument is omitted; an explicit tokenizer argument must match the index tokenizer for the index to be used.
 Without the argument, whether a call gets the tokenizer of the index depends on the query plan: filters and projections directly over the table get it, and so does a condition pushed down to the table, such as `HAVING` on a grouping key.
@@ -1505,7 +1505,7 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-For `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`, [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens) takes the place of `text_index_like_min_pattern_length`.
+For `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`, [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index) takes the place of `text_index_like_min_pattern_length`.
 
 This optimization supports functions `like`, `ilike`, `startsWith`, and `endsWith`, as well as [`hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`](#functions-example-hastokenprefix-hastokenlike-hastokenmatch).
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
