@@ -10,6 +10,8 @@ endif ()
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
+# Must precede configure_config.cmake, which sets USE_ANTLR4_GRAMMARS if the grammar target exists.
+add_subdirectory (Parsers/Prometheus/grammar)
 include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
 configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_version.cpp)
@@ -435,6 +437,7 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_iceberg_rest_catalog Server/IcebergRESTCatalog)
 
 # Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
 set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
