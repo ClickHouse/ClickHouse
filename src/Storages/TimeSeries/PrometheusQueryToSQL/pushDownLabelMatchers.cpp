@@ -1,0 +1,225 @@
+#include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
+
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorCountValues.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorOr.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorUnless.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
+#include <algorithm>
+
+
+namespace DB::PrometheusQueryToSQL
+{
+
+namespace
+{
+    using Matcher = PrometheusQueryTree::Matcher;
+    using MatcherList = PrometheusQueryTree::MatcherList;
+    using BinaryOperatorNode = PrometheusQueryTree::BinaryOperator;
+    using AggregationOperatorNode = PrometheusQueryTree::AggregationOperator;
+
+    /// The work of the pass grows fast with the number of binary operators, so bigger expressions are left as they are.
+    constexpr size_t MAX_BINARY_OPERATORS = 20;
+
+    bool contains(const Strings & labels, const String & label)
+    {
+        return std::find(labels.begin(), labels.end(), label) != labels.end();
+    }
+
+    /// Keeps the matchers on the labels which the binary operator matches series by.
+    MatcherList keepMatchingLabels(MatcherList matchers, const BinaryOperatorNode & binary_operator)
+    {
+        std::erase_if(matchers, [&](const Matcher & matcher)
+        {
+            return contains(binary_operator.labels, matcher.label_name) != binary_operator.on;
+        });
+        return matchers;
+    }
+
+    /// Keeps the matchers on the labels which the aggregation keeps in its result.
+    MatcherList keepGroupingLabels(MatcherList matchers, const AggregationOperatorNode & aggregation)
+    {
+        if (!aggregation.by && !aggregation.without)
+            return {};
+        std::erase_if(matchers, [&](const Matcher & matcher)
+        {
+            return contains(aggregation.labels, matcher.label_name) != aggregation.by;
+        });
+        return matchers;
+    }
+
+    /// Appends the matchers which `dest` doesn't have yet.
+    void appendMissingMatchers(MatcherList & dest, const MatcherList & matchers)
+    {
+        for (const auto & matcher : matchers)
+        {
+            bool exists = std::ranges::any_of(dest, [&](const Matcher & other)
+            {
+                return other.label_name == matcher.label_name && other.label_value == matcher.label_value
+                    && other.matcher_type == matcher.matcher_type;
+            });
+            if (!exists)
+                dest.push_back(matcher);
+        }
+    }
+
+    /// Whether the node is a binary operator between two instant vectors other than `or`.
+    bool isVectorMatching(const Node * node)
+    {
+        return node->node_type == NodeType::BinaryOperator
+            && !isBinaryOperatorOr(static_cast<const BinaryOperatorNode *>(node)->operator_name)
+            && node->children.at(0)->result_type == ResultType::INSTANT_VECTOR
+            && node->children.at(1)->result_type == ResultType::INSTANT_VECTOR;
+    }
+
+    /// Returns the argument whose series become the node's result series with the same labels, or nullptr.
+    const Node * getLabelPreservingArgument(const Node * node)
+    {
+        switch (node->node_type)
+        {
+            case NodeType::RangeSelector:
+            case NodeType::Subquery:
+            case NodeType::Offset:
+                return node->children.at(0);
+
+            case NodeType::Function:
+            {
+                const auto & function_name = static_cast<const PrometheusQueryTree::Function *>(node)->function_name;
+                bool is_function_over_range = isFunctionOverRange(function_name) || isFunctionQuantileOverTime(function_name)
+                    || isFunctionPredictLinear(function_name);
+                if (!is_function_over_range)
+                    return nullptr;
+                for (const auto * argument : node->children)
+                {
+                    if (argument->result_type == ResultType::RANGE_VECTOR)
+                        return argument;
+                }
+                return nullptr;
+            }
+
+            case NodeType::BinaryOperator:
+            {
+                /// An operator between a vector and a scalar keeps the labels of the vector.
+                const auto * left = node->children.at(0);
+                const auto * right = node->children.at(1);
+                if (left->result_type == ResultType::SCALAR && right->result_type == ResultType::INSTANT_VECTOR)
+                    return right;
+                if (left->result_type == ResultType::INSTANT_VECTOR && right->result_type == ResultType::SCALAR)
+                    return left;
+                return nullptr;
+            }
+
+            default:
+                return nullptr;
+        }
+    }
+
+    /// Returns the matchers which every series of the node's result satisfies, except the ones on the metric name.
+    MatcherList getCommonMatchers(const Node * node)
+    {
+        if (node->node_type == NodeType::InstantSelector)
+        {
+            MatcherList matchers = static_cast<const PrometheusQueryTree::InstantSelector *>(node)->matchers;
+            std::erase_if(matchers, [](const Matcher & matcher) { return matcher.label_name == kMetricName; });
+            return matchers;
+        }
+
+        if (node->node_type == NodeType::AggregationOperator)
+        {
+            const auto & aggregation = static_cast<const AggregationOperatorNode &>(*node);
+            if (isAggregationOperatorCountValues(aggregation.operator_name))
+                return {};
+            return keepGroupingLabels(getCommonMatchers(aggregation.children.back()), aggregation);
+        }
+
+        if (isVectorMatching(node))
+        {
+            /// The result of `unless` has only left series, so only the matchers of the left side hold for it.
+            const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
+            MatcherList matchers = getCommonMatchers(binary_operator.getLeftArgument());
+            if (!isBinaryOperatorUnless(binary_operator.operator_name))
+                appendMissingMatchers(matchers, getCommonMatchers(binary_operator.getRightArgument()));
+            return keepMatchingLabels(std::move(matchers), binary_operator);
+        }
+
+        if (const auto * argument = getLabelPreservingArgument(node))
+            return getCommonMatchers(argument);
+
+        return {};
+    }
+
+    /// Adds the matchers to the selectors of the node, so it returns only the result series which satisfy them.
+    void addMatchers(const Node * node, const MatcherList & matchers)
+    {
+        if (matchers.empty())
+            return;
+
+        if (node->node_type == NodeType::InstantSelector)
+        {
+            /// The nodes belong to a copy of the tree made by pushDownLabelMatchers(), so they can be changed.
+            const auto & selector = static_cast<const PrometheusQueryTree::InstantSelector &>(*node);
+            appendMissingMatchers(const_cast<MatcherList &>(selector.matchers), matchers);
+            return;
+        }
+
+        if (node->node_type == NodeType::AggregationOperator)
+        {
+            const auto & aggregation = static_cast<const AggregationOperatorNode &>(*node);
+            if (!isAggregationOperatorCountValues(aggregation.operator_name))
+                addMatchers(aggregation.children.back(), keepGroupingLabels(matchers, aggregation));
+            return;
+        }
+
+        if (isVectorMatching(node))
+        {
+            const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
+            MatcherList matching = keepMatchingLabels(matchers, binary_operator);
+            addMatchers(binary_operator.getLeftArgument(), matching);
+            addMatchers(binary_operator.getRightArgument(), matching);
+            return;
+        }
+
+        if (const auto * argument = getLabelPreservingArgument(node))
+            addMatchers(argument, matchers);
+    }
+
+    size_t countBinaryOperators(const Node * node)
+    {
+        size_t count = (node->node_type == NodeType::BinaryOperator) ? 1 : 0;
+        for (const auto * child : node->children)
+            count += countBinaryOperators(child);
+        return count;
+    }
+
+    void pushDownAcrossBinaryOperators(const Node * node)
+    {
+        for (const auto * child : node->children)
+            pushDownAcrossBinaryOperators(child);
+
+        if (!isVectorMatching(node))
+            return;
+
+        /// A series without a match on the other side is dropped, except the left series of `unless`, which are kept.
+        const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
+        MatcherList left_matchers = keepMatchingLabels(getCommonMatchers(binary_operator.getLeftArgument()), binary_operator);
+        MatcherList right_matchers = keepMatchingLabels(getCommonMatchers(binary_operator.getRightArgument()), binary_operator);
+
+        addMatchers(binary_operator.getRightArgument(), left_matchers);
+        if (!isBinaryOperatorUnless(binary_operator.operator_name))
+            addMatchers(binary_operator.getLeftArgument(), right_matchers);
+    }
+}
+
+
+std::shared_ptr<const PrometheusQueryTree> pushDownLabelMatchers(std::shared_ptr<const PrometheusQueryTree> promql_tree)
+{
+    const auto * root = promql_tree->getRoot();
+    if (!root || countBinaryOperators(root) > MAX_BINARY_OPERATORS)
+        return promql_tree;
+    auto res = std::make_shared<PrometheusQueryTree>(*promql_tree);
+    pushDownAcrossBinaryOperators(res->getRoot());
+    return res;
+}
+
+}
