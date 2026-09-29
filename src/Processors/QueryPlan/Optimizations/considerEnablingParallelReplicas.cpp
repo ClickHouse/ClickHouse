@@ -371,73 +371,86 @@ void collectLazyReads(const QueryPlan::Node & branch_root, std::vector<LazilyRea
 /// statistics. Only the lazy reads met on this descent qualify: a lazy read on the join side we do not
 /// descend into belongs to a different table, one that every replica reads in full rather than splits,
 /// and the cost model divides `input_bytes` by the number of replicas.
-/// The reads below `root`, without needing mutable access to the plan: a `const` node still hands out a
-/// mutable step, because `shared_ptr::get() const` returns `T *`. That is the same thing `findReadingStep`
-/// relies on, and it is what lets this run on the boundary node, which is reached as `const`.
-std::vector<ReadFromMergeTree *> collectReadingStepsBelow(const QueryPlan::Node & root)
+/// The nodes below `root` that read a `MergeTree` table. Nodes rather than steps, because the read has to
+/// be located in the other plan by the path that leads to it, and a step does not know where it sits. This
+/// needs no mutable access to the plan: a `const` node still hands out a mutable step, because
+/// `shared_ptr::get() const` returns `T *`, which is what lets this run on the boundary node.
+std::vector<const QueryPlan::Node *> collectReadNodesBelow(const QueryPlan::Node & root)
 {
-    std::vector<ReadFromMergeTree *> reads;
+    std::vector<const QueryPlan::Node *> reads;
     std::vector<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
-        if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-            reads.push_back(read);
+        if (typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            reads.push_back(node);
         for (const auto * child : node->children)
             stack.push_back(child);
     }
     return reads;
 }
 
-/// The nodes below `root` that have a read of `table` somewhere beneath them, `root` included when it
-/// applies. Computed once, in one walk down and one walk back up per read of the table, so that the
-/// descent below can ask "which side holds it" in constant time. Asking per join instead would re-walk a
-/// subtree at every level - quadratic in the plan, on the path that plans every query.
-std::unordered_set<const QueryPlan::Node *> nodesLeadingToTable(const QueryPlan::Node & root, const MergeTreeData & table)
+/// The child indices leading from `from` down to `target`, or nothing when `target` is not below it.
+std::optional<std::vector<size_t>> pathToNode(const QueryPlan::Node & from, const QueryPlan::Node & target)
 {
-    std::unordered_map<const QueryPlan::Node *, const QueryPlan::Node *> parents;
-    std::vector<const QueryPlan::Node *> reads_of_table;
-
-    std::vector<const QueryPlan::Node *> stack{&root};
-    while (!stack.empty())
+    if (&from == &target)
+        return std::vector<size_t>{};
+    for (size_t i = 0; i < from.children.size(); ++i)
     {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get());
-            read && &read->getMergeTreeData() == &table)
-            reads_of_table.push_back(node);
-        for (const auto * child : node->children)
+        if (auto below = pathToNode(*from.children[i], target))
         {
-            parents.emplace(child, node);
-            stack.push_back(child);
+            below->insert(below->begin(), i);
+            return below;
         }
     }
-
-    std::unordered_set<const QueryPlan::Node *> leading_to_table;
-    for (const auto * node : reads_of_table)
-    {
-        /// Walk up to the root, stopping as soon as an ancestor is already marked: everything above it
-        /// was marked by an earlier read.
-        while (node && leading_to_table.insert(node).second)
-        {
-            auto it = parents.find(node);
-            node = it == parents.end() ? nullptr : it->second;
-        }
-    }
-    return leading_to_table;
+    return {};
 }
 
-/// `parallelized_table` is the table parallel replicas coordinates, which is where the descent has to end:
-/// the cost model divides the read's bytes by the replica count, and only that read is split between them.
-/// It is needed to pick a join's side, because the plan does not record which side the query wrote first.
-/// `JoinStepLogical::swapInputs` reorders the inputs and flips `Left` <-> `Right`, but leaves `Inner`
-/// alone - so a swapped `INNER` join, the common case, is indistinguishable from an unswapped one by kind,
-/// and `children[isRight(kind) ? 1 : 0]` then lands on the other relation.
+/// The node `path` leads to from `from`, or null when the plan is not deep or wide enough to follow it.
+const QueryPlan::Node * followPath(const QueryPlan::Node & from, const std::vector<size_t> & path)
+{
+    const auto * node = &from;
+    for (auto index : path)
+    {
+        if (index >= node->children.size())
+            return nullptr;
+        node = node->children[index];
+    }
+    return node;
+}
+
+/// `target` and everything above it up to `root`, so that a descent can ask "which child leads there" in
+/// constant time. One walk, rather than a subtree scan at every join.
+std::unordered_set<const QueryPlan::Node *> nodesLeadingToNode(const QueryPlan::Node & root, const QueryPlan::Node & target)
+{
+    std::unordered_set<const QueryPlan::Node *> leading;
+    if (auto path = pathToNode(root, target))
+    {
+        const auto * node = &root;
+        leading.insert(node);
+        for (auto index : *path)
+        {
+            node = node->children[index];
+            leading.insert(node);
+        }
+    }
+    return leading;
+}
+
+/// `nodes_leading_to_parallelized_read` is the read parallel replicas coordinates and its ancestors, so
+/// the descent follows the branch that actually gets split rather than inferring it. Inferring it is what
+/// went wrong before: `children[isRight(kind) ? 1 : 0]` compensates for `JoinStepLogical::swapInputs`,
+/// which reorders the inputs and flips `Left` <-> `Right` - but leaves `Inner` alone, so a swapped `INNER`
+/// join is indistinguishable from an unswapped one by kind and the descent landed on the other relation.
+/// Measured at sf=100, that priced a 1.8 GiB `lineitem` read while `supplier` was the read being split
+/// (TPC-H q07, adopting a plan 11% slower) and a 0.6 MB `supplier` read while `lineorder` was being split
+/// (SSB q2.1-q2.3, declining plans 62% faster). A self-join is the same fault in one table: only one of
+/// the two occurrences is split and the other is read in full on every replica, and picking the wrong one
+/// priced 25 KB against 2.4 MB on a composite sorting key filtered on a component the join does not use.
 ReadFromMergeTree * findReadingStep(
     const QueryPlan::Node & top_of_single_replica_plan,
-    const MergeTreeData & parallelized_table,
-    const std::unordered_set<const QueryPlan::Node *> & nodes_leading_to_parallelized_table,
+    const std::unordered_set<const QueryPlan::Node *> & nodes_leading_to_parallelized_read,
     LazilyReadFromMergeTree ** lazy_reading_step = nullptr)
 {
     if (lazy_reading_step)
@@ -465,19 +478,19 @@ ReadFromMergeTree * findReadingStep(
         }
 
         // For a physical `JoinStep` (a plain `SELECT ... FROM a JOIN b` leaves it at/near the top of
-        // the replicas plan), follow the parallelized side: child 0, or child 1 for `RIGHT`. This
-        // mirrors the physical-slot selector used by `calculateHashTableCacheKeys` and
-        // `ParallelReplicasLocalPlan`, so both resolve the same table as the parallelized input.
+        // the replicas plan), follow the side the coordinated read is on.
         if (const auto * join_step = typeid_cast<const JoinStep *>(reading_step->step.get());
             join_step && reading_step->children.size() == 2)
         {
             // `swap_streams` swaps the physical pipelines at execution without reordering the plan
-            // children, so the kind-based side selection below would then descend into the wrong
-            // child. In the analyzer path that AutoParallelReplicas requires this is never set: joins are built as
-            // `JoinStepLogical` and the logical->physical conversion applies any swap by reordering
-            // the children and flipping the kind together (only the dead `optimizeJoinLegacy` path
-            // sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
-            // it, AutoParallelReplicas fails closed (skips) instead of instrumenting/parallelizing the wrong side.
+            // children, so which relation a plan child stands for at execution is no longer what the plan
+            // says. The side selection below no longer reads the kind, so it would still land on the read
+            // the replicas coordinate - but the two plans' children would be paired by a position that no
+            // longer means the same thing, and everything downstream pairs reads that way. In the analyzer
+            // path that AutoParallelReplicas requires this is never set: joins are built as `JoinStepLogical` and the
+            // logical->physical conversion applies any swap by reordering the children and flipping the
+            // kind together (only the dead `optimizeJoinLegacy` path sets `swap_streams`). Guard against it
+            // explicitly so that if a future change ever revives it, AutoParallelReplicas fails closed.
             if (join_step->swap_streams)
             {
                 LOG_TRACE(
@@ -495,38 +508,23 @@ ReadFromMergeTree * findReadingStep(
             // those decomposable kinds and rejects `FULL`/`PASTE`/`CROSS`/etc., so for any other kind no
             // parallel-replicas plan is built and this function is never reached. The split below is
             // therefore safe by that invariant, not by a check here.
-            /// Descend the side that reads the parallelized table. Exactly one side may read it: the
-            /// caller established that the replicas plan coordinates a single read of it, and a table read
-            /// on both sides would leave nothing here to tell the two reads apart.
-            const bool left_reads_it = nodes_leading_to_parallelized_table.contains(reading_step->children[0]);
-            const bool right_reads_it = nodes_leading_to_parallelized_table.contains(reading_step->children[1]);
-            if (!left_reads_it && !right_reads_it)
+            /// Descend the side the coordinated read is on. It is one particular read, not a table, so
+            /// this holds for a self-join too: both sides read the same table, but only one of them
+            /// contains the read whose ranges the replicas split.
+            const bool left_leads_there = nodes_leading_to_parallelized_read.contains(reading_step->children[0]);
+            const bool right_leads_there = nodes_leading_to_parallelized_read.contains(reading_step->children[1]);
+            if (left_leads_there == right_leads_there)
             {
-                /// The plan below this join does not read the table the replicas coordinate at all, so the
-                /// two plans disagree about what is being read - there is nothing here to price.
+                /// The coordinated read sits below exactly one child, so this means the set was built for
+                /// another plan than the one being walked.
                 LOG_DEBUG(
                     getLogger("optimizeTree"),
-                    "Neither side of the join on the way to the read reads the parallelized table {}. "
+                    "The join on the way to the read leads to the coordinated read on {} of its sides. "
                     "Skipping optimization",
-                    parallelized_table.getStorageID().getNameForLogs());
+                    left_leads_there ? "both" : "neither");
                 return nullptr;
             }
-            if (left_reads_it != right_reads_it)
-            {
-                reading_step = reading_step->children[left_reads_it ? 0 : 1];
-            }
-            else
-            {
-                /// A self-join: both sides read the coordinated table, so which side it is cannot be told
-                /// from the table. Fall back to the position, which is what encodes "the side the query
-                /// wrote first" whenever no swap happened. Being wrong here is harmless in the way that
-                /// matters: both sides read the *same* table, so the read is priced at the right table
-                /// either way, and it is a mismatched table - `lineitem` against `supplier` - that sends the
-                /// cost model orders of magnitude wrong. The reads are told apart by name downstream, where
-                /// the transplant pairs them.
-                const auto kind = join_step->getJoin()->getTableJoin().kind();
-                reading_step = reading_step->children[isRight(kind) ? 1 : 0];
-            }
+            reading_step = reading_step->children[left_leads_there ? 0 : 1];
             continue;
         }
 
@@ -1001,9 +999,11 @@ void considerEnablingParallelReplicas(
     /// coordinated, saw nothing worth dividing and declined a plan 62% faster.
     ///
     /// The replicas plan marks the coordinated read itself, so ask it instead of guessing.
+    const QueryPlan::Node * coordinated_read_node_in_replicas_plan = nullptr;
     ReadFromMergeTree * coordinated_read_in_replicas_plan = nullptr;
-    for (auto * read : collectReadingStepsBelow(*plan_with_parallel_replicas->getRootNode()))
+    for (const auto * node : collectReadNodesBelow(*plan_with_parallel_replicas->getRootNode()))
     {
+        auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get());
         if (!read->isParallelReadingFromReplicas())
             continue;
         if (coordinated_read_in_replicas_plan)
@@ -1018,6 +1018,7 @@ void considerEnablingParallelReplicas(
                 read->getStorageID().getNameForLogs());
             return;
         }
+        coordinated_read_node_in_replicas_plan = node;
         coordinated_read_in_replicas_plan = read;
     }
     if (!coordinated_read_in_replicas_plan)
@@ -1029,14 +1030,50 @@ void considerEnablingParallelReplicas(
         return;
     }
 
+    /// The same read has to be pointed at in the single-node plan, whose steps are the ones that get
+    /// instrumented. Matching it by table is not enough - a self-join reads one table twice and only one of
+    /// the two occurrences is the coordinated one - so follow the path that leads to it. The two plans are
+    /// identical below the matched node, which is what `findCorrespondingNodeInSingleNodePlan` establishes
+    /// by comparing hashes of the whole subtree, so the same child indices lead to the same read.
+    const auto path_to_coordinated_read
+        = pathToNode(*final_node_in_replica_plan, *coordinated_read_node_in_replicas_plan);
+    if (!path_to_coordinated_read)
+    {
+        /// The coordinated read is outside the fragment the replicas ship (a subquery or a set built
+        /// beside it), so the matched node's statistics are not the ones the division applies to.
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The coordinated read of {} is not below the node whose output the replicas ship. "
+            "Skipping optimization",
+            coordinated_read_in_replicas_plan->getStorageID().getNameForLogs());
+        return;
+    }
+
     const auto & parallelized_table = coordinated_read_in_replicas_plan->getMergeTreeData();
-    const auto nodes_leading_to_parallelized_table
-        = nodesLeadingToTable(*corresponding_node_in_single_replica_plan, parallelized_table);
+    const auto * coordinated_read_node_in_single_replica_plan
+        = followPath(*corresponding_node_in_single_replica_plan, *path_to_coordinated_read);
+    const auto * coordinated_read_in_single_replica_plan = coordinated_read_node_in_single_replica_plan
+        ? typeid_cast<const ReadFromMergeTree *>(coordinated_read_node_in_single_replica_plan->step.get())
+        : nullptr;
+    if (!coordinated_read_in_single_replica_plan
+        || &coordinated_read_in_single_replica_plan->getMergeTreeData() != &parallelized_table)
+    {
+        /// Reaching a different step, or none, means the two plans are not the same shape below the matched
+        /// node after all, so nothing here can be trusted to describe the coordinated read.
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The path to the coordinated read of {} does not lead to it in the single-node plan. "
+            "Skipping optimization",
+            coordinated_read_in_replicas_plan->getStorageID().getNameForLogs());
+        return;
+    }
 
     /// Now we need to identify the reading step that should be instrumented for statistics collection
     LazilyReadFromMergeTree * lazy_reading_step = nullptr;
     ReadFromMergeTree * source_reading_step = findReadingStep(
-        *corresponding_node_in_single_replica_plan, parallelized_table, nodes_leading_to_parallelized_table, &lazy_reading_step);
+        *corresponding_node_in_single_replica_plan,
+        nodesLeadingToNode(*corresponding_node_in_single_replica_plan, *coordinated_read_node_in_single_replica_plan),
+        &lazy_reading_step);
     if (!source_reading_step)
     {
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
@@ -1212,13 +1249,11 @@ void considerEnablingParallelReplicas(
                 }
 
 
-                /// The coordinated read found above, not another descent: the descent can reach a
-                /// different table than the replicas coordinate, which is exactly why the read was
-                /// re-aimed above. Comparing two runs of the same descent could only ever agree.
+                /// Aimed at the coordinated read found above, so this is the read the replicas split,
+                /// reached through the same chain of steps as its counterpart in the single-node plan.
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(
                     *final_node_in_replica_plan,
-                    parallelized_table,
-                    nodesLeadingToTable(*final_node_in_replica_plan, parallelized_table));
+                    nodesLeadingToNode(*final_node_in_replica_plan, *coordinated_read_node_in_replicas_plan));
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
 
@@ -1229,12 +1264,10 @@ void considerEnablingParallelReplicas(
                 /// parallel_replicas_min_number_of_rows_per_replica > 0, and when a JOIN sits on top
                 /// findReadingStep descends into one side whose read may already have been analyzed while
                 /// planning the join (e.g. a top-level DISTINCT or a scalar subquery in the query). In that case
-                /// keep its own analysis instead of overwriting it: it is the same parallelized table
-                /// (findReadingStep runs the same descent on the hash-matched JOIN node in both plans, and the
-                /// swap_streams case is already diverted to the throw above), so the existing result is
-                /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
-                /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
-                /// apply a mismatched analysis.
+                /// keep its own analysis instead of overwriting it: it is the same read reached by the same
+                /// path in both plans, so the existing result is equivalent. A read for a *different* table
+                /// would mean the single-node and parallel-replicas plans diverged at the matched node - a
+                /// broken invariant, so fail loudly rather than silently apply a mismatched analysis.
                 if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
                 {
                     throw Exception(
