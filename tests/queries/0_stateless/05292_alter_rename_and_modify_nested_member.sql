@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_rename_modify_nested;
 
 CREATE TABLE t_rename_modify_nested (x UInt32, n Nested(a UInt32, y LowCardinality(String)))
 ENGINE = MergeTree ORDER BY x
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_rename_modify_nested VALUES (1, [10, 20], ['a', 'bb']), (2, [30], ['ccc']);
 
