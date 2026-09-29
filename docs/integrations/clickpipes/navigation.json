@@ -207,6 +207,7 @@
       "group": "Security and access",
       "icon": "shield-check",
       "pages": [
+        "integrations/clickpipes/security/aws-iam-role",
         "integrations/clickpipes/security/gcp-workload-identity"
       ]
     },
