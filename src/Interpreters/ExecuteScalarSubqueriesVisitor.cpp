@@ -106,8 +106,7 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 namespace
 {
 
-/// Keeps the query that a thread running no query is attached to (referenced only weakly elsewhere), and that
-/// attachment, alive while the interpreter and its pipeline exist; members are destroyed in reverse order.
+/// Threads reference their query context only weakly; the members are destroyed in reverse order, the interpreter first.
 struct ScalarSubqueryInterpreter
 {
     ContextMutablePtr query_context;
@@ -171,8 +170,7 @@ static std::unique_ptr<ScalarSubqueryInterpreter> getQueryInterpreter(const ASTS
     /// `collectMaterializedCTEs` returns nothing for subquery options unless materialization is forced.
     options.forceMaterializeCTE();
 
-    /// A thread that runs no query (e.g. one loading tables) is attached to a query before the constructor, which
-    /// already executes nested scalar subqueries.
+    /// A thread with no query (e.g. loading tables) is attached before the constructor, which already executes nested scalar subqueries.
     if (!CurrentThread::getGroup())
     {
         if (subquery_context->hasQueryContext())
@@ -185,8 +183,7 @@ static std::unique_ptr<ScalarSubqueryInterpreter> getQueryInterpreter(const ASTS
         result->query_scope = QueryScope::create(result->query_context);
     }
 
-    /// The build side of a join runtime filter and `__applyFilter` use the lookup of the thread's query context, and the
-    /// read step the one of its own context.
+    /// The read step takes the runtime filter lookup from its context, the build side and `__applyFilter` from the thread's query context.
     if (auto thread_query_context = CurrentThread::tryGetQueryContext())
         subquery_context->setRuntimeFilterLookup(thread_query_context->getRuntimeFilterLookup());
 
