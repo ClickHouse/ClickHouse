@@ -964,7 +964,7 @@ private:
             child_required.emplace_back(positions.begin(), positions.end());
         }
         else
-            child_required = step->getRequiredColumns(required).required_input_positions;
+            child_required = step->getRequiredColumns(required);
 
         std::vector<QueryPlanPtr> children;
         for (size_t child = 0; child < node->children.size(); ++child)
