@@ -235,6 +235,11 @@ def test_replicated_mutation_checks_set_row_policy_behind_temporary_table(
             {"enable_lightweight_update": 1},
             id="update",
         ),
+        pytest.param(
+            "ALTER TABLE replicated_view_rp.data_rp UPDATE v = {} WHERE k = 3",
+            {"alter_update_mode": "heavy"},
+            id="alter_update",
+        ),
     ],
 )
 def test_replicated_mutation_checks_set_row_policy_in_assigned_value(

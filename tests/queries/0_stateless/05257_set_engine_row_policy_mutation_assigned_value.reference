@@ -1,0 +1,8 @@
+-- without a policy the view is usable
+1	2
+2	20
+3	30
+-- with a policy the assigned value is refused
+1	2
+2	20
+3	30

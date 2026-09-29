@@ -214,9 +214,8 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 namespace
 {
 
-QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+QueryTreeNodePtr analyzeQueryOverStorage(const ASTPtr & ast, const StoragePtr & storage, ContextPtr context)
 {
-    auto ast = prepareQueryAffectedAST(commands, storage, context);
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
@@ -227,6 +226,30 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
+}
+
+QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+{
+    return analyzeQueryOverStorage(prepareQueryAffectedAST(commands, storage, context), storage, context);
+}
+
+/// `SELECT <value of every UPDATE assignment>`, or nullptr if the commands assign nothing.
+ASTPtr prepareUpdatedValuesAST(const std::vector<MutationCommand> & commands)
+{
+    auto values = make_intrusive<ASTExpressionList>();
+    for (const MutationCommand & command : commands)
+    {
+        auto alter = command.ast();
+        if (alter && alter->update_assignments)
+            for (const auto & child : alter->update_assignments->children)
+                values->children.push_back(child->as<const ASTAssignment &>().expression()->clone());
+    }
+    if (values->children.empty())
+        return nullptr;
+
+    auto select = make_intrusive<ASTSelectQuery>();
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(values));
+    return select;
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -2489,7 +2512,11 @@ void MutationsInterpreter::validate()
 {
     validateNonDeterministicMutationsForStorage(source.getStorage(), commands, context);
 
+    /// The plan below only analyzes the scalar subqueries. These two run them as the submitting user,
+    /// which also checks the tables and the views that they read.
     prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+    if (auto updated_values = prepareUpdatedValuesAST(commands))
+        analyzeQueryOverStorage(updated_values, source.getStorage(), context);
 
     QueryPlan plan;
 
