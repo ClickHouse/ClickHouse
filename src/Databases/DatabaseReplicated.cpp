@@ -2679,8 +2679,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
     waitDatabaseStarted();
 
-    /// `CREATE OR REPLACE` drops the replaced table with its inner tables after this transaction is committed,
-    /// so the metadata of those inner tables is removed in the transaction.
+    /// `CREATE OR REPLACE` drops the replaced table with its inner tables after this transaction is committed.
     Strings replaced_inner_tables;
     if (exchange && txn->isInitialQuery() && txn->isCreateOrReplaceQuery())
         addInnerTableNames(*this, *getTable(to_table_name, local_context), local_context, replaced_inner_tables);
