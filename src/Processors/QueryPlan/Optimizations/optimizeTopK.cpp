@@ -36,17 +36,6 @@ static bool dependsOnItsBlock(const ActionsDAG & actions)
     return false;
 }
 
-/// True if a value of this type can contain a floating-point number anywhere inside it - directly,
-/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ... (`forEachChild` recurses on its own).
-static bool typeCanContainFloat(const DataTypePtr & type)
-{
-    if (isFloat(type))
-        return true;
-    bool found = false;
-    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
-    return found;
-}
-
 /// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no
 /// marks or skip indexes here, so only the dynamic-filtering path applies, and it is delivered
 /// through `FormatTopKFilterInfo` rather than an injected PREWHERE: the format appends the
@@ -70,12 +59,12 @@ static size_t tryTopKForFormatSource(
     if (!settings.use_top_k_dynamic_filtering)
         return 0;
 
-    /// Same eligibility as the MergeTree dynamic-filtering path below: Dynamic and Variant
-    /// columns cannot be reliably compared by `__topKFilter`, and for variable-length types the
-    /// per-row comparison cost can exceed its savings, so they are gated behind an explicit
-    /// opt-in.
+    /// Same eligibility as the MergeTree dynamic-filtering path below: a Dynamic, Variant or JSON
+    /// anywhere in the type cannot be reliably compared by `__topKFilter`, and for variable-length
+    /// types the per-row comparison cost can exceed its savings, so they are gated behind an
+    /// explicit opt-in.
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
-    if (isDynamic(sort_column.type) || isVariant(sort_column.type)
+    if (hasRuntimeTypedType(sort_column.type)
         || (sort_column_is_variable_length && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
         return 0;
 
@@ -87,7 +76,7 @@ static size_t tryTopKForFormatSource(
     /// hazard: `nan` values are legally absent from Parquet min/max statistics, so a finite range
     /// cannot prove that a row group holds no `nan` row that must sort first. Keep floating-point
     /// sort keys off this path until both are `nan`-aware.
-    if (typeCanContainFloat(sort_column.type))
+    if (hasTypeThatCanContainFloat(sort_column.type))
         return 0;
 
     /// The resolved sort column must be one of the source's outputs with an unchanged type: the

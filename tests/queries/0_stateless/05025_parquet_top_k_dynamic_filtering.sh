@@ -222,3 +222,22 @@ for query in "${tuple_queries[@]}"; do
         <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
         && echo "OK"
 done
+
+echo "-- a Variant nested in the sort key: the threshold keeps a value but not which alternative"
+echo "-- holds it, while ORDER BY ranks the alternatives first, so no filter may be armed for a"
+echo "-- runtime-typed column at any depth (v.1 is UInt8 in var1 and UInt64 in var2)"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/var1.parquet', Parquet)
+    SELECT number AS id, tuple(toUInt8(3)) AS v FROM numbers(1000)
+    SETTINGS engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/var2.parquet', Parquet)
+    SELECT 1000 + number AS id, tuple(toUInt64(900)) AS v FROM numbers(1000)
+    SETTINGS engine_file_truncate_on_insert = 1;
+"
+variant_query="SELECT v, id FROM file('${DIR}/var{1,2}.parquet', Parquet, 'id UInt64, v Tuple(Variant(UInt64, UInt8))') ORDER BY v, id DESC LIMIT 2 SETTINGS allow_suspicious_types_in_order_by = 1, allow_suspicious_variant_types = 1"
+"${LOCAL[@]}" "${ON[@]}" --query "${variant_query}"
+diff \
+    <("${LOCAL[@]}" "${ON[@]}" --query "${variant_query}") \
+    <("${LOCAL[@]}" "${OFF[@]}" --query "${variant_query}") \
+    && echo "OK"

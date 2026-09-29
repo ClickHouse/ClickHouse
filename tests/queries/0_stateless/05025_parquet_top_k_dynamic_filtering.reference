@@ -94,3 +94,9 @@ OK
 99997	(99997,99997)	99997
 99995	(99995,99995)	99995
 OK
+-- a Variant nested in the sort key: the threshold keeps a value but not which alternative
+-- holds it, while ORDER BY ranks the alternatives first, so no filter may be armed for a
+-- runtime-typed column at any depth (v.1 is UInt8 in var1 and UInt64 in var2)
+(900)	1999
+(900)	1998
+OK
