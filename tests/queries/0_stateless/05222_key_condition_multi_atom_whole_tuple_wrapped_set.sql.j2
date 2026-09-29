@@ -1,0 +1,42 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: granule counts may differ with random settings.
+
+-- A key column can be a deterministic function of the packed tuple of a membership predicate,
+-- such as `cityHash64(tuple(s, x))` for `(s, x) IN (...)`. It is not a function of any single
+-- tuple component, so the wrapped-set pass must also consider the whole tuple as a source.
+-- Without that atom the leaf constrains only the second key column, which cannot prune any
+-- granule whose first key column spans several values.
+
+SET explain_query_plan_default = 'legacy';
+SET optimize_rewrite_has_to_in = 0;
+SET optimize_trivial_count_with_sparsity_filter = 0;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. `settings` apply to the
+    whole check. -#}
+{% macro check(table, predicate, settings = '', condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+    {%- if settings %} SETTINGS {{ settings }}{% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_whole_tuple_wrapped_set (s String, x UInt8) ENGINE = MergeTree ORDER BY (cityHash64(tuple(s, x)), tuple(s, x))
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, min_bytes_for_wide_part = 0;
+INSERT INTO test_whole_tuple_wrapped_set SELECT toString(number), number FROM numbers(200);
+
+-- The direct packed-tuple atom and the wrapped `cityHash64(tuple(s, x))` atom prune together.
+{{ check('test_whole_tuple_wrapped_set', "(s, x) IN (('7', 7))", condition = true) }}
+{{ check('test_whole_tuple_wrapped_set', "(s, x) IN (('7', 7), ('120', 120))") }}
+{{ check('test_whole_tuple_wrapped_set', "has([('7', 7)], (s, x))") }}
+{{ check('test_whole_tuple_wrapped_set', "has([('7', 7), ('120', 120)], (s, x))") }}
+
+-- The wrapped atom is relaxed (the hash is not injective), so negation stays correct: the negated
+-- leaf keeps only its exact direct atom, which cannot exclude any granule of this data.
+{{ check('test_whole_tuple_wrapped_set', "(s, x) NOT IN (('7', 7))", condition = true) }}
+{{ check('test_whole_tuple_wrapped_set', "NOT has([('7', 7)], (s, x))", condition = true) }}
+
+-- With the multi-atom analysis disabled the leaf keeps only its direct atom and reads every granule.
+{{ check('test_whole_tuple_wrapped_set', "(s, x) IN (('7', 7))", settings = 'analyze_index_with_multiple_key_columns_per_condition = 0', condition = true) }}

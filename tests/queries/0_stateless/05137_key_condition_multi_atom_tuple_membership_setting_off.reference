@@ -1,10 +1,6 @@
-1
-2
-1
-Condition: ((s, x) in 1-element set)
-Granules: 2/3
-1
-2
-1
-Condition: (tuple(s, x) in 1-element set)
-Granules: 2/3
+(s, x) IN (('b', 5))	1	1	2	Condition: ((s, x) in 1-element set)
+(s, x) NOT IN (('b', 5))	2	2	3	Condition: ((s, x) notIn 1-element set)
+has([('b', 5)], (s, x))	1	1	2
+(s, x) IN (('b', 5))	1	1	2	Condition: (tuple(s, x) in 1-element set)
+(s, x) NOT IN (('b', 5))	2	2	3	Condition: (tuple(s, x) notIn 1-element set)
+has([('b', 5)], (s, x))	1	1	2

@@ -1,3 +1,3 @@
-1
-2
-1
+(s, x) IN (('b', 5))	1	1	2
+(s, x) NOT IN (('b', 5))	2	2	3	Condition: ((s, x) notIn 1-element set)
+has([('b', 5)], (s, x))	1	1	2

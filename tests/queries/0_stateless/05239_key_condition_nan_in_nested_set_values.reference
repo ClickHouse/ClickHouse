@@ -1,10 +1,5 @@
-1
-12
-1
-12
-1
-12
-1
-12
-1
-2
+k IN (tuple(nan, [1.], tuple(1.), map('x', 1.)))	1	1	12
+k IN (tuple(1., [nan], tuple(1.), map('x', 1.)))	1	1	12
+k IN (tuple(1., [1.], tuple(nan), map('x', 1.)))	1	1	12
+k IN (tuple(1., [1.], tuple(1.), map('x', nan)))	1	1	12
+k IN (tuple(5., [5.], tuple(5.), map('x', 5.)))	1	1	2

@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS test;
-
 CREATE TABLE test (d Date32)
 ENGINE = MergeTree ORDER BY (toYear(d), toDate(d));
 

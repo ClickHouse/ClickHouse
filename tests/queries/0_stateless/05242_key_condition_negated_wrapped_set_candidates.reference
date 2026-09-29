@@ -1,42 +1,24 @@
 scalar, multiple atoms = 0
-64
-16
-64
-16
-64
-16
+s NOT IN ('abc')	16	16	64
+notHas(['abc'], s)	16	16	64
+NOT has(['abc'], s)	16	16	64
 scalar, multiple atoms = 1
-17
-16
-17
-16
-17
-16
+s NOT IN ('abc')	16	16	17
+notHas(['abc'], s)	16	16	17
+NOT has(['abc'], s)	16	16	17
 whole tuple, multiple atoms = 0
-64
-16
-64
-16
-64
-16
+(s, x) NOT IN (('abc', 1))	16	16	64
+notHas([('abc', 1)], (s, x))	16	16	64
+NOT has([('abc', 1)], (s, x))	16	16	64
 whole tuple, multiple atoms = 1
-17
-16
-17
-16
-17
-16
+(s, x) NOT IN (('abc', 1))	16	16	17
+notHas([('abc', 1)], (s, x))	16	16	17
+NOT has([('abc', 1)], (s, x))	16	16	17
 tuple component, multiple atoms = 1
-64
-16
-64
-16
-64
-16
+(s, x) NOT IN (('abc', 1))	16	16	64
+notHas([('abc', 1)], (s, x))	16	16	64
+NOT has([('abc', 1)], (s, x))	16	16	64
 non-injective, multiple atoms = 1
-64
-16
-64
-16
-64
-16
+s NOT IN ('abc')	16	16	64
+notHas(['abc'], s)	16	16	64
+NOT has(['abc'], s)	16	16	64
