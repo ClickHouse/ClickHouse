@@ -6,3 +6,7 @@
 1	2
 2	20
 3	30
+-- a subquery inside a lambda or next to an alias is still accepted
+1	2
+2	3
+3	1

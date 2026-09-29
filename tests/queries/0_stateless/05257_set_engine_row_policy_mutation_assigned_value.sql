@@ -24,6 +24,12 @@ SELECT '-- with a policy the assigned value is refused';
 SELECT max(number) FROM v_rp; -- { serverError ACCESS_DENIED }
 ALTER TABLE mt_rp UPDATE v = (SELECT max(number) FROM v_rp) WHERE k = 3; -- { serverError ACCESS_DENIED }
 ALTER TABLE mt_rp UPDATE v = v + (SELECT max(number) FROM v_rp) WHERE k = 3; -- { serverError ACCESS_DENIED }
+ALTER TABLE mt_rp UPDATE v = k IN (SELECT number FROM numbers(10) WHERE number = (SELECT max(number) FROM v_rp)) WHERE k = 3; -- { serverError ACCESS_DENIED }
+SELECT * FROM mt_rp ORDER BY k;
+
+SELECT '-- a subquery inside a lambda or next to an alias is still accepted';
+ALTER TABLE mt_rp UPDATE v = arrayExists(x -> x IN (SELECT 3), [k]) WHERE k = 3;
+ALTER TABLE mt_rp UPDATE v = ((k + 1) AS kk) * (kk IN (SELECT 3)) WHERE k = 2;
 SELECT * FROM mt_rp ORDER BY k;
 
 DROP ROW POLICY rp_set_rp ON set_rp;

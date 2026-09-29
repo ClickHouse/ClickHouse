@@ -234,25 +234,32 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return analyzeQueryOverStorage(prepareQueryAffectedAST(commands, storage, context), storage, context);
 }
 
-/// Collects the parts of `ast` that read a subquery: a scalar subquery, or an `IN` or `exists` call on a subquery.
-void collectSubqueryExpressions(const ASTPtr & ast, ASTs & expressions)
+/// Collects the subqueries of `ast`. A scalar subquery is taken as is. The set of an `IN` or `exists` call is taken
+/// as `exists(subquery)`, because it may return more than one row.
+void collectSubqueries(const ASTPtr & ast, ASTs & subqueries)
 {
-    const auto * function = ast->as<ASTFunction>();
-    const bool reads_subquery = ast->as<ASTSubquery>()
-        || (function && (functionIsInOrGlobalInOperator(function->name) || function->name == "exists") && function->arguments
-            && std::ranges::any_of(function->arguments->children, [](const ASTPtr & argument) { return argument->as<ASTSubquery>(); }));
-    if (reads_subquery)
+    if (ast->as<ASTSubquery>())
     {
-        expressions.push_back(ast->clone());
+        subqueries.push_back(ast->clone());
         return;
     }
 
-    for (const auto & child : ast->children)
-        collectSubqueryExpressions(child, expressions);
+    const auto * function = ast->as<ASTFunction>();
+    const bool takes_set
+        = function && function->arguments && (functionIsInOrGlobalInOperator(function->name) || function->name == "exists");
+    for (const auto & child : takes_set ? function->arguments->children : ast->children)
+    {
+        const bool is_set = takes_set && child == function->arguments->children.back() && child->as<ASTSubquery>();
+        if (is_set)
+            subqueries.push_back(makeASTFunction("exists", child->clone()));
+        else
+            collectSubqueries(child, subqueries);
+    }
 }
 
-/// `SELECT` of the subqueries in the `UPDATE` assignments, or nullptr if there are none. A whole assigned value
-/// is not analyzed: that folds its constants, which can fail even when no row matches and the value is never computed.
+/// `SELECT` of the subqueries in the `UPDATE` assignments, or nullptr if there are none. The rest of an assigned
+/// value is left out: it can use the names of a lambda or of an alias, and folding its constants can fail although
+/// no row matches. A failing subquery still fails the validation, as in the predicate.
 ASTPtr prepareAssignedSubqueriesAST(const std::vector<MutationCommand> & commands, const ContextPtr & context)
 {
     auto subqueries = make_intrusive<ASTExpressionList>();
@@ -261,7 +268,7 @@ ASTPtr prepareAssignedSubqueriesAST(const std::vector<MutationCommand> & command
         auto alter = command.ast();
         if (alter && alter->update_assignments)
             for (const auto & child : alter->update_assignments->children)
-                collectSubqueryExpressions(child->as<const ASTAssignment &>().expression(), subqueries->children);
+                collectSubqueries(child->as<const ASTAssignment &>().expression(), subqueries->children);
     }
     if (subqueries->children.empty())
         return nullptr;
