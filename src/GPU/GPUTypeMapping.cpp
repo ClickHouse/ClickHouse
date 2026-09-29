@@ -82,8 +82,10 @@ GPUElementType sumResultTypeFor(GPUElementType element_type)
         case GPUElementType::Float32:
         case GPUElementType::Float64:
             return GPUElementType::Float64;
+        case GPUElementType::String:
+            break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "A sum of GPU element type {}, which has none", element_type);
 }
 
 std::optional<GPUCodec> codecOf(UInt8 method_byte)
@@ -149,16 +151,16 @@ bool isStringKey(const IDataType & type)
     return isString(type);
 }
 
-std::vector<GPUColumnType> groupByKeysOrThrow(const DataTypes & key_types)
+std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
 {
-    std::vector<GPUColumnType> keys;
+    std::vector<GPUElementType> keys;
     keys.reserve(key_types.size());
     for (const auto & key_type : key_types)
     {
         if (isStringKey(*key_type))
-            keys.push_back({.kind = GPUColumnKind::Variable, .element_type = GPUElementType::UInt8});
+            keys.push_back(GPUElementType::String);
         else
-            keys.push_back({.kind = GPUColumnKind::Fixed, .element_type = elementTypeOrThrow(*key_type)});
+            keys.push_back(elementTypeOrThrow(*key_type));
     }
     return keys;
 }
@@ -284,8 +286,9 @@ char * resizeAndGetValueBytes(IColumn & column, size_t num_rows, GPUElementType 
         case GPUElementType::Int64: return resizeAndGetValueBytes<Int64>(column, num_rows);
         case GPUElementType::Float32: return resizeAndGetValueBytes<Float32>(column, num_rows);
         case GPUElementType::Float64: return resizeAndGetValueBytes<Float64>(column, num_rows);
+        case GPUElementType::String: break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Values of GPU element type {} for a column of fixed-width values", element_type);
 }
 
 }

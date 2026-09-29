@@ -5,7 +5,7 @@
 #if USE_GPU
 
 #include <GPU/GPUMemory.h>
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 #include <cstddef>
 #include <span>

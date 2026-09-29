@@ -31,7 +31,7 @@ namespace DB::GPU
 namespace
 {
 
-void checkMatches(const DeviceColumnView & column, size_t num_matches, std::string_view what)
+void checkMatches(const DeviceFixedColumn & column, size_t num_matches, std::string_view what)
 {
     if (column.rows != num_matches)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The device returned {} {} for {} matches", column.rows, what, num_matches);
@@ -127,12 +127,12 @@ void HashTable::finishBuild()
 
     Stopwatch watch;
 
-    std::vector<DeviceColumnView> payloads;
+    std::vector<DeviceFixedColumn> payloads;
     payloads.reserve(build_payload_pipes.size());
     for (auto & pipe : build_payload_pipes)
-        payloads.push_back(pipe.flush());
+        payloads.push_back(fixedOrThrow(pipe.flush().view()));
 
-    const DeviceColumnView keys = build_key_pipe.flush();
+    const DeviceFixedColumn keys = fixedOrThrow(build_key_pipe.flush().view());
     if (keys.rows != build_rows)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "The device holds {} keys of the right table, expected {}", keys.rows, build_rows);
@@ -200,29 +200,34 @@ HashTable::Matches HashTable::probe(const IColumn & key_column)
     std::unique_ptr<Probe> probe = takeProbe();
 
     probe->keys.stage(key_column);
-    const DeviceColumnView keys = probe->keys.flush();
+    const DeviceFixedColumn keys = fixedOrThrow(probe->keys.flush().view());
 
     const size_t num_matches = onDevice(
         [&] { return probe->device.probe(keys); }, "Cannot probe the GPU's hash table with {} rows of the left table", num_rows);
 
     if (num_matches != 0)
     {
-        ColumnDownload download(probe->stream.get());
+        std::vector<DeviceColumnView> from;
+        std::vector<IColumn *> to;
+        from.reserve(payload_element_types.size() + 1);
+        to.reserve(payload_element_types.size() + 1);
 
-        const DeviceColumnView device_indices
+        const DeviceFixedColumn device_indices
             = onDevice([&] { return probe->device.probeRowIndices(); }, "Cannot view the probe-side row indices on the device");
         checkMatches(device_indices, num_matches, "probe-side row indices");
-        download.add(device_indices, *matches.probe_row_indices);
+        from.push_back(device_indices);
+        to.push_back(matches.probe_row_indices.get());
 
         for (size_t i = 0; i < payload_element_types.size(); ++i)
         {
-            const DeviceColumnView device_payload
+            const DeviceFixedColumn device_payload
                 = onDevice([&] { return probe->device.gatheredPayload(i); }, "Cannot view gathered payload column {} on the device", i);
             checkMatches(device_payload, num_matches, "gathered payload rows");
-            download.add(device_payload, *matches.build_payload_columns[i]);
+            from.push_back(device_payload);
+            to.push_back(matches.build_payload_columns[i].get());
         }
 
-        download.finish();
+        copyDeviceToHost(from, to, probe->stream.get());
     }
 
     probe->keys.reset();

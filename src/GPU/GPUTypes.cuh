@@ -4,14 +4,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 
 /** The vocabulary shared by the two sides of `src/GPU`.
   *
-  * The `Cudf*` files talk to cuDF and are compiled by nvcc against libstdc++; everything else is
-  * compiled with the rest of ClickHouse by clang against libc++. The two meet in the `I*`
-  * interfaces, whose signatures name only the types of this header and `rmm::cuda_stream_view`,
-  * which holds a `cudaStream_t` and nothing else: nothing of either standard library crosses
-  * between them, and the cuDF side only ever sees device pointers and streams. The host side
+  * The `.cu` files talk to cuDF and are compiled by nvcc against libstdc++; the `.cpp` files are
+  * compiled with the rest of ClickHouse by clang against libc++. Whatever nvcc compiles is a `.cu`
+  * or a `.cuh`, and a `.h` is the host side's alone. Some `.cuh` are included by both sides: this
+  * one, `GPUStreams.cuh`, and the headers of the classes the nvcc side defines - `CudfGroupBy.cuh`,
+  * `CudfHashJoin.cuh`, `CudfReduction.cuh`, `RecordGroupBy.cuh` - whose signatures name only the
+  * types of this header and `rmm::cuda_stream_view`, which holds a `cudaStream_t` and nothing
+  * else: nothing of either standard library crosses between them, and the cuDF side only ever
+  * sees device pointers and streams. The host side
   * takes nothing of rmm but that type, and never calls what of it throws - `synchronize` - since
   * an exception built against libstdc++ is not one it can read.
   *
@@ -22,13 +26,21 @@
   * `what()` dispatches to the thrower's vtable. What must not cross is an object whose layout the
   * two sides disagree on: the standard exception classes exist twice in the binary, and the
   * process binds the names both define - `what`, the destructors - to libc++'s definitions,
-  * which do not know the layout of a `std::logic_error` built on the cuDF side. The cuDF side
-  * therefore throws its own `CudfError`, whose message and `what` are its own, and wraps its
-  * calls into cuDF in `guarded`, which turns what cuDF throws into a `CudfError` without asking
-  * or destroying the original - see `Cudf.cuh`.
+  * which do not know the layout of a `std::logic_error` built on the cuDF side. So an error of
+  * either side is one `DB::Exception` of `GPU_ERROR`, built on the host side by `throwGPUError`
+  * wherever it is thrown from, and the cuDF side wraps its calls into cuDF in `guarded`, which
+  * turns what cuDF throws into one without asking or destroying the original - see `Cudf.cuh`.
   */
 namespace DB::GPU
 {
+
+/// Throws a `DB::Exception` of `GPU_ERROR` that says `message`. Defined on the host side, which
+/// alone knows the class; the cuDF side calls it for its own errors.
+[[noreturn]] void throwGPUError(const char * message);
+
+/// Whether `exception` is a `DB::Exception`, which the cuDF side lets through as it is. The
+/// standard `std::exception` is the same class to both sides: a vtable pointer and nothing else.
+bool isClickHouseException(const std::exception & exception);
 
 template <typename T>
 struct GPUSpan
@@ -70,6 +82,8 @@ enum class GPUElementType : int
     Int64 = 7,
     Float32 = 8,
     Float64 = 9,
+    /// Values of varying width: a column of them is `Variable`, its bytes and their offsets.
+    String = 10,
 };
 
 enum class GPUAggregationKind : int
@@ -94,15 +108,10 @@ struct GPUGroupByValue
     GPUAggregationKind aggregation;
 };
 
-/** How a column lies in memory - which buffers it is made of - as both sides take it.
-  *
-  * - `Fixed`: `rows` values of `element_type` in `data`.
-  * - `Variable`: values of varying width, their bytes one after another in `data`, and `rows + 1`
-  *   offsets into them in `offsets`: the value of row `i` is from `offsets[i]` up to `offsets[i + 1]`.
-  *   A `String` is one.
-  *
-  * A kind of column more is a layout on the host side (`GPUColumns.h`) and a view of cuDF's on the
-  * other (`Cudf.cuh`); the pipes and the copies back are the same for every kind.
+/** How a column lies in memory as both sides take it: `rows` values of one width, or bytes and
+  * offsets into them. A column of another kind is a struct of its own below, a case of
+  * `DeviceColumnView`, and a download on the host side (`GPUColumns.h`) and a view of cuDF's
+  * (`Cudf.cuh`) of it.
   */
 enum class GPUColumnKind : int
 {
@@ -110,28 +119,57 @@ enum class GPUColumnKind : int
     Variable = 1,
 };
 
-/// The type of a column as the device takes it: its kind, and for `Fixed` its values' type.
-struct GPUColumnType
+constexpr GPUColumnKind columnKindOf(GPUElementType type)
 {
-    GPUColumnKind kind = GPUColumnKind::Fixed;
+    return type == GPUElementType::String ? GPUColumnKind::Variable : GPUColumnKind::Fixed;
+}
+
+/// `rows` values of `element_type`, which is not `String`, one after another at `data`, in device
+/// memory.
+struct DeviceFixedColumn
+{
     GPUElementType element_type = GPUElementType::UInt8;
-
-    bool operator==(const GPUColumnType &) const = default;
-};
-
-/// A column in device memory, as the cuDF side receives it and gives it back. For `Variable`,
-/// `offsets[0]` need not be 0 - it is where the first row starts - and `bytes` is how many bytes
-/// the rows span from there, which a view handed to the device side may leave 0.
-struct DeviceColumnView
-{
-    GPUElementType element_type;
     const char * data = nullptr;
     size_t rows = 0;
-    GPUColumnKind kind = GPUColumnKind::Fixed;
-    const uint64_t * offsets = nullptr;
-    size_t bytes = 0;
+};
 
-    GPUColumnType type() const { return {kind, element_type}; }
+/// `rows` values of varying width in device memory, their bytes one after another at `chars`,
+/// `chars_bytes` of them. `offsets` holds `rows + 1` offsets into `chars`, from 0 to `chars_bytes`:
+/// row `i` is from `offsets[i]` up to `offsets[i + 1]`. A column of no rows may have no offsets at
+/// all. A column of `String` is one.
+struct DeviceVariableColumn
+{
+    const uint64_t * offsets = nullptr;
+    const char * chars = nullptr;
+    size_t rows = 0;
+    size_t chars_bytes = 0;
+};
+
+/** A column in device memory of any kind, as it crosses between the two sides: `kind` says which
+  * member of the union it is. A `std::variant` would not do, as the two standard libraries lay it
+  * out differently. Each side reads a member through a check of its own - `fixedOrThrow` or a
+  * switch on `kind` on the host side, `columnViewOf` on the other.
+  *
+  * `null_mask`, when there is one, holds a byte per row, not zero for a `NULL`, as a
+  * `ColumnNullable` keeps it. Nothing takes one yet, and whatever takes a view refuses one.
+  */
+struct DeviceColumnView
+{
+    GPUColumnKind kind;
+    union
+    {
+        DeviceFixedColumn fixed;
+        DeviceVariableColumn variable;
+    };
+    const uint8_t * null_mask = nullptr;
+
+    DeviceColumnView() : kind(GPUColumnKind::Fixed), fixed{} { }
+    DeviceColumnView(const DeviceFixedColumn & fixed_) : kind(GPUColumnKind::Fixed), fixed(fixed_) { } /// NOLINT
+    DeviceColumnView(const DeviceVariableColumn & variable_) : kind(GPUColumnKind::Variable), variable(variable_) { } /// NOLINT
+
+    size_t rows() const { return kind == GPUColumnKind::Fixed ? fixed.rows : variable.rows; }
+
+    GPUElementType type() const { return kind == GPUColumnKind::Fixed ? fixed.element_type : GPUElementType::String; }
 };
 
 struct HostColumnView
@@ -215,9 +253,11 @@ struct GPUFilterProgram
 
 constexpr bool isInteger(GPUElementType type)
 {
-    return type != GPUElementType::Float32 && type != GPUElementType::Float64;
+    return type != GPUElementType::Float32 && type != GPUElementType::Float64 && type != GPUElementType::String;
 }
 
+/// The width of a value of a `Fixed` column. The kernels call it too, so it cannot throw: a
+/// `String` has no one width, and is 0 here.
 constexpr size_t sizeOf(GPUElementType type)
 {
     switch (type)
@@ -236,6 +276,8 @@ constexpr size_t sizeOf(GPUElementType type)
         case GPUElementType::Int64:
         case GPUElementType::Float64:
             return 8;
+        case GPUElementType::String:
+            return 0;
     }
     return 0;
 }

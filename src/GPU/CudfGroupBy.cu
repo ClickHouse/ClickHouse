@@ -35,7 +35,7 @@ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationK
         case GPUAggregationKind::Min: return cudf::make_min_aggregation<cudf::groupby_aggregation>();
         case GPUAggregationKind::Max: return cudf::make_max_aggregation<cudf::groupby_aggregation>();
     }
-    throw CudfError("unknown aggregation " + std::to_string(static_cast<int>(aggregation)));
+    throwGPUError("unknown aggregation " + std::to_string(static_cast<int>(aggregation)));
 }
 
 /// What a group leaves a value in: a `sum` of integers in eight bytes - cuDF sums them all into
@@ -57,7 +57,7 @@ struct SubtractFrom
 
 struct CudfGroupBy::State
 {
-    const std::vector<GPUColumnType> keys;
+    const std::vector<GPUElementType> keys;
     const std::vector<GPUGroupByValue> values;
     const rmm::cuda_stream_view stream;
 
@@ -67,12 +67,12 @@ struct CudfGroupBy::State
     std::vector<std::unique_ptr<cudf::table>> partials;
     size_t partial_rows = 0;
 
-    /// After `finalize`: per key, the offsets of a variable-width key as `INT64`, which cuDF may have left
+    /// After `finalize`: per key, the offsets of a key of strings as `INT64`, which cuDF may have left
     /// in `INT32`; nothing for any other.
     std::vector<std::unique_ptr<cudf::column>> variable_offsets;
     bool finalized = false;
 
-    State(GPUSpan<GPUColumnType> keys_, GPUSpan<GPUGroupByValue> values_, rmm::cuda_stream_view stream_)
+    State(GPUSpan<GPUElementType> keys_, GPUSpan<GPUGroupByValue> values_, rmm::cuda_stream_view stream_)
         : keys(keys_.begin(), keys_.end())
         , values(values_.begin(), values_.end())
         , stream(stream_)
@@ -106,7 +106,7 @@ struct CudfGroupBy::State
             std::unique_ptr<cudf::column> & result = results[i].results.front();
             const GPUElementType left_in = leftInOf(values[i]);
             if (cudf::size_of(result->type()) != sizeOf(left_in))
-                throw CudfError(
+                throwGPUError(
                     "the device reduced value " + std::to_string(i) + " into cuDF type "
                     + std::to_string(static_cast<int32_t>(result->type().id())) + ", which is not as wide as element type "
                     + std::to_string(static_cast<int>(left_in)));
@@ -151,28 +151,28 @@ struct CudfGroupBy::State
     }
 };
 
-CudfGroupBy::CudfGroupBy(GPUSpan<GPUColumnType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream)
+CudfGroupBy::CudfGroupBy(GPUSpan<GPUElementType> keys, GPUSpan<GPUGroupByValue> values, rmm::cuda_stream_view stream)
 {
     if (stream.is_default())
-        throw CudfError("a `GROUP BY` by variable-width keys on the device's default stream, where cuco cannot copy its counts back");
+        throwGPUError("a `GROUP BY` by variable-width keys on the device's default stream, where cuco cannot copy its counts back");
 
     if (keys.empty() || values.empty())
-        throw CudfError("a `GROUP BY` without keys or without values");
+        throwGPUError("a `GROUP BY` without keys or without values");
 
     for (const auto & key : keys)
     {
-        if (key.kind == GPUColumnKind::Fixed && !isInteger(key.element_type))
-            throw CudfError("a key of element type " + std::to_string(static_cast<int>(key.element_type)) + " is not an integer");
+        if (key != GPUElementType::String && !isInteger(key))
+            throwGPUError("a key of element type " + std::to_string(static_cast<int>(key)) + " is neither an integer nor a string");
     }
 
     for (const auto & value : values)
     {
         if (!isInteger(value.element_type))
-            throw CudfError(
+            throwGPUError(
                 "a value of element type " + std::to_string(static_cast<int>(value.element_type))
                 + " is not an integer, which a `GROUP BY` by variable-width keys reduces only");
         if (value.aggregation == GPUAggregationKind::Sum && sizeOf(value.result_type) != 8)
-            throw CudfError("a sum into element type " + std::to_string(static_cast<int>(value.result_type)) + ", which is not eight bytes wide");
+            throwGPUError("a sum into element type " + std::to_string(static_cast<int>(value.result_type)) + ", which is not eight bytes wide");
     }
 
     initializeCudf();
@@ -184,13 +184,13 @@ CudfGroupBy::~CudfGroupBy()
     delete state;
 }
 
-void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values)
+void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceFixedColumn> values)
 {
     if (state->finalized)
-        throw CudfError("a batch after the groups were closed");
+        throwGPUError("a batch after the groups were closed");
 
     if (keys.size() != state->keys.size() || values.size() != state->values.size())
-        throw CudfError(
+        throwGPUError(
             "a batch of " + std::to_string(keys.size()) + " keys and " + std::to_string(values.size()) + " values, expected "
             + std::to_string(state->keys.size()) + " and " + std::to_string(state->values.size()));
 
@@ -204,8 +204,8 @@ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnV
     for (size_t i = 0; i < keys.size(); ++i)
     {
         const std::string what = "key " + std::to_string(i);
-        if (keys[i].rows != rows)
-            throw CudfError(what + " of " + std::to_string(keys[i].rows) + " rows in a batch of " + std::to_string(rows));
+        if (keys[i].rows() != rows)
+            throwGPUError(what + " of " + std::to_string(keys[i].rows()) + " rows in a batch of " + std::to_string(rows));
         columns.push_back(columnViewOf(keys[i], state->keys[i], what));
     }
 
@@ -213,7 +213,7 @@ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnV
     {
         const std::string what = "value " + std::to_string(i);
         if (values[i].rows != rows)
-            throw CudfError(what + " of " + std::to_string(values[i].rows) + " rows in a batch of " + std::to_string(rows));
+            throwGPUError(what + " of " + std::to_string(values[i].rows) + " rows in a batch of " + std::to_string(rows));
         columns.push_back(columnViewOf(values[i], state->values[i].element_type, what));
     }
 
@@ -234,7 +234,7 @@ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnV
 size_t CudfGroupBy::finalize()
 {
     if (state->finalized)
-        throw CudfError("the groups were closed twice");
+        throwGPUError("the groups were closed twice");
 
     state->mergeAll();
     state->finalized = true;
@@ -247,7 +247,7 @@ size_t CudfGroupBy::finalize()
 
     for (size_t i = 0; i < state->keys.size(); ++i)
     {
-        if (state->keys[i].kind != GPUColumnKind::Variable)
+        if (state->keys[i] != GPUElementType::String)
         {
             state->variable_offsets.emplace_back();
             continue;
@@ -255,7 +255,7 @@ size_t CudfGroupBy::finalize()
 
         const cudf::strings_column_view strings(groups.column(static_cast<cudf::size_type>(i)));
         if (strings.offset() != 0)
-            throw CudfError("the device returned the strings of key " + std::to_string(i) + " as a slice");
+            throwGPUError("the device returned the strings of key " + std::to_string(i) + " as a slice");
 
         state->variable_offsets.push_back(guarded(
             "widening the offsets of key " + std::to_string(i),
@@ -268,56 +268,60 @@ size_t CudfGroupBy::finalize()
 DeviceColumnView CudfGroupBy::key(size_t index) const
 {
     if (!state->finalized)
-        throw CudfError("the groups were asked for before they were closed");
+        throwGPUError("the groups were asked for before they were closed");
 
     if (index >= state->keys.size())
-        throw CudfError("key " + std::to_string(index) + " of " + std::to_string(state->keys.size()));
+        throwGPUError("key " + std::to_string(index) + " of " + std::to_string(state->keys.size()));
 
-    const GPUColumnType type = state->keys[index];
-    if (!state->merged)
-        return {.element_type = type.element_type, .data = nullptr, .rows = 0, .kind = type.kind};
-
-    const cudf::column_view column = state->merged->view().column(static_cast<cudf::size_type>(index));
-    switch (type.kind)
+    const GPUElementType type = state->keys[index];
+    switch (columnKindOf(type))
     {
         case GPUColumnKind::Fixed:
-            return deviceViewOf(column, type.element_type, "a key of the groups");
+            if (!state->merged)
+                return DeviceFixedColumn{.element_type = type};
+            return deviceViewOf(state->merged->view().column(static_cast<cudf::size_type>(index)), type, "a key of the groups");
         case GPUColumnKind::Variable:
-            return deviceViewOfVariable(column, state->variable_offsets[index]->view(), "a key of the groups", state->stream.value());
+            if (!state->merged)
+                return DeviceVariableColumn{};
+            return deviceViewOfVariable(
+                state->merged->view().column(static_cast<cudf::size_type>(index)),
+                state->variable_offsets[index]->view(),
+                "a key of the groups",
+                state->stream.value());
     }
-    throw CudfError("unknown column kind " + std::to_string(static_cast<int>(type.kind)));
+    throwGPUError("unknown column kind of element type " + std::to_string(static_cast<int>(type)));
 }
 
-DeviceColumnView CudfGroupBy::value(size_t index) const
+DeviceFixedColumn CudfGroupBy::value(size_t index) const
 {
     if (!state->finalized)
-        throw CudfError("the groups were asked for before they were closed");
+        throwGPUError("the groups were asked for before they were closed");
 
     if (index >= state->values.size())
-        throw CudfError("value " + std::to_string(index) + " of " + std::to_string(state->values.size()));
+        throwGPUError("value " + std::to_string(index) + " of " + std::to_string(state->values.size()));
 
     const GPUElementType left_in = leftInOf(state->values[index]);
     if (!state->merged)
-        return {left_in, nullptr, 0};
+        return {.element_type = left_in};
 
     const cudf::column_view column = state->merged->view().column(static_cast<cudf::size_type>(state->keys.size() + index));
     checkNoNulls(column, "a value of the groups");
     if (column.offset() != 0)
-        throw CudfError("the device returned a value of the groups as a slice");
+        throwGPUError("the device returned a value of the groups as a slice");
 
     /// The width was checked when the column was made; a sum of unsigned integers is `INT64` here
     /// and `UInt64` to the host, with the same bits.
-    return {left_in, column.head<char>(), static_cast<size_t>(column.size())};
+    return {.element_type = left_in, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 
-void subtractFromOffsets(uint64_t * offsets, size_t count, uint64_t minus, rmm::cuda_stream_view stream)
+void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream)
 {
-    if (count == 0 || minus == 0)
+    if (count == 0 || (minus == 0 && from == to))
         return;
 
     guarded("rebasing " + std::to_string(count) + " string offsets", [&]
     {
-        thrust::transform(rmm::exec_policy_nosync(stream), offsets, offsets + count, offsets, SubtractFrom{minus});
+        thrust::transform(rmm::exec_policy_nosync(stream), from, from + count, to, SubtractFrom{minus});
     });
 }
 

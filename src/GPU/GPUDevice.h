@@ -4,7 +4,8 @@
 
 #if USE_GPU
 
-#include <GPU/GPUStreams.h>
+#include <GPU/GPUStreams.cuh>
+#include <GPU/GPUTypes.cuh>
 
 #include <Common/Exception.h>
 
@@ -46,9 +47,10 @@ auto onDevice(Body && body, fmt::format_string<Args...> what, Args &&... args)
     {
         return body();
     }
-    catch (const Exception &)
+    catch (Exception & e)
     {
         clearDeviceError();
+        e.addMessage(fmt::format(what, std::forward<Args>(args)...));
         throw;
     }
     catch (const std::exception & e)

@@ -5,7 +5,7 @@
 #if USE_GPU
 
 #include <GPU/GPUTypeMapping.h>
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 #include <GPU/GPUUploadPipe.h>
 #include <GPU/CudfGroupBy.cuh>
 #include <GPU/RecordGroupBy.cuh>
@@ -204,10 +204,13 @@ private:
     struct Reader
     {
         std::vector<StagedColumn> staging;
-        std::vector<DeviceColumn> device_columns;
+        std::vector<DeviceFixedColumnBuffer> device_columns;
         /// Per variable-width key, the offsets its column of offsets holds on the device, kept on the host
         /// as they land, to tell how many rows the bytes on the device cover.
         std::vector<std::vector<UInt64>> variable_offsets;
+        /// Per variable-width key, the offsets of the rows being grouped, from 0: the column of offsets
+        /// holds them from where the bytes on the device start.
+        std::vector<DeviceBuffer> piece_offsets;
         size_t grouped_rows = 0;
         size_t dropped_rows = 0;
     };
@@ -267,9 +270,9 @@ private:
 
     /// Groups a batch by variable-width keys on their own stream, which waits for the compute stream to have
     /// filled the batch and which the compute stream waits for before it refills it.
-    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceColumnView> & value_columns, size_t num_rows);
+    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns, size_t num_rows);
 
-    const std::vector<GPUColumnType> group_keys;
+    const std::vector<GPUElementType> group_keys;
     /// The element type of each key's column on the device; a variable-width key keeps its bytes there,
     /// as `UInt8`.
     const std::vector<GPUElementType> key_element_types;

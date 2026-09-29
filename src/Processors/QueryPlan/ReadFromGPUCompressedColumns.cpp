@@ -6,6 +6,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Block.h>
 #include <GPU/GPUAccumulator.h>
+#include <GPU/GPUColumns.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -455,7 +456,7 @@ private:
     struct ColumnReader
     {
         ColumnReader(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device)
-            : is_variable(GPU::columnTypeOf(*column.type).value_or(GPU::GPUColumnType{}).kind == GPU::GPUColumnKind::Variable)
+            : is_variable(GPU::columnTypeOrThrow(*column.type) == GPU::GPUElementType::String)
             , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
         {
             if (on_device)

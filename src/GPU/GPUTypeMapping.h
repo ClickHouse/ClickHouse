@@ -4,7 +4,7 @@
 
 #if USE_GPU
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
@@ -40,7 +40,7 @@ GPUElementType reducibleElementTypeOrThrow(const IDataType & argument_type, cons
 bool isStringKey(const IDataType & type);
 
 /// The keys as the device groups by them: strings, and fixed-width integers.
-std::vector<GPUColumnType> groupByKeysOrThrow(const DataTypes & key_types);
+std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
 
 bool canGroupByReduceOnDevice(
     const DataTypes & key_types,

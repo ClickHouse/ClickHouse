@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 #include <cuco/static_set.cuh>
 

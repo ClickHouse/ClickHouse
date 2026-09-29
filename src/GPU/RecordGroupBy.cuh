@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 namespace DB::GPU
 {
@@ -31,7 +31,7 @@ public:
     /// evaluated over `filter_columns`, are grouped. Answers how many microseconds the device
     /// spent in the grouping kernels, apart from whatever they waited for.
     double addBatch(
-        GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, GPUSpan<DeviceColumnView> filter_columns, const GPUFilterProgram * filter);
+        GPUSpan<DeviceFixedColumn> keys, GPUSpan<DeviceFixedColumn> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram * filter);
 
     /// Closes the groups to further batches and answers how many there are.
     size_t finalize();

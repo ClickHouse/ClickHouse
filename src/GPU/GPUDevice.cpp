@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <mutex>
+#include <string_view>
 
 namespace DB::ErrorCodes
 {
@@ -12,6 +13,17 @@ namespace DB::ErrorCodes
 
 namespace DB::GPU
 {
+
+void throwGPUError(const char * message)
+{
+    clearDeviceError();
+    throw Exception(ErrorCodes::GPU_ERROR, "{}", std::string_view(message));
+}
+
+bool isClickHouseException(const std::exception & exception)
+{
+    return dynamic_cast<const Exception *>(&exception) != nullptr;
+}
 
 void initializeDevice()
 {

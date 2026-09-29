@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 namespace DB::GPU
 {
@@ -21,7 +21,7 @@ public:
     CudfReduction(const CudfReduction &) = delete;
     CudfReduction & operator=(const CudfReduction &) = delete;
 
-    void addBatch(DeviceColumnView values);
+    void addBatch(DeviceFixedColumn values);
 
     /// The bits of the result over every batch so far, in `result_type`, after which the
     /// reduction starts over.

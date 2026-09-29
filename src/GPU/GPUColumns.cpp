@@ -3,6 +3,7 @@
 #if USE_GPU
 
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUMemory.h>
 #include <GPU/GPUTypeMapping.h>
 
 #include <Columns/ColumnString.h>
@@ -10,6 +11,7 @@
 #include <Common/typeid_cast.h>
 
 #include <cstring>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -19,166 +21,126 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
-std::optional<GPUColumnType> columnTypeOf(const IDataType & type)
+std::optional<GPUElementType> columnTypeOf(const IDataType & type)
 {
     if (isString(type))
-        return GPUColumnType{GPUColumnKind::Variable, GPUElementType::UInt8};
+        return GPUElementType::String;
 
-    if (const auto element_type = elementTypeOf(type))
-        return GPUColumnType{GPUColumnKind::Fixed, *element_type};
-
-    return std::nullopt;
+    return elementTypeOf(type);
 }
 
-GPUColumnType columnTypeOrThrow(const IDataType & type)
+GPUElementType columnTypeOrThrow(const IDataType & type)
 {
     if (const auto column_type = columnTypeOf(type))
         return *column_type;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} for the device, which has no layout for it", type.getName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} for the device, which does not take it", type.getName());
 }
 
-ColumnLayout ColumnLayout::of(GPUColumnType type)
+namespace
 {
-    switch (type.kind)
-    {
-        case GPUColumnKind::Fixed:
-            return {.type = type, .buffers = {{.element_size = sizeOf(type.element_type), .offsets_into = std::nullopt}}};
-        case GPUColumnKind::Variable:
-            return {
-                .type = type,
-                .buffers = {{.element_size = sizeof(UInt64), .offsets_into = 1}, {.element_size = 1, .offsets_into = std::nullopt}},
-            };
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU column kind {}", static_cast<int>(type.kind));
+
+void checkNoNulls(const DeviceColumnView & view)
+{
+    if (view.null_mask)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A column from the device with a null mask, which nothing takes yet");
 }
 
-std::vector<std::string_view> ColumnLayout::buffersOf(const IColumn & column) const
+/// Puts `rows` values of `element_type` into an empty `column` from `values`.
+void fillFixed(IColumn & column, GPUElementType element_type, size_t rows, std::string_view values)
 {
-    switch (type.kind)
+    if (values.size() != rows * sizeOf(element_type))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of {} values of {} bytes", values.size(), rows, sizeOf(element_type));
+
+    const HostColumnView to = resizeForElementType(column, rows, element_type);
+    memcpy(to.data, values.data(), values.size());
+}
+
+/// Puts `rows` values of varying width into an empty `ColumnString` from their bytes and their
+/// `rows + 1` offsets as the device keeps them, from 0 on.
+void fillVariable(IColumn & column, size_t rows, std::string_view offsets, std::string_view chars)
+{
+    auto * strings = typeid_cast<ColumnString *>(&column);
+    if (!strings || !strings->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot put strings from the device into a column of {}", column.getName());
+
+    if (offsets.size() != (rows + 1) * sizeof(UInt64))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of offsets for {} strings", offsets.size(), rows);
+
+    const auto * from = reinterpret_cast<const UInt64 *>(offsets.data());
+    if (from[0] != 0 || from[rows] != chars.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Strings from the device run from {} to {} over {} bytes", from[0], from[rows], chars.size());
+
+    auto & column_chars = strings->getChars();
+    column_chars.resize(chars.size());
+    memcpy(column_chars.data(), chars.data(), chars.size());
+
+    /// A `ColumnString` keeps the ends of its rows, without the leading 0.
+    auto & column_offsets = strings->getOffsets();
+    column_offsets.resize(rows);
+    memcpy(column_offsets.data(), from + 1, rows * sizeof(UInt64));
+}
+
+}
+
+const DeviceFixedColumn & fixedOrThrow(const DeviceColumnView & view)
+{
+    checkNoNulls(view);
+    if (view.kind != GPUColumnKind::Fixed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of kind {} where one of fixed-width values is expected", view.kind);
+    return view.fixed;
+}
+
+void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, rmm::cuda_stream_view stream)
+{
+    if (from.size() != to.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} columns from the device into {} columns", from.size(), to.size());
+
+    /// Where each column lands in host memory: the values of a `Fixed` column, or the offsets and
+    /// the bytes of a `Variable` one.
+    struct Landed
     {
-        case GPUColumnKind::Fixed:
-            return {rawValuesOf(column, column.size(), sizeOf(type.element_type))};
-        case GPUColumnKind::Variable:
+        PinnedBuffer first;
+        PinnedBuffer chars;
+    };
+    std::vector<Landed> landed(from.size());
+
+    for (size_t i = 0; i < from.size(); ++i)
+    {
+        const DeviceColumnView & view = from[i];
+        checkNoNulls(view);
+        switch (view.kind)
         {
-            const auto * strings = typeid_cast<const ColumnString *>(&column);
-            if (!strings)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} where the device takes strings", column.getName());
-
-            const auto & offsets = strings->getOffsets();
-            const auto & chars = strings->getChars();
-            return {
-                {reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(UInt64)},
-                {reinterpret_cast<const char *>(chars.data()), chars.size()},
-            };
+            case GPUColumnKind::Fixed:
+                landed[i].first.appendFromDevice(view.fixed.data, view.fixed.rows * sizeOf(view.fixed.element_type), stream);
+                break;
+            case GPUColumnKind::Variable:
+                if (view.variable.rows == 0)
+                    break;
+                landed[i].first.appendFromDevice(
+                    reinterpret_cast<const char *>(view.variable.offsets), (view.variable.rows + 1) * sizeof(UInt64), stream);
+                landed[i].chars.appendFromDevice(view.variable.chars, view.variable.chars_bytes, stream);
+                break;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU column kind {}", static_cast<int>(type.kind));
-}
 
-DeviceColumnView ColumnLayout::viewOf(std::span<char * const> data, size_t rows, std::span<const size_t> elements) const
-{
-    if (data.size() != buffers.size() || elements.size() != buffers.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A view of {} buffers of a column made of {}", data.size(), buffers.size());
-
-    switch (type.kind)
-    {
-        case GPUColumnKind::Fixed:
-            return {.element_type = type.element_type, .data = data[0], .rows = rows};
-        case GPUColumnKind::Variable:
-            return {
-                .element_type = type.element_type,
-                .data = data[1],
-                .rows = rows,
-                .kind = GPUColumnKind::Variable,
-                .offsets = reinterpret_cast<const uint64_t *>(data[0]),
-                .bytes = elements[1],
-            };
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU column kind {}", static_cast<int>(type.kind));
-}
-
-std::vector<std::pair<const char *, size_t>> ColumnLayout::buffersOf(const DeviceColumnView & view) const
-{
-    if (view.type() != type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A view of another type of column than its layout's");
-
-    switch (type.kind)
-    {
-        case GPUColumnKind::Fixed:
-            return {{view.data, view.rows * sizeOf(type.element_type)}};
-        case GPUColumnKind::Variable:
-            return {{reinterpret_cast<const char *>(view.offsets), (view.rows + 1) * sizeof(UInt64)}, {view.data, view.bytes}};
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU column kind {}", static_cast<int>(type.kind));
-}
-
-void ColumnLayout::fill(IColumn & column, size_t rows, std::span<const std::string_view> from) const
-{
-    if (from.size() != buffers.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} buffers for a column made of {}", from.size(), buffers.size());
-
-    switch (type.kind)
-    {
-        case GPUColumnKind::Fixed:
-        {
-            const HostColumnView values = resizeForElementType(column, rows, type.element_type);
-            if (from[0].size() != rows * sizeOf(type.element_type))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of {} values of {} bytes", from[0].size(), rows, sizeOf(type.element_type));
-            memcpy(values.data, from[0].data(), from[0].size());
-            return;
-        }
-        case GPUColumnKind::Variable:
-        {
-            auto * strings = typeid_cast<ColumnString *>(&column);
-            if (!strings || !strings->empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot put strings from the device into a column of {}", column.getName());
-
-            if (from[0].size() != (rows + 1) * sizeof(UInt64))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of offsets for {} strings", from[0].size(), rows);
-
-            const auto * offsets = reinterpret_cast<const UInt64 *>(from[0].data());
-            if (offsets[0] != 0 || offsets[rows] != from[1].size())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Strings from the device run from {} to {} over {} bytes", offsets[0], offsets[rows], from[1].size());
-
-            auto & chars = strings->getChars();
-            chars.resize(from[1].size());
-            memcpy(chars.data(), from[1].data(), from[1].size());
-
-            auto & column_offsets = strings->getOffsets();
-            column_offsets.resize(rows);
-            memcpy(column_offsets.data(), offsets + 1, rows * sizeof(UInt64));
-            return;
-        }
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU column kind {}", static_cast<int>(type.kind));
-}
-
-void ColumnDownload::add(const DeviceColumnView & view, IColumn & column)
-{
-    Pending & added = pending.emplace_back(Pending{.layout = ColumnLayout::of(view.type()), .column = &column, .rows = view.rows, .buffers = {}});
-
-    const auto device_buffers = added.layout.buffersOf(view);
-    added.buffers.resize(device_buffers.size());
-    for (size_t i = 0; i < device_buffers.size(); ++i)
-        added.buffers[i].appendFromDevice(device_buffers[i].first, device_buffers[i].second, stream);
-}
-
-void ColumnDownload::finish()
-{
     checkCuda(cudaStreamSynchronize(stream), "Cannot wait for columns to be copied back from the device");
 
-    for (Pending & column : pending)
+    for (size_t i = 0; i < from.size(); ++i)
     {
-        std::vector<std::string_view> buffers;
-        buffers.reserve(column.buffers.size());
-        for (const PinnedBuffer & buffer : column.buffers)
-            buffers.push_back(buffer.bytes());
-        column.layout.fill(*column.column, column.rows, buffers);
+        const DeviceColumnView & view = from[i];
+        switch (view.kind)
+        {
+            case GPUColumnKind::Fixed:
+                fillFixed(*to[i], view.fixed.element_type, view.fixed.rows, landed[i].first.bytes());
+                break;
+            case GPUColumnKind::Variable:
+                if (view.variable.rows != 0)
+                    fillVariable(*to[i], view.variable.rows, landed[i].first.bytes(), landed[i].chars.bytes());
+                break;
+        }
     }
-
-    pending.clear();
 }
 
 }

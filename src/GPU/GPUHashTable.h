@@ -4,7 +4,7 @@
 
 #if USE_GPU
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 #include <GPU/CudfHashJoin.cuh>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUUploadPipe.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 #include <cuda_runtime_api.h>
 
@@ -31,7 +31,7 @@ public:
     /// Queues the build over the right table, which stays where it is, on the compute stream. Can
     /// be called once, and before any probe; the probes run on streams of their own, so the caller
     /// waits for the compute stream before the first.
-    void build(DeviceColumnView keys, GPUSpan<DeviceColumnView> payloads);
+    void build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payloads);
 
 private:
     friend class CudfHashJoinProbe;
@@ -55,12 +55,12 @@ public:
 
     /// Probes with `keys`, whose upload the caller has queued on the probe's stream, and answers
     /// how many pairs match. The count comes back to the host, so this waits for the device.
-    size_t probe(DeviceColumnView keys);
+    size_t probe(DeviceFixedColumn keys);
 
     /// The last probe's matches: the probe-side row index of each matching pair, as `UInt32`, and
     /// the right table's payload columns gathered to the same order. Valid until the next probe.
-    DeviceColumnView probeRowIndices() const;
-    DeviceColumnView gatheredPayload(size_t index) const;
+    DeviceFixedColumn probeRowIndices() const;
+    DeviceFixedColumn gatheredPayload(size_t index) const;
 
 private:
     struct State;

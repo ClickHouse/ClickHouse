@@ -4,31 +4,49 @@
 
 #if USE_GPU
 
-#include <GPU/GPUColumns.h>
 #include <GPU/GPUDecompression.h>
 #include <GPU/GPUMemory.h>
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 
-#include <optional>
 #include <span>
 #include <string_view>
-#include <utility>
+#include <variant>
 #include <vector>
 
 namespace DB::GPU
 {
 
-class DeviceColumn
+/** A column the host side keeps in device memory, of any kind: what the device is handed of it is
+  * its `view`, which is valid until the column is next changed. The cuDF side takes the view, and
+  * `columnViewOf` there turns it into cuDF's.
+  */
+class IDeviceColumn
+{
+public:
+    virtual ~IDeviceColumn() = default;
+
+    virtual size_t rows() const = 0;
+
+    virtual DeviceColumnView view() const = 0;
+
+protected:
+    IDeviceColumn() = default;
+    IDeviceColumn(IDeviceColumn &&) noexcept = default;
+};
+
+
+/// Values of one width in device memory.
+class DeviceFixedColumnBuffer final : public IDeviceColumn
 {
 public:
     /// On the compute stream.
-    explicit DeviceColumn(GPUElementType element_type_);
+    explicit DeviceFixedColumnBuffer(GPUElementType element_type_);
 
     /// Allocated, copied into and freed in the order of `stream_`.
-    DeviceColumn(GPUElementType element_type_, rmm::cuda_stream_view stream_);
+    DeviceFixedColumnBuffer(GPUElementType element_type_, rmm::cuda_stream_view stream_);
 
     void appendPlain(std::string_view host_values) { values.append(host_values); }
 
@@ -46,15 +64,46 @@ public:
 
     size_t elementSize() const { return sizeOf(element_type); }
 
-    size_t rows() const { return values.size() / sizeOf(element_type); }
+    size_t rows() const override { return values.size() / sizeOf(element_type); }
 
-    DeviceColumnView view() const { return {element_type, values.data(), rows()}; }
+    DeviceColumnView view() const override { return fixedView(); }
+
+    DeviceFixedColumn fixedView() const { return {element_type, values.data(), rows()}; }
 
 private:
     const GPUElementType element_type;
     const rmm::cuda_stream_view stream;
     DeviceBuffer values;
     DeviceBuffer spare;
+};
+
+
+/// Values of varying width in device memory: their bytes, and their offsets, which start with a 0
+/// even while there are no rows.
+class DeviceVariableColumnBuffer final : public IDeviceColumn
+{
+public:
+    /// Allocated, copied into and freed in the order of `stream_`.
+    explicit DeviceVariableColumnBuffer(rmm::cuda_stream_view stream_);
+
+    /// Appends rows: where each of them ends among all the bytes of the column, as `UInt64`, and
+    /// their bytes.
+    void append(std::string_view host_row_ends, std::string_view host_chars);
+
+    void clear();
+
+    size_t bytes() const { return chars.size(); }
+
+    size_t rows() const override { return offsets.size() / sizeof(uint64_t) - 1; }
+
+    DeviceColumnView view() const override;
+
+private:
+    void startOffsets();
+
+    const rmm::cuda_stream_view stream;
+    DeviceBuffer offsets;
+    DeviceBuffer chars;
 };
 
 
@@ -67,7 +116,9 @@ public:
 
     virtual size_t stagedBytes() const = 0;
 
-    virtual DeviceColumnView flush() = 0;
+    /// Sends what is staged to the device, and answers the column it is gathered in there, which
+    /// holds everything staged since `reset`.
+    virtual const IDeviceColumn & flush() = 0;
 
     virtual void reset() = 0;
 
@@ -101,39 +152,48 @@ public:
     std::span<char> reserveRaw(size_t max_bytes);
     void commitRaw(size_t bytes);
 
-    GPUColumnType type() const { return layout.type; }
+    GPUElementType type() const { return column_type; }
 
     size_t stagedRows() const override { return staged_rows; }
 
     size_t stagedBytes() const override { return staged_bytes; }
 
-    DeviceColumnView flush() override;
+    const IDeviceColumn & flush() override;
 
     void reset() override;
 
     void waitForUploads();
 
 private:
+    void stageFixed(const IColumn & column);
+    void stageVariable(const IColumn & column);
+
+    /// Sends what is staged to the device if `bytes` more would not fit, and waits until the
+    /// staging buffers can be written.
+    void makeRoomFor(size_t bytes);
+
     void sendStagedToDevice();
 
     void makeStagingWritable();
 
-    void startOffsets();
-
-    const ColumnLayout layout;
+    const GPUElementType column_type;
     const size_t stage_bytes;
     const rmm::cuda_stream_view stream;
 
-    std::vector<PinnedBuffer> staging;
+    /// The values of a `Fixed` column, the bytes of a `Variable` one.
+    PinnedBuffer staged_data;
+    /// The offsets of a `Variable` column, from where the rows staged since `reset` start.
+    PinnedBuffer staged_offsets;
     size_t staging_bytes = 0;
     DeviceEvent copied;
     bool in_flight = false;
 
     size_t staged_rows = 0;
     size_t staged_bytes = 0;
-    std::vector<size_t> elements_taken;
+    /// Of a `Variable` column, the bytes of its rows staged since `reset`.
+    size_t staged_chars = 0;
 
-    std::vector<DeviceBuffer> device;
+    std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer> device;
 };
 
 
@@ -155,7 +215,7 @@ public:
 
     size_t stagedBytes() const override { return staged_bytes; }
 
-    DeviceColumnView flush() override;
+    const IDeviceColumn & flush() override;
 
     void reset() override;
 
@@ -173,7 +233,7 @@ private:
 
     size_t staged_bytes = 0;
 
-    DeviceColumn device;
+    DeviceFixedColumnBuffer device;
 };
 
 }

@@ -22,7 +22,7 @@ namespace
 GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
 {
     if (!isInteger(key_element_type))
-        throw CudfError("a join key of element type " + std::to_string(static_cast<int>(key_element_type)) + " is not an integer");
+        throwGPUError("a join key of element type " + std::to_string(static_cast<int>(key_element_type)) + " is not an integer");
 
     return key_element_type;
 }
@@ -30,7 +30,7 @@ GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
 void checkCount(size_t actual, size_t expected, const std::string & what)
 {
     if (actual != expected)
-        throw CudfError(std::to_string(actual) + " " + what + ", expected " + std::to_string(expected));
+        throwGPUError(std::to_string(actual) + " " + what + ", expected " + std::to_string(expected));
 }
 
 }
@@ -62,10 +62,10 @@ CudfHashJoin::~CudfHashJoin()
     delete state;
 }
 
-void CudfHashJoin::build(DeviceColumnView keys, GPUSpan<DeviceColumnView> payloads)
+void CudfHashJoin::build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payloads)
 {
     if (state->built)
-        throw CudfError("the hash table was built twice");
+        throwGPUError("the hash table was built twice");
 
     checkCount(payloads.size(), state->payload_element_types.size(), "payload columns of the right table");
 
@@ -111,7 +111,7 @@ struct CudfHashJoinProbe::State
 CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream_view stream)
 {
     if (!join.state->built)
-        throw CudfError("a probe of a hash table that is not built");
+        throwGPUError("a probe of a hash table that is not built");
 
     state = new State(*join.state, stream);
 }
@@ -122,10 +122,10 @@ CudfHashJoinProbe::~CudfHashJoinProbe()
     delete state;
 }
 
-size_t CudfHashJoinProbe::probe(DeviceColumnView keys)
+size_t CudfHashJoinProbe::probe(DeviceFixedColumn keys)
 {
     if (keys.rows == 0)
-        throw CudfError("an empty block of the left table");
+        throwGPUError("an empty block of the left table");
 
     state->gathered_payloads.reset();
     state->probe_indices.reset();
@@ -143,7 +143,7 @@ size_t CudfHashJoinProbe::probe(DeviceColumnView keys)
         [&] { return join.hash_join->inner_join(cudf::table_view(key_columns), std::nullopt, stream); });
 
     if (probe_side->size() != build_side->size())
-        throw CudfError(
+        throwGPUError(
             "the device returned " + std::to_string(probe_side->size()) + " probe-side indices against "
             + std::to_string(build_side->size()) + " build-side ones");
 
@@ -165,10 +165,10 @@ size_t CudfHashJoinProbe::probe(DeviceColumnView keys)
     return num_matches;
 }
 
-DeviceColumnView CudfHashJoinProbe::probeRowIndices() const
+DeviceFixedColumn CudfHashJoinProbe::probeRowIndices() const
 {
     if (!state->probed)
-        throw CudfError("a probe's result was asked for before the probe ran");
+        throwGPUError("a probe's result was asked for before the probe ran");
 
     static_assert(sizeof(cudf::size_type) == sizeof(uint32_t), "the probe-side row indices are handed back as they are");
 
@@ -178,14 +178,14 @@ DeviceColumnView CudfHashJoinProbe::probeRowIndices() const
     return {GPUElementType::UInt32, reinterpret_cast<const char *>(state->probe_indices->data()), state->probe_indices->size()};
 }
 
-DeviceColumnView CudfHashJoinProbe::gatheredPayload(size_t index) const
+DeviceFixedColumn CudfHashJoinProbe::gatheredPayload(size_t index) const
 {
     if (!state->probed)
-        throw CudfError("a probe's result was asked for before the probe ran");
+        throwGPUError("a probe's result was asked for before the probe ran");
 
     const CudfHashJoin::State & join = state->join;
     if (index >= join.payload_element_types.size())
-        throw CudfError("payload column " + std::to_string(index) + " of " + std::to_string(join.payload_element_types.size()));
+        throwGPUError("payload column " + std::to_string(index) + " of " + std::to_string(join.payload_element_types.size()));
 
     if (!state->gathered_payloads)
         return {join.payload_element_types[index], nullptr, 0};

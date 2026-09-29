@@ -4,7 +4,7 @@
 
 #if USE_GPU
 
-#include <GPU/GPUTypes.h>
+#include <GPU/GPUTypes.cuh>
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ActionsDAG.h>
