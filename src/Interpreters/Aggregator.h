@@ -571,6 +571,7 @@ private:
     Sizes key_sizes;
 
     HashMethodContextPtr aggregation_state_cache;
+    HashMethodContextPtr aggregation_state_cache_without_batch_keys;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
