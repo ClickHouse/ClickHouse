@@ -20,7 +20,10 @@ public:
     static UserDefinedSQLFunctionFactory & instance();
 
     /// Register function for function_name in factory for specified create_function_query.
-    bool registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists, bool is_restore = false);
+    bool registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
+
+    /// `registerFunction` for a new definition from `CREATE FUNCTION`: also checks the rules that a restored definition may predate.
+    bool createFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
 
     /// Unregister function for function_name.
     bool unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists);

@@ -8,7 +8,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-# 25.3 still accepts every definition in LEGACY_FUNCTIONS.
+# 25.3 still accepts every definition in FUNCTIONS except STORED_FUNCTIONS.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/backups.xml"],
@@ -18,12 +18,20 @@ node = cluster.add_instance(
     with_installed_binary=True,
 )
 
+# Only versions before 22.2 created these, so the test writes them to the old node's storage.
+STORED_FUNCTIONS = {"udf_three_arguments": "lambda(tuple(x), x, 1)"}
 LEGACY_FUNCTIONS = {
     "udf_not_lambda": "JSONExtractString((x, y), x)",
     "udf_identity_arguments": "lambda(identity(x), x)",
     "udf_parametric_arguments": "lambda(quantile(0.5)(x), x)",
+    **STORED_FUNCTIONS,
 }
-FUNCTIONS = {**LEGACY_FUNCTIONS, "udf_lambda": "(x, y) -> (x + y)"}
+FUNCTIONS = {
+    **LEGACY_FUNCTIONS,
+    "udf_dotted_argument": "(x.y) -> x.y",
+    "udf_nested_dotted_argument": "x -> arrayMap(y.z -> (y.z + x), [1, 2])",
+    "udf_lambda": "(x, y) -> (x + y)",
+}
 
 LIST_FUNCTIONS = "SELECT name, create_query FROM system.functions WHERE origin = 'SQLUserDefined' ORDER BY name"
 
@@ -55,7 +63,18 @@ def new_backup(prefix):
 
 def test_restore_functions_created_by_older_version(start_cluster):
     for name, definition in FUNCTIONS.items():
-        node.query(f"CREATE FUNCTION {name} AS {definition}")
+        if name not in STORED_FUNCTIONS:
+            node.query(f"CREATE FUNCTION {name} AS {definition}")
+    for name, definition in STORED_FUNCTIONS.items():
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo 'CREATE FUNCTION {name} AS {definition}' > /var/lib/clickhouse/user_defined/function_{name}.sql",
+            ],
+            user="root",
+        )
+    node.restart_clickhouse()
     old_backup = new_backup("old")
     node.query(f"BACKUP TABLE system.functions TO {old_backup}")
 
