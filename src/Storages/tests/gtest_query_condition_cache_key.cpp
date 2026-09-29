@@ -9,6 +9,10 @@ using namespace DB;
 namespace
 {
 
+/// Namespaces as `getDataSourceDescription` reports them: endpoint plus bucket.
+const String namespace_a = "storage.example.com443/bucket_a";
+const String namespace_b = "storage.example.com443/bucket_b";
+
 ObjectInfo makeObjectInfo(const String & path, std::optional<String> etag, bool etag_is_strong)
 {
     ObjectInfo object_info(path);
@@ -22,6 +26,15 @@ ObjectInfo makeObjectInfo(const String & path, std::optional<String> etag, bool 
     return object_info;
 }
 
+ObjectInfo makeImmutableObjectInfo(const String & path, const String & storage_namespace)
+{
+    ObjectInfo object_info(path);
+    ObjectMetadata metadata;
+    metadata.immutable_contents_namespace = storage_namespace;
+    object_info.setObjectMetadata(metadata);
+    return object_info;
+}
+
 }
 
 /// A strong etag (present and marked as a strong content identifier, e.g. S3/Azure) must key the
@@ -30,7 +43,7 @@ ObjectInfo makeObjectInfo(const String & path, std::optional<String> etag, bool 
 TEST(QueryConditionCacheKey, StrongEtagIsUsedAsKey)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", "strong-etag", /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info);
     ASSERT_TRUE(key.has_value());
     EXPECT_EQ(*key, QueryConditionCache::makeFilePartName("bucket/data.parquet", "strong-etag"));
 }
@@ -38,11 +51,12 @@ TEST(QueryConditionCacheKey, StrongEtagIsUsedAsKey)
 /// A weak etag (present but not a strong content identifier, e.g. HDFS's second-precision
 /// `(mtime, size)` token) must NOT key the cache: a same-second, same-size overwrite keeps the same
 /// weak etag, so reusing the cached skip marks could silently drop matching rows. This is the
-/// regression guarded here - if the guard reverts to `etag.empty()`, this test fails.
+/// regression guarded here - if the guard reverts to `etag.empty()`, this test fails. It covers a
+/// data-lake read too: `IcebergHDFS` with the manifest shortcut off fetches exactly this metadata.
 TEST(QueryConditionCacheKey, WeakEtagBypassesCache)
 {
     auto object_info = makeObjectInfo("hdfs/data.parquet", "1700000000_42", /*etag_is_strong=*/ false);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -51,7 +65,7 @@ TEST(QueryConditionCacheKey, WeakEtagBypassesCache)
 TEST(QueryConditionCacheKey, EmptyEtagBypassesCache)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", "", /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -59,21 +73,47 @@ TEST(QueryConditionCacheKey, EmptyEtagBypassesCache)
 TEST(QueryConditionCacheKey, MissingMetadataBypassesCache)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info);
     EXPECT_FALSE(key.has_value());
 }
 
-/// Data-lake data files are immutable, so the path is a stable identity on its own: the cache is
-/// keyed on the identifier alone, even when the object carries a weak etag or no etag at all.
-TEST(QueryConditionCacheKey, DataLakeUsesIdentifierWithoutEtag)
+/// The manifest shortcut records no etag but marks the file immutable within its namespace, and that
+/// token keys the cache. Not the bare path: a data-lake path is bucket-relative, and a table function
+/// reads under a nil table UUID.
+TEST(QueryConditionCacheKey, ImmutableMetadataUsesTheNamespaceToken)
 {
-    auto weak = makeObjectInfo("lake/data.parquet", "1700000000_42", /*etag_is_strong=*/ false);
-    auto weak_key = StorageObjectStorageSource::makeQueryConditionCacheKey(weak, /*is_data_lake=*/ true);
-    ASSERT_TRUE(weak_key.has_value());
-    EXPECT_EQ(*weak_key, "lake/data.parquet");
+    auto object_info = makeImmutableObjectInfo("lake/data.parquet", namespace_a);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info);
+    ASSERT_TRUE(key.has_value());
+    EXPECT_EQ(*key, QueryConditionCache::makeFilePartName("lake/data.parquet", makeImmutableContentsCacheToken(namespace_a)));
+}
 
-    auto no_meta = makeObjectInfo("lake/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
-    auto no_meta_key = StorageObjectStorageSource::makeQueryConditionCacheKey(no_meta, /*is_data_lake=*/ true);
-    ASSERT_TRUE(no_meta_key.has_value());
-    EXPECT_EQ(*no_meta_key, "lake/data.parquet");
+/// Two buckets holding the same relative path must not share skip marks.
+TEST(QueryConditionCacheKey, ImmutableMetadataSeparatesTheNamespaces)
+{
+    auto in_a = makeImmutableObjectInfo("tbl/data/00001.parquet", namespace_a);
+    auto in_b = makeImmutableObjectInfo("tbl/data/00001.parquet", namespace_b);
+
+    const auto key_in_a = StorageObjectStorageSource::makeQueryConditionCacheKey(in_a);
+    const auto key_in_b = StorageObjectStorageSource::makeQueryConditionCacheKey(in_b);
+    ASSERT_TRUE(key_in_a.has_value());
+    ASSERT_TRUE(key_in_b.has_value());
+    EXPECT_NE(*key_in_a, *key_in_b);
+    EXPECT_EQ(
+        *key_in_a,
+        *StorageObjectStorageSource::makeQueryConditionCacheKey(makeImmutableObjectInfo("tbl/data/00001.parquet", namespace_a)));
+}
+
+/// When the store answered with a strong etag it tracks an in-place rewrite, which
+/// `use_iceberg_manifest_object_metadata = 0` is documented to protect against, so it wins.
+TEST(QueryConditionCacheKey, StrongEtagWinsOverTheNamespace)
+{
+    auto object_info = makeImmutableObjectInfo("lake/data.parquet", namespace_a);
+    auto metadata = *object_info.getObjectMetadata();
+    metadata.etag = "strong-etag";
+    object_info.setObjectMetadata(metadata);
+
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info);
+    ASSERT_TRUE(key.has_value());
+    EXPECT_EQ(*key, QueryConditionCache::makeFilePartName("lake/data.parquet", "strong-etag"));
 }

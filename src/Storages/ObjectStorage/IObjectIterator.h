@@ -50,6 +50,16 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    /// Metadata the engine knows from its own records (Iceberg: the manifest entry), so the read path
+    /// can skip the `HeadObject` for the size. Unlike `getFileSizeHint`, this replaces the store's
+    /// answer, so return only what the records guarantee. `storage_namespace` is the object's endpoint
+    /// and bucket (`dataSourceDescriptionForObjectPath`); an immutable object must record it, see
+    /// `ObjectMetadata::immutable_contents_namespace`.
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest(const String & /*storage_namespace*/) const
+    {
+        return std::nullopt;
+    }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 

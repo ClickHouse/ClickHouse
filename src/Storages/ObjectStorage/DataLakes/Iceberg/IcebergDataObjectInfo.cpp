@@ -13,9 +13,15 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+namespace ProfileEvents
+{
+    extern const Event IcebergManifestObjectMetadataUsed;
+}
 
 namespace DB::ErrorCodes
 {
@@ -87,6 +93,27 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & pa
     : ObjectInfo(path_)
     , info(info_)
 {
+}
+
+std::optional<ObjectMetadata> IcebergDataObjectInfo::tryGetObjectMetadataWithoutRequest(const String & storage_namespace) const
+{
+    /// A negative size means a malformed manifest. Zero also falls back to the store: with
+    /// `skip_empty_files`, a missing object would otherwise pass for an empty one.
+    if (!info.file_size_in_bytes.has_value() || *info.file_size_in_bytes <= 0)
+        return std::nullopt;
+
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<uint64_t>(*info.file_size_in_bytes);
+    metadata.is_size_known = true;
+    /// The manifest records no modification time; a default presented as known would look older than
+    /// any cached count.
+    metadata.is_last_modified_known = false;
+    /// Data files are immutable by spec, so no ETag is needed. The namespace still is, see
+    /// `ObjectMetadata::immutable_contents_namespace`.
+    metadata.immutable_contents_namespace = storage_namespace;
+
+    ProfileEvents::increment(ProfileEvents::IcebergManifestObjectMetadataUsed);
+    return metadata;
 }
 
 std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(

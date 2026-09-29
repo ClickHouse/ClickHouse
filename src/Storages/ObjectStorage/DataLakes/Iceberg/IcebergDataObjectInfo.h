@@ -95,6 +95,9 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         return std::nullopt;
     }
 
+    /// Reads `info`, which a cluster function worker fills in after construction, so this stays lazy.
+    std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest(const String & storage_namespace) const override;
+
     /// Attach a V2 position delete file (Parquet).
     void addPositionDeleteFile(const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path);
 

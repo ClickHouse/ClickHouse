@@ -296,3 +296,117 @@ def test_data_files_in_another_bucket_over_disk(
     )
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def _query_with_profile_events(instance, query, query_id, settings, events):
+    """Run `query` and return its result together with its own values for `events`."""
+    result = instance.query(query, query_id=query_id, settings=settings).strip()
+    instance.query("SYSTEM FLUSH LOGS")
+    selected = ", ".join(f"ProfileEvents['{event}']" for event in events)
+    row = instance.query(
+        f"""
+        SELECT {selected}
+        FROM system.query_log
+        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+        """
+    ).strip()
+    return result, [int(value) for value in row.split("\t")]
+
+
+def test_manifest_object_metadata_identifies_cross_bucket_data_files(
+    started_cluster_iceberg_no_spark, tmp_path
+):
+    """The manifest answers for a foreign-bucket data file too, and the cache identity of that file
+    carries the bucket its qualified path names rather than the table's."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+
+    prefix = f"manifest_metadata/{root_namespace}"
+    table = catalog.create_table(
+        identifier=f"{root_namespace}.test_manifest_metadata",
+        schema=schema,
+        location=f"s3://{METADATA_BUCKET}/{prefix}",
+    )
+
+    minio = started_cluster_iceberg_no_spark.minio_client
+
+    own_bucket_key = f"{prefix}/data/own.parquet"
+    minio.fput_object(
+        METADATA_BUCKET, own_bucket_key, _write_parquet(schema, tmp_path, 0, 100)
+    )
+    other_bucket_key = f"{prefix}/data/other.parquet"
+    minio.fput_object(
+        DATA_BUCKET, other_bucket_key, _write_parquet(schema, tmp_path, 100, 50)
+    )
+    table.add_files(
+        [
+            f"s3://{METADATA_BUCKET}/{own_bucket_key}",
+            f"s3://{DATA_BUCKET}/{other_bucket_key}",
+        ]
+    )
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{root_namespace}.test_manifest_metadata`"
+
+    read_query = f"SELECT count(), sum(id) FROM {table_expression}"
+    expected = f"150\t{sum(range(150))}"
+    settings = {
+        "use_iceberg_manifest_object_metadata": 1,
+        # The shortcut yields to ETag validation, which is on by default for S3.
+        "s3_validate_etag_on_read": 0,
+        "use_parquet_metadata_cache": 1,
+    }
+    events = (
+        "IcebergManifestObjectMetadataUsed",
+        "ParquetMetadataCacheMisses",
+        "ParquetMetadataCacheHits",
+    )
+
+    # First read: both files answered from the manifest, both footers read from storage.
+    first_result, (first_used, first_misses, _) = _query_with_profile_events(
+        instance, read_query, f"{root_namespace}_first", settings, events
+    )
+    assert first_result == expected
+    assert first_used == 2
+    assert first_misses == 2
+
+    # Second read: a foreign-bucket file whose identity was unusable would show up as a miss.
+    second_result, (second_used, _, second_hits) = _query_with_profile_events(
+        instance, read_query, f"{root_namespace}_second", settings, events
+    )
+    assert second_result == expected
+    assert second_used == 2
+    assert second_hits == 2
+
+    # Each file is still read from its own bucket.
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _path LIKE '{DATA_BUCKET}/%'",
+            settings=settings,
+        ).strip()
+        == "50"
+    )
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _path LIKE '{METADATA_BUCKET}/%'",
+            settings=settings,
+        ).strip()
+        == "100"
+    )
+
+    assert (
+        instance.query(
+            read_query, settings={"use_iceberg_manifest_object_metadata": 0}
+        ).strip()
+        == expected
+    )
