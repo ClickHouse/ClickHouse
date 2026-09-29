@@ -2105,7 +2105,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
                 {
-                    table_expression_data.setHasAdditionalFilter();
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
@@ -3268,12 +3267,10 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    /// A prepared storage replaces the right-side plan, and with it the `FilterStep`s applying the
-    /// table's row policy and `additional_table_filters`, so such a table is joined as a stream.
-    /// A `Join` table is a prebuilt hash table read as is, so it cannot be filtered at all.
-    const auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpressionNode());
+    /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
+    /// table's row policy, so such a table is joined as a stream. A `Join` table is a prebuilt
+    /// hash table read as is, so it cannot be filtered at all.
     bool right_table_has_row_policy = !right_join_tree_query_plan.used_row_policies.empty();
-    bool right_table_has_filters = right_table_has_row_policy || right_table_expression_data.hasAdditionalFilter();
 
     PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
     if (prepared_join.storage_join && right_table_has_row_policy)
@@ -3281,7 +3278,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             "Row policies are not supported for table {} with the Join engine",
             prepared_join.storage_join->getStorageID().getNameForLogs());
 
-    bool allow_storage_join = !right_table_has_filters
+    bool allow_storage_join = !right_table_has_row_policy
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (!allow_storage_join)

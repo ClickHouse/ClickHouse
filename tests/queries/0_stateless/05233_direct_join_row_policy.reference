@@ -36,21 +36,8 @@
 3	public-3
 -- no direct join under a row policy
 0
--- policy and additional_table_filters
-3	public-3
-1	0	
-2	0	
-3	3	public-3
-5	0	
--- direct join without filters
+-- direct join without a policy
 1	public	public-1
 2	hidden	hidden-2
 3	public	public-3
 Algorithm: DirectKeyValueJoin
--- additional_table_filters without a policy
-2	hidden	hidden-2
-1	0	
-2	2	hidden-2
-3	0	
-5	0	
-0

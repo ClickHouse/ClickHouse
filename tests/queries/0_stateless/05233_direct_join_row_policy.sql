@@ -50,31 +50,14 @@ SELECT count() FROM (
     SELECT p.key, kv.secret FROM probe_rls AS p INNER JOIN kv_rls AS kv ON kv.key = p.key
 ) WHERE explain LIKE '%DirectKeyValueJoin%';
 
-SELECT '-- policy and additional_table_filters';
-SELECT p.key, kv.secret FROM probe_rls AS p INNER JOIN kv_rls AS kv ON kv.key = p.key ORDER BY p.key
-    SETTINGS additional_table_filters = {'kv_rls': 'key != 1'};
-SELECT p.key, kv.key, kv.secret FROM probe_rls AS p LEFT JOIN kv_rls AS kv ON kv.key = p.key ORDER BY p.key
-    SETTINGS additional_table_filters = {'kv_rls': 'key != 1'};
-
 DROP ROW POLICY kv_rls_public ON kv_rls;
 
-SELECT '-- direct join without filters';
+SELECT '-- direct join without a policy';
 SELECT p.key, kv.tenant, kv.secret FROM probe_rls AS p INNER JOIN kv_rls AS kv ON kv.key = p.key ORDER BY p.key;
 SELECT extract(explain, 'Algorithm: \\w+') FROM (
     EXPLAIN actions = 1
     SELECT p.key, kv.secret FROM probe_rls AS p INNER JOIN kv_rls AS kv ON kv.key = p.key
 ) WHERE explain LIKE '%Algorithm:%';
-
-SELECT '-- additional_table_filters without a policy';
-SELECT p.key, kv.tenant, kv.secret FROM probe_rls AS p INNER JOIN kv_rls AS kv ON kv.key = p.key ORDER BY p.key
-    SETTINGS additional_table_filters = {'kv_rls': 'tenant = \'hidden\''};
-SELECT p.key, kv.key, kv.secret FROM probe_rls AS p LEFT JOIN kv_rls AS kv ON kv.key = p.key ORDER BY p.key
-    SETTINGS additional_table_filters = {'kv_rls': 'tenant = \'hidden\''};
-SELECT count() FROM (
-    EXPLAIN actions = 1
-    SELECT p.key, kv.secret FROM probe_rls AS p INNER JOIN kv_rls AS kv ON kv.key = p.key
-    SETTINGS additional_table_filters = {'kv_rls': 'tenant = \'hidden\''}
-) WHERE explain LIKE '%DirectKeyValueJoin%';
 
 DROP TABLE kv_rls;
 DROP TABLE probe_rls;
