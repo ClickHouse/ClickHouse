@@ -1959,28 +1959,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 - [Optional secured communication between ClickHouse and Zookeeper](/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
-Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) family. It can be specified:
-
-**Globally in the [merge_tree](#merge_tree) section of the `config.xml` file**
-
-ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
-
-**For each table**
-
-When creating a table, specify the corresponding [engine setting](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
-
-**Possible values**
-
-- `0` — Functionality is turned off.
-- `1` — Functionality is turned on.
-
-If [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper), then [replicated](/reference/engines/table-engines/mergetree-family/replication) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
-
-<Note>
-After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
-
-Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
-</Note>
+Obsolete setting, does nothing. [Replicated](/reference/engines/table-engines/mergetree-family/replication) tables always store the header of a data part compactly in a single `znode`. Part headers written by older versions with separate `columns` and `checksums` child `znodes` are still read.
 
 ## distributed_ddl {#distributed_ddl}
 Manage executing [distributed ddl queries](/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
