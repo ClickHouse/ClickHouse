@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 SET enable_time_series_table = 1;
 
@@ -26,6 +26,13 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{jo
 
 SELECT '-- negative matcher returns the complement';
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{job!~"api|web"}', 1000) ORDER BY value);
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{job!~"api"}', 1000) ORDER BY value);
+
+SELECT '-- the number of alternatives is not limited';
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx,
+    concat('a_total{job=~"', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(300)), '|'), '|api|web"}'), 1000) ORDER BY value);
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx,
+    concat('a_total{job!~"', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(300)), '|'), '|api|web"}'), 1000) ORDER BY value);
 
 SELECT '-- an empty alternative also matches a missing label';
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{job=~"api|"}', 1000) ORDER BY value);

@@ -335,10 +335,6 @@ namespace
                 break;
             pos = next + 1;
         }
-
-        /// Prometheus uses the same limit for its set matches.
-        if (terms.size() > 256)
-            return {};
         return terms;
     }
 
@@ -360,9 +356,14 @@ namespace
         String value = matcher.label_value;
         if (add_anchors)
         {
-            /// `IN` gives the same result as the regex and lets the primary key filter by it.
+            /// `IN` matches exactly what the fully anchored regex matches, and the primary key can filter by it.
             if (auto terms = tryGetLiteralAlternatives(value))
             {
+                /// A single term is an equality, which the text index on tags can serve too.
+                if (terms->size() == 1)
+                    return makeASTFunction(add_not ? "notEquals" : "equals",
+                        tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(std::move(terms->front())));
+
                 ASTs literals;
                 for (auto & term : *terms)
                     literals.push_back(make_intrusive<ASTLiteral>(std::move(term)));

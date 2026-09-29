@@ -5,6 +5,10 @@
 [1]
 -- negative matcher returns the complement
 [2,3,4,5]
+[2,3,4,5,6]
+-- the number of alternatives is not limited
+[1,6]
+[2,3,4,5]
 -- an empty alternative also matches a missing label
 [1,4,5]
 [2,3,6]
