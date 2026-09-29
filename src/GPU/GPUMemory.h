@@ -8,7 +8,9 @@
 #include <rmm/cuda_stream_view.hpp>
 
 #include <cstddef>
+#include <memory>
 #include <string_view>
+#include <type_traits>
 
 namespace DB::GPU
 {
@@ -83,51 +85,29 @@ private:
 };
 
 
-class DeviceStream
+struct StreamDeleter
 {
-public:
-    DeviceStream();
-    ~DeviceStream();
-
-    DeviceStream(DeviceStream && other) noexcept;
-    DeviceStream & operator=(DeviceStream && other) noexcept;
-
-    DeviceStream(const DeviceStream &) = delete;
-    DeviceStream & operator=(const DeviceStream &) = delete;
-
-    rmm::cuda_stream_view get() const { return rmm::cuda_stream_view{stream}; }
-
-    void synchronize() const;
-
-private:
-    cudaStream_t stream = nullptr;
+    void operator()(cudaStream_t stream) const noexcept
+    {
+        cudaStreamSynchronize(stream);
+        cudaStreamDestroy(stream);
+    }
 };
 
+/// Owns a non-blocking CUDA stream; waits for its work before destroying it.
+using StreamPtr = std::unique_ptr<std::remove_pointer_t<cudaStream_t>, StreamDeleter>;
 
-class DeviceEvent
+StreamPtr createStream();
+
+struct EventDeleter
 {
-public:
-    DeviceEvent();
-    ~DeviceEvent();
-
-    DeviceEvent(DeviceEvent && other) noexcept;
-    DeviceEvent & operator=(DeviceEvent && other) noexcept;
-
-    DeviceEvent(const DeviceEvent &) = delete;
-    DeviceEvent & operator=(const DeviceEvent &) = delete;
-
-    void record();
-    void record(rmm::cuda_stream_view stream);
-
-    void wait() const;
-
-    void waitOn(rmm::cuda_stream_view stream) const;
-
-    bool isComplete() const;
-
-private:
-    cudaEvent_t event = nullptr;
+    void operator()(cudaEvent_t event) const noexcept { cudaEventDestroy(event); }
 };
+
+/// Owns a CUDA event for holders that are moved around.
+using EventPtr = std::unique_ptr<std::remove_pointer_t<cudaEvent_t>, EventDeleter>;
+
+EventPtr createEvent();
 
 }
 

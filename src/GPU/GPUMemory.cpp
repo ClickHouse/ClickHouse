@@ -41,8 +41,6 @@ public:
             }
         }
 
-        initializeDevice();
-
         void * fresh = nullptr;
         checkCuda(cudaHostAlloc(&fresh, bytes, cudaHostAllocDefault), "Cannot allocate {} bytes of pinned host memory", bytes);
 
@@ -187,8 +185,6 @@ void DeviceBuffer::reserve(size_t bytes)
     if (bytes <= capacity)
         return;
 
-    initializeDevice();
-
     DeviceBuffer grown(stream);
     grown.capacity = std::max(bytes, capacity * 2);
 
@@ -227,101 +223,18 @@ char * DeviceBuffer::grow(size_t bytes)
 }
 
 
-DeviceStream::DeviceStream()
+StreamPtr createStream()
 {
-    initializeDevice();
+    cudaStream_t stream = nullptr;
     checkCuda(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), "Cannot create a CUDA stream");
+    return StreamPtr(stream);
 }
 
-DeviceStream::~DeviceStream()
+EventPtr createEvent()
 {
-    if (stream == nullptr)
-        return;
-
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-}
-
-DeviceStream::DeviceStream(DeviceStream && other) noexcept
-    : stream(std::exchange(other.stream, nullptr))
-{
-}
-
-DeviceStream & DeviceStream::operator=(DeviceStream && other) noexcept
-{
-    if (this != &other)
-    {
-        if (stream != nullptr)
-        {
-            cudaStreamSynchronize(stream);
-            cudaStreamDestroy(stream);
-        }
-        stream = std::exchange(other.stream, nullptr);
-    }
-    return *this;
-}
-
-void DeviceStream::synchronize() const
-{
-    checkCuda(cudaStreamSynchronize(stream), "Cannot wait for a CUDA stream");
-}
-
-
-DeviceEvent::DeviceEvent()
-{
-    initializeDevice();
+    cudaEvent_t event = nullptr;
     checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
-}
-
-DeviceEvent::~DeviceEvent()
-{
-    if (event != nullptr)
-        cudaEventDestroy(event);
-}
-
-DeviceEvent::DeviceEvent(DeviceEvent && other) noexcept
-    : event(std::exchange(other.event, nullptr))
-{
-}
-
-DeviceEvent & DeviceEvent::operator=(DeviceEvent && other) noexcept
-{
-    if (this != &other)
-    {
-        if (event != nullptr)
-            cudaEventDestroy(event);
-        event = std::exchange(other.event, nullptr);
-    }
-    return *this;
-}
-
-void DeviceEvent::record()
-{
-    record(StreamRegistry::get().compute);
-}
-
-void DeviceEvent::record(rmm::cuda_stream_view stream)
-{
-    checkCuda(cudaEventRecord(event, stream), "Cannot mark a point in a device stream");
-}
-
-void DeviceEvent::wait() const
-{
-    checkCuda(cudaEventSynchronize(event), "Cannot wait for the device to reach a point in its stream");
-}
-
-void DeviceEvent::waitOn(rmm::cuda_stream_view stream) const
-{
-    checkCuda(cudaStreamWaitEvent(stream, event, 0), "Cannot make a device stream wait for a point in another");
-}
-
-bool DeviceEvent::isComplete() const
-{
-    const cudaError_t status = cudaEventQuery(event);
-    if (status == cudaErrorNotReady)
-        return false;
-    checkCuda(status, "Cannot ask whether the device has reached a point in its stream");
-    return true;
+    return EventPtr(event);
 }
 
 }

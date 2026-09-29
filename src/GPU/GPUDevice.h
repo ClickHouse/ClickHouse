@@ -60,11 +60,7 @@ auto onDevice(Body && body, fmt::format_string<Args...> what, Args &&... args)
     }
 }
 
-void initializeDevice();
-
-void synchronizeDevice();
-
-const String & deviceProbeError();
+void synchronizeStream(rmm::cuda_stream_view stream);
 
 }
 

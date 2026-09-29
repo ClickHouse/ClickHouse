@@ -151,7 +151,7 @@ void ColumnUploadPipe::makeStagingWritable()
     if (!in_flight)
         return;
 
-    copied.wait();
+    checkCuda(cudaEventSynchronize(copied.get()), "Cannot wait for an upload to the device");
     in_flight = false;
 
     staged_data.clear();
@@ -256,7 +256,7 @@ void ColumnUploadPipe::sendStagedToDevice()
             break;
     }
 
-    copied.record(stream);
+    checkCuda(cudaEventRecord(copied.get(), stream), "Cannot mark a point in an upload stream");
     in_flight = true;
 }
 
@@ -271,7 +271,7 @@ void ColumnUploadPipe::waitForUploads()
     if (!in_flight)
         return;
 
-    copied.wait();
+    checkCuda(cudaEventSynchronize(copied.get()), "Cannot wait for an upload to the device");
     in_flight = false;
 }
 

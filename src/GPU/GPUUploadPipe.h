@@ -165,7 +165,7 @@ private:
     PinnedBuffer staged_data;
     PinnedBuffer staged_offsets;
     size_t staging_bytes = 0;
-    DeviceEvent copied;
+    EventPtr copied = createEvent();
     bool in_flight = false;
 
     size_t staged_rows = 0;
