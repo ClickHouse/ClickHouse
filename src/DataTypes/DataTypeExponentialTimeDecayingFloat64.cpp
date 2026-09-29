@@ -343,7 +343,7 @@ DataTypeExponentialTimeDecayingFloat64::DataTypeExponentialTimeDecayingFloat64(
               std::make_shared<DataTypeFloat64>(),
               std::make_shared<DataTypeFloat64>(),
               std::make_shared<DataTypeFloat64>()},
-          Names{"sign", "signed_unit_time", "decay_length"}))
+          Names{"value", "timestamp", "decay_length"}))
 {
 }
 
@@ -632,34 +632,13 @@ ColumnPtr materializeExponentialTimeDecayingFloat64LogicalColumn(
     ColumnPtr full = storage_column.convertToFullColumnIfConst();
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*full);
     const auto & tuple = decaying.getStorageTuple();
-    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
-    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
 
-    auto signs = ColumnFloat64::create();
-    auto signed_unit_times = ColumnFloat64::create();
     auto decay_lengths = ColumnFloat64::create(tuple.size(), decay_length);
-    signs->reserve(tuple.size());
-    signed_unit_times->reserve(tuple.size());
-
-    for (size_t row = 0; row < tuple.size(); ++row)
-    {
-        const Float64 value = values[row];
-        if (value == 0)
-        {
-            signs->insertValue(0);
-            signed_unit_times->insertValue(0);
-            continue;
-        }
-
-        const Float64 sign = std::copysign(1.0, value);
-        const Float64 unit_timestamp
-            = getExponentialTimeDecayingUnitTimestamp(value, times[row], decay_length);
-        signs->insertValue(sign);
-        signed_unit_times->insertValue(sign * unit_timestamp);
-    }
-
     return ColumnTuple::create(
-        Columns{std::move(signs), std::move(signed_unit_times), std::move(decay_lengths)});
+        Columns{
+            tuple.getColumnPtr(0),
+            tuple.getColumnPtr(1),
+            std::move(decay_lengths)});
 }
 
 ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
@@ -667,56 +646,55 @@ ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
 {
     ColumnPtr full = logical_column.convertToFullColumnIfConst();
     const auto & tuple = assert_cast<const ColumnTuple &>(*full);
-    if (tuple.tupleSize() != 3)
+    if (tuple.tupleSize() != 2 && tuple.tupleSize() != 3)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Malformed ExponentialTimeDecaying value in {}: expected three logical fields",
+            "Malformed ExponentialTimeDecaying value in {}: expected raw (value, timestamp[, decay_length]) tuple",
             operation);
 
-    const auto & signs = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
-    const auto & signed_unit_times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
-    const auto & decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
+    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
 
-    auto values = ColumnFloat64::create();
-    auto times = ColumnFloat64::create();
-    values->reserve(tuple.size());
-    times->reserve(tuple.size());
+    const ColumnFloat64 * decay_lengths = nullptr;
+    if (tuple.tupleSize() == 3)
+        decay_lengths = &assert_cast<const ColumnFloat64 &>(tuple.getColumn(2));
+
+    auto storage_values = ColumnFloat64::create();
+    auto storage_times = ColumnFloat64::create();
+    storage_values->reserve(tuple.size());
+    storage_times->reserve(tuple.size());
 
     for (size_t row = 0; row < tuple.size(); ++row)
     {
-        if (!std::isfinite(decay_lengths[row]) || decay_lengths[row] != decay_length)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecaying value in {}: supplied decay length {} does not match type decay length {}",
-                operation,
-                decay_lengths[row],
-                decay_length);
-
-        const Float64 sign = signs[row];
-        const Float64 signed_unit_time = signed_unit_times[row];
-        if (sign == 0)
+        if (decay_lengths)
         {
-            if (signed_unit_time != 0)
+            const Float64 supplied_decay_length = decay_lengths->getData()[row];
+            if (!std::isfinite(supplied_decay_length) || supplied_decay_length != decay_length)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Malformed ExponentialTimeDecaying value in {}: zero must have zero unit timestamp",
-                    operation);
-            values->insertValue(0);
-            times->insertValue(0);
-            continue;
+                    "Malformed ExponentialTimeDecaying value in {}: supplied decay length {} does not match type decay length {}",
+                    operation,
+                    supplied_decay_length,
+                    decay_length);
         }
 
-        if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+        const Float64 value = values[row];
+        const Float64 time = times[row];
+        if (!std::isfinite(value)
+            || !std::isfinite(time)
+            || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecaying value in {}: expected canonical sign and signed unit timestamp",
+                "Malformed ExponentialTimeDecaying value in {}: value and timestamp must define a finite decay curve",
                 operation);
 
-        values->insertValue(sign);
-        times->insertValue(sign * signed_unit_time);
+        const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
+        storage_values->insertValue(normalized.value_at_anchor);
+        storage_times->insertValue(normalized.anchor_time);
     }
 
-    auto physical = ColumnTuple::create(Columns{std::move(values), std::move(times)});
+    auto physical = ColumnTuple::create(
+        Columns{std::move(storage_values), std::move(storage_times)});
     return ColumnExponentialTimeDecaying::create(physical->assumeMutable(), decay_length);
 }
 
