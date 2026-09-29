@@ -3495,8 +3495,11 @@ try
             {
                 TransactionManager::instance();
             }
-            catch (...)
+            catch (const Coordination::Exception & e)
             {
+                /// An unavailable Keeper must not keep the server from starting; the next use retries.
+                if (!Coordination::isHardwareError(e.code))
+                    throw;
                 tryLogCurrentException(log, "Cannot initialize the transaction log at startup");
             }
         }
