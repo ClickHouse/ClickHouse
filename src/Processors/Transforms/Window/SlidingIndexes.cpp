@@ -32,6 +32,14 @@ std::vector<bool> markKeyChanges(const Columns & columns, size_t rows_count, con
     return changes;
 }
 
+std::vector<bool> markPeerGroupStarts(const Columns & columns, size_t rows_count, const WindowTransformParams & params, const Columns & previous_key)
+{
+    if (params.window_description.frame.type == WindowFrame::FrameType::ROWS)
+        return std::vector<bool>(rows_count, true);
+
+    return markKeyChanges(columns, rows_count, params.peer_key_indices, previous_key);
+}
+
 Columns cutLastKey(const Columns & columns, size_t rows_count, const std::vector<size_t> & key_indices)
 {
     Columns last_row(columns.size());
@@ -50,10 +58,15 @@ SlidingIndexes::SlidingIndexes(const WindowTransformParams & params_)
 
 SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int64_t rows_count)
 {
-    auto partition_starts_index = markKeyChanges(materialized_columns, rows_count, params.partition_by_indices, last_partition_key);
+    auto partition_starts = markKeyChanges(materialized_columns, rows_count, params.partition_by_indices, last_partition_key);
     last_partition_key = cutLastKey(materialized_columns, rows_count, params.partition_by_indices);
+
+    auto peer_group_starts = markPeerGroupStarts(materialized_columns, rows_count, params, last_peer_key);
+    last_peer_key = cutLastKey(materialized_columns, rows_count, params.peer_key_indices);
+
     return SlidingIndex{
-        .partition_starts = std::move(partition_starts_index),
+        .partition_starts = std::move(partition_starts),
+        .peer_group_starts = std::move(peer_group_starts),
     };
 }
 

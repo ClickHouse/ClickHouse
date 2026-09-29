@@ -12,6 +12,7 @@ namespace DB
 struct SlidingIndex
 {
     std::vector<bool> partition_starts;
+    std::vector<bool> peer_group_starts;
 };
 
 class SlidingIndexes
@@ -24,6 +25,7 @@ public:
 private:
     const WindowTransformParams & params;
     Columns last_partition_key;
+    Columns last_peer_key;
 };
 
 }
