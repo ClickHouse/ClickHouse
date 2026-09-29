@@ -144,66 +144,88 @@ void emitRanks(
 }
 
 
+void TextIndexBlockedPositionsCodec::Encoder::finishDocument(bool sorted)
+{
+    auto * first = values.begin() + open_document_begin;
+    auto * last = values.end();
+    chassert(first != last);
+
+    if (!sorted)
+    {
+        std::sort(first, last);
+        last = std::unique(first, last);
+        values.resize(last - values.begin());
+    }
+
+    const size_t freq = last - first;
+
+    /// Decoders address the whole-token stream with UInt32 offsets; refuse to write an unreadable part.
+    num_positions += freq;
+    if (num_positions > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
+
+    /// The first position of a document is stored absolute, the rest as deltas.
+    std::adjacent_difference(first, last, first);
+
+    if (freq > 1)
+    {
+        exceptions.push_back(static_cast<UInt32>(docs_in_block));
+        exceptions.push_back(static_cast<UInt32>(freq));
+    }
+
+    ++docs_in_block;
+    ++num_docs;
+    open_document_begin = values.size();
+
+    if (docs_in_block == BLOCK_DOCS)
+        block_bytes.push_back(encodeBlock(staged));
+}
+
 void TextIndexBlockedPositionsCodec::Encoder::addDocument(std::span<const UInt32> positions)
 {
     chassert(!positions.empty());
     chassert(std::ranges::adjacent_find(positions, std::greater_equal<UInt32>{}) == positions.end());
 
-    /// Decoders address the whole-token stream with UInt32 offsets; refuse to write an unreadable part.
-    num_positions += positions.size();
-    if (num_positions > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
-
-    block_freqs.push_back(static_cast<UInt32>(positions.size()));
-    const size_t values_begin = block_values.size();
-    block_values.resize(values_begin + positions.size());
-    std::adjacent_difference(positions.begin(), positions.end(), block_values.begin() + values_begin);
-
-    ++num_docs;
-    if (block_freqs.size() == BLOCK_DOCS)
-        sealBlock();
+    values.insert(positions.begin(), positions.end());
+    finishDocument(true);
 }
 
-void TextIndexBlockedPositionsCodec::Encoder::sealBlock()
+size_t TextIndexBlockedPositionsCodec::Encoder::encodeBlock(PaddedPODArray<UInt8> & out)
 {
-    const size_t docs_in_block = block_freqs.size();
-    const size_t total = block_values.size();
+    const size_t num_exceptions = exceptions.size() / 2;
+    const size_t begin = out.size();
+    out.resize(begin + 10 + num_exceptions * 20 + PFor::maxCompressedBytes<UInt32>(values.size()));
 
-    const size_t begin = staged.size();
-    staged.resize(begin + 10 + docs_in_block * 10 + PFor::maxCompressedBytes<UInt32>(total));
-    uint8_t * block_begin = staged.data() + begin;
-    size_t offset = 0;
+    auto * block_begin = reinterpret_cast<uint8_t *>(out.data() + begin);
+    size_t offset = writeVarUIntTo(block_begin, num_exceptions);
+    for (UInt32 value : exceptions)
+        offset += writeVarUIntTo(block_begin + offset, value);
+    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, block_begin + offset);
 
-    const size_t num_exceptions = std::ranges::count_if(block_freqs, [](UInt32 freq) { return freq > 1; });
-    offset += writeVarUIntTo(block_begin + offset, num_exceptions);
-    for (size_t i = 0; i < docs_in_block; ++i)
-    {
-        if (block_freqs[i] > 1)
-        {
-            offset += writeVarUIntTo(block_begin + offset, i);
-            offset += writeVarUIntTo(block_begin + offset, block_freqs[i]);
-        }
-    }
-
-    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(block_values.data(), total), PFor::Delta::none, block_begin + offset);
-
-    staged.resize(begin + offset);
-    block_bytes.push_back(offset);
-    block_freqs.clear();
-    block_values.clear();
+    out.resize(begin + offset);
+    values.clear();
+    exceptions.clear();
+    open_document_begin = 0;
+    docs_in_block = 0;
+    return offset;
 }
 
 void TextIndexBlockedPositionsCodec::Encoder::finalize(WriteBuffer & out)
 {
-    if (!block_freqs.empty())
-        sealBlock();
+    /// Freed on return, so the allocator reuses it for the next token.
+    PaddedPODArray<UInt8> last_block;
+    const size_t num_blocks = block_bytes.size() + (docs_in_block != 0);
+    const size_t last_block_bytes = docs_in_block != 0 ? encodeBlock(last_block) : 0;
 
     writeVarUInt(num_docs, out);
-    writeVarUInt(block_bytes.size(), out);
-    for (size_t bytes : block_bytes)
+    writeVarUInt(num_blocks, out);
+    for (UInt64 bytes : block_bytes)
         writeVarUInt(bytes, out);
+    if (num_blocks != block_bytes.size())
+        writeVarUInt(last_block_bytes, out);
     out.write(reinterpret_cast<const char *>(staged.data()), staged.size());
+    out.write(reinterpret_cast<const char *>(last_block.data()), last_block.size());
 }
 
 TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDirectory(
