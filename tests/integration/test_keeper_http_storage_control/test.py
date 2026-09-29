@@ -2,6 +2,7 @@
 
 import http.client
 import os
+import socket
 import uuid
 
 import pytest
@@ -65,6 +66,20 @@ def send_chunked_storage_request(node, method, path, chunks):
         return connection.getresponse().status
     finally:
         connection.close()
+
+
+def send_unframed_storage_request(node, method, path, body):
+    # Neither `Content-Length` nor chunked encoding: the body ends where the client shuts down
+    # its side of the connection.
+    with socket.create_connection((node.ip_address, 9182), timeout=30) as connection:
+        connection.sendall(
+            f"{method} /api/v1/storage{path} HTTP/1.1\r\nHost: {node.ip_address}\r\n\r\n".encode()
+            + body
+        )
+        connection.shutdown(socket.SHUT_WR)
+        with connection.makefile("rb") as reader:
+            response = reader.read()
+    return int(response.split(b" ", 2)[1])
 
 
 def test_keeper_http_storage_create_get_exists(started_cluster):
@@ -244,6 +259,24 @@ def test_keeper_http_storage_max_request_size(started_cluster):
         send_storage_request(node3, "GET", f"/{prefix}_chunked").content
         == b"c" * max_request_size
     )
+
+    assert (
+        send_unframed_storage_request(
+            node3, "POST", f"/{prefix}_unframed_over", over_limit
+        )
+        == 413
+    )
+    send_storage_request(
+        node3, "GET", f"/{prefix}_unframed_over", expected_response_code=404
+    )
+    assert (
+        send_unframed_storage_request(node3, "POST", f"/{prefix}_unframed", at_limit)
+        == 201
+    )
+    assert send_storage_request(node3, "GET", f"/{prefix}_unframed").content == at_limit
+
+    send_storage_request(node3, "POST", f"/{prefix}_empty", expected_response_code=201)
+    assert send_storage_request(node3, "GET", f"/{prefix}_empty").content == b""
 
     send_storage_request(
         node1, "POST", f"/{prefix}_unlimited", over_limit, expected_response_code=201
