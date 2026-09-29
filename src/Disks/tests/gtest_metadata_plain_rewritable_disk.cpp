@@ -2431,10 +2431,7 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAReplacedFile)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/target").front().remote_path), "the target file");
 }
 
-/// Only a committed transaction removes the blob of a file the metadata lists. When the blob is gone anyway, metadata
-/// and object storage diverged before the transaction began: the commit reports a broken invariant, and the reversal
-/// still leaves every object as it found it. `LOGICAL_ERROR` aborts a debug or sanitizer build where it is thrown, so
-/// there the check is that the commit dies with this report.
+/// `LOGICAL_ERROR` aborts debug and sanitizer builds, so there only the report is checked.
 static void expectCommitReportsDivergence(const MetadataTransactionPtr & tx, const std::string & missing_blob)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -2508,8 +2505,7 @@ TEST_F(MetadataPlainRewritableDiskTest, ReplaceFromFileWithoutBlobKeepsTarget)
     object_storage->removeObjectIfExists(StoredObject(source_blob));
     const auto objects_before = allObjects(object_storage, "ReplaceWithoutBlob");
 
-    /// The target is a live file. A move that removed it before it found that the source cannot be read would leave the
-    /// metadata listing a file whose blob is lost.
+    /// The move must fail before it touches the target.
     auto tx = metadata->createTransaction();
     tx->replaceFile("/A/source", "/A/target");
     expectCommitReportsDivergence(tx, source_blob);

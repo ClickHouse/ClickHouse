@@ -147,9 +147,9 @@ private:
 
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
-    /// Set before the copy to the temporary key, because that copy can land even when it throws.
+    /// The copy can land even when it throws.
     bool copy_attempted = false;
-    /// Set once that copy returns. Only from then on can this operation have removed the source.
+    /// Only after the copy can the source be removed.
     bool source_saved = false;
 
 public:
@@ -221,8 +221,7 @@ private:
     /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
     /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
     bool blob_move_attempted{false};
-    /// Set once the copy of the source to `tmp_remote_path_from` returns. Only from then on can the move have removed
-    /// the source, and nothing touches the target before it.
+    /// Only after the source is saved can it be removed; the target is not touched before.
     bool source_saved{false};
     bool had_existing_target{false};
 
@@ -238,8 +237,7 @@ public:
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
-     *  1. Copy remote_path_from to tmp_remote_path_from. A source that cannot be read stops the move here, before
-     *     anything changes.
+     *  1. Copy remote_path_from to tmp_remote_path_from.
      *  2. If the target exists, copy remote_path_to to tmp_remote_path_to and remove remote_path_to.
      *  3. Copy remote_path_from to remote_path_to.
      *  4. Remove remote_path_from.
@@ -248,8 +246,8 @@ public:
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. Restore remote_path_from from tmp_remote_path_from, if the source was saved there.
-     *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if the target did not exist.
+     *  1. Restore remote_path_from from tmp_remote_path_from, if saved.
+     *  2. Restore remote_path_to from tmp_remote_path_to, or remove it if there was no target.
      *  3. Remove the temporary copies.
      */
     void undo() override;

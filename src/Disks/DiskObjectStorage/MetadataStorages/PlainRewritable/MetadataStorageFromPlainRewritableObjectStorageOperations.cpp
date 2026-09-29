@@ -49,9 +49,7 @@ namespace FailPoints
 namespace
 {
 
-/// Copies the blob of a file that the metadata lists to a temporary key. Only a committed transaction removes such a
-/// blob, so a copy that fails because the blob does not exist means that metadata and object storage diverged before
-/// this transaction began. Nothing can restore that blob, so it is reported as a broken invariant.
+/// A listed blob that is missing means metadata and object storage diverged before this transaction.
 void copyBlobOfListedFile(
     IObjectStorage & object_storage,
     const std::filesystem::path & path,
@@ -455,7 +453,6 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
     auto log = getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation");
 
-    /// The source is removed only after the copy returns, so before that there is nothing to restore.
     /// The temporary copy is dropped in a later stage, so a failure never strands the restore.
     if (source_saved)
     {
@@ -605,7 +602,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     blob_move_attempted = true;
 
-    /// The source goes aside first: a source that cannot be read must stop the move before the target is touched.
+    /// Save the source before touching the target.
     {
         fiu_do_on(FailPoints::plain_object_storage_copy_temp_source_file_fail_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
@@ -664,7 +661,6 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
     /// Each stage says where one key has to end up and asks object storage whether it is already there, so it holds
     /// whether the matching step of `execute` never ran, ran, or ran and lost its answer.
-    /// The source is removed only after it was saved, so before that there is nothing to restore.
     if (source_saved)
     {
         undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
