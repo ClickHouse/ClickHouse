@@ -40,6 +40,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -233,23 +234,43 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return analyzeQueryOverStorage(prepareQueryAffectedAST(commands, storage, context), storage, context);
 }
 
-/// `SELECT <value of every UPDATE assignment>`, or nullptr if the commands assign nothing.
-ASTPtr prepareUpdatedValuesAST(const std::vector<MutationCommand> & commands)
+/// Collects the parts of `ast` that read a subquery: a scalar subquery, or an `IN` or `exists` call on a subquery.
+void collectSubqueryExpressions(const ASTPtr & ast, ASTs & expressions)
 {
-    auto values = make_intrusive<ASTExpressionList>();
+    const auto * function = ast->as<ASTFunction>();
+    const bool reads_subquery = ast->as<ASTSubquery>()
+        || (function && (functionIsInOrGlobalInOperator(function->name) || function->name == "exists") && function->arguments
+            && std::ranges::any_of(function->arguments->children, [](const ASTPtr & argument) { return argument->as<ASTSubquery>(); }));
+    if (reads_subquery)
+    {
+        expressions.push_back(ast->clone());
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        collectSubqueryExpressions(child, expressions);
+}
+
+/// `SELECT` of the subqueries in the `UPDATE` assignments, or nullptr if there are none. A whole assigned value
+/// is not analyzed: that folds its constants, which can fail even when no row matches and the value is never computed.
+ASTPtr prepareAssignedSubqueriesAST(const std::vector<MutationCommand> & commands, const ContextPtr & context)
+{
+    auto subqueries = make_intrusive<ASTExpressionList>();
     for (const MutationCommand & command : commands)
     {
         auto alter = command.ast();
         if (alter && alter->update_assignments)
             for (const auto & child : alter->update_assignments->children)
-                values->children.push_back(child->as<const ASTAssignment &>().expression()->clone());
+                collectSubqueryExpressions(child->as<const ASTAssignment &>().expression(), subqueries->children);
     }
-    if (values->children.empty())
+    if (subqueries->children.empty())
         return nullptr;
 
     auto select = make_intrusive<ASTSelectQuery>();
-    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(values));
-    return select;
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(subqueries));
+    ASTPtr select_ast = std::move(select);
+    normalizeSetOperations(select_ast, context);
+    return select_ast;
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -2512,11 +2533,11 @@ void MutationsInterpreter::validate()
 {
     validateNonDeterministicMutationsForStorage(source.getStorage(), commands, context);
 
-    /// The plan below only analyzes the scalar subqueries. These two run them as the submitting user,
-    /// which also checks the tables and the views that they read.
+    /// The plan below does not run scalar subqueries, so it does not check the views that they read.
+    /// These two run the subqueries of the predicates and of the assigned values as the submitting user.
     prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
-    if (auto updated_values = prepareUpdatedValuesAST(commands))
-        analyzeQueryOverStorage(updated_values, source.getStorage(), context);
+    if (auto assigned_subqueries = prepareAssignedSubqueriesAST(commands, context))
+        analyzeQueryOverStorage(assigned_subqueries, source.getStorage(), context);
 
     QueryPlan plan;
 
