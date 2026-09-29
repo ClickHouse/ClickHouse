@@ -16,6 +16,13 @@ namespace DB::GPU
 namespace
 {
 
+struct SubtractFrom
+{
+    uint64_t minus;
+
+    __device__ uint64_t operator()(uint64_t offset) const { return offset - minus; }
+};
+
 struct AddStart
 {
     const uint64_t * start;
@@ -23,6 +30,17 @@ struct AddStart
     __device__ uint64_t operator()(uint64_t running_size) const { return *start + running_size; }
 };
 
+}
+
+void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream)
+{
+    if (count == 0 || (minus == 0 && from == to))
+        return;
+
+    guarded("rebasing " + std::to_string(count) + " string offsets", [&]
+    {
+        thrust::transform(rmm::exec_policy_nosync(stream), from, from + count, to, SubtractFrom{minus});
+    });
 }
 
 void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, rmm::cuda_stream_view stream)

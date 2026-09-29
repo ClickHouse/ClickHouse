@@ -4,6 +4,7 @@
 
 #include <GPU/GPUColumns.h>
 #include <GPU/GPUDevice.h>
+#include <GPU/OffsetsKernels.cuh>
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>

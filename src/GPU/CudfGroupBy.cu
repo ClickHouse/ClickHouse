@@ -11,10 +11,6 @@
 #include <cudf/table/table_view.hpp>
 #include <cudf/unary.hpp>
 
-#include <rmm/exec_policy.hpp>
-
-#include <thrust/transform.h>
-
 #include <limits>
 #include <memory>
 #include <string>
@@ -42,13 +38,6 @@ GPUElementType leftInOf(const GPUGroupByValue & value)
 {
     return value.aggregation == GPUAggregationKind::Sum ? value.result_type : value.element_type;
 }
-
-struct SubtractFrom
-{
-    uint64_t minus;
-
-    __device__ uint64_t operator()(uint64_t offset) const { return offset - minus; }
-};
 
 }
 
@@ -302,17 +291,6 @@ DeviceColumnView CudfGroupBy::value(size_t index) const
                 state->merged->view().column(column_index), state->value_offsets[index], "a value of the groups", state->stream.value());
     }
     throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(left_in))).c_str());
-}
-
-void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream)
-{
-    if (count == 0 || (minus == 0 && from == to))
-        return;
-
-    guarded("rebasing " + std::to_string(count) + " string offsets", [&]
-    {
-        thrust::transform(rmm::exec_policy_nosync(stream), from, from + count, to, SubtractFrom{minus});
-    });
 }
 
 }

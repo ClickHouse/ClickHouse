@@ -2,7 +2,6 @@
 
 #if USE_GPU
 
-#include <GPU/CudfGroupBy.cuh>
 #include <GPU/GPUColumns.h>
 #include <GPU/OffsetsKernels.cuh>
 #include <GPU/GPUDevice.h>

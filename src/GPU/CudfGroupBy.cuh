@@ -28,6 +28,4 @@ private:
     State * state = nullptr;
 };
 
-void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream);
-
 }
