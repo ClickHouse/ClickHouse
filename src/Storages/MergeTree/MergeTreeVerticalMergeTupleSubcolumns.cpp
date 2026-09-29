@@ -94,11 +94,14 @@ bool anyPartIsCompact(const MergeTreeDataPartsVector & parts)
     return false;
 }
 
-bool anyLeafHasDynamicSubcolumns(const std::vector<NameAndTypePair> & leaves)
+/// `hasDynamicSubcolumns` is also true for a plain `Map`: its bucket streams depend on the
+/// data, but the leaf writer records them and the parent copies that list. Refuse only a
+/// dynamic structure (`Dynamic`, `JSON`), whose streams are not one static leaf.
+bool anyLeafHasDynamicStructure(const std::vector<NameAndTypePair> & leaves)
 {
     for (const auto & leaf : leaves)
     {
-        if (leaf.type->hasDynamicSubcolumns())
+        if (leaf.type->hasDynamicStructure())
             return true;
     }
     return false;
@@ -262,8 +265,8 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     if (columns_with_statistics_to_rebuild.contains(column.name))
         return {.reason = "stats_rebuild_pins_parent"};
 
-    if (anyLeafHasDynamicSubcolumns(leaves))
-        return {.reason = "dynamic_subcolumns"};
+    if (anyLeafHasDynamicStructure(leaves))
+        return {.reason = "dynamic_structure"};
 
     if (anySourceOrApplicablePatchCannotReadLeaves(parts, alter_conversions, leaves, column.name))
         return {.reason = "cannot_read_leaf_as_subcolumn"};
