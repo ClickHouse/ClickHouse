@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Columns/FilterDescription.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -86,7 +87,8 @@ public:
         InitializerFunc initializer_func_ = {},
         MaterializedCTEPtr materialized_cte_ = {},
         MemorySourceFilterPtr filter_ = {},
-        SharedHeader filtered_header_ = {})
+        SharedHeader filtered_header_ = {},
+        Names nested_arrays_ = {})
         : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -95,6 +97,7 @@ public:
         , initializer_func(std::move(initializer_func_))
         , materialized_cte(std::move(materialized_cte_))
         , filter(std::move(filter_))
+        , nested_arrays(std::move(nested_arrays_))
     {
         if (filter && !virtual_columns.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
@@ -180,12 +183,85 @@ private:
         return tryGetColumnFromBlock(src, name_and_type);
     }
 
+    /// Fills the entries of `columns` (`columns_to_read` read from `src`) that `src` lacks. All arrays of one `Nested` in a
+    /// stored block have equal sizes (checked on insert), so a missing array gets the sizes of an array of its `Nested` from
+    /// `nested_arrays` that `src` has, and a missing subcolumn of such an array is taken from the filled array.
+    void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
+    {
+        const size_t num_columns = columns.size();
+        /// Stays empty (no allocation) unless some missing array has a source.
+        std::vector<const ColumnWithTypeAndName *> sizes_sources;
+
+        if (!nested_arrays.empty())
+        {
+            auto column_it = columns_to_read.begin();
+            for (size_t i = 0; i < num_columns; ++i, ++column_it)
+            {
+                if (columns[i] || !isArray(column_it->getTypeInStorage()))
+                    continue;
+
+                const String name_in_storage = column_it->getNameInStorage();
+                if (src.has(name_in_storage))
+                    continue;
+
+                const String nested_name = Nested::splitName(name_in_storage).first;
+                for (const auto & array_name : nested_arrays)
+                {
+                    if (Nested::splitName(std::string_view(array_name)).first != nested_name)
+                        continue;
+
+                    const auto * stored = src.findByName(array_name);
+                    if (stored && stored->column && isArray(stored->type))
+                    {
+                        if (sizes_sources.empty())
+                            sizes_sources.resize(num_columns);
+                        sizes_sources[i] = stored;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (sizes_sources.empty())
+        {
+            fillMissingColumns(columns, src.rows(), columns_to_read, columns_to_read, {}, nullptr);
+            return;
+        }
+
+        NamesAndTypesList columns_to_fill;
+        NamesAndTypesList sources;
+        NameSet source_names;
+        auto column_it = columns_to_read.begin();
+        for (size_t i = 0; i < num_columns; ++i, ++column_it)
+        {
+            if (sizes_sources[i] && column_it->isSubcolumn())
+                columns_to_fill.emplace_back(column_it->getNameInStorage(), column_it->getTypeInStorage());
+            else
+                columns_to_fill.push_back(*column_it);
+
+            if (sizes_sources[i] && source_names.insert(sizes_sources[i]->name).second)
+            {
+                sources.emplace_back(sizes_sources[i]->name, sizes_sources[i]->type);
+                columns.push_back(sizes_sources[i]->column->decompress());
+            }
+        }
+
+        columns_to_fill.insert(columns_to_fill.end(), sources.begin(), sources.end());
+        fillMissingColumns(columns, src.rows(), columns_to_fill, columns_to_fill, {}, nullptr);
+        columns.resize(num_columns);
+
+        column_it = columns_to_read.begin();
+        for (size_t i = 0; i < num_columns; ++i, ++column_it)
+            if (sizes_sources[i] && column_it->isSubcolumn())
+                columns[i] = column_it->getTypeInStorage()->getSubcolumn(column_it->getSubcolumnName(), columns[i]);
+    }
+
     void fillPhysicalColumns(const Block & src, Columns & result_columns) const
     {
         for (const auto & name_and_type : physical_columns)
             result_columns.emplace_back(readColumn(src, name_and_type));
 
-        fillMissingColumns(result_columns, src.rows(), physical_columns, physical_columns, {}, nullptr);
+        fillColumnsMissingFromBlock(src, physical_columns, result_columns);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
@@ -219,7 +295,7 @@ private:
             for (const auto & name_and_type : filter->filter_input_columns)
                 filter_columns.emplace_back(readColumn(src, name_and_type));
 
-            fillMissingColumns(filter_columns, num_src_rows, filter->filter_input_columns, filter->filter_input_columns, {}, nullptr);
+            fillColumnsMissingFromBlock(src, filter->filter_input_columns, filter_columns);
 
             for (const auto & column : filter_columns)
                 num_read_bytes += column->byteSize();
@@ -310,7 +386,7 @@ private:
             for (const auto & name_and_type : filter->deferred_columns)
                 deferred_columns.emplace_back(readColumn(src, name_and_type));
 
-            fillMissingColumns(deferred_columns, num_src_rows, filter->deferred_columns, filter->deferred_columns, {}, nullptr);
+            fillColumnsMissingFromBlock(src, filter->deferred_columns, deferred_columns);
 
             for (const auto & column : deferred_columns)
                 num_read_bytes += column->byteSize();
@@ -348,6 +424,8 @@ private:
     InitializerFunc initializer_func;
     MaterializedCTEPtr materialized_cte;
     MemorySourceFilterPtr filter;
+    /// The arrays of the table in the `Nested` of a requested array; see `fillColumnsMissingFromBlock`.
+    const Names nested_arrays;
 };
 
 ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
@@ -477,6 +555,26 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
+/// The arrays of the table in the `Nested` of a requested array. A block written before a requested array was added takes its
+/// array sizes from one of them.
+static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
+{
+    NameSet nested_names;
+    for (const auto & column : physical_columns)
+        if (isArray(column.getTypeInStorage()))
+            nested_names.insert(Nested::splitName(column.getNameInStorage()).first);
+
+    Names result;
+    if (nested_names.empty())
+        return result;
+
+    for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        if (isArray(column.type) && nested_names.contains(Nested::splitName(column.name).first))
+            result.push_back(column.name);
+
+    return result;
+}
+
 Pipe ReadFromMemoryStorageStep::makePipe()
 {
     storage_snapshot->check(columns_to_read);
@@ -486,6 +584,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     auto source_filter = makeSourceFilter(physical_columns);
+    auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
@@ -512,7 +611,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             },
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
-            output_header));
+            output_header,
+            nested_arrays));
     }
 
     size_t size = current_data->size();
@@ -524,7 +624,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header);
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header,
+            nested_arrays);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
