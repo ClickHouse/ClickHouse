@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/SecondaryIndexColumnTypes.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ColumnSize.h>
 #include <Core/NamesAndTypes.h>
@@ -113,6 +114,8 @@ public:
     virtual std::shared_ptr<const IMergeTreeDataPart> getDataPart() const = 0;
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
+
+    virtual const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const = 0;
 
     virtual AlterConversionsPtr getAlterConversions() const = 0;
 

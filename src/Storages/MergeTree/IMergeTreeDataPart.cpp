@@ -2764,6 +2764,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     if (auto serialization_file = readFileIfExists(SERIALIZATION_FILE_NAME))
         infos = SerializationInfoByName::readJSON(loaded_columns, *serialization_file);
 
+    if (auto index_types_file = readFileIfExists(SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME))
+        secondary_index_column_types = SecondaryIndexColumnTypes::readJSON(*index_types_file);
+
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {

@@ -15,6 +15,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/SecondaryIndexColumnTypes.h>
 #include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -235,6 +236,9 @@ public:
     ColumnPtr getColumnSample(const NameAndTypePair & column) const;
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const { return secondary_index_column_types; }
+    void setSecondaryIndexColumnTypes(SecondaryIndexColumnTypes value) { secondary_index_column_types = std::move(value); }
 
     const PartSerializations & getSerializations() const { return *serializations; }
 
@@ -693,6 +697,10 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
+    /// See SecondaryIndexColumnTypes. Present only when a skip index was materialized over a column
+    /// type the part has not materialized itself (a JSON type hint applied lazily).
+    static constexpr auto SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME = "secondary_index_column_types.json";
+
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// File that lists persisted system columns whose stored values became stale.
@@ -923,6 +931,9 @@ private:
     /// Map from name of column to its serialization info.
     /// Kept per-part: it holds the row/default counters of this part's data.
     SerializationInfoByName serialization_infos{{}};
+
+    /// See SecondaryIndexColumnTypes. Empty for almost every part.
+    SecondaryIndexColumnTypes secondary_index_column_types;
 
     /// Serializations for every columns and subcolumns by their names.
     /// Shared across parts of the table with the same serialization kinds; the per-column pieces
