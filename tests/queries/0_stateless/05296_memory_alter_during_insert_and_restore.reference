@@ -8,4 +8,5 @@ backup across type change BACKUP_FAILED
 backup across type change error	1
 materialized view with an altered inner table	4	10
 view with a renamed inner column CANNOT_RESTORE_TABLE
-view with a dropped inner column	3	6	0
+view with a dropped inner column	4	10	0
+view with a renamed and re-added inner column	4	4

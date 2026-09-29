@@ -885,10 +885,16 @@ void StorageMemory::restoreDataImpl(
         auto in = backup->readFile(data_file_path);
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
-        NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
-        for (auto block = block_in.read(); !block.empty(); block = block_in.read())
+        /// A reader converts every block to the columns of its first one, but the blocks of a table can differ, e.g. those
+        /// inserted before an `ADD COLUMN` or a `MODIFY COLUMN`, so each block is read on its own.
+        for (auto index_block = index.blocks.cbegin(); index_block != index.blocks.cend(); ++index_block)
         {
+            NativeReader block_in{compressed_in, 0, index_block, std::next(index_block)};
+            auto block = block_in.read();
+            if (block.empty())
+                break;
+
             if ((*memory_settings)[MemorySetting::compress])
             {
                 Block compressed_block;

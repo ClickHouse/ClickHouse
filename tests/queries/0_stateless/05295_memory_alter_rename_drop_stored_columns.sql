@@ -1,3 +1,5 @@
+-- Tags: memory-engine
+
 -- RENAME COLUMN and DROP COLUMN on a Memory table: the rows inserted before the ALTER are read under the new
 -- names, and a column added later with an old name gets default values, not the old column's data.
 
@@ -188,3 +190,18 @@ DROP TABLE mem_column_kinds SYNC;
 RESTORE TABLE mem_column_kinds FROM Memory('05295_column_kinds_backup') FORMAT Null;
 SELECT 'column kinds restored', k, m, al, n.x FROM mem_column_kinds;
 DROP TABLE mem_column_kinds;
+
+-- RESTORE keeps each stored block's own columns and types: blocks inserted before an ADD COLUMN or a MODIFY COLUMN
+-- differ from the later ones.
+DROP TABLE IF EXISTS mem_block_structures;
+CREATE TABLE mem_block_structures (a UInt32) ENGINE = Memory;
+INSERT INTO mem_block_structures VALUES (1);
+ALTER TABLE mem_block_structures ADD COLUMN b UInt64;
+INSERT INTO mem_block_structures VALUES (2, 5);
+ALTER TABLE mem_block_structures MODIFY COLUMN a UInt64;
+INSERT INTO mem_block_structures VALUES (1099511627776, 6);
+BACKUP TABLE mem_block_structures TO Memory('05295_block_structures_backup') FORMAT Null;
+DROP TABLE mem_block_structures SYNC;
+RESTORE TABLE mem_block_structures FROM Memory('05295_block_structures_backup') FORMAT Null;
+SELECT 'blocks of different structures restored', count(), sum(a), sum(b) FROM mem_block_structures;
+DROP TABLE mem_block_structures;

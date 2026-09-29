@@ -48,3 +48,4 @@ empty tuple rows	3	0
 empty tuple restored	3
 empty tuple restore into a non-empty table	3
 column kinds restored	1	2	3	[5]
+blocks of different structures restored	3	1099511627779	11
