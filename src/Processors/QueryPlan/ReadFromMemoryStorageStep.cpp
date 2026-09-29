@@ -211,16 +211,20 @@ private:
 
     /// Fills the entries of `columns` (`columns_to_read` read from `src`) that `src` lacks, from `src` alone. All members of
     /// one `Nested` in a stored block have equal sizes (checked on insert), so a missing member gets the sizes of the array
-    /// that `findSizesSource` picks, and a missing subcolumn of such a member is taken from the filled array.
+    /// that `findSizesSource` picks, and a missing subcolumn of such a member is taken from the filled array. The entries
+    /// without such an array are filled apart, so no stored array lends its offsets to a column that is not a member.
     void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
     {
-        NamesAndTypesList columns_to_fill;
-        /// For each entry of `columns_to_fill`: its position in `columns`, and the requested subcolumn to extract from it if
-        /// the entry was replaced by its column in storage.
-        std::vector<std::pair<size_t, const NameAndTypePair *>> positions;
+        /// The missing entries with a sizes source (a subcolumn replaced by its column in storage), followed by their distinct
+        /// sources, and the missing entries without one. For each entry: its position in `columns`, and the requested
+        /// subcolumn to extract from it if the entry was replaced by its column in storage.
+        NamesAndTypesList columns_with_sizes;
+        std::vector<std::pair<size_t, const NameAndTypePair *>> positions_with_sizes;
         NamesAndTypesList sources;
         Columns source_columns;
         NameSet source_names;
+        NamesAndTypesList columns_without_sizes;
+        std::vector<size_t> positions_without_sizes;
 
         auto column_it = columns_to_read.begin();
         for (size_t i = 0; i < columns.size(); ++i, ++column_it)
@@ -229,39 +233,53 @@ private:
                 continue;
 
             const auto * source = findSizesSource(src, *column_it);
-            if (source && column_it->isSubcolumn())
+            if (!source)
             {
-                columns_to_fill.emplace_back(column_it->getNameInStorage(), column_it->getTypeInStorage());
-                positions.emplace_back(i, &*column_it);
+                columns_without_sizes.push_back(*column_it);
+                positions_without_sizes.push_back(i);
+                continue;
+            }
+
+            if (column_it->isSubcolumn())
+            {
+                columns_with_sizes.emplace_back(column_it->getNameInStorage(), column_it->getTypeInStorage());
+                positions_with_sizes.emplace_back(i, &*column_it);
             }
             else
             {
-                columns_to_fill.push_back(*column_it);
-                positions.emplace_back(i, nullptr);
+                columns_with_sizes.push_back(*column_it);
+                positions_with_sizes.emplace_back(i, nullptr);
             }
 
-            if (source && source_names.insert(source->name).second)
+            if (source_names.insert(source->name).second)
             {
                 sources.emplace_back(source->name, source->type);
                 source_columns.push_back(source->column->decompress());
             }
         }
 
-        if (positions.empty())
-            return;
-
-        /// Only the missing entries and their sources, so no other column of the read lends its offsets.
-        Columns filled(positions.size());
-        filled.insert(filled.end(), source_columns.begin(), source_columns.end());
-        columns_to_fill.insert(columns_to_fill.end(), sources.begin(), sources.end());
-        fillMissingColumns(filled, src.rows(), columns_to_fill, columns_to_fill, {}, nullptr);
-
-        for (size_t j = 0; j < positions.size(); ++j)
+        if (!positions_without_sizes.empty())
         {
-            const auto & [position, subcolumn] = positions[j];
-            columns[position] = subcolumn
-                ? subcolumn->getTypeInStorage()->getSubcolumn(subcolumn->getSubcolumnName(), filled[j])
-                : std::move(filled[j]);
+            Columns filled(positions_without_sizes.size());
+            fillMissingColumns(filled, src.rows(), columns_without_sizes, columns_without_sizes, {}, nullptr);
+            for (size_t j = 0; j < positions_without_sizes.size(); ++j)
+                columns[positions_without_sizes[j]] = std::move(filled[j]);
+        }
+
+        if (!positions_with_sizes.empty())
+        {
+            Columns filled(positions_with_sizes.size());
+            filled.insert(filled.end(), source_columns.begin(), source_columns.end());
+            columns_with_sizes.insert(columns_with_sizes.end(), sources.begin(), sources.end());
+            fillMissingColumns(filled, src.rows(), columns_with_sizes, columns_with_sizes, {}, nullptr);
+
+            for (size_t j = 0; j < positions_with_sizes.size(); ++j)
+            {
+                const auto & [position, subcolumn] = positions_with_sizes[j];
+                columns[position] = subcolumn
+                    ? subcolumn->getTypeInStorage()->getSubcolumn(subcolumn->getSubcolumnName(), filled[j])
+                    : std::move(filled[j]);
+            }
         }
     }
 
