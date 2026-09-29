@@ -15,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `format_display_secrets_in_show_and_select` and the `displaySecretsInShowAndSelect` privilege together);
 # everyone else sees the `ReadFromSealedView` step alone. The test server keeps the server setting off, so the
 # secrets path is not covered here. The plans are not dumped into the reference: only the presence of the
-# private value, of the inner steps and of the hidden-plan marker is counted.
+# private value, of the inner steps and of the hidden-plan marker is reported.
 
 db=${CLICKHOUSE_DATABASE}
 definer="definer_${db}_$RANDOM"
@@ -45,14 +45,20 @@ GRANT SELECT ON $db.definer_view TO $definer, $reader;
 GRANT SELECT ON $db.none_view TO $definer, $reader;
 EOSQL
 
-# Prints, per EXPLAIN flavour: lines with the private value, lines with an inner step, lines with the marker.
-explain_counts() {
+# Prints, per EXPLAIN flavour, three flags: the output mentions the private value, an inner step, the hidden-plan marker.
+# Flags rather than line counts: how many lines hold a folded constant depends on the plan shape
+# (for example on `query_plan_merge_filters`).
+explain_flags() {
     local user=$1 settings=$2 query=$3
     local user_option=()
     [ -n "$user" ] && user_option=(--user "$user")
     local out
     out=$(${CLICKHOUSE_CLIENT} "${user_option[@]}" ${settings} --query "$query" 2>&1)
-    echo "$(grep -c 'PRIVATE_ROW_VALUE\|JOIN_SIDE_KEY' <<< "$out") $(grep -c 'ReadFromSystemNumbers' <<< "$out") $(grep -c 'plan hidden' <<< "$out")"
+    local flags=()
+    for pattern in 'PRIVATE_ROW_VALUE\|JOIN_SIDE_KEY' 'ReadFromSystemNumbers' 'plan hidden'; do
+        if grep -q "$pattern" <<< "$out"; then flags+=(1); else flags+=(0); fi
+    done
+    echo "${flags[*]}"
 }
 
 flavours=(
@@ -69,38 +75,38 @@ flavours=(
 for view in definer_view none_view; do
     echo "-- $view for the reader: private value, inner steps, hidden marker"
     for flavour in "${flavours[@]}"; do
-        echo "$flavour: $(explain_counts "$reader" "" "$flavour SELECT * FROM $db.$view")"
+        echo "$flavour: $(explain_flags "$reader" "" "$flavour SELECT * FROM $db.$view")"
     done
 
     echo "-- $view for the reader with the format setting but without the privilege"
-    echo "$(explain_counts "$reader" "--format_display_secrets_in_show_and_select 1" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.$view")"
+    echo "$(explain_flags "$reader" "--format_display_secrets_in_show_and_select 1" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.$view")"
 
     echo "-- $view: the reader still queries it"
     ${CLICKHOUSE_CLIENT} --user "$reader" --query "SELECT count() FROM $db.$view"
 done
 
 echo "-- the default user holds every privilege, so it sees both plans"
-echo "$(explain_counts "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
-echo "$(explain_counts "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+echo "$(explain_flags "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 echo "-- definer_view for its definer: the plan is shown, with the value folded from the private table"
-echo "$(explain_counts "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
-echo "$(explain_counts "$definer" "" "EXPLAIN PIPELINE header = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "$definer" "" "EXPLAIN PIPELINE header = 1 SELECT * FROM $db.definer_view")"
 echo "-- none_view for the same user: no definer to match"
-echo "$(explain_counts "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+echo "$(explain_flags "$definer" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 echo "-- a user with SET DEFINER on the definer but without SELECT on the private table does not see the plan"
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $definer TO $reader"
-echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
-echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 echo "-- nor does a user with ALLOW SQL SECURITY NONE"
 ${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $reader"
-echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 echo "-- with the privileges to read everything, the same user sees both plans"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, dictGet, READ, CREATE TEMPORARY TABLE, NAMED COLLECTION ON *.* TO $reader"
-echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
-echo "$(explain_counts "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
 ${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.definer_view; DROP VIEW $db.none_view; DROP TABLE $db.private_table; DROP USER $definer, $reader"
