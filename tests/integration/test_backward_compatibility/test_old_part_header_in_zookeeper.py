@@ -3,14 +3,17 @@ import time
 import pytest
 from kazoo.exceptions import NoNodeError
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster
+
+# A release in which use_minimalistic_part_header_in_zookeeper = 0 still writes part nodes in the old format
+OLD_VERSION = "25.3"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     with_zookeeper=True,
     image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag=OLD_VERSION,
     stay_alive=True,
     with_installed_binary=True,
 )
