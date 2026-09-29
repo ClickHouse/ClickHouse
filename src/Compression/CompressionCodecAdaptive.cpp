@@ -31,7 +31,7 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-struct CandidateGroup
+struct SpecializedCodec
 {
     std::string_view codec_expr;
     std::span<const TypeIndex> types;
@@ -46,8 +46,8 @@ constexpr std::array T64_TYPES = {
 
 constexpr std::array ALP_TYPES = {TypeIndex::Float32, TypeIndex::Float64};
 
-/// Candidate codecs for the adaptive pool. Each one is also tried followed by the deployment default if it's a general-purpose compressor.
-constexpr std::array<CandidateGroup, 3> CANDIDATES = {{
+/// Codecs specialized for particular types. Each one is also tried followed by the deployment default if it's a general-purpose compressor.
+constexpr std::array<SpecializedCodec, 3> SPECIALIZED_CODECS = {{
     /// T64 defaults to the byte flavour (over bit). Good: same size + faster [de]compression.
     {"T64", T64_TYPES},
     /// Do not use AUTO as it picks STD or RD per block from a sample. With sampled adaptive compression, that is sample of a sample.
@@ -113,28 +113,28 @@ private:
 
 }
 
-AdaptiveCodec::Candidates AdaptiveCodec::poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
+AdaptiveCodec::Pool AdaptiveCodec::poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
 {
     /// An encrypting default must not reach here as substituting a codec would drop the encryption. Must handle this in the caller.
     if (deployment_default->isEncryption())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
 
     static const CompressionCodecPtr none_codec = CompressionCodecFactory::instance().get("NONE", {});
-    Candidates pool{{none_codec}, {deployment_default}};
+    Pool pool{{none_codec}, {deployment_default}};
     if (!type)
         return pool;
 
     const bool chain_with_default = deployment_default->isGenericCompression();
     const TypeIndex type_id = type->getTypeId();
-    for (const auto & [codec_expr, types] : CANDIDATES)
+    for (const auto & [codec_expr, types] : SPECIALIZED_CODECS)
     {
         if (std::ranges::find(types, type_id) == types.end())
             continue;
 
-        Candidate candidate{buildCodecForType(codec_expr, *type)};
+        Entry entry{buildCodecForType(codec_expr, *type)};
         if (chain_with_default)
-            candidate.chain = std::make_shared<CompressionCodecMultiple>(Codecs{candidate.codec, deployment_default});
-        pool.push_back(std::move(candidate));
+            entry.chain = std::make_shared<CompressionCodecMultiple>(Codecs{entry.codec, deployment_default});
+        pool.push_back(std::move(entry));
     }
     return pool;
 }
@@ -222,8 +222,8 @@ UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_si
 void CompressionCodecAdaptive::updateHash(SipHash & hash) const
 {
     getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/true);
-    for (const auto & candidate : pool)
-        candidate.codec->updateHash(hash);
+    for (const auto & entry : pool)
+        entry.codec->updateHash(hash);
 }
 
 uint8_t CompressionCodecAdaptive::getMethodByte() const

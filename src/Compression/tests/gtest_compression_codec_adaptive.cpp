@@ -54,7 +54,7 @@ std::vector<char> bytesOf(const std::vector<T> & values)
 /// Asserts order of codecs in the pool: [0] NONE, [1] the default, then `extras` in order, each with its chain with the default.
 void expectPool(const char * name, std::initializer_list<std::string_view> extras)
 {
-    AdaptiveCodec::Candidates pool;
+    AdaptiveCodec::Pool pool;
     ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(type(name), defaultCodec())) << "type " << name;
     ASSERT_EQ(pool.size(), 2 + extras.size()) << "type " << name;
     EXPECT_EQ(pool[0].codec->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
@@ -65,12 +65,12 @@ void expectPool(const char * name, std::initializer_list<std::string_view> extra
     size_t i = 2;
     for (const auto extra : extras)
     {
-        const auto & candidate = pool[i++];
-        EXPECT_EQ(candidate.codec->getCodecDescription()->formatForLogging(), extra) << "type " << name;
-        ASSERT_NE(candidate.chain, nullptr) << "type " << name;
-        const auto stages = candidate.chain->getCodecs();
+        const auto & entry = pool[i++];
+        EXPECT_EQ(entry.codec->getCodecDescription()->formatForLogging(), extra) << "type " << name;
+        ASSERT_NE(entry.chain, nullptr) << "type " << name;
+        const auto stages = entry.chain->getCodecs();
         ASSERT_EQ(stages.size(), 2u) << "type " << name;
-        EXPECT_EQ(stages[0], candidate.codec) << "type " << name;
+        EXPECT_EQ(stages[0], entry.codec) << "type " << name;
         EXPECT_EQ(stages[1], defaultCodec()) << "type " << name;
     }
 }
@@ -213,8 +213,8 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
     /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
     CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
     Codecs codecs;
-    for (const auto & candidate : AdaptiveCodec::poolForType(type("UInt32"), defaultCodec()))
-        codecs.push_back(candidate.codec);
+    for (const auto & entry : AdaptiveCodec::poolForType(type("UInt32"), defaultCodec()))
+        codecs.push_back(entry.codec);
     ASSERT_EQ(codecs.size(), 3u);
     CompressionCodecMultiple multiple(codecs);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());

@@ -13,19 +13,19 @@ namespace AdaptiveCodec
 {
 
 /// A pool entry. `chain` is `codec` followed by the deployment default, or null when that default is not a general-purpose compression.
-struct Candidate
+struct Entry
 {
     CompressionCodecPtr codec;
     std::shared_ptr<const CompressionCodecMultiple> chain = nullptr;
 };
 
-using Candidates = VectorWithMemoryTracking<Candidate>;
+using Pool = VectorWithMemoryTracking<Entry>;
 
-/// Candidates codecs for `type`, in priority order. [0] is `NONE`: a block that no codec can shrink is stored uncompressed.
+/// The pool for `type`, in priority order. [0] is `NONE`: a block that no codec can shrink is stored uncompressed.
 /// [1] is the default codec, thus we get "no worse than the default" compression.
-/// Extra candidates come from a per-type table. Beyond [0] and [1], they must be ordered by descending decompression speed
+/// Specialized candidates come from a per-type table. Beyond [0] and [1], they must be ordered by descending decompression speed
 /// as a draw in size should resolve to the fastest reads.
-Candidates poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default);
+Pool poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default);
 
 }
 
@@ -61,7 +61,7 @@ protected:
 
 private:
     /// pool[0] is NONE, pool[1] is the deployment default
-    AdaptiveCodec::Candidates pool;
+    AdaptiveCodec::Pool pool;
 };
 
 }
