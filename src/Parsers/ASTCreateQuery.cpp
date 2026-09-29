@@ -794,10 +794,12 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(dictionary, child);
 
-    /// `ParserCreateDictionaryQuery` reads the attributes together with the definition.
-    if (dictionary && !dictionary_attributes_list)
+    /// `ParserCreateDictionaryQuery` reads the attributes together with the definition, except for `ATTACH`; no other query has them.
+    const bool expect_definition = is_dictionary && !attach;
+    if ((dictionary_attributes_list != nullptr) != expect_definition || (dictionary != nullptr) != expect_definition)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has a 'dictionary' definition without 'dictionary_attributes_list' during AST JSON deserialization");
+            "`CreateQuery` must have both 'dictionary_attributes_list' and 'dictionary' in a `CREATE DICTIONARY` and neither "
+            "in other queries during AST JSON deserialization");
 
     child = r.readChildOfType<ASTRefreshStrategy>("refresh_strategy");
     if (child)

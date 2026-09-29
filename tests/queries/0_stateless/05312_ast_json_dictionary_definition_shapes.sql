@@ -1,6 +1,6 @@
 -- A dictionary definition in the AST JSON format is rejected when its key-value brackets, primary key, defaults or
--- attributes have a shape that the SQL parser does not produce: such definitions could stop the server or be stored in
--- a form that the server cannot load at the next start.
+-- attributes have a shape that the SQL parser does not produce, or when a query other than CREATE DICTIONARY carries it:
+-- such definitions could stop the server or be stored in a form that the server cannot load at the next start.
 
 SET enable_json_ast_dialect = 1;
 
@@ -53,3 +53,13 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UI
 
 SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
     '"dictionary_attributes_list":{"type":"ExpressionList","children":', '"dictionary_attributes_list":{"type":"ExpressionList","unused_children":')); -- { serverError BAD_ARGUMENTS }
+
+-- Attributes without a definition, and a definition in an ATTACH DICTIONARY and in a table.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
+    '"dictionary":{"type":"Dictionary"', '"unused_dictionary":{"type":"Dictionary"')); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
+    '"attach":false', '"attach":true')); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON(replace(parseQueryToJSON($$CREATE DICTIONARY d (id UInt64, v String DEFAULT 'x') PRIMARY KEY id SOURCE(HTTP(URL 'http://localhost/' FORMAT 'TabSeparated' HEADERS(HEADER(NAME 'k' VALUE 'v')))) LAYOUT(FLAT()) LIFETIME(0)$$),
+    '"is_dictionary":true', '"is_dictionary":false')); -- { serverError BAD_ARGUMENTS }
