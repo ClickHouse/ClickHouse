@@ -15,14 +15,14 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The implicit default must preserve the decay-length marker encoded in the type.
 SELECT
-    tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'sign') = 0
-    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'signed_unit_time') = 0
-    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'decay_length') = 10;
+    tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'value_at_anchor') = 0
+    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'anchor_time') = 0
+    AND exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying(10)')) = 10;
 
 -- Direct typed input uses the validating serialization, including when nested.
-SELECT tupleElement(value, 'decay_length') = 10
+SELECT exponentialTimeDecayingDecayLength(value) = 10
 FROM VALUES('value ExponentialTimeDecaying(10)', ((1., 0., 10.)));
-SELECT tupleElement(values[1], 'decay_length') = 10
+SELECT exponentialTimeDecayingDecayLength(values[1]) = 10
 FROM VALUES('values Array(ExponentialTimeDecaying(10))', ([(1., 0., 10.)]));
 SELECT *
 FROM VALUES('value ExponentialTimeDecaying(10)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
@@ -36,14 +36,14 @@ CREATE TABLE time_decay_default_insert
 )
 ENGINE = Memory;
 INSERT INTO time_decay_default_insert (id) VALUES (1);
-SELECT tupleElement(value, 'sign') = 0 AND tupleElement(value, 'signed_unit_time') = 0
+SELECT tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0
 FROM time_decay_default_insert;
 
 CREATE TABLE time_decay_default_alter (id UInt8) ENGINE = Memory;
 INSERT INTO time_decay_default_alter VALUES (1);
 ALTER TABLE time_decay_default_alter
     ADD COLUMN value ExponentialTimeDecaying(10);
-SELECT tupleElement(value, 'sign') = 0 AND tupleElement(value, 'signed_unit_time') = 0
+SELECT tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0
 FROM time_decay_default_alter;
 
 CREATE TABLE time_decay_default_simple_aggregate
@@ -57,7 +57,7 @@ ENGINE = AggregatingMergeTree
 ORDER BY id;
 INSERT INTO time_decay_default_simple_aggregate (id) VALUES (1);
 SELECT
-    tupleElement(value, 'sign') = 0 AND tupleElement(value, 'signed_unit_time') = 0,
+    tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0,
     exponentialTimeDecayingDecayLength(value) = 10
 FROM time_decay_default_simple_aggregate;
 
@@ -65,8 +65,8 @@ DROP TABLE time_decay_default_insert;
 DROP TABLE time_decay_default_alter;
 DROP TABLE time_decay_default_simple_aggregate;
 
--- A layout-compatible named Tuple is not the experimental type. INSERT must
--- still build the conversion so the existing per-row validator runs.
+-- A tuple carrying the obsolete derived field names is not a value representation.
+-- Reject it at the conversion boundary even when its values happen to look valid.
 CREATE TABLE time_decay_layout_compatible_insert
 (
     value ExponentialTimeDecaying(10)
@@ -79,8 +79,8 @@ SELECT CAST(
 INSERT INTO time_decay_layout_compatible_insert
 SELECT CAST(
     (1., 0., 10.),
-    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)');
-SELECT count() = 1 FROM time_decay_layout_compatible_insert;
+    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+SELECT count() = 0 FROM time_decay_layout_compatible_insert;
 DROP TABLE time_decay_layout_compatible_insert;
 
 CREATE TABLE time_decay_nested_layout_compatible_insert
@@ -95,8 +95,8 @@ SELECT CAST(
 INSERT INTO time_decay_nested_layout_compatible_insert
 SELECT CAST(
     [(1., 0., 10.)],
-    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))');
-SELECT count() = 1 FROM time_decay_nested_layout_compatible_insert;
+    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+SELECT count() = 0 FROM time_decay_nested_layout_compatible_insert;
 DROP TABLE time_decay_nested_layout_compatible_insert;
 
 CREATE TABLE time_decay_layout_compatible_simple_aggregate_insert
@@ -119,8 +119,8 @@ SELECT
     1,
     CAST(
         (1., 0., 10.),
-        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)');
-SELECT count() = 1 FROM time_decay_layout_compatible_simple_aggregate_insert;
+        'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, BAD_ARGUMENTS }
+SELECT count() = 0 FROM time_decay_layout_compatible_simple_aggregate_insert;
 DROP TABLE time_decay_layout_compatible_simple_aggregate_insert;
 
 CREATE TABLE time_decay_feature_gate
@@ -391,8 +391,8 @@ SELECT
         <= 1e-12 * greatest(1., abs(expected.weighted_sum / expected.weight)),
     abs(exponentialTimeDecayingValueAt(merged.decaying_count, expected.max_time) - expected.weight)
         <= 1e-11 * greatest(1., abs(expected.weight)),
-    isFinite(tupleElement(direct.decaying_sum, 'signed_unit_time')),
-    isFinite(tupleElement(merged.decaying_sum, 'signed_unit_time'))
+    isFinite(tupleElement(direct.decaying_sum, 'anchor_time')),
+    isFinite(tupleElement(merged.decaying_sum, 'anchor_time'))
 FROM expected
 CROSS JOIN direct
 CROSS JOIN merged;
@@ -441,8 +441,8 @@ SELECT
     abs(decimal.weighted_avg - numeric.weighted_avg) < 1e-12,
     abs(exponentialTimeDecayingValueAt(decimal.decaying_count, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875)))
         <= 1e-6 * greatest(1., abs(exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875)))),
-    isFinite(tupleElement(datetime64.decaying_sum, 'signed_unit_time')),
-    isFinite(tupleElement(decimal.decaying_sum, 'signed_unit_time'))
+    isFinite(tupleElement(datetime64.decaying_sum, 'anchor_time')),
+    isFinite(tupleElement(decimal.decaying_sum, 'anchor_time'))
 FROM numeric
 CROSS JOIN datetime64
 CROSS JOIN decimal;
@@ -479,8 +479,8 @@ SELECT
     exponentialTimeDecayingValueAt(function_result, latest_time) AS function_value,
     operator_value - expected_value AS value_error,
     latest_time AS expected_time,
-    tupleElement(operator_result, 'signed_unit_time') AS operator_signed_unit_time,
-    tupleElement(function_result, 'signed_unit_time') AS function_signed_unit_time,
+    tupleElement(operator_result, 'anchor_time') AS operator_anchor_time,
+    tupleElement(function_result, 'anchor_time') AS function_anchor_time,
     toTypeName(operator_result) AS result_type
 FROM
 (
@@ -515,10 +515,10 @@ WHERE NOT
 (
     abs(exponentialTimeDecayingValueAt(operator_result, latest_time) - expected_value)
         <= 1e-12 * greatest(1., abs(expected_value))
-    AND isFinite(tupleElement(operator_result, 'signed_unit_time'))
+    AND isFinite(tupleElement(operator_result, 'anchor_time'))
     AND abs(exponentialTimeDecayingValueAt(operator_result, latest_time) - exponentialTimeDecayingValueAt(function_result, latest_time))
         <= 1e-12 * greatest(1., abs(exponentialTimeDecayingValueAt(function_result, latest_time)))
-    AND tupleElement(operator_result, 'signed_unit_time') = tupleElement(function_result, 'signed_unit_time')
+    AND tupleElement(operator_result, 'anchor_time') = tupleElement(function_result, 'anchor_time')
     AND toTypeName(operator_result) = 'ExponentialTimeDecaying(10)'
 )
 ORDER BY id;
@@ -561,10 +561,10 @@ WITH
     )
 SELECT
     abs(exponentialTimeDecayingValueAt(implicit_result, toFloat64(10)) - exponentialTimeDecayingValueAt(explicit_result, toFloat64(10))) < 1e-12,
-    tupleElement(implicit_result, 'signed_unit_time') = tupleElement(explicit_result, 'signed_unit_time'),
+    tupleElement(implicit_result, 'anchor_time') = tupleElement(explicit_result, 'anchor_time'),
     abs(exponentialTimeDecayingValueAt(implicit_result, toFloat64(10)) - exponentialTimeDecayingValueAt(result, toFloat64(10))) < 1e-12,
-    abs(tupleElement(implicit_result, 'signed_unit_time') - tupleElement(result, 'signed_unit_time'))
-        <= 1e-12 * greatest(1., abs(tupleElement(implicit_result, 'signed_unit_time'))),
+    abs(tupleElement(implicit_result, 'anchor_time') - tupleElement(result, 'anchor_time'))
+        <= 1e-12 * greatest(1., abs(tupleElement(implicit_result, 'anchor_time'))),
     exponentialTimeDecayingDecayLength(implicit_result) = 10,
     exponentialTimeDecayingDecayLength(result) = 10
 FROM direct
@@ -592,7 +592,7 @@ OPTIMIZE TABLE exponential_time_decay_non_integral FINAL;
 SELECT
     toTypeName(value),
     abs(exponentialTimeDecayingValueAt(value, toFloat64(0.1)) - 2 / exp(1)) < 1e-12,
-    isFinite(tupleElement(value, 'signed_unit_time')),
+    isFinite(tupleElement(value, 'anchor_time')),
     exponentialTimeDecayingDecayLength(value) = 0.1
 FROM exponential_time_decay_non_integral;
 
@@ -806,13 +806,13 @@ WITH
 SELECT
     abs(exponentialTimeDecayingValueAt(combined, toFloat64(-10)) - 5)
         <= 1e-12,
-    isFinite(tupleElement(combined, 'signed_unit_time'));
+    isFinite(tupleElement(combined, 'anchor_time'));
 
 WITH exponentialTimeDecayedSum(value) AS combined
 SELECT
     abs(exponentialTimeDecayingValueAt(combined, toFloat64(-10)) - 5)
         <= 1e-12,
-    isFinite(tupleElement(combined, 'signed_unit_time'))
+    isFinite(tupleElement(combined, 'anchor_time'))
 FROM time_decay_default_identity;
 
 DROP TABLE time_decay_default_identity;
