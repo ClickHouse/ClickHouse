@@ -4,12 +4,14 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <string>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
+    extern const int OK;
     extern const int STD_EXCEPTION;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -53,6 +55,42 @@ TEST(Exception, RecordToSystemErrorsOnlyRecordsSuppressedExceptions)
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::UNSUPPORTED_METHOD), recorded_count + 1);
     recorded.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::UNSUPPORTED_METHOD), recorded_count + 1);
+}
+
+
+TEST(Exception, CurrentExceptionWithoutHandledException)
+{
+    EXPECT_EQ(getCurrentExceptionCode(), ErrorCodes::OK);
+    EXPECT_EQ(getCurrentExceptionMessage(false), "");
+}
+
+TEST(Exception, CurrentExceptionInDestructorDuringUnwinding)
+{
+    struct Probe
+    {
+        int & code;
+        std::string & message;
+        ~Probe()
+        {
+            code = getCurrentExceptionCode();
+            message = getCurrentExceptionMessage(false);
+        }
+    };
+
+    int code = -1;
+    std::string message = "unset";
+    try
+    {
+        Probe probe{code, message};
+        throw std::runtime_error("unwinding");
+    }
+    catch (const std::runtime_error &)
+    {
+        EXPECT_EQ(getCurrentExceptionCode(), ErrorCodes::STD_EXCEPTION);
+    }
+
+    EXPECT_EQ(code, ErrorCodes::OK);
+    EXPECT_EQ(message, "");
 }
 
 }
