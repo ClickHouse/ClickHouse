@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 #include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>

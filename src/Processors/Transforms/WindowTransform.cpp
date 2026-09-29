@@ -4,10 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/SortCursor.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
@@ -16,12 +13,6 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <limits>
@@ -54,19 +45,10 @@ struct fmt::formatter<DB::RowNumber>
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool allow_rank_dense_rank_arguments;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
