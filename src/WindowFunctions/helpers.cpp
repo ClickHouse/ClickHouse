@@ -31,13 +31,13 @@ bool isPartitionFirstRow(const WindowTransform * transform)
 bool isPartitionLastRow(const WindowTransform * transform)
 {
     /// This is for fast check.
-    if (!transform->partition_ended)
+    if (!transform->partition.bounds().fully_visible)
         return false;
 
     auto current_row = transform->current_row;
     /// isPartitionLastRow is called on each row, also move on current_row.row here.
     current_row.row++;
-    const auto & partition_end_row = transform->partition_end;
+    const RowNumber partition_end_row = transform->partition.bounds().end;
 
     /// The partition end is reached, when following is true
     /// - current row is the partition end row,
