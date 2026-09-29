@@ -817,9 +817,8 @@ void WindowTransform::computeReadyRows()
         // which is precisely the definition of the known end of the partition.
         while (current.location < partition_end)
         {
-            // We now know that the current row is valid, so we can update the
-            // peer group start.
-            if (current.location != partition.bounds().start && blocks.blockAt(current.location.block).index.peer_group_starts[current.location.row])
+            // We now know that the current row is valid, so we can update the peer group start.
+            if (peer_group_start.location != current.location && blocks.blockAt(current.location.block).index.peer_group_starts[current.location.row])
             {
                 ++current.peer_group_index_in_partition;
                 peer_group_start = current;
