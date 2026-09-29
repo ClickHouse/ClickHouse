@@ -1098,8 +1098,9 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                  size_t input_rows_count) -> ColumnPtr
             {
                 ColumnsWithTypeAndName storage_arguments = arguments;
+                ColumnPtr full_column = arguments[0].column->convertToFullColumnIfConst();
                 const auto & decaying_column
-                    = assert_cast<const ColumnExponentialTimeDecaying &>(*arguments[0].column);
+                    = assert_cast<const ColumnExponentialTimeDecaying &>(*full_column);
                 storage_arguments[0].column = decaying_column.getStoragePtr();
                 storage_arguments[0].type = storage_type;
                 return wrapper(storage_arguments, result_type, nullable_source, input_rows_count);
