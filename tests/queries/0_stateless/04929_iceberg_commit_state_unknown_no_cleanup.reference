@@ -29,6 +29,12 @@ yes
 data files: 8
 36
 36
+-- DROP PARTITION, unknown outcome: the unwind must not delete the new manifest list
+unknown status reported
+yes
+avro files: 5
+7
+7
 -- Unknown outcome: throws, and leaves every staged file in place
 unknown status reported
 data files: 3

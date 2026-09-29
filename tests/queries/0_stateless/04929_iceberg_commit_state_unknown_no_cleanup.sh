@@ -24,11 +24,12 @@ TABLE_DELETE_UNKNOWN="t_delete_unknown_${CLICKHOUSE_DATABASE}"
 TABLE_UNKNOWN="t_unknown_${CLICKHOUSE_DATABASE}"
 TABLE_OPTIMIZE="t_optimize_${CLICKHOUSE_DATABASE}"
 TABLE_OPTIMIZE_UNKNOWN="t_optimize_unknown_${CLICKHOUSE_DATABASE}"
+TABLE_DROP_UNKNOWN="t_drop_unknown_${CLICKHOUSE_DATABASE}"
 TABLE_HINT="t_hint_${CLICKHOUSE_DATABASE}"
 TABLE_CONTROL="t_control_${CLICKHOUSE_DATABASE}"
 ALL_TABLES=(
     "${TABLE_INSERT}" "${TABLE_DELETE}" "${TABLE_DELETE_UNKNOWN}" "${TABLE_UNKNOWN}"
-    "${TABLE_OPTIMIZE}" "${TABLE_OPTIMIZE_UNKNOWN}" "${TABLE_HINT}" "${TABLE_CONTROL}"
+    "${TABLE_OPTIMIZE}" "${TABLE_OPTIMIZE_UNKNOWN}" "${TABLE_DROP_UNKNOWN}" "${TABLE_HINT}" "${TABLE_CONTROL}"
 )
 
 cleanup() {
@@ -177,6 +178,30 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --use_iceberg_met
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_metadata_commit_reconcile_fail"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_metadata_commit_response_lost"
 report_compacted_table "${TABLE_OPTIMIZE_UNKNOWN}"
+
+echo "-- DROP PARTITION, unknown outcome: the unwind must not delete the new manifest list"
+DROP_PATH="${USER_FILES_PATH}/${TABLE_DROP_UNKNOWN}/"
+rm -rf "${DROP_PATH}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_DROP_UNKNOWN}"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_DROP_UNKNOWN} (c0 Int32, p Int32)
+    ENGINE = IcebergLocal('${DROP_PATH}', 'Parquet')
+    PARTITION BY p
+"
+# One partition per INSERT, so the drop removes a whole manifest and writes only a manifest list.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE_DROP_UNKNOWN} VALUES (1, 1), (2, 1)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE_DROP_UNKNOWN} VALUES (3, 2), (4, 2)"
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_metadata_commit_response_lost"
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_metadata_commit_reconcile_fail"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE_DROP_UNKNOWN} DROP PARTITION 1" 2>&1 \
+    | grep -qF 'UNKNOWN_STATUS_OF_TRANSACTION' && echo "unknown status reported" || echo "NOT REPORTED AS UNKNOWN"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_metadata_commit_reconcile_fail"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_metadata_commit_response_lost"
+current_manifest_list_present "${DROP_PATH}"
+echo "avro files: $(stored_files "${DROP_PATH}" '*.avro')"
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT sum(c0) FROM ${TABLE_DROP_UNKNOWN}"
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
+    --query "SELECT sum(c0) FROM icebergLocal('${DROP_PATH}', 'Parquet')"
 
 echo "-- Unknown outcome: throws, and leaves every staged file in place"
 create_and_seed "${TABLE_UNKNOWN}"
