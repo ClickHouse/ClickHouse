@@ -166,7 +166,9 @@ private:
 
     /// Restores the data of this table from backup. `metadata_version` is the version of the table's metadata when
     /// the restore was scheduled, `names_verified` means that the column names in the backup are its names.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified);
+    /// A stored column in `unmapped_names` fails the restore instead of being dropped as a column the table lacks.
+    void restoreDataImpl(
+        const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified, const NameSet & unmapped_names);
 
     /// Renames (`new_name` is set) and drops (`new_name` is empty) of stored columns.
     struct ColumnChange

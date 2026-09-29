@@ -6,7 +6,7 @@
 # An INSERT that started before an ALTER renaming or dropping columns of a Memory table, and a RESTORE
 # whose data is loaded after such an ALTER, store their rows under the column names after the ALTER.
 # A BACKUP that took the table definition before an ALTER changed its columns fails, and a materialized view
-# whose inner Memory table was altered on its own is backed up and restored.
+# whose inner Memory table was altered on its own is backed up and restored, unless a column of the view was renamed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -112,3 +112,23 @@ $CLICKHOUSE_CLIENT -q "BACKUP TABLE t_mv TO $backup_mv" > /dev/null
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_mv SYNC"
 $CLICKHOUSE_CLIENT -q "RESTORE TABLE t_mv FROM $backup_mv" > /dev/null
 $CLICKHOUSE_CLIENT -q "SELECT 'materialized view with an altered inner table', count(), sum(x) FROM t_mv"
+
+# The RESTORE of a view whose column was renamed in its inner table fails instead of restoring the column as default values,
+# and a column dropped from the inner table is restored as default values, not with its old data.
+$CLICKHOUSE_CLIENT -m -q "
+CREATE TABLE t_mv_src2 (x UInt64) ENGINE = Null;
+CREATE MATERIALIZED VIEW t_mv_rename ENGINE = Memory AS SELECT x FROM t_mv_src2;
+CREATE MATERIALIZED VIEW t_mv_drop ENGINE = Memory AS SELECT x, x * 10 AS z FROM t_mv_src2;
+INSERT INTO t_mv_src2 SELECT number + 1 FROM numbers(3);
+"
+inner_rename=$($CLICKHOUSE_CLIENT -q "SELECT target_table FROM system.tables WHERE database = currentDatabase() AND name = 't_mv_rename'")
+inner_drop=$($CLICKHOUSE_CLIENT -q "SELECT target_table FROM system.tables WHERE database = currentDatabase() AND name = 't_mv_drop'")
+$CLICKHOUSE_CLIENT -q "ALTER TABLE \`$inner_rename\` RENAME COLUMN x TO y"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE \`$inner_drop\` DROP COLUMN z"
+backup_mv2="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_mv2')"
+$CLICKHOUSE_CLIENT -q "BACKUP TABLE t_mv_rename, TABLE t_mv_drop TO $backup_mv2" > /dev/null
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_mv_rename SYNC"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_mv_drop SYNC"
+echo "view with a renamed inner column $($CLICKHOUSE_CLIENT -q "RESTORE TABLE t_mv_rename FROM $backup_mv2" 2>&1 | grep -o -m1 CANNOT_RESTORE_TABLE)"
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE t_mv_drop FROM $backup_mv2" > /dev/null
+$CLICKHOUSE_CLIENT -q "SELECT 'view with a dropped inner column', count(), sum(x), sum(z) FROM t_mv_drop"

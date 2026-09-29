@@ -53,6 +53,7 @@
 #include <IO/copyData.h>
 #include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -792,6 +793,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     /// a rename or drop: the inner table of a materialized view is created with the columns of the view.
     auto metadata_snapshot = getInMemoryMetadataPtr(restorer.getContext(), false);
     bool names_verified = false;
+    NameSet unmapped_names;
     String columns_file_path = fs::path(data_path_in_backup) / "columns.txt";
     if (!restorer.getRestoreSettings().allow_different_table_def && backup->fileExists(columns_file_path))
     {
@@ -819,15 +821,25 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
                     "The column names of table {} in the backup do not match the table, whose columns were renamed or dropped",
                     getStorageID().getNameForLogs());
         }
+
+        /// If the table has a column that the backup lacks, a column of the backup that the table lacks may hold its data under a new name.
+        bool table_has_other_columns = false;
+        for (const auto & name : table_names)
+            table_has_other_columns = table_has_other_columns || !backup_names.contains(name);
+        if (table_has_other_columns)
+            for (const auto & name : backup_names)
+                if (!table_names.contains(name))
+                    unmapped_names.insert(name);
     }
 
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup,
-         metadata_version = metadata_snapshot->getMetadataVersion(), names_verified]
-        { storage->restoreDataImpl(backup, data_path_in_backup, metadata_version, names_verified); });
+         metadata_version = metadata_snapshot->getMetadataVersion(), names_verified, unmapped_names]
+        { storage->restoreDataImpl(backup, data_path_in_backup, metadata_version, names_verified, unmapped_names); });
 }
 
-void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified)
+void StorageMemory::restoreDataImpl(
+    const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified, const NameSet & unmapped_names)
 {
     /// Our data are in the StripeLog format.
 
@@ -919,8 +931,17 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     {
         unknown_columns.changes.clear();
         for (const auto & column : block)
-            if (!table_columns.contains(column.name))
-                unknown_columns.changes.push_back({column.name, ""});
+        {
+            if (table_columns.contains(column.name))
+                continue;
+            if (unmapped_names.contains(column.name))
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Column {} of table {} in the backup is not in the table, which has columns that are not in the backup, "
+                    "so it may have been renamed. Set allow_different_table_def to restore the columns by their names",
+                    backQuote(column.name), getStorageID().getNameForLogs());
+            unknown_columns.changes.push_back({column.name, ""});
+        }
         if (!unknown_columns.changes.empty())
             applyColumnChanges(block, unknown_columns, (*memory_settings)[MemorySetting::compress]);
     }
