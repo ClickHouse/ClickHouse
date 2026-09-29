@@ -7105,6 +7105,14 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} is not a MergeTree table", table_id.getNameForLogs());
 
+    /// A shipped plan is executed without the planner, which is what records the access info of a
+    /// locally planned read (`PlannerJoinTree.cpp`), so without this the worker's `system.query_log`
+    /// row names nothing it read. Only the receiver deserializes, so the initiator does not count its
+    /// own read twice. The columns are the read step's own: a plan states its access there, and that
+    /// can legitimately differ from the initiator's, as after `replaceVectorColumnWithDistanceColumn`.
+    if (ctx.context->hasQueryContext())
+        ctx.context->getQueryContext()->addQueryAccessInfo(storage_ptr->getStorageID(), column_names);
+
     MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
 
