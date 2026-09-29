@@ -2,7 +2,6 @@
 
 import pytest
 import pyarrow as pa
-import pyarrow.flight as flight
 import time
 import random
 import string
