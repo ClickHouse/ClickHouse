@@ -10,7 +10,6 @@ set -e -o pipefail
 opts=(
     --enable_analyzer 1
     --enable_multiple_prewhere_read_steps 1
-    --read_ahead_prewhere_columns 0
     --optimize_functions_to_subcolumns 1
     --optimize_move_to_prewhere 0
     --optimize_prewhere_after_pushdown 0
