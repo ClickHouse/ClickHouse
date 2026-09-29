@@ -11,7 +11,7 @@ CREATE TABLE ts_src ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 CREATE TABLE ts_dst ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 
 INSERT INTO ts_src (metric_name, tags, histograms) VALUES
-    ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], [2]), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5], 0, 0, [], [])]);
+    ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], []), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5], 0, 0, [], [])]);
 INSERT INTO ts_src (metric_name, tags, samples) VALUES
     ('test_gauge', map('job', 'test'), [('2024-01-01 00:00:01.000', 1.5)]);
 
