@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
