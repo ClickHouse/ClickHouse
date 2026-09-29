@@ -276,6 +276,11 @@ public:
                 node.parametrised_alias = boost::dynamic_pointer_cast<ASTQueryParameter>(param_ast);
                 if (!node.parametrised_alias)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTQueryParameter for 'parametrised_alias' during AST JSON deserialization");
+
+                /// The SQL parser produces only a bare `{name:Identifier}` here, and any other shape
+                /// would format as SQL that does not parse back.
+                if (node.parametrised_alias->type != "Identifier" || node.parametrised_alias->hasAlias())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a bare `{{name:Identifier}}` query parameter for 'parametrised_alias' during AST JSON deserialization");
             }
         }
     }
