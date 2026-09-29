@@ -1,10 +1,10 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
--- Tests that a JOIN does not stop the query condition cache from pruning granules for the joined
--- table's own WHERE condition. The condition is on a column outside the primary key, so the primary
--- index cannot prune it and the cache is the only thing that can; a repeated query must therefore read
--- fewer granules the second time, with or without a JOIN above the read.
+-- Tests that a JOIN, also one read by parallel replicas, does not stop the query condition cache from
+-- pruning granules for the joined table's own WHERE condition. The condition is on a column outside the
+-- primary key, so the primary index cannot prune it and the cache is the only thing that can; a repeated
+-- query must therefore read fewer granules the second time, with or without a JOIN above the read.
 
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_local_plan = 1;
@@ -52,25 +52,57 @@ SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM tab INNER JOIN dim ON tab.k = dim.k WHERE tab.v = 7 SETTINGS log_comment = 'qcc_join_r1';
 SELECT count() FROM tab INNER JOIN dim ON tab.k = dim.k WHERE tab.v = 7 SETTINGS log_comment = 'qcc_join_r2';
 SYSTEM FLUSH LOGS query_log;
--- Run 1 populates and prunes nothing, run 2 hits and prunes. Every value is printed per run, so a
--- reference diff shows which property went missing. The condition is looked up once as the WHERE and
--- once as the PREWHERE it was moved to, each lookup counting one hit or miss, so run 1 misses twice and
--- run 2 hits once and misses once. Run 2's last value counts index analyses, one per table: this read
--- must not pay a second index analysis.
+-- Run 1 populates the cache and reads every mark, run 2 hits it and reads at most three: the matching
+-- granule, the one of `dim`, and on a compact part sometimes the next granule. Every value is printed per
+-- run, so a reference diff shows which property went missing. The condition is looked up once as the
+-- WHERE and once as the PREWHERE it was moved to, each lookup counting one hit or miss, so run 1 misses
+-- twice and run 2 hits once and misses once. Run 2's last value counts index analyses, one per table:
+-- this read must not pay a second index analysis.
 SELECT ProfileEvents['QueryConditionCacheHits'],
        ProfileEvents['QueryConditionCacheMisses'],
-       toInt32(ProfileEvents['SelectedMarks']) * 4 < toInt32(ProfileEvents['SelectedMarksTotal'])
+       ProfileEvents['SelectedMarks'] = ProfileEvents['SelectedMarksTotal']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_join_r1'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT ProfileEvents['QueryConditionCacheHits'],
        ProfileEvents['QueryConditionCacheMisses'],
-       toInt32(ProfileEvents['SelectedMarks']) * 4 < toInt32(ProfileEvents['SelectedMarksTotal']),
+       ProfileEvents['SelectedMarks'] <= 3,
        ProfileEvents['IndexAnalysisRounds']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_join_r2'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT '-- a JOIN read by parallel replicas must prune the second run too';
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM tab INNER JOIN dim ON tab.k = dim.k WHERE tab.v = 7
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
+    parallel_replicas_plan_based = 0, automatic_parallel_replicas_mode = 0, parallel_replicas_min_number_of_rows_per_replica = 0,
+    log_comment = 'qcc_pr_join_r1';
+SELECT count() FROM tab INNER JOIN dim ON tab.k = dim.k WHERE tab.v = 7
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
+    parallel_replicas_plan_based = 0, automatic_parallel_replicas_mode = 0, parallel_replicas_min_number_of_rows_per_replica = 0,
+    log_comment = 'qcc_pr_join_r2';
+SYSTEM FLUSH LOGS query_log;
+-- Run 2's last value shows that the read really went through parallel replicas.
+SELECT ProfileEvents['QueryConditionCacheHits'],
+       ProfileEvents['QueryConditionCacheMisses'],
+       ProfileEvents['SelectedMarks'] = ProfileEvents['SelectedMarksTotal']
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = 'qcc_pr_join_r1'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT ProfileEvents['QueryConditionCacheHits'],
+       ProfileEvents['QueryConditionCacheMisses'],
+       ProfileEvents['SelectedMarks'] <= 3,
+       ProfileEvents['IndexAnalysisRounds'],
+       ProfileEvents['ParallelReplicasUsedCount'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = 'qcc_pr_join_r2'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT '-- control: the same JOIN without join reordering already pruned';
@@ -84,31 +116,32 @@ SELECT count() FROM tab INNER JOIN dim ON tab.k = dim.k WHERE tab.v = 7
 SETTINGS query_plan_optimize_join_order_limit = 0, log_comment = 'qcc_nojoinorder_r2';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryConditionCacheHits'],
-       toInt32(ProfileEvents['SelectedMarks']) * 4 < toInt32(ProfileEvents['SelectedMarksTotal'])
+       ProfileEvents['SelectedMarks'] = ProfileEvents['SelectedMarksTotal']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_nojoinorder_r1'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT ProfileEvents['QueryConditionCacheHits'],
-       toInt32(ProfileEvents['SelectedMarks']) * 4 < toInt32(ProfileEvents['SelectedMarksTotal'])
+       ProfileEvents['SelectedMarks'] <= 3
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_nojoinorder_r2'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT '-- control: the same condition without a JOIN still prunes';
+-- Reading `k` too keeps the condition in PREWHERE, as in the JOIN arms above.
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT count() FROM tab WHERE v = 7 SETTINGS log_comment = 'qcc_nojoin_r1';
-SELECT count() FROM tab WHERE v = 7 SETTINGS log_comment = 'qcc_nojoin_r2';
+SELECT sum(k) FROM tab WHERE v = 7 SETTINGS log_comment = 'qcc_nojoin_r1';
+SELECT sum(k) FROM tab WHERE v = 7 SETTINGS log_comment = 'qcc_nojoin_r2';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryConditionCacheHits'],
-       toInt32(ProfileEvents['SelectedMarks']) * 4 < toInt32(ProfileEvents['SelectedMarksTotal'])
+       ProfileEvents['SelectedMarks'] = ProfileEvents['SelectedMarksTotal']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_nojoin_r1'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT ProfileEvents['QueryConditionCacheHits'],
-       toInt32(ProfileEvents['SelectedMarks']) * 4 < toInt32(ProfileEvents['SelectedMarksTotal'])
+       ProfileEvents['SelectedMarks'] <= 2
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_nojoin_r2'

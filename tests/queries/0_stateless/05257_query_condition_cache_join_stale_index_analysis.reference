@@ -3,15 +3,20 @@
 -- a JOIN must not stop the cache from pruning the second run
 1
 1
-0	2	0
+0	2	1
 1	1	1	2
+-- a JOIN read by parallel replicas must prune the second run too
+1
+1
+0	2	1
+1	1	1	2	1
 -- control: the same JOIN without join reordering already pruned
 1
 1
-0	0
+0	1
 1	1
 -- control: the same condition without a JOIN still prunes
-1
-1
-0	0
+7
+7
+0	1
 1	1
