@@ -32,6 +32,12 @@ ALTER TABLE mt_rp UPDATE v = arrayExists(x -> x IN (SELECT 3), [k]) WHERE k = 3;
 ALTER TABLE mt_rp UPDATE v = ((k + 1) AS kk) * (kk IN (SELECT 3)) WHERE k = 2;
 SELECT * FROM mt_rp ORDER BY k;
 
+SELECT '-- a subquery may use an alias of its command, and two commands may use the same alias';
+ALTER TABLE mt_rp UPDATE v = (5 AS c) + (SELECT c) WHERE k = 1;
+ALTER TABLE mt_rp UPDATE v = (SELECT c) WHERE k = (2 AS c);
+ALTER TABLE mt_rp UPDATE v = ((SELECT 7) AS x) WHERE k = 1, UPDATE v = ((SELECT 8) AS x) WHERE k = 3;
+SELECT * FROM mt_rp ORDER BY k;
+
 DROP ROW POLICY rp_set_rp ON set_rp;
 DROP VIEW v_rp;
 DROP TABLE set_rp;
