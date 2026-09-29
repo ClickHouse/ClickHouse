@@ -8,8 +8,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
-#include <sstream>
-
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -32,19 +30,34 @@ std::optional<String> SecondaryIndexColumnTypes::tryGetBuiltType(const String & 
 
 void SecondaryIndexColumnTypes::writeJSON(WriteBuffer & out) const
 {
-    Poco::JSON::Object root;
+    /// Written straight to the buffer (not via a stream): {"index":{"column":"type", ...}, ...}.
+    /// Both maps are ordered, so the output is deterministic for stable checksums.
+    writeChar('{', out);
+    bool first_index = true;
     for (const auto & [index_name, columns] : index_to_column_types)
     {
-        Poco::JSON::Object::Ptr index_object = new Poco::JSON::Object();
-        for (const auto & [column_name, type_name] : columns)
-            index_object->set(column_name, type_name);
-        root.set(index_name, index_object);
-    }
+        if (!first_index)
+            writeChar(',', out);
+        first_index = false;
 
-    std::ostringstream oss; // NOLINT(*-dynamic-static-initializers)
-    oss.exceptions(std::ios::failbit);
-    root.stringify(oss);
-    writeString(oss.str(), out);
+        writeJSONString(index_name, out, {});
+        writeChar(':', out);
+        writeChar('{', out);
+
+        bool first_column = true;
+        for (const auto & [column_name, type_name] : columns)
+        {
+            if (!first_column)
+                writeChar(',', out);
+            first_column = false;
+
+            writeJSONString(column_name, out, {});
+            writeChar(':', out);
+            writeJSONString(type_name, out, {});
+        }
+        writeChar('}', out);
+    }
+    writeChar('}', out);
 }
 
 SecondaryIndexColumnTypes SecondaryIndexColumnTypes::readJSON(ReadBuffer & in)
