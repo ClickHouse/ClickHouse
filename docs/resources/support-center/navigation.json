@@ -131,8 +131,7 @@
             "resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "resources/support-center/knowledge-base/materialized-views/projection-example",
-            "resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
+            "resources/support-center/knowledge-base/materialized-views/projection-example"
           ]
         },
         {

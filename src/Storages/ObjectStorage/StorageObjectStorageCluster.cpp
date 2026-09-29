@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/parseGlobs.h>
-#include <Disks/DiskType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -79,25 +78,9 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     /// be absent or later filtered out.
     if (containsOnlyEnumGlobs(path.path))
     {
-        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
-        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
-        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
-        /// and, for a table definition, persist it - from a path that the reader always refuses to
-        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
-        /// never built, so taking each group's first alternative is enough.
-        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
-        {
-            auto expanded = expandSelectionGlob(path.path);
-            if (!expanded.empty())
-                return expanded.front() + archive_suffix;
-        }
-        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
-        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
-        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
-        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
-        /// the sample path is never one the reader would not read.
-        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
-            return *first + archive_suffix;
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front() + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);

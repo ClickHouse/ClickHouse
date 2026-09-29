@@ -2329,12 +2329,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
-        /// `canThrow` (which falls back to this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
-                    || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
+                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -4343,18 +4340,10 @@ public:
         {
             /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
             /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-            ///
-            /// A `LowCardinality` wrapper hides the nullability from `isNullable`, so strip it: with a
-            /// `LowCardinality(Nullable(...))` denominator the NULL-masking variant was not selected and
-            /// the NULL rows divided by the nested default `0`, throwing `Division by zero` on data
-            /// where the plain `Nullable(...)` denominator returns NULL.
-            const auto left_type = recursiveRemoveLowCardinality(arguments[0].type);
-            const auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
-
-            division_by_nullable = !left_type->onlyNull() && !right_type->onlyNull() && right_type->isNullable()
+            division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
                 && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
                     || (IsOperation<Op>::div_floating
-                        && (isDecimalOrNullableDecimal(left_type) || isDecimalOrNullableDecimal(right_type))));
+                        && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
         }
 
         auto make_adaptor = [&](auto function)

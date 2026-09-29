@@ -47,7 +47,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -353,7 +353,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
+        loader.reloadDictionary({query.getDatabase(), query.getTable()});
         return;
     }
 
@@ -364,7 +364,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
+        loader.unloadDictionary({query.getDatabase(), query.getTable()});
         return;
     }
 
@@ -1171,16 +1171,6 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
-        case Type::DISABLE_ALL_FAILPOINTS:
-        {
-            /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
-            /// server that injects nothing, which a build without libfiu already is. Failing
-            /// it would only make every caller - a test harness, above all - special-case a
-            /// build flag to ask for a state that already holds.
-            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointInjection::disableAllFailPoints();
-            break;
-        }
 #if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
@@ -1259,10 +1249,6 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_INFO(getLogger("InterpreterSystemQuery"),
                 "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            /// The process writes its coverage to files, see `initCoverageFromEnvironment`.
-            if (!isCoverageFileSinkEnabled())
-#endif
             {
                 /// Register (or re-register) the flush callback so coverage data is
                 /// resolved and inserted into system.coverage_log when the previous
@@ -2566,7 +2552,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-    TransactionManager::instance().sync();
+    TransactionLog::instance().sync();
 }
 
 
@@ -3260,7 +3246,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;

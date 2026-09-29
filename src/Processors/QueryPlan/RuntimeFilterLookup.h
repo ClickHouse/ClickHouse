@@ -69,32 +69,6 @@ private:
     bool inserts_are_finished = false;
 };
 
-/// Build-side key range collected for storage index analysis.
-/// Access is synchronized by the owning RuntimeFilter.
-class RuntimeFilterIndexAnalysis
-{
-public:
-    RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_);
-
-    void enable() { enabled = true; }
-    bool canUseExactValues() const { return enabled && positive_filter; }
-    void insert(const IColumn & values);
-    void mergeFrom(const RuntimeFilterIndexAnalysis & source);
-    void setRange(const Range & range);
-    std::optional<Range> getRange() const;
-
-private:
-    static bool supportsDataType(const DataTypePtr & data_type);
-    void extendRange(const Field & new_min, const Field & new_max);
-
-    const bool range_supported;
-    const bool positive_filter;
-    bool enabled = false;
-    bool has_range = false;
-    Field range_min{};
-    Field range_max{};
-};
-
 /// Thread-safe, nonnegative row budget used to throttle runtime-filter evaluation.
 class RuntimeFilterSkipBudget
 {
@@ -316,23 +290,28 @@ private:
     {
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
-        detail::RuntimeFilterIndexAnalysis index_analysis;
+        bool index_analysis_enabled = false;
+        bool has_range = false;
+        Field range_min{};
+        Field range_max{};
     };
 
     template <typename FilterImpl>
     static Data makeData(size_t filters_to_merge, FilterImpl && filter)
     {
         using FilterType = std::decay_t<FilterImpl>;
-        auto target_type = filter.getTargetType();
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
-            Filter(std::forward<FilterImpl>(filter)),
-            detail::RuntimeFilterIndexAnalysis(target_type, !std::is_same_v<FilterType, ExactNotContains>)};
+            Filter(std::forward<FilterImpl>(filter))};
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
-            result.index_analysis.enable();
+            result.index_analysis_enabled = true;
             if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
-                result.index_analysis.setRange(*range);
+            {
+                result.range_min = range->left;
+                result.range_max = range->right;
+                result.has_range = true;
+            }
         }
         return result;
     }
@@ -377,6 +356,8 @@ public:
 
 private:
     const DataTypePtr filter_column_target_type;
+    const bool range_supported;
+    const bool range_positive;
 
     RuntimeFilterEvaluationState evaluation_state;
     mutable SharedMutex mutex;

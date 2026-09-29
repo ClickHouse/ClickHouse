@@ -28,7 +28,6 @@ namespace ProfileEvents
     extern const Event AzureGetProperties;
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
-    extern const Event AzureClients;
     extern const Event DiskAzureCreateContainer;
 
     extern const Event AzureGetRequestThrottlerCount;
@@ -344,8 +343,6 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
-    ProfileEvents::increment(ProfileEvents::AzureClients);
-
     if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
         return params.createForContainer();
 
@@ -382,36 +379,23 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     }
 }
 
-AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    AuthConfig auth_config;
-    if (config.has(config_prefix + ".account_name"))
-        auth_config.account_name = config.getString(config_prefix + ".account_name");
-    if (config.has(config_prefix + ".account_key"))
-        auth_config.account_key = config.getString(config_prefix + ".account_key");
+    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
+    {
+        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
+            config.getString(config_prefix + ".account_name"),
+            config.getString(config_prefix + ".account_key")
+        );
+    }
+
     if (config.has(config_prefix + ".connection_string"))
-        auth_config.connection_string = config.getString(config_prefix + ".connection_string");
-    auth_config.use_workload_identity = config.getBool(config_prefix + ".use_workload_identity", false);
-    return auth_config;
-}
+        return ConnectionString{config.getString(config_prefix + ".connection_string")};
 
-AuthMethod getAuthMethod(const AuthConfig & auth_config)
-{
-    if (auth_config.account_key.has_value() && auth_config.account_name.has_value())
-        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*auth_config.account_name, *auth_config.account_key);
-
-    if (auth_config.connection_string.has_value())
-        return ConnectionString{*auth_config.connection_string};
-
-    if (auth_config.use_workload_identity)
+    if (config.getBool(config_prefix + ".use_workload_identity", false))
         return std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
 
     return getManagedIdentityCredential();
-}
-
-AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    return getAuthMethod(readAuthConfig(config, config_prefix));
 }
 
 BlobClientOptions getClientOptions(

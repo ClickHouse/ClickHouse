@@ -371,16 +371,6 @@ class ClickHouseProc:
     def stop_log_exports():
         return log_export.stop()
 
-    def _set_pid(self, replica_num, pid):
-        if replica_num == 1:
-            self.pid_1 = pid
-        elif replica_num == 2:
-            self.pid_2 = pid
-        elif replica_num == 0:
-            self.pid_0 = pid
-        else:
-            assert False
-
     def start(self, replica_num=0):
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
@@ -404,9 +394,6 @@ class ClickHouseProc:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
-        # The cached pid mirrors this file and must not outlive it: `stop_server`
-        # keys its pid-less kill path off the cached value.
-        self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
         Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
@@ -459,7 +446,14 @@ class ClickHouseProc:
                     continue
                 started = True
                 print(f"Got pid from fs [{pid}]")
-                self._set_pid(replica_num, int(pid))
+                if replica_num == 1:
+                    self.pid_1 = int(pid)
+                elif replica_num == 2:
+                    self.pid_2 = int(pid)
+                elif replica_num == 0:
+                    self.pid_0 = int(pid)
+                else:
+                    assert False
                 break
         except Exception:
             pass
@@ -859,14 +853,6 @@ fi
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-            elif proc:
-                # `proc` is the `sh -c` wrapper, not the server, so kill by the
-                # unique `--pid-file` token, then reap the wrapper.
-                Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
 
         return self
 
@@ -1225,20 +1211,10 @@ fi
                 "caller id: None:DistribCache",
             )
         )
-        # The matches go through a file rather than a pipe into `grep -q .`: `grep -q` exits at
-        # its first line, so `tee` takes SIGPIPE and the tail is lost, and the appended
-        # lifecycle IS that tail.
-        no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
-            f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
+            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
             f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            f"| head -n100 > {no_such_key_matches}; "
-            f"python3 {repo_dir}/ci/jobs/scripts/s3_key_lifecycle.py {no_such_key_matches} {self.log_dir} "
-            f">> {no_such_key_matches} "
-            f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
-            f">> {no_such_key_matches}; "
-            f"cat {no_such_key_matches} >&2; "
-            f"[ -f {no_such_key_matches} ] && ! [ -s {no_such_key_matches} ]"
+            "| head -n100 | tee /dev/stderr | grep -q ."
         )
         results.append(
             Result.from_commands_run(

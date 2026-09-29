@@ -2492,7 +2492,7 @@ Calculates the approximate distance between two points (the values of the vector
     )";
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance. With `p = 1` only the sign of each element is read and compared against the reference vector at full precision; the setting `qbit_one_bit_symmetric_distance` reduces the reference vector to its signs as well and derives the result from the Hamming distance between the two sign vectors, which is faster.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read.", {"UInt"}}};
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read.", {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
@@ -2531,7 +2531,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
            {"p",
             "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level "
             "controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while "
-            "using more bits increases accuracy at the cost of performance. With `p = 1` only the sign of each element is read and compared against the reference vector at full precision; the setting `qbit_one_bit_symmetric_distance` reduces the reference vector to its signs as well and derives the result from the Hamming distance between the two sign vectors, which is faster.",
+            "using more bits increases accuracy at the cost of performance.",
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
@@ -2582,7 +2582,7 @@ Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_produ
            {"p",
             "Number of bits from each vector element to use in the calculation (1 to element bit-width). The quantization level controls "
             "the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more "
-            "bits increases accuracy at the cost of performance. With `p = 1` only the sign of each element is read and compared against the reference vector at full precision; the setting `qbit_one_bit_symmetric_distance` reduces the reference vector to its signs as well and derives the result from the Hamming distance between the two sign vectors, which is faster.",
+            "bits increases accuracy at the cost of performance.",
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
@@ -2638,9 +2638,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
         "Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer using "
         "the Gaussian conditional-mean centroids of the existing Lloyd-Max prefix intervals, for faster I/O with reduced accuracy; "
         "8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an "
-        "`Array(Int8)` reference is always reconstructed at full 8-bit precision. With `p = 1` the setting "
-        "`qbit_one_bit_symmetric_distance` reduces the reference to its signs as well and derives the result from the Hamming "
-        "distance between the two sign vectors, which is faster.",
+        "`Array(Int8)` reference is always reconstructed at full 8-bit precision.",
         {"UInt"}};
     const auto quantized_used_dims_argument = FunctionDocumentation::Argument{
         "used_dims",

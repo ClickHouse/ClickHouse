@@ -14,6 +14,7 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
@@ -30,7 +31,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -40,18 +40,15 @@
 #include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/Transforms/AsyncInsertQueueTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
-#include <Common/saturatedDuration.h>
 #include <Core/Field.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -64,15 +61,13 @@
 #include <Interpreters/TreeRewriter.h>
 
 #include <memory>
-#include <unordered_set>
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool async_insert;
-    extern const SettingsBool async_insert_select_as_async_insert;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -107,11 +102,6 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool implicit_transaction;
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-    extern const SettingsUInt64 async_insert_max_data_size;
-    extern const SettingsBool wait_for_async_insert;
-    extern const SettingsSeconds wait_for_async_insert_timeout;
 }
 
 namespace MergeTreeSetting
@@ -137,8 +127,7 @@ namespace ErrorCodes
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_,
-    bool is_initial_insert_)
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
     : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
@@ -146,7 +135,6 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_squash(no_squash_)
     , no_destination(no_destination_)
     , async_insert(async_insert_)
-    , is_initial_insert(is_initial_insert_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
@@ -174,8 +162,25 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
+            SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-            auto header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
+
+            if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
+            }
+            else
+            {
+                ASTPtr input_function;
+                query.tryFindInputFunction(input_function);
+                if (input_function)
+                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with allow_experimental_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
+
+                InterpreterSelectWithUnionQuery interpreter_select{
+                    query.select, current_context, select_query_options};
+                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
+                header_block = tmp_pipeline.getSharedHeader();
+            }
 
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
@@ -377,21 +382,27 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
 }
 
 
-Block InterpreterInsertQuery::convertSelectToInsertSchema(
-    QueryPipelineBuilder & pipeline,
-    const ASTInsertQuery & query,
-    const StoragePtr & table,
-    const ContextPtr & context_,
-    bool no_destination,
-    bool allow_materialized)
+QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
 {
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context_, no_destination, allow_materialized);
+    auto context = getContext();
+
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-    if (context_->getSettingsRef()[Setting::insert_null_as_default])
+    if (context->getSettingsRef()[Setting::insert_null_as_default])
     {
         const auto & input_columns = pipeline.getHeader().getColumnsWithTypeAndName();
         const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
@@ -424,105 +435,32 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
-            context_);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context_, CompileExpressions::yes));
+            context);
+    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
 
-    return query_sample_block;
-}
-
-/// Bounds the Alias chase, so a cyclic catalog state still terminates.
-constexpr size_t max_alias_chase_depth = 8;
-
-/// A `StorageAlias` chain is one destination; returns false when it is broken or too deep, counted as unresolvable.
-static bool collectDestinationIdentities(const StoragePtr & table, std::unordered_set<const IStorage *> & identities)
-{
-    StoragePtr storage = table;
-    for (size_t depth = 0; depth <= max_alias_chase_depth; ++depth)
+    pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        if (!storage)
-            return false;
+        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
+        counting->setProcessListElement(context->getProcessListElement());
+        counting->setProgressCallback(context->getProgressCallback());
 
-        /// A cycle adds nothing new: everything reachable is already collected.
-        if (!identities.insert(storage.get()).second)
-            return true;
+        return counting;
+    });
 
-        const auto * alias = storage->as<StorageAlias>();
-        if (!alias)
-            return true;
-
-        storage = alias->tryGetTargetTable();
-    }
-    return false;
-}
-
-/// True if this SELECT pipeline reads the destination table, or if that cannot be established (needed
-/// because the queue route would let the SELECT side's lock outlive the wait for the flush's own lock,
-/// stalling a DDL write arriving in between). Reads the pipeline's storage holders rather than
-/// re-deriving the table set from the AST.
-static bool selectPipelineReadsDestinationTable(const QueryPipelineBuilder & pipeline, const StoragePtr & table)
-{
-    std::unordered_set<const IStorage *> destination_identities;
-    if (!collectDestinationIdentities(table, destination_identities))
-        return true;
-
-    for (const auto & storage : pipeline.getResources().storage_holders)
-        if (destination_identities.contains(storage.get()))
-            return true;
-
-    return false;
-}
-
-QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
-    ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline, bool add_async_insert_queue_transform,
-    TableLockHolder * destination_lock)
-{
-    auto context = getContext();
-
-    // disable parallel replicas for inserts if enabled
-    // the insert can trigger update for dependent materialized views
-    // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
-    {
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSetting("enable_parallel_replicas", Field{0});
-        context = mutable_context;
-    }
-
-    auto query_sample_block = convertSelectToInsertSchema(pipeline, query, table, context, no_destination, allow_materialized);
-    /// Frozen for a block diverted to the queue: `query_sample_block` is moved into
-    /// `insert_dependencies` below.
-    Names insert_column_names = query_sample_block.getNames();
-    /// The queue flush has no defaults step to undo the `Nullable` widening `insert_null_as_default`
-    /// applies, so such a query stays on the sink chain below.
-    bool needs_null_default_sync = false;
-    bool select_reads_destination = false;
-    if (add_async_insert_queue_transform)
-    {
-        /// Named handle: converting a temporary `StorageMetadataHandle` to `StorageMetadataPtr` is deleted.
-        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-        needs_null_default_sync = !blocksHaveEqualStructure(
-            query_sample_block,
-            getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
-        select_reads_destination = selectPipelineReadsDestinationTable(pipeline, table);
-    }
+    auto select_streams = pipeline.getNumStreams();
+    if (select_streams != 1)
+        pipeline.resize(1);
 
     auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(
         select_query_sorted, context->getSettingsRef(),
         context->getSettingsRef()[Setting::insert_deduplication_token].value, logger);
 
-    /// Pin the decision whenever the queue route is possible, so it deduplicates the same as the sync
-    /// route: the queue flush otherwise resolves it through `async_insert_deduplicate` instead.
-    const bool deduplication_differs_from_sync_default
-        = deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef());
-    const bool deduplication_differs_from_async_default = add_async_insert_queue_transform
-        && deduplicate_insert_select != isDeduplicationEnabledForInsert(true, context->getSettingsRef());
-
-    if (deduplication_differs_from_sync_default || deduplication_differs_from_async_default)
+    if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
         auto tmp_context = Context::createCopy(context);
         overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
@@ -535,84 +473,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         context);
 
     const auto & settings = context->getSettingsRef();
-
-    if (add_async_insert_queue_transform)
-    {
-        std::string_view reason;
-        if (needs_null_default_sync)
-            reason = "insert_null_as_default widens the block to Nullable";
-        else if (select_reads_destination)
-            reason = "SELECT reads the destination table";
-        /// Views are excluded wholesale, not per view target: a diverted block leaves their sink chain
-        /// built but unfed. `isViewsInvolved` only sees the dependency graph `collectAllDependencies`
-        /// walked from `table`; an `Alias` destination hides its target's own dependent views behind
-        /// the nested `INSERT` its `AliasSink` runs at execution time, so that hop needs its own probe.
-        else if (insert_dependencies->isViewsInvolved() || InsertDependenciesBuilder::forwardedInsertHidesDependentView(table))
-            reason = "destination table has dependent views";
-
-        if (reason.empty())
-            LOG_DEBUG(logger, "INSERT ... SELECT is eligible for the asynchronous insert queue route");
-        else
-        {
-            LOG_DEBUG(logger, "INSERT ... SELECT will be executed synchronously (reason: {})", reason);
-            add_async_insert_queue_transform = false;
-        }
-    }
-
-    /// Hands the whole destination side over to the queue transform: either divert a single small
-    /// block to the async queue, or lazily build the same push pipeline a plain `INSERT` would use,
-    /// once ineligibility is actually confirmed. Building the sink chain below unconditionally would
-    /// start it (and any start-time side effect it has, e.g. `AliasSink` opening its nested `INSERT`)
-    /// before that decision is made; see `AsyncInsertQueueTransform`.
-    if (add_async_insert_queue_transform)
-    {
-        /// Only callers that hand the destination lock over may ask for this route.
-        chassert(destination_lock);
-
-        /// Only the main stream may divert a block and take the lock over; collapse to it first.
-        if (pipeline.getNumStreams() != 1)
-            pipeline.resize(1);
-
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            /// Only the main stream carries rows to divert, and only it may take the lock over. A
-            /// `WITH TOTALS` select also offers totals and extremes streams, whose blocks belong to
-            /// no insert at all.
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-
-            return std::make_shared<AsyncInsertQueueTransform>(
-                in_header, context->tryGetAsynchronousInsertQueue(), context, query_ptr, insert_column_names,
-                settings[Setting::async_insert_max_data_size],
-                saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count(),
-                settings[Setting::wait_for_async_insert],
-                std::move(*destination_lock),
-                insert_dependencies, table, max_threads, no_squash, async_insert);
-        });
-
-        pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
-        {
-            return std::make_shared<EmptySink>(cur_header);
-        });
-
-        return QueryPipelineBuilder::getPipeline(std::move(pipeline));
-    }
-
-    /// Reached only when the async route was never eligible: build the ordinary synchronous
-    /// `INSERT ... SELECT` tail directly on the `SELECT` pipeline.
-    pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
-    {
-        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
-        counting->setProcessListElement(context->getProcessListElement());
-        counting->setProgressCallback(context->getProgressCallback());
-
-        return counting;
-    });
-
-    /// Count on the parallel SELECT streams, then collapse: dedup info and squashing need one stream.
-    if (pipeline.getNumStreams() != 1)
-        pipeline.resize(1);
-
     bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
     if (!squash_with_strict_limits)
@@ -691,7 +551,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
-void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context)
+static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context)
 {
     const Settings & settings = select_context->getSettingsRef();
 
@@ -721,8 +581,8 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        /// The effective value from the constructor is already capped by `max_threads` and by the
-        /// available memory; the raw setting is not.
+        /// Use the effective value computed in the constructor: it is already capped by `max_threads`
+        /// and reduced according to the available memory, while the raw setting is not.
         new_settings[Setting::max_threads] = effective_max_insert_threads;
 
         if (prefer_large_blocks)
@@ -746,7 +606,7 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
     }
 }
 
-bool InterpreterInsertQuery::queryHasOrderByAll(const ASTPtr & select)
+static bool queryHasOrderByAll(const ASTPtr & select)
 {
     if (auto * select_query = select->as<ASTSelectQuery>())
     {
@@ -763,8 +623,7 @@ bool InterpreterInsertQuery::queryHasOrderByAll(const ASTPtr & select)
     return false;
 }
 
-QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
-    ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform, TableLockHolder & destination_lock)
+QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
@@ -772,8 +631,18 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
     QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-        InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-        return interpreter_select_analyzer.buildQueryPipeline();
+
+        const Settings & settings = select_context->getSettingsRef();
+        if (settings[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
+            return interpreter_select_analyzer.buildQueryPipeline();
+        }
+        else
+        {
+            InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
+            return interpreter_select.buildQueryPipeline();
+        }
     }();
 
     /// ORDER BY ALL should produce a single globally-sorted stream.
@@ -784,7 +653,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
     /// resizes to 1 stream regardless.
     select_query_sorted = queryHasOrderByAll(query.select) && pipeline.getNumStreams() <= 1;
 
-    return addInsertToSelectPipeline(query, table, pipeline, add_async_insert_queue_transform, &destination_lock);
+    return addInsertToSelectPipeline(query, table, pipeline);
 }
 
 
@@ -795,10 +664,7 @@ std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> Interprete
 
     auto [pipeline_builder, parallel_replicas_info]
         = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
-    /// Parallel replicas builds its own local pipeline and never routes through the async insert queue,
-    /// so it hands over no lock and the caller keeps it for the whole pipeline.
-    auto local_pipeline = addInsertToSelectPipeline(
-        query, table, pipeline_builder, /* add_async_insert_queue_transform */ false, /* destination_lock */ nullptr);
+    auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder);
     return {std::move(local_pipeline), std::move(parallel_replicas_info)};
 }
 
@@ -848,6 +714,9 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::allow_experimental_analyzer])
+        return {};
+
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
@@ -856,13 +725,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
-
-    /// A follower executing the shipped INSERT never uses the plan-based implementation of parallel
-    /// replicas: `collaborate_with_initiator` makes `canUseParallelReplicasOnInitiator` false, which is what
-    /// gates `QueryPlanOptimizationSettings::enable_parallel_replicas`. The initiator takes part as one more
-    /// replica, so it has to read the way the followers read. This is not a fallback for a declined
-    /// plan-based query: the feature is defined on top of the query-shipping transport.
-    context->setSetting("parallel_replicas_plan_based", false);
 
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
@@ -873,13 +735,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
-
-    /// Pinning it on the context above is not enough: the nested interpreter re-applies the SELECT's own
-    /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
-    /// bringing the plan-based implementation back for the plans built below. `execute` restores
-    /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{std::string_view{"parallel_replicas_plan_based"}};
-    removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
@@ -1078,40 +933,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         insert_threads,
         context);
 
-    QueryPipeline pipeline
-        = buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert);
-
-    if (query.hasInlinedData() && !async_insert)
-    {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
-
-        if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
-
-        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
-        pipeline.complete(std::move(pipe));
-    }
-
-    return pipeline;
-}
-
-QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
-    std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
-    ContextPtr context_,
-    const StoragePtr & table,
-    size_t max_threads_,
-    bool no_squash_,
-    bool async_insert_)
-{
-    const Settings & settings = context_->getSettingsRef();
-
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
     chassert(sink_chains.size() == sink_stream_size);
     chassert(sink_stream_size >= 1);
 
-    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert_;
-    bool should_squash = shouldAddSquashingForStorage(table, context_) && !no_squash_;
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
+    bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash;
 
     /// The header that flows through the whole insert pipeline.
     SharedHeader insert_header = sink_chains.front().getInputSharedHeader();
@@ -1145,9 +973,9 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        auto counting = std::make_shared<CountingTransform>(insert_header, context_->getQuota(), context_->getNormalizedQueryHash());
-        counting->setProcessListElement(context_->getProcessListElement());
-        counting->setProgressCallback(context_->getProgressCallback());
+        auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota(), context->getNormalizedQueryHash());
+        counting->setProcessListElement(context->getProcessListElement());
+        counting->setProgressCallback(context->getProgressCallback());
         add_head_transform(std::move(counting));
     }
 
@@ -1232,8 +1060,19 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     // does not translate into reserved-but-unused slots.
     // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
     const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
-    pipeline.setNumThreads(serial_views ? 1 : max_threads_);
+    pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
+
+    if (query.hasInlinedData() && !async_insert)
+    {
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
+
+        if (settings[Setting::enable_parsing_to_custom_serialization])
+            format->setSerializationHints(table->getSerializationHints());
+
+        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
+        pipeline.complete(std::move(pipe));
+    }
 
     return pipeline;
 }
@@ -1471,9 +1310,6 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
-    /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
-    /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
-    /// that is why the queue route is refused below for a SELECT that may read the destination.
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     table->updateExternalDynamicMetadataIfExists(context);
@@ -1502,7 +1338,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockIO res;
-    if (query.select && !query.async_insert_flush)
+    if (query.select)
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
@@ -1529,53 +1365,7 @@ BlockIO InterpreterInsertQuery::execute()
             query.select = std::move(saved_select);
         }
         if (!res.pipeline.initialized())
-        {
-            /// The remaining eligibility guards need the built SELECT pipeline, so
-            /// `addInsertToSelectPipeline` makes the final decision.
-            std::string_view reason;
-            /// Internal inserts (refresh, POPULATE, CTAS) swap or publish their destination as soon as
-            /// execute() returns, so the async route with wait_for_async_insert = 0 would race the flush
-            /// and lose data. Kept before the transaction guard, which throws rather than downgrades.
-            if (!is_initial_insert)
-                reason = "insert is not user-initiated";
-            else if (!settings[Setting::async_insert_select_as_async_insert])
-                reason = "async_insert_select_as_async_insert is disabled";
-            else if (!context->tryGetAsynchronousInsertQueue())
-                reason = "asynchronous insert queue is not configured";
-            else if (!settings[Setting::async_insert] && !table->areAsynchronousInsertsEnabled())
-                reason = "async_insert is disabled for this query and table";
-            /// Async inserts are never used inside a transaction. Checked before the guards that only
-            /// downgrade the query, and with the same contract as the inlined-data path in
-            /// `executeQuery`, so `INSERT ... VALUES` and `INSERT ... SELECT` react to the same
-            /// settings alike: throw, unless the user opted out of the exception.
-            else if (context->getCurrentTransaction() || settings[Setting::implicit_transaction])
-            {
-                if (settings[Setting::throw_on_unsupported_query_inside_transaction])
-                {
-                    if (settings[Setting::implicit_transaction])
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
-                }
-                reason = "query runs inside a transaction";
-            }
-            /// `StorageAlias::isMergeTree` delegates to its target, so the alias needs no unwrapping.
-            else if (!table->isMergeTree())
-                reason = "destination table is not a MergeTree-family table";
-            else if ((settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto)
-                && !settings[Setting::insert_quorum_parallel])
-                reason = "insert_quorum is enabled without insert_quorum_parallel";
-            else if (skip_target_insert_access_check)
-                reason = "internal populate of CREATE TABLE ... AS SELECT";
-            else if (table->isRemote())
-                reason = "destination table is remote";
-            else if (query.table_function)
-                reason = "destination is a table function";
-
-            if (!reason.empty())
-                LOG_DEBUG(logger, "INSERT ... SELECT will be executed synchronously (reason: {})", reason);
-
-            res.pipeline = buildInsertSelectPipeline(query, table, /* add_async_insert_queue_transform */ reason.empty(), table_lock);
-        }
+            res.pipeline = buildInsertSelectPipeline(query, table);
     }
     else
     {
@@ -1590,14 +1380,9 @@ BlockIO InterpreterInsertQuery::execute()
     /// on this: under its brief exclusive lock on the source, any concurrent `INSERT` has either
     /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
     /// dependent views (and will see the newly registered view).
-    /// Empty when the async insert queue transform took the lock over: it commits through a separate
-    /// flush that takes its own lock, and the route is refused when any dependent view exists.
-    if (table_lock)
-    {
-        QueryPlanResourceHolder insert_resources;
-        insert_resources.table_locks.emplace_back(std::move(table_lock));
-        res.pipeline.addResources(std::move(insert_resources));
-    }
+    QueryPlanResourceHolder insert_resources;
+    insert_resources.table_locks.emplace_back(std::move(table_lock));
+    res.pipeline.addResources(std::move(insert_resources));
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
@@ -1653,17 +1438,13 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
     {
-        /// A forwarded (SECONDARY_QUERY) insert must stay out of the async queue; see is_initial_insert.
-        const bool is_initial_insert
-            = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
         return std::make_unique<InterpreterInsertQuery>(
             args.query,
             args.context,
             args.allow_materialized,
             /* no_squash */false,
             /* no_destination */false,
-            /* async_insert */false,
-            is_initial_insert);
+            /* async_insert */false);
     };
     factory.registerInterpreter("InterpreterInsertQuery", create_fn);
 }

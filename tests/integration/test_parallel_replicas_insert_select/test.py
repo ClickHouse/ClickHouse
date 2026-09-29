@@ -58,25 +58,20 @@ def create_tables(table_name, populate_count, skip_last_replica):
         node3.query(f"SYSTEM SYNC REPLICA {table_name}")
 
 
-# `parallel_replicas_plan_based` must not change how the insert is distributed: the INSERT is shipped as
-# a query, and a replica executing it always reads the query-tree-based way. The expected query counts are
-# therefore the same for both values of the setting.
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries,plan_based",
+    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries",
     [
-        pytest.param("test_1_shard_3_replicas", 2, False, 3, False),
-        pytest.param("test_1_shard_3_replicas", 2, True, 2, False),
-        pytest.param("test_1_shard_3_replicas", 3, False, 4, False),
-        pytest.param("test_1_shard_3_replicas", 3, True, 3, False),
-        pytest.param("test_1_shard_3_replicas", 3, False, 4, True),
-        pytest.param("test_1_shard_3_replicas", 3, True, 3, True),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3, False),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2, False),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3, False),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2, False),
+        pytest.param("test_1_shard_3_replicas", 2, False, 3),
+        pytest.param("test_1_shard_3_replicas", 2, True, 2),
+        pytest.param("test_1_shard_3_replicas", 3, False, 4),
+        pytest.param("test_1_shard_3_replicas", 3, True, 3),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2),
     ],
 )
-def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries, plan_based):
+def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries):
     populate_count = 1000000
 
     source_table = "t_source"
@@ -93,7 +88,6 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_insert_select_local_pipeline": local_pipeline,
-            "parallel_replicas_plan_based": plan_based,
             "enable_analyzer": 1,
         },
         query_id=query_id
