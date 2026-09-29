@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-<div id="resource-organization">
-  ## تنظيم الموارد
-</div>
+## تنظيم الموارد {#resource-organization}
 
 تشبه طريقة تنظيم الموارد في ClickHouse Cloud [التسلسل الهرمي للموارد في BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). ونوضّح أدناه أوجه الاختلاف المحددة استنادًا إلى المخطط التالي الذي يبيّن التسلسل الهرمي لموارد ClickHouse Cloud:
 
@@ -62,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### الأذونات
 </div>
 
-يتحكم ClickHouse Cloud في وصول المستخدمين من خلال موضعين: عبر [Cloud Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) وعبر [قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users). تُدار إمكانية الوصول إلى Console عبر واجهة المستخدم [clickhouse.cloud](https://console.clickhouse.cloud). وتُدار إمكانية الوصول إلى قاعدة البيانات عبر حسابات مستخدمي قاعدة البيانات والأدوار. بالإضافة إلى ذلك، يمكن منح مستخدمي Console أدوارًا داخل قاعدة البيانات تتيح لهم التفاعل مع قاعدة البيانات عبر [SQL Console](/ar/integrations/connectors/sql-clients/sql-console).
+يتحكم ClickHouse Cloud في وصول المستخدمين من خلال موضعين: عبر [Cloud Console](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) وعبر [قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users). تُدار إمكانية الوصول إلى Console عبر واجهة المستخدم [clickhouse.cloud](https://console.clickhouse.cloud). وتُدار إمكانية الوصول إلى قاعدة البيانات عبر حسابات مستخدمي قاعدة البيانات والأدوار. بالإضافة إلى ذلك، يمكن منح مستخدمي Console أدوارًا داخل قاعدة البيانات تتيح لهم التفاعل مع قاعدة البيانات عبر [SQL Console](/ar/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
   ## أنواع البيانات
