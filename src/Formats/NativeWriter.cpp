@@ -44,7 +44,7 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
 
     if (const auto * array = typeid_cast<const ColumnArray *>(column.get()))
     {
-        auto nested = recursiveRemoveSparse(materializeObjectTypedPaths(array->getDataPtr()));
+        auto nested = materializeObjectTypedPaths(array->getDataPtr());
         if (nested.get() == array->getDataPtr().get())
             return column;
         return ColumnArray::create(nested, array->getOffsetsPtr());
@@ -73,7 +73,7 @@ ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
         auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
         if (nested.get() == nullable->getNestedColumnPtr().get())
             return column;
-        return ColumnNullable::create(recursiveRemoveSparse(nested), nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
     }
 
     if (typeid_cast<const ColumnObject *>(column.get()))

@@ -40,4 +40,7 @@ protected:
     NameToElem name_to_elem;
 };
 
+/// Whether `old_info` can be carried over to `new_info` with `createWithType` when the type of a column changes.
+bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info);
+
 }

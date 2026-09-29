@@ -3,7 +3,6 @@
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 namespace DB
@@ -57,12 +56,6 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
             && canReuseSerializationInfoForTypeChange(*old_info, *new_info_ptr))
         {
             new_info = old_info_it->second->createWithType(*old_type_it->second, *new_path_type, path_settings);
-        }
-        else if (old_type_it != old_object.getTypedPaths().end() && old_info)
-        {
-            if (auto reused = tryReuseSerializationInfoThroughNullable(
-                    *old_info, *old_type_it->second, new_info, *new_path_type, path_settings))
-                new_info = std::move(reused);
         }
         else if (old_type_it == old_object.getTypedPaths().end() || old_info_it == name_to_elem.end())
         {

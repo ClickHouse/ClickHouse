@@ -3,7 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Serializations/SerializationInfoNullable.h>
 
 namespace DB
 {
@@ -78,11 +77,8 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
             const auto & old_info = elems[*old_position];
             if (canReuseSerializationInfoForTypeChange(*old_info, *info))
                 info = old_info->createWithType(*old_elements[*old_position], *new_elements[i], elem_settings);
-            else if (auto reused = tryReuseSerializationInfoThroughNullable(
-                         *old_info, *old_elements[*old_position], info, *new_elements[i], elem_settings))
-                info = std::move(reused);
         }
-        else if (!old_position)
+        else
             info->addDefaults(data.num_rows);
 
         infos.push_back(std::move(info));

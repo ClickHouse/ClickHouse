@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Object.h>
@@ -67,12 +66,6 @@ void SerializationInfoNamed::add(const IColumn & column)
 
 void SerializationInfoNamed::add(const SerializationInfo & other)
 {
-    if (const auto * other_nullable = dynamic_cast<const SerializationInfoNullable *>(&other))
-    {
-        add(*other_nullable->getNestedInfo());
-        return;
-    }
-
     SerializationInfo::add(other);
 
     if (typeid(*this) != typeid(other))
@@ -200,6 +193,13 @@ const MutableSerializationInfoPtr & SerializationInfoNamed::getElementInfo(const
     if (it == name_to_elem.end())
         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Subcolumn '{}' is missing in serialization info", name);
     return it->second;
+}
+
+bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info)
+{
+    if (old_info.structureEquals(new_info))
+        return true;
+    return typeid(old_info) == typeid(new_info) && dynamic_cast<const SerializationInfoNamed *>(&old_info);
 }
 
 }

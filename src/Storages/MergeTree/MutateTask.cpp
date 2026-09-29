@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationInfoNullable.h>
+#include <DataTypes/Serializations/SerializationInfoNamed.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -920,9 +920,6 @@ getColumnsForNewDataPart(
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
                 if (canReuseSerializationInfoForTypeChange(*old_info, *rebuilt_info))
                     rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
-                else if (auto reused = tryReuseSerializationInfoThroughNullable(
-                             *old_info, *source_type, rebuilt_info, *storage_type, settings))
-                    rebuilt_info = std::move(reused);
 
                 new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
                 continue;
@@ -941,9 +938,6 @@ getColumnsForNewDataPart(
         auto new_info = new_type->createSerializationInfo(settings);
         if (canReuseSerializationInfoForTypeChange(*old_info, *new_info))
             new_info = old_info->createWithType(*old_type, *new_type, settings);
-        else if (auto reused = tryReuseSerializationInfoThroughNullable(
-                     *old_info, *old_type, new_info, *new_type, settings))
-            new_info = std::move(reused);
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
@@ -970,18 +964,17 @@ getColumnsForNewDataPart(
         }
     }
 
-    /// Full-part mutations need serialization infos for columns missing them in the source part.
-    /// Column mutations need them when preserving source settings that differ from storage defaults.
-    bool materialize_updated_column_serialization_infos = affects_all_columns
-        || source_part_serialization_settings != storage_serialization_settings;
+    /// Column mutations preserve source part serialization settings even when they differ from storage defaults,
+    /// and in this case mutated columns are explicitly added to serialization infos to prevent storage serialization
+    /// inheritance
+    bool materialize_updated_column_serialization_infos = !affects_all_columns
+        && source_part_serialization_settings != storage_serialization_settings;
 
     if (materialize_updated_column_serialization_infos)
     {
         for (const auto & column : updated_header.getNamesAndTypesList())
         {
             if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
-                continue;
-            if (affects_all_columns && (settings.isAlwaysDefault() || !settings.shouldCollectSerializationInfo(*column.type)))
                 continue;
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));

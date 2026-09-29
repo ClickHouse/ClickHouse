@@ -6,9 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 compressed_table="${table}_compressed"
-wrapped_table="${table}_wrapped"
-wrapped_type="Nullable(Tuple(a Nullable(String), j JSON(x Nullable(String), max_dynamic_paths = 0)))"
-plain_wrapped_type="Nullable(Tuple(a Nullable(String)))"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS ${table};
@@ -63,50 +60,4 @@ ${CLICKHOUSE_CURL} -sS --fail "${CLICKHOUSE_URL}" --data-binary \
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE ${table};
     DROP TABLE ${compressed_table};
-    SET enable_nullable_tuple_type = 1;
-    CREATE TABLE ${wrapped_table}
-    (
-        v ${wrapped_type}
-    )
-    ENGINE = MergeTree
-    ORDER BY tuple()
-    SETTINGS
-        ratio_of_defaults_for_sparse_serialization = 0.5,
-        serialization_info_version = 'with_subcolumns',
-        nullable_serialization_version = 'allow_sparse';
-    INSERT INTO ${wrapped_table}
-    SELECT CAST(
-        (if(number = 0, 'value', NULL), if(number = 0, '{\"x\":\"value\"}', '{}')),
-        '${wrapped_type}')
-    FROM numbers(100);
-    SELECT dumpColumnStructure(v) LIKE '%Sparse%' FROM ${wrapped_table} LIMIT 1;
 "
-
-${CLICKHOUSE_CLIENT} --query "SELECT v FROM ${wrapped_table} FORMAT Native" \
-    | ${CLICKHOUSE_LOCAL} --enable_nullable_tuple_type=1 --input-format Native --query \
-        "SELECT dumpColumnStructure(v) LIKE '%Sparse%', v.a, v.j.x FROM table LIMIT 2"
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ${wrapped_table}"
-
-${CLICKHOUSE_CLIENT} --query "
-    SET enable_nullable_tuple_type = 1;
-    CREATE TABLE ${wrapped_table}
-    (
-        v ${plain_wrapped_type}
-    )
-    ENGINE = MergeTree
-    ORDER BY tuple()
-    SETTINGS
-        ratio_of_defaults_for_sparse_serialization = 0.5,
-        serialization_info_version = 'with_subcolumns',
-        nullable_serialization_version = 'allow_sparse';
-    INSERT INTO ${wrapped_table}
-    SELECT CAST(tuple(if(number = 0, 'value', NULL)), '${plain_wrapped_type}')
-    FROM numbers(100);
-"
-
-${CLICKHOUSE_CLIENT} --query "SELECT v FROM ${wrapped_table} FORMAT Native" \
-    | ${CLICKHOUSE_LOCAL} --enable_nullable_tuple_type=1 --input-format Native --query \
-        "SELECT count(), countIf(v.a = 'value') FROM table"
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ${wrapped_table}"

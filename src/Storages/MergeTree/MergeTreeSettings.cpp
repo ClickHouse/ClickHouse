@@ -324,9 +324,8 @@ This makes settings like `string_serialization_version` effective.
 listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
 - `with_subcolumns` - Everything `with_missing_columns` records (so `skip_empty_columns_on_insert`
-keeps working), plus serialization information for nested subcolumns: named subcolumns, such as
-declared paths in `JSON`, and the recursive metadata carried through `Array` and `Nullable`,
-such as sparse elements inside `Array(...)` or `Nullable(Tuple(...))`.
+keeps working), plus serialization information for the declared paths of `JSON` columns,
+so that each declared path can use sparse serialization independently.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
@@ -337,16 +336,13 @@ switch to `with_types`, `with_missing_columns`, or `with_subcolumns` to enable t
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to `with_types` or newer.
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
 
-`String` types that are direct elements of a `Tuple` (including nested `Tuple`s) are always affected. Nested `String` types
-inside `Array`, `Map`, `Nullable`, and declared `JSON` paths are affected only when
-`propagate_types_serialization_versions_to_nested_types = 1`; this also applies when these types
-are themselves elements of a `Tuple`, such as `Tuple(Array(String))` or `Tuple(Nullable(String))`.
-Nested `String` types inside `LowCardinality` are not affected.
+Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
+are not affected, except when they appear in a `Tuple`.
 
 Possible values:
 
@@ -428,8 +424,7 @@ Possible values:
         {"25.12", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"}, \
         {"25.8", "v2", "v2", "Add a setting to control Dynamic serialization versions"}) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
-If enabled, type serialization versions, such as `string_serialization_version`, also apply to nested types inside `Array`, `Map`, `Nullable`, and `JSON`.
-If disabled, these versions apply only to top-level columns and direct `Tuple` elements.
+If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
 )", 0, \
         {"26.3", false, true, "Propagate data types serialization version to nested types by default"})\
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version, "basic", R"(
