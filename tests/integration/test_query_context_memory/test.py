@@ -17,7 +17,9 @@ def started_cluster():
     try:
         cluster.start()
         if node.is_built_with_sanitizer():
-            pytest.skip("Requires ClickHouse allocation interceptors, which sanitizer builds replace")
+            pytest.skip(
+                "Requires ClickHouse allocation interceptors, which sanitizer builds replace"
+            )
         yield cluster
     finally:
         cluster.shutdown()
@@ -41,17 +43,23 @@ def test_select_one_accounts_for_inherited_context(protocol, batching_limit):
             "log_queries": 1,
         }
         if protocol == "native":
-            result = node.query("SELECT 1", user=user, query_id=query_id, settings=settings)
+            result = node.query(
+                "SELECT 1", user=user, query_id=query_id, settings=settings
+            )
         else:
             result = node.http_query(
                 "SELECT 1", user=user, params={**settings, "query_id": query_id}
             )
         assert result == "1\n"
         node.query("SYSTEM FLUSH LOGS")
-        row = node.query(
-            "SELECT memory_usage, length(log_comment) FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        ).strip().split("\t")
+        row = (
+            node.query(
+                "SELECT memory_usage, length(log_comment) FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+            .strip()
+            .split("\t")
+        )
         # The initial copy happened before the protocol cleared the setting.
         assert int(row[0]) >= payload_size, row
         assert int(row[1]) == 0, row
@@ -72,28 +80,39 @@ def test_inherited_context_memory_is_recorded_before_protocol_override(batching_
 
     # The session's large string is copied before the protocol clears its logical value.
     # Its retained capacity must remain included in query memory accounting.
-    assert node.http_query(
-        "SELECT 1",
-        params={
-            "session_id": session_id,
-            "query_id": query_id,
-            "log_comment": "",
-            "max_untracked_memory": batching_limit,
-            "log_queries": 1,
-        },
-    ) == "1\n"
+    assert (
+        node.http_query(
+            "SELECT 1",
+            params={
+                "session_id": session_id,
+                "query_id": query_id,
+                "log_comment": "",
+                "max_untracked_memory": batching_limit,
+                "log_queries": 1,
+            },
+        )
+        == "1\n"
+    )
     node.query("SYSTEM FLUSH LOGS")
-    rows = node.query(
-        "SELECT memory_usage, length(log_comment) FROM system.query_log "
-        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-    ).strip().split("\t")
+    rows = (
+        node.query(
+            "SELECT memory_usage, length(log_comment) FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        .strip()
+        .split("\t")
+    )
     assert int(rows[0]) >= peak_payload_size
     assert int(rows[1]) == 0
 
     # The override must not clear the session-owned setting.
-    assert node.http_query(
-        "SELECT length(getSetting('log_comment'))", params={"session_id": session_id}
-    ) == f"{peak_payload_size}\n"
+    assert (
+        node.http_query(
+            "SELECT length(getSetting('log_comment'))",
+            params={"session_id": session_id},
+        )
+        == f"{peak_payload_size}\n"
+    )
     node.http_query("SELECT 1", params={"session_id": session_id, "close_session": 1})
 
 
@@ -119,7 +138,9 @@ def test_retained_context_respects_query_limit(batching_limit):
         assert "Query memory limit exceeded during query setup" in error
         assert node.http_query("SELECT 1", params={"session_id": session_id}) == "1\n"
     finally:
-        node.http_query("SELECT 1", params={"session_id": session_id, "close_session": 1})
+        node.http_query(
+            "SELECT 1", params={"session_id": session_id, "close_session": 1}
+        )
 
 
 @pytest.mark.parametrize("pause_rejection", [False, True])
@@ -158,14 +179,21 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
     failpoint = "query_setup_memory_rejection_before_cleanup"
     try:
         assert_eq_with_retry(
-            node, f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'", "1"
+            node,
+            f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'",
+            "1",
         )
-        assert node.http_query(
-            "SELECT 1", user=user, params={"max_memory_usage_for_user": user_limit}
-        ) == "1\n"
-        before = int(node.query(
-            f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
-        ))
+        assert (
+            node.http_query(
+                "SELECT 1", user=user, params={"max_memory_usage_for_user": user_limit}
+            )
+            == "1\n"
+        )
+        before = int(
+            node.query(
+                f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
+            )
+        )
         for attempt in range(10):
             query_id = str(uuid.uuid4())
 
@@ -189,35 +217,48 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
                 with ThreadPoolExecutor(max_workers=1) as pool:
                     rejected = pool.submit(reject_query)
                     try:
-                        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=15)
-                        assert node.query(
-                            f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}'"
-                        ) == "1\n"
+                        node.query(
+                            f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=15
+                        )
+                        assert (
+                            node.query(
+                                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}'"
+                            )
+                            == "1\n"
+                        )
                         # Cancellation and inspection can race with rejected-entry cleanup.
                         node.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
                     finally:
                         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
                     error = rejected.result(timeout=30)
-                assert node.query(
-                    f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
-                ) == "0\n"
+                assert (
+                    node.query(
+                        f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+                    )
+                    == "0\n"
+                )
             else:
                 error = reject_query()
             assert "User memory limit exceeded during query setup" in error
-        after = int(node.query(
-            f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
-        ))
+        after = int(
+            node.query(
+                f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
+            )
+        )
         # The sentinel prevents a last-query reset from hiding a credit leaked by rejection.
         assert abs(after - before) < 64 * 1024, (before, after)
         # A fresh context avoids the session's retained string capacity while checking
         # that the same user can still admit a small query with the sentinel active.
-        assert node.http_query(
-            "SELECT 1",
-            user=user,
-            params={
-                "max_memory_usage_for_user": user_limit,
-            },
-        ) == "1\n"
+        assert (
+            node.http_query(
+                "SELECT 1",
+                user=user,
+                params={
+                    "max_memory_usage_for_user": user_limit,
+                },
+            )
+            == "1\n"
+        )
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
@@ -253,7 +294,9 @@ def test_synchronous_queries_do_not_accumulate_setup_memory(batching_limit):
     )
     try:
         assert_eq_with_retry(
-            node, f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'", "1"
+            node,
+            f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'",
+            "1",
         )
 
         # `SET` completes on the request thread, isolating setup accounting from
@@ -261,27 +304,34 @@ def test_synchronous_queries_do_not_accumulate_setup_memory(batching_limit):
         query = "SET max_block_size = 65536 /*" + "q" * 8192 + "*/"
 
         def small_query():
-            assert node.http_query(
-                query,
-                user=user,
-                params={
-                    "session_id": session_id,
-                    "log_comment": "",
-                    "log_queries": 0,
-                    "max_untracked_memory": batching_limit,
-                },
-            ) == ""
+            assert (
+                node.http_query(
+                    query,
+                    user=user,
+                    params={
+                        "session_id": session_id,
+                        "log_comment": "",
+                        "log_queries": 0,
+                        "max_untracked_memory": batching_limit,
+                    },
+                )
+                == ""
+            )
 
         for _ in range(32):
             small_query()
 
         def setup_balance():
-            row = node.query(
-                "SELECT memory_usage, "
-                "(SELECT memory_usage FROM system.processes "
-                f"WHERE query_id = '{sentinel_id}') "
-                f"FROM system.user_processes WHERE user = '{user}'"
-            ).strip().split("\t")
+            row = (
+                node.query(
+                    "SELECT memory_usage, "
+                    "(SELECT memory_usage FROM system.processes "
+                    f"WHERE query_id = '{sentinel_id}') "
+                    f"FROM system.user_processes WHERE user = '{user}'"
+                )
+                .strip()
+                .split("\t")
+            )
             user_memory, sentinel_memory = map(int, row)
             # A positive floor prevents saturation from hiding excess debits.
             assert user_memory >= 16 * 1024 * 1024, row
@@ -296,9 +346,12 @@ def test_synchronous_queries_do_not_accumulate_setup_memory(batching_limit):
             samples.append(setup_balance())
         # A live query prevents resets, and enough repetitions expose even a small
         # per-query residue from guards, group metadata, or weak-reference storage.
-        assert node.query(
-            f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'"
-        ) == "1\n"
+        assert (
+            node.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'"
+            )
+            == "1\n"
+        )
         assert max(abs(sample - before) for sample in samples) < 2048, (before, samples)
     finally:
         node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
