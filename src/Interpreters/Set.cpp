@@ -791,7 +791,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             if (isWorthBuildingRoaring(data))
             {
                 roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                roaring_bitmap->addMany(data.size(), data.data());
+                addDistinctSorted(*roaring_bitmap, data);
             }
         }
         else if (const auto * col_u32 = typeid_cast<const ColumnUInt32 *>(ordered_set[0].get()))
