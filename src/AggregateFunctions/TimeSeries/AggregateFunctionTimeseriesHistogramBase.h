@@ -299,12 +299,8 @@ public:
                     continue;
 
                 auto & bucket = state.buckets[rhs_entry.getKey()];
+                moveSamplesSliceToBlobEnd(state, bucket);
                 auto & blob = state.samples_blob;
-                if (bucket.samples.offset + bucket.samples.size != blob.size())
-                {
-                    blob.insert(blob.end(), blob.begin() + bucket.samples.offset, blob.begin() + bucket.samples.offset + bucket.samples.size);
-                    bucket.samples.offset = blob.size() - bucket.samples.size;
-                }
                 for (size_t i = 0; i < rhs_bucket.samples.size; ++i)
                 {
                     auto record = rhs_state.samples_blob[rhs_bucket.samples.offset + i];
@@ -1206,6 +1202,25 @@ private:
         return ref;
     }
 
+    /// Makes the rate-family bucket's slice of `samples_blob` end at the blob's end, so that records can be appended to it:
+    /// a slice elsewhere is copied forward (the superseded slice stays in the blob). The records are copied one by one,
+    /// because `PODArray::insert` must not take a range of the array itself (it may reallocate the array while reading the range).
+    static void moveSamplesSliceToBlobEnd(State & state, TimeSeriesHistogramSamplesBucket & bucket)
+    {
+        auto & blob = state.samples_blob;
+        if (bucket.samples.offset + bucket.samples.size == blob.size())
+            return;
+
+        const size_t old_offset = bucket.samples.offset;
+        blob.reserve(blob.size() + bucket.samples.size);
+        bucket.samples.offset = blob.size();
+        for (size_t i = 0; i < bucket.samples.size; ++i)
+        {
+            const auto record = blob[old_offset + i];
+            blob.push_back(record);
+        }
+    }
+
     static void serializeFloats(const PODArray<Float64> & blob, TimeSeriesHistogramBlobRef ref, WriteBuffer & buf)
     {
         writeBinaryLittleEndian(ref.size, buf);
@@ -1313,12 +1328,8 @@ private:
         {
             /// The rate-family bucket: keep every sample; the bucket's slice grows in place at the blob's
             /// end, otherwise it is copied forward (the superseded slice stays in the blob).
+            moveSamplesSliceToBlobEnd(state, bucket);
             auto & blob = state.samples_blob;
-            if (bucket.samples.offset + bucket.samples.size != blob.size())
-            {
-                blob.insert(blob.end(), blob.begin() + bucket.samples.offset, blob.begin() + bucket.samples.offset + bucket.samples.size);
-                bucket.samples.offset = blob.size() - bucket.samples.size;
-            }
             TimeSeriesHistogramBucket<TimestampType> record;
             record.newest_timestamp = timestamp;
             record.flags = (*payload.flags)[row_num];
