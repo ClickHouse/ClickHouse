@@ -103,7 +103,8 @@ protected:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     /// `read_request_map` is set when only a part of `read_info->read_request_map` goes to this reader, as the ranges the
-    /// coordinator of parallel replicas assigns to this replica. A reader reused for the task takes it.
+    /// coordinator of parallel replicas assigns to this replica. The readers of the task get it without the ranges the
+    /// refiner has dropped (`mapWithoutDroppedRanges`), and a reader reused for the task takes it.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
@@ -125,6 +126,11 @@ protected:
     /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
 
+    /// `read_request_map`, or the map of the part when it is null, without the ranges the refiner has dropped from the
+    /// part so far. The refiner works task by task, so the ranges of later tasks stay in the map until it drops them.
+    /// Without a refiner or without maps, returns `read_request_map`.
+    MarkRangesPtr mapWithoutDroppedRanges(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & read_request_map) const;
+
     MergeTreeReadRangesRefinerPtr ranges_refiner;
 
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
@@ -132,6 +138,22 @@ protected:
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
+
+private:
+    struct DroppedRanges
+    {
+        MarkRanges ranges;
+        size_t version = 0;
+        /// The last map built from `ranges`, kept so that tasks of the part share one map until the refiner drops more.
+        MarkRangesPtr map_base;
+        size_t map_version = 0;
+        MarkRangesPtr map;
+    };
+
+    void recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const;
+
+    mutable std::mutex dropped_ranges_mutex;
+    mutable std::unordered_map<const MergeTreeReadTaskInfo *, DroppedRanges> dropped_ranges TSA_GUARDED_BY(dropped_ranges_mutex);
 };
 
 }

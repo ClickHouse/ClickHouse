@@ -34,6 +34,50 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// `from` minus `what`, both sorted by `begin` and disjoint.
+MarkRanges subtractMarkRanges(const MarkRanges & from, const MarkRanges & what)
+{
+    MarkRanges result;
+    size_t first = 0;
+    for (auto range : from)
+    {
+        while (first < what.size() && what[first].end <= range.begin)
+            ++first;
+        for (size_t i = first; i < what.size() && what[i].begin < range.end && range.begin < range.end; ++i)
+        {
+            if (what[i].begin > range.begin)
+                result.emplace_back(range.begin, what[i].begin);
+            range.begin = std::max(range.begin, what[i].end);
+        }
+        if (range.begin < range.end)
+            result.push_back(range);
+    }
+    return result;
+}
+
+/// The union of `a` and `b`, both sorted by `begin` and disjoint, merged where they touch.
+MarkRanges uniteMarkRanges(const MarkRanges & a, const MarkRanges & b)
+{
+    MarkRanges all;
+    std::merge(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(all),
+        [](const MarkRange & lhs, const MarkRange & rhs) { return lhs.begin < rhs.begin; });
+
+    MarkRanges result;
+    for (const auto & range : all)
+    {
+        if (!result.empty() && range.begin <= result.back().end)
+            result.back().end = std::max(result.back().end, range.end);
+        else
+            result.push_back(range);
+    }
+    return result;
+}
+
+}
+
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
@@ -454,21 +498,23 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     auto extras = getExtras();
     MergeTreeReadTask::Readers task_readers;
 
+    const auto map = mapWithoutDroppedRanges(*read_info, read_request_map);
+
     if (!previous_task)
     {
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, read_request_map);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, map);
     }
     else if (get_part_name(previous_task->getInfo()) != get_part_name(*read_info))
     {
         extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, read_request_map);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, map);
     }
     else
     {
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges, patches_ranges);
-        if (read_request_map)
-            task_readers.updateRequestMap(read_request_map);
+        if (map)
+            task_readers.updateRequestMap(map);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
@@ -505,6 +551,9 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
         return ranges;
 
     size_t marks_before = ranges.getNumberOfMarks();
+    MarkRanges cut;
+    if (info.read_request_map)
+        cut = ranges;
     auto refined = ranges_refiner->refine(info, std::move(ranges));
     size_t marks_after = refined.getNumberOfMarks();
 
@@ -514,12 +563,51 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
             marks_after, marks_before, info.data_part_info->getPartName());
 
     if (marks_after < marks_before)
+    {
         ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedMarks, marks_before - marks_after);
+        if (info.read_request_map)
+            recordDroppedRanges(info, std::move(cut), refined);
+    }
 
     if (marks_after == 0)
         ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedCuts);
 
     return refined;
+}
+
+void MergeTreeReadPoolBase::recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const
+{
+    auto by_begin = [](const MarkRange & lhs, const MarkRange & rhs) { return lhs.begin < rhs.begin; };
+    std::sort(cut.begin(), cut.end(), by_begin);
+    std::sort(refined.begin(), refined.end(), by_begin);
+    auto dropped = subtractMarkRanges(cut, refined);
+
+    std::lock_guard lock(dropped_ranges_mutex);
+    auto & part = dropped_ranges[&info];
+    part.ranges = uniteMarkRanges(part.ranges, dropped);
+    ++part.version;
+}
+
+MarkRangesPtr MergeTreeReadPoolBase::mapWithoutDroppedRanges(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & read_request_map) const
+{
+    if (!ranges_refiner || !info.read_request_map)
+        return read_request_map;
+
+    const auto & base = read_request_map ? read_request_map : info.read_request_map;
+
+    std::lock_guard lock(dropped_ranges_mutex);
+    auto it = dropped_ranges.find(&info);
+    if (it == dropped_ranges.end())
+        return base;
+
+    auto & part = it->second;
+    if (part.map_base != base || part.map_version != part.version)
+    {
+        part.map = std::make_shared<const MarkRanges>(subtractMarkRanges(*base, part.ranges));
+        part.map_base = base;
+        part.map_version = part.version;
+    }
+    return part.map;
 }
 
 }

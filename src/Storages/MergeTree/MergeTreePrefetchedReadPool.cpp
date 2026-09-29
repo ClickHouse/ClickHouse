@@ -108,7 +108,9 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
-        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+        readers = MergeTreeReadTask::createReaders(
+            task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges,
+            read_prefetch.mapWithoutDroppedRanges(*task.read_info, nullptr));
 
         /// This is already a prefetch thread, so initiate the prefetches inline.
         read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
