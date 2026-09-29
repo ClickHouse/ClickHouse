@@ -20,9 +20,9 @@ PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 # factory requires at least two `max_download_buffer_size` segments - and serves the range requests
 # of its workers. The first segment starts with a few good rows and then blocks, so that the
 # workers are inside their reads when the cancellation arrives; the rest of the data is never sent.
-# It binds to the port 0 and reports the port the kernel gave it, so that it cannot collide with
-# anything else running in parallel, and serves requests in parallel: the test polls it while a
-# range request is being held.
+# /reset starts the next attempt from scratch, see below. It binds to the port 0 and reports the
+# port the kernel gave it, so that it cannot collide with anything else running in parallel, and
+# serves requests in parallel: the test polls it while a range request is being held.
 python3 -u -c "
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -58,6 +58,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif self.path == '/release':
             release.set()
+            self.send_response(200)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+        elif self.path == '/reset':
+            with lock:
+                ranges = 0
+            release.clear()
             self.send_response(200)
             self.send_header('Content-Length', '0')
             self.end_headers()
@@ -117,35 +124,47 @@ for _ in {1..300}; do
     sleep 0.1
 done
 
-QUERY_ID="${CLICKHOUSE_DATABASE}_parallel_read_soft_cancel"
 STDERR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.stderr")
 
-# `max_download_buffer_size` makes the reported file size two segments, which is the least the
-# format factory accepts for the parallel read; `parallel_replicas_for_cluster_engines` would
-# rewrite url to urlCluster and read it in remote queries with their own query ids, leaving the log
-# the test waits for under a different query id.
-$CLICKHOUSE_CLIENT \
-    --max_execution_time 3 \
-    --timeout_overflow_mode 'break' \
-    --max_download_threads 2 \
-    --max_download_buffer_size 2097152 \
-    --parallel_replicas_for_cluster_engines 0 \
-    --query_id "$QUERY_ID" \
-    --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64')" \
-    >/dev/null 2>"$STDERR_FILE" &
-CLIENT_PID=$!
+# The cancellation must arrive while the workers are inside their range requests. When the server
+# is slow to start the query - under a sanitizer, for example - the timeout can fire before the
+# workers have made them: nothing to assert then, so retry.
+for attempt in {1..10}; do
+    curl -sS "http://127.0.0.1:$HTTP_PORT/reset" -o /dev/null
 
-# Wait until the workers of the parallel read are inside their range requests.
-PARALLEL=0
-for _ in {1..300}; do
-    [[ $(curl -sS "http://127.0.0.1:$HTTP_PORT/ranges") -ge 2 ]] && PARALLEL=1 && break
-    sleep 0.1
+    QUERY_ID="${CLICKHOUSE_DATABASE}_parallel_read_soft_cancel_$attempt"
+
+    # `max_download_buffer_size` makes the reported file size two segments, which is the least the
+    # format factory accepts for the parallel read; `parallel_replicas_for_cluster_engines` would
+    # rewrite url to urlCluster and read it in remote queries with their own query ids, leaving the
+    # log the test waits for under a different query id.
+    $CLICKHOUSE_CLIENT \
+        --max_execution_time 3 \
+        --timeout_overflow_mode 'break' \
+        --max_download_threads 2 \
+        --max_download_buffer_size 2097152 \
+        --parallel_replicas_for_cluster_engines 0 \
+        --query_id "$QUERY_ID" \
+        --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64')" \
+        >/dev/null 2>"$STDERR_FILE" &
+    CLIENT_PID=$!
+
+    # Wait until the workers of the parallel read are inside their range requests, or until the
+    # query has ended without them.
+    PARALLEL=0
+    for _ in {1..300}; do
+        [[ $(curl -sS "http://127.0.0.1:$HTTP_PORT/ranges") -ge 2 ]] && PARALLEL=1 && break
+        kill -0 "$CLIENT_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+
+    wait $CLIENT_PID
+    CLIENT_STATUS=$?
+
+    curl -sS "http://127.0.0.1:$HTTP_PORT/release" -o /dev/null
+
+    ((PARALLEL == 1)) && break
 done
-
-wait $CLIENT_PID
-CLIENT_STATUS=$?
-
-curl -sS "http://127.0.0.1:$HTTP_PORT/release" -o /dev/null
 
 if ((PARALLEL == 1)); then
     echo "the data was read by the workers of the parallel read buffer"

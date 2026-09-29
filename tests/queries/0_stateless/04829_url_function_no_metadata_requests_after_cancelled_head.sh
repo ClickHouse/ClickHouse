@@ -28,6 +28,8 @@ PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 #   release the source early.
 # - GET /file serves the data at once: only the cancellation, not a failure, stops the source from
 #   requesting it.
+# - /reset starts the next attempt from scratch, for the case when the cancellation preempts the
+#   HEAD request, see below.
 # The server must serve requests in parallel: the test polls /stats and requests /release while
 # HEAD /file is being served, and a single-threaded server would block them until the query has
 # already finished, too late to cancel it.
@@ -57,6 +59,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
         elif self.path == '/release':
             release.set()
+            self.send_response(200)
+            self.end_headers()
+        elif self.path == '/reset':
+            release.clear()
+            counts.clear()
             self.send_response(200)
             self.end_headers()
         elif self.path == '/file':
@@ -106,46 +113,68 @@ stat_count()
     curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('$1', 0))"
 }
 
-QUERY_ID="${CLICKHOUSE_DATABASE}_cancelled_head"
 ERROR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.err")
 
-# parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
-# queries with their own query ids: the log the test polls for would be left under a different
-# query id.
-$CLICKHOUSE_CLIENT \
-    --max_execution_time 1 \
-    --timeout_overflow_mode break \
-    --http_make_head_request 1 \
-    --parallel_replicas_for_cluster_engines 0 \
-    --query_id "$QUERY_ID" \
-    --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/file', 'CSV', 'x UInt64')" \
-    2>"$ERROR_FILE" &
-CLIENT_PID=$!
+# The timeout must be delivered while the source is blocked in the HEAD request. When the server is
+# slow to start the query - under a sanitizer, for example - the timeout can fire before the HEAD
+# request has been made, and the source stops without making any request: nothing to assert then,
+# so retry.
+for attempt in {1..10}; do
+    curl -sS "http://127.0.0.1:$HTTP_PORT/reset" -o /dev/null
 
-# The timeout is delivered to the source while it is blocked in the HEAD request: the source leaves
-# a trace in the log, which the test waits for before releasing the response.
-DELIVERED=0
-for _ in {1..120}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
-        DELIVERED=1
-        break
+    QUERY_ID="${CLICKHOUSE_DATABASE}_cancelled_head_$attempt"
+
+    # parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
+    # queries with their own query ids: the log the test polls for would be left under a different
+    # query id.
+    $CLICKHOUSE_CLIENT \
+        --max_execution_time 1 \
+        --timeout_overflow_mode break \
+        --http_make_head_request 1 \
+        --parallel_replicas_for_cluster_engines 0 \
+        --query_id "$QUERY_ID" \
+        --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/file', 'CSV', 'x UInt64')" \
+        2>"$ERROR_FILE" &
+    CLIENT_PID=$!
+
+    # Wait until the source is inside the HEAD request, or until the query has ended without it.
+    HEAD_MADE=0
+    for _ in {1..300}; do
+        (($(stat_count "HEAD /file") > 0)) && HEAD_MADE=1 && break
+        kill -0 "$CLIENT_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+
+    # The timeout is delivered to the source while it is blocked in the HEAD request: the source
+    # leaves a trace in the log, which the test waits for before releasing the response.
+    DELIVERED=0
+    if ((HEAD_MADE == 1)); then
+        for _ in {1..120}; do
+            $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+            if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
+                DELIVERED=1
+                break
+            fi
+            sleep 0.1
+        done
     fi
-    sleep 0.1
+
+    # Only now, with the cancellation delivered, answer the HEAD request the source is blocked in
+    # with the status which means "the server does not support HEAD". The source must not treat it
+    # as a file without metadata and go on requesting the size and the data.
+    curl -sS "http://127.0.0.1:$HTTP_PORT/release" -o /dev/null
+
+    wait $CLIENT_PID
+    CLIENT_STATUS=$?
+
+    ((HEAD_MADE == 1)) && break
 done
+
 if ((DELIVERED == 1)); then
     echo "the cancellation was delivered while the source was blocked in the HEAD request"
 else
-    echo "FAIL: no cancellation reached the source"
+    echo "FAIL: the cancellation was not delivered while the source was blocked in the HEAD request"
 fi
-
-# Only now, with the cancellation delivered, answer the HEAD request the source is blocked in with
-# the status which means "the server does not support HEAD". The source must not treat it as a file
-# without metadata and go on requesting the size and the data.
-curl -sS "http://127.0.0.1:$HTTP_PORT/release" -o /dev/null
-
-wait $CLIENT_PID
-CLIENT_STATUS=$?
 
 if ((CLIENT_STATUS == 0)); then
     echo "the timed out query succeeded with its partial result"
