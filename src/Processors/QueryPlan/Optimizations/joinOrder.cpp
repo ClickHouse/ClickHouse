@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include <Core/Joins.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -183,13 +184,31 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///   1. Remove predicates whose endpoints are already equivalent from child joins.
 ///      Non-redundant predicates are added to the equivalence classes immediately,
 ///      so later predicates at the same step can also be detected as redundant.
-///   2. If no predicates remain (transitive-only join), synthesize one per equivalence
-///      class spanning the left and right subtrees.
+///   2. At an inner join, synthesize one predicate per equivalence class spanning the left
+///      and right subtrees that the remaining predicates do not connect. If predicates remain,
+///      only for classes whose members have one type up to Nullable and LowCardinality
+///      (equality across types is not transitive), and not when a side is a prepared storage.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
-    const EquivalenceClasses<JoinActionRef> & column_equivalences)
+    const EquivalenceClasses<JoinActionRef> & column_equivalences,
+    const BitSet & prepared_storage_relations)
 {
     using EquivClasses = EquivalenceClasses<JoinActionRef>;
+
+    auto is_prepared_storage = [&](const DPJoinEntryPtr & side)
+    {
+        auto relation = side->relations.getSingleBit();
+        return relation && prepared_storage_relations.test(*relation);
+    };
+
+    auto has_single_type = [](const EquivClasses::Class & members)
+    {
+        auto type = removeLowCardinalityAndNullable(members.front().getType());
+        return std::ranges::all_of(members, [&](const JoinActionRef & member)
+        {
+            return removeLowCardinalityAndNullable(member.getType())->equals(*type);
+        });
+    };
 
     std::function<EquivClasses(const DPJoinEntryPtr &)> process =
         [&](const DPJoinEntryPtr & entry) -> EquivClasses
@@ -237,11 +256,32 @@ static void cleanupJoinPredicates(
             return false;
         });
 
-        /// Phase 2: Synthesize predicates for transitive-only joins.
-        if (expressions.empty() && isInner(entry->join_operator.kind))
+        /// Phase 2: Synthesize predicates for equivalence classes spanning both subtrees.
+        const bool has_predicates = !expressions.empty();
+        if (is_inner && !(has_predicates && (is_prepared_storage(entry->left) || is_prepared_storage(entry->right))))
         {
             const auto & left_rels = entry->left->relations;
             const auto & right_rels = entry->right->relations;
+
+            auto is_from = [](const BitSet & rels, const JoinActionRef & member)
+            {
+                auto rel = member.getSourceRelations().getSingleBit();
+                return rel && rels.test(*rel);
+            };
+
+            auto is_connected = [&](const EquivClasses::Class & members)
+            {
+                for (const auto & lhs : members)
+                {
+                    auto lhs_class = is_from(left_rels, lhs) ? equiv.getClass(lhs) : nullptr;
+                    if (!lhs_class)
+                        continue;
+                    for (const auto & rhs : members)
+                        if (is_from(right_rels, rhs) && equiv.getClass(rhs) == lhs_class)
+                            return true;
+                }
+                return false;
+            };
 
             using ConstClassPtr = EquivClasses::ConstClassPtr;
             std::unordered_set<ConstClassPtr> visited;
@@ -254,6 +294,9 @@ static void cleanupJoinPredicates(
 
                 auto equiv_class = column_equivalences.getClass(member);
                 if (!equiv_class || !visited.insert(equiv_class).second)
+                    continue;
+
+                if (has_predicates && (is_connected(*equiv_class) || !has_single_type(*equiv_class)))
                     continue;
 
                 for (const auto & other : *equiv_class)
@@ -368,6 +411,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         query_graph.buildColumnEquivalences();
         column_equivalences = query_graph.column_equivalences;
     }
+    auto prepared_storage_relations = query_graph.prepared_storage_relations;
 
     /// Carry the conflict-detector setting on the graph so DPsub (which only receives the
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
@@ -382,7 +426,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
     if (optimization_settings.enable_join_transitive_predicates)
-        cleanupJoinPredicates(best_plan, column_equivalences);
+        cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations);
     return best_plan;
 }
 

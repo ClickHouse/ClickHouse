@@ -707,7 +707,7 @@ def test_promql_extended_support():
                 if isinstance(command, promqltest.LoadBlock):
                     insert_values = []
                     for series in command.series:
-                        values = promqltest.series_insert_values(command.interval_s, series)
+                        values = promqltest.series_insert_values(command.interval_ns, series)
                         if values is not None:
                             insert_values.append(values)
                     if insert_values:
