@@ -89,7 +89,7 @@ std::istream * receiveResponse(
     return &istr;
 }
 
-std::vector<std::string> requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
+Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
 {
     if (!request.has("Authorization"))
         return {};
@@ -104,7 +104,7 @@ std::vector<std::string> requestCredentialSecrets(const Poco::Net::HTTPRequest &
     {
         /// `HTTPBasicCredentials` decodes the base64 user name and password from the header.
         Poco::Net::HTTPBasicCredentials credentials(request);
-        std::vector<std::string> secrets;
+        Strings secrets;
         if (!credentials.getUsername().empty())
             secrets.push_back(credentials.getUsername());
         if (!credentials.getPassword().empty())
@@ -117,7 +117,7 @@ std::vector<std::string> requestCredentialSecrets(const Poco::Net::HTTPRequest &
 
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects,
-    const std::vector<std::string> & body_secrets)
+    const Strings & body_secrets)
 {
     auto status = response.getStatus();
 
@@ -144,7 +144,7 @@ Exception HTTPException::makeExceptionMessage(
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body,
-    const std::vector<std::string> & body_secrets)
+    const Strings & body_secrets)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
