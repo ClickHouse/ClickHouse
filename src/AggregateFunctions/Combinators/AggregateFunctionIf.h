@@ -192,10 +192,17 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
         if (only_null_condition)
             return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlaceNotNull(
+                row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
     }
 
@@ -238,6 +245,16 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
