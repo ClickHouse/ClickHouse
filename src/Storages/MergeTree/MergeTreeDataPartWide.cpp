@@ -152,22 +152,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     MergeTreeIndexGranularityPtr computed_index_granularity,
-    WrittenOffsetSubstreams * written_offset_substreams);
-MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
-    const String & data_part_name_,
-    const String & logger_name_,
-    const SerializationByName & serializations_,
-    MutableDataPartStoragePtr data_part_storage_,
-    const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const MergeTreeSettingsPtr & storage_settings_,
-    const NamesAndTypesList & columns_list,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const String & marks_file_extension_,
-    const CompressionCodecPtr & default_codec_,
-    const MergeTreeWriterSettings & writer_settings,
-    MergeTreeIndexGranularityPtr computed_index_granularity,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    const PlannedMapKeyColumnsKeys & map_key_columns_keys)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
@@ -175,7 +161,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         metadata_snapshot, indices_to_recalc,
         marks_file_extension_,
         default_codec_, writer_settings, std::move(computed_index_granularity),
-        written_offset_substreams);
+        written_offset_substreams, map_key_columns_keys);
 }
 
 void MergeTreeDataPartWide::addStreamToColumnSize(const String & stream_name, ColumnSize & size) const

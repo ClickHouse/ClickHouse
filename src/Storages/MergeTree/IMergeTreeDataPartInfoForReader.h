@@ -126,6 +126,15 @@ public:
 
     virtual SerializationPtr getSerialization(const NameAndTypePair & column) const = 0;
 
+    /// The part's own serialization for a physical column (resolved at part load,
+    /// including the Map serialization version the part was written with), or
+    /// nullptr when the column is not physical in this part.
+    virtual SerializationPtr tryGetSerialization(const String & column_name) const
+    {
+        (void)column_name;
+        return nullptr;
+    }
+
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     virtual String getTableName() const = 0;

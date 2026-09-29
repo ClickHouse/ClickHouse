@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
 #include <ranges>
 
@@ -100,7 +101,25 @@ void MergeTreeReaderCompact::fillColumnPositions()
             const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
             if (!part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name)
                 && !type_for_subcolumn->hasSubcolumn(subcolumn_name))
-                position.reset();
+            {
+                /// Dynamic subcolumns (the `key_<key>` / `exists_<key>` subcolumns of a
+                /// `with_key_columns` Map) are never listed by `hasSubcolumn`: whether one
+                /// exists in this part is decided by the substreams recorded in
+                /// `columns_substreams.txt` -- the per-key substreams of a key that is absent
+                /// from the part were never written, so the serialization reads the key as
+                /// missing. Only the streams that every key column shares (the `m.keys`
+                /// manifest) prove the column itself exists here.
+                bool is_existing_dynamic_subcolumn = false;
+                if (has_substream_marks && type_for_subcolumn->hasDynamicSubcolumnsData())
+                {
+                    ISerialization::SubstreamPath keys_path;
+                    keys_path.push_back(ISerialization::Substream::MapKeys);
+                    is_existing_dynamic_subcolumn
+                        = columns_substreams.tryGetSubstreamPosition(*position, column_to_read, keys_path, storage_settings).has_value();
+                }
+                if (!is_existing_dynamic_subcolumn)
+                    position.reset();
+            }
         }
 
         column_positions[i] = std::move(position);
@@ -214,10 +233,41 @@ void MergeTreeReaderCompact::readData(
         if (needSkipStream(column_idx, substream_path))
             return nullptr;
 
+        if (!substream_path.empty() && substream_path.back().type == ISerialization::Substream::MapKeys)
+        {
+            /// The `m.keys` manifest of a `with_key_columns` Map is written by the
+            /// state prefix of every granule (compact parts re-run the prefix per
+            /// granule), so its marks always point at manifest bytes. The manifest is
+            /// self-delimiting (a key count followed by the keys), so reading it
+            /// through the shared buffer consumes exactly its bytes -- this is what
+            /// allows a nested Map (e.g. `Array(Map(...))`) to share the manifest's
+            /// stream with the per-granule element data that follows the manifest.
+            /// A manifest absent from `columns_substreams.txt` means the column has
+            /// no data in this part.
+            /// (This also applies to subcolumn reads, whose prefix reads the manifest.)
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
+        }
+
         if (seek_to_substream_mark)
         {
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
+        }
+        else if (!substream_path.empty()
+            && (substream_path.back().type == ISerialization::Substream::MapKeyValue
+                || substream_path.back().type == ISerialization::Substream::MapKeyPresence))
+        {
+            /// A whole-Map read of a `with_key_columns` column reads the streams of every
+            /// key through the shared buffer: seek each substream to its recorded position.
+            /// A substream absent from `columns_substreams.txt` (a key absent from this
+            /// part) has no data here; the serialization treats a null buffer as missing.
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
         }
 
         return stream.getDataBuffer();
@@ -411,8 +461,12 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
+            /// Dynamic subcolumns (the `key_<key>` / `exists_<key>` subcolumns of a
+            /// `with_key_columns` Map) are not listed by `hasSubcolumn`; they exist in
+            /// the part when their streams are recorded in `columns_substreams.txt`.
             if (part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), columns_to_read[index].name)
-                || column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+                || column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName())
+                || column_from_part.type->hasDynamicSubcolumnsData())
             {
                 subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
@@ -465,7 +519,30 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
         if (needSkipStream(column_idx, substream_path))
             return nullptr;
 
-        if (seek_to_substream_mark)
+        if (column_positions[column_idx] && !substream_path.empty() && substream_path.back().type == ISerialization::Substream::MapKeys)
+        {
+            /// Same manifest handling as in `readData`: the manifest is written per
+            /// granule and is self-delimiting, so reading it through the shared buffer
+            /// consumes exactly its bytes; only a seek to its mark is needed.
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
+        }
+        else if (column_positions[column_idx]
+            && !substream_path.empty()
+            && (substream_path.back().type == ISerialization::Substream::MapKeyValue
+                || substream_path.back().type == ISerialization::Substream::MapKeyPresence))
+        {
+            /// Same per-key seeking as in `readData`: a whole-Map prefix read seeks every
+            /// key's stream through the shared buffer; a substream absent from
+            /// `columns_substreams.txt` has no data in this part.
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
+        }
+        else if (seek_to_substream_mark)
         {
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);

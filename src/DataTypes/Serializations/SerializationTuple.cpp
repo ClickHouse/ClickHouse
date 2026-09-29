@@ -1,6 +1,7 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
@@ -748,6 +749,14 @@ struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBul
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
 };
 
+const std::vector<ISerialization::SerializeBinaryBulkStatePtr> * SerializationTuple::getElementStates(
+    const ISerialization::SerializeBinaryBulkState * state)
+{
+    if (const auto * tuple_state = typeid_cast<const SerializeBinaryBulkStateTuple *>(state))
+        return &tuple_state->states;
+    return nullptr;
+}
+
 struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinaryBulkState
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
@@ -786,6 +795,8 @@ void SerializationTuple::enumerateStreams(
             .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
             .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr)
             .withDeserializeState(tuple_deserialize_state ? tuple_deserialize_state->states[i] : nullptr);
+        if (auto child = SerializationMapKeyColumns::forwardNestedSeedKeysState(data.serialize_state, i))
+            next_data.serialize_state = std::move(child);
 
         elems[i]->enumerateStreams(settings, callback, next_data);
     }
@@ -800,7 +811,12 @@ void SerializationTuple::serializeBinaryBulkStatePrefix(
     tuple_state->states.resize(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
+    {
+        /// Forward the per-element child of a write-side seed chain for a nested
+        /// `with_key_columns` Map.
+        tuple_state->states[i] = SerializationMapKeyColumns::forwardNestedSeedKeysState(state, i);
         elems[i]->serializeBinaryBulkStatePrefix(extractElementColumn(column, i), settings, tuple_state->states[i]);
+    }
 
     state = std::move(tuple_state);
 }

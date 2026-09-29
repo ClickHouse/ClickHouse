@@ -1,0 +1,19 @@
+substreams
+['m.exists.a','m.exists.b','m.keys','m.values.a','m.values.b']
+files
+keys=1
+values_a=1
+exists_a=1
+values_b=1
+exists_b=1
+key_c_values=0
+key_c_exists=0
+columns_txt
+m_columns=1
+per_key_entries=0
+percent escaped key
+values_escaped=1
+exists_escaped=1
+literal_space=0
+0
+3

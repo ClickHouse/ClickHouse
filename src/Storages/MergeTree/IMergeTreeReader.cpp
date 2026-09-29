@@ -11,6 +11,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -447,10 +448,94 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
     auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
     auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    const auto & infos = data_part_info_for_read->getSerializationInfos();
+
+    auto get_serialization = [&](const NameAndTypePair & column) -> SerializationPtr
+    {
+        if (column_in_part)
+        {
+            /// The part resolves its full-column serializations at load, including
+            /// the with_key_columns Map layout of parts whose `serialization.json`
+            /// does not describe it; prefer that over re-deriving the serialization
+            /// from SerializationInfo here.
+            ///
+            /// Subcolumn entries that are stored as own physical columns in the part
+            /// (e.g. the arrays of a flattened `Nested`) are listed in the part's
+            /// serialization map under their full name; look them up directly. For
+            /// genuine subcolumns of a physical column (like `m.key_a` of a Map),
+            /// resolve from the parent's part serialization so the part's actual Map
+            /// layout is used. If the parent itself is not a physical column of the
+            /// part (e.g. a `Nested` name read as a whole), fall back to deriving
+            /// the serialization from the subcolumn's type and the part's
+            /// SerializationInfo, as before.
+            if (column_in_part->isSubcolumn())
+            {
+                /// A genuine per-key Map subcolumn (`m.key_<k>` of a `with_key_columns`
+                /// Map) must resolve from the parent's part serialization so the part's
+                /// actual Map layout is used. Other subcolumns keep the upstream
+                /// SerializationInfo-derived resolution: the part's serialization map
+                /// stores subcolumn serializations derived from the whole column's
+                /// serialization, which for types like Variant carries internal state
+                /// (discriminator mappings) that differs from a SerializationInfo-derived
+                /// one and would read the wrong streams.
+                if (auto parent_serialization = data_part_info_for_read->tryGetSerialization(column_in_part->getNameInStorage()))
+                {
+                    const auto & type_in_storage = column_in_part->getTypeInStorage();
+                    if (typeid_cast<const DataTypeMap *>(type_in_storage.get()))
+                        return type_in_storage->getSubcolumnSerialization(column_in_part->getSubcolumnName(), parent_serialization);
+                }
+
+                if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
+                    return IDataType::getSerialization(*column_in_part, *it->second);
+
+                return IDataType::getSerialization(*column_in_part, infos.getSettings());
+            }
+
+            /// A `with_key_columns` Map's part serialization (already rewritten to the
+            /// part's effective Map version by `applyTableMapSerializationVersionForBasicInfos`)
+            /// is the authoritative one for the whole column; the SerializationInfo-derived
+            /// fallback would rebuild the plain Map serialization. Other columns keep the
+            /// upstream SerializationInfo-derived resolution.
+            if (typeid_cast<const DataTypeMap *>(column_in_part->getTypeInStorage().get()))
+                if (auto direct = data_part_info_for_read->tryGetSerialization(column_in_part->name))
+                    return direct;
+
+            if (containsObjectType(*column_in_part->getTypeInStorage()))
+            {
+                auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
+                if (serialization->supportsPooling())
+                    return serialization;
+            }
+
+            if (auto it = infos.find(column_in_part->name); it != infos.end())
+                return IDataType::getSerialization(*column_in_part, *it->second);
+
+            return IDataType::getSerialization(*column_in_part, infos.getSettings());
+        }
+
+        /// The column is absent from the part. Derive the serialization from the
+        /// part's SerializationInfo; dynamic subcolumns such as `m.key_a` are not
+        /// listed in `columns.txt` but still apply the parent column's
+        /// SerializationInfo so `with_key_columns` / `with_buckets` Map key lookups
+        /// open the streams written for this part.
+        NameAndTypePair storage_column{column.getNameInStorage(), column.getTypeInStorage()};
+        SerializationPtr derived;
+        if (auto it = infos.find(column.getNameInStorage()); it != infos.end())
+            derived = IDataType::getSerialization(storage_column, *it->second);
+        else
+            derived = IDataType::getSerialization(storage_column, infos.getSettings());
+
+        if (column.isSubcolumn())
+        {
+            const auto & type_in_storage = column.getTypeInStorage();
+            return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), derived);
+        }
+
+        return derived;
+    };
 
     if (!column_in_part)
     {
-        const auto & infos = data_part_info_for_read->getSerializationInfos();
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
         {
             auto type_in_part = DataTypeFactory::instance().get(missing->type_name);
@@ -459,14 +544,12 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
                 name_pair.second,
                 type_in_part,
                 name_pair.second.empty() ? type_in_part : type_in_part->getSubcolumnType(name_pair.second)};
-            return IDataType::getSerialization(missed_column);
+            return get_serialization(missed_column);
         }
 
         NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-        return IDataType::getSerialization(missed_column);
+        return get_serialization(missed_column);
     }
-
-    const auto & infos = data_part_info_for_read->getSerializationInfos();
 
     /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
     /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
@@ -485,17 +568,7 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    if (containsObjectType(*column_in_part->getTypeInStorage()))
-    {
-        auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
-        if (serialization->supportsPooling())
-            return serialization;
-    }
-
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
-
-    return IDataType::getSerialization(*column_in_part, infos.getSettings());
+    return get_serialization(*column_in_part);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
