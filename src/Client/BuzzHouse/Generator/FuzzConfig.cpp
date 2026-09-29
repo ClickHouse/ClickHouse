@@ -956,27 +956,11 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
     if (enable_failpoints)
     {
-        /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion, trigger_sanitizer_error - The server aborts legitimately, can't be used
-        /// terminate_with_exception, terminate_with_std_exception - Terminates the server
-        /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
-        ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
-        /// attach_to_group_failure, thread_group_switcher_post_attach_failure - Break the "a query thread has a thread
-        ///     group" invariant on whatever thread happens to hit them next. `ThreadGroupSwitcher` is `noexcept` and only
-        ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
-        ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
-        ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
-        /// pauseable, pauseable_once - Block the next thread to reach them until a NOTIFY or DISABLE names that same
-        ///     failpoint, with no timeout. Each statement below picks its name at random, so a resume rarely follows.
-        /// I am limiting the number of failpoints per run, so the WAIT and NOTIFY failpoint can suceed more
         loadServerSettings<String>(
             this->failpoints,
             "failpoints",
             "SELECT \"name\" FROM \"system\".\"fail_points\""
-            " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once')"
-            " AND \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
-            "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
-            "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
-            "'thread_group_switcher_post_attach_failure') ORDER BY rand() LIMIT 10");
+            " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once') ORDER BY rand() LIMIT 10");
     }
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     loadFunctions();

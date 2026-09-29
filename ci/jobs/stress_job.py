@@ -197,6 +197,18 @@ def stderr_reports_sanitizer_error(stderr_logs: List[Path]) -> bool:
 RUNNER_MEMORY_RESERVE = 8 * 1024**3
 
 
+# Rows the harness writes about a consequence of a server crash rather than
+# about its cause. When the server logs name the crash, such a row only repeats
+# it as a separate, less specific failure.
+CRASH_CONSEQUENCE_RESULT_NAMES = frozenset(
+    {
+        "Cannot start clickhouse-server",
+        "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)",
+        "Test script failed",
+    }
+)
+
+
 def container_memory_limit() -> int:
     visible = Utils.physical_memory()
     limit = visible - RUNNER_MEMORY_RESERVE
@@ -757,6 +769,14 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     f"Only expected messages in the server logs: {failures.results[0][0]}"
                 )
             elif failures.results:
+                if crash_named:
+                    # The crash named in the server logs is the cause, so drop the rows
+                    # about its consequences to report it once.
+                    failed_results = [
+                        r
+                        for r in failed_results
+                        if r.name not in CRASH_CONSEQUENCE_RESULT_NAMES
+                    ]
                 for name, description, files in failures.results:
                     failed_results.append(
                         Result.create_from(
@@ -784,7 +804,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
-    if exit_code != 0:
+    # The crash named in the server logs explains the non-zero exit code of the
+    # script, so a generic row about it would only duplicate that failure. Any
+    # other failed row does not: the script may also have failed on its own later.
+    if exit_code != 0 and not crash_named:
         failed_results.append(
             Result.create_from(
                 name="Check failed",
