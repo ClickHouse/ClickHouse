@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# Tag no-parallel: the pool is keyed on host, port, credentials and pool size, none of which a test
-# database makes unique, so concurrent copies queue behind one connection. Measured with 6 copies:
-# 7s on its own, 16s together.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,6 +14,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # upper bound over its limit.
 QUERY_PREFIX="04659_${CLICKHOUSE_DATABASE}_$(random_str 8)"
 
+# The pool is keyed on host, port, user and pool size, so a user of its own keeps concurrent runs out
+# of each other's pool.
+POOL_USER="u_${QUERY_PREFIX}"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${POOL_USER} IDENTIFIED WITH no_password"
+trap '${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${POOL_USER}"' EXIT
+
 function running() {
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id IN (${1})"
 }
@@ -29,6 +31,22 @@ function wait_running() {
     local wanted=$1 ids=$2 deadline=$((SECONDS + $3))
     while (( SECONDS < deadline )); do
         [[ $(running "${ids}") == "${wanted}" ]] && return 0
+        sleep 0.05
+    done
+    return 1
+}
+
+# Being in system.processes only means a query has started. The log line shows it reached the pool;
+# an indefinite wait logs it without a frequency limit.
+function wait_blocked() {
+    local deadline=$((SECONDS + $2))
+    while (( SECONDS < deadline )); do
+        [[ $(${CLICKHOUSE_CLIENT} --query "
+            SYSTEM FLUSH LOGS text_log;
+            SELECT count() FROM system.text_log
+            WHERE event_date >= yesterday() AND query_id = '$1'
+              AND message_format_string = 'No free connections in pool. Waiting indefinitely.'
+        ") != 0 ]] && return 0
         sleep 0.05
     done
     return 1
@@ -50,7 +68,7 @@ function contend() {
     # Sleeps far longer than the handshake below needs, so the connection stays held until the kill
     # frees it. The per block sleep cap is what bounds the row count.
     timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${holder}" --query "
-        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(30)) WHERE sleepEachRow(1)
+        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(30), '${POOL_USER}', '') WHERE sleepEachRow(1)
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
                  connection_pool_max_wait_ms = ${wait_ms}, function_sleep_max_microseconds_per_block = 60000000
     " < /dev/null > /dev/null 2>&1 &
@@ -60,7 +78,7 @@ function contend() {
     wait_running 1 "'${holder}'" 60 || echo "the holder never started, so the pool was never full"
 
     timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
-        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1)) WHERE sleepEachRow(1)
+        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1), '${POOL_USER}', '') WHERE sleepEachRow(1)
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
                  connection_pool_max_wait_ms = ${wait_ms}, function_sleep_max_microseconds_per_block = 60000000
     " < /dev/null > /dev/null 2>&1 &
@@ -73,11 +91,7 @@ function contend() {
     if [[ $3 == succeeds ]]; then
         # Here only the kill can end the wait, so the waiter has to be in it first: a kill that
         # landed earlier would free the connection before there was any wait to hand it over to.
-        wait_running 1 "'${waiter}'" 60 || echo "the waiter never started, so it never reached the pool"
-
-        # Being in system.processes only means the waiter has started, so give it time to reach the
-        # pool and log.
-        sleep 2
+        wait_blocked "${waiter}" 60 || echo "the waiter never reached the pool"
     else
         # Here the waiter ends on its own deadline, which is the whole point of the arm, so the kill
         # must not come first: waiting for the waiter to exit is what orders the two. Its own bound
@@ -194,7 +208,7 @@ function cancel_waiter() {
     # The holder does not wait, so the value is inert for it; it is kept identical to the waiter's so
     # the pair is queueing under one configuration.
     timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${holder}" --query "
-        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(30)) WHERE sleepEachRow(1)
+        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(30), '${POOL_USER}', '') WHERE sleepEachRow(1)
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
                  connection_pool_max_wait_ms = ${pool_wait_ms}, function_sleep_max_microseconds_per_block = 60000000
     " < /dev/null > /dev/null 2>&1 &
@@ -204,10 +218,10 @@ function cancel_waiter() {
 
     # A soft deadline the pool wait has to observe by itself. A wait that does not only reports the
     # timeout once the connection comes back, which is the regression this arm pins.
-    [[ ${mode} == soft ]] && limit=", max_execution_time = 5"
+    [[ ${mode} == soft ]] && limit=", max_execution_time = 2"
 
     timeout 12 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
-        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1))
+        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1), '${POOL_USER}', '')
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
                  connection_pool_max_wait_ms = ${pool_wait_ms}${limit}
     " < /dev/null > /dev/null 2>&1 &
@@ -219,9 +233,13 @@ function cancel_waiter() {
         wait_running 2 "'${holder}', '${waiter}'" 60 \
             || echo "the queries never ran at the same time, so the pool was never full"
 
-        # Being in system.processes only means the waiter has started, so give it time to reach the
-        # pool: a kill that arrives before the wait would not exercise the wait at all.
-        sleep 2
+        # A kill that arrives before the wait would not exercise the wait at all. A finite wait logs
+        # under a frequency limit, so its line may be suppressed and a short sleep has to do.
+        if [[ ${pool_wait_ms} == 0 ]]; then
+            wait_blocked "${waiter}" 60 || echo "the waiter never reached the pool"
+        else
+            sleep 1
+        fi
 
         timeout 12 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${waiter}' SYNC" > /dev/null 2>&1 || rc=$?
         [[ ${rc} == 0 ]] || echo "the waiter did not stop when it was killed"
