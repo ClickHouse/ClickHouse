@@ -1789,7 +1789,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         {
             const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
 
-            LOG_TRACE(log, "Executing prewhere actions on block: {}", block.dumpStructure());
+            LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
 
             prewhere_info->actions->execute(block);
 
@@ -1854,7 +1854,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         }
     }
 
-    LOG_TRACE(log, "After execute prewhere {}", result.dumpInfo());
+    LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());
 }
 
 std::string PrewhereExprInfo::dump() const
