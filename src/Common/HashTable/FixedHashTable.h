@@ -405,9 +405,6 @@ public:
     /// is left. An empty table keeps `max < min`, which is how iteration finds nothing.
     void restoreMinMaxOptimization()
     {
-        if (!disable_min_max_optimization)
-            return;
-
         min = NUM_CELLS - 1;
         max = 0;
         if (buf)

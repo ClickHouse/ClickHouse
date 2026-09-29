@@ -2879,14 +2879,11 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::onBuildPhaseFinish()
 {
-    /// The buckets are final here (`ConcurrentHashJoin` has merged the slots into one map by now), so
-    /// the cell numbering the used flags are indexed by can be settled.
-    if (twoLevelMapIsUsed())
-    {
-        const auto maps_kind = getMapsKind();
-        for (auto & map : data->maps)
-            joinDispatch(kind, strictness, map, maps_kind, [this](auto, auto, auto & map_) { map_.computeBucketPrefix(data->type); });
-    }
+    /// The used flags are indexed by `offsetInternal`, and `offsetInternal` needs the bucket prefix sums.
+    /// The buckets do not change after this point. `ConcurrentHashJoin` calls this function only after it has
+    /// merged the maps of all its slots into one.
+    for (auto & map : data->maps)
+        std::visit([this](auto & map_) { map_.computeBucketPrefix(data->type); }, map);
 
     reinitUsedFlags();
 
