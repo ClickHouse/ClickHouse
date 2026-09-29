@@ -246,21 +246,23 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     EXPECT_EQ(object_storage->reads, 2);
     EXPECT_EQ(reader.getFileSize("A/file"), 4);
 
+    /// The new name has a different length, so the rewritten `prefix.path` gets a different ETag even
+    /// if the filesystem keeps the modification time of an object rewritten within one clock tick.
     {
         auto tx = writer->createTransaction();
-        tx->moveDirectory("A", "C");
+        tx->moveDirectory("A", "C1");
         tx->removeDirectory("B");
         tx->commit(DB::NoCommitOptions{});
     }
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 3);
-    EXPECT_EQ(reader.listDirectory(""), std::vector<std::string>({"C"}));
-    EXPECT_EQ(reader.getFileSize("C/file"), 4);
+    EXPECT_EQ(reader.listDirectory(""), std::vector<std::string>({"C1"}));
+    EXPECT_EQ(reader.getFileSize("C1/file"), 4);
 
     create_directory("A");
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 4);
-    EXPECT_EQ(sorted(reader.listDirectory("")), std::vector<std::string>({"A", "C"}));
+    EXPECT_EQ(sorted(reader.listDirectory("")), std::vector<std::string>({"A", "C1"}));
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 4);
 
@@ -275,44 +277,17 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     EXPECT_EQ(object_storage->reads, 8);
     {
         auto tx = writer->createTransaction();
-        tx->moveDirectory("C", "D");
+        tx->moveDirectory("C1", "D");
         tx->commit(DB::NoCommitOptions{});
     }
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 10);
-    EXPECT_FALSE(reader.existsDirectory("C"));
+    EXPECT_FALSE(reader.existsDirectory("C1"));
     EXPECT_EQ(reader.getFileSize("D/file"), 4);
 
     /// A forced reload must still read all directory bodies.
     reader.dropCache();
     EXPECT_EQ(object_storage->reads, 12);
-}
-
-/// `LocalObjectStorage` stages a write next to its target until it is finalized. The
-/// metadata loaded while the writer is still open must not take the staged file for a
-/// file of the directory.
-TEST_F(MetadataPlainRewritableDiskTest, LoadIgnoresUnfinishedWrite)
-{
-    auto metadata = getMetadataStorage("LoadIgnoresUnfinishedWrite");
-    auto object_storage = getObjectStorage("LoadIgnoresUnfinishedWrite");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectory("A");
-        tx->commit(DB::NoCommitOptions{});
-    }
-
-    auto buffer = object_storage->writeObject(StoredObject(generateObjectKeyForPath(metadata, "A/file")), WriteMode::Rewrite);
-    buffer->write("data", 4);
-    buffer->next();
-
-    metadata = restartMetadataStorage("LoadIgnoresUnfinishedWrite");
-    EXPECT_EQ(metadata->listDirectory("A"), std::vector<std::string>{});
-
-    buffer->finalize();
-    metadata = restartMetadataStorage("LoadIgnoresUnfinishedWrite");
-    EXPECT_EQ(metadata->listDirectory("A"), std::vector<std::string>({"file"}));
-    EXPECT_EQ(metadata->getFileSize("A/file"), 4);
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)

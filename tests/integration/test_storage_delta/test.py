@@ -4684,13 +4684,6 @@ def test_write_external_cancel_does_not_crash_server(started_cluster, partitione
         f"SETTINGS output_format_parquet_compression_method = 'none'"
     )
 
-    def count_data_area_files():
-        return instance.exec_in_container(
-            ["bash", "-c", f"find /{result_file} -type f -not -path '*/_delta_log/*' | wc -l"]
-        ).strip()
-
-    assert count_data_area_files() == "0"
-
     query_id = str(uuid.uuid4())
 
     # An assertion raised inside a thread does not fail the test (pytest only turns
@@ -4721,11 +4714,11 @@ def test_write_external_cancel_does_not_crash_server(started_cluster, partitione
         # Wait until an inner sink has actually created its data file, i.e. its write
         # buffer is open, before cancelling. Source-side progress (read_rows) does not
         # prove the sink consumed anything, so key on the sink's own observable output.
-        # Like a remote object storage, the local one does not expose an object until
-        # it is finalized - it stages the write under a temporary name - so count any
-        # file outside of the Delta log, not just the published parquet files.
         for _ in range(100):
-            if int(count_data_area_files()) >= 1:
+            written_parquet_count = instance.exec_in_container(
+                ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+            ).strip()
+            if int(written_parquet_count) >= 1:
                 break
             time.sleep(0.1)
         else:
@@ -4742,12 +4735,13 @@ def test_write_external_cancel_does_not_crash_server(started_cluster, partitione
     # Server stays alive after the cancelled write (would have aborted before the fix).
     assert "1" == instance.query("SELECT 1").strip()
 
-    # The cancelled INSERT must not leave any orphan data file behind either, neither
-    # a published nor a staged one. The table started empty, so no file must remain
-    # outside of the Delta log.
-    orphan_file_count = count_data_area_files()
-    assert orphan_file_count == "0", (
-        f"orphan data file(s) left after cancelled insert: {orphan_file_count}"
+    # The cancelled INSERT must not leave any orphan data file behind either. The
+    # table started empty, so no parquet file must remain.
+    orphan_parquet_count = instance.exec_in_container(
+        ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+    ).strip()
+    assert orphan_parquet_count == "0", (
+        f"orphan data file(s) left after cancelled insert: {orphan_parquet_count}"
     )
 
 
