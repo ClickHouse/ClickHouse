@@ -471,11 +471,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     chassert(!task->entry.query.empty());
     chassert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
-    if (flags.run_as_submitting_user)
-    {
-        task->submitting_user_id = query_context->getUserID();
-        task->submitting_user_roles = query_context->getCurrentRoles();
-    }
+    if (flags.run_as_submitting_user && query_context->getUserID())
+        task->submitting_user_context = query_context;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();

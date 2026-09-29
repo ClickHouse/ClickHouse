@@ -120,9 +120,9 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
 
-    /// Set for an initial query that has to run as the submitting user, see `QueryFlags::run_as_submitting_user`.
-    std::optional<UUID> submitting_user_id;
-    std::vector<UUID> submitting_user_roles;
+    /// The context of the submitting user, for an initial query that has to run as that user,
+    /// see `QueryFlags::run_as_submitting_user`.
+    ContextPtr submitting_user_context;
 
     Coordination::Requests ops;
     ExecutionStatus execution_status;
