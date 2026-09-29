@@ -55,6 +55,5 @@ A lossy TTL recompression codec is accepted with allow_suspicious_ttl_expression
 0
 Legacy error-bound-mode aliases (ABS_OR_REL, NORM) stay loadable for backward compatibility
 1	1
-A compression block size that is not a multiple of the float width is rejected
 The lossless (zstd) fallback round-trips
 1

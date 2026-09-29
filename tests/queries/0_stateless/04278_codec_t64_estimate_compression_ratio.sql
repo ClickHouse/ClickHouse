@@ -88,24 +88,23 @@ WHERE database = currentDatabase() AND table = 't64_int64_cross_zero' AND active
 DROP TABLE t64_int64_cross_zero;
 
 
-SELECT 'T64 misaligned blocks';
+SELECT 'T64 block size below one value';
 
-DROP TABLE IF EXISTS t64_misaligned_blocks;
+DROP TABLE IF EXISTS t64_small_blocks;
 
-CREATE TABLE t64_misaligned_blocks (x UInt32 CODEC(T64))
+CREATE TABLE t64_small_blocks (x UInt32 CODEC(T64))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 0, max_compress_block_size = 5;
 
--- 5 is not a multiple of sizeof(UInt32), so every block ends with unaligned bytes (`bytes_to_skip`) and the final 1-byte block holds no 
--- whole value (`bytes_to_compress == 0`). One granule of data keeps the writer's chunking aligned with the aggregate's.
-INSERT INTO t64_misaligned_blocks SELECT number FROM numbers(4);
+-- 5 is below sizeof(UInt32), so the writer rounds it up to one value per block, and so must the aggregate.
+INSERT INTO t64_small_blocks SELECT number FROM numbers(4);
 
 SELECT
     column_data_compressed_bytes AS on_disk_bytes,
     toUInt64(round(column_data_uncompressed_bytes /
-                   (SELECT estimateCompressionRatio('T64', 5)(x) FROM t64_misaligned_blocks))) AS aggregate_predicted_bytes,
+                   (SELECT estimateCompressionRatio('T64', 4)(x) FROM t64_small_blocks))) AS aggregate_predicted_bytes,
     on_disk_bytes = aggregate_predicted_bytes AS matches
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't64_misaligned_blocks' AND active AND column = 'x';
+WHERE database = currentDatabase() AND table = 't64_small_blocks' AND active AND column = 'x';
 
-DROP TABLE t64_misaligned_blocks;
+DROP TABLE t64_small_blocks;
