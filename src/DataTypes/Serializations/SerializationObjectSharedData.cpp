@@ -13,12 +13,14 @@
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
 #include <algorithm>
+#include <numeric>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
@@ -1049,6 +1051,32 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObjectSharedData::des
     return state;
 }
 
+void SerializationObjectSharedData::checkChunksMatchFirstBucket(
+    const ChunkStructures & chunks, const ChunkStructures & first_bucket_chunks, size_t bucket)
+{
+    if (chunks.size() != first_bucket_chunks.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Bucket {} of Object shared data has {} chunks, but bucket 0 has {} chunks",
+            bucket,
+            chunks.size(),
+            first_bucket_chunks.size());
+
+    for (size_t chunk = 0; chunk != chunks.size(); ++chunk)
+    {
+        if (chunks[chunk].limit != first_bucket_chunks[chunk].limit || chunks[chunk].offset != first_bucket_chunks[chunk].offset)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Chunk {} of bucket {} of Object shared data has {} rows at offset {}, but the same chunk of bucket 0 has {} rows at offset {}",
+                chunk,
+                bucket,
+                chunks[chunk].limit,
+                chunks[chunk].offset,
+                first_bucket_chunks[chunk].limit,
+                first_bucket_chunks[chunk].offset);
+    }
+}
+
 std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObjectSharedData::deserializeStructure(
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -1443,6 +1471,17 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
                 {
                     auto subcolumn = subcolumns_infos[pos].type->createColumn();
                     subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(*subcolumn, chunk_structure.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
+                    /// The callers read the rows of the chunk out of this column, so a shorter one
+                    /// would be read out of bounds.
+                    if (subcolumn->size() != chunk_structure.num_rows)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected size of subcolumn {} of path {} in Object shared data: {}. Expected size {}",
+                            subcolumns_infos[pos].name,
+                            requested_path,
+                            subcolumn->size(),
+                            chunk_structure.num_rows);
+
                     paths_data_chunk.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
             }
@@ -1455,6 +1494,14 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
                 auto dynamic_column = dynamic_type->createColumn();
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
                 dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
+                if (dynamic_column->size() != chunk_structure.num_rows)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected size of path {} in Object shared data: {}. Expected size {}",
+                        requested_path,
+                        dynamic_column->size(),
+                        chunk_structure.num_rows);
+
                 paths_data_chunk.paths_data[requested_path] = std::move(dynamic_column);
             }
         }
@@ -1720,7 +1767,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
+            size_t values_size_before = values_column.size();
             SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
+            /// The number of values comes from the offsets, so a shorter column would be read out of bounds.
+            if (values_column.size() != values_size_before + nested_limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected number of values in Object shared data: {}. Expected {}",
+                    values_column.size() - values_size_before,
+                    nested_limit);
+
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1732,6 +1788,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             std::vector<std::vector<String>> chunks_paths;
             /// Collect the number of rows to read for each chunk.
             std::vector<size_t> chunks_limits;
+            std::shared_ptr<ChunkStructures> first_bucket_chunk_structures;
 
             for (size_t bucket = 0; bucket != buckets; ++bucket)
             {
@@ -1747,10 +1804,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 /// Initialize chunks_paths/chunks_limits on first bucket.
                 if (bucket == 0)
                 {
+                    first_bucket_chunk_structures = chunk_structures;
                     chunks_paths.resize(chunk_structures->size());
                     chunks_limits.reserve(chunk_structures->size());
                     for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
                         chunks_limits.push_back((*chunk_structures)[chunk_idx].limit);
+                }
+                else
+                {
+                    checkChunksMatchFirstBucket(*chunk_structures, *first_bucket_chunk_structures, bucket);
                 }
 
                 for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
@@ -1788,6 +1850,19 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Each chunk has its own set of indexes, we should deserialize them chunk by chunk.
             size_t offsets_current_chunk_start = prev_offset_size;
             auto & offsets = shared_data_array_column.getOffsets();
+
+            /// The chunks and the sizes stream describe the same rows: covering more would index the
+            /// offsets out of bounds, fewer would leave the paths short. Reported as a short read, like
+            /// a truncated elements stream in SerializationArray.
+            size_t num_chunks_rows = std::accumulate(chunks_limits.begin(), chunks_limits.end(), size_t(0));
+            size_t num_offsets_rows = offsets.size() - prev_offset_size;
+            if (num_chunks_rows != num_offsets_rows)
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Chunks of Object shared data contain {} rows, but {} rows were read from the sizes stream",
+                    num_chunks_rows,
+                    num_offsets_rows);
+
             for (size_t chunk_idx = 0; chunk_idx != chunks_paths.size(); ++chunk_idx)
             {
                 /// Calculate how many index entries should be read for this chunk.
@@ -1807,7 +1882,19 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
+            if (!values_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy values");
+
+            size_t values_size_before = values_column.size();
             SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
+            /// The number of values comes from the offsets, so a shorter column would be read out of bounds.
+            if (values_column.size() != values_size_before + nested_limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected number of values in Object shared data: {}. Expected {}",
+                    values_column.size() - values_size_before,
+                    nested_limit);
+
             settings.path.pop_back();
 
             settings.path.pop_back();
