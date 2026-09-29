@@ -589,12 +589,36 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         "'t6_cluster_copy', 't6_cluster_copy_v3')"
     ).strip() == "0"
 
+    # Storage construction sees only analyzed projections. A copied unavailable declaration
+    # must still count for CREATE-time restrictions before the destination is published.
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t6_unique_copy AS dl.t6 "
+        "ENGINE = MergeTree ORDER BY a UNIQUE KEY (a)",
+        settings={"enable_unique_key": 1},
+    )
+    assert "Projections are not supported on tables with UNIQUE KEY" in error
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t9_limit_copy AS dl.t9 "
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1"
+    )
+    assert "Maximum limit of 1 projection(s) exceeded" in error
+    assert node.query(
+        "SELECT count() FROM system.tables WHERE database = 'dl' "
+        "AND name IN ('t6_unique_copy', 't9_limit_copy')"
+    ).strip() == "0"
+
     # A local `CREATE AS` must retain the declaration even though this server cannot analyze it
     # until the projection setting is restored. It is absent from `system.projections` meanwhile.
     node.query("CREATE TABLE dl.t6_local_copy AS dl.t6 ENGINE = MergeTree ORDER BY a")
     assert projections("t6_local_copy") == "0"
     assert declarations_on_disk("t6_local_copy") == 1
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6_local_copy")
+    node.query(
+        "CREATE TABLE dl.t6_limit_copy AS dl.t6 "
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1"
+    )
+    assert projections("t6_limit_copy") == "0"
+    assert declarations_on_disk("t6_limit_copy") == 1
     node.query("CREATE TABLE dl.t9_local_copy AS dl.t9 ENGINE = MergeTree ORDER BY a")
     assert projections("t9_local_copy") == "1"
     assert declarations_on_disk("t9_local_copy") == 2

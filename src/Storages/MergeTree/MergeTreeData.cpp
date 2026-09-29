@@ -96,6 +96,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -1320,7 +1321,8 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "TTL is not supported on tables with UNIQUE KEY");
 
-    if (!new_metadata.projections.empty())
+    const auto & unavailable_projections = new_metadata.projections.getUnavailableDefinitions();
+    if (!new_metadata.projections.empty() || (!attach && !unavailable_projections.empty()))
     {
         /// Projections on a UNIQUE KEY table would read through the projection
         /// part, bypassing the delete-bitmap filter and exposing logically-
@@ -1333,15 +1335,19 @@ void MergeTreeData::checkProperties(
                 "Projections are not supported on tables with UNIQUE KEY");
 
         std::unordered_set<String> projections_names;
+        const auto settings = getSettings();
+        auto check_projection_name = [&](const String & name)
+        {
+            if (!projections_names.insert(name).second)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(name));
+
+            if (projections_names.size() > (*settings)[MergeTreeSetting::max_projections])
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
+        };
 
         for (const auto & projection : new_metadata.projections)
         {
-            if (projections_names.contains(projection.name))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
-
-            const auto settings = getSettings();
-            if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
+            check_projection_name(projection.name);
 
             /// A projection body cannot be altered (`MODIFY PROJECTION` replaces settings only and is
             /// re-validated here as part of the new metadata), so we do not look it up in the old metadata.
@@ -1353,9 +1359,13 @@ void MergeTreeData::checkProperties(
                 is_aggregate,
                 true /* allow_nullable_key */,
                 local_context);
-
-            projections_names.insert(projection.name);
         }
+
+        /// ATTACH must still load old metadata. New definitions count unavailable declarations
+        /// toward the same duplicate-name and max_projections checks as analyzed projections.
+        if (!attach)
+            for (const auto & definition : unavailable_projections)
+                check_projection_name(definition->as<const ASTProjectionDeclaration &>().name);
     }
 
     /// `enable_block_number_column` / `enable_block_offset_column` are merge-time invariants for
@@ -1528,6 +1538,18 @@ void MergeTreeData::checkMetadataProperties(
     checkProperties(
         new_metadata,
         old_metadata,
+        /*attach=*/false,
+        /*allow_empty_sorting_key=*/false,
+        allow_nullable_key,
+        local_context);
+}
+
+void MergeTreeData::checkCopiedUnavailableProjections(
+    const StorageInMemoryMetadata & metadata, ContextPtr local_context) const
+{
+    checkProperties(
+        metadata,
+        metadata,
         /*attach=*/false,
         /*allow_empty_sorting_key=*/false,
         allow_nullable_key,

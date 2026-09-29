@@ -1649,6 +1649,9 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
+    /// Recheck table-level projection restrictions after CREATE AS copies unavailable declarations.
+    void checkCopiedUnavailableProjections(const StorageInMemoryMetadata & metadata, ContextPtr local_context) const;
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;

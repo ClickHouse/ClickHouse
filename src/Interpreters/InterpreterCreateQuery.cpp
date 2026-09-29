@@ -50,6 +50,7 @@
 
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageAlias.h>
@@ -2554,6 +2555,13 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    if (mode == LoadingStrictnessLevel::CREATE)
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage))
+        {
+            const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+            if (metadata->projections.hasUnavailable())
+                merge_tree->checkCopiedUnavailableProjections(*metadata, context);
+        }
 }
 catch (...)
 {
@@ -2598,8 +2606,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
 
         /// A fresh storage must analyze every projection it sees. Append declarations copied from
-        /// an unavailable source only after construction and validation, and publish the same set
-        /// in both the storage metadata and the persisted CREATE query.
+        /// an unavailable source only after construction, then validate the final metadata before
+        /// publishing the same set in the storage and the persisted CREATE query.
         create.columns_list->projections->children = metadata.projections.getDefinitionsInDeclarationOrder();
     };
 
@@ -2621,8 +2629,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             preserve_unavailable_projections(res);
+            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2844,8 +2852,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
     preserve_unavailable_projections(res);
+    validateStorage(*res, mode, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
