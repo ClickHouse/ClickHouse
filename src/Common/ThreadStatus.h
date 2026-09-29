@@ -87,7 +87,6 @@ public:
     ThreadGroup();
     ~ThreadGroup();
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    ~ThreadGroup();
 
     void initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
