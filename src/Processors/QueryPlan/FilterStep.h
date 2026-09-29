@@ -107,7 +107,6 @@ public:
 
     bool canGetUnneededColumns() const override { return true; }
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
-    bool canRemoveColumnsFromOutput() const override;
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 

@@ -708,13 +708,6 @@ void JoinStepLogical::addInputToOutputs(const ActionsDAG::Node * input)
     expression_actions.getActionsDAG()->getOutputs().push_back(input);
 }
 
-bool JoinStepLogical::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        return false;
-
-    return canRemoveUnusedColumns() && output_header->columns() > 1;
-}
 
 void JoinStepLogical::updateOutputHeader()
 {

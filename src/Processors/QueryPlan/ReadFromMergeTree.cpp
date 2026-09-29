@@ -6564,13 +6564,6 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     return result;
 }
 
-bool ReadFromMergeTree::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        return false;
-
-    return canRemoveUnusedColumns() && output_header->columns() > 0;
-}
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
 {

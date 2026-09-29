@@ -281,13 +281,6 @@ ExpressionStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_
     return result;
 }
 
-bool ExpressionStep::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
-
-    return canRemoveUnusedColumns();
-}
 
 QueryPlanStepPtr ExpressionStep::clone() const
 {

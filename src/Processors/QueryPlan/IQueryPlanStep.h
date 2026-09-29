@@ -208,9 +208,6 @@ public:
     /// Returns true if the step has implemented getUnneededColumns.
     virtual bool canGetUnneededColumns() const { return false; }
 
-    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
-    virtual bool canRemoveColumnsFromOutput() const;
-
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.
     /// The group tag is used in EXPLAIN ANALYZE in order to track

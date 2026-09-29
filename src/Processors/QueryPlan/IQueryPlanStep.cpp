@@ -129,10 +129,6 @@ IQueryPlanStep::getUnneededColumns(const std::vector<size_t> & /*unneeded_output
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getUnneededColumns is not implemented for step {}", getName());
 }
 
-bool IQueryPlanStep::canRemoveColumnsFromOutput() const
-{
-    return false;
-}
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
