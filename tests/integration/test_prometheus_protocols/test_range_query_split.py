@@ -176,3 +176,23 @@ def test_negative_offset_is_not_cached():
     }
     assert query_range(query, H, H + 6 * 3600, 60, params) == expected
     assert int(node.query("SELECT count() FROM system.query_cache")) == 0
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["sum by (mode) (rate(node_cpu_seconds_total[5m]))", "node_load1 offset -10m", f"node_load1 @ {H + 3600}"],
+)
+def test_use_query_cache_of_request_caches_no_chunk(query):
+    node.query("SYSTEM DROP QUERY CACHE")
+    expected = query_range(query, H, H + 6 * 3600, 60)
+
+    # promql_range_query_cache_min_age is 0, so no chunk is cached.
+    params = {
+        "promql_range_query_split_interval": INTERVAL,
+        "use_query_cache": 1,
+        "query_cache_nondeterministic_function_handling": "save",
+        "query_cache_ttl": 3600,
+    }
+    assert query_range(query, H, H + 6 * 3600, 60, params) == expected
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 0
+

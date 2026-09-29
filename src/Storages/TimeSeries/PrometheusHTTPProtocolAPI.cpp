@@ -403,6 +403,9 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         /// These settings don't change the result of a chunk, so they must not be a part of its key in the query cache.
         auto query_context = makeQueryContext();
         query_context->resetSettingsToDefaultValue({"promql_range_query_split_interval", "promql_range_query_cache_min_age"});
+
+        /// A chunk uses the query cache only if it's eligible, whatever `use_query_cache` of the request is.
+        bool use_query_cache = false;
         if (cache_min_age > 0)
         {
             /// Only a chunk covering a whole interval is requested again, a chunk cut by the start or the end of the query is not.
@@ -413,11 +416,11 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
             const Int64 chunk_end = chunk_settings.end_time->value;
             const bool whole_interval
                 = is_first_step_of_interval(*chunk_start) && is_first_step_of_interval(static_cast<Int128>(chunk_end) + step);
-            const bool use_query_cache = can_cache && whole_interval && (chunk_end / scale_multiplier < cache_max_end_seconds);
-            query_context->setSetting("use_query_cache", use_query_cache);
-            if (use_query_cache)
-                query_context->setSetting("query_cache_nondeterministic_function_handling", String("save"));
+            use_query_cache = can_cache && whole_interval && (chunk_end / scale_multiplier < cache_max_end_seconds);
         }
+        query_context->setSetting("use_query_cache", use_query_cache);
+        if (use_query_cache)
+            query_context->setSetting("query_cache_nondeterministic_function_handling", String("save"));
 
         auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
