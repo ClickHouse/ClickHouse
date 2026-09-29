@@ -62,7 +62,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsDouble limit;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsUInt64 max_result_bytes;
@@ -70,7 +73,13 @@ namespace Setting
     extern const SettingsDouble offset;
     extern const SettingsSeconds promql_range_query_cache_min_age;
     extern const SettingsSeconds promql_range_query_split_interval;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace TimeSeriesSetting
@@ -388,7 +397,18 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
     const Int64 step = evaluation_settings.step->value;
 
     const auto cache_min_age = settings[Setting::promql_range_query_cache_min_age].totalSeconds();
-    const bool can_cache = !readsSamplesAfterEvaluationTime(*query_tree->getRoot());
+    /// A limit with a non-throw overflow mode could cut a chunk short, and the query cache refuses such a query.
+    const bool can_cache = !readsSamplesAfterEvaluationTime(*query_tree->getRoot())
+        && settings[Setting::read_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+        && settings[Setting::group_by_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::sort_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::result_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::timeout_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::set_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::join_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::transfer_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::distinct_overflow_mode] == OverflowMode::THROW;
     const Int64 cache_max_end_seconds = time(nullptr) - cache_min_age;
 
     /// Each chunk is a separate query, so the time limit of the whole request is checked between them.

@@ -220,3 +220,32 @@ def test_result_limits_apply_to_whole_response(query, params):
     split_params = {**params, "promql_range_query_split_interval": INTERVAL}
     response = send_query_range(query, H, H + 6 * 3600, 60, split_params)
     assert (response.status_code, response.text) == (expected.status_code, expected.text)
+
+
+@pytest.mark.parametrize(
+    "overflow_mode",
+    [
+        "read_overflow_mode",
+        "read_overflow_mode_leaf",
+        "group_by_overflow_mode",
+        "sort_overflow_mode",
+        "result_overflow_mode",
+        "timeout_overflow_mode",
+        "set_overflow_mode",
+        "join_overflow_mode",
+        "transfer_overflow_mode",
+        "distinct_overflow_mode",
+    ],
+)
+def test_chunk_with_non_throw_overflow_mode_is_not_cached(overflow_mode):
+    node.query("SYSTEM DROP QUERY CACHE")
+    expected = query_range("node_load1", H, H + 6 * 3600, 60, {overflow_mode: "break"})
+
+    params = {
+        overflow_mode: "break",
+        "promql_range_query_split_interval": INTERVAL,
+        "promql_range_query_cache_min_age": 600,
+        "query_cache_ttl": 3600,
+    }
+    assert query_range("node_load1", H, H + 6 * 3600, 60, params) == expected
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 0

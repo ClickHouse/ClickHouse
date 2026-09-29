@@ -10498,6 +10498,7 @@ If greater than zero, a chunk of a range query split by `promql_range_query_spli
 is executed with `use_query_cache = 1` and `query_cache_nondeterministic_function_handling = 'save'`, and the other chunks are executed with `use_query_cache = 0`.
 The other query cache settings, like `query_cache_ttl`, apply as usual.
 A query with a negative `offset` or an `@` modifier can read samples newer than its chunk, so its chunks are not cached. 0 disables caching of chunks.
+No chunk is cached if an overflow mode, like `timeout_overflow_mode`, is not `throw`, because a limit could cut the chunk short.
 )", PRIVATE_PREVIEW, \
         {"26.10", 0, 0, "New setting."}) \
     \
