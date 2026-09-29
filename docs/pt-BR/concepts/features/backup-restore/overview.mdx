@@ -216,6 +216,9 @@ A cláusula se aplica apenas ao elemento em que é especificada:
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
 
+Nessa lista, coloque entre crases o nome de uma tabela ou banco de dados chamado `table`, `dictionary`, `view`, `database` ou `all`: após uma
+vírgula, um nome sem crases é interpretado como o início do próximo elemento.
+
 * Em um elemento que se refere a um único objeto (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`), somente o objeto desse elemento está
   no escopo; portanto, a cláusula deve especificar apenas esse objeto. Use um elemento e
   uma cláusula para cada tabela:

@@ -204,23 +204,26 @@ Chacune des commandes ci-dessus est détaillée ci-dessous :
 pour les tables dont les données peuvent être régénérées après une restauration, comme les tables cibles des
 vues matérialisées.
 
-La clause détermine ce que `BACKUP` écrit dans la sauvegarde ; elle ne change pas ce que `RESTORE` peut faire avec celle-ci. Si
+La clause détermine ce que `BACKUP` écrit dans la sauvegarde ; elle ne change pas ce que `RESTORE` peut faire avec celle-ci. Si
 `RESTORE` peut recréer une table, la restauration de sa définition sans ses lignes produit une table vide. La clause ne permet pas pour autant
-de restaurer une table qui ne pourrait pas l’être autrement : la possibilité de recréer une table à partir de sa définition
+de restaurer une table qui ne pourrait pas l’être autrement : la possibilité de recréer une table à partir de sa définition
 sauvegardée dépend du moteur, et certains moteurs ne le permettent pas du tout. Voir
 [Moteurs que `RESTORE` ne peut pas recréer](#engines-restore-cannot-recreate).
 
-La portée de la clause se limite à l’élément auquel elle s’applique :
+La portée de la clause se limite à l’élément auquel elle s’applique :
 
-* Sur un élément `DATABASE` ou `ALL`, elle peut désigner n’importe quelle table sauvegardée par cet élément :
+* Sur un élément `DATABASE` ou `ALL`, elle peut désigner n’importe quelle table sauvegardée par cet élément :
 
 ```sql
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
 
+Dans cette liste, entourez de backquotes toute table ou base de données nommée `table`, `dictionary`, `view`, `database` ou `all` : après une
+virgule, un nom sans backquotes est interprété comme le début de l&#39;élément suivant.
+
 * Pour un élément portant sur un seul objet (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`), seul l&#39;objet de cet élément
-  est pris en compte : la clause doit donc désigner cet objet, et aucun autre. Définissez un élément et
-  une clause distincts pour chaque table :
+  est pris en compte : la clause doit donc désigner cet objet, et aucun autre. Définissez un élément et
+  une clause distincts pour chaque table :
 
 ```sql
 -- Backs up both tables, without the data of `t1`
@@ -235,7 +238,7 @@ ses données **sont** sauvegardées : désigner une table revient à demander la
 où une table désignée explicitement est sauvegardée même si un élément plus large l’exclut.
 
 Les données de la table interne d’une vue matérialisée (ou des tables internes d’une table `TimeSeries`) sont
-exclues en indiquant le nom de l’objet externe&#39;s name; inner table names are not accepted by the clause.
+exclues en indiquant le nom de l’objet externe ; la clause n’accepte pas les noms des tables internes.
 
 `EXCEPT DATA FROM {TABLE|TABLES}` n’est valide que pour `BACKUP`. `RESTORE` le rejette au lieu de l’accepter
 comme une opération sans effet.

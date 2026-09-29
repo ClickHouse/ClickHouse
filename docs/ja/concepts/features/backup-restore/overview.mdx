@@ -193,7 +193,7 @@ ClickHouse server の設定ファイル (例: `users.xml`) で定義されたア
 ### データを含めずにテーブルをバックアップする {#backup-without-data}
 
 `EXCEPT DATA FROM {TABLE|TABLES}` を指定すると、テーブルの行を含めず、定義だけをバックアップに保存します。
-マテリアライズドビューのターゲットテーブルなど、復元後に内容を再生成できるテーブルに便利です。
+materialized view のターゲットテーブルなど、復元後に内容を再生成できるテーブルに便利です。
 
 この句で指定するのは `BACKUP` が書き込む内容であり、そのバックアップに対して `RESTORE` ができることは変わりません。
 `RESTORE` で再作成できるテーブルなら、行を含まない定義から空のテーブルが復元されます。一方、この句を指定しても、
@@ -208,6 +208,9 @@ ClickHouse server の設定ファイル (例: `users.xml`) で定義されたア
 ```sql
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
+
+このリストでは、`table`、`dictionary`、`view`、`database`、`all` という名前のテーブルまたはデータベースはバッククォートで囲んでください。カンマの後に
+バッククォートで囲まれていない名前があると、次の要素の開始として解釈されます。
 
 * 単一オブジェクトを対象とする要素 (`TABLE`、`DICTIONARY`、`VIEW`、`TEMPORARY TABLE`) では、その要素が指定するオブジェクトだけが
   対象となるため、句にはそのオブジェクトのみを指定してください。各テーブルに対して個別の要素と

@@ -199,10 +199,10 @@ para tablas cuyo contenido puede regenerarse después de una restauración, por 
 materializadas.
 
 La cláusula determina lo que escribe `BACKUP`; no cambia lo que `RESTORE` puede hacer con el resultado. En
-el caso de una tabla que `RESTORE` puede volver a crear, una definición sin filas se restaura como una tabla vacía. Sin embargo, no hace
+el caso de una tabla que `RESTORE` puede recrear, una definición sin filas se restaura como una tabla vacía. Sin embargo, no hace
 restaurable una tabla que de otro modo no lo sería: que una definición de la copia de seguridad pueda convertirse de nuevo
 en una tabla depende del motor, y algunos motores directamente no lo permiten; consulte
-[Motores que `RESTORE` no puede volver a crear](#engines-restore-cannot-recreate).
+[Motores que `RESTORE` no puede recrear](#engines-restore-cannot-recreate).
 
 El alcance de la cláusula se limita al elemento en el que se especifica:
 
@@ -211,6 +211,9 @@ El alcance de la cláusula se limita al elemento en el que se especifica:
 ```sql
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
+
+En esta lista, escriba entre comillas invertidas cualquier tabla o base de datos llamada `table`, `dictionary`, `view`, `database` o `all`: después de una
+coma, un nombre sin comillas se interpreta como el inicio del siguiente elemento.
 
 * En un elemento que hace referencia a un solo objeto (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`), solo
   el objeto de ese elemento está dentro del ámbito, por lo que la cláusula debe especificar ese objeto y ningún otro. Defina un elemento y

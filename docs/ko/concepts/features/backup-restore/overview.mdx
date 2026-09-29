@@ -209,16 +209,19 @@ ClickHouse 서버 설정 파일(예: `users.xml`)에 정의된 액세스 구성�
 엔진에 따라 다르며, 일부 엔진은 이를 전혀 허용하지 않습니다.
 [`RESTORE`가 재생성할 수 없는 엔진](#engines-restore-cannot-recreate)을 참조하세요.
 
-이 절은 지정한 요소에만 적용됩니다.
+이 절은 지정한 원소에만 적용됩니다.
 
-* `DATABASE` 또는 `ALL` 요소에 지정하면 해당 요소가 백업하는 테이블 중 어느 것이든 선택할 수 있습니다:
+* `DATABASE` 또는 `ALL` 원소에 지정하면 해당 원소가 백업하는 테이블 중 어느 것이든 선택할 수 있습니다:
 
 ```sql
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
 
-* 단일 객체 요소(`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`)에서는 해당 요소의 객체만
-  참조할 수 있으므로, 절에는 해당 객체만 지정해야 합니다. 테이블마다 별도의 요소와
+이 목록에서 이름이 `table`, `dictionary`, `view`, `database` 또는 `all`인 테이블이나 데이터베이스는 백쿼트로 감싸야 합니다. 쉼표
+뒤에 따옴표 없이 쓰면 다음 원소의 시작으로 해석됩니다.
+
+* 단일 객체 원소(`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`)에서는 해당 원소의 객체만
+  참조할 수 있으므로, 절에는 해당 객체만 지정해야 합니다. 테이블마다 별도의 원소와
   절을 지정하세요:
 
 ```sql
@@ -229,8 +232,8 @@ BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('back
 BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
 ```
 
-테이블 자체를 지정하는 항목과 더 넓은 범위의 항목에 포함된 `EXCEPT DATA FROM` 절이 같은 테이블을 가리키면
-해당 테이블의 데이터는 **백업됩니다**. 테이블을 지정하면 그 데이터도 백업 대상에 포함되기 때문입니다. 이는 더 넓은 범위의 항목에서
+테이블 자체를 지정하는 원소와 더 넓은 범위의 원소에 포함된 `EXCEPT DATA FROM` 절이 같은 테이블을 가리키면
+해당 테이블의 데이터는 **백업됩니다**. 테이블을 지정하면 그 데이터도 백업 대상에 포함되기 때문입니다. 이는 더 넓은 범위의 원소에서
 테이블을 제외하더라도 명시적으로 지정한 테이블은 백업되는 `EXCEPT TABLES`의 동작과 같습니다.
 
 materialized view의 내부 테이블(또는 `TimeSeries` 테이블의 내부 테이블)의 데이터는

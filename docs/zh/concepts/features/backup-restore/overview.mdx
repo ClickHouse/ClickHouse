@@ -213,6 +213,8 @@ settings&#95;profiles 和 quotas，在备份和恢复操作期间会进行特殊
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
 
+在此列表中，如果表或数据库的名称为 `table`、`dictionary`、`view`、`database` 或 `all`，请用反引号将其括起来：在逗号之后，未加引号的此类名称会被解析为下一个元素的开头。
+
 * 对于单对象元素 (`TABLE`、`DICTIONARY`、`VIEW`、`TEMPORARY TABLE`) ，作用域内只有该元素自身的对象，
   因此该子句只能指定这一个对象，不能指定其他对象。请为每个表分别编写独立的元素和
   子句：

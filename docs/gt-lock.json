@@ -7,42 +7,42 @@
       "versionId": "d32db41de0afcd9c73f863b43acae05eb332f8a5d948c665a343043032ed5f0d",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-28T19:27:40.619Z",
+          "updatedAt": "2026-09-29T00:10:16.458Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ja": {
-          "updatedAt": "2026-09-28T19:27:40.409Z",
+          "updatedAt": "2026-09-29T00:10:16.275Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ru": {
-          "updatedAt": "2026-09-28T19:27:41.030Z",
+          "updatedAt": "2026-09-29T00:10:16.830Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "es": {
-          "updatedAt": "2026-09-28T19:27:40.191Z",
+          "updatedAt": "2026-09-29T00:10:16.086Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-28T19:27:40.824Z",
+          "updatedAt": "2026-09-29T00:10:16.635Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "zh": {
-          "updatedAt": "2026-09-28T19:27:41.228Z",
+          "updatedAt": "2026-09-29T00:10:17.015Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "fr": {
-          "updatedAt": "2026-09-28T19:27:41.655Z",
+          "updatedAt": "2026-09-29T00:10:17.388Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         },
         "ar": {
-          "updatedAt": "2026-09-28T19:27:41.452Z",
+          "updatedAt": "2026-09-29T00:10:17.195Z",
           "fileName": "docs.json",
           "postProcessHash": "b8bb5f1aa5a2a4142c89726697029a0e3f9d1a9d087dc936e9d9a8dbc428e645"
         }
@@ -30661,47 +30661,47 @@
     },
     {
       "fileId": "5db7e608d37ecbeec40158bf8f779d1bf4ca24ffaceac489f6834339184995c8",
-      "versionId": "4bfb58a32aa2650d604f4788c1397fb4181baeda565ea89432d442184411dbd6",
+      "versionId": "27497d7341d5374cb1e70a9ef4a98356959219b3149ce29c1175126dc12f0390",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-09-28T19:13:36.572Z",
+          "updatedAt": "2026-09-29T00:10:20.572Z",
           "fileName": "pt-BR/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "ac6b0c35963604763eebffcae0b660e61d6e4e63bf7d1891c8229297d1695cee"
-        },
-        "es": {
-          "updatedAt": "2026-09-28T19:13:36.633Z",
-          "fileName": "es/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "b838dd77c9d6a8b5dc58b26314912a29da83bbcaa1dd4d6a4c587082e1888412"
-        },
-        "ja": {
-          "updatedAt": "2026-09-28T19:13:36.641Z",
-          "fileName": "ja/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "0e3c3e5a231253da8414f12f7da106f40d9d2814fbba529e56792cca414be860"
-        },
-        "ru": {
-          "updatedAt": "2026-09-28T19:13:36.694Z",
-          "fileName": "ru/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "d010480aae32f42c34d34faf35fa80d91c89dcfddabe8e135b361803e2ca734f"
-        },
-        "ko": {
-          "updatedAt": "2026-09-28T19:13:36.719Z",
-          "fileName": "ko/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "9385e88accf2dcbea993e7f86bc1ad7984c6f5a5d332f67540052444ee1f9328"
+          "postProcessHash": "90e62cbf2a40b16e430a6b3a7e577cdaeb9f9ac31d72ed9532ec8aba93911630"
         },
         "ar": {
-          "updatedAt": "2026-09-28T19:13:36.729Z",
+          "updatedAt": "2026-09-29T00:10:20.573Z",
           "fileName": "ar/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "76f3a4162b2e33d36e3bf7a05517ffaf5cc59ee9ead20f48675f93220575c448"
-        },
-        "fr": {
-          "updatedAt": "2026-09-28T19:13:36.750Z",
-          "fileName": "fr/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "24a11b3cfdc9270190f69098568d5b65eaa48b6ca9311c5b807049421e12ae25"
+          "postProcessHash": "b7aed1d9649446f8f45f3af157b7e404206f2074f8c884cd2163b16112a6e52f"
         },
         "zh": {
-          "updatedAt": "2026-09-28T19:13:36.787Z",
+          "updatedAt": "2026-09-29T00:10:20.574Z",
           "fileName": "zh/concepts/features/backup-restore/overview.mdx",
-          "postProcessHash": "cf2e1e4b56faf14e72c1a12aa5ef5045cb36db9405f9768de7604a573867aa63"
+          "postProcessHash": "93c8b7e503bd88667f51ec095f35199d1b2c0e36053c03b36e9f0bcd0969ea99"
+        },
+        "fr": {
+          "updatedAt": "2026-09-29T00:10:20.575Z",
+          "fileName": "fr/concepts/features/backup-restore/overview.mdx",
+          "postProcessHash": "d6a21cd7e1cd40e168b2921ce6e9951f475d0edb26a50e5df0dc05c037448c9d"
+        },
+        "es": {
+          "updatedAt": "2026-09-29T00:10:20.575Z",
+          "fileName": "es/concepts/features/backup-restore/overview.mdx",
+          "postProcessHash": "6a1718458360aa8d1d7923888b60c052d9c3f61d57ba8d3f0365798cf30b8e60"
+        },
+        "ru": {
+          "updatedAt": "2026-09-29T00:10:20.576Z",
+          "fileName": "ru/concepts/features/backup-restore/overview.mdx",
+          "postProcessHash": "1f8262072e731b90a2a2cc5c775c5abf8220b12657ec85ad3cccc40b76d67288"
+        },
+        "ja": {
+          "updatedAt": "2026-09-29T00:10:20.576Z",
+          "fileName": "ja/concepts/features/backup-restore/overview.mdx",
+          "postProcessHash": "540e4edc2cf13aacbd985de69f22607be960a7665e2f8e8edfd25f9d2ce6f2a5"
+        },
+        "ko": {
+          "updatedAt": "2026-09-29T00:10:20.577Z",
+          "fileName": "ko/concepts/features/backup-restore/overview.mdx",
+          "postProcessHash": "7365379598d0d1b966e1096c9ae0671e8e2e4066ce69f2766ea482db5500b1a9"
         }
       },
       "fileName": "concepts/features/backup-restore/overview.mdx"
