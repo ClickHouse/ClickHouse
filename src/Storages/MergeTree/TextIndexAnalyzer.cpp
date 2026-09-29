@@ -195,9 +195,9 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         pattern_cursors.clear();
 }
 
-TextIndexDictionaryAutomaton::Result TextIndexAnalyzer::nextPatternToken(std::string_view token, String & seek_target)
+TextIndexDictionaryDFA::Cursor::Result TextIndexAnalyzer::nextPatternToken(std::string_view token, String & lower_bound)
 {
-    using Result = TextIndexDictionaryAutomaton::Result;
+    using Result = TextIndexDictionaryDFA::Cursor::Result;
     bool found = false;
     String candidate;
     for (auto & cursor : pattern_cursors)
@@ -205,9 +205,9 @@ TextIndexDictionaryAutomaton::Result TextIndexAnalyzer::nextPatternToken(std::st
         auto result = cursor.next(token, candidate);
         if (result == Result::Match)
             return Result::Match;
-        if (result == Result::Seek && (!found || candidate < seek_target))
+        if (result == Result::Seek && (!found || candidate < lower_bound))
         {
-            seek_target = candidate;
+            lower_bound = candidate;
             found = true;
         }
     }

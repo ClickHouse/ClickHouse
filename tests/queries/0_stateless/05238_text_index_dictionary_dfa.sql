@@ -1,5 +1,15 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the block-read assertion uses the initiator's ProfileEvents.
+
+-- Tests `LIKE` / `ILIKE` patterns with a literal prefix and wildcards after it (e.g. 'service%error'), for which the
+-- text index intersects a DFA built from the pattern with the sorted dictionary (`TextIndexDictionaryDFA`), and skips
+-- the dictionary blocks which cannot contain a matching token. Checks that:
+-- - the result is the same as without the index, for both dictionary encodings (front coding on and off), including
+--   UTF-8, NUL, newline, case-insensitive matching and escaped wildcards;
+-- - only a few dictionary blocks are read, although the dictionary has many blocks before and after the matching ones;
+-- - an `OR` of several patterns is handled correctly, also when one of them can't use the DFA ('%literal%');
+-- - exceeding `text_index_like_max_postings_to_read` bypasses the index for the pattern instead of returning partial results.
+
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;

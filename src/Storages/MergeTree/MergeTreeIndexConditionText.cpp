@@ -86,9 +86,9 @@ TextSearchQuery::TextSearchQuery(
 
     for (const auto & pattern : patterns)
     {
-        std::shared_ptr<const TextIndexDictionaryAutomaton> automaton;
+        std::shared_ptr<const TextIndexDictionaryDFA> automaton;
         if (pattern.getMatchKind() == RegexpMatchKind::Prefix || pattern.getMatchKind() == RegexpMatchKind::Exact)
-            automaton = TextIndexDictionaryAutomaton::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix);
+            automaton = TextIndexDictionaryDFA::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix);
         else if (pattern.getRE2())
         {
             /// The existing SQL surface supplies `LIKE` patterns. Leading wildcards
@@ -101,7 +101,7 @@ TextSearchQuery::TextSearchQuery(
                 suffix->Decref();
             if (has_prefix && !prefix.empty())
             {
-                automaton = TextIndexDictionaryAutomaton::fromRegexp(*pattern.getRE2());
+                automaton = TextIndexDictionaryDFA::fromRegexp(*pattern.getRE2());
                 if (automaton && !automaton->canSkipPrefixes())
                     automaton.reset();
             }

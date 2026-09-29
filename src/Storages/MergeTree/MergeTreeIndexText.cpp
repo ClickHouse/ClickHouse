@@ -723,7 +723,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
     const bool intersect_dictionary = analyzer->canIntersectDictionary();
-    using AutomatonResult = TextIndexDictionaryAutomaton::Result;
+    using AutomatonResult = TextIndexDictionaryDFA::Cursor::Result;
     String seek_token;
     String next_token;
     bool dictionary_exhausted = false;

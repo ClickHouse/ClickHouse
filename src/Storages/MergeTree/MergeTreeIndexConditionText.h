@@ -2,7 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/TextIndexDictionaryAutomaton.h>
+#include <Storages/MergeTree/TextIndexDictionaryDFA.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -73,7 +73,7 @@ private:
     std::vector<OptimizedRegularExpression> patterns;
     /// Compiled once per query, shared by the dictionary readers of all parts.
     /// A null entry means this pattern uses the existing literal/matcher scan.
-    std::vector<std::shared_ptr<const TextIndexDictionaryAutomaton>> pattern_automata;
+    std::vector<std::shared_ptr<const TextIndexDictionaryDFA>> pattern_automata;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
     /// Precomputed in the constructor because getHash is called on hot paths.
