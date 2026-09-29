@@ -159,7 +159,7 @@ function parsed(sql) {
 
 {
     /// The parser has no stack check of its own below `MAX_PARSER_DEPTH`, so the stack must hold
-    /// whatever that depth admits. With a 64 KiB stack, 50 nested parentheses overflowed it, which
+    /// whatever that depth admits. With a 64 KiB stack, 51 nested parentheses overflowed it, which
     /// traps and leaves the instance unusable. Past the depth, the answer is an error.
     const nest = n => `SELECT ${'('.repeat(n)}1${')'.repeat(n)}`;
     check('ch_parse accepts 190 nested parentheses', parsed(nest(190)).ok);
@@ -235,16 +235,21 @@ if (hasAstJson) {
         check(`...and ch_format_json round-trips it`, back.ok && back.out === format(sql, 1).out);
     }
 
-    /// The stack is sized for the depth limits rather than the other way round: a tree close to
-    /// `MAX_PARSER_DEPTH` still has its JSON, and the first limit a deeper one reaches is the depth.
-    const nearLimit = `SELECT ${Array(450).fill('1').join(' + ')}`;
-    const nearLimitParsed = parsed(nearLimit);
-    check('a tree close to the depth limit has an ast', nearLimitParsed.ok && !!nearLimitParsed.doc?.ast);
-    const nearLimitBack = call(JSON.stringify(nearLimitParsed.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
-    check('...and ch_format_json reads it back', nearLimitBack.ok);
-    const pastLimit = parsed(`SELECT ${Array(600).fill('1').join(' + ')}`);
+    /// A longer chain still has its JSON. A much longer one runs into the stack check, which must
+    /// answer a null "ast" with the reason - not stop the module - and a tree past the depth limit
+    /// is a parse error.
+    const chain = n => `SELECT ${Array(n).fill('1').join(' + ')}`;
+    const chainParsed = parsed(chain(20));
+    check('a chain of 20 terms has an ast', chainParsed.ok && !!chainParsed.doc?.ast);
+    const chainBack = call(JSON.stringify(chainParsed.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
+    check('...and ch_format_json round-trips it', chainBack.ok && chainBack.out === format(chain(20), 1).out);
+    const longChain = parsed(chain(450));
+    check('a chain of 450 terms parses, with a null ast because of the stack', longChain.ok
+        && longChain.doc?.ast === null && /Stack size too large/.test(longChain.doc?.ast_error ?? ''));
+    const pastLimit = parsed(chain(600));
     check('past the depth limit the error is the depth', !pastLimit.ok
         && /too deep/.test(pastLimit.doc?.error?.message ?? ''));
+    check('ch_parse works after the stack check', parsed('SELECT 1 + 2').ok);
 
     /// Past those limits the "ast" is null with a reason - never JSON this module cannot read back.
     /// The first query is over the element budget; the second one fits in the input limit while its

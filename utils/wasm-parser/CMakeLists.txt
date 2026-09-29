@@ -283,16 +283,21 @@ list (TRANSFORM EXPORTS PREPEND "-Wl,--export=")
 # then called into. Note that `-mllvm -wasm-enable-sjlj` is deliberately absent here - the LTO unit
 # must contain no `setjmp`, and leaving the flag off turns a stray one into a link error.
 #
-# The stack is 8 MiB rather than wasm-ld's default of 64 KiB. `checkStackSize` reads its real
-# bounds (wasi-libc takes them from `__stack_low` and `__stack_high`) and, as on the server, refuses
-# to use more than half of it, so 64 KiB turned the AST of a three-level subquery into "Stack size
-# too large". Below that check the parser itself has only its depth limit, and 50 nested
-# parentheses overflowed the stack, which traps and leaves the instance unusable. At
-# `MAX_PARSER_DEPTH`, the deepest tree `ch_parse` still reports costs 2.7 MB of stack, nearly all of
-# it in the JSON round trip. So everything the depth limits accept fits in the half the check
-# allows, and the check remains a backstop rather than the limit a query reaches first. The stack
-# adds nothing to the module, only to the initial size of its memory, and pages that the stack
-# never reaches cost address space rather than memory.
+# The stack is 384 KiB rather than wasm-ld's default of 64 KiB, and is sized from both ends:
+#
+# * The parser checks the stack only every 8192 levels of depth, so below `MAX_PARSER_DEPTH` the
+#   stack must hold whatever the parser does. That is up to 320 KB (nested `IN (SELECT ...)`), and
+#   at 64 KiB 51 nested parentheses overflowed it: a trap that leaves the instance unusable.
+# * Everything else relies on `checkStackSize`, which reads the real bounds of this stack
+#   (wasi-libc takes them from `__stack_low` and `__stack_high`) and, as on the server, allows half
+#   of it. WebAssembly frames also take the engine's own stack, which the check cannot see, and the
+#   check must fire before that one runs out. The tightest engine stack is a Web Worker in Chrome:
+#   at 512 KiB, deep `CAST` types there end in `RangeError: Maximum call stack size exceeded`.
+#
+# At 384 KiB, every query up to and past the depth limits parses and formats in a Chrome worker
+# without a trap. The AST JSON of a tree deeper than about 35 terms of `+` or 9 nested subqueries
+# comes back as a null "ast" with "Stack size too large" instead. The stack adds nothing to the
+# module, only to the initial size of its memory.
 target_link_options (parser PRIVATE
     -Oz
     -flto
@@ -301,7 +306,7 @@ target_link_options (parser PRIVATE
     -mexec-model=reactor
     -Wl,--no-entry
     -Wl,--strip-all
-    -Wl,-z,stack-size=8388608
+    -Wl,-z,stack-size=393216
     ${EXPORTS}
 )
 
