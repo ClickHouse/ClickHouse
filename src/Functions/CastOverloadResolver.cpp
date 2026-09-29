@@ -15,6 +15,8 @@
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+
+#include <cmath>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 
