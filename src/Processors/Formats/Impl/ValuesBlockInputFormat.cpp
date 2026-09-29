@@ -670,7 +670,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     /// Semantic tuple-backed types need their CAST path here. A raw `Field` conversion sees only
     /// the physical `Tuple` and loses the custom type semantics before its validating materializer runs.
-    if (isExponentialTimeDecayingFloat64(type))
+    if (containsExponentialTimeDecayingFloat64(type) && type.getTypeId() != TypeIndex::Variant)
     {
         ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr());
