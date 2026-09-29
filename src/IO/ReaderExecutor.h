@@ -2,6 +2,7 @@
 
 #include <IO/OffsetMap.h>
 #include <IO/IFileBasedSourceReader.h>
+#include <IO/ByteRangeSet.h>
 #include <IO/ChainedBuffers.h>
 #include <IO/ReadContinuityTracker.h>
 #include <IO/LongConnectionLimit.h>

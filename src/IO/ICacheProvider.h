@@ -2,7 +2,6 @@
 
 #include <IO/ChainedBuffers.h>
 #include <algorithm>
-#include <IO/ByteRangeSet.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
 

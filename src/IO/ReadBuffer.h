@@ -236,7 +236,7 @@ public:
 
     virtual void setReadUntilEnd() {}
 
-    /// The byte ranges the caller will read, sorted and disjoint; it reads nothing outside them.
+    /// The byte ranges the caller will read; it reads nothing outside them.
     /// Each call replaces the previous map. An empty map, the default, is the whole file.
     /// Advisory: an implementation may use it to decide how far to read ahead, never to refuse a read.
     virtual void setRequestMap(ByteRangeSet /* ranges */) {}
