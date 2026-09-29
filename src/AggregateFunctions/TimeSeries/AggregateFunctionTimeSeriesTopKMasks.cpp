@@ -114,12 +114,12 @@ void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & fac
     FunctionDocumentation::Description description_topk = R"(
 Selects the time series with the k greatest values at each time step of a time grid.
 
-Each input row is one time series: `key` identifies the series, the optional `sampling_key` is a per-series hash used
-to break a tie between equal values, and `values` contains the values of the series aligned to a common time grid, so
-the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest non-NULL
-values at that step are selected (NaN is considered smaller than any other value). A value tie is broken by preferring
-the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
-tie is broken by the smaller `key`.
+Each input row is one time series: `key` identifies the series, the optional `sampling_key` is any stable per-series
+`UInt64` used to break a tie between equal values, and `values` contains the values of the series aligned to a common
+time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest
+non-NULL values at that step are selected (NaN is considered smaller than any other value). A value tie is broken by
+preferring the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a
+`sampling_key` a tie is broken by the smaller `key`.
 
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -163,12 +163,12 @@ FROM (SELECT arrayJoin(series) AS s);
     FunctionDocumentation::Description description_bottomk = R"(
 Selects the time series with the k smallest values at each time step of a time grid.
 
-Each input row is one time series: `key` identifies the series, the optional `sampling_key` is a per-series hash used
-to break a tie between equal values, and `values` contains the values of the series aligned to a common time grid, so
-the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest non-NULL
-values at that step are selected (NaN is considered greater than any other value). A value tie is broken by preferring
-the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
-tie is broken by the smaller `key`.
+Each input row is one time series: `key` identifies the series, the optional `sampling_key` is any stable per-series
+`UInt64` used to break a tie between equal values, and `values` contains the values of the series aligned to a common
+time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest
+non-NULL values at that step are selected (NaN is considered greater than any other value). A value tie is broken by
+preferring the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a
+`sampling_key` a tie is broken by the smaller `key`.
 
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
