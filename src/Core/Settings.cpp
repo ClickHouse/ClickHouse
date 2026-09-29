@@ -9079,11 +9079,11 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
-If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
 The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0, \
-        {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
+        {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
