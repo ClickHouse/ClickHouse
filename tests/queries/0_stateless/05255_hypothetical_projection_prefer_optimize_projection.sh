@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # prefer_optimize_projection makes the optimizer use any usable projection, and the verdict follows it;
 # the twin table with the projection materialized shows what the optimizer really reads
 
-PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1"
+# the estimate never uses parallel replicas, so neither does the real plan it is checked against
+PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, enable_parallel_replicas = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_prefer; DROP TABLE IF EXISTS t_prefer_real;
