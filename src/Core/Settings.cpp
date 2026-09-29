@@ -10487,8 +10487,11 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     DECLARE(Seconds, promql_range_query_split_interval, 0, R"(
 If greater than zero, a range query of the Prometheus HTTP API (`/api/v1/query_range`) at least this long is evaluated in chunks, one after another, and the results of the chunks are merged.
 The chunks start at the first steps at or after multiples of this interval since the Unix epoch, so the same chunks repeat when a dashboard is refreshed.
-This bounds the peak memory of the query by the memory of one chunk, but makes the query slower unless the chunks are read from the query cache (see `promql_range_query_cache_min_age`).
-A query using `@ start()` or `@ end()` is not split, nor is a query with a setting that applies to the whole result, like `max_result_rows`, `limit` or `order`, or with a GROUP BY, sorting or JOIN limit, like `max_rows_to_group_by`. 0 disables splitting.
+This bounds the memory used to evaluate the query by the memory of one chunk, but makes the query slower unless the chunks are read from the query cache (see `promql_range_query_cache_min_age`).
+The results of all chunks are still kept in memory until they are merged into the response, so the memory of the response itself is not bounded.
+A query using `@ start()` or `@ end()` is not split, nor is a query with a setting that applies to the whole result, like `max_result_rows`, `limit` or `order`,
+with a GROUP BY, sorting or JOIN limit, like `max_rows_to_group_by`, or with a read or time limit of the whole query, like `max_rows_to_read`, `max_bytes_to_read`
+or `max_execution_time`, which would start again for each chunk. 0 disables splitting.
 The chunks are separate queries, so a check over the whole range, like the one for series with the same labels or the limit on the grid points of a subquery, sees one chunk at a time.
 Each chunk counts as one query against quotas.
 )", PRIVATE_PREVIEW, \
