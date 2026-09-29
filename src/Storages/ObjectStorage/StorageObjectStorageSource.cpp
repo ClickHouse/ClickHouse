@@ -1665,19 +1665,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (stripped_row_level_filter)
         {
             /// The row-level filter keeps its input columns, see the comment for `ReadFromFormatInfo::prewhere_info`.
-            auto row_level_dag = stripped_row_level_filter->actions.clone();
+            /// The outputs are the filter column and all inputs. If the filter column is an input
+            /// itself (e.g. `USING a`), it must not be removed.
+            const auto & filter_node = stripped_row_level_filter->actions.findInOutputs(stripped_row_level_filter->column_name);
+            auto row_level_dag = ActionsDAG::cloneSubDAG({&filter_node}, /*remove_aliases=*/ true);
             auto & row_level_outputs = row_level_dag.getOutputs();
-            for (const auto * input : row_level_dag.getInputs())
-                if (std::ranges::find(row_level_outputs, input) == row_level_outputs.end())
-                    row_level_outputs.push_back(input);
+            const auto * row_level_filter_node = row_level_outputs.front();
+            row_level_outputs.clear();
+
+            bool remove_row_level_filter_column = stripped_row_level_filter->do_remove_column;
+            if (row_level_filter_node->type == ActionsDAG::ActionType::INPUT)
+                remove_row_level_filter_column = false;
+            else
+                row_level_outputs.push_back(row_level_filter_node);
+
+            row_level_outputs.insert(row_level_outputs.end(), row_level_dag.getInputs().begin(), row_level_dag.getInputs().end());
 
             auto row_level_actions = std::make_shared<ExpressionActions>(std::move(row_level_dag));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
                     header, row_level_actions,
-                    stripped_row_level_filter->column_name,
-                    stripped_row_level_filter->do_remove_column,
+                    row_level_filter_node->result_name,
+                    remove_row_level_filter_column,
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
             });
