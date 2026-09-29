@@ -790,6 +790,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(dictionary, child);
 
+    /// `ParserCreateDictionaryQuery` reads the attributes together with the definition.
+    if (dictionary && !dictionary_attributes_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has a 'dictionary' definition without 'dictionary_attributes_list' during AST JSON deserialization");
+
     child = r.readChildOfType<ASTRefreshStrategy>("refresh_strategy");
     if (child)
         set(refresh_strategy, child);

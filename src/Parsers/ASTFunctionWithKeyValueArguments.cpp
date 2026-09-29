@@ -65,6 +65,17 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+
+    /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
+    const auto * list = child->as<ASTExpressionList>();
+    if (second_with_brackets != (list != nullptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
+    if (list)
+        for (const auto & element : list->children)
+            if (!element || !element->as<ASTPair>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
     set(second, child);
 }
 
