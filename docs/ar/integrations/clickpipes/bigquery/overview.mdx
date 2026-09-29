@@ -16,37 +16,21 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الميزات {#features}
 </div>
 
-### التحميل الأولي {#initial-load}
+<div id="initial-load">
+  ### التحميل الأولي {#initial-load}
+</div>
 
-ينسخ التحميل الأولي جداول محددة من [مجموعة بيانات](https://docs.cloud.google.com/bigquery/docs/datasets-intro) في BigQuery إلى ClickHouse. يمكنك تشغيله وحده أو الانتقال بعده إلى النسخ المتماثل المستمر. يستخدم التحميل حاوية Google Cloud Storage (GCS) توفرها للتخزين المرحلي. ويتوقف ClickPipe المخصّص للتحميل الأولي وحده عند اكتمال التحميل.
-
-<Note>
-  يستخدم ClickPipes استعلامات [`EXPORT DATA`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/export-statements) في BigQuery لنسخ البيانات إلى حاوية التخزين المرحلي. وتفرض BigQuery رسومًا على تنفيذ هذه الاستعلامات، بالإضافة إلى رسوم تخزين GCS.
-</Note>
-
-### النسخ المتماثل المستمر {#cdc}
-
-بعد التحميل الأولي، يمكن لـ ClickPipe الخاص بـ BigQuery التحقق دوريًا من وجود بيانات جديدة ونقلها إلى ClickHouse. ويمكنك أيضًا بدء النسخ المتماثل المستمر دون تحميل أولي. اختر طريقة النسخ المتماثل وفقًا لكيفية تغيّر الجدول المصدر. توضّح الأمثلة التالية بنية الاستعلام؛ ويختار ClickPipes الأعمدة التي جرت تهيئتها والبيانات الوصفية للأحداث.
-
-| الطريقة                                                                                                       | متى تستخدمها                                                                   | ما ينسخه ClickPipes                                                                                                | مثال على استعلام                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| القائمة على الاستعلام                                                                                         | يحتوي كل صف مُدرج أو مُحدَّث على عمود `TIMESTAMP` تتقدّم قيمته عند تغيّر الصف. | الصفوف التي تكون قيمة علامتها الزمنية المرجعية أحدث من آخر قيمة نُسخت. ولا تُكتشف عمليات الحذف.                    | `SELECT * FROM dataset.orders WHERE TIMESTAMP(updated_at) > @start AND TIMESTAMP(updated_at) <= @end`                                                           |
-| [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) | لا يلزم نسخ سوى الصفوف الجديدة من الجدول.                                      | الصفوف المُدرجة أو المُضافة إلى الجدول، بما فيها الصفوف المُدرجة عبر `MERGE`. ولا تُنسخ التحديثات أو عمليات الحذف. | [`SELECT * FROM APPENDS(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) |
-| [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) | يجب أن تنعكس عمليات الإدراج والتحديث والحذف في ClickHouse.                     | التغييرات التي يرصدها سجل تغييرات BigQuery، بما فيها التغييرات الناتجة عن `MERGE` وإفراغ الجدول.                   | [`SELECT * FROM CHANGES(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) |
-
-في النسخ المتماثل القائم على الاستعلام، اختر عمودًا للعلامة الزمنية المرجعية لكل جدول. يجب أن يكون من نوع `TIMESTAMP` وأن يُدرج ضمن الأعمدة المنسوخة. عيّن قيمته عند إدراج صف أو تحديثه. إذا تغيّر صف دون أن تتقدّم قيمة علامته الزمنية المرجعية، فلن يرصد ClickPipes ذلك التغيير. استخدم [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) إذا كنت بحاجة إلى نسخ عمليات الحذف.
-
-تتطلب كلتا الطريقتين القائمتين على الأحداث جداول BigQuery عادية. ولا تتطلب [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) تفعيل سجل التغييرات. لاستخدام [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)، فعّل سجل التغييرات لكل جدول مصدر قبل إنشاء ClickPipe:
-
-```sql
-ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
-```
-
-تتطلب [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) أيضًا مفتاحًا أساسيًا في BigQuery أو مفتاح فرز مخصصًا مُهيأً للجدول المستهدف. اختر أعمدة تميّز كل صف حتى تتمكن ClickPipes من تطبيق التحديثات وعمليات الحذف على الصف الصحيح. لا يفرض BigQuery قيود المفتاح الأساسي، لذا يجب أن تكون هذه القيم مميزة في بيانات المصدر.
+سيحمّل ClickPipe الخاص بـ BigQuery الجداول المحددة في [مجموعة بيانات](https://docs.cloud.google.com/bigquery/docs/datasets-intro) BigQuery إلى جداول الوجهة في ClickHouse ضمن عملية دفعية واحدة. وبمجرد اكتمال مهمة الإدخال، يتوقف ClickPipe تلقائيًا. وتتطلب عملية إدخال التحميل الأولي حاوية Google Cloud Storage ‏(GCS) يوفّرها المستخدم لاستخدامها كمنطقة مرحلية. في المستقبل، ستوفّر ClickPipes الحاوية الوسيطة وتتولى إدارتها.
 
 <Note>
-  لا تستطيع [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) و[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) قراءة إلا التغييرات الواقعة ضمن [نافذة الرجوع بالزمن في BigQuery](https://docs.cloud.google.com/bigquery/docs/time-travel) لجدول المصدر. تبلغ مدة هذه النافذة سبعة أيام افتراضيًا، وقد تُختصر إلى يومين. إذا تأخر النسخ المتماثل إلى ما بعد هذه النافذة، فأجرِ تحميلًا أوليًا جديدًا لاستعادة نسخة كاملة. يفرض BigQuery رسومًا على الاستعلامات التي تُنفَّذ باستخدام الطرق الثلاث جميعها. ويترتب على تفعيل سجل التغييرات لاستخدام [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) تكاليف تخزين إضافية في BigQuery.
+  تعتمد ClickPipes على مهام الاستخراج الدفعية لجلب البيانات من BigQuery إلى حاوية GCS المرحلية. ولا تترتب على هذه العملية **أي رسوم معالجة** في BigQuery.
 </Note>
+
+<div id="cdc">
+  ### CDC (التقاط بيانات التغيير) {#cdc}
+</div>
+
+CDC **غير متاح** في المعاينة الخاصة حاليًا، لكنه سيكون مدعومًا في المستقبل. وحتى ذلك الحين، نوصي باستخدام [Google Cloud Storage ClickPipe](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview) لمزامنة بيانات BigQuery المُصدَّرة إلى ClickHouse Cloud بشكل مستمر بعد اكتمال التحميل الأولي.
 
 <div id="data-type-mapping">
   ## تعيين أنواع البيانات {#data-type-mapping}
@@ -93,14 +77,14 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   ### الأذونات {#permissions}
 </div>
 
-#### BigQuery {#bigquery}
+<div id="bigquery">
+  #### BigQuery {#bigquery}
+</div>
 
-يحتاج حساب الخدمة إلى أدوار BigQuery التالية:
+يجب أن يتضمن حساب الخدمة أدوار BigQuery التالية:
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
-
-للنسخ المتماثل المستمر، امنح حساب الخدمة أيضًا الدور [`roles/bigquery.readSessionUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.readSessionUser) على مستوى مشروع Google Cloud. تستخدم ClickPipes [واجهة برمجة تطبيقات BigQuery Storage Read](https://docs.cloud.google.com/bigquery/docs/reference/storage#permissions) لإنشاء جلسات قراءة وقراءة نتائج استعلامات CDC. لا يمكن منح هذا الدور على مستوى مجموعة البيانات؛ لذا أبقِ الدور `roles/bigquery.dataViewer` ممنوحًا لحساب الخدمة على مجموعات بيانات المصدر أو جداولها، حتى يتمكن من قراءة بياناتها.
 
 ولزيادة تقييد نطاق الوصول، نوصي باستخدام [شروط IAM](https://docs.cloud.google.com/bigquery/docs/conditions) لتقييد الموارد التي يمكن للدور الوصول إليها. على سبيل المثال، يمكنك قصر دور `dataViewer` على مجموعة البيانات المحددة التي تحتوي على الجداول التي تريد مزامنتها:
 

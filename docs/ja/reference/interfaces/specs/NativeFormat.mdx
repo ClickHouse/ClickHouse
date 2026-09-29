@@ -1108,18 +1108,15 @@ Native writer と reader は、block をまたいでシリアル化状態を**�
 |                                                                                 |           | `1` | `STRING`                               | ネイティブフォーマットの互換性モード — JSON テキストを含む単一の `String` カラムとして Object を転送します。           |
 |                                                                                 |           | `2` | `V2`                                   | `max_dynamic_paths` パラメータを除いた V1 のレイアウトです。                                    |
 |                                                                                 |           | `3` | `FLATTENED`                            | ネイティブフォーマットの互換性モード — flattened path 表現です。                                     |
-|                                                                                 |           | `4` | `V3`                                   | V2 に、shared data のシリアル化バージョン用サブフィールドと statistics フラグを追加したものです。                |
-| **Object shared data** (Object `V3` で使用されるサブストリーム)                              | VarUInt   | `0` | `MAP`                                  | shared data を `Map(String, String)` としてエンコードしたものです。                           |
-|                                                                                 |           | `1` | `MAP_WITH_BUCKETS`                     | `MAP` と同じですが、スキャン効率のために N 個の bucket に分割されます。                                  |
-|                                                                                 |           | `2` | `ADVANCED`                             | path / mark / メタデータごとに個別の stream を持つ compact granule フォーマットです。                |
+|                                                                                 |           | `4` | `V3`                                   | MergeTree のパーツにのみ書き込まれ、wire 上に送られることはありません。レイアウトはここでは規定しません。                  |
 | **Dynamic**                                                                     | UInt64 LE | `1` | `V1`                                   | 元のエンコーディングです。`max_dynamic_types` と実行時の Variant 型のリストを含みます。                    |
 |                                                                                 |           | `2` | `V2`                                   | `max_dynamic_types` パラメータを除いた V1 です。                                          |
 |                                                                                 |           | `3` | `FLATTENED`                            | ネイティブフォーマットの互換性モードです。                                                         |
-|                                                                                 |           | `4` | `V3`                                   | V2 に、バイナリエンコードされた variant type names と empty-statistics のサポートを追加したものです。       |
-| **Variant** discriminator モード                                                   | UInt64 LE | `0` | `BASIC`                                | 各行の discriminator をそのまま書き込みます。                                                |
-|                                                                                 |           | `1` | `COMPACT`                              | granule 内のすべての行で discriminator が 1 つだけ共有されている場合、単一の値と granule マーカーのみが書き込まれます。 |
-| **Variant** granule フォーマット (mode が `COMPACT` の場合)                               | UInt8     | `0` | `PLAIN`                                | granule は異なる discriminator を持ちます。                                             |
-|                                                                                 |           | `1` | `COMPACT`                              | granule はすべての行に対して 1 つの discriminator を持ちます。                                  |
+|                                                                                 |           | `4` | `V3`                                   | MergeTree のパーツにのみ書き込まれ、wire 上に送られることはありません。レイアウトはここでは規定しません。                  |
+| **Variant** 判別子 モード                                                   | UInt64 LE | `0` | `BASIC`                                | 各行の判別子をそのまま書き込みます。                                                |
+|                                                                                 |           | `1` | `COMPACT`                              | granule 内のすべての行で判別子が 1 つだけ共有されている場合、単一の値と granule マーカーのみが書き込まれます。 |
+| **Variant** granule フォーマット (mode が `COMPACT` の場合)                               | UInt8     | `0` | `PLAIN`                                | granule は異なる判別子を持ちます。                                             |
+|                                                                                 |           | `1` | `COMPACT`                              | granule はすべての行に対して 1 つの判別子を持ちます。                                  |
 | **LowCardinality** key のシリアル化                                                   | Int64     | `1` | `sharedDictionariesWithAdditionalKeys` | 現在定義されている唯一のバージョンです。                                                          |
 | **JSON-as-String** フォールバック (`output_format_native_write_json_as_string` が有効な場合) | UInt64 LE | `1` | `JSONStringSerializationVersion`       | JSON カラムは、このプレフィックスが付いた `String` カラムとして到着します。                                 |
 
@@ -1127,7 +1124,7 @@ Native writer と reader は、block をまたいでシリアル化状態を**�
 
 * **値は連番ではありません。** `Dynamic` では `1`、`2`、`3`、`4` が使われており、`V3` は `4`、`FLATTENED` は `3` です。数値が大きいほど新しいとは限りません。
 * **ネイティブフォーマット専用の値があります。** `Object::STRING`、`Object::FLATTENED`、`Dynamic::FLATTENED` は、Object/Dynamic を完全には実装していない client との native プロトコル互換性のために存在します。これらは MergeTree のオンディスクストレージには現れません。
-* **`V3` は主にオンディスク向けです。** native TCP プロトコルを利用する client では、通常 `V3` (値 `4`) ではなく `FLATTENED` (値 `3`) が見えます。
+* **`V3` はオンディスク専用です。** `Object::V3` と `Dynamic::V3` を記載しているのは、これらの値が割り当て済みで再利用できないためであり、デコーダがこれらを受け取る可能性があるからではありません。ClickHouse はこれらを `Native` で送信することはなく、`Native` 上で受け取った場合は `INCORRECT_DATA` で拒否します。これらが保持する内容 (`Object::V3` の shared-data サブバージョンと、その bucket および granule のレイアウト) はいずれもブロックではなくパーツを記述するものであるため、このページでは扱いません。native TCP プロトコルを利用する client に見えるのは `V1`、`V2`、`STRING`、`FLATTENED` のいずれかです。
 
 #### LowCardinality(T) {#lowcardinality}
 
@@ -1308,16 +1305,22 @@ state prefix (バージョン + 型リスト) は、行数が 0 より大きい�
 <Info>
   **不正な count**
 
-  `num_types` は、どの型名よりも前にストリームから読み取られます。デコーダーはこれを信頼できない値として扱う必要があり、割り当てサイズの決定に直接使ってはいけません。`SIZE_MAX` に近い count も (`DB::Exception` 以外の例外を送出したり、中間の算術演算で overflow を起こしたりする可能性があります)、`100000000` のように大きいが表現可能な count も同様です (これは vector の `max_size()` を大きく下回るにもかかわらず、型名を 1 つも読み取る前に数 GB を割り当ててしまいます)。ClickHouse は型リストを一度に 1 エントリずつ、上限付きの事前割り当てヒントだけを使って読み取るため、破損した `num_types` は、count がコンテナーに保持できる量を超える場合は `INCORRECT_DATA` (「`Dynamic` column has too many types」) として、そうでない場合はストリーム内の型エントリが尽きた時点で通常の読み取りエラーとして拒否されます。メモリー不足による失敗になることはありません。
+  `num_types` は、どの型名よりも前にストリームから読み取られます。デコーダはこれを信頼できない値として扱う必要があり、割り当てサイズの決定に直接使ってはいけません。`SIZE_MAX` に近い count も (`DB::Exception` 以外の例外を送出したり、中間の算術演算で overflow を起こしたりする可能性があります)、`100000000` のように大きいが表現可能な count も同様です (これは vector の `max_size()` を大きく下回るにもかかわらず、型名を 1 つも読み取る前に数 GB を割り当ててしまいます)。ClickHouse は型リストを一度に 1 エントリずつ、上限付きの事前割り当てヒントだけを使って読み取るため、破損した `num_types` は、count がコンテナーに保持できる量を超える場合は `INCORRECT_DATA` (「`Dynamic` column has too many types」) として、そうでない場合はストリーム内の型エントリが尽きた時点で通常の読み取りエラーとして拒否されます。メモリー不足による失敗になることはありません。
 
   ただし、**flattened** の `num_types` を `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (ClickHouse では `254`) で制限しては**いけません**。flattened の型リストには、共有 variant にあふれたものも含め、実行時の異なる型が *すべて* 含まれるため、有効な flattened block であっても、それを大幅に超える数が正当に列挙されることがあります。`MAX_DYNAMIC_TYPES_LIMIT` による制限が適用されるのは、非 flat の `V1`/`V2`/`V3` プレフィックス内の `num_dynamic_types` count だけです。これは通常の variant スロットを数えるものであり、この上限で制限されます (ClickHouse は、共有 variant の `+ 1` を加える前にここでこれを検証します)。
+</Info>
+
+<Info>
+  **途中で切れたストリーム**
+
+  判別子の run には正確に `num_rows` 個のエントリが含まれており、デコーダはストリームに含まれていた内容をそのまま受け入れるのではなく、その数だけ読み取れたことを検証する必要があります。run が短くても、その後に続く内容との矛盾は生じません。型ごとの値の count は実際に読み取った判別子から導出されるため値の run と整合したままであり、NULL マーカーだけで構成された run は値のバイトをまったく必要としないためです。ClickHouse は、短い判別子 run を型ごとのチェックより前に `INCORRECT_DATA` (「Mismatch in flattened `Dynamic` column: N rows are expected, but the indexes stream contains only M rows」) として拒否します。再構成されたカラムは、実際のサイズにかかわらず `num_rows` 行分として使用されるためです。
 </Info>
 
 <Note>
   シリアライゼーションが stateful な実行時型 (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) は、型名リストの後にネストされた state prefix を持ちます。
 </Note>
 
-実行時の型リストは通常、`Variant` の正規化に従います。通常の variant スロットは `DataTypeVariant` の順序 (型名順) で書き込まれるため、wire 上の順序は挿入順とは一致しません。ただし、常に全体がソートされている**わけではありません**。共有 variant にあふれた型 (たとえば `Dynamic(max_types=N)` の場合) は、通常のスロットの後に最初に現れた順で追加されるため、リストの tail では型名順が崩れることがあります。したがって、デコーダーは転送された型リストを 判別子 の割り当てにおける基準として扱う必要があり、自分で再ソートしてはいけません。行 `[42::UInt64, "hi", NULL]` では、2 つの型は `String` と `UInt64` で、`"String"` は `"UInt64"` より前にソートされるため、判別子 は `0` = String、`1` = UInt64、`2` = NULL です:
+実行時の型リストは通常、`Variant` の正規化に従います。通常の variant スロットは `DataTypeVariant` の順序 (型名順) で書き込まれるため、wire 上の順序は挿入順とは一致しません。ただし、常に全体がソートされている**わけではありません**。共有 variant にあふれた型 (たとえば `Dynamic(max_types=N)` の場合) は、通常のスロットの後に最初に現れた順で追加されるため、リストの tail では型名順が崩れることがあります。したがって、デコーダは転送された型リストを 判別子 の割り当てにおける基準として扱う必要があり、自分で再ソートしてはいけません。一方、リストに含めてはならないのは、重複した型と `Nothing` です。等しい 2 つのエントリは 1 つの判別子に対応付けられ、`Nothing` はそもそも variant ではないため、いずれの場合もリストの一部が再構成先を失います。ClickHouse はどちらも `INCORRECT_DATA` として拒否します。行 `[42::UInt64, "hi", NULL]` では、2 つの型は `String` と `UInt64` で、`"String"` は `"UInt64"` より前にソートされるため、判別子 は `0` = String、`1` = UInt64、`2` = NULL です:
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
@@ -1355,14 +1358,18 @@ FLATTENED モードでは **共有データカラムはありません** (この
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
 
-2 段階の構造になっている点に注意してください。まず **すべて** のパスの state prefix が先に現れ、その後に **すべて** のパスデータが続きます。したがって、動的パスの `Dynamic` プレフィックス (プレフィックスフェーズ) は、そのデータ (データフェーズ) とは分かれています。state prefix は、行数が 0 より大きいすべてのブロックの先頭で読み取られ、各パスカラム (型付きまたは動的) にはちょうど `num_rows` 個の値が格納されます。行 `r` のオブジェクトは、各パスのインデックス `r` にある値を読み取って組み立てられます。その行で `Dynamic` の判別子が NULL の動的パスは、キーを追加しません。
+2 段階の構造になっている点に注意してください。まず **すべて** のパスの state prefix が先に現れ、その後に **すべて** のパスデータが続きます。したがって、動的パスの `Dynamic` プレフィックス (プレフィックスフェーズ) は、そのデータ (データフェーズ) とは分かれています。state prefix は、行数が 0 より大きいすべてのブロックの先頭で読み取られ、各パスカラム (型付きまたは動的) にはちょうど `num_rows` 個の値が格納されます。行 `r` のオブジェクトは、各パスのインデックス `r` にある値を読み取って組み立てられます。その行で `Dynamic` の判別子が NULL の動的パスは、キーを追加しません。動的パス名は互いに重複してはならず、また型文字列ですでに型付きとして宣言されているパスと同じ名前であってもなりません。どちらの場合も、組み立てられたオブジェクトの 1 つのキーに 2 つの値が存在することになるため、ClickHouse はいずれも `INCORRECT_DATA` として拒否します。非フラットなエンコーディングの動的パスリストについても同様です。
 
 <Info>
   **不正な個数**
 
-  ここで説明している FLATTENED レイアウトの `num_dynamic_paths` と、非フラットな `V1`/`V2`/`V3` エンコーディングにおける dynamic-paths の個数は、パス名より前にストリームから読み取られます。(`V1`/`V2`/`V3` の非フラットなプレフィックスには、flattened-paths 専用のフィールドはありません。含まれるのは dynamic-paths の個数だけで、これに加えて `V1` では読み取って破棄される `max_dynamic_paths` の値と、以下の `V3` shared-data メタデータがあります。) [`Dynamic`](#dynamic) と同様に、デコーダはこれらの個数を信頼できないものとして扱わなければならず、それらを直接使ってメモリ割り当てのサイズを決めてはなりません。`SIZE_MAX` 系の個数だけでなく、大きいが表現可能な個数についても同様です。ClickHouse は、上限付きの事前割り当てヒントだけを使ってパス名を 1 エントリずつ読み取るため、破損した個数は、コンテナーが保持できる上限を超えている場合は `INCORRECT_DATA` (「JSON/Object column has too many paths」) として、あるいはストリーム内のパス名が尽きた時点で通常の読み取りエラーとして拒否されます。
+  ここで説明している FLATTENED レイアウトの `num_dynamic_paths` と、非フラットな `V1`/`V2` エンコーディングにおける dynamic-paths の個数は、パス名より前にストリームから読み取られます。(非フラットなプレフィックスには、flattened-paths 専用のフィールドはありません。含まれるのは dynamic-paths の個数だけで、これに加えて `V1` では読み取って破棄される `max_dynamic_paths` の値があります。) [`Dynamic`](#dynamic) と同様に、デコーダはこれらの個数を信頼できないものとして扱わなければならず、それらを直接使ってメモリ割り当てのサイズを決めてはなりません。`SIZE_MAX` 系の個数だけでなく、大きいが表現可能な個数についても同様です。ClickHouse は、上限付きの事前割り当てヒントだけを使ってパス名を 1 エントリずつ読み取るため、破損した個数は、コンテナーが保持できる上限を超えている場合は `INCORRECT_DATA` (「JSON/Object column has too many paths」) として、あるいはストリーム内のパス名が尽きた時点で通常の読み取りエラーとして拒否されます。
+</Info>
 
-  非フラットな `V3` プレフィックスには、さらに `shared_data_buckets` の個数も含まれます (shared-data のシリアライゼーションバージョンが `MAP_WITH_BUCKETS` または `ADVANCED` の場合に存在します)。これは、バケットごとの reader 状態とカラムベクトルのサイズを、必要に応じて増やすループを介さずに直接決定します。そのため、デコーダはもっともらしくないバケット数を事前に拒否しなければなりません。パス数や型数とは異なり、この個数には writer 側で厳密な invariant があります。バケット数は、小さな MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) から選ばれ、これらは 0 以外で上限が `256` に制限されています。したがって、有効な on-wire の範囲は `1 … 256` のみです。ClickHouse は、この範囲外の値を `INCORRECT_DATA` (「JSON/Object column has an invalid number of shared data buckets」) として拒否します。これには、コンテナーの `max_size()` よりはるかに小さい `100000` のような、大きいが表現可能な個数も含まれます。
+<Info>
+  **途中で切れたストリーム**
+
+  パスカラムごとの `num_rows` 個の値は上限ではなく、厳密な要件です。デコーダは、ストリームが本来の位置で終わると信頼するのではなく、型付き・動的を問わずすべてのパスカラムをブロックの行数と照合しなければなりません。組み立てられたオブジェクトには照合の基準となる独立したサイズがなく、その行数はフラット化を解除した結果によって決まります。そのため、値が不足しているパスカラムは後から検出できず、その行 `r` を読み取ると末尾を越えてしまいます。ClickHouse はこれを `INCORRECT_DATA` (「Unexpected size of typed path / flattened path *p* in flattened Object column」) として拒否します。動的パスの場合、このチェックは、その [`Dynamic`](#dynamic) カラム内部で行われる同等のチェックに加えて実施されます。
 </Info>
 
 `JSON` 値 `{"a": 42, "b": "hi"}` (1 行で、両方のパスが動的) の例を示します。JSON の整数は `Int64` として推論されます:
@@ -1378,9 +1385,9 @@ FLATTENED モードでは **共有データカラムはありません** (この
 00 02 68 69                  "b" data: discriminator 0, String "hi"
 ```
 
-#### JSON 非フラット (V2/V3) {#json-non-flat}
+#### JSON 非フラット (V1/V2) {#json-non-flat}
 
-非フラット化 `Object` エンコーディング (`V1`/`V2`/`V3`) は、MergeTree のオンディスクストレージで使用され、flattened フラグがオフのときにサーバーが wire 上に出力する形式です。`clickhouse-client` / HTTP `FORMAT Native` (revision `0`) では `V1`、native TCP プロトコルでは `V2` が使われます。これらは shared-data カラムを含み、このページでは**定義していません**。また、Native wire 上ではパスごとの統計情報を**含まない**点に注意してください。`NativeWriter` は統計情報を無効のままにするため、`Object` structure prefix には統計情報セクションがなく、その後のバイト列には typed/dynamic/shared-data prefixes と data がそのまま続きます。統計情報が現れるのは、それを有効にしている MergeTree のオンディスクパスだけです。このページを使って `JSON` カラムをデコードするには、client は文書化されている tiers のいずれかを選択する必要があります。[String fallback](#json-tier-1-string-fallback) を使う場合は `output_format_native_write_json_as_string = 1` を設定し、[FLATTENED Object](#json-tier-2-flattened-object) レイアウトを使う場合は `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (かつ `output_format_native_write_json_as_string = 0`) を設定します。
+非フラット化 `Object` エンコーディングは、flattened フラグがオフのときにサーバーが wire 上に出力する形式です。`clickhouse-client` / HTTP `FORMAT Native` (revision `0`) では `V1`、native TCP プロトコルでは `V2` が使われます。(3 つ目の非フラットエンコーディングである `V3` は MergeTree のパーツにのみ書き込まれ、wire 上では拒否されます。) これらは shared-data カラムを含み、このページでは**定義していません**。また、Native wire 上ではパスごとの統計情報を**含まない**点に注意してください。`NativeWriter` は統計情報を無効のままにするため、`Object` structure prefix には統計情報セクションがなく、その後のバイト列には typed/dynamic/shared-data prefixes と data がそのまま続きます。統計情報が現れるのは、それを有効にしている MergeTree のオンディスクパスだけです。このページを使って `JSON` カラムをデコードするには、client は文書化されている tiers のいずれかを選択する必要があります。[String fallback](#json-tier-1-string-fallback) を使う場合は `output_format_native_write_json_as_string = 1` を設定し、[FLATTENED Object](#json-tier-2-flattened-object) レイアウトを使う場合は `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (かつ `output_format_native_write_json_as_string = 0`) を設定します。
 
 ## 圧縮フレーム {#compression-frame}
 

@@ -12,83 +12,71 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <IntroClickPipe />
 
-## 前提条件 {#pre-requisites}
+<div id="pre-requisites">
+  ## 前提条件 {#pre-requisites}
+</div>
 
 * GCP プロジェクトで [サービス アカウント](https://docs.cloud.google.com/iam/docs/service-account-overview) と [IAM ロール](https://docs.cloud.google.com/iam/docs/roles-overview) を管理する権限が必要です。権限がない場合は、管理者に支援を依頼してください。[公式ドキュメント](https://docs.cloud.google.com/iam/docs/service-accounts-create)に従って、必要最小限の[権限](/ja/integrations/clickpipes/bigquery/overview#permissions)を付与した専用のサービス アカウントを作成することを推奨します。
 
-* 初期ロードでは、ステージング用の Google Cloud Storage (GCS) バケットが必要です。[Google Cloud の手順](https://docs.cloud.google.com/storage/docs/creating-buckets)に従って、ClickPipe 専用のバケットを作成することを推奨します。
-
-* 継続的なレプリケーションを行う場合は、プロジェクトでサービス アカウントに [BigQuery Read Session User ロール](/ja/integrations/clickpipes/bigquery/overview#bigquery)を付与してください。テーブルを選択する前に、[レプリケーション方式の要件](/ja/integrations/clickpipes/bigquery/overview#cdc)を確認してください。
+* 初期ロードでは、ステージング用にユーザーが用意した Google Cloud Storage (GCS) バケットが必要です。[公式ドキュメント](https://docs.cloud.google.com/storage/docs/creating-buckets)に従って、ClickPipe 専用のバケットを作成することを推奨します。将来的には、この中間バケットは ClickPipes が提供および管理する予定です。
 
 <Steps>
   <Step title="データソースを選択する" id="1-select-the-data-source">
-    **1.** ClickHouse Cloud のメインナビゲーションメニューから **データソース** を選択し、**ClickPipe を作成** をクリックします。
+    **1.** ClickHouse Cloud で、メインナビゲーションメニューから **Data sources** を選択し、**Create ClickPipe** をクリックします。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
 
-    **2.** **BigQuery** のタイルをクリックします。
+    **2.** **BigQuery** タイルをクリックします。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="BigQuery のタイルを選択" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="BigQuery タイルを選択" size="lg" border />
   </Step>
 
-  <Step title="ClickPipe の接続を設定する" id="2-setup-your-clickpipe-connection">
-    BigQuery プロジェクトへの接続に必要な情報を入力します。初期ロードを実行する場合は、ステージング用の GCS バケットも指定します。
+  <Step title="ClickPipe 接続を設定する" id="2-setup-your-clickpipe-connection">
+    新しい ClickPipe を設定するには、BigQuery データウェアハウスへの接続方法と認証情報に加え、ステージング用の GCS バケットを指定する必要があります。
 
-    **1.** ClickPipes 用に作成した service account の `.json` キーをアップロードします。service account に最低限必要な[アクセス許可](/ja/integrations/clickpipes/bigquery/overview#permissions)が付与されていることを確認してください。
+    **1.** ClickPipes 用に作成したサービス アカウントの `.json` 秘密鍵をアップロードします。サービス アカウントに、必要最小限の [permissions](/ja/integrations/clickpipes/bigquery/overview#permissions) が付与されていることを確認してください。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="サービスアカウントキーをアップロード" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="サービスアカウントの秘密鍵をアップロード" size="lg" border />
 
-    **2.** **レプリケーションモード**として、[初期ロードのみ](/ja/integrations/clickpipes/bigquery/overview#initial-load)、**初期ロード + CDC**、または **CDC のみ**を選択します。CDC モードを選択した場合は、[クエリベースまたはイベントベースの方式](/ja/integrations/clickpipes/bigquery/overview#cdc)を選びます。
+    **2.** **Replication method** を選択します。プライベートプレビューでは、サポートされているオプションは [**Initial load only**](/ja/integrations/clickpipes/bigquery/overview#initial-load) のみです。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="BigQuery のレプリケーションモードの選択肢：初期ロードのみ、初期ロード + CDC、CDC のみ" size="lg" border />
+    **3.** 初期ロード中のデータをステージングするための GCS バケットのパスを指定します。
 
-    **3.** 初期ロードを実行する場合は、データのステージングに使用する GCS バケットのパスを指定します。
-
-    **4.** **Next** をクリックして入力内容を検証します。
+    **4.** **Next** をクリックして検証します。
   </Step>
 
   <Step title="ClickPipe を設定する" id="3-configure-your-clickpipe">
-    選択したフェーズについて、以下の値を設定してください。初期ロードの設定は ClickPipe が既存データをインポートするときにのみ、CDC の設定は変更のレプリケーションを継続するときにのみ適用されます。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="同期間隔、初期ロード、CDC に関する BigQuery ClickPipe の設定" size="lg" border />
-
-    | 設定                     | 制御する内容                                                                                                                                                                                                                |
-    | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-    | 同期間隔 (秒)               | ClickPipes が各ソーステーブルに新たな変更がないか確認する頻度。                                                                                                                                                                                 |
-    | 初期ロードの並列スレッド数          | ClickPipes が 1 つのテーブルから同時にロードするパーツの最大数。                                                                                                                                                                               |
-    | スナップショットのパーティションあたりの行数 | 初期ロードの各パーツに含める行数の目安。大きなテーブルでは、ClickPipes がこの値を調整する場合があります。                                                                                                                                                            |
-    | スナップショットで並列にロードするテーブル数 | ClickPipes が同時にロードするソーステーブルの最大数。                                                                                                                                                                                      |
-    | CDC で並列に処理するテーブル数      | ClickPipes が同時に読み取り、ClickHouse に送信するテーブルの最大数。                                                                                                                                                                         |
-    | CDC の安全バッファ (秒)        | ClickPipes が各 CDC クエリの対象期間を、BigQuery の現在時刻よりどれだけ前で区切るか。これにより、直近の書き込みが読み取り可能になるまでの時間を確保できます。                                                                                                                           |
-    | CDC の単一クエリの最大時間幅 (秒)   | 1 つの CDC クエリが対象とする最大時間範囲。ClickPipes は、これより長い期間を複数のクエリに分割します。イベントベースのレプリケーションでは、BigQuery の[1 日の制限](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions)に合わせて 86,400 秒以下に設定してください。 |
+    BigQuery データセットのサイズや、同期するテーブルの合計サイズによっては、ClickPipe のデフォルトのインジェスト設定を調整する必要がある場合があります。
   </Step>
 
   <Step title="テーブルを設定する" id="4-configure-tables">
-    **1.** BigQuery テーブルのレプリケーション先となる ClickHouse データベースを選択します。既存のデータベースを選ぶか、新しく作成できます。
+    **1.** BigQuery テーブルのレプリケーション先となる ClickHouse データベースを選択します。既存のデータベースを選択することも、新しく作成することもできます。
 
-    **2.** ソーステーブルを選択します。**カラム設定**では、宛先テーブルごとに名前を変更したり、レプリケーションするカラムを選んだりできます。一覧には、service account がアクセスできるデータセットのみが表示されます。
+    **2.** レプリケートするテーブルと、必要に応じてカラムを選択します。一覧には、指定したサービス アカウントがアクセスできるデータセットのみが表示されます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="BigQuery のソーステーブルを選択し、宛先テーブル名、CDC ウォーターマーク、sorting key、詳細設定を指定する" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="権限" size="lg" border />
 
-    **3.** テーブルごとに CDC オプションを設定します。スクリーンショットはクエリベースの設定を示しています。`TIMESTAMP` 型の **CDC ウォーターマークカラム**を選択し、レプリケーション対象のカラムに含めてください。また、行が変更されるたびに、そのカラムの値を更新してください。イベントベースのレプリケーションでは、代わりに [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) または [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を選択します。[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を使用する場合は、ソーステーブルで `enable_change_history = TRUE` を設定する必要があります。
+    **3.** 選択した各テーブルについて、**Advanced settings** &gt; **Use a custom sorting key** で必ずカスタムソートキーを定義してください。将来的には、ソートキーはアップストリームのデータベースにある既存のクラスタリングキーまたはパーティション化キーに基づいて自動的に推定されるようになります。
 
-    **4.** **sorting key** を確認します。行が更新または削除される可能性がある場合は、各行を識別でき、値が変わらないカラムを選択してください。[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を使用するには、ソーステーブルに主キーがあるか、ここで sorting key を設定する必要があります。ClickHouse は sorting key を使ってデータを並べ、クエリに利用します。sorting key がない場合は `tuple()` が使用され、プライマリインデックスは作成されません。
+    <Warning>
+      ClickHouse でクエリ性能を最適化するには、レプリケートテーブルに [ソートキー](/ja/concepts/best-practices/choosing-a-primary-key) を必ず定義する必要があります。そうしない場合、ソートキー は `tuple()` に設定されます。これはプライマリインデックスが作成されないことを意味し、ClickHouse はそのテーブルに対するすべてのクエリでフルテーブルスキャンを実行します。
+    </Warning>
 
-    **5.** **詳細設定**を開き、ClickHouse テーブルの **エンジン**を選択します。必要に応じて、初期ロード用のパーティション化キーも指定できます。このパーティション化キーは、宛先テーブルの `PARTITION BY` 式を設定するものではありません。
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="権限" size="lg" border />
   </Step>
 
-  <Step title="アクセス許可を設定する" id="6-configure-permissions">
-    最後に、ClickPipes の内部ユーザーに付与するアクセス許可を設定できます。
+  <Step title="権限を設定する" id="6-configure-permissions">
+    最後に、ClickPipes の内部ユーザーに対する権限を設定できます。
 
-    **アクセス許可:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。この内部ユーザーには、カスタムロールまたは事前定義されたロールのいずれかを割り当てられます。
+    **Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。この内部ユーザーには、カスタムロールまたは事前定義されたロールのいずれかを割り当てられます。
 
     * `Full access`: クラスターへのフルアクセス。宛先テーブルで materialized view または Dictionary を使用する場合に必要です。
-    * `Only destination`: 宛先テーブルへのデータの挿入のみを許可します。
+    * `Only destination`: 宛先テーブルへの INSERT 権限のみ。
   </Step>
 
-  <Step title="セットアップを完了する" id="7-complete-setup">
-    **Create ClickPipe** をクリックしてセットアップを完了します。概要ページに移動したら、初期ロードの進行状況を確認できます。さらに、クリックすると BigQuery ClickPipes の詳細を表示できます。
+  <Step title="設定を完了する" id="7-complete-setup">
+    **Create ClickPipe** をクリックして設定を完了します。概要ページにリダイレクトされ、そこで初期ロードの進行状況を確認したり、BigQuery ClickPipes の詳細をクリックして表示したりできます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="アクセス許可" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="権限" size="lg" border />
   </Step>
 </Steps>

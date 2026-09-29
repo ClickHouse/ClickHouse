@@ -16,37 +16,21 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 機能 {#features}
 </div>
 
-### 初期ロード {#initial-load}
+<div id="initial-load">
+  ### 初期ロード {#initial-load}
+</div>
 
-初期ロードでは、BigQuery の [データセット](https://docs.cloud.google.com/bigquery/docs/datasets-intro) から選択したテーブルを ClickHouse にコピーします。初期ロードだけを実行することも、初期ロード後に継続的なレプリケーションを行うこともできます。ロードには、ステージング用に指定した Google Cloud ストレージ (GCS) のバケットを使用します。初期ロードのみを行う ClickPipe は、ロードが完了すると停止します。
-
-<Note>
-  ClickPipes は BigQuery の [`EXPORT DATA`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/export-statements) クエリを使用して、データをステージング用のバケットにコピーします。これらのクエリの実行には BigQuery の料金がかかり、GCS のストレージ料金も発生します。
-</Note>
-
-### 継続的なレプリケーション {#cdc}
-
-初期ロードの完了後、BigQuery ClickPipe は新しいデータをポーリングし、ClickHouse に反映できます。初期ロードを行わずに継続的なレプリケーションを開始することもできます。ソーステーブルでのデータの変更方法に応じて、レプリケーション方式を選択してください。以下の例はクエリの形式を示しています。実際には、ClickPipes が設定済みのカラムとイベントのメタデータを選択します。
-
-| 方式                                                                                                            | 使用する場面                                                | ClickPipes がレプリケーションする内容                               | クエリの例                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| クエリベース                                                                                                        | 挿入または更新される各行に、行が変更されるたびに値が更新される `TIMESTAMP` カラムがある場合。 | ウォーターマークの値が最後にレプリケーションした値より新しい行。削除は検出されません。            | `SELECT * FROM dataset.orders WHERE TIMESTAMP(updated_at) > @start AND TIMESTAMP(updated_at) <= @end`                                                           |
-| [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) | 新しい行だけをレプリケーションすればよい場合。                               | `MERGE` による挿入を含め、テーブルに挿入または追加された行。更新と削除はレプリケーションされません。 | [`SELECT * FROM APPENDS(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) |
-| [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) | 挿入、更新、削除を ClickHouse に反映する必要がある場合。                    | `MERGE` やテーブルの全行削除による変更を含む、BigQuery の変更履歴に記録された変更。     | [`SELECT * FROM CHANGES(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) |
-
-クエリベースのレプリケーションでは、テーブルごとにウォーターマーク用のカラムを選択してください。このカラムは `TIMESTAMP` 型で、レプリケーション対象のカラムに含まれている必要があります。行を挿入または更新する際に、このカラムの値を設定してください。行が変更されてもウォーターマークの値が新しくならなければ、ClickPipes はその変更を検出できません。削除もレプリケーションする必要がある場合は、[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を使用してください。
-
-イベントベースの方式はいずれも、通常の BigQuery テーブルが必要です。[`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) では、変更履歴を有効にする必要はありません。[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を使用する場合は、ClickPipe を作成する前に、各ソーステーブルで変更履歴を有効にしてください。
-
-```sql
-ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
-```
-
-[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を使用するには、BigQuery の主キー、または宛先テーブルに設定されたカスタムの sorting key も必要です。ClickPipes が更新や削除を対象の行に正しく適用できるよう、各行を識別できるカラムを選択してください。BigQuery は主キー制約を適用しないため、ソースデータ側でこれらの値の一意性を維持する必要があります。
+BigQuery ClickPipe は、BigQuery の [データセット](https://docs.cloud.google.com/bigquery/docs/datasets-intro) 内で選択したテーブルを、1 回のバッチ操作で ClickHouse の宛先テーブルにロードします。インジェストタスクが完了すると、ClickPipe は自動的に自動停止します。初期ロードのインジェストプロセスでは、ステージング用にユーザーが用意した Google Cloud Storage (GCS) バケットが必要です。今後は、この中間バケットは ClickPipes によって提供および管理される予定です。
 
 <Note>
-  [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) と [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) が読み取れる変更は、ソーステーブルの [BigQuery タイムトラベルの保持期間](https://docs.cloud.google.com/bigquery/docs/time-travel)内のものに限られます。この期間はデフォルトで 7 日間ですが、最短で 2 日間に設定できます。レプリケーションの遅延がこの期間を超えた場合は、完全なコピーを復元するために初期ロードをやり直してください。BigQuery では、3 つの方法のいずれで実行したクエリにも料金が発生します。[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) 用に変更履歴を有効にすると、BigQuery のストレージ費用も追加で発生します。
+  ClickPipes は、BigQuery からステージング用の GCS バケットにデータを取得するために、バッチ抽出ジョブを利用します。この操作によって、BigQuery で**処理料金が発生することはありません**。
 </Note>
+
+<div id="cdc">
+  ### CDC (変更データキャプチャ) {#cdc}
+</div>
+
+CDC はプライベートプレビューでは**サポートされていません**が、今後サポートされる予定です。それまでは、初期ロードの完了後に BigQuery のデータエクスポートを ClickHouse Cloud に継続的に同期する方法として、[Google Cloud Storage ClickPipe](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview) の使用を推奨します。
 
 <div id="data-type-mapping">
   ## データ型マッピング {#data-type-mapping}
@@ -93,14 +77,14 @@ ClickPipes は、[サービスアカウントキー](https://docs.cloud.google.c
   ### 権限 {#permissions}
 </div>
 
-#### BigQuery {#bigquery}
+<div id="bigquery">
+  #### BigQuery {#bigquery}
+</div>
 
 サービス アカウントには、次の BigQuery ロールが必要です。
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
-
-継続的なレプリケーションを行う場合は、Google Cloud プロジェクトに対して [`roles/bigquery.readSessionUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.readSessionUser) も付与してください。ClickPipes は [BigQuery Storage Read API](https://docs.cloud.google.com/bigquery/docs/reference/storage#permissions) を使用して読み取りセッションを作成し、CDC クエリの結果を読み取ります。このロールはデータセット単位では付与できません。サービス アカウントがデータを読み取れるよう、ソースのデータセットまたはテーブルに対する `roles/bigquery.dataViewer` の付与は維持してください。
 
 アクセス範囲をさらに絞り込むには、ロールがアクセスできるリソースを制限するために [IAM 条件](https://docs.cloud.google.com/bigquery/docs/conditions) を使用することを推奨します。たとえば、`dataViewer` ロールを、同期対象のテーブルを含む特定のデータセットのみに制限できます。
 

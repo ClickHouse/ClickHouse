@@ -1102,32 +1102,29 @@ Native 写入器和读取器**不会**在块之间保留序列化状态：`Nativ
 
 #### 序列化版本参考 {#serialization-version-reference}
 
-| 类型                                                                          | 字段宽度      | 值   | 名称                                     | 含义                                               |
-| --------------------------------------------------------------------------- | --------- | --- | -------------------------------------- | ------------------------------------------------ |
-| **Object** (JSON 的基础类型)                                                     | UInt64 LE | `0` | `V1`                                   | 原始编码。包含 `max_dynamic_paths` 参数和动态路径列表。           |
-|                                                                             |           | `1` | `STRING`                               | 原生格式兼容模式——将 Object 作为单个包含 JSON 文本的 `String` 列传输。 |
-|                                                                             |           | `2` | `V2`                                   | V1 布局，但去掉了 `max_dynamic_paths` 参数。               |
-|                                                                             |           | `3` | `FLATTENED`                            | 原生格式兼容模式——扁平化路径表示。                               |
-|                                                                             |           | `4` | `V3`                                   | 在 V2 的基础上增加了共享数据序列化版本子字段和统计标志。                   |
-| **Object 共享数据** (Object `V3` 使用的子流)                                         | VarUInt   | `0` | `MAP`                                  | 共享数据编码为 `Map(String, String)`。                   |
-|                                                                             |           | `1` | `MAP_WITH_BUCKETS`                     | 与 `MAP` 相同，但会拆分为 N 个桶以提高扫描效率。                    |
-|                                                                             |           | `2` | `ADVANCED`                             | 紧凑粒度格式，为路径 / 标记 / 元数据使用独立流。                      |
-| **Dynamic**                                                                 | UInt64 LE | `1` | `V1`                                   | 原始编码。包含 `max_dynamic_types` 和运行时 Variant 类型列表。   |
-|                                                                             |           | `2` | `V2`                                   | V1 但去掉了 `max_dynamic_types` 参数。                  |
-|                                                                             |           | `3` | `FLATTENED`                            | 原生格式兼容模式。                                        |
-|                                                                             |           | `4` | `V3`                                   | 在 V2 的基础上增加了二进制编码的 Variant 类型名称和空统计信息支持。         |
-| **Variant** 判别值模式                                                           | UInt64 LE | `0` | `BASIC`                                | 每一行的判别值都会按原样写入。                                  |
-|                                                                             |           | `1` | `COMPACT`                              | 如果一个粒度中的所有行共用同一个判别值，则只写入单个值 + 粒度标记。              |
-| **Variant** 粒度格式 (当模式为 `COMPACT` 时)                                         | UInt8     | `0` | `PLAIN`                                | 粒度中的判别值是异构的。                                     |
-|                                                                             |           | `1` | `COMPACT`                              | 粒度中的所有行都使用同一个判别值。                                |
-| **LowCardinality** 键序列化                                                     | Int64     | `1` | `sharedDictionariesWithAdditionalKeys` | 目前唯一已定义的版本。                                      |
-| **JSON-as-String** 回退机制 (启用 `output_format_native_write_json_as_string` 时)  | UInt64 LE | `1` | `JSONStringSerializationVersion`       | JSON 列会作为一个 `String` 列传入，并以此前缀开头。                |
+| 类型                                                                         | 字段宽度      | 值   | 名称                                     | 含义                                               |
+| -------------------------------------------------------------------------- | --------- | --- | -------------------------------------- | ------------------------------------------------ |
+| **Object** (JSON 的基础类型)                                                    | UInt64 LE | `0` | `V1`                                   | 原始编码。包含 `max_dynamic_paths` 参数和动态路径列表。           |
+|                                                                            |           | `1` | `STRING`                               | 原生格式兼容模式——将 Object 作为单个包含 JSON 文本的 `String` 列传输。 |
+|                                                                            |           | `2` | `V2`                                   | V1 布局，但去掉了 `max_dynamic_paths` 参数。               |
+|                                                                            |           | `3` | `FLATTENED`                            | 原生格式兼容模式——扁平化路径表示。                               |
+|                                                                            |           | `4` | `V3`                                   | 仅写入 MergeTree parts，从不通过网络传输；其布局不在此处说明。          |
+| **Dynamic**                                                                | UInt64 LE | `1` | `V1`                                   | 原始编码。包含 `max_dynamic_types` 和运行时 Variant 类型列表。   |
+|                                                                            |           | `2` | `V2`                                   | V1 但去掉了 `max_dynamic_types` 参数。                  |
+|                                                                            |           | `3` | `FLATTENED`                            | 原生格式兼容模式。                                        |
+|                                                                            |           | `4` | `V3`                                   | 仅写入 MergeTree parts，从不通过网络传输；其布局不在此处说明。          |
+| **Variant** 判别值模式                                                          | UInt64 LE | `0` | `BASIC`                                | 每一行的判别值都会按原样写入。                                  |
+|                                                                            |           | `1` | `COMPACT`                              | 如果一个粒度中的所有行共用同一个判别值，则只写入单个值 + 粒度标记。              |
+| **Variant** 粒度格式 (当模式为 `COMPACT` 时)                                        | UInt8     | `0` | `PLAIN`                                | 粒度中的判别值是异构的。                                     |
+|                                                                            |           | `1` | `COMPACT`                              | 粒度中的所有行都使用同一个判别值。                                |
+| **LowCardinality** 键序列化                                                    | Int64     | `1` | `sharedDictionariesWithAdditionalKeys` | 目前唯一已定义的版本。                                      |
+| **JSON-as-String** 回退机制 (启用 `output_format_native_write_json_as_string` 时) | UInt64 LE | `1` | `JSONStringSerializationVersion`       | JSON 列会作为一个 `String` 列传入，并以此前缀开头。                |
 
 关于这张表，有几点值得注意：
 
 * **这些值并不是连续的。** `Dynamic` 使用 `1`、`2`、`3`、`4`，其中 `V3` 是 `4`，`FLATTENED` 是 `3`。数值更大并不一定表示版本更新。
 * **某些值仅用于原生格式。** `Object::STRING`、`Object::FLATTENED` 和 `Dynamic::FLATTENED` 的存在，是为了与未实现完整 Object/Dynamic 的客户端保持原生协议兼容。它们不会出现在 MergeTree 的磁盘存储中。
-* **`V3` 主要用于磁盘存储。** 使用原生 TCP 协议的客户端通常看到的是 `FLATTENED` (值为 `3`) ，而不是 `V3` (值为 `4`) 。
+* **`V3` 仅用于磁盘存储。** 之所以列出 `Object::V3` 和 `Dynamic::V3`，是因为这些值已被分配且不得重复使用，而不是因为解码器会遇到它们：ClickHouse 从不通过 `Native` 发送它们，并且在该格式中遇到它们时会以 `INCORRECT_DATA` 错误拒绝。它们所承载的全部内容——`Object::V3` 的共享数据子版本及其桶布局和粒度布局——描述的是 part 而非数据块，因此不在本页讨论范围内。使用原生 TCP 协议的客户端只会看到 `V1`、`V2`、`STRING` 或 `FLATTENED`。
 
 #### LowCardinality(T) {#lowcardinality}
 
@@ -1313,11 +1310,17 @@ ClickHouse 的 `JSON` 类型有多种线传输编码 (请参阅[序列化版本�
   不过，**不要**用 `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` in ClickHouse) 来限制**扁平化的** `num_types`：扁平化类型列表包含*所有*不同的运行时类型，包括那些已溢出到共享 variant 中的类型，因此一个有效的扁平化块完全可能合法地列出远多于该限制的类型。`MAX_DYNAMIC_TYPES_LIMIT` 这一限制只适用于非扁平 `V1`/`V2`/`V3` 前缀中的 `num_dynamic_types` 计数；该计数统计的是常规 variant slot，并受此限制约束 (ClickHouse 会在这里、为共享 variant 执行 `+ 1` 之前对其进行验证) 。
 </Info>
 
+<Info>
+  **截断的 stream**
+
+  判别值 run 恰好包含 `num_rows` 个条目，解码器必须验证确实读取了这么多条目，而不能照单全收 stream 中的内容。较短的 run 并不会与其后的任何内容产生矛盾：各类型的值计数是根据实际读取到的判别值推导出来的，因此与值 run 保持一致；而完全由 NULL 标记构成的 run 根本不需要任何值字节。ClickHouse 会在执行任何按类型的检查之前，以 `INCORRECT_DATA` (&quot;Mismatch in flattened `Dynamic` column: N rows are expected, but the indexes stream contains only M rows&quot;) 拒绝过短的判别值 run，因为重建后的列随后会被当作 `num_rows` 行使用，无论其实际大小如何。
+</Info>
+
 <Note>
   序列化为有状态的运行时类型 (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) 会在类型名称列表之后携带嵌套的 state prefix。
 </Note>
 
-运行时类型列表通常遵循 `Variant` 的规范化形式——常规 variant slot 按 `DataTypeVariant` (类型名称) 顺序写入，因此 wire 顺序并不遵循插入顺序。不过，它**并不总是**全局有序的：溢出到共享 variant 中的类型 (例如在 `Dynamic(max_types=N)` 下) 会按首次出现的顺序追加在常规 slot 之后，因此列表尾部可能会打破按类型名称排序的顺序。因此，解码器必须将传输的类型列表视为分配判别值的权威依据，不得自行重新排序。对于行 `[42::UInt64, "hi", NULL]`，两种类型是 `String` 和 `UInt64`，而且 `"String"` 排在 `"UInt64"` 之前，因此判别值分别为 `0` = String、`1` = UInt64、`2` = NULL：
+运行时类型列表通常遵循 `Variant` 的规范化形式——常规 variant slot 按 `DataTypeVariant` (类型名称) 顺序写入，因此 wire 顺序并不遵循插入顺序。不过，它**并不总是**全局有序的：溢出到共享 variant 中的类型 (例如在 `Dynamic(max_types=N)` 下) 会按首次出现的顺序追加在常规 slot 之后，因此列表尾部可能会打破按类型名称排序的顺序。因此，解码器必须将传输的类型列表视为分配判别值的权威依据，不得自行重新排序。列表中不允许出现的是重复的类型或 `Nothing`：两个相同的条目会映射到同一个判别值，而 `Nothing` 根本不是 variant，因此在这两种情况下，列表中都有一部分无处可供重建。ClickHouse 会以 `INCORRECT_DATA` 拒绝这两种情况。对于行 `[42::UInt64, "hi", NULL]`，两种类型是 `String` 和 `UInt64`，而且 `"String"` 排在 `"UInt64"` 之前，因此判别值分别为 `0` = String、`1` = UInt64、`2` = NULL：
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
@@ -1331,7 +1334,7 @@ ClickHouse 的 `JSON` 类型有多种线传输编码 (请参阅[序列化版本�
 
 重建后：行 0 = UInt64 run[0] = `42`；行 1 = String run[0] = `"hi"`；行 2 = NULL。各类型的 run 在 wire 中的顺序与类型列表中的顺序相同 (`String` 在 `UInt64` 之前) 。
 
-#### JSON (层级 2：FLATTENED Object) {#json-tier-2-flattened-object}
+#### JSON (第 2 层：FLATTENED Object) {#json-tier-2-flattened-object}
 
 这种 JSON 编码更丰富：它不像 Tier 1 那样将每个值都扁平化为文本，而是针对每个 JSON 路径将该列拆分为一个子列。要选择这种编码，需要在启用 flattened-serialization 标志 (`output_format_native_use_flattened_dynamic_and_json_serialization = 1`) 的同时，**不**请求 Tier 1 回退 (`output_format_native_write_json_as_string = 0`) ；随后服务器会输出序列化**版本 3**。
 
@@ -1355,14 +1358,18 @@ ClickHouse 的 `JSON` 类型有多种线传输编码 (请参阅[序列化版本�
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
 
-请注意这种两阶段形态：**所有**路径状态前缀都会先出现，然后才是**所有**路径数据。因此，动态路径的 `Dynamic` 前缀 (在前缀阶段) 会与其数据 (在数据阶段) 分开。状态前缀会在每个行数 &gt; 0 的块开头读取，而每个路径列 (无论是类型化还是动态) 都恰好包含 `num_rows` 个值。行 `r` 的对象是通过读取每个路径中索引 `r` 处的值来组装的；如果某个动态路径在该行的 `Dynamic` 判别值为 NULL，则它不会提供任何键。
+请注意这种两阶段形态：**所有**路径状态前缀都会先出现，然后才是**所有**路径数据。因此，动态路径的 `Dynamic` 前缀 (在前缀阶段) 会与其数据 (在数据阶段) 分开。状态前缀会在每个行数 &gt; 0 的块开头读取，而每个路径列 (无论是类型化还是动态) 都恰好包含 `num_rows` 个值。行 `r` 的对象是通过读取每个路径中索引 `r` 处的值来组装的；如果某个动态路径在该行的 `Dynamic` 判别值为 NULL，则它不会提供任何键。动态路径名称必须互不相同，且不得与类型字符串中已声明为类型化的路径重复——这两种情况都会使组装后的对象在同一个键下出现两个值，因此 ClickHouse 对两者都会以 `INCORRECT_DATA` 拒绝。非扁平编码的动态路径列表同样遵循此规则。
 
 <Info>
-  **Malformed counts**
+  **计数值损坏**
 
-  此处记录的 FLATTENED 布局中的 `num_dynamic_paths` —— 以及非扁平 `V1`/`V2`/`V3` 编码中的动态路径计数 —— 都是在路径名称之前从 stream 中读取的。(非扁平前缀中没有单独的 flattened-paths 字段：`V1`/`V2`/`V3` 只携带动态路径计数，另外 `V1` 还包含一个会被读取后丢弃的 `max_dynamic_paths` 值，以及下文所述的 `V3` 共享数据元数据。) 与 [`Dynamic`](#dynamic) 一样，decoder 必须将这些计数视为不可信，绝不能直接据此确定分配大小——无论是 `SIZE_MAX` 这一类计数，还是虽大但仍可表示的计数。ClickHouse 会逐个读取路径名称，并且只使用一个带上限的预分配 hint，因此损坏的计数会在两种情况下被拒绝：要么是在超过容器可容纳数量时以 `INCORRECT_DATA` (“JSON/Object column has too many paths”) 拒绝，要么是在 stream 中路径名称耗尽后作为普通读取错误拒绝。
+  此处记录的 FLATTENED 布局中的 `num_dynamic_paths` —— 以及非扁平 `V1`/`V2` 编码中的动态路径计数 —— 都是在路径名称之前从 stream 中读取的。(非扁平前缀中没有单独的 flattened-paths 字段：它们只携带动态路径计数，另外 `V1` 还包含一个会被读取后丢弃的 `max_dynamic_paths` 值。) 与 [`Dynamic`](#dynamic) 一样，解码器必须将这些计数视为不可信，绝不能直接据此确定分配大小——无论是 `SIZE_MAX` 这一类计数，还是虽大但仍可表示的计数。ClickHouse 会逐个读取路径名称，并且只使用一个带上限的预分配 hint，因此损坏的计数会在两种情况下被拒绝：要么是在超过容器可容纳数量时以 `INCORRECT_DATA` (“JSON/Object column has too many paths”) 拒绝，要么是在 stream 中路径名称耗尽后作为普通读取错误拒绝。
+</Info>
 
-  非扁平 `V3` 前缀还会额外携带一个 `shared_data_buckets` 计数 (当共享数据 serialization version 为 `MAP_WITH_BUCKETS` 或 `ADVANCED` 时存在) 。它会直接确定每个桶的 reader 状态和列向量的大小 (而不是通过按需增长循环) ，因此 decoder 必须预先拒绝不合理的 bucket 计数。与路径计数和类型计数不同，这个计数在 writer 端有严格的不变量：桶数取自较小的 MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) ，这些配置值非零且上限为 `256`，因此唯一有效的线上传输范围是 `1 … 256`。ClickHouse 会将任何超出该范围的值——包括像 `100000` 这样虽可表示但很大的计数，它远低于容器的 `max_size()`——都以 `INCORRECT_DATA` 拒绝 (“JSON/Object column has an invalid number of shared data buckets”) 。
+<Info>
+  **截断的 stream**
+
+  每个路径列包含 `num_rows` 个值是一项硬性要求，而非上界：解码器必须将每个路径列 (无论是类型化还是动态) 与块的行数逐一核对，而不能指望 stream 恰好在应有的位置结束。组装后的对象没有可供比对的独立大小——其行数完全取决于反扁平化的结果——因此长度不足的路径列事后无法被发现，读取其第 `r` 行时就会越界。ClickHouse 会以 `INCORRECT_DATA` (“Unexpected size of typed path / flattened path *p* in flattened Object column”) 拒绝这种情况。对于动态路径，这项检查是在其 [`Dynamic`](#dynamic) 列内部的等效检查之外额外进行的。
 </Info>
 
 `JSON` 值 `{"a": 42, "b": "hi"}` (一行，两个路径都是动态的) 。JSON 整数会被推断为 `Int64`：
@@ -1378,9 +1385,9 @@ ClickHouse 的 `JSON` 类型有多种线传输编码 (请参阅[序列化版本�
 00 02 68 69                  "b" data: discriminator 0, String "hi"
 ```
 
-#### JSON 非扁平化 (V2/V3) {#json-non-flat}
+#### JSON 非扁平化 (V1/V2) {#json-non-flat}
 
-非扁平化的 `Object` 编码 (`V1`/`V2`/`V3`) 用于 MergeTree 的磁盘存储；当 flattened 标志关闭时，这也是服务器在线上传输时输出的格式——`clickhouse-client` / HTTP `FORMAT Native` (修订版 `0`) 使用 `V1`，原生 TCP 协议使用 `V2`。它们都带有一个 `shared-data` 列，但**不**在本页的说明范围内。请注意，它们**不会**通过 Native 传输携带按路径划分的统计信息：`NativeWriter` 会保持 statistics 关闭，因此 `Object` 结构前缀中没有 statistics 部分，其后的字节直接就是 typed/dynamic/shared-data 的前缀和数据。Statistics 仅出现在启用了该功能的 MergeTree 磁盘路径上。若要使用本页内容解码 `JSON` 列，客户端必须选择本文档中说明的某个层级：将 `output_format_native_write_json_as_string = 1` 用于 [String 回退](#json-tier-1-string-fallback)，或将 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (同时将 `output_format_native_write_json_as_string = 0`) 用于 [FLATTENED Object](#json-tier-2-flattened-object) 布局。
+当 flattened 标志关闭时，非扁平化的 `Object` 编码是服务器在线上传输时输出的格式——`clickhouse-client` / HTTP `FORMAT Native` (修订版本 `0`) 使用 `V1`，原生 TCP 协议使用 `V2`。(第三种非扁平化编码 `V3` 仅写入 MergeTree parts，在线上传输时会被拒绝。) 它们都带有一个 `shared-data` 列，但**不**在本页的说明范围内。请注意，它们**不会**通过 Native 传输携带按路径划分的统计信息：`NativeWriter` 会保持 statistics 关闭，因此 `Object` 结构前缀中没有 statistics 部分，其后的字节直接就是 typed/dynamic/shared-data 的前缀和数据。Statistics 仅出现在启用了该功能的 MergeTree 磁盘路径上。若要使用本页内容解码 `JSON` 列，客户端必须选择本文档中说明的某个层级：将 `output_format_native_write_json_as_string = 1` 用于 [String 回退](#json-tier-1-string-fallback)，或将 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (同时将 `output_format_native_write_json_as_string = 0`) 用于 [FLATTENED Object](#json-tier-2-flattened-object) 布局。
 
 ## 压缩帧 {#compression-frame}
 

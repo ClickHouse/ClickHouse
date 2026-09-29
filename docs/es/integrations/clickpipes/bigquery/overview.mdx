@@ -16,37 +16,21 @@ import { Image } from "/snippets/es/components/Image.jsx";
   ## Funciones {#features}
 </div>
 
-### Carga inicial {#initial-load}
+<div id="initial-load">
+  ### Carga inicial {#initial-load}
+</div>
 
-La carga inicial copia las tablas seleccionadas de un [conjunto de datos](https://docs.cloud.google.com/bigquery/docs/datasets-intro) de BigQuery a ClickHouse. Puede ejecutarse de forma independiente o ir seguida de una replicación continua. Para el staging, se utiliza un bucket de Google Cloud Storage (GCS) que debe proporcionar. Un ClickPipe configurado únicamente para la carga inicial se detiene al finalizar esta.
-
-<Note>
-  ClickPipes utiliza consultas [`EXPORT DATA`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/export-statements) de BigQuery para copiar los datos al bucket de staging. BigQuery cobra por la ejecución de esas consultas; también se aplican cargos por el almacenamiento en GCS.
-</Note>
-
-### Replicación continua {#cdc}
-
-Tras la carga inicial, un ClickPipe de BigQuery puede comprobar periódicamente si hay datos nuevos y replicarlos en ClickHouse. También puede iniciar la replicación continua sin realizar una carga inicial. Elija el método de replicación según cómo cambien los datos de la tabla de origen. Estos ejemplos muestran la estructura de las consultas; ClickPipes selecciona las columnas configuradas y los metadatos de los eventos.
-
-| Método                                                                                                        | Cuándo usarlo                                                                                                  | Qué replica ClickPipes                                                                                                                      | Consulta de ejemplo                                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Basado en consultas                                                                                           | Cada fila insertada o actualizada tiene una columna `TIMESTAMP` cuyo valor se actualiza cuando cambia la fila. | Las filas cuyo valor de marca de agua es posterior al último valor replicado. Las eliminaciones no se detectan.                             | `SELECT * FROM dataset.orders WHERE TIMESTAMP(updated_at) > @start AND TIMESTAMP(updated_at) <= @end`                                                           |
-| [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) | Solo es necesario replicar las filas nuevas de la tabla.                                                       | Las filas insertadas o añadidas a la tabla, incluidas las inserciones mediante `MERGE`. Las actualizaciones y eliminaciones no se replican. | [`SELECT * FROM APPENDS(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) |
-| [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) | Las inserciones, actualizaciones y eliminaciones deben reflejarse en ClickHouse.                               | Los cambios registrados en el historial de cambios de BigQuery, incluidos los derivados de `MERGE` y del truncamiento de tablas.            | [`SELECT * FROM CHANGES(TABLE dataset.orders, @start, @end)`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) |
-
-Para la replicación basada en consultas, seleccione una columna de marca de agua para cada tabla. Debe ser de tipo `TIMESTAMP` y estar incluida entre las columnas replicadas. Asígnele un valor al insertar o actualizar una fila. Si una fila cambia sin que su marca de agua avance, ClickPipes no detectará ese cambio. Use [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) si necesita replicar las eliminaciones.
-
-Ambos métodos basados en eventos requieren tablas estándar de BigQuery. [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) no requiere que esté habilitado el historial de cambios. Para usar [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes), habilite el historial de cambios en cada tabla de origen antes de crear el ClickPipe:
-
-```sql
-ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
-```
-
-[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) también requiere una clave primaria de BigQuery o una clave de ordenación personalizada configurada para la tabla de destino. Elija columnas que identifiquen cada fila para que ClickPipes pueda aplicar las actualizaciones y eliminaciones a la fila correspondiente. BigQuery no impone restricciones de clave primaria, por lo que los datos de origen deben conservar la unicidad de esos valores.
+El ClickPipe de BigQuery cargará las tablas seleccionadas de un [conjunto de datos](https://docs.cloud.google.com/bigquery/docs/datasets-intro) de BigQuery en las tablas de destino de ClickHouse en una sola operación por lotes. Una vez completada la tarea de ingestión, el ClickPipe se detiene automáticamente. El proceso de ingestión de la carga inicial requiere un bucket de Google Cloud Storage (GCS) proporcionado por el usuario para staging. En el futuro, el bucket intermedio será proporcionado y administrado por ClickPipes.
 
 <Note>
-  [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) y [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) solo pueden leer los cambios de la tabla de origen comprendidos en la [ventana de consulta de datos históricos de BigQuery](https://docs.cloud.google.com/bigquery/docs/time-travel), que es de siete días de forma predeterminada y puede reducirse a dos días. Si la replicación se retrasa más allá de ese período, ejecute una nueva carga inicial para restaurar una copia completa. BigQuery cobra por las consultas realizadas mediante los tres métodos. Habilitar el historial de cambios para [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) también genera costos de almacenamiento en BigQuery.
+  ClickPipes se basa en trabajos de extracción por lotes para obtener datos de BigQuery y llevarlos al bucket de GCS de staging. Esta operación **no genera cargos de procesamiento** en BigQuery.
 </Note>
+
+<div id="cdc">
+  ### CDC (captura de cambios de datos) {#cdc}
+</div>
+
+CDC **no está disponible** en la vista previa privada, pero será compatible en el futuro. Mientras tanto, recomendamos usar [Google Cloud Storage ClickPipe](/es/integrations/clickpipes/object-storage/google-cloud-storage/overview) para sincronizar continuamente las exportaciones de datos de BigQuery con ClickHouse Cloud una vez completada la carga inicial.
 
 <div id="data-type-mapping">
   ## Correspondencia de tipos de datos {#data-type-mapping}
@@ -93,14 +77,14 @@ ClickPipes se autentica en tu proyecto de Google Cloud mediante una [clave de cu
   ### Permisos {#permissions}
 </div>
 
-#### BigQuery {#bigquery}
+<div id="bigquery">
+  #### BigQuery {#bigquery}
+</div>
 
-La cuenta de servicio necesita estos roles de BigQuery:
+La cuenta de servicio debe tener los siguientes roles de BigQuery:
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
-
-Para la replicación continua, conceda también [`roles/bigquery.readSessionUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.readSessionUser) en el proyecto de Google Cloud. ClickPipes usa la [API BigQuery Storage Read](https://docs.cloud.google.com/bigquery/docs/reference/storage#permissions) para crear sesiones de lectura y leer los resultados de las consultas de CDC. Este rol no se puede conceder a nivel de conjunto de datos; mantenga `roles/bigquery.dataViewer` en los conjuntos de datos o tablas de origen para que la cuenta de servicio pueda leer sus datos.
 
 Para acotar aún más el acceso, recomendamos usar [condiciones de IAM](https://docs.cloud.google.com/bigquery/docs/conditions) para restringir los recursos a los que puede acceder el rol. Por ejemplo, puede restringir el rol `dataViewer` al conjunto de datos específico que contiene las tablas que desea sincronizar:
 

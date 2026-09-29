@@ -1108,18 +1108,15 @@ Native writer와 reader는 block 간에 직렬화 상태를 유지하지 **않�
 |                                                                              |           | `1` | `STRING`                               | 네이티브 포맷 호환 모드 — JSON 텍스트를 담은 단일 `String` 컬럼으로 Object를 전송합니다.     |
 |                                                                              |           | `2` | `V2`                                   | `max_dynamic_paths` 매개변수를 제외한 V1 레이아웃입니다.                        |
 |                                                                              |           | `3` | `FLATTENED`                            | 네이티브 포맷 호환 모드 — 평탄화된 경로 표현입니다.                                   |
-|                                                                              |           | `4` | `V3`                                   | V2에 shared data 직렬화 버전 하위 필드와 통계 플래그를 추가한 버전입니다.                 |
-| **Object shared data** (Object `V3`에서 사용되는 하위 스트림)                           | VarUInt   | `0` | `MAP`                                  | shared data를 `Map(String, String)`으로 인코딩합니다.                     |
-|                                                                              |           | `1` | `MAP_WITH_BUCKETS`                     | `MAP`과 같지만 스캔 효율을 위해 N개의 버킷으로 분할합니다.                             |
-|                                                                              |           | `2` | `ADVANCED`                             | 경로 / 마크 / metadata용 별도 스트림을 사용하는 compact granule 포맷입니다.          |
-| **Dynamic**                                                                  | UInt64 LE | `1` | `V1`                                   | 원래 인코딩입니다. `max_dynamic_types`와 런타임 variant type 목록을 포함합니다.      |
+|                                                                              |           | `4` | `V3`                                   | MergeTree 파트에만 기록되며 wire로는 전송되지 않습니다. 레이아웃은 여기서 다루지 않습니다.        |
+| **Dynamic**                                                                  | UInt64 LE | `1` | `V1`                                   | 원래 인코딩입니다. `max_dynamic_types`와 런타임 variant 타입 목록을 포함합니다.      |
 |                                                                              |           | `2` | `V2`                                   | `max_dynamic_types` 매개변수를 제외한 V1입니다.                             |
 |                                                                              |           | `3` | `FLATTENED`                            | 네이티브 포맷 호환 모드입니다.                                                |
-|                                                                              |           | `4` | `V3`                                   | V2에 바이너리로 인코딩된 variant type 이름과 빈 통계 지원을 추가한 버전입니다.              |
-| **Variant** discriminators mode                                              | UInt64 LE | `0` | `BASIC`                                | 모든 행의 discriminator를 그대로 기록합니다.                                  |
-|                                                                              |           | `1` | `COMPACT`                              | granule의 모든 행이 하나의 discriminator를 공유하면 단일 값 + granule 마커만 기록합니다. |
-| **Variant** granule format (mode가 `COMPACT`일 때)                              | UInt8     | `0` | `PLAIN`                                | granule의 discriminator가 서로 다릅니다.                                 |
-|                                                                              |           | `1` | `COMPACT`                              | granule의 모든 행이 하나의 discriminator를 가집니다.                          |
+|                                                                              |           | `4` | `V3`                                   | MergeTree 파트에만 기록되며 wire로는 전송되지 않습니다. 레이아웃은 여기서 다루지 않습니다.        |
+| **Variant** 판별자 mode                                              | UInt64 LE | `0` | `BASIC`                                | 모든 행의 판별자를 그대로 기록합니다.                                  |
+|                                                                              |           | `1` | `COMPACT`                              | granule의 모든 행이 하나의 판별자를 공유하면 단일 값 + granule 마커만 기록합니다. |
+| **Variant** granule format (mode가 `COMPACT`일 때)                              | UInt8     | `0` | `PLAIN`                                | granule의 판별자가 서로 다릅니다.                                 |
+|                                                                              |           | `1` | `COMPACT`                              | granule의 모든 행이 하나의 판별자를 가집니다.                          |
 | **LowCardinality** key serialization                                         | Int64     | `1` | `sharedDictionariesWithAdditionalKeys` | 현재 정의된 유일한 버전입니다.                                                |
 | **JSON-as-String** 폴백 (`output_format_native_write_json_as_string`이 활성화된 경우) | UInt64 LE | `1` | `JSONStringSerializationVersion`       | JSON 컬럼은 이 접두사가 앞에 붙은 `String` 컬럼으로 전달됩니다.                       |
 
@@ -1127,7 +1124,7 @@ Native writer와 reader는 block 간에 직렬화 상태를 유지하지 **않�
 
 * **값은 연속적이지 않습니다.** `Dynamic`은 `1`, `2`, `3`, `4`를 사용하며 `V3`는 `4`, `FLATTENED`는 `3`입니다. 숫자가 더 크다고 해서 반드시 더 최신 버전인 것은 아닙니다.
 * **일부 값은 네이티브 포맷 전용입니다.** `Object::STRING`, `Object::FLATTENED`, `Dynamic::FLATTENED`는 전체 Object/Dynamic을 구현하지 않은 클라이언트와의 네이티브 protocol 호환성을 위해 존재합니다. 이 값들은 MergeTree 온디스크 스토리지에는 나타나지 않습니다.
-* **`V3`는 주로 온디스크용입니다.** 네이티브 TCP protocol을 사용하는 클라이언트는 일반적으로 `V3`(값 `4`)보다 `FLATTENED`(값 `3`)를 보게 됩니다.
+* **`V3`는 온디스크 전용입니다.** `Object::V3`와 `Dynamic::V3`를 표에 포함한 것은 디코더가 이 값을 접할 수 있어서가 아니라, 이미 할당된 값이므로 재사용하면 안 되기 때문입니다. ClickHouse는 이 값을 `Native`로 전송하지 않으며, `Native`에서 이 값을 받으면 `INCORRECT_DATA`로 거부합니다. 이 값들이 담는 모든 내용, 즉 `Object::V3`의 shared data 하위 버전과 해당 버킷 및 granule 레이아웃은 블록이 아닌 파트에 관한 것이므로 이 페이지에서는 다루지 않습니다. 네이티브 TCP 프로토콜을 사용하는 클라이언트는 `V1`, `V2`, `STRING` 또는 `FLATTENED`를 보게 됩니다.
 
 #### LowCardinality(T) {#lowcardinality}
 
@@ -1313,11 +1310,17 @@ ClickHouse의 `JSON` 유형에는 여러 wire 인코딩이 있습니다([seriali
   다만 **flattened** `num_types`에는 `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT`(ClickHouse에서는 `254`)를 상한으로 적용해서는 **안 됩니다**. flattened 타입 목록에는 공유 variant로 오버플로우된 타입까지 포함해 *모든* 고유 런타임 타입이 들어가므로, 유효한 flattened block에는 이보다 훨씬 많은 타입이 정당하게 나열될 수 있습니다. `MAX_DYNAMIC_TYPES_LIMIT` 상한은 non-flat `V1`/`V2`/`V3` 프리픽스의 `num_dynamic_types` count에만 적용되며, 이 값은 일반 variant 슬롯 수를 나타내고 해당 제한으로 상한이 정해집니다(ClickHouse는 공유 variant에 대한 `+ 1`을 적용하기 전에 여기서 이를 검증합니다).
 </Info>
 
+<Info>
+  **잘린 스트림**
+
+  판별자 run에는 정확히 `num_rows`개의 엔트리가 들어 있으며, 디코더는 스트림에 담긴 내용을 그대로 받아들이지 말고 실제로 그만큼 읽었는지 확인해야 합니다. run이 더 짧더라도 뒤따르는 데이터와 모순이 생기지는 않습니다. 타입별 값 개수는 실제로 읽은 판별자로부터 도출되므로 값 run과 일관성이 유지되며, NULL 마커로만 이루어진 run은 값 바이트를 전혀 필요로 하지 않기 때문입니다. 재구성된 컬럼은 실제 크기와 관계없이 `num_rows`개의 행으로 사용되므로, ClickHouse는 타입별 검사를 수행하기 전에 짧은 판별자 run을 `INCORRECT_DATA`(&quot;Mismatch in flattened `Dynamic` column: N rows are expected, but the indexes stream contains only M rows&quot;)로 거부합니다.
+</Info>
+
 <Note>
   직렬화가 상태 유지형(stateful)인 런타임 타입(`LowCardinality`, `Variant`, `Dynamic`, `JSON`)은 타입 이름 목록 뒤에 중첩된 상태 접두사를 포함합니다.
 </Note>
 
-런타임 타입 목록은 일반적으로 `Variant` 정규화(canonicalization)를 따릅니다. 일반 `Variant` 슬롯은 `DataTypeVariant`의 (타입 이름) 순서로 기록되므로, wire 순서는 삽입 순서를 따르지 않습니다. 하지만 **항상** 전역적으로 정렬되는 것은 아닙니다. 공유 `Variant`로 오버플로우된 타입(예: `Dynamic(max_types=N)`)은 처음 나타난 순서대로 일반 슬롯 뒤에 추가되므로, 목록의 tail 부분에서는 타입 이름 순서가 깨질 수 있습니다. 따라서 디코더는 전송된 타입 목록을 판별자 할당의 기준으로 간주해야 하며, 이를 자체적으로 다시 정렬해서는 안 됩니다. 행 `[42::UInt64, "hi", NULL]`에서는 두 타입이 `String`과 `UInt64`이고, `"String"`이 `"UInt64"`보다 먼저 정렬되므로 판별자는 `0` = String, `1` = UInt64, `2` = NULL입니다:
+런타임 타입 목록은 일반적으로 `Variant` 정규화(canonicalization)를 따릅니다. 일반 `Variant` 슬롯은 `DataTypeVariant`의 (타입 이름) 순서로 기록되므로, wire 순서는 삽입 순서를 따르지 않습니다. 하지만 **항상** 전역적으로 정렬되는 것은 아닙니다. 공유 `Variant`로 오버플로우된 타입(예: `Dynamic(max_types=N)`)은 처음 나타난 순서대로 일반 슬롯 뒤에 추가되므로, 목록의 tail 부분에서는 타입 이름 순서가 깨질 수 있습니다. 따라서 디코더는 전송된 타입 목록을 판별자 할당의 기준으로 간주해야 하며, 이를 자체적으로 다시 정렬해서는 안 됩니다. 반면 목록에 중복된 타입이나 `Nothing`이 포함되어서는 안 됩니다. 동일한 두 엔트리는 하나의 판별자에 매핑되고 `Nothing`은 애초에 variant가 아니므로, 어느 경우든 목록의 일부가 재구성될 자리가 없어집니다. ClickHouse는 두 경우 모두 `INCORRECT_DATA`로 거부합니다. 행 `[42::UInt64, "hi", NULL]`에서는 두 타입이 `String`과 `UInt64`이고, `"String"`이 `"UInt64"`보다 먼저 정렬되므로 판별자는 `0` = String, `1` = UInt64, `2` = NULL입니다:
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
@@ -1355,14 +1358,18 @@ FLATTENED 모드에서는 **공유 데이터 컬럼이 없습니다**(해당 오
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
 
-2단계 구조에 유의하십시오: **모든** 경로 상태 접두사가 먼저 오고, 그다음 **모든** 경로 데이터가 옵니다. 따라서 동적 경로의 `Dynamic` 프리픽스(프리픽스 단계)는 해당 데이터(데이터 단계)와 분리됩니다. 상태 접두사는 행 수가 0보다 큰 모든 블록의 시작에서 읽히며, 모든 경로 컬럼(타입 지정 또는 동적)은 정확히 `num_rows`개의 값을 가집니다. 행 `r`의 객체는 각 경로에서 인덱스 `r`의 값을 읽어 조합되며, 해당 행에서 `Dynamic` 판별자가 NULL인 동적 경로는 어떤 key도 추가하지 않습니다.
+2단계 구조에 유의하십시오: **모든** 경로 상태 접두사가 먼저 오고, 그다음 **모든** 경로 데이터가 옵니다. 따라서 동적 경로의 `Dynamic` 프리픽스(프리픽스 단계)는 해당 데이터(데이터 단계)와 분리됩니다. 상태 접두사는 행 수가 0보다 큰 모든 블록의 시작에서 읽히며, 모든 경로 컬럼(타입 지정 또는 동적)은 정확히 `num_rows`개의 값을 가집니다. 행 `r`의 객체는 각 경로에서 인덱스 `r`의 값을 읽어 조합되며, 해당 행에서 `Dynamic` 판별자가 NULL인 동적 경로는 어떤 key도 추가하지 않습니다. 동적 경로 이름은 서로 달라야 하며, 타입 문자열에 이미 타입이 지정된 경로로 선언된 경로와 중복되어서도 안 됩니다. 어느 경우든 조합된 객체에서 하나의 key에 두 개의 값이 생기므로, ClickHouse는 두 경우 모두 `INCORRECT_DATA`로 거부합니다. non-flat 인코딩의 동적 경로 목록에도 동일하게 적용됩니다.
 
 <Info>
   **잘못된 개수 값**
 
-  여기서 문서화한 FLATTENED 레이아웃의 `num_dynamic_paths`와 non-flat `V1`/`V2`/`V3` 인코딩의 동적 경로 개수는 모두 경로 이름보다 먼저 스트림에서 읽힙니다. (non-flat 프리픽스에는 별도의 flattened-paths 필드가 없습니다. `V1`/`V2`/`V3`에는 동적 경로 개수만 있으며, 여기에 `V1`에서는 읽은 뒤 버려지는 `max_dynamic_paths` 값과 아래 설명하는 `V3` shared-data 메타데이터가 추가됩니다.) [`Dynamic`](#dynamic)과 마찬가지로 디코더는 이러한 개수 값을 신뢰할 수 없는 것으로 취급해야 하며, 이를 바탕으로 직접 메모리를 할당해서는 안 됩니다. `SIZE_MAX` 계열의 개수든, 표현은 가능하지만 매우 큰 값이든 모두 마찬가지입니다. ClickHouse는 상한이 있는 사전 할당 힌트만 사용하여 경로 이름을 한 항목씩 읽으므로, 손상된 개수 값은 컨테이너가 담을 수 있는 한도를 초과하면 `INCORRECT_DATA`(&quot;JSON/Object column has too many paths&quot;)로 거부되고, 스트림에서 경로 이름이 먼저 고갈되면 일반적인 읽기 오류로 거부됩니다.
+  여기서 문서화한 FLATTENED 레이아웃의 `num_dynamic_paths`와 non-flat `V1`/`V2` 인코딩의 동적 경로 개수는 모두 경로 이름보다 먼저 스트림에서 읽힙니다. (non-flat 프리픽스에는 별도의 flattened-paths 필드가 없습니다. 이들 프리픽스에는 동적 경로 개수만 있으며, 여기에 `V1`에서는 읽은 뒤 버려지는 `max_dynamic_paths` 값이 추가됩니다.) [`Dynamic`](#dynamic)과 마찬가지로 디코더는 이러한 개수 값을 신뢰할 수 없는 것으로 취급해야 하며, 이를 바탕으로 직접 메모리를 할당해서는 안 됩니다. `SIZE_MAX` 계열의 개수든, 표현은 가능하지만 매우 큰 값이든 모두 마찬가지입니다. ClickHouse는 상한이 있는 사전 할당 힌트만 사용하여 경로 이름을 한 항목씩 읽으므로, 손상된 개수 값은 컨테이너가 담을 수 있는 한도를 초과하면 `INCORRECT_DATA`(&quot;JSON/Object column has too many paths&quot;)로 거부되고, 스트림에서 경로 이름이 먼저 고갈되면 일반적인 읽기 오류로 거부됩니다.
+</Info>
 
-  non-flat `V3` 프리픽스에는 추가로 `shared_data_buckets` 개수도 포함됩니다(shared-data serialization version이 `MAP_WITH_BUCKETS` 또는 `ADVANCED`인 경우에 존재). 이 값은 버킷별 reader 상태와 컬럼 벡터의 크기를 직접 정합니다(필요 시 확장하는 루프를 통하지 않음). 따라서 디코더는 그럴듯하지 않은 버킷 개수를 처음부터 거부해야 합니다. 경로 및 유형 개수와 달리, 이 개수에는 writer 측의 엄격한 불변식이 있습니다. 버킷 수는 0이 아니고 `256`으로 상한이 정해진 작은 MergeTree 설정(`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`)에서 선택되므로, 유효한 on-wire 범위는 `1 … 256`뿐입니다. ClickHouse는 그 범위를 벗어나는 모든 값을 `INCORRECT_DATA`(&quot;JSON/Object column has an invalid number of shared data buckets&quot;)로 거부합니다. 여기에는 컨테이너의 `max_size()`보다 훨씬 작은 `100000`처럼 표현은 가능하지만 큰 값도 포함됩니다.
+<Info>
+  **잘린 스트림**
+
+  경로 컬럼별 `num_rows`개의 값은 상한이 아니라 반드시 충족해야 하는 요구 사항입니다. 디코더는 스트림이 올바른 위치에서 끝날 것이라고 신뢰하지 말고, 타입이 지정된 경로와 동적 경로를 포함한 모든 경로 컬럼을 블록의 행 수와 대조해 확인해야 합니다. 조합된 객체에는 비교 기준이 될 독립적인 크기가 없으므로(행 수는 평탄화 해제 결과에 따라 정해짐), 값이 부족한 경로 컬럼은 나중에 감지할 수 없으며 해당 컬럼의 행 `r`을 읽으면 컬럼의 끝을 넘어서게 됩니다. ClickHouse는 이를 `INCORRECT_DATA`(&quot;Unexpected size of typed path / flattened path *p* in flattened Object column&quot;)로 거부합니다. 동적 경로의 경우 이 검사는 해당 [`Dynamic`](#dynamic) 컬럼 내부의 동등한 검사와 별도로 추가 수행됩니다.
 </Info>
 
 `JSON` 값 `{"a": 42, "b": "hi"}` (행 1개, 두 경로 모두 동적). JSON 정수는 `Int64`로 추론됩니다:
@@ -1378,9 +1385,9 @@ FLATTENED 모드에서는 **공유 데이터 컬럼이 없습니다**(해당 오
 00 02 68 69                  "b" data: discriminator 0, String "hi"
 ```
 
-#### JSON 비평탄형 (V2/V3) {#json-non-flat}
+#### JSON 비평탄형 (V1/V2) {#json-non-flat}
 
-평탄화되지 않은 `Object` 인코딩(`V1`/`V2`/`V3`)은 MergeTree 온디스크 저장소에서 사용되며, flattened flag가 꺼져 있을 때 server가 wire를 통해 내보내는 형식이기도 합니다. 즉, `clickhouse-client` / HTTP `FORMAT Native`(revision `0`)에서는 `V1`이, 네이티브 TCP protocol에서는 `V2`가 사용됩니다. 이 인코딩에는 shared-data 컬럼이 포함되며, 이 페이지에서는 **정의하지 않습니다**. 또한 Native wire에서는 경로별 statistics를 **포함하지 않습니다**. `NativeWriter`는 statistics를 비활성화한 상태로 두므로 `Object` 구조체 접두사에는 statistics 섹션이 없고, 그 뒤에는 typed/dynamic/shared-data 프리픽스와 데이터 바이트가 바로 이어집니다. Statistics는 이를 활성화한 MergeTree 온디스크 경로에서만 나타납니다. 이 페이지를 사용해 `JSON` 컬럼을 디코딩하려면 클라이언트는 문서화된 tier 중 하나를 선택해야 합니다. [String 폴백](#json-tier-1-string-fallback)을 사용하려면 `output_format_native_write_json_as_string = 1`로 설정하고, [FLATTENED Object](#json-tier-2-flattened-object) layout을 사용하려면 `output_format_native_use_flattened_dynamic_and_json_serialization = 1`로 설정하십시오(`output_format_native_write_json_as_string = 0`과 함께).
+평탄화되지 않은 `Object` 인코딩은 flattened flag가 꺼져 있을 때 server가 wire를 통해 내보내는 형식입니다. 즉, `clickhouse-client` / HTTP `FORMAT Native`(revision `0`)에서는 `V1`이, 네이티브 TCP 프로토콜에서는 `V2`가 사용됩니다. (세 번째 비평탄형 인코딩인 `V3`는 MergeTree 파트에만 기록되며, wire에서는 허용되지 않습니다.) 이 인코딩에는 shared-data 컬럼이 포함되며, 이 페이지에서는 **정의하지 않습니다**. 또한 Native wire에서는 경로별 statistics를 **포함하지 않습니다**. `NativeWriter`는 statistics를 비활성화한 상태로 두므로 `Object` 구조체 접두사에는 statistics 섹션이 없고, 그 뒤에는 typed/dynamic/shared-data 프리픽스와 데이터 바이트가 바로 이어집니다. Statistics는 이를 활성화한 MergeTree 온디스크 경로에서만 나타납니다. 이 페이지를 사용해 `JSON` 컬럼을 디코딩하려면 클라이언트는 문서화된 tier 중 하나를 선택해야 합니다. [String 폴백](#json-tier-1-string-fallback)을 사용하려면 `output_format_native_write_json_as_string = 1`로 설정하고, [FLATTENED Object](#json-tier-2-flattened-object) layout을 사용하려면 `output_format_native_use_flattened_dynamic_and_json_serialization = 1`로 설정하십시오(`output_format_native_write_json_as_string = 0`과 함께).
 
 ## 압축 프레임 {#compression-frame}
 

@@ -12,82 +12,70 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <IntroClickPipe />
 
-## 前提条件 {#pre-requisites}
+<div id="pre-requisites">
+  ## 前提条件 {#pre-requisites}
+</div>
 
 * 您必须具备在 GCP 项目中管理[服务账号](https://docs.cloud.google.com/iam/docs/service-account-overview)和 [IAM roles](https://docs.cloud.google.com/iam/docs/roles-overview) 的权限，或者获得管理员协助。我们建议按照[官方文档](https://docs.cloud.google.com/iam/docs/service-accounts-create)创建一个专用服务账号，并仅授予所需的最小[权限](/zh/integrations/clickpipes/bigquery/overview#permissions)。
 
-* 初始加载需要一个 Google Cloud Storage (GCS) 存储桶用于暂存。我们建议按照 [Google Cloud 的说明](https://docs.cloud.google.com/storage/docs/creating-buckets)为您的 ClickPipe 创建一个专用存储桶。
-
-* 对于持续复制，请在项目中向该服务账号授予 [BigQuery Read Session User 角色](/zh/integrations/clickpipes/bigquery/overview#bigquery)。选择表之前，请先查看[所选复制方法的要求](/zh/integrations/clickpipes/bigquery/overview#cdc)。
+* 初始加载过程需要用户提供一个 Google Cloud Storage (GCS) 存储桶用于暂存。我们建议按照[官方文档](https://docs.cloud.google.com/storage/docs/creating-buckets)为您的 ClickPipe 创建一个专用存储桶。未来，该中间存储桶将由 ClickPipes 提供并管理。
 
 <Steps>
   <Step title="选择数据源" id="1-select-the-data-source">
-    **1.** 在 ClickHouse Cloud 的主导航菜单中选择 **数据源**，然后点击 **创建 ClickPipe**。
+    **1.** 在 ClickHouse Cloud 中，从主导航菜单选择 **Data sources** 并点击 **Create ClickPipe**。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
 
-    **2.** 点击 **BigQuery** 卡片。
+    **2.** 点击 **BigQuery** 磁贴。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="选择 BigQuery 卡片" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="选择 BigQuery 磁贴" size="lg" border />
   </Step>
 
-  <Step title="配置 ClickPipe 连接" id="2-setup-your-clickpipe-connection">
-    提供 BigQuery 项目的连接信息。如果要执行初始加载，还需提供用于暂存数据的 GCS 存储桶。
+  <Step title="设置你的 ClickPipe 连接" id="2-setup-your-clickpipe-connection">
+    要设置新的 ClickPipe，你必须提供如何连接和验证你的 BigQuery 数据仓库的详细信息，以及一个用于暂存的 GCS 存储桶。
 
-    **1.** 上传为 ClickPipes 创建的服务账号的 `.json` 密钥。确保该服务账号具有[所需的最低权限](/zh/integrations/clickpipes/bigquery/overview#permissions)。
+    **1.** 上传为 ClickPipes 创建的服务账号的 `.json` 密钥。确保该服务账号具有最小所需的 [权限](/zh/integrations/clickpipes/bigquery/overview#permissions)。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="上传服务账号密钥" size="lg" border />
 
-    **2.** 选择**复制模式**：[仅初始加载](/zh/integrations/clickpipes/bigquery/overview#initial-load)、**初始加载 + CDC** 或 **仅 CDC**。如果选择 CDC 模式，还需选择[基于查询或基于事件的方法](/zh/integrations/clickpipes/bigquery/overview#cdc)。
+    **2.** 选择 **Replication method**。在 Private Preview 中，当前唯一支持的选项是 [**仅初始加载**](/zh/integrations/clickpipes/bigquery/overview#initial-load)。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="BigQuery 复制模式选项：仅初始加载、初始加载 + CDC 和仅 CDC" size="lg" border />
+    **3.** 提供用于初始加载期间暂存数据的 GCS 存储桶路径。
 
-    **3.** 如果要执行初始加载，请提供用于暂存数据的 GCS 存储桶路径。
-
-    **4.** 点击**下一步**进行验证。
+    **4.** 点击 **Next** 以进行验证。
   </Step>
 
-  <Step title="配置 ClickPipe" id="3-configure-your-clickpipe">
-    为所选阶段设置以下配置值。初始加载设置仅在 ClickPipe 导入现有数据时生效；CDC 设置仅在 ClickPipe 继续复制变更时生效。
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="BigQuery ClickPipe 的同步间隔、初始加载和 CDC 设置" size="lg" border />
-
-    | 设置                  | 控制内容                                                                                                                                                                                       |
-    | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-    | 同步间隔 (秒)            | ClickPipes 检查每个源表是否有新变更的频率。                                                                                                                                                                |
-    | 初始加载的并行线程数          | ClickPipes 同时加载单个表的分片的最大数量。                                                                                                                                                                |
-    | 每个分区的快照行数           | 初始加载时每个分片的目标行数。ClickPipes 可能会针对大型表调整此值。                                                                                                                                                    |
-    | 并行生成快照的表数           | ClickPipes 同时加载的源表的最大数量。                                                                                                                                                                   |
-    | CDC 并行处理的表数         | ClickPipes 同时读取并发送至 ClickHouse 的表的最大数量。                                                                                                                                                    |
-    | CDC 安全缓冲时间 (秒)      | 每次 CDC 查询的结束时间与 BigQuery 当前时间之间的间隔。这能让最近写入的数据在 ClickPipes 读取之前有足够时间变为可用。                                                                                                                   |
-    | CDC 单次查询的最大时间窗口 (秒) | 单次 CDC 查询覆盖的最大时间范围。ClickPipes 会将更长的时间段拆分为多个查询。对于基于事件的复制，请将此值设为不超过 86,400 秒，以符合 BigQuery 的[一天限制](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions)。 |
+  <Step title="配置你的 ClickPipe" id="3-configure-your-clickpipe">
+    根据你的 BigQuery 数据集的大小，或你想要同步的表的总大小，你可能需要调整 ClickPipe 的默认摄取设置。
   </Step>
 
   <Step title="配置表" id="4-configure-tables">
-    **1.** 选择用于存放 BigQuery 复制表的 ClickHouse 数据库。可以选择现有数据库，也可以创建新数据库。
+    **1.** 选择要将 BigQuery 表复制到的 ClickHouse 数据库。你可以选择现有数据库或创建新的数据库。
 
-    **2.** 选择源表。可以修改每个目标表的名称，并在 **列设置** 中选择要复制的列。列表中仅显示服务账号有权访问的数据集。
+    **2.** 选择要复制的表以及 (可选) 要复制的列。只有提供的服务账号有权访问的数据集才会被列出。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="选择 BigQuery 源表，并配置目标表名称、CDC 水位线、sorting key 和高级设置" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="权限" size="lg" border />
 
-    **3.** 为每个表设置 CDC 选项。截图展示的是基于查询的设置。选择一个类型为 `TIMESTAMP` 的 **CDC 水位线列**，将其保留在要复制的列中，并在对应行发生变化时更新该列的值。如果使用基于事件的复制，则改为选择 [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) 或 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)。使用 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) 时，源表必须设置 `enable_change_history = TRUE`。
+    **3.** 对于每个选定的表，请务必在 **Advanced settings** &gt; **Use a custom sorting key** 下定义自定义排序键。将来，排序键会根据上游数据库中现有的聚类或分区键自动推断。
 
-    **4.** 检查 **Sorting key**。如果行可能被更新或删除，请选择能够标识每一行且值保持不变的列。使用 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) 时，源表必须有主键，否则必须在此处设置 sorting key。ClickHouse 使用 sorting key 组织数据，以便执行查询；如果未设置，则使用 `tuple()`，且不会建立主索引。
+    <Warning>
+      你**必须**为被复制的表定义 [排序键](/zh/concepts/best-practices/choosing-a-primary-key)，以优化 ClickHouse 中的查询性能。否则，排序键将被设置为 `tuple()`，这意味着不会创建主索引，ClickHouse 将对该表上的所有查询执行全表扫描。
+    </Warning>
 
-    **5.** 打开 **高级设置**，选择 ClickHouse 表的 **引擎**，或为初始加载指定可选的分区键。此分区键不会设置目标表的 `PARTITION BY` 表达式。
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="权限" size="lg" border />
   </Step>
 
   <Step title="配置权限" id="6-configure-permissions">
-    最后，您可以为 ClickPipes 内部用户配置权限。
+    最后，你可以为内部 ClickPipes 用户配置权限。
 
-    **权限：**ClickPipes 会创建一个专用用户，用于向目标表写入数据。您可以为该内部用户指定自定义角色，也可以选择以下预定义角色之一：
+    **Permissions:** ClickPipes 将创建一个专用用户用于将数据写入目标表。你可以为该内部用户选择自定义角色或以下预定义角色之一：
 
-    * `Full access`：拥有集群的完全访问权限。如果目标表使用 materialized view 或字典，则必须选择此角色。
-    * `Only destination`：仅拥有向目标表插入数据的权限。
+    * `Full access`: 对集群具有完全访问权限。如果你在目标表上使用 materialized views 或 dictionary，则需要此权限。
+    * `Only destination`: 仅对目标表具有插入权限。
   </Step>
 
-  <Step title="完成配置" id="7-complete-setup">
-    点击 **Create ClickPipe** 完成设置。页面随后会跳转至概览页，您可以在这里查看初始数据加载进度，并点击查看 BigQuery ClickPipes 的详细信息。
+  <Step title="完成设置" id="7-complete-setup">
+    点击 **Create ClickPipe** 完成设置。你将被重定向到概览页面，在那里可以查看初始加载的进度并点击查看你的 BigQuery ClickPipes 的详细信息。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="权限" size="lg" border />
   </Step>

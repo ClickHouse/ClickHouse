@@ -12,82 +12,70 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <IntroClickPipe />
 
-## المتطلبات المسبقة {#pre-requisites}
+<div id="pre-requisites">
+  ## المتطلبات المسبقة {#pre-requisites}
+</div>
 
 * يجب أن تكون لديك امتيازات إدارة [حسابات الخدمة](https://docs.cloud.google.com/iam/docs/service-account-overview) و[أدوار IAM](https://docs.cloud.google.com/iam/docs/roles-overview) في مشروع GCP الخاص بك، أو الاستعانة بمسؤول. نوصي بإنشاء حساب خدمة مخصص بأقل مجموعة مطلوبة من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions)، وفقًا لـ[الوثائق الرسمية](https://docs.cloud.google.com/iam/docs/service-accounts-create).
 
-* يتطلب التحميل الأولي حاوية Google Cloud Storage ‏(GCS) لأغراض التخزين المرحلي. نوصي بإنشاء حاوية مخصصة لـ ClickPipe الخاص بك وفقًا لـ[تعليمات Google Cloud](https://docs.cloud.google.com/storage/docs/creating-buckets).
-
-* للنسخ المتماثل المستمر، امنح حساب الخدمة [دور BigQuery Read Session User](/ar/integrations/clickpipes/bigquery/overview#bigquery) على مستوى المشروع. تحقّق من [متطلبات طريقة النسخ المتماثل التي اخترتها](/ar/integrations/clickpipes/bigquery/overview#cdc) قبل اختيار الجداول.
+* تتطلب عملية التحميل الأولي حاوية Google Cloud Storage ‏(GCS) يوفّرها المستخدم لأغراض التخزين المرحلي. نوصي بإنشاء حاوية مخصصة لـ ClickPipe الخاص بك وفقًا لـ[الوثائق الرسمية](https://docs.cloud.google.com/storage/docs/creating-buckets). مستقبلاً، ستُوفَّر الحاوية الوسيطة وتُدار بواسطة ClickPipes.
 
 <Steps>
   <Step title="اختر مصدر البيانات" id="1-select-the-data-source">
     **1.** في ClickHouse Cloud، اختر **Data sources** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختيار عمليات الاستيراد" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر عمليات الاستيراد" size="lg" border />
 
-    **2.** انقر على بطاقة **BigQuery**.
+    **2.** انقر على لوحة **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="اختيار بطاقة BigQuery" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="اختر لوحة BigQuery" size="lg" border />
   </Step>
 
-  <Step title="إعداد اتصال ClickPipe" id="2-setup-your-clickpipe-connection">
-    أدخل بيانات الاتصال بمشروع BigQuery. إذا كنت تُجري تحميلاً أوليًا، فحدّد حاوية GCS لتخزين البيانات مؤقتًا.
+  <Step title="أعدّ اتصال ClickPipe الخاص بك" id="2-setup-your-clickpipe-connection">
+    لإعداد ClickPipe جديد، يجب تقديم تفاصيل الاتصال بمخزن بيانات BigQuery والمصادقة عليه، بالإضافة إلى حاوية GCS مرحلية.
 
-    **1.** ارفع ملف المفتاح `.json` الخاص بحساب الخدمة الذي أنشأته لـ ClickPipes. تأكّد من منح حساب الخدمة الحد الأدنى من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions) المطلوبة.
+    **1.** ارفع مفتاح `.json` الخاص بحساب الخدمة الذي أنشأته لـ ClickPipes. تأكد من أن حساب الخدمة يمتلك الحد الأدنى المطلوب من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="تحميل مفتاح حساب الخدمة" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="ارفع مفتاح حساب الخدمة" size="lg" border />
 
-    **2.** اختر **وضع النسخ المتماثل**: [التحميل الأولي فقط](/ar/integrations/clickpipes/bigquery/overview#initial-load)، أو **التحميل الأولي + CDC**، أو **CDC فقط**. إذا اخترت أحد وضعَي CDC، فحدّد [طريقة تعتمد على الاستعلامات أو الأحداث](/ar/integrations/clickpipes/bigquery/overview#cdc).
+    **2.** اختر **Replication method**. في مرحلة Private Preview، الخيار المدعوم الوحيد هو [**Initial load only**](/ar/integrations/clickpipes/bigquery/overview#initial-load).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="خيارات وضع النسخ المتماثل في BigQuery: التحميل الأولي فقط، والتحميل الأولي مع CDC، وCDC فقط" size="lg" border />
+    **3.** أدخل مسار حاوية GCS لاستخدامها في تخزين البيانات مرحليًا أثناء التحميل الأولي.
 
-    **3.** إذا كنت تُجري تحميلاً أوليًا، فأدخل مسار حاوية GCS المستخدمة لتخزين البيانات مؤقتًا.
-
-    **4.** انقر على **التالي** للتحقّق من صحة البيانات.
+    **4.** انقر على **Next** للتحقق.
   </Step>
 
-  <Step title="هيّئ ClickPipe الخاص بك" id="3-configure-your-clickpipe">
-    اضبط القيم التالية للمراحل التي اخترتها. لا تنطبق إعدادات التحميل الأولي إلا عند استيراد ClickPipe للبيانات الموجودة، ولا تنطبق إعدادات CDC إلا عند مواصلته نسخ التغييرات.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="إعدادات BigQuery ClickPipe للفاصل الزمني للمزامنة والتحميل الأولي وCDC" size="lg" border />
-
-    | الإعداد                                        | ما يتحكم فيه                                                                                                                                                                                                                                                                                               |
-    | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-    | الفاصل الزمني للمزامنة (بالثواني)              | وتيرة فحص ClickPipes لكل جدول مصدر بحثًا عن تغييرات جديدة.                                                                                                                                                                                                                                                 |
-    | خيوط التنفيذ المتوازية للتحميل الأولي          | الحد الأقصى لعدد أجزاء بيانات الجدول الواحد التي يحمّلها ClickPipes في الوقت نفسه.                                                                                                                                                                                                                         |
-    | عدد الصفوف لكل تقسيم في اللقطة                 | العدد المستهدف من الصفوف في كل جزء بيانات من التحميل الأولي. قد يعدّل ClickPipes هذه القيمة للجداول الكبيرة.                                                                                                                                                                                               |
-    | عدد الجداول المتوازية في اللقطة                | الحد الأقصى لعدد جداول المصدر التي يحمّلها ClickPipes في الوقت نفسه.                                                                                                                                                                                                                                       |
-    | عدد الجداول المتوازية في CDC                   | الحد الأقصى لعدد الجداول التي يقرأها ClickPipes ويرسل بياناتها إلى ClickHouse في الوقت نفسه.                                                                                                                                                                                                               |
-    | هامش الأمان في CDC (بالثواني)                  | مقدار تأخر نهاية كل استعلام CDC ينفّذه ClickPipes عن الوقت الحالي في BigQuery. ويتيح ذلك لعمليات الكتابة الأخيرة وقتًا لتصبح متاحة قبل أن يقرأها ClickPipes.                                                                                                                                               |
-    | الحد الأقصى لمدة استعلام CDC الواحد (بالثواني) | أقصى نطاق زمني يغطيه استعلام CDC واحد. يقسّم ClickPipes الفترات الأطول إلى استعلامات منفصلة. عند النسخ المتماثل المستند إلى الأحداث، أبقِ هذه القيمة عند 86,400 ثانية أو أقل، وهو [حد اليوم الواحد](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions) في BigQuery. |
+  <Step title="اضبط ClickPipe الخاص بك" id="3-configure-your-clickpipe">
+    استنادًا إلى حجم مجموعة بيانات BigQuery لديك، أو الحجم الإجمالي للجداول التي تريد مزامنتها، قد تحتاج إلى تعديل إعدادات الاستيعاب الافتراضية لـ ClickPipe.
   </Step>
 
-  <Step title="تهيئة الجداول" id="4-configure-tables">
-    **1.** حدّد قاعدة بيانات ClickHouse التي تريد نسخ جداول BigQuery إليها نسخًا متماثلًا. يمكنك اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
+  <Step title="اضبط الجداول" id="4-configure-tables">
+    **1.** اختر قاعدة بيانات ClickHouse التي تريد نسخ جداول BigQuery إليها. يمكنك اختيار قاعدة بيانات موجودة أو إنشاء قاعدة جديدة.
 
-    **2.** حدّد جداول المصدر. يمكنك تغيير اسم كل جدول في الوجهة، واختيار الأعمدة التي تريد نسخها نسخًا متماثلًا من **إعدادات الأعمدة**. لا تظهر في القائمة إلا مجموعات البيانات التي يملك حساب الخدمة صلاحية الوصول إليها.
+    **2.** اختر الجداول، وعند الحاجة الأعمدة، التي تريد نسخها. لن تظهر إلا مجموعات البيانات التي يملك حساب الخدمة المقدم صلاحية الوصول إليها.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="اختيار جدول مصدر في BigQuery وتهيئة اسمه في الوجهة، وعمود العلامة المائية لـ CDC، ومفتاح الفرز، والإعدادات المتقدمة" size="lg" border />
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="الأذونات" size="lg" border />
 
-    **3.** اضبط خيار CDC لكل جدول. تعرض لقطة الشاشة إعدادات النسخ المتماثل القائم على الاستعلامات. حدّد **عمود العلامة المائية لـ CDC** من النوع `TIMESTAMP`، وأبقِه ضمن الأعمدة التي يجري نسخها نسخًا متماثلًا، وحدّث قيمته كلما تغيّر الصف. أما عند استخدام النسخ المتماثل القائم على الأحداث، فحدّد [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) أو [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) بدلًا من ذلك. يتطلب [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) ضبط `enable_change_history = TRUE` في جدول المصدر.
+    **3.** لكل جدول محدد، احرص على تحديد مفتاح فرز مخصص ضمن **Advanced settings** &gt; **Use a custom sorting key**. مستقبلًا، سيُستدل على مفتاح الفرز تلقائيًا استنادًا إلى مفاتيح التجميع العنقودي أو مفاتيح التقسيم الموجودة في قاعدة البيانات الأصلية.
 
-    **4.** راجع **مفتاح الفرز**. إذا كان من الممكن تحديث الصفوف أو حذفها، فاختر أعمدة لا تتغير قيمها وتُميّز كل صف. لاستخدام [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)، يجب أن يكون لجدول المصدر مفتاح أساسي، أو أن تضبط مفتاح فرز هنا. يستخدم ClickHouse مفتاح الفرز لتنظيم البيانات بما يخدم الاستعلامات؛ وإذا لم تحدّد مفتاحًا، فسيستخدم `tuple()` ولن يكون للجدول فهرس أساسي.
+    <Warning>
+      **يجب** تحديد [مفتاح فرز](/ar/concepts/best-practices/choosing-a-primary-key) للجداول المنسوخة لتحسين أداء الاستعلامات في ClickHouse. وإلا فسيُضبط مفتاح الفرز على `tuple()`، ما يعني عدم إنشاء فهرس أساسي، وسيُجري ClickHouse فحصًا كاملًا للجدول في جميع الاستعلامات عليه.
+    </Warning>
 
-    **5.** افتح **الإعدادات المتقدمة** لاختيار **محرّك** جدول ClickHouse أو تحديد مفتاح تقسيم اختياري للتحميل الأولي. لا يحدّد مفتاح التقسيم هذا تعبير `PARTITION BY` لجدول الوجهة.
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="الأذونات" size="lg" border />
   </Step>
 
-  <Step title="تهيئة الأذونات" id="6-configure-permissions">
-    أخيرًا، يمكنك تهيئة أذونات المستخدم الداخلي لـ ClickPipes.
+  <Step title="اضبط الأذونات" id="6-configure-permissions">
+    أخيرًا، يمكنك ضبط أذونات مستخدم ClickPipes الداخلي.
 
-    **الأذونات:** ينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات في جدول الوجهة. يمكنك إسناد دور مخصص أو أحد الأدوار المحددة مسبقًا إلى هذا المستخدم:
+    **Permissions:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
 
-    * `Full access`: وصول كامل إلى العنقود. مطلوب إذا كنت تستخدم عروضًا مُجسَّدة أو قاموسًا مع جدول الوجهة.
-    * `Only destination`: أذونات إدراج البيانات في جدول الوجهة فقط.
+    * `Full access`: وصول كامل إلى العنقود. مطلوب إذا كنت تستخدم العروض المادية أو القواميس مع الجدول الوجهة.
+    * `Only destination`: أذونات إدراج إلى الجدول الوجهة فقط.
   </Step>
 
   <Step title="أكمل الإعداد" id="7-complete-setup">
-    انقر على **Create ClickPipe** لإكمال الإعداد. ستنتقل إلى صفحة النظرة العامة، حيث يمكنك متابعة تقدّم التحميل الأولي والنقر للاطلاع على تفاصيل ClickPipes الخاصة بك في BigQuery.
+    انقر على **Create ClickPipe** لإكمال الإعداد. ستتم إعادة توجيهك إلى صفحة النظرة العامة، حيث يمكنك متابعة تقدم التحميل الأولي والنقر للاطلاع على تفاصيل BigQuery ClickPipes الخاصة بك.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="الأذونات" size="lg" border />
   </Step>
