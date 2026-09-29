@@ -455,6 +455,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiLineString` (GeoParquet) | [MultiLineString](/reference/data-types/geo#multilinestring) |
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
+| `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 
@@ -496,6 +497,14 @@ Data types of ClickHouse table columns can differ from the corresponding fields 
 For some Parquet types there's no closely matching ClickHouse type. We read them as follows:
 * `TIMESTAMP` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
 * `INTERVAL` is currently read as `FixedString(12)` with raw binary representation of the time interval, as encoded in Parquet file.
+
+## Variant type {#variant-type}
+
+ClickHouse reads columns stored in the Parquet [`VARIANT`](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md) encoding, such as those written by Spark 4.0, into the [`Dynamic`](/reference/data-types/dynamic) type. A column is recognized as a variant if it is a group annotated with the `VARIANT` logical type, or an unannotated group with a `metadata` `BYTE_ARRAY` field plus a `value` `BYTE_ARRAY` field, a `typed_value` field, or both.
+
+Each value keeps its own type. Variant primitive types are read as the matching ClickHouse types (for example, `int32` as `Int32`, `decimal8` as `Decimal(18, S)`, `timestamp` as `DateTime64(6, 'UTC')`, `timestamp_ntz` as `DateTime64(6)`, `binary` and `string` as `String`, `uuid` as `UUID`), the variant `null` is read as `NULL`, variant objects are read as `Map(String, Dynamic)` and variant arrays are read as `Array(Dynamic)`.
+
+Shredded variants are supported when `typed_value` is a primitive type. Variants whose `typed_value` is a group (a shredded object or array) are not supported yet.
 
 ## Geo types (GeoParquet) {#geo-types}
 

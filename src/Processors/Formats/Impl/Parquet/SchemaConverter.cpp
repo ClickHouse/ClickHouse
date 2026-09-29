@@ -725,7 +725,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     for (size_t i = 0; i < num_children; ++i)
     {
         const parq::SchemaElement & child = file_metadata.schema[child_schema_idx];
-        size_t role;
+        size_t role = 0;
         if (child.name == "metadata")
             role = Metadata;
         else if (child.name == "value")
