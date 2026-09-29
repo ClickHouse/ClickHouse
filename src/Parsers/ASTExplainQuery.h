@@ -203,12 +203,17 @@ protected:
             /// a leading parenthesized branch of `EXCEPT` or a nested set operation.
             /// without the complete-source wrapper, the parser would treat that branch
             /// as the source. the wrapper also preserves source output options and nested
-            /// actions
+            /// actions.
+            /// A nested `EXPLAIN TEXT` could only have been written in parentheses to be followed by
+            /// output options of this `EXPLAIN`; without them it would take those options as its own.
+            const auto * explained_explain = query->as<ASTExplainQuery>();
+            const bool explained_explain_text = explained_explain && explained_explain->getKind() == FormattedQuery;
             const bool need_parens = kind == FormattedQuery
-                                             || (frame.has_trailing_output_options
-                                            && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
-                                            && query->getQueryKind() != QueryKind::Insert
-                                            && query->getQueryKind() != QueryKind::AsyncInsertFlush);
+                                    || (frame.has_trailing_output_options
+                                    && (explained_explain_text
+                                    || (!dynamic_cast<const ASTQueryWithOutput *>(query.get())
+                                        && query->getQueryKind() != QueryKind::Insert
+                                        && query->getQueryKind() != QueryKind::AsyncInsertFlush)));
 
             /// the `EXPLAIN TEXT` wrapper already separates the source from the trailing output
             /// options so the source must not parenthesize itself again for them. otherwise a
