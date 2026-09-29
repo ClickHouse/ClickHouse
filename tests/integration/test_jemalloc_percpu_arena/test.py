@@ -62,12 +62,27 @@ def skip_if_jemalloc_disabled():
         pytest.skip(f"Compiled without jemalloc (USE_JEMALLOC={output})")
 
 
+def skip_if_musl():
+    output = run_command_in_container(
+        """clickhouse local -q "
+        SELECT value FROM system.build_options WHERE name = 'USE_MUSL'"
+    """
+    ).strip()
+    if output == b"ON" or output == b"1":
+        # musl implements both _SC_NPROCESSORS_CONF and _SC_NPROCESSORS_ONLN via
+        # sched_getaffinity, ignoring the /sys/devices/system/cpu/online override
+        # this test plants, so the CONF/ONLN inconsistency jemalloc aborts on
+        # cannot be constructed at all.
+        pytest.skip("musl derives both CPU-count sysconf values from the affinity mask")
+
+
 # Ensure that clickhouse works even when number of online CPUs
 # (_SC_NPROCESSORS_ONLN) is smaller then available (_SC_NPROCESSORS_CONF).
 #
 # Refs: https://github.com/jemalloc/jemalloc/pull/2181
 def test_jemalloc_percpu_arena():
     skip_if_jemalloc_disabled()
+    skip_if_musl()
 
     assert multiprocessing.cpu_count() > CPU_ID
 

@@ -432,6 +432,10 @@ target_link_libraries(protoc _libprotoc _libprotobuf)
 if (NOT USE_MUSL)
     target_link_libraries(protoc pthread)
 endif()
+# musl: executables need explicit CRT objects because of -nostartfiles.
+if (USE_MUSL)
+    target_sources(protoc PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
+endif()
 target_link_libraries(protoc
     utf8_validity
     ${protobuf_absl_used_targets})
@@ -452,7 +456,11 @@ if (ENABLE_FUZZING)
 endif()
 
 add_native_target (protoc)
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+# Use the native-build protoc only when actually cross-compiling (host != target).
+# This must match the native-build guard in the root CMakeLists.txt: a native musl
+# host build (host == target) does not produce a native/ subtree, and its own
+# statically-linked protoc runs on the host, so point at $<TARGET_FILE:protoc>.
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
 endif()
 

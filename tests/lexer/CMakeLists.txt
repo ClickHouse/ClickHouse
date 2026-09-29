@@ -1,4 +1,9 @@
-add_executable(lexer_test main.c)
+# musl: executables need explicit CRT objects because of -nostartfiles.
+if (USE_MUSL)
+    add_executable(lexer_test ${MUSL_CRT_START_OBJECTS} main.c ${MUSL_CRT_END_OBJECTS})
+else ()
+    add_executable(lexer_test main.c)
+endif ()
 target_include_directories(lexer_test PRIVATE ${CMAKE_SOURCE_DIR}/src/Parsers)
 target_compile_options(lexer_test PRIVATE -std=c99 -Wno-vla -Wno-declaration-after-statement)
 target_link_libraries(lexer_test PRIVATE lexer-c)

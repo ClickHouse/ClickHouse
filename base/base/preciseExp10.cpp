@@ -79,8 +79,10 @@ double preciseExp10(double x)
            1e+289, 1e+290, 1e+291, 1e+292, 1e+293, 1e+294, 1e+295, 1e+296, 1e+297, 1e+298, 1e+299, 1e+300, 1e+301, 1e+302, 1e+303, 1e+304, 1e+305,
            1e+306, 1e+307, 1e+308};
 
-    double n = {};
-    double y = modf(x, &n);
+    /// Split x into integral and fractional parts with trunc, which the compiler lowers to a single
+    /// instruction, instead of modf, which stays an out-of-line libm call when linking against musl.
+    double n = trunc(x);
+    double y = x - n;
     if (n > 308) return std::numeric_limits<double>::infinity();
     if (n < -323) return 0;
 
