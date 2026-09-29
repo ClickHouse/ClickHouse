@@ -12,7 +12,8 @@ SELECT argMax(read_rows, event_time_microseconds) < 5000 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05182_limit';
 
 -- the block does not shrink below a few hundred rows, so a long run of empty arrays is not streamed one row at a time
-SELECT DISTINCT bs FROM (SELECT arrayJoin(a), blockSize() AS bs FROM t_aj_limit LIMIT 3 SETTINGS max_threads = 1, enable_parallel_replicas = 0);
+-- blockSize() has to see the source block, before the expansion
+SELECT DISTINCT bs FROM (SELECT arrayJoin(a), blockSize() AS bs FROM t_aj_limit LIMIT 3 SETTINGS max_threads = 1, enable_parallel_replicas = 0, legacy_array_join_function_nondeterministic_evaluation = 1);
 
 -- the prefetched pool sizes its reads by marks, not by the block size, so a small LIMIT keeps it off
 -- it is only a candidate for a single-node read that is multi-stream or all-remote, and the local
