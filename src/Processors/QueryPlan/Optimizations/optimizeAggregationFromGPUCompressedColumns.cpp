@@ -18,6 +18,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUFilterCompiler.h>
+#include <GPU/GPUColumns.h>
 #include <GPU/GPUTypeMapping.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -282,8 +283,7 @@ std::optional<ReadColumns> matchReducedColumns(
 
     for (const auto & read_column : read_header)
     {
-        const bool string_key = key_position_by_read_name.contains(read_column.name) && GPU::isStringKey(*read_column.type);
-        if (!GPU::elementTypeOf(*read_column.type) && !string_key)
+        if (!GPU::columnTypeOf(*read_column.type))
             GPU_COMPRESSED_REFUSE("a column of a type the device has no element type for");
 
         if (key_position_by_read_name.contains(read_column.name))
@@ -561,27 +561,32 @@ std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading
             return part->getSerialization(name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT};
         };
 
+        /// The device reads a string's bytes from its own file and their sizes from the `.size` stream
+        /// beside it, which parts written before `string_serialization_version` was `with_size_stream`
+        /// do not have: their sizes are inline, a varint before each string.
+        const auto part_stores_sizes = [&](const NameAndTypePair & column)
+        {
+            if (!GPU::isStringKey(*column.type))
+                return true;
+            ISerialization::SubstreamPath sizes_path;
+            sizes_path.push_back(ISerialization::Substream::StringSizes);
+            return IMergeTreeDataPart::getStreamNameForColumn(column, sizes_path, ".bin", part->checksums, part->storage.getSettings()).has_value();
+        };
+
         for (const auto & key : columns.keys)
         {
             if (!part_stores(key.name))
                 GPU_COMPRESSED_REFUSE("a part that does not store a key column with the table's type and the default serialization");
-
-            /// The device reads a string key's bytes from its own file and their sizes from the
-            /// `.size` stream beside it, which parts written before `string_serialization_version`
-            /// was `with_size_stream` do not have: their sizes are inline, a varint before each string.
-            if (GPU::isStringKey(*key.type))
-            {
-                ISerialization::SubstreamPath sizes_path;
-                sizes_path.push_back(ISerialization::Substream::StringSizes);
-                if (!IMergeTreeDataPart::getStreamNameForColumn(key, sizes_path, ".bin", part->checksums, part->storage.getSettings()))
-                    GPU_COMPRESSED_REFUSE("a part that keeps the sizes of a string key inline rather than in a stream of their own");
-            }
+            if (!part_stores_sizes(key))
+                GPU_COMPRESSED_REFUSE("a part that keeps the sizes of a string key inline rather than in a stream of their own");
         }
 
         for (const auto & column : columns.columns)
         {
             if (!part_stores(column.column.name))
                 GPU_COMPRESSED_REFUSE("a part that does not store an aggregated column with the table's type and the default serialization");
+            if (!part_stores_sizes(column.column))
+                GPU_COMPRESSED_REFUSE("a part that keeps the sizes of an aggregated string inline rather than in a stream of their own");
         }
 
         parts.push_back(part);
@@ -631,8 +636,9 @@ bool optimizeAggregationFromGPUCompressedColumns(
         return false;
 
     if (filter->filter
-        && std::any_of(columns->keys.begin(), columns->keys.end(), [](const auto & key) { return GPU::isStringKey(*key.type); }))
-        GPU_COMPRESSED_REFUSE("a PREWHERE in a read grouped by strings, which the device groups without a filter");
+        && (std::any_of(columns->keys.begin(), columns->keys.end(), [](const auto & key) { return GPU::isStringKey(*key.type); })
+            || std::any_of(columns->columns.begin(), columns->columns.end(), [](const auto & column) { return GPU::isStringKey(*column.column.type); })))
+        GPU_COMPRESSED_REFUSE("a PREWHERE in a read of strings, which the device groups without a filter");
 
     if (!reading->getAnalyzedResult())
         reading->setAnalyzedResult(reading->selectRangesToRead());

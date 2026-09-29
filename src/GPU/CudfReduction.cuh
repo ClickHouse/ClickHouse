@@ -14,9 +14,11 @@ public:
     CudfReduction(const CudfReduction &) = delete;
     CudfReduction & operator=(const CudfReduction &) = delete;
 
-    void addBatch(DeviceFixedColumn values);
+    void addBatch(DeviceColumnView values);
 
-    uint64_t finalize();
+    /// The reduction of every batch so far, as a column of one row on the device that lives as long as this does, or
+    /// of no rows where there was no batch.
+    DeviceColumnView finalize();
 
 private:
     struct State;

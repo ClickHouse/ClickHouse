@@ -1,5 +1,7 @@
 #include <GPU/GPUTypeMapping.h>
 
+#include <GPU/GPUColumns.h>
+
 #if USE_GPU
 
 #include <Columns/ColumnVector.h>
@@ -123,20 +125,21 @@ String aggregationName(GPUAggregationKind aggregation)
 
 bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
 {
-    const auto element_type = elementTypeOf(argument_type);
-    if (!element_type)
-        return false;
-
     if (aggregation == GPUAggregationKind::Sum)
-        return elementTypeOf(result_type) == sumResultTypeFor(*element_type);
+    {
+        const auto element_type = elementTypeOf(argument_type);
+        return element_type && elementTypeOf(result_type) == sumResultTypeFor(*element_type);
+    }
 
-    return elementTypeOf(result_type) == element_type;
+    /// A `min` or a `max` is of the argument's type, and of values of varying width too, compared by their bytes.
+    const auto column_type = columnTypeOf(argument_type);
+    return column_type && columnTypeOf(result_type) == column_type;
 }
 
 GPUElementType reducibleElementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
 {
     if (canReduceOnDevice(argument_type, result_type, aggregation))
-        return *elementTypeOf(argument_type);
+        return *columnTypeOf(argument_type);
 
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
@@ -178,8 +181,10 @@ bool canGroupByReduceOnDevice(
     if (key_types.size() > max_group_by_keys || argument_types.size() > max_group_by_values)
         return false;
 
-    const bool by_variable = std::any_of(key_types.begin(), key_types.end(), [](const auto & type) { return isStringKey(*type); });
-    if (by_variable)
+    /// Keys or values of varying width are grouped through cuDF, which takes keys of integers and strings, and reduces
+    /// integers, and strings by `min` and `max`; `RecordGroupBy` takes fixed-width keys and values only.
+    const auto is_variable = [](const auto & type) { return isStringKey(*type); };
+    if (std::any_of(key_types.begin(), key_types.end(), is_variable) || std::any_of(argument_types.begin(), argument_types.end(), is_variable))
     {
         for (const auto & key_type : key_types)
         {
@@ -193,7 +198,7 @@ bool canGroupByReduceOnDevice(
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             const auto element_type = elementTypeOf(*argument_types[i]);
-            if (!element_type || !isInteger(*element_type))
+            if (!is_variable(argument_types[i]) && (!element_type || !isInteger(*element_type)))
                 return false;
             if (!canReduceOnDevice(*argument_types[i], *result_types[i], aggregations[i]))
                 return false;

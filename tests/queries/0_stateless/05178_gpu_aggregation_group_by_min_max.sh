@@ -69,6 +69,11 @@ compare_with_cpu "SELECT k_u8, min(v_i64), max(v_i64) FROM gpu_group_by_min_max 
 compare_with_cpu "SELECT k_u8, min(v_f32), max(v_f32) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
 compare_with_cpu "SELECT k_u8, min(v_f64), max(v_f64) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
 
+# Of strings, which the device compares by their bytes, by a fixed-width key and by a string.
+compare_with_cpu "SELECT k_u8, min(v_str), max(v_str) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
+compare_with_cpu "SELECT k_str, min(v_str), max(v_u8) FROM gpu_group_by_min_max GROUP BY k_str ORDER BY k_str"
+compare_with_cpu "SELECT k_u32, max(v_str) FROM gpu_group_by_min_max GROUP BY k_u32 ORDER BY k_u32 SETTINGS gpu_aggregation_batch_bytes = 65536"
+
 # A key of each supported type.
 compare_with_cpu "SELECT k_u32, min(v_i32), max(v_i32) FROM gpu_group_by_min_max GROUP BY k_u32 ORDER BY k_u32"
 compare_with_cpu "SELECT k_i16, min(v_i32), max(v_i32) FROM gpu_group_by_min_max GROUP BY k_i16 ORDER BY k_i16"
@@ -101,7 +106,6 @@ compare_with_cpu "SELECT k_null, min(v_u8), max(v_u8) FROM gpu_group_by_min_max 
 compare_with_cpu "SELECT k_str, min(v_u8), max(v_u8) FROM gpu_group_by_min_max GROUP BY k_str ORDER BY k_str"
 compare_with_cpu "SELECT k_u8, min(v_null), max(v_null) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
 compare_with_cpu "SELECT k_u8, min(v_dec), max(v_dec) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
-compare_with_cpu "SELECT k_u8, min(v_str), max(v_str) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
 compare_with_cpu "SELECT k_u8, minIf(v_u8, k_i16 > 0), maxIf(v_u8, k_i16 > 0) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
 compare_with_cpu "SELECT k_u8, argMin(v_u8, v_i32), argMax(v_u8, v_i32) FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"
 compare_with_cpu "SELECT k_u8, min(v_u8), max(v_u8), count() FROM gpu_group_by_min_max GROUP BY k_u8 ORDER BY k_u8"

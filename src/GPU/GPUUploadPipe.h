@@ -43,8 +43,6 @@ public:
 
     void appendPlain(std::string_view host_values) { values.append(host_values); }
 
-    void appendCompressed(SyncDecompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks);
-
     char * grow(size_t bytes) { return values.grow(bytes); }
 
     char * mutableData() { return values.data(); }
@@ -71,6 +69,9 @@ private:
 };
 
 
+/// The chars of a column of values of varying width and the offsets its rows end at, starting from 0. `rows` and `view`
+/// are of the rows whose chars and sizes have both arrived: all of them when the host appends the two together, and
+/// those `settle` counted when they arrive apart, as expanded compressed blocks of either stream do.
 class DeviceVariableColumnBuffer final : public IDeviceColumn
 {
 public:
@@ -78,20 +79,39 @@ public:
 
     void append(std::string_view host_row_ends, std::string_view host_chars);
 
+    char * growChars(size_t bytes) { return chars.grow(bytes); }
+
+    /// Sizes of rows on the device, as bytes: they may start at any address and end in the middle of a size, whose
+    /// rest is taken to come with the next call.
+    void appendSizes(const char * device_sizes, size_t bytes);
+
+    /// Counts the rows whose chars have arrived. Waits for the stream.
+    void settle();
+
+    void dropFront(size_t num_rows);
+
     void clear();
+
+    /// Bytes of chars and sizes that no settled row covers.
+    size_t unsettledBytes() const;
 
     size_t bytes() const { return chars.size(); }
 
-    size_t rows() const override { return offsets.size() / sizeof(uint64_t) - 1; }
+    size_t rows() const override { return settled_rows; }
 
     DeviceColumnView view() const override;
 
 private:
     void startOffsets();
+    size_t sizedRows() const { return offsets.size() / sizeof(uint64_t) - 1; }
 
     const rmm::cuda_stream_view stream;
     DeviceBuffer offsets;
     DeviceBuffer chars;
+    DeviceBuffer pending_sizes;
+    DeviceBuffer spare;
+    size_t settled_rows = 0;
+    size_t settled_bytes = 0;
 };
 
 
@@ -182,8 +202,10 @@ private:
 
 /// Uploads compressed blocks as they are stored in a part and decompresses them on the device: when the staging
 /// area fills up and on `flush`, the staged blocks are sent and expanded with nvcomp through a `SyncDecompressor`,
-/// blocking until done.
-/// The CPU never decompresses these blocks. Used by `GPUAccumulator` for a single aggregation over compressed columns.
+/// blocking until done. The CPU never decompresses these blocks. A column of values of varying width is two streams,
+/// its chars and the sizes of its rows, both staged here as blocks; the device turns the sizes into offsets, and `flush`
+/// gives the rows whose chars and sizes have both arrived. Used by `GPUAccumulator` for a single aggregation over
+/// compressed columns.
 class CompressedUploadPipe final : public IUploadPipe
 {
 public:
@@ -197,7 +219,11 @@ public:
 
     void stageCompressedBlock(std::string_view payload, size_t decompressed_bytes);
 
-    size_t stagedRows() const override { return staged_bytes / element_size; }
+    /// Of a column of values of varying width: a block of the sizes of its rows.
+    void stageCompressedSizesBlock(std::string_view payload, size_t decompressed_bytes);
+
+    /// Rows whose values, or whose sizes, are staged or on the device since the last `reset`.
+    size_t stagedRows() const override;
 
     size_t stagedBytes() const override { return staged_bytes; }
 
@@ -206,20 +232,29 @@ public:
     void reset() override;
 
 private:
+    struct StagedBlocks
+    {
+        PinnedBuffer bytes;
+        std::vector<CompressedBlock> blocks;
+        size_t expanded_bytes = 0;
+    };
+
+    void stageBlock(StagedBlocks & staged, std::string_view payload, size_t decompressed_bytes);
     void sendStagedToDevice();
 
-    const GPUElementType element_type;
-    const size_t element_size;
+    const GPUElementType column_type;
     const size_t stage_bytes;
     const GPUCodec codec;
 
-    PinnedBuffer staged;
-    std::vector<CompressedBlock> blocks;
+    StagedBlocks staged_data;
+    StagedBlocks staged_sizes;
     SyncDecompressor decompressor;
+    DeviceBuffer expanded_sizes{StreamRegistry::get().compute};
 
+    /// Expanded bytes of both streams staged or on the device since the last `reset`.
     size_t staged_bytes = 0;
 
-    DeviceFixedColumnBuffer device;
+    std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer> device;
 };
 
 }

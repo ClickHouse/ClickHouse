@@ -2,6 +2,7 @@
 
 #if USE_GPU
 
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Block.h>
@@ -93,6 +94,22 @@ bool expandsOnDevice(const IMergeTreeDataPart & part, const String & column_name
     if (size.data_uncompressed == 0)
         return true;
     return static_cast<double>(size.data_compressed) <= max_ratio * static_cast<double>(size.data_uncompressed);
+}
+
+ISerialization::SubstreamPath stringSizesPath()
+{
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::StringSizes);
+    return path;
+}
+
+/// The uncompressed bytes of a stream of a column of the part.
+size_t streamBytesOf(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path)
+{
+    const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", part.checksums, part.storage.getSettings());
+    if (!stream_name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has no file for a stream of column {}", part.name, column.name);
+    return part.checksums.files.at(*stream_name + ".bin").uncompressed_size;
 }
 
 GPU::GPUCodec codecOrThrow(UInt8 method, const String & column_name, const IMergeTreeDataPart & part)
@@ -266,6 +283,8 @@ private:
     Field reduceColumn(const IMergeTreeDataPart & part, size_t column_idx)
     {
         const ColumnToReduce & column = state->columns[column_idx];
+        if (GPU::columnTypeOrThrow(*column.column.type) == GPU::GPUElementType::String)
+            return reduceVariableColumn(part, column_idx);
 
         GPU::GPUAccumulator * accumulator = nullptr;
         size_t bytes_read = 0;
@@ -319,6 +338,127 @@ private:
 
         return accumulator->finalize();
     }
+
+    /// A column of values of varying width - a `String` - is two streams: its bytes, and the sizes of its rows in the
+    /// `.size` stream beside them. Expanded on the device, both go there as compressed blocks, the sizes a little ahead
+    /// of the bytes they cover, so that the device holds little of either without the other. Expanded on the host, the
+    /// rows are read into columns of strings a piece at a time.
+    Field reduceVariableColumn(const IMergeTreeDataPart & part, size_t column_idx)
+    {
+        const ColumnToReduce & column = state->columns[column_idx];
+        const size_t bytes_total = streamBytesOf(part, column.column, {});
+        const size_t sizes_total = streamBytesOf(part, column.column, stringSizesPath());
+        if (sizes_total != part.rows_count * sizeof(UInt64))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Column {} of part {} holds {} bytes of sizes, where the part has {} rows",
+                column.column.name,
+                part.name,
+                sizes_total,
+                part.rows_count);
+
+        GPU::GPUAccumulator * accumulator = nullptr;
+        size_t rows_read = 0;
+        size_t bytes_read = 0;
+
+        if (expandsOnDevice(part, column.column.name, state->decompression, state->device_decompression_max_ratio))
+        {
+            MergeTreeCompressedBlockReader bytes_reader(part, column.column, state->read_settings);
+            MergeTreeCompressedBlockReader sizes_reader(part, column.column, state->read_settings, stringSizesPath());
+            size_t sizes_read = 0;
+
+            while (bytes_read < bytes_total || sizes_read < sizes_total)
+            {
+                /// The rows the bytes read cover, were every row as long as the average one.
+                const size_t rows_of_bytes = bytes_total == 0
+                    ? part.rows_count
+                    : static_cast<size_t>(static_cast<unsigned __int128>(bytes_read) * part.rows_count / bytes_total);
+                const bool reads_sizes = sizes_read < sizes_total && (bytes_read == bytes_total || sizes_read / sizeof(UInt64) <= rows_of_bytes);
+                MergeTreeCompressedBlockReader & reader = reads_sizes ? sizes_reader : bytes_reader;
+
+                const auto block = reader.next();
+                if (!block)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "A stream of column {} of part {} ended before its {} bytes", column.column.name, part.name, bytes_total);
+
+                const GPU::GPUCodec codec = codecOrThrow(*reader.methodByte(), column.column.name, part);
+                if (!accumulator)
+                    accumulator = &accumulatorFor(column_idx, codec);
+                else if (accumulators[column_idx]->codec != codec)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The streams of column {} of part {} are compressed by different codecs", column.column.name, part.name);
+
+                const std::string_view payload(block->payload, block->compressed_bytes);
+                if (reads_sizes)
+                {
+                    accumulator->addSizesBlock(payload, block->decompressed_bytes);
+                    sizes_read += block->decompressed_bytes;
+                }
+                else
+                {
+                    accumulator->addBlock(payload, block->decompressed_bytes);
+                    bytes_read += block->decompressed_bytes;
+                }
+
+                checkNotCancelled();
+            }
+
+            rows_read = sizes_read / sizeof(UInt64);
+        }
+        else
+        {
+            accumulator = &accumulatorFor(column_idx, std::nullopt);
+            CompressedReadBufferFromFile bytes_reader(MergeTreeCompressedBlockReader::openColumnFile(part, column.column, state->read_settings));
+            CompressedReadBufferFromFile sizes_reader(
+                MergeTreeCompressedBlockReader::openColumnFile(part, column.column, state->read_settings, stringSizesPath()));
+
+            while (rows_read < part.rows_count)
+            {
+                auto strings = ColumnString::create();
+                auto & offsets = strings->getOffsets();
+                offsets.resize(std::min(string_piece_rows, part.rows_count - rows_read));
+                sizes_reader.readStrict(reinterpret_cast<char *>(offsets.data()), offsets.size() * sizeof(UInt64));
+
+                UInt64 piece_bytes = 0;
+                for (auto & offset : offsets)
+                {
+                    if (offset > bytes_total - bytes_read - piece_bytes)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "The sizes of column {} of part {} add up to more than its {} bytes", column.column.name, part.name, bytes_total);
+                    piece_bytes += offset;
+                    offset = piece_bytes;
+                }
+
+                auto & chars = strings->getChars();
+                chars.resize(piece_bytes);
+                bytes_reader.readStrict(reinterpret_cast<char *>(chars.data()), piece_bytes);
+
+                accumulator->add(*strings);
+                rows_read += offsets.size();
+                bytes_read += piece_bytes;
+
+                checkNotCancelled();
+            }
+        }
+
+        if (rows_read != part.rows_count || bytes_read != bytes_total)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Column {} of part {} came to {} rows of {} bytes, where the part has {} rows of {} bytes",
+                column.column.name,
+                part.name,
+                rows_read,
+                bytes_read,
+                part.rows_count,
+                bytes_total);
+
+        if (!accumulator)
+            return column.result_type->getDefault();
+
+        return accumulator->finalize();
+    }
+
+    /// How many rows of a column of values of varying width the host expands at a time.
+    static constexpr size_t string_piece_rows = 64 * 1024;
 
     void checkNotCancelled() const
     {
@@ -448,11 +588,11 @@ private:
     /// Reads a column of a part as compressed blocks for the device to expand, or as values
     /// expanded on the host, a piece at a time.
     ///
-    /// A variable-width key - a `String`, the one kind a part is read as - is two streams: its bytes,
-    /// in the column's own file, which are read like the
-    /// values of any other column, and their sizes, in the `.size` stream, which are read on the
-    /// host ahead of the bytes and go to the device as the offsets the bytes end at. Its rows read
-    /// are those whose bytes all are.
+    /// A column of values of varying width - a `String`, the one kind a part is read as, a key or a
+    /// value - is two streams: its bytes, in the column's own file, which are read like the values of
+    /// any other column, and their sizes, in the `.size` stream, which are read on the host ahead of
+    /// the bytes and go to the device as the offsets the bytes end at. Its rows read are those whose
+    /// bytes all are.
     struct ColumnReader
     {
         ColumnReader(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device)
@@ -471,12 +611,8 @@ private:
             }
 
             if (is_variable)
-            {
-                ISerialization::SubstreamPath sizes_path;
-                sizes_path.push_back(ISerialization::Substream::StringSizes);
                 sizes = std::make_unique<CompressedReadBufferFromFile>(
-                    MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings, sizes_path));
-            }
+                    MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings, stringSizesPath()));
         }
 
         const bool is_variable;
@@ -630,8 +766,8 @@ private:
         for (const auto & column : filter_columns)
             readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name)));
 
-        /// A variable-width key's offsets start from the 0 its first row starts at.
-        for (size_t i = 0; i < state->keys.size(); ++i)
+        /// The offsets of a column of values of varying width start from the 0 its first row starts at.
+        for (size_t i = 0; i < readers.size(); ++i)
         {
             if (readers[i]->is_variable)
             {

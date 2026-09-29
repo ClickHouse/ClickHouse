@@ -16,12 +16,12 @@ public:
     CudfGroupBy(const CudfGroupBy &) = delete;
     CudfGroupBy & operator=(const CudfGroupBy &) = delete;
 
-    void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceFixedColumn> values);
+    void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values);
 
     size_t finalize();
 
     DeviceColumnView key(size_t index) const;
-    DeviceFixedColumn value(size_t index) const;
+    DeviceColumnView value(size_t index) const;
 
 private:
     struct State;

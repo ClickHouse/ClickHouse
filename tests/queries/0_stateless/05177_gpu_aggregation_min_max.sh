@@ -59,6 +59,10 @@ compare_with_cpu "SELECT min(i64), max(i64) FROM gpu_min_max"
 compare_with_cpu "SELECT min(f32), max(f32) FROM gpu_min_max"
 compare_with_cpu "SELECT min(f64), max(f64) FROM gpu_min_max"
 
+# Of strings, which the device compares by their bytes.
+compare_with_cpu "SELECT min(s), max(s) FROM gpu_min_max"
+compare_with_cpu "SELECT min(s), max(s) FROM gpu_min_max SETTINGS gpu_aggregation_batch_bytes = 4096"
+
 # Several aggregates at once, mixed with a `sum`.
 compare_with_cpu "SELECT min(u8), max(i64), min(f64) FROM gpu_min_max"
 compare_with_cpu "SELECT min(i32), max(i32), sum(i32) FROM gpu_min_max"
@@ -83,7 +87,6 @@ compare_with_cpu "SELECT min(u64), max(u64) FROM gpu_min_max WHERE u8 > 255 SETT
 # Not eligible, and so computed on the CPU with the setting on all the same.
 compare_with_cpu "SELECT min(n), max(n) FROM gpu_min_max"
 compare_with_cpu "SELECT min(d), max(d) FROM gpu_min_max"
-compare_with_cpu "SELECT min(s), max(s) FROM gpu_min_max"
 compare_with_cpu "SELECT minIf(u64, k = 1), maxIf(u64, k = 1) FROM gpu_min_max"
 compare_with_cpu "SELECT argMin(u8, i32), argMax(u8, i32) FROM gpu_min_max"
 compare_with_cpu "SELECT minOrNull(u8), maxOrNull(u8) FROM gpu_min_max"

@@ -47,6 +47,9 @@ public:
 
     void addBlock(std::string_view payload, size_t decompressed_bytes);
 
+    /// Of a column of values of varying width: a compressed block of the sizes of its rows, whose bytes come through `addBlock`.
+    void addSizesBlock(std::string_view payload, size_t decompressed_bytes);
+
     Field finalize();
 
     static constexpr size_t max_stage_bytes = 256UL * 1024 * 1024;
@@ -55,13 +58,14 @@ private:
     static constexpr size_t max_batch_rows = (1UL << 31) - 1;
 
     ColumnUploadPipe & plainPipeOrThrow();
+    CompressedUploadPipe & compressedPipeOrThrow();
 
     void reduceBatchOnDevice();
 
     const GPUElementType element_type;
     const GPUElementType result_type;
+    const DataTypePtr result_data_type;
     const GPUAggregationKind aggregation;
-    const size_t element_size;
     const size_t batch_bytes;
 
     std::unique_ptr<CudfReduction> reduction;
@@ -98,7 +102,8 @@ public:
 
     void finishPart(size_t reader, size_t num_rows);
 
-    void addVariableOffsets(size_t reader, size_t key_index, std::span<const UInt64> offsets);
+    /// Offsets a column of values of varying width - a key or a value - ends its rows at, from where its part starts.
+    void addVariableOffsets(size_t reader, size_t column_index, std::span<const UInt64> offsets);
 
     struct Waits
     {
@@ -164,9 +169,11 @@ private:
     size_t stagedRows() const { return value_pipes.front().stagedRows(); }
     size_t stagedVariableBytes() const;
 
-    size_t variableOffsetsColumnOf(size_t key_index) const;
+    /// The keys, the values and the columns of the filter come first, then the offsets of each column of varying width.
+    bool isVariableColumn(size_t column_index) const;
+    size_t variableOffsetsColumnOf(size_t column_index) const;
 
-    size_t numColumns() const { return group_keys.size() + values.size() + filter_element_types.size() + variable_key_indices.size(); }
+    size_t numColumns() const { return group_keys.size() + values.size() + filter_element_types.size() + variable_column_indices.size(); }
 
     std::optional<size_t> variableOrdinalOfOffsetsColumn(size_t column_index) const;
 
@@ -199,12 +206,12 @@ private:
 
     void copyVariableGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns);
 
-    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns);
+    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceColumnView> & value_columns);
 
     const std::vector<GPUElementType> group_keys;
     const std::vector<GPUElementType> key_element_types;
-    const std::vector<size_t> variable_key_indices;
     const std::vector<GPUGroupByValue> values;
+    const std::vector<size_t> variable_column_indices;
     const std::vector<GPUElementType> filter_element_types;
     const std::optional<GPUFilterProgram> filter;
     const size_t batch_rows;
