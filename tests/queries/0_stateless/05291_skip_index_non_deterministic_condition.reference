@@ -1,4 +1,4 @@
--- set index, rows out of 80000 within 35 standard deviations of the expected count
+-- set index, rows out of 8000 within 11 standard deviations of the expected count
 rand, bulk	1
 rand, per granule	1
 rand in PREWHERE	1
@@ -16,14 +16,14 @@ control: id = 1	1
 rand	1
 id < 10 AND rand	1
 rand, index used	0
--- text index on map keys: 40000 rows have the key, about 40 of the others pass through rand
+-- text index on map keys: 4000 rows have the key, about 40 of the others pass through rand
 map element	1
 map subcolumn	1
 rand, index used	0
-control: length, rows	40000
+control: length, rows	4000
 control: length, index used	1
 -- text index on JSON paths
 json path	1
 rand, index used	0
-control: rows	40000
+control: rows	4000
 control: index used	1
