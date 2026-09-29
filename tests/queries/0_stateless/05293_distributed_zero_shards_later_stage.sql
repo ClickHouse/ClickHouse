@@ -41,6 +41,8 @@ SELECT b FROM zero_shards_dist WHERE x = 1 AND x = 2 SETTINGS distributed_group_
 SELECT b FROM zero_shards_dist WHERE 0 SETTINGS distributed_group_by_no_merge = 2;
 SELECT x, x + 1 FROM zero_shards_dist WHERE 0 SETTINGS distributed_group_by_no_merge = 1;
 SELECT a1, a2, a1 FROM zero_shards_dist WHERE 0 ORDER BY dt DESC LIMIT 1 SETTINGS distributed_group_by_no_merge = 1;
+SELECT count() FROM zero_shards_dist WHERE 0 SETTINGS distributed_group_by_no_merge = 1;
+SELECT count() FROM zero_shards_dist WHERE x = 1 AND x = 2 SETTINGS distributed_group_by_no_merge = 1;
 SELECT count(), sum(x) FROM zero_shards_dist_over_dist WHERE 0;
 SELECT sum(b) FROM zero_shards_dist_over_dist WHERE 0;
 SELECT count(), sum(x) FROM zero_shards_dist_over_dist WHERE 0 SETTINGS optimize_skip_unused_shards = 0;
