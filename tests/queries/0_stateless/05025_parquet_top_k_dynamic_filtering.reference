@@ -54,22 +54,22 @@ OK
 nan
 100
 OK
-filter armed
 nan
 100
 OK
-filter armed
 nan
 65635
 OK
-filter armed
 100
 101
 OK
-filter armed
 65635
 65634
 OK
+filter armed
+filter armed
+filter armed
+filter armed
 filter armed
 filter not armed
 [[100], [101]] all of f3 skipped: True
