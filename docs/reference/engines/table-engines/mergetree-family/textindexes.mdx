@@ -312,6 +312,7 @@ The latter form has the disadvantage that the emulated preprocessor is only appl
 For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAllTokens(col, [...])` does not.
 The index with the preprocessor matches both: it is also used for `WHERE hasAllTokens(lower(col), [...])`, with the index tokenizer, and leaves the search term of that filter as is.
 This does not apply to an index with a postprocessor, an index on an array column, or a `Nullable` preprocessor expression.
+It also does not apply if another text index of the table is defined on `lower(col)` (then that index is used, as before) or has the same preprocessor expression.
 For an optimal user experience, we therefore recommend using preprocessor expressions.
 </Note>
 

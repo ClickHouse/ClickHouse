@@ -590,6 +590,8 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+    /// The expressions the other text indexes of the table answer: the one each is defined on and its preprocessor expression.
+    NameSet getOtherTextIndexExpressions(const ContextPtr & context) const;
 
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     static DataTypePtr getNestedDataType(const DataTypePtr & data_type);

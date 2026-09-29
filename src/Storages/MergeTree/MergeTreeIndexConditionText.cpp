@@ -168,7 +168,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
     NameSet columns_shadowing_map_subcolumns_,
-    const ColumnsDescription & table_columns)
+    const ColumnsDescription & table_columns,
+    const NameSet & other_text_index_expressions)
     : WithContext(context_)
     , header(index_sample_block)
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
@@ -185,19 +186,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     /// Over an array the preprocessor runs per element inside `arrayMap`, which is not an expression a query spells.
     if (has_preprocessor && !has_postprocessor && !isArray(header.getByPosition(0).type))
     {
-        /// Named as the query side names its nodes, like the index expression in `header`.
         const auto * expression = preprocessor->getOriginalActionsDAG().getOutputs().front();
-        RPNBuilderTreeContext tree_context(context_);
-        Block expression_header{ColumnWithTypeAndName(expression->result_type, RPNBuilderTreeNode(expression, tree_context).getColumnName())};
+        Block expression_header{ColumnWithTypeAndName(expression->result_type, getPreprocessorExpressionName(*preprocessor, context_))};
 
         /// Direct read answers with a non-Nullable UInt8, so `NOT` over a Nullable expression would return NULL rows.
         const bool is_nullable = isNullableOrLowCardinalityNullable(expression->result_type);
         /// A query cannot tell a table column with the expression's name apart from the expression.
         const bool is_shadowed = table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, expression_header.begin()->name);
+        /// Another text index answering the expression would prune with its own tokenizer and postprocessor. An index
+        /// defined on the expression keeps it, and two indexes with the same preprocessor expression both leave it.
+        const bool is_answered_by_other_index = other_text_index_expressions.contains(expression_header.begin()->name);
 
-        if (!is_nullable && !is_shadowed)
+        if (!is_nullable && !is_shadowed && !is_answered_by_other_index)
             preprocessed_expression_condition = std::make_shared<MergeTreeIndexConditionText>(
-                nullptr, context_, expression_header, std::nullopt, tokenizer, nullptr, nullptr, has_positions, NameSet{}, table_columns);
+                nullptr, context_, expression_header, std::nullopt, tokenizer, nullptr, nullptr, has_positions, NameSet{}, table_columns, NameSet{});
     }
 
     if (!predicate)
@@ -261,6 +263,12 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
     cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
+}
+
+String MergeTreeIndexConditionText::getPreprocessorExpressionName(const MergeTreeIndexTextPreprocessor & preprocessor, ContextPtr context)
+{
+    RPNBuilderTreeContext tree_context(std::move(context));
+    return RPNBuilderTreeNode(preprocessor.getOriginalActionsDAG().getOutputs().front(), tree_context).getColumnName();
 }
 
 bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & element)

@@ -99,10 +99,13 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
         NameSet columns_shadowing_map_subcolumns_,
-        const ColumnsDescription & table_columns);
+        const ColumnsDescription & table_columns,
+        const NameSet & other_text_index_expressions);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// The preprocessor expression named as the query side names its nodes, like the index expression in `header`.
+    static String getPreprocessorExpressionName(const MergeTreeIndexTextPreprocessor & preprocessor, ContextPtr context);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -114,13 +117,6 @@ public:
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
-    /// The preprocessor expression the index also answers predicates on, see `preprocessed_expression_condition`.
-    std::optional<String> getPreprocessedExpressionName() const
-    {
-        if (!preprocessed_expression_condition)
-            return std::nullopt;
-        return preprocessed_expression_condition->header.begin()->name;
-    }
 
     /// Create text search query for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;

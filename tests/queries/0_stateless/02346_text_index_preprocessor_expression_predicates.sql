@@ -168,6 +168,77 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') S
 
 DROP TABLE tab;
 
+SELECT '-- An index defined on the preprocessor expression answers it alone';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX a s TYPE text(tokenizer = ngrams(3), preprocessor = lower(s)),
+    INDEX b lower(s) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'xabcx'), (2, 'ab');
+
+SELECT id, hasAnyTokens(lower(s), 'ab abcd') FROM tab ORDER BY id;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'ab abcd') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'ab abcd') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'ab abcd') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'ab abcd') SETTINGS force_data_skipping_indices = 'b';
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'ab abcd') SETTINGS force_data_skipping_indices = 'a'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE tab;
+
+SELECT '-- The same when only the index on the expression has a postprocessor';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX a s TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(s)),
+    INDEX b lower(s) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(lower(s) = 'and', '', lower(s)))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'x and y'), (2, 'z');
+
+SELECT id, hasAnyTokens(lower(s), 'and') FROM tab ORDER BY id;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'and') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'and') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'and') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'and') SETTINGS force_data_skipping_indices = 'a'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE tab;
+
+SELECT '-- Two indexes with the same preprocessor expression do not answer it';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX a s TYPE text(tokenizer = ngrams(3), preprocessor = upper(lower(s))),
+    INDEX c lower(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(s)))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'xabcx'), (2, 'ab');
+
+SELECT id, hasAnyTokens(upper(lower(s)), 'AB ABCD') FROM tab ORDER BY id;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(upper(lower(s)), 'AB ABCD') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(upper(lower(s)), 'AB ABCD') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(upper(lower(s)), 'AB ABCD') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(upper(lower(s)), 'AB ABCD') SETTINGS force_data_skipping_indices = 'a'; -- { serverError INDEX_NOT_USED }
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(upper(lower(s)), 'AB ABCD') SETTINGS force_data_skipping_indices = 'c'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE tab;
+
 SELECT '-- A column named like the preprocessor expression is not taken for it';
 
 CREATE TABLE tab

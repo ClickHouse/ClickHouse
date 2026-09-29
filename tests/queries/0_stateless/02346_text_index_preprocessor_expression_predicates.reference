@@ -127,6 +127,25 @@ Granules: 3/6
 [1,2]
 [1,2]
 [1,2]
+-- An index defined on the preprocessor expression answers it alone
+1	0
+2	1
+[2]
+[2]
+[2]
+[2]
+-- The same when only the index on the expression has a postprocessor
+1	0
+2	0
+[]
+[]
+[]
+-- Two indexes with the same preprocessor expression do not answer it
+1	0
+2	1
+[2]
+[2]
+[2]
 -- A column named like the preprocessor expression is not taken for it
 [2]
 -- A preprocessor with constant arguments

@@ -645,11 +645,6 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            /// An index with a preprocessor also answers its preprocessor expression, which another index may be defined on.
-            const auto expression_name = text_index_condition.getPreprocessedExpressionName();
-            if (expression_name && used_index_columns.contains(*expression_name))
-                continue;
-
             auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
             if (!search_query)
                 continue;
@@ -670,8 +665,6 @@ private:
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info, is_index_analyzed);
                 used_index_columns.insert(index_header.begin()->name);
-                if (expression_name)
-                    used_index_columns.insert(*expression_name);
                 continue;
             }
 
@@ -681,8 +674,6 @@ private:
 
             selected_conditions.emplace_back(search_query, index_name, *virtual_column_name, &info, is_index_analyzed);
             used_index_columns.insert(index_header.begin()->name);
-            if (expression_name)
-                used_index_columns.insert(*expression_name);
         }
 
         return selected_conditions;

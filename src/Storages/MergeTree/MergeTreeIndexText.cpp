@@ -2157,7 +2157,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.positions, getColumnsShadowingMapSubcolumns(), metadata_snapshot->getColumns());
+        preprocessor, postprocessor, params.positions, getColumnsShadowingMapSubcolumns(), metadata_snapshot->getColumns(),
+        getOtherTextIndexExpressions(context));
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -2267,6 +2268,31 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+}
+
+NameSet MergeTreeIndexText::getOtherTextIndexExpressions(const ContextPtr & context) const
+{
+    NameSet result;
+
+    /// Only an index with a preprocessor answers an expression besides its own.
+    if (!preprocessor->hasActions())
+        return result;
+
+    for (const auto & other : metadata_snapshot->getSecondaryIndices())
+    {
+        if (other.type != TEXT_INDEX_NAME || other.name == index.name)
+            continue;
+
+        result.insert(other.column_names.begin(), other.column_names.end());
+        if (auto normalized_name = getNormalizedIndexColumnName(other))
+            result.insert(*normalized_name);
+
+        auto options = convertArgumentsToOptionsMap(other.arguments);
+        if (auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false))
+            result.insert(MergeTreeIndexConditionText::getPreprocessorExpressionName(MergeTreeIndexTextPreprocessor(preprocessor_ast, other), context));
+    }
+
+    return result;
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
