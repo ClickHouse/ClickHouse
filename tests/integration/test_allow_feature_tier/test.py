@@ -167,6 +167,16 @@ def drop_entities(node, users=(), roles=(), profiles=(), storage=None):
 
 
 @contextmanager
+def entities(node, users=(), roles=(), profiles=(), storage=None):
+    """Drops the named entities before and after the block, so that a test starts clean and leaves nothing behind."""
+    drop_entities(node, users, roles, profiles, storage)
+    try:
+        yield
+    finally:
+        drop_entities(node, users, roles, profiles, storage)
+
+
+@contextmanager
 def feature_tier(node, value, config_path=feature_tier_path):
     old_value = get_current_tier_value(node)
     set_feature_tier(node, old_value, value, config_path)
@@ -1120,104 +1130,86 @@ def test_projection_settings_of_a_freshly_attached_table_are_checked(start_clust
 
 
 def test_granting_a_role_that_a_profile_is_assigned_to(start_cluster):
-    users, roles, profiles = ["tier_g1"], ["tier_carrier_role"], ["tier_carrier_profile"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users, roles, profiles)
+    with entities(
+        instance,
+        users=["tier_g1"],
+        roles=["tier_carrier_role"],
+        profiles=["tier_carrier_profile"],
+    ):
+        instance.query("CREATE USER tier_g1 IDENTIFIED WITH no_password")
+        instance.query("CREATE ROLE tier_carrier_role")
+        instance.query(
+            f"CREATE SETTINGS PROFILE tier_carrier_profile SETTINGS {EXPERIMENTAL_SETTING} = 1 TO tier_carrier_role"
+        )
+        assert read_experimental_setting(instance, "tier_g1") == "0"
 
-    instance.query("CREATE USER tier_g1 IDENTIFIED WITH no_password")
-    instance.query("CREATE ROLE tier_carrier_role")
-    instance.query(
-        f"CREATE SETTINGS PROFILE tier_carrier_profile SETTINGS {EXPERIMENTAL_SETTING} = 1 TO tier_carrier_role"
-    )
-    assert read_experimental_setting(instance, "tier_g1") == "0"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance, "GRANT tier_carrier_role TO tier_g1"
             )
             assert read_experimental_setting(instance, "tier_g1") == "0"
-    finally:
-        drop_entities(instance, users, roles, profiles)
 
 
 def test_dropping_a_settings_profile_a_user_uses(start_cluster):
-    users, profiles = ["tier_g2"], ["tier_droppable_profile"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, profiles=profiles)
+    with entities(instance, users=["tier_g2"], profiles=["tier_droppable_profile"]):
+        instance.query("CREATE USER tier_g2 IDENTIFIED WITH no_password")
+        instance.query(
+            f"CREATE SETTINGS PROFILE tier_droppable_profile SETTINGS {EXPERIMENTAL_SETTING} = 1 TO tier_g2"
+        )
+        assert read_experimental_setting(instance, "tier_g2") == "1"
 
-    instance.query("CREATE USER tier_g2 IDENTIFIED WITH no_password")
-    instance.query(
-        f"CREATE SETTINGS PROFILE tier_droppable_profile SETTINGS {EXPERIMENTAL_SETTING} = 1 TO tier_g2"
-    )
-    assert read_experimental_setting(instance, "tier_g2") == "1"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance, "DROP SETTINGS PROFILE tier_droppable_profile"
             )
             assert read_experimental_setting(instance, "tier_g2") == "1"
-    finally:
-        drop_entities(instance, users=users, profiles=profiles)
 
 
 def test_dropping_a_role_that_carries_a_setting(start_cluster):
-    users, roles = ["tier_g4"], ["tier_droppable_role"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, roles=roles)
+    with entities(instance, users=["tier_g4"], roles=["tier_droppable_role"]):
+        instance.query("CREATE USER tier_g4 IDENTIFIED WITH no_password")
+        instance.query(
+            f"CREATE ROLE tier_droppable_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        instance.query("GRANT tier_droppable_role TO tier_g4")
+        assert read_experimental_setting(instance, "tier_g4") == "1"
 
-    instance.query("CREATE USER tier_g4 IDENTIFIED WITH no_password")
-    instance.query(
-        f"CREATE ROLE tier_droppable_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query("GRANT tier_droppable_role TO tier_g4")
-    assert read_experimental_setting(instance, "tier_g4") == "1"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance, "DROP ROLE tier_droppable_role"
             )
             assert read_experimental_setting(instance, "tier_g4") == "1"
-    finally:
-        drop_entities(instance, users=users, roles=roles)
 
 
 def test_replacing_a_user_discarding_a_granted_role(start_cluster):
-    users, roles = ["tier_g5"], ["tier_replaced_away_role"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, roles=roles)
+    with entities(instance, users=["tier_g5"], roles=["tier_replaced_away_role"]):
+        instance.query(
+            f"CREATE ROLE tier_replaced_away_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        instance.query("CREATE USER tier_g5 IDENTIFIED WITH no_password")
+        instance.query("GRANT tier_replaced_away_role TO tier_g5")
+        assert read_experimental_setting(instance, "tier_g5") == "1"
 
-    instance.query(
-        f"CREATE ROLE tier_replaced_away_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query("CREATE USER tier_g5 IDENTIFIED WITH no_password")
-    instance.query("GRANT tier_replaced_away_role TO tier_g5")
-    assert read_experimental_setting(instance, "tier_g5") == "1"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance,
                 "CREATE USER OR REPLACE tier_g5 IDENTIFIED WITH no_password",
             )
             assert read_experimental_setting(instance, "tier_g5") == "1"
-    finally:
-        drop_entities(instance, users=users, roles=roles)
 
 
 def test_dropping_a_setting_from_a_user(start_cluster):
-    users = ["tier_g6"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users)
+    with entities(instance, users=["tier_g6"]):
+        instance.query(
+            f"CREATE USER tier_g6 IDENTIFIED WITH no_password SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        assert read_experimental_setting(instance, "tier_g6") == "1"
 
-    instance.query(
-        f"CREATE USER tier_g6 IDENTIFIED WITH no_password SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    assert read_experimental_setting(instance, "tier_g6") == "1"
-
-    try:
         with feature_tier(instance, "1"):
             for statement in [
                 f"ALTER USER tier_g6 DROP SETTING {EXPERIMENTAL_SETTING}",
@@ -1227,119 +1219,96 @@ def test_dropping_a_setting_from_a_user(start_cluster):
             ]:
                 assert_experimental_change_is_blocked(instance, statement)
                 assert read_experimental_setting(instance, "tier_g6") == "1"
-    finally:
-        drop_entities(instance, users=users)
 
 
 def test_revoking_a_role_that_carries_a_setting(start_cluster):
-    users, roles = ["tier_g7"], ["tier_revocable_role"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, roles=roles)
+    with entities(instance, users=["tier_g7"], roles=["tier_revocable_role"]):
+        instance.query(
+            f"CREATE ROLE tier_revocable_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        instance.query("CREATE USER tier_g7 IDENTIFIED WITH no_password")
+        instance.query("GRANT tier_revocable_role TO tier_g7")
+        assert read_experimental_setting(instance, "tier_g7") == "1"
 
-    instance.query(
-        f"CREATE ROLE tier_revocable_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query("CREATE USER tier_g7 IDENTIFIED WITH no_password")
-    instance.query("GRANT tier_revocable_role TO tier_g7")
-    assert read_experimental_setting(instance, "tier_g7") == "1"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance, "REVOKE tier_revocable_role FROM tier_g7"
             )
             assert read_experimental_setting(instance, "tier_g7") == "1"
-    finally:
-        drop_entities(instance, users=users, roles=roles)
 
 
 def test_making_a_granted_role_default(start_cluster):
-    users, roles = ["tier_g8"], ["tier_not_default_role"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, roles=roles)
+    with entities(instance, users=["tier_g8"], roles=["tier_not_default_role"]):
+        instance.query(
+            f"CREATE ROLE tier_not_default_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        instance.query(
+            "CREATE USER tier_g8 IDENTIFIED WITH no_password DEFAULT ROLE NONE"
+        )
+        instance.query("GRANT tier_not_default_role TO tier_g8")
+        # A granted role that is not a default role carries nothing
+        assert read_experimental_setting(instance, "tier_g8") == "0"
 
-    instance.query(
-        f"CREATE ROLE tier_not_default_role SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query("CREATE USER tier_g8 IDENTIFIED WITH no_password DEFAULT ROLE NONE")
-    instance.query("GRANT tier_not_default_role TO tier_g8")
-    # A granted role that is not a default role carries nothing
-    assert read_experimental_setting(instance, "tier_g8") == "0"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance, "SET DEFAULT ROLE ALL TO tier_g8"
             )
             assert read_experimental_setting(instance, "tier_g8") == "0"
-    finally:
-        drop_entities(instance, users=users, roles=roles)
 
 
 def test_assigning_a_profile_to_a_user(start_cluster):
-    users, profiles = ["tier_g9"], ["tier_assignable_profile"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, profiles=profiles)
+    with entities(instance, users=["tier_g9"], profiles=["tier_assignable_profile"]):
+        instance.query("CREATE USER tier_g9 IDENTIFIED WITH no_password")
+        instance.query(
+            f"CREATE SETTINGS PROFILE tier_assignable_profile SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        assert read_experimental_setting(instance, "tier_g9") == "0"
 
-    instance.query("CREATE USER tier_g9 IDENTIFIED WITH no_password")
-    instance.query(
-        f"CREATE SETTINGS PROFILE tier_assignable_profile SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    assert read_experimental_setting(instance, "tier_g9") == "0"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance,
                 "ALTER SETTINGS PROFILE tier_assignable_profile TO tier_g9",
             )
             assert read_experimental_setting(instance, "tier_g9") == "0"
-    finally:
-        drop_entities(instance, users=users, profiles=profiles)
 
 
 def test_a_setting_shadowed_by_a_dependent_role(start_cluster):
     # `tier_child` sets the setting to 0 and `tier_parent` to 1, and `tier_child` is granted to
     # `tier_parent`, so the user reads 0. Dropping the setting from `tier_child` does not change what
     # `tier_child` alone resolves to, but it moves the user's value from 0 to 1
-    users, roles = ["tier_g10"], ["tier_parent", "tier_child"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users, roles=roles)
+    with entities(instance, users=["tier_g10"], roles=["tier_parent", "tier_child"]):
+        instance.query(f"CREATE ROLE tier_child SETTINGS {EXPERIMENTAL_SETTING} = 0")
+        instance.query(f"CREATE ROLE tier_parent SETTINGS {EXPERIMENTAL_SETTING} = 1")
+        instance.query("GRANT tier_child TO tier_parent")
+        instance.query("CREATE USER tier_g10 IDENTIFIED WITH no_password")
+        instance.query("GRANT tier_parent TO tier_g10")
+        assert read_experimental_setting(instance, "tier_g10") == "0"
 
-    instance.query(f"CREATE ROLE tier_child SETTINGS {EXPERIMENTAL_SETTING} = 0")
-    instance.query(f"CREATE ROLE tier_parent SETTINGS {EXPERIMENTAL_SETTING} = 1")
-    instance.query("GRANT tier_child TO tier_parent")
-    instance.query("CREATE USER tier_g10 IDENTIFIED WITH no_password")
-    instance.query("GRANT tier_parent TO tier_g10")
-    assert read_experimental_setting(instance, "tier_g10") == "0"
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance,
                 f"ALTER ROLE tier_child DROP SETTING {EXPERIMENTAL_SETTING}",
             )
             assert read_experimental_setting(instance, "tier_g10") == "0"
-    finally:
-        drop_entities(instance, users=users, roles=roles)
 
 
 def test_restating_the_value_a_user_already_has(start_cluster):
     # The statement changes no setting for `tier_target`, so it is allowed even though the administrator
     # running it has a different value in their own session
-    users = ["tier_admin", "tier_target"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users)
+    with entities(instance, users=["tier_admin", "tier_target"]):
+        instance.query("CREATE USER tier_admin IDENTIFIED WITH no_password")
+        instance.query("GRANT ACCESS MANAGEMENT ON *.* TO tier_admin")
+        instance.query(
+            f"CREATE USER tier_target IDENTIFIED WITH no_password SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        assert read_experimental_setting(instance, "tier_admin") == "0"
+        assert read_experimental_setting(instance, "tier_target") == "1"
 
-    instance.query("CREATE USER tier_admin IDENTIFIED WITH no_password")
-    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO tier_admin")
-    instance.query(
-        f"CREATE USER tier_target IDENTIFIED WITH no_password SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    assert read_experimental_setting(instance, "tier_admin") == "0"
-    assert read_experimental_setting(instance, "tier_target") == "1"
-
-    try:
         with feature_tier(instance, "1"):
             output, error = instance.query_and_get_answer_with_error(
                 f"ALTER USER tier_target SETTINGS {EXPERIMENTAL_SETTING} = 1",
@@ -1347,21 +1316,17 @@ def test_restating_the_value_a_user_already_has(start_cluster):
             )
             assert error == "", error
             assert read_experimental_setting(instance, "tier_target") == "1"
-    finally:
-        drop_entities(instance, users=users)
 
 
 def test_unrelated_access_entity_statements_are_allowed(start_cluster):
     # Only the settings in effect decide the refusal: statements that change no setting keep working
-    users, roles, profiles = (
-        ["tier_g11"],
-        ["tier_plain_role"],
-        ["tier_unused_profile"],
-    )
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users, roles, profiles)
-
-    try:
+    with entities(
+        instance,
+        users=["tier_g11"],
+        roles=["tier_plain_role"],
+        profiles=["tier_unused_profile"],
+    ):
         with feature_tier(instance, "1"):
             for statement in [
                 "CREATE USER tier_g11 IDENTIFIED WITH no_password",
@@ -1377,30 +1342,30 @@ def test_unrelated_access_entity_statements_are_allowed(start_cluster):
             ]:
                 output, error = instance.query_and_get_answer_with_error(statement)
                 assert error == "", statement + ": " + error
-    finally:
-        drop_entities(instance, users, roles, profiles)
 
 
 def test_feature_tier_is_enforced_in_named_access_storage(start_cluster):
     users = ["tier_storage_alter", "tier_storage_role_user"]
-    roles = ["tier_storage_role"]
     all_users = users + ["tier_storage_create"]
 
-    drop_entities(instance, users=all_users, roles=roles, storage="memory")
-
-    instance.query(
-        f"CREATE USER tier_storage_alter IN memory IDENTIFIED WITH no_password "
+    with entities(
+        instance,
+        users=all_users,
+        roles=["tier_storage_role"],
+        storage="memory",
+    ):
+        instance.query(
+            f"CREATE USER tier_storage_alter IN memory IDENTIFIED WITH no_password "
         f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query(
-        "CREATE USER tier_storage_role_user IN memory IDENTIFIED WITH no_password"
-    )
-    instance.query(
-        f"CREATE ROLE tier_storage_role IN memory SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query("GRANT tier_storage_role TO tier_storage_role_user")
+        )
+        instance.query(
+            "CREATE USER tier_storage_role_user IN memory IDENTIFIED WITH no_password"
+        )
+        instance.query(
+            f"CREATE ROLE tier_storage_role IN memory SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        instance.query("GRANT tier_storage_role TO tier_storage_role_user")
 
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance,
@@ -1423,21 +1388,17 @@ def test_feature_tier_is_enforced_in_named_access_storage(start_cluster):
             )
             assert read_experimental_setting(instance, "tier_storage_alter") == "1"
             assert read_experimental_setting(instance, "tier_storage_role_user") == "1"
-    finally:
-        drop_entities(instance, users=all_users, roles=roles, storage="memory")
 
 
 def test_renaming_a_user_does_not_hide_a_settings_change(start_cluster):
     old_name = "tier_rename_old"
     new_name = "tier_rename_new"
-    drop_entities(instance, users=[old_name, new_name])
-
-    instance.query(
-        f"CREATE USER {old_name} IDENTIFIED WITH no_password "
+    with entities(instance, users=[old_name, new_name]):
+        instance.query(
+            f"CREATE USER {old_name} IDENTIFIED WITH no_password "
         f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
+        )
 
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance,
@@ -1451,20 +1412,16 @@ def test_renaming_a_user_does_not_hide_a_settings_change(start_cluster):
                 ).strip()
                 == "0"
             )
-    finally:
-        drop_entities(instance, users=[old_name, new_name])
 
 
 def test_dropping_an_explicit_default_value_is_allowed(start_cluster):
     user = "tier_explicit_default"
-    drop_entities(instance, users=[user])
-
-    instance.query(
-        f"CREATE USER {user} IDENTIFIED WITH no_password "
+    with entities(instance, users=[user]):
+        instance.query(
+            f"CREATE USER {user} IDENTIFIED WITH no_password "
         f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
-    )
+        )
 
-    try:
         with feature_tier(instance, "1"):
             output, error = instance.query_and_get_answer_with_error(
                 f"ALTER USER {user} DROP SETTING {EXPERIMENTAL_SETTING}"
@@ -1472,20 +1429,16 @@ def test_dropping_an_explicit_default_value_is_allowed(start_cluster):
             assert output == ""
             assert error == "", error
             assert read_experimental_setting(instance, user) == "0"
-    finally:
-        drop_entities(instance, users=[user])
 
 
 def test_create_user_if_not_exists_is_a_no_op(start_cluster):
     user = "tier_if_not_exists"
-    drop_entities(instance, users=[user])
-
-    instance.query(
-        f"CREATE USER {user} IDENTIFIED WITH no_password "
+    with entities(instance, users=[user]):
+        instance.query(
+            f"CREATE USER {user} IDENTIFIED WITH no_password "
         f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
+        )
 
-    try:
         with feature_tier(instance, "1"):
             output, error = instance.query_and_get_answer_with_error(
                 f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password"
@@ -1493,35 +1446,28 @@ def test_create_user_if_not_exists_is_a_no_op(start_cluster):
             assert output == ""
             assert error == "", error
             assert read_experimental_setting(instance, user) == "1"
-    finally:
-        drop_entities(instance, users=[user])
 
 
 def test_overlapping_settings_profiles_use_the_effective_precedence(start_cluster):
     user = "tier_overlapping_profiles"
     profile_zero = "tier_profile_zero"
     profile_one = "tier_profile_one"
-    profiles = [profile_zero, profile_one]
-    drop_entities(instance, users=[user], profiles=profiles)
+    with entities(instance, users=[user], profiles=[profile_zero, profile_one]):
+        instance.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+        instance.query(
+            f"CREATE SETTINGS PROFILE {profile_zero} SETTINGS {EXPERIMENTAL_SETTING} = 0 TO {user}"
+        )
+        instance.query(
+            f"CREATE SETTINGS PROFILE {profile_one} SETTINGS {EXPERIMENTAL_SETTING} = 1 TO {user}"
+        )
+        value_before = read_experimental_setting(instance, user)
+        effective_profile = profile_one if value_before == "1" else profile_zero
 
-    instance.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
-    instance.query(
-        f"CREATE SETTINGS PROFILE {profile_zero} SETTINGS {EXPERIMENTAL_SETTING} = 0 TO {user}"
-    )
-    instance.query(
-        f"CREATE SETTINGS PROFILE {profile_one} SETTINGS {EXPERIMENTAL_SETTING} = 1 TO {user}"
-    )
-    value_before = read_experimental_setting(instance, user)
-    effective_profile = profile_one if value_before == "1" else profile_zero
-
-    try:
         with feature_tier(instance, "1"):
             assert_experimental_change_is_blocked(
                 instance, f"DROP SETTINGS PROFILE {effective_profile}"
             )
             assert read_experimental_setting(instance, user) == value_before
-    finally:
-        drop_entities(instance, users=[user], profiles=profiles)
 
 
 def test_concurrent_access_changes_cannot_compose_a_restricted_setting(start_cluster):
@@ -1591,64 +1537,54 @@ def test_concurrent_access_changes_cannot_compose_a_restricted_setting(start_clu
 def test_moving_a_role_preserves_the_effective_setting(start_cluster):
     user = "tier_move_user"
     role = "tier_move_role"
-    drop_entities(instance, users=[user], roles=[role], storage="memory")
-    drop_entities(instance, roles=[role], storage="local_directory")
-
-    instance.query(f"CREATE USER {user} IN memory IDENTIFIED WITH no_password")
-    instance.query(
-        f"CREATE ROLE {role} IN memory SETTINGS {EXPERIMENTAL_SETTING} = 1"
-    )
-    instance.query(f"GRANT {role} TO {user}")
-    assert read_experimental_setting(instance, user) == "1"
-
-    try:
-        with feature_tier(instance, "1"):
-            output, error = instance.query_and_get_answer_with_error(
-                f"MOVE ROLE {role} TO local_directory"
+    with entities(instance, users=[user], roles=[role], storage="memory"):
+        with entities(instance, roles=[role], storage="local_directory"):
+            instance.query(f"CREATE USER {user} IN memory IDENTIFIED WITH no_password")
+            instance.query(
+                f"CREATE ROLE {role} IN memory SETTINGS {EXPERIMENTAL_SETTING} = 1"
             )
-            assert output == ""
-            assert error == "", error
+            instance.query(f"GRANT {role} TO {user}")
             assert read_experimental_setting(instance, user) == "1"
-            assert (
-                instance.query(
-                    f"SELECT storage FROM system.roles WHERE name = '{role}'"
-                ).strip()
-                == "local_directory"
-            )
-    finally:
-        drop_entities(instance, users=[user], roles=[role], storage="memory")
-        drop_entities(instance, roles=[role], storage="local_directory")
+
+            with feature_tier(instance, "1"):
+                output, error = instance.query_and_get_answer_with_error(
+                    f"MOVE ROLE {role} TO local_directory"
+                )
+                assert output == ""
+                assert error == "", error
+                assert read_experimental_setting(instance, user) == "1"
+                assert (
+                    instance.query(
+                        f"SELECT storage FROM system.roles WHERE name = '{role}'"
+                    ).strip()
+                    == "local_directory"
+                )
 
 
 def test_move_rolls_back_entities_removed_before_failure(start_cluster):
     role = "tier_move_rollback_role"
-    drop_entities(instance, roles=[role], storage="memory")
-    drop_entities(instance, roles=[role], storage="local_directory")
-    instance.query(f"CREATE ROLE {role} IN memory")
+    with entities(instance, roles=[role], storage="memory"):
+        with entities(instance, roles=[role], storage="local_directory"):
+            instance.query(f"CREATE ROLE {role} IN memory")
 
-    try:
-        output, error = instance.query_and_get_answer_with_error(
-            f"MOVE ROLE {role}, {role} TO local_directory"
-        )
-        assert output == ""
-        assert "After successfully removing 1/2" in error, error
-        assert (
-            instance.query(
-                f"SELECT storage FROM system.roles WHERE name = '{role}'"
-            ).strip()
-            == "memory"
-        )
-    finally:
-        drop_entities(instance, roles=[role], storage="memory")
-        drop_entities(instance, roles=[role], storage="local_directory")
+            output, error = instance.query_and_get_answer_with_error(
+                f"MOVE ROLE {role}, {role} TO local_directory"
+            )
+            assert output == ""
+            assert "After successfully removing 1/2" in error, error
+            assert (
+                instance.query(
+                    f"SELECT storage FROM system.roles WHERE name = '{role}'"
+                ).strip()
+                == "memory"
+            )
 
 
 def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster):
     user = "tier_config_user"
-    drop_entities(instance, users=[user], storage="local_directory")
-    assert read_experimental_setting(instance, user) == "0"
+    with entities(instance, users=[user], storage="local_directory"):
+        assert read_experimental_setting(instance, user) == "0"
 
-    try:
         instance.query(
             f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
             f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
@@ -1658,16 +1594,13 @@ def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster)
         ).splitlines()
         assert storages == ["local_directory", "users_xml"]
         assert read_experimental_setting(instance, user) == "1"
-    finally:
-        drop_entities(instance, users=[user], storage="local_directory")
 
 
 def test_shadowing_a_config_user_checks_feature_tier(start_cluster):
     user = CONFIG_EXPERIMENTAL_USER
-    drop_entities(instance, users=[user], storage="local_directory")
-    assert read_experimental_setting(instance, user) == "1"
+    with entities(instance, users=[user], storage="local_directory"):
+        assert read_experimental_setting(instance, user) == "1"
 
-    try:
         with feature_tier(instance, "1"):
             # The new user carries no settings, but it takes over the name and drops the EXPERIMENTAL
             # setting the config user resolves to.
@@ -1682,8 +1615,6 @@ def test_shadowing_a_config_user_checks_feature_tier(start_cluster):
                 == "0"
             )
         assert read_experimental_setting(instance, user) == "1"
-    finally:
-        drop_entities(instance, users=[user], storage="local_directory")
 
 
 def test_unshadowing_a_config_user_checks_feature_tier(start_cluster):
@@ -1715,24 +1646,20 @@ def test_unshadowing_a_config_user_checks_feature_tier(start_cluster):
 
 def test_moving_a_shadowing_user_checks_feature_tier(start_cluster):
     user = CONFIG_EXPERIMENTAL_USER
-    drop_entities(instance, users=[user], storage="local_directory")
-    drop_entities(instance, users=[user], storage="memory")
-    instance.query(
-        f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
+    with entities(instance, users=[user], storage="local_directory"):
+        with entities(instance, users=[user], storage="memory"):
+            instance.query(
+                f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
         f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
-    )
-    assert read_experimental_setting(instance, user) == "0"
-
-    try:
-        with feature_tier(instance, "1"):
-            # `memory` is looked up after `users_xml`, so the move exposes the config user again.
-            assert_experimental_change_is_blocked(
-                instance, f"MOVE USER {user} TO memory"
             )
-        assert read_experimental_setting(instance, user) == "0"
-    finally:
-        drop_entities(instance, users=[user], storage="local_directory")
-        drop_entities(instance, users=[user], storage="memory")
+            assert read_experimental_setting(instance, user) == "0"
+
+            with feature_tier(instance, "1"):
+                # `memory` is looked up after `users_xml`, so the move exposes the config user again.
+                assert_experimental_change_is_blocked(
+                    instance, f"MOVE USER {user} TO memory"
+                )
+            assert read_experimental_setting(instance, user) == "0"
 
 
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
@@ -1757,27 +1684,22 @@ def test_const_constraint_is_sticky_when_previous_constraints_are_kept(start_clu
     user = "tier_legacy_constraint_user"
     base_profile = "tier_legacy_constraint_base"
     profile = "tier_legacy_constraint_profile"
-    profiles = [base_profile, profile]
-    drop_entities(node, users=[user], profiles=profiles)
-
-    node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
-    node.query(
-        f"CREATE SETTINGS PROFILE {base_profile} "
+    with entities(node, users=[user], profiles=[base_profile, profile]):
+        node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+        node.query(
+            f"CREATE SETTINGS PROFILE {base_profile} "
         f"SETTINGS {EXPERIMENTAL_SETTING} = 0 CONST"
-    )
-    node.query(
-        f"CREATE SETTINGS PROFILE {profile} SETTINGS INHERIT {base_profile}, "
-        f"{EXPERIMENTAL_SETTING} = 0 WRITABLE TO {user}"
-    )
+        )
+        node.query(
+            f"CREATE SETTINGS PROFILE {profile} SETTINGS INHERIT {base_profile}, "
+            f"{EXPERIMENTAL_SETTING} = 0 WRITABLE TO {user}"
+        )
 
-    try:
         with feature_tier(node, "1"):
             assert_experimental_change_is_blocked(
                 node,
                 f"ALTER SETTINGS PROFILE {profile} DROP PROFILES {base_profile}",
             )
-    finally:
-        drop_entities(node, users=[user], profiles=profiles)
 
 
 def test_restore_access_entities_checks_feature_tier(start_cluster):
@@ -1812,9 +1734,7 @@ def test_restore_replaces_user_from_readonly_storage(start_cluster):
     user = "tier_config_user"
     backup_name = f"tier_restore_collision_{uuid.uuid4().hex}"
     backup = f"Disk('backups', '{backup_name}')"
-    drop_entities(instance, users=[user], storage="local_directory")
-
-    try:
+    with entities(instance, users=[user], storage="local_directory"):
         instance.query(
             f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
             f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
@@ -1833,8 +1753,6 @@ def test_restore_replaces_user_from_readonly_storage(start_cluster):
             == ["local_directory", "users_xml"]
         )
         assert read_experimental_setting(instance, user) == "1"
-    finally:
-        drop_entities(instance, users=[user], storage="local_directory")
 
 
 def test_replicated_update_reapplies_after_version_conflict(start_cluster):
@@ -1968,15 +1886,14 @@ def test_replicas_cannot_commit_two_halves_of_restricted_change(start_cluster):
 def test_compatibility_skips_settings_of_a_disabled_tier(start_cluster):
     users = ["tier_compatibility_user"]
     assert "0" == get_current_tier_value(instance)
-    drop_entities(instance, users=users)
-    query = (
-        f"SELECT getSetting('{COMPATIBILITY_EXPERIMENTAL_SETTING}'), "
+    with entities(instance, users=users):
+        query = (
+            f"SELECT getSetting('{COMPATIBILITY_EXPERIMENTAL_SETTING}'), "
         f"getSetting('{COMPATIBILITY_PRODUCTION_SETTING}')"
-    )
-    old_compatibility = " SETTINGS compatibility = '23.6'"
-    assert instance.query(query + old_compatibility) == "1\t0\n"
+        )
+        old_compatibility = " SETTINGS compatibility = '23.6'"
+        assert instance.query(query + old_compatibility) == "1\t0\n"
 
-    try:
         with feature_tier(instance, "1"):
             # The EXPERIMENTAL setting keeps its value, while the PRODUCTION one still follows `compatibility`.
             assert instance.query(query + old_compatibility) == "0\t0\n"
@@ -1988,5 +1905,3 @@ def test_compatibility_skips_settings_of_a_disabled_tier(start_cluster):
             assert instance.query(query, user=users[0]) == "0\t0\n"
 
         assert instance.query(query, user=users[0]) == "1\t0\n"
-    finally:
-        drop_entities(instance, users=users)
