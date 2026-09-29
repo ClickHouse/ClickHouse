@@ -269,6 +269,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
     REGULAR(iceberg_catalog_commit_response_lost) \
     ONCE(iceberg_catalog_commit_superseded) \
+    REGULAR(iceberg_catalog_commit_stale_parent) \
     REGULAR(iceberg_catalog_commit_reconcile_fail) \
     REGULAR(iceberg_catalog_commit_reconcile_throw) \
     REGULAR(iceberg_catalog_commit_transport_fail) \

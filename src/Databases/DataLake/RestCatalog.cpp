@@ -79,7 +79,9 @@ namespace DB::FailPoints
     extern const char check_database_datalake_negative[];
     extern const char iceberg_catalog_commit_response_lost[];
     extern const char iceberg_catalog_commit_superseded[];
+    extern const char iceberg_catalog_commit_stale_parent[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
+    extern const char iceberg_catalog_commit_reconcile_throw[];
     extern const char iceberg_catalog_commit_transport_fail[];
     extern const char iceberg_catalog_commit_transport_net_fail[];
     extern const char iceberg_catalog_commit_rejected[];
@@ -2013,6 +2015,11 @@ bool RestCatalog::tableHasSnapshot(const std::string & namespace_name, const std
 
     try
     {
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_throw,
+        {
+            throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected read-back failure");
+        });
+
         auto buf = createReadBuffer(
             *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
         if (buf->eof())
@@ -2076,6 +2083,12 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             if (parent_snapshot_id != -1)
                 requirement->set("snapshot-id", parent_snapshot_id);
         }
+
+        /// Models a commit the catalog refuses because `main` is not at the parent it asserts.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_stale_parent,
+        {
+            requirement->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
+        });
 
         Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
         requirements->add(requirement);
