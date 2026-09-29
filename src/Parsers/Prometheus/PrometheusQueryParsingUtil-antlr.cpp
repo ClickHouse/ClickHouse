@@ -144,8 +144,8 @@ namespace
         std::unique_ptr<antlr4::Token> nextToken() override
         {
             auto next_token = PromQLLexer::nextToken();
-            /// Like in Prometheus, any name followed by '(' is a function name.
-            if (next_token->getType() == METRIC_NAME && isFollowedByLeftParen())
+            /// Like in Prometheus, a name without ':' followed by '(' is a function name.
+            if (next_token->getType() == METRIC_NAME && !next_token->getText().contains(':') && isFollowedByLeftParen())
                 static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
 
             if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())

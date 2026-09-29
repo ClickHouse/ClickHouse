@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- A name followed by '(' is a function name, any other name is a metric name.
+-- A name without ':' followed by '(' is a function name, any other name is a metric name.
 
 DROP TABLE IF EXISTS prometheus;
 
@@ -25,6 +25,7 @@ SELECT * FROM prometheusQuery('prometheus', 'min_of (1, 2)', 110);
 
 SELECT '-- unknown functions';
 SELECT * FROM prometheusQuery('prometheus', 'foo_bar(rate)', 110); -- { serverError UNKNOWN_FUNCTION }
+SELECT * FROM prometheusQuery('prometheus', 'foo_bar (rate)', 110); -- { serverError UNKNOWN_FUNCTION }
 SELECT * FROM prometheusQuery('prometheus', 'Rate(rate[1m])', 110); -- { serverError UNKNOWN_FUNCTION }
 SELECT * FROM prometheusQuery('prometheus', 'info(rate)', 110); -- { serverError NOT_IMPLEMENTED }
 

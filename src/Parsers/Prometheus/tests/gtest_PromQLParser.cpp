@@ -1927,7 +1927,7 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
 
 TEST(PromQLParser, FunctionNames)
 {
-    /// Any name followed by '(' is a function name, even an unknown one.
+    /// Any name without ':' followed by '(' is a function name, even an unknown one.
     EXPECT_EQ(parse("foo_bar(x)"), R"(
 foo_bar(x)
 
@@ -1953,4 +1953,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     expectRoundTrip(R"(time{job="x"} + rate)", R"(time{job="x"} + rate)");
+
+    /// A name with ':' cannot be called.
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = 0;
+    EXPECT_FALSE(query_tree.tryParse("foo:bar(x)", 3, &error_message, &error_pos));
+    EXPECT_FALSE(error_message.empty());
 }
