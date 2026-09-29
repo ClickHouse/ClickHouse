@@ -195,6 +195,9 @@ private:
     /// equals zero creates object with deduplication window equals zero.
     void loadDeduplicationLog();
 
+    /// Remove the block ids of parts whose data is discarded from the deduplication log.
+    void dropDeduplicationLogParts(const DataPartsVector & parts);
+
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.

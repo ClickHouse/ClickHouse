@@ -1,0 +1,6 @@
+replace	1	1
+replace	1	2
+replace	2	1
+move	1	1
+move	2	1
+truncate in a transaction	1

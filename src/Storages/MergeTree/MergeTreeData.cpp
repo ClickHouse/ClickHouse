@@ -7602,9 +7602,13 @@ void MergeTreeData::removePartsFromWorkingSet(
 }
 
 
-void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
+DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
-    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
+    DataPartsVector removed_active_parts;
+    for (const auto & part : removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true))
+        if (auto active_part = part.getPartIfItWasActive())
+            removed_active_parts.push_back(std::move(active_part));
+    return removed_active_parts;
 }
 
 void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
