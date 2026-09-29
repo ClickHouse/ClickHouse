@@ -1021,6 +1021,7 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
     for (const auto & action_json : *actions)
     {
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+        /// Only validates `retry`: an invalid value throws here, so the command is rejected before any of its actions is executed.
         (void)getRetryCount(action_obj);
         if (action_obj->has("remove_members"))
         {
