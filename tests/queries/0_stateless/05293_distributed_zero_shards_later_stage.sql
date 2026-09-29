@@ -45,6 +45,8 @@ SELECT count() FROM zero_shards_dist WHERE 0 SETTINGS distributed_group_by_no_me
 SELECT count() FROM zero_shards_dist WHERE x = 1 AND x = 2 SETTINGS distributed_group_by_no_merge = 1;
 SELECT count(), sum(x) FROM zero_shards_dist_over_dist WHERE 0;
 SELECT sum(b) FROM zero_shards_dist_over_dist WHERE 0;
+-- The inner read must skip every shard; with serialize_query_plan = 1 a remote shard rebuilds it without the WHERE.
+SELECT count(), sum(b) FROM zero_shards_dist_over_dist WHERE 0 SETTINGS force_optimize_skip_unused_shards = 1, serialize_query_plan = 0;
 SELECT count(), sum(x) FROM zero_shards_dist_over_dist WHERE 0 SETTINGS optimize_skip_unused_shards = 0;
 SELECT b FROM zero_shards_dist WHERE x = 7 SETTINGS distributed_group_by_no_merge = 1;
 SELECT count(), sum(b) FROM zero_shards_dist WHERE 0;
