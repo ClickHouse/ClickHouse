@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-random-merge-tree-settings
+# The part size checks compare compressed layouts, which the randomized codec, serialization versions
+# and part storage type perturb more than the layout itself does.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # only once the block reached min_compress_block_size, so small substreams keep sharing a block. Measures
 # the decompressed size through query_log ProfileEvents, which also works on object storage.
 
-# $1 table, $2 columns, $3 compress_per_substream_in_compact_parts, $4 min_compress_block_size, $5 row expression
+# $1 table, $2 columns, $3 compress_per_substream_in_compact_parts, $4 min_compress_block_size,
+# $5 row expression, $6 compress_per_column_in_compact_parts
 create_and_fill()
 {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $1"
@@ -17,7 +21,7 @@ create_and_fill()
     SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
         index_granularity = 8192, index_granularity_bytes = 1073741824,
         min_compress_block_size = $4, max_compress_block_size = 1048576,
-        write_marks_for_substreams_in_compact_parts = 1, compress_per_column_in_compact_parts = 1,
+        write_marks_for_substreams_in_compact_parts = 1, compress_per_column_in_compact_parts = $6,
         compress_per_substream_in_compact_parts = $3"
     $CLICKHOUSE_CLIENT -q "INSERT INTO $1 SELECT $5 FROM numbers(16384)"
 }
@@ -44,8 +48,8 @@ part_size()
 # A subcolumn read must not decompress the column's large substreams.
 BIG_COLUMNS="t Tuple(big String, small String), arr Array(String)"
 BIG_ROW="(hex(randomString(250)), toString(number % 100)), arrayMap(i -> hex(randomString(50)), range(5))"
-create_and_fill big_on "$BIG_COLUMNS" 1 65536 "$BIG_ROW"
-create_and_fill big_off "$BIG_COLUMNS" 0 65536 "$BIG_ROW"
+create_and_fill big_on "$BIG_COLUMNS" 1 65536 "$BIG_ROW" 1
+create_and_fill big_off "$BIG_COLUMNS" 0 65536 "$BIG_ROW" 1
 
 for read_expr in "sum(length(t.small))" "sum(arr.size0)"; do
     on=$(read_bytes big_on "$read_expr" "on_${read_expr}")
@@ -53,6 +57,14 @@ for read_expr in "sum(length(t.small))" "sum(arr.size0)"; do
     [ "$off" -ge $((on * 5)) ] && echo "selective_read $read_expr OK" \
         || echo "selective_read $read_expr FAIL (on=$on off=$off)"
 done
+
+# compress_per_column_in_compact_parts = 0 keeps all streams sharing a codec in one block per granule,
+# so substream boundaries must not be cut either.
+create_and_fill percol0_on "$BIG_COLUMNS" 1 65536 "$BIG_ROW" 0
+create_and_fill percol0_off "$BIG_COLUMNS" 0 65536 "$BIG_ROW" 0
+p_on=$(read_bytes percol0_on "sum(length(t.small))" percol0_on)
+p_off=$(read_bytes percol0_off "sum(length(t.small))" percol0_off)
+[ "$p_on" -eq "$p_off" ] && echo "per_column_optout OK" || echo "per_column_optout FAIL (on=$p_on off=$p_off)"
 
 # Many small substreams must keep sharing a block: cutting at every boundary (min_compress_block_size = 1)
 # makes the same read touch a much smaller block and costs storage.
@@ -63,9 +75,9 @@ for i in $(seq 0 19); do
     small_row="$small_row${small_row:+, }toUInt8(number + $i)"
 done
 
-create_and_fill small_adaptive "t Tuple($small_columns)" 1 65536 "tuple($small_row)"
-create_and_fill small_every "t Tuple($small_columns)" 1 1 "tuple($small_row)"
-create_and_fill small_off "t Tuple($small_columns)" 0 65536 "tuple($small_row)"
+create_and_fill small_adaptive "t Tuple($small_columns)" 1 65536 "tuple($small_row)" 1
+create_and_fill small_every "t Tuple($small_columns)" 1 1 "tuple($small_row)" 1
+create_and_fill small_off "t Tuple($small_columns)" 0 65536 "tuple($small_row)" 1
 
 adaptive=$(read_bytes small_adaptive "sum(t.c0)" adaptive)
 every=$(read_bytes small_every "sum(t.c0)" every)
@@ -84,4 +96,4 @@ $CLICKHOUSE_CLIENT -q "
 SELECT if((SELECT sum(cityHash64(t.c0, t.c7, t.c19)) FROM small_adaptive)
         = (SELECT sum(cityHash64(t.c0, t.c7, t.c19)) FROM small_off), 'subcolumn_values OK', 'subcolumn_values FAIL')"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE big_on, big_off, small_adaptive, small_every, small_off"
+$CLICKHOUSE_CLIENT -q "DROP TABLE big_on, big_off, percol0_on, percol0_off, small_adaptive, small_every, small_off"
