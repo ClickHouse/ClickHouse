@@ -310,6 +310,8 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
         PaddedPODArray<Key> chunk_keys;
         for (size_t i = num_grouped_chunks; i < chunks.size(); ++i)
         {
+            if (last && isCancelled())
+                return;
             const size_t num_rows = chunks[i].getNumRows();
             Columns chunk_key_holders;
             const auto key_columns = getKeyColumns(chunks[i].getColumns(), single_string_key ? key_holders.emplace_back() : chunk_key_holders);
@@ -375,6 +377,8 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
 
     for (size_t bucket = 0; bucket < num_buckets; ++bucket)
     {
+        if (last && isCancelled())
+            return;
         if (!last)
         {
             /// The partitions of the deferred rows must be remembered, so they are put into the table of all of them.
@@ -443,6 +447,8 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     size_t deferred_row = 0;
     for (; num_grouped_chunks < chunks.size(); ++num_grouped_chunks)
     {
+        if (last && isCancelled())
+            return;
         auto & chunk = chunks[num_grouped_chunks];
         const size_t num_rows = chunk.getNumRows();
         auto chunk_groups = ColumnUInt32::create(num_rows);
@@ -723,6 +729,9 @@ Chunk PartitionAggregateTransform::generate()
     if (!results_ready)
     {
         groupChunks(/*last=*/ true);
+        /// `groupChunks` stops early if the query is cancelled, and then there is nothing to output.
+        if (isCancelled())
+            return {};
 
         /// With two rows or less in each group, the results are taken for each row from the states, instead of
         /// being taken for each group and then copied to the rows, which takes more memory. The rows of partitions
@@ -732,6 +741,8 @@ Chunk PartitionAggregateTransform::generate()
         {
             for (size_t i = 0; i < functions.size(); ++i)
             {
+                if (isCancelled())
+                    return {};
                 auto column = functions[i].aggregate_function->getResultType()->createColumn();
                 insertResults(i, places.data(), places.size(), *column);
                 results.push_back(std::move(column));

@@ -102,7 +102,8 @@ private:
     /// The key of a row, serialized into `pool` unless it is one `String`.
     std::string_view getSerializedKey(size_t row, const ColumnRawPtrs & key_columns, Arena & pool) const;
     /// Assigns the partitions of the rows of the buffered chunks that do not have them yet and aggregates them.
-    /// If `last`, no more rows come, and the partitions of the deferred rows do not have to be remembered.
+    /// If `last`, no more rows come, and the partitions of the deferred rows do not have to be remembered; the grouping
+    /// then stops early if the query is cancelled.
     void groupChunks(bool last);
     template <typename Map>
     void addGroups(Map & map, size_t num_rows, const ColumnRawPtrs & key_columns, UInt32 * group_data);
