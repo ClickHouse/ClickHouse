@@ -251,8 +251,7 @@ public:
     std::vector<size_t> partition_by_indices;
     // Indices of the ORDER BY columns in block;
     std::vector<size_t> order_by_indices;
-    // Whether any ORDER BY key has a collator. When false, peers are compared with the plain
-    // per-column fast paths.
+    // Whether any ORDER BY key has a collator; if not, peers use the per-column fast paths.
     bool have_order_by_collation = false;
 
     // Which input columns we actually read while computing the window functions: the PARTITION BY
