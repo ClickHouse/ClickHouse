@@ -25,9 +25,7 @@ void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
     if (!isCancelled())
         query_result_cache_writer->finalizeWrite();
-
-    /// Release regardless of cancellation: the subquery's execution (successful or not) is over either way, so
-    /// any query waiting on this herd token should stop waiting and re-probe the cache.
+    
     if (herd_token_holder)
         herd_token_holder->release();
 }

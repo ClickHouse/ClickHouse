@@ -2656,12 +2656,11 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    /// Avoid the "thundering herd" effect for this subquery, the same way executeQuery() does for the top-level
-    /// query (see there for a detailed explanation). herd_token_holder is a plain local RAII object: as long as
+    /// Avoid the "thundering herd" effect for this subquery. herd_token_holder is a plain local RAII object: as long as
     /// it is not explicitly moved into a StreamInQueryResultCacheStep further below, any return/exception between
     /// here and the end of this function releases the token via its destructor.
     /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in), skip
-    /// the context flag check while still respecting safety checks - same condition used for the write path below.
+    /// the context flag check while still respecting safety checks for same condition used for the write path below.
     bool skip_context_check_for_herd = should_cache && !can_use_query_result_cache;
     QueryResultCacheHerdTokenHolder herd_token_holder;
     if (should_cache)
@@ -2669,13 +2668,8 @@ void Planner::buildPlanForQueryNode()
         const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
         if (herd_wait_timeout.count() > 0
             && settings[Setting::enable_reads_from_query_cache]
-            /// See the identical condition in executeQuery() for why min_query_runs/min_query_duration must be
-            /// zero for coalescing to be worthwhile at all.
             && settings[Setting::query_cache_min_query_runs] == 0
             && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
-            /// throw_on_error=false: only a cheap, speculative probe of write-eligibility to decide whether
-            /// coalescing is worthwhile. The authoritative, throwing check happens at the write site below,
-            /// completely unaffected by this probe.
             && checkCanWriteQueryResultCache(ast, query_context, skip_context_check_for_herd, /*throw_on_error=*/ false))
         {
             QueryResultCache::Key coalescing_probe_key(
@@ -2694,11 +2688,7 @@ void Planner::buildPlanForQueryNode()
                 return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
             };
 
-            /// Retry loop, bounded by the overall herd_wait_timeout budget - see the identical loop and its
-            /// comment in executeQuery() for the full explanation. In short: a query that loses the race to take
-            /// over as executor must rejoin the herd by waiting on the new executor's token instead of planning
-            /// this subquery independently and uncoalesced, or a single executor timing out/dying could turn
-            /// into a "mini thundering herd" of duplicate, uncoalesced subquery executions.
+            /// Retry loop, bounded by the overall herd_wait_timeout budget
             const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
             QueryResultCache::HerdTokenPtr herd_token;
             while (true)

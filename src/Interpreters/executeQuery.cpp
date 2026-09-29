@@ -3107,10 +3107,7 @@ static BlockIO executeQueryImpl(
 
             if (!served_from_query_result_cache)
             {
-                /// Avoid the "thundering herd" effect: if many concurrent, identical queries miss the query result
-                /// cache at the same time, only one of them (the "executor") actually computes the result; the
-                /// others wait for it to finish and then re-probe the cache instead of redundantly computing the
-                /// same, potentially expensive, result themselves.
+                /// Avoid the "thundering herd" effect.
                 const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
                 if (can_use_query_result_cache && herd_wait_timeout.count() > 0
                     && settings[Setting::enable_reads_from_query_cache]
@@ -3123,10 +3120,8 @@ static BlockIO executeQueryImpl(
                     /// only coalesce when the executor is unconditionally going to attempt the write.
                     && settings[Setting::query_cache_min_query_runs] == 0
                     && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
-                    /// throw_on_error=false: only a cheap, speculative probe of write-eligibility to decide whether
-                    /// coalescing is worthwhile at all. If it is not (e.g. the query touches a system table and
-                    /// query_cache_system_table_handling='throw'), the authoritative, throwing check further below
-                    /// (after the query has actually run) is completely unaffected by this probe.
+                    /// Speculatively check write-eligibility (`throw_on_error=false`) to determine if coalescing makes sense.
+                    /// Ineligible queries bypass coalescing safely; the authoritative post-execution error check remains unaffected.
                     && checkCanWriteQueryResultCache(out_ast, context, /*skip_context_check=*/ false, /*throw_on_error=*/ false))
                 {
                     QueryResultCache::Key coalescing_probe_key(
@@ -3145,15 +3140,8 @@ static BlockIO executeQueryImpl(
                         return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
                     };
 
-                    /// Retry loop, bounded by the overall herd_wait_timeout budget: a query that loses the race to
-                    /// take over as executor (tryBecomeHerdExecutor() returns nullptr because another concurrent
-                    /// query just became the new executor) must not fall through to independent, uncoalesced
-                    /// execution - it rejoins the herd by waiting on that new executor's token instead. Without
-                    /// this loop, a single executor timing out or dying could make every one of its waiters
-                    /// execute the query independently instead of exactly one of them taking over ("mini
-                    /// thundering herd"). The loop only truly gives up once the whole configured timeout budget
-                    /// is exhausted, at which point falling through and executing independently and uncoalesced
-                    /// is the correct, deliberate last resort, exactly as if this feature did not exist.
+                    /// Bound by `herd_wait_timeout`, this loop forces queries that lose the race to become
+                    /// executor (`tryBecomeHerdExecutor() == nullptr`) to rejoin the herd rather than fall through.Prevents a mini thundering herd
                     const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
                     QueryResultCache::HerdTokenPtr herd_token;
                     while (true)
@@ -3168,8 +3156,7 @@ static BlockIO executeQueryImpl(
                         if (herd_token)
                             break;
 
-                        /// We waited rather than became the executor. Distinguish "waited and gave up/got woken"
-                        /// from "was cancelled while waiting" exactly as the query would be without coalescing.
+                        /// Wait rather than became the executor.
                         if (herd_wait_process_list_elem)
                             herd_wait_process_list_elem->throwIfKilled();
 
@@ -3177,14 +3164,10 @@ static BlockIO executeQueryImpl(
                         if (served_from_query_result_cache)
                             break;
 
-                        /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or the
-                        /// cache may have been cleared in the meantime. Try to take over as executor.
+                        /// Still a miss. Try to take over as executor.
                         herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, context->getCurrentQueryId());
                         if (herd_token)
                             break;
-
-                        /// Lost the takeover race to yet another concurrent query: loop back and wait on its new
-                        /// token instead of executing independently, as long as the overall budget allows.
                     }
 
                     if (herd_token)
