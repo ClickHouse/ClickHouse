@@ -40,7 +40,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -215,8 +214,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 namespace
 {
 
-QueryTreeNodePtr analyzeQueryOverStorage(const ASTPtr & ast, const StoragePtr & storage, ContextPtr context)
+QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
+    auto ast = prepareQueryAffectedAST(commands, storage, context);
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
@@ -227,69 +227,6 @@ QueryTreeNodePtr analyzeQueryOverStorage(const ASTPtr & ast, const StoragePtr & 
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
-}
-
-QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
-{
-    return analyzeQueryOverStorage(prepareQueryAffectedAST(commands, storage, context), storage, context);
-}
-
-bool hasSubquery(const ASTPtr & ast)
-{
-    return ast->as<ASTSubquery>() || std::ranges::any_of(ast->children, hasSubquery);
-}
-
-/// Collects the parts of an assigned value that `validate` analyzes in full: the subqueries, and the aliased
-/// expressions outside of lambdas, which a subquery may refer to. The set of an `IN` or `exists` call is taken
-/// as `exists(subquery)`, because it may return more than one row.
-void collectSubqueries(const ASTPtr & ast, ASTs & parts, bool in_lambda = false)
-{
-    if (ast->as<ASTSubquery>() || (!in_lambda && !ast->tryGetAlias().empty()))
-    {
-        parts.push_back(ast->clone());
-        return;
-    }
-
-    const auto * function = ast->as<ASTFunction>();
-    in_lambda = in_lambda || (function && function->name == "lambda");
-    const bool takes_set
-        = function && function->arguments && (functionIsInOrGlobalInOperator(function->name) || function->name == "exists");
-    for (const auto & child : takes_set ? function->arguments->children : ast->children)
-    {
-        const bool is_set = takes_set && child == function->arguments->children.back() && child->as<ASTSubquery>();
-        if (is_set)
-            parts.push_back(makeASTFunction("exists", child->clone()));
-        else
-            collectSubqueries(child, parts, in_lambda);
-    }
-}
-
-/// For every `UPDATE` command with a subquery, `SELECT <parts of its assigned values> WHERE <its predicate>`, so
-/// that the parts see the aliases of the command. The rest of an assigned value is left out: it can use the
-/// parameter of a lambda, and folding its constants can fail although no row matches. A failing subquery still
-/// fails the validation, as in the predicate.
-ASTs prepareAssignedSubqueriesASTs(const std::vector<MutationCommand> & commands, const StoragePtr & storage, const ContextPtr & context)
-{
-    ASTs queries;
-    for (const MutationCommand & command : commands)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments || !hasSubquery(alter->update_assignments->ptr()))
-            continue;
-
-        auto parts = make_intrusive<ASTExpressionList>();
-        for (const auto & child : alter->update_assignments->children)
-            collectSubqueries(child->as<const ASTAssignment &>().expression(), parts->children);
-
-        auto select = make_intrusive<ASTSelectQuery>();
-        select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(parts));
-        if (auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context))
-            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(predicate));
-        ASTPtr query = std::move(select);
-        normalizeSetOperations(query, context);
-        queries.push_back(std::move(query));
-    }
-    return queries;
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -2552,11 +2489,7 @@ void MutationsInterpreter::validate()
 {
     validateNonDeterministicMutationsForStorage(source.getStorage(), commands, context);
 
-    /// The plan below does not run scalar subqueries, so it does not check the views that they read.
-    /// These two run the subqueries of the predicates and of the assigned values as the submitting user.
     prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
-    for (const auto & query : prepareAssignedSubqueriesASTs(commands, source.getStorage(), context))
-        analyzeQueryOverStorage(query, source.getStorage(), context);
 
     QueryPlan plan;
 

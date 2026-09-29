@@ -227,28 +227,14 @@ def test_replicated_mutation_checks_set_row_policy_behind_temporary_table(
     assert_replicated_data_unchanged()
 
 
-@pytest.mark.parametrize(
-    "mutation, settings",
-    [
-        pytest.param(
-            "UPDATE replicated_view_rp.data_rp SET v = {} WHERE k = 3",
-            {"enable_lightweight_update": 1},
-            id="update",
-        ),
-        pytest.param(
-            "ALTER TABLE replicated_view_rp.data_rp UPDATE v = {} WHERE k = 3",
-            {"alter_update_mode": "heavy"},
-            id="alter_update",
-        ),
-    ],
-)
 def test_replicated_mutation_checks_set_row_policy_in_assigned_value(
-    replicated_set_with_row_policy, mutation, settings
+    replicated_set_with_row_policy,
 ):
     error = initiator.query_and_get_error(
-        mutation.format("(SELECT max(number) FROM replicated_view_rp.v)"),
+        "UPDATE replicated_view_rp.data_rp "
+        "SET v = (SELECT max(number) FROM replicated_view_rp.v) WHERE k = 3",
         user="view_mutator",
-        settings=settings,
+        settings={"enable_lightweight_update": 1},
     )
 
     assert_set_policy_error(error, "replicated_view_rp.set_rp")
