@@ -306,6 +306,11 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
     /// Replace `length(argument)` with `argument.size`.
     /// `argument` is String.
 
+    /// Guard the transformer itself: both size-only and full-read uses must
+    /// evaluate the String after pending on-fly UPDATEs, not its stored size.
+    if (ctx.context->getSettingsRef()[Setting::apply_mutations_on_fly])
+        return;
+
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
@@ -319,6 +324,11 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
     /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
     /// `argument` is String.
+
+    /// Guard the transformer itself: both size-only and full-read uses must
+    /// evaluate the String after pending on-fly UPDATEs, not its stored size.
+    if (ctx.context->getSettingsRef()[Setting::apply_mutations_on_fly])
+        return;
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
@@ -924,7 +934,7 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// skip index on that subcolumn prune granules), while the full column is still
 /// read for matching rows in SELECT. String rewrites additionally require
 /// `optimize_string_size_subcolumn_with_full_read` because splitting reads may add work
-/// when the size filter does not reject whole granules. The full-read exception is also disabled
+/// when the size filter does not reject whole granules. All String size rewrites are disabled
 /// for on-fly mutations: a pending UPDATE can change the String while its stored `.size` still
 /// describes the pre-mutation value. For legacy String parts where .size is virtual,
 /// the MergeTree read planner co-reads the parent String in PREWHERE to avoid
@@ -983,7 +993,7 @@ void optimizeJSONArrayElement(
     /// Collect field names from the tupleElement chain (outer to inner).
     std::vector<String> field_names;
 
-    /// The outermost tupleElement is function_node itself.
+    /// The outermost function is function_node itself.
     {
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)

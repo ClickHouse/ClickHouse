@@ -1,4 +1,6 @@
 -- Keep mutations pending so the reader applies them before PREWHERE.
+SET enable_analyzer = 1;
+SET optimize_empty_string_comparisons = 1;
 SET mutations_sync = 0;
 SET apply_mutations_on_fly = 1;
 SET optimize_move_to_prewhere = 0;
@@ -53,6 +55,50 @@ SELECT id, s FROM test_string_filter_mutations PREWHERE notEmpty(s) ORDER BY id;
 
 SELECT 'full-read length filter sees chained updates';
 SELECT id, s FROM test_string_filter_mutations PREWHERE length(s) = 3 ORDER BY id;
+
+-- These uses are eligible through `everywhere`, not the full-read exception.
+-- Check the plans as well as results so a mutation guard cannot silently cover
+-- only `filter_only`. Neither value of the full-read opt-in may bypass it.
+SELECT 'size-only rewrites are disabled with pending updates';
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT length(s), empty(s), notEmpty(s) FROM test_string_filter_mutations
+    SETTINGS optimize_string_size_subcolumn_with_full_read = 0);
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT length(s), empty(s), notEmpty(s) FROM test_string_filter_mutations
+    SETTINGS optimize_string_size_subcolumn_with_full_read = 1);
+
+SELECT 'size-only projection sees chained updates without full-read opt-in';
+SELECT id, length(s), empty(s), notEmpty(s)
+FROM test_string_filter_mutations ORDER BY id
+SETTINGS optimize_string_size_subcolumn_with_full_read = 0;
+
+SELECT 'size-only projection sees chained updates with full-read opt-in';
+SELECT id, length(s), empty(s), notEmpty(s)
+FROM test_string_filter_mutations ORDER BY id;
+
+SELECT 'size-only PREWHERE filters see updated values';
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT id FROM test_string_filter_mutations PREWHERE empty(s));
+SELECT id FROM test_string_filter_mutations PREWHERE empty(s) ORDER BY id;
+SELECT id FROM test_string_filter_mutations PREWHERE notEmpty(s) ORDER BY id;
+SELECT id FROM test_string_filter_mutations PREWHERE length(s) = 3 ORDER BY id;
+
+SELECT 'size-only WHERE comparisons see updated values';
+SELECT id FROM test_string_filter_mutations WHERE s = '' ORDER BY id
+SETTINGS optimize_string_size_subcolumn_with_full_read = 0;
+SELECT id FROM test_string_filter_mutations WHERE s != '' ORDER BY id
+SETTINGS optimize_string_size_subcolumn_with_full_read = 0;
+
+-- The guard must not disable ordinary size-only optimization in a query-level
+-- context with on-fly mutations disabled, even if the session enables them.
+SELECT 'size-only rewrites remain available without on-fly mutations';
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT length(s), empty(s), notEmpty(s) FROM test_string_filter_mutations
+    SETTINGS apply_mutations_on_fly = 0, optimize_string_size_subcolumn_with_full_read = 0);
 
 -- Explicit `s.size` mutation semantics are outside this optimization.
 -- Verify that the original on-disk values really are still present.

@@ -14,6 +14,50 @@ full-read nonempty filter sees updated values
 full-read length filter sees chained updates
 1	!xx
 5	!xx
+size-only rewrites are disabled with pending updates
+1
+1
+size-only projection sees chained updates without full-read opt-in
+0	0	1	0
+1	3	0	1
+2	4	0	1
+3	4	0	1
+4	0	1	0
+5	3	0	1
+6	4	0	1
+7	4	0	1
+size-only projection sees chained updates with full-read opt-in
+0	0	1	0
+1	3	0	1
+2	4	0	1
+3	4	0	1
+4	0	1	0
+5	3	0	1
+6	4	0	1
+7	4	0	1
+size-only PREWHERE filters see updated values
+1
+0
+4
+1
+2
+3
+5
+6
+7
+1
+5
+size-only WHERE comparisons see updated values
+0
+4
+1
+2
+3
+5
+6
+7
+size-only rewrites remain available without on-fly mutations
+1
 mutations remain pending
 0	old
 1	
