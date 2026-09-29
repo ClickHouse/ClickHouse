@@ -43,7 +43,7 @@ unsigned blocksFor(size_t work)
 void checkCount(size_t actual, size_t expected, const std::string & what)
 {
     if (actual != expected)
-        throwGPUError(std::to_string(actual) + " " + what + ", expected " + std::to_string(expected));
+        throwGPUError((std::to_string(actual) + " " + what + ", expected " + std::to_string(expected)).c_str());
 }
 
 void checkLaunch(const std::string & what)
@@ -82,7 +82,7 @@ Fold foldOf(const GPUGroupByValue & value)
         case GPUAggregationKind::Max:
             return is_float ? Fold::MaxFloat : (isSigned(value.element_type) ? Fold::MaxSigned : Fold::MaxUnsigned);
     }
-    throwGPUError("unknown aggregation " + std::to_string(static_cast<int>(value.aggregation)));
+    throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(value.aggregation))).c_str());
 }
 
 uint64_t identityOf(Fold fold)
@@ -138,9 +138,9 @@ struct Shape
         , values(values_.begin(), values_.end())
     {
         if (key_element_types.empty() || key_element_types.size() > max_group_by_keys)
-            throwGPUError("a `GROUP BY` of " + std::to_string(key_element_types.size()) + " keys on the device");
+            throwGPUError(("a `GROUP BY` of " + std::to_string(key_element_types.size()) + " keys on the device").c_str());
         if (values.empty() || values.size() > max_group_by_values)
-            throwGPUError("a `GROUP BY` of " + std::to_string(values.size()) + " aggregates on the device");
+            throwGPUError(("a `GROUP BY` of " + std::to_string(values.size()) + " aggregates on the device").c_str());
 
         for (const GPUElementType key_element_type : key_element_types)
         {
@@ -150,14 +150,14 @@ struct Shape
             key_bytes += sizeOf(key_element_type);
         }
         if (key_bytes > max_group_by_key_bytes)
-            throwGPUError("a `GROUP BY` on keys of " + std::to_string(key_bytes) + " bytes between them on the device");
+            throwGPUError(("a `GROUP BY` on keys of " + std::to_string(key_bytes) + " bytes between them on the device").c_str());
 
         folds.reserve(values.size());
         identities.count = static_cast<uint32_t>(values.size());
         for (size_t i = 0; i < values.size(); ++i)
         {
             if (values[i].aggregation == GPUAggregationKind::Sum && sizeOf(values[i].result_type) != 8)
-                throwGPUError("a sum into element type " + std::to_string(static_cast<int>(values[i].result_type)) + ", which is not eight bytes wide");
+                throwGPUError(("a sum into element type " + std::to_string(static_cast<int>(values[i].result_type)) + ", which is not eight bytes wide").c_str());
             folds.push_back(foldOf(values[i]));
             identities.values[i] = identityOf(folds.back());
         }
@@ -264,7 +264,7 @@ public:
         slots = set->ref(cuco::op::insert_and_find).storage_ref().data();
 
         if (capacity > max_capacity)
-            throwGPUError("a `GROUP BY` table of " + std::to_string(capacity) + " slots on the device");
+            throwGPUError(("a `GROUP BY` table of " + std::to_string(capacity) + " slots on the device").c_str());
 
         records.emplace((capacity + 1) * shape.values.size(), stream);
         accumulators = {.records = records->data(), .num_values = shape.numValues()};
@@ -506,7 +506,7 @@ struct RecordGroupBy::State
         const size_t requested
             = std::max({static_cast<size_t>(static_cast<double>(needed) / max_load) + 1, table.getCapacity() * 2, min_capacity});
         if (requested > max_capacity)
-            throwGPUError("a `GROUP BY` of " + std::to_string(needed) + " groups is too large for the device");
+            throwGPUError(("a `GROUP BY` of " + std::to_string(needed) + " groups is too large for the device").c_str());
 
         GroupTable larger(requested, shape, computeStream());
         if (table.exists())
@@ -598,7 +598,6 @@ struct RecordGroupBy::State
 
 RecordGroupBy::RecordGroupBy(GPUSpan<GPUElementType> key_element_types, GPUSpan<GPUGroupByValue> values)
 {
-    initializeCudf();
     state = guarded("setting up a `GROUP BY`", [&] { return new State(key_element_types, values); });
 }
 
@@ -700,7 +699,7 @@ void RecordGroupBy::copyGroupsOut(GPUSpan<HostColumnView> keys, GPUSpan<HostColu
     for (size_t i = 0; i < keys.size(); ++i)
     {
         if (keys[i].element_type != shape.key_element_types[i])
-            throwGPUError("key column " + std::to_string(i) + " is copied out into a column of another type");
+            throwGPUError(("key column " + std::to_string(i) + " is copied out into a column of another type").c_str());
         checkCount(keys[i].rows, state->output_groups, "rows of room for key column " + std::to_string(i));
 
         checkCuda(
@@ -711,7 +710,7 @@ void RecordGroupBy::copyGroupsOut(GPUSpan<HostColumnView> keys, GPUSpan<HostColu
     for (size_t i = 0; i < value_views.size(); ++i)
     {
         if (value_views[i].element_type != leftIn(shape.values[i]))
-            throwGPUError("value column " + std::to_string(i) + " is copied out into a column of another type");
+            throwGPUError(("value column " + std::to_string(i) + " is copied out into a column of another type").c_str());
         checkCount(value_views[i].rows, state->output_groups, "rows of room for value column " + std::to_string(i));
 
         checkCuda(

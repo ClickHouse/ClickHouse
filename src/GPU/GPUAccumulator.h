@@ -199,7 +199,7 @@ private:
 
     void copyVariableGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns);
 
-    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns, size_t num_rows);
+    void groupByVariable(const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns);
 
     const std::vector<GPUElementType> group_keys;
     const std::vector<GPUElementType> key_element_types;

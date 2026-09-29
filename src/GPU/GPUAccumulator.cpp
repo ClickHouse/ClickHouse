@@ -62,11 +62,7 @@ GPUAccumulator::GPUAccumulator(
     , aggregation(aggregation_)
     , element_size(sizeOf(element_type))
     , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
-    , reduction(onDevice(
-          [&] { return std::make_unique<CudfReduction>(element_type, result_type, aggregation); },
-          "Cannot set up a `{}` of {} on the device",
-          aggregationName(aggregation_),
-          argument_type.getName()))
+    , reduction(std::make_unique<CudfReduction>(element_type, result_type, aggregation))
 {
     const size_t stage_bytes = std::min(batch_bytes, max_stage_bytes);
     if (codec_)
@@ -125,7 +121,7 @@ void GPUAccumulator::reduceBatchOnDevice()
 
     const DeviceFixedColumn values = fixedOrThrow(pipe->flush().view());
 
-    onDevice([&] { reduction->addBatch(values); }, "Cannot reduce {} values by `{}` on a GPU", values.rows, aggregationName(aggregation));
+    reduction->addBatch(values);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, values.rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches, 1);
@@ -146,7 +142,7 @@ Field GPUAccumulator::finalize()
             element_size);
 
     Stopwatch watch;
-    const UInt64 bits = onDevice([&] { return reduction->finalize(); }, "Cannot read a `{}` back from a GPU", aggregationName(aggregation));
+    const UInt64 bits = reduction->finalize();
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
     switch (result_type)
@@ -315,18 +311,11 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , value_pipes(pipesFor(argument_types, batch_rows, compressed))
 {
     if (variable_key_indices.empty())
-        group_by = onDevice(
-            [&] { return std::make_unique<RecordGroupBy>(key_element_types, values); },
-            "Cannot set up a `GROUP BY` over {} keys on the device",
-            key_element_types.size());
+        group_by = std::make_unique<RecordGroupBy>(key_element_types, values);
     else
     {
         variable_group_stream = createStream();
-        variable_group_by = onDevice(
-            [&] { return std::make_unique<CudfGroupBy>(group_keys, values, rmm::cuda_stream_view{variable_group_stream.get()}); },
-            "Cannot set up a `GROUP BY` over {} keys, {} of them of variable width, on the device",
-            group_keys.size(),
-            variable_key_indices.size());
+        variable_group_by = std::make_unique<CudfGroupBy>(group_keys, values, rmm::cuda_stream_view{variable_group_stream.get()});
     }
 
     if (filter && !variable_key_indices.empty())
@@ -485,10 +474,9 @@ void GroupByGPUAccumulator::sendBatchToDevice()
 
     double kernel_microseconds = 0;
     if (variable_group_by)
-        groupByVariable(keys, value_columns, num_rows);
+        groupByVariable(keys, value_columns);
     else
-        kernel_microseconds = onDevice(
-            [&] { return group_by->addBatch(fixedColumnsOf(keys), value_columns, {}, nullptr); }, "Cannot group {} rows on the device", num_rows);
+        kernel_microseconds = group_by->addBatch(fixedColumnsOf(keys), value_columns, {}, nullptr);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -997,18 +985,12 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
             DeviceBuffer & rebased = reader.piece_offsets[next_variable];
             rebased.clear();
             auto * rebased_offsets = reinterpret_cast<uint64_t *>(rebased.grow((num_rows + 1) * sizeof(UInt64)));
-            onDevice(
-                [&]
-                {
-                    subtractFromOffsets(
-                        reinterpret_cast<const uint64_t *>(offsets.data) + reader.grouped_rows,
-                        num_rows + 1,
-                        first,
-                        rebased_offsets,
-                        StreamRegistry::get().compute);
-                },
-                "Cannot view the offsets of {} rows of a variable-width key from 0",
-                num_rows);
+            subtractFromOffsets(
+                reinterpret_cast<const uint64_t *>(offsets.data) + reader.grouped_rows,
+                num_rows + 1,
+                first,
+                rebased_offsets,
+                StreamRegistry::get().compute);
 
             keys.push_back(DeviceVariableColumn{
                 .offsets = rebased_offsets,
@@ -1036,12 +1018,9 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
 
     double kernel_microseconds = 0;
     if (variable_group_by)
-        groupByVariable(keys, value_columns, num_rows);
+        groupByVariable(keys, value_columns);
     else
-        kernel_microseconds = onDevice(
-            [&] { return group_by->addBatch(fixedColumnsOf(keys), value_columns, filter_columns, filter ? &*filter : nullptr); },
-            "Cannot group {} rows on the device",
-            num_rows);
+        kernel_microseconds = group_by->addBatch(fixedColumnsOf(keys), value_columns, filter_columns, filter ? &*filter : nullptr);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -1052,7 +1031,7 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
 }
 
 void GroupByGPUAccumulator::groupByVariable(
-    const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns, size_t num_rows)
+    const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns)
 {
     const rmm::cuda_stream_view compute = StreamRegistry::get().compute;
     const rmm::cuda_stream_view grouping = rmm::cuda_stream_view{variable_group_stream.get()};
@@ -1061,7 +1040,7 @@ void GroupByGPUAccumulator::groupByVariable(
     checkCuda(cudaEventRecord(filled.get(), compute), "Cannot mark a point in the compute stream");
     checkCuda(cudaStreamWaitEvent(grouping, filled.get(), 0), "Cannot make the grouping stream wait for the compute stream");
 
-    onDevice([&] { variable_group_by->addBatch(keys, value_columns); }, "Cannot group {} rows by variable-width keys on the device", num_rows);
+    variable_group_by->addBatch(keys, value_columns);
 
     const EventPtr grouped = createEvent();
     checkCuda(cudaEventRecord(grouped.get(), grouping), "Cannot mark a point in the grouping stream");
@@ -1087,14 +1066,8 @@ void GroupByGPUAccumulator::dropGroupedRows(Reader & reader)
 
         DeviceFixedColumnBuffer & device_offsets = reader.device_columns[first_offsets_column + j];
         device_offsets.dropFront(reader.grouped_rows);
-        onDevice(
-            [&]
-            {
-                auto * offsets_on_device = reinterpret_cast<uint64_t *>(device_offsets.mutableData());
-                subtractFromOffsets(offsets_on_device, device_offsets.rows(), dropped_bytes, offsets_on_device, StreamRegistry::get().compute);
-            },
-            "Cannot move the offsets of a variable-width key back by {} bytes",
-            dropped_bytes);
+        auto * offsets_on_device = reinterpret_cast<uint64_t *>(device_offsets.mutableData());
+        subtractFromOffsets(offsets_on_device, device_offsets.rows(), dropped_bytes, offsets_on_device, StreamRegistry::get().compute);
 
         offsets.erase(offsets.begin(), offsets.begin() + reader.grouped_rows);
         for (UInt64 & offset : offsets)
@@ -1122,8 +1095,8 @@ size_t GroupByGPUAccumulator::finalize()
 
     Stopwatch watch;
     const size_t groups = variable_group_by
-        ? onDevice([&] { return variable_group_by->finalize(); }, "Cannot finalize a `GROUP BY` by variable-width keys on the device")
-        : onDevice([&] { return group_by->finalize(); }, "Cannot finalize a `GROUP BY` on the device");
+        ? variable_group_by->finalize()
+        : group_by->finalize();
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
     num_groups = groups;
@@ -1158,7 +1131,7 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
         return;
 
     Stopwatch watch;
-    onDevice([&] { group_by->copyGroupsOut(keys, groups); }, "Cannot copy {} groups back from the device", *num_groups);
+    group_by->copyGroupsOut(keys, groups);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 
@@ -1187,7 +1160,7 @@ void GroupByGPUAccumulator::copyVariableGroupsTo(MutableColumns & key_columns, M
 
     for (size_t i = 0; i < group_keys.size(); ++i)
     {
-        const DeviceColumnView key = onDevice([&] { return variable_group_by->key(i); }, "Cannot view key {} of the groups", i);
+        const DeviceColumnView key = variable_group_by->key(i);
         if (key.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of key {} of {} groups", key.rows(), i, rows);
         from.push_back(key);
@@ -1196,7 +1169,7 @@ void GroupByGPUAccumulator::copyVariableGroupsTo(MutableColumns & key_columns, M
 
     for (size_t i = 0; i < values.size(); ++i)
     {
-        const DeviceFixedColumn value = onDevice([&] { return variable_group_by->value(i); }, "Cannot view value {} of the groups", i);
+        const DeviceFixedColumn value = variable_group_by->value(i);
         if (value.rows != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of value {} of {} groups", value.rows, i, rows);
         from.push_back(value);

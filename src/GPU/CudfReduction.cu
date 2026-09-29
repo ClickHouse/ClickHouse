@@ -26,7 +26,7 @@ std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggregationKin
         case GPUAggregationKind::Min: return cudf::make_min_aggregation<cudf::reduce_aggregation>();
         case GPUAggregationKind::Max: return cudf::make_max_aggregation<cudf::reduce_aggregation>();
     }
-    throwGPUError("unknown aggregation " + std::to_string(static_cast<int>(aggregation)));
+    throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
 template <typename Result>
@@ -58,8 +58,8 @@ Result scalarValueAs(const cudf::scalar & value)
             return static_cast<Result>(static_cast<const cudf::numeric_scalar<double> &>(value).value(stream));
         default:
             throwGPUError(
-                "the device returned a scalar of cuDF type " + std::to_string(static_cast<int32_t>(value.type().id()))
-                + ", which is not one this path reduces into");
+                ("the device returned a scalar of cuDF type " + std::to_string(static_cast<int32_t>(value.type().id()))
+                + ", which is not one this path reduces into").c_str());
     }
 }
 
@@ -72,7 +72,7 @@ uint64_t resultBitsOf(const cudf::scalar & value, GPUElementType result_type)
         case GPUElementType::Float64: return std::bit_cast<uint64_t>(scalarValueAs<double>(value));
         default:
             throwGPUError(
-                "a reduction into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide");
+                ("a reduction into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide").c_str());
     }
 }
 
@@ -98,8 +98,8 @@ const void * scalarDataOf(const cudf::scalar & value)
         case cudf::type_id::FLOAT64: return scalarDataAs<double>(value);
         default:
             throwGPUError(
-                "the device returned a scalar of cuDF type " + std::to_string(static_cast<int32_t>(value.type().id()))
-                + ", which is not one this path reduces into");
+                ("the device returned a scalar of cuDF type " + std::to_string(static_cast<int32_t>(value.type().id()))
+                + ", which is not one this path reduces into").c_str());
     }
 }
 
@@ -135,9 +135,8 @@ CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_
 {
     if (sizeOf(result_type) != 8)
         throwGPUError(
-            "a reduction into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide");
+            ("a reduction into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide").c_str());
 
-    initializeCudf();
     state = new State(element_type, result_type, aggregation);
 }
 
@@ -161,8 +160,8 @@ void CudfReduction::addBatch(DeviceFixedColumn values)
 
     if (batch->type() != output_type)
         throwGPUError(
-            "the device reduced a batch into cuDF type " + std::to_string(static_cast<int32_t>(batch->type().id())) + ", expected "
-            + std::to_string(static_cast<int32_t>(output_type.id())));
+            ("the device reduced a batch into cuDF type " + std::to_string(static_cast<int32_t>(batch->type().id())) + ", expected "
+            + std::to_string(static_cast<int32_t>(output_type.id()))).c_str());
 
     if ((num_partials + 1) * output_size > partials.size())
         partials.resize(std::max({(num_partials + 1) * output_size, partials.size() * 2, min_partials_bytes}), stream);

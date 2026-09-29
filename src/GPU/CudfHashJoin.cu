@@ -22,7 +22,7 @@ namespace
 GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
 {
     if (!isInteger(key_element_type))
-        throwGPUError("a join key of element type " + std::to_string(static_cast<int>(key_element_type)) + " is not an integer");
+        throwGPUError(("a join key of element type " + std::to_string(static_cast<int>(key_element_type)) + " is not an integer").c_str());
 
     return key_element_type;
 }
@@ -30,7 +30,7 @@ GPUElementType integerKeyTypeOf(GPUElementType key_element_type)
 void checkCount(size_t actual, size_t expected, const std::string & what)
 {
     if (actual != expected)
-        throwGPUError(std::to_string(actual) + " " + what + ", expected " + std::to_string(expected));
+        throwGPUError((std::to_string(actual) + " " + what + ", expected " + std::to_string(expected)).c_str());
 }
 
 }
@@ -53,7 +53,6 @@ struct CudfHashJoin::State
 
 CudfHashJoin::CudfHashJoin(GPUElementType key_element_type, GPUSpan<GPUElementType> payload_element_types)
 {
-    initializeCudf();
     state = new State(key_element_type, payload_element_types);
 }
 
@@ -142,8 +141,8 @@ size_t CudfHashJoinProbe::probe(DeviceFixedColumn keys)
 
     if (probe_side->size() != build_side->size())
         throwGPUError(
-            "the device returned " + std::to_string(probe_side->size()) + " probe-side indices against "
-            + std::to_string(build_side->size()) + " build-side ones");
+            ("the device returned " + std::to_string(probe_side->size()) + " probe-side indices against "
+            + std::to_string(build_side->size()) + " build-side ones").c_str());
 
     if (!join.payload_element_types.empty() && !build_side->is_empty())
     {
@@ -181,7 +180,7 @@ DeviceFixedColumn CudfHashJoinProbe::gatheredPayload(size_t index) const
 
     const CudfHashJoin::State & join = state->join;
     if (index >= join.payload_element_types.size())
-        throwGPUError("payload column " + std::to_string(index) + " of " + std::to_string(join.payload_element_types.size()));
+        throwGPUError(("payload column " + std::to_string(index) + " of " + std::to_string(join.payload_element_types.size())).c_str());
 
     if (!state->gathered_payloads)
         return {join.payload_element_types[index], nullptr, 0};

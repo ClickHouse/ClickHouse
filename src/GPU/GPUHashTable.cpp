@@ -70,11 +70,7 @@ HashTable::HashTable(const IDataType & key_type_, const DataTypes & payload_type
     , row_bytes(rowBytesOf(key_element_type, payload_element_types))
     , stage_bytes(stage_bytes_)
     , build_key_pipe(*key_type, stage_bytes)
-    , hash_join(onDevice(
-          [&] { return std::make_unique<CudfHashJoin>(key_element_type, payload_element_types); },
-          "Cannot set up a hash join on {} with {} payload columns on the device",
-          key_type->getName(),
-          payload_types.size()))
+    , hash_join(std::make_unique<CudfHashJoin>(key_element_type, payload_element_types))
 {
     build_payload_pipes.reserve(payload_types.size());
     for (const auto & type : payload_types)
@@ -137,8 +133,7 @@ void HashTable::finishBuild()
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "The device holds {} keys of the right table, expected {}", keys.rows, build_rows);
 
-    onDevice(
-        [&] { hash_join->build(keys, payloads); }, "Cannot build a hash table over {} rows of the right table on a GPU", build_rows);
+    hash_join->build(keys, payloads);
 
     synchronizeStream(StreamRegistry::get().compute);
 
@@ -170,9 +165,7 @@ std::unique_ptr<HashTable::Probe> HashTable::takeProbe()
         }
     }
 
-    return onDevice(
-        [&] { return std::make_unique<Probe>(*hash_join, *key_type, stage_bytes); },
-        "Cannot set up a probe of the GPU's hash table");
+    return std::make_unique<Probe>(*hash_join, *key_type, stage_bytes);
 }
 
 void HashTable::returnProbe(std::unique_ptr<Probe> probe)
@@ -199,8 +192,7 @@ HashTable::Matches HashTable::probe(const IColumn & key_column)
     probe->keys.stage(key_column);
     const DeviceFixedColumn keys = fixedOrThrow(probe->keys.flush().view());
 
-    const size_t num_matches = onDevice(
-        [&] { return probe->device.probe(keys); }, "Cannot probe the GPU's hash table with {} rows of the left table", num_rows);
+    const size_t num_matches = probe->device.probe(keys);
 
     if (num_matches != 0)
     {
@@ -209,16 +201,14 @@ HashTable::Matches HashTable::probe(const IColumn & key_column)
         from.reserve(payload_element_types.size() + 1);
         to.reserve(payload_element_types.size() + 1);
 
-        const DeviceFixedColumn device_indices
-            = onDevice([&] { return probe->device.probeRowIndices(); }, "Cannot view the probe-side row indices on the device");
+        const DeviceFixedColumn device_indices = probe->device.probeRowIndices();
         checkMatches(device_indices, num_matches, "probe-side row indices");
         from.push_back(device_indices);
         to.push_back(matches.probe_row_indices.get());
 
         for (size_t i = 0; i < payload_element_types.size(); ++i)
         {
-            const DeviceFixedColumn device_payload
-                = onDevice([&] { return probe->device.gatheredPayload(i); }, "Cannot view gathered payload column {} on the device", i);
+            const DeviceFixedColumn device_payload = probe->device.gatheredPayload(i);
             checkMatches(device_payload, num_matches, "gathered payload rows");
             from.push_back(device_payload);
             to.push_back(matches.build_payload_columns[i].get());

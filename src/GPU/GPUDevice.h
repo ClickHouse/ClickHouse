@@ -40,26 +40,6 @@ void checkCuda(cudaError_t status, fmt::format_string<Args...> what, Args &&... 
     }
 }
 
-template <typename Body, typename... Args>
-auto onDevice(Body && body, fmt::format_string<Args...> what, Args &&... args)
-{
-    try
-    {
-        return body();
-    }
-    catch (Exception & e)
-    {
-        clearDeviceError();
-        e.addMessage(fmt::format(what, std::forward<Args>(args)...));
-        throw;
-    }
-    catch (const std::exception & e)
-    {
-        clearDeviceError();
-        throw Exception(ErrorCodes::GPU_ERROR, "{}: {}", fmt::format(what, std::forward<Args>(args)...), e.what());
-    }
-}
-
 void synchronizeStream(rmm::cuda_stream_view stream);
 
 }
