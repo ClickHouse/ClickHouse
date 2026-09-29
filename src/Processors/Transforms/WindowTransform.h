@@ -100,6 +100,15 @@ public:
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
+    /// Whether the ORDER BY keys are equal at two rows, honouring the ORDER BY collation.
+    bool orderByEqualAt(const RowNumber & x, const RowNumber & y) const;
+
+    /// End of the run of rows whose ORDER BY keys equal those at `begin`, within [begin.row, end) of its block.
+    size_t orderByEqualRangeEnd(const RowNumber & begin, size_t end) const;
+
+    bool orderByEqualAtWithCollation(RowNumber x, RowNumber y) const;
+    size_t orderByEqualRangeEndWithCollation(RowNumber begin, size_t end) const;
+
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();
     void advanceFrameStart();
@@ -245,6 +254,8 @@ public:
     std::vector<size_t> partition_by_indices;
     // Indices of the ORDER BY columns in block;
     std::vector<size_t> order_by_indices;
+    // Whether any ORDER BY key has a collator; if not, peers use the per-column fast paths.
+    bool have_order_by_collation = false;
 
     // Which input columns we actually read while computing the window functions: the PARTITION BY
     // and ORDER BY keys and the function arguments.

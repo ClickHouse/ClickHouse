@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -336,6 +337,8 @@ void WindowTransform::resolveColumnIndices(const std::vector<WindowFunctionDescr
     {
         order_by_indices.push_back(
             input_header.getPositionByName(column.column_name));
+        if (column.collator)
+            have_order_by_collation = true;
     }
 
     // We only need to materialize (remove Const/LowCardinality/Sparse from) the columns we actually
@@ -752,7 +755,62 @@ void WindowTransform::advanceFrameStart()
     }
 }
 
-bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
+NO_INLINE bool WindowTransform::orderByEqualAtWithCollation(RowNumber x, RowNumber y) const
+{
+    const Columns & x_columns = inputAt(x);
+    const Columns & y_columns = inputAt(y);
+
+    for (size_t i = 0, size = order_by_indices.size(); i < size; ++i)
+    {
+        const auto & descr = window_description.order_by[i];
+        const IColumn & lhs = *x_columns[order_by_indices[i]];
+        const IColumn & rhs = *y_columns[order_by_indices[i]];
+
+        int res = 0;
+        if (descr.collator && lhs.isCollationSupported())
+            res = lhs.compareAtWithCollation(x.row, y.row, rhs, 1 /* nan_direction_hint */, *descr.collator);
+        else
+            res = lhs.compareAt(x.row, y.row, rhs, 1 /* nan_direction_hint */);
+
+        if (res != 0)
+            return false;
+    }
+
+    return true;
+}
+
+size_t WindowTransform::orderByEqualRangeEnd(const RowNumber & begin, size_t end) const
+{
+    if (unlikely(have_order_by_collation))
+        return orderByEqualRangeEndWithCollation(begin, end);
+
+    // Narrowing key by key, as the data is sorted lexicographically.
+    return getEqualRangeEndAssumeSorted(inputAt(begin), order_by_indices, begin.row, end, 1 /* nan_direction_hint */);
+}
+
+NO_INLINE size_t WindowTransform::orderByEqualRangeEndWithCollation(RowNumber begin, size_t end) const
+{
+    // The collated order may interleave rows whose bytes differ, so the per-column scans (which
+    // compare raw) would report a boundary inside a peer group, or trip their sortedness check.
+    return findEqualRangeEndAssumeSorted(
+        begin.row, end, 8 /* linear_probe */, [&](size_t row) { return orderByEqualAtWithCollation({begin.block, row}, begin); });
+}
+
+ALWAYS_INLINE bool WindowTransform::orderByEqualAt(const RowNumber & x, const RowNumber & y) const
+{
+    if (unlikely(have_order_by_collation))
+        return orderByEqualAtWithCollation(x, y);
+
+    for (const size_t position : order_by_indices)
+    {
+        if (inputAt(x)[position]->compareAt(x.row, y.row, *inputAt(y)[position], 1 /* nan_direction_hint */) != 0)
+            return false;
+    }
+
+    return true;
+}
+
+ALWAYS_INLINE bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
 {
     if (x == y)
     {
@@ -772,26 +830,13 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
             break;
     }
 
-    const size_t n = order_by_indices.size();
-    if (n == 0)
+    if (order_by_indices.empty())
     {
         // No ORDER BY, so all rows are peers.
         return true;
     }
 
-    size_t i = 0;
-    for (; i < n; ++i)
-    {
-        const auto * column_x = inputAt(x)[order_by_indices[i]].get();
-        const auto * column_y = inputAt(y)[order_by_indices[i]].get();
-        if (column_x->compareAt(x.row, y.row, *column_y,
-                1 /* nan_direction_hint */) != 0)
-        {
-            return false;
-        }
-    }
-
-    return true;
+    return orderByEqualAt(x, y);
 }
 
 void WindowTransform::advanceFrameEndCurrentRow()
@@ -839,30 +884,16 @@ void WindowTransform::advanceFrameEndCurrentRow()
         // peer group's end with a fast equal-range scan.
         // First check whether frame_end is still a peer of current_row -- the reference (current_row)
         // may be in a different block, so we compare against it directly.
-        const size_t order_by_columns = order_by_indices.size();
-        size_t i = 0;
-        for (; i < order_by_columns; ++i)
-        {
-            const auto * reference_column = inputAt(current_row)[order_by_indices[i]].get();
-            const auto * compared_column = inputAt(frame_end)[order_by_indices[i]].get();
-            if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
-            {
-                break;
-            }
-        }
-
-        if (i < order_by_columns)
+        if (!orderByEqualAt(frame_end, current_row))
         {
             // frame_end is already past the current row's peer group.
             frame_ended = true;
             return;
         }
 
-        // frame_end is a peer; extend over the run of equal ORDER BY values within this block,
-        // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
-        // so the scan will just return the end of the block.
-        const UInt64 peer_group_end_row
-            = getEqualRangeEndAssumeSorted(inputAt(frame_end), order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+        // frame_end is a peer; extend over the run of equal ORDER BY values within this block.
+        // With no ORDER BY, all rows are peers, so the scan will just return the end of the block.
+        const size_t peer_group_end_row = orderByEqualRangeEnd(frame_end, rows_end);
 
         if (peer_group_end_row < rows_end)
         {
@@ -999,15 +1030,14 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
 
         // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
         // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
-        const size_t run_end = getEqualRangeEndAssumeSorted(
-            inputAt(cur), order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
+        const size_t run_end = orderByEqualRangeEnd(cur, end_bound);
 
         if (run_end < end_bound)
             return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
 
-        // No earlier boundary, so the run of peers reached the bound. getEqualRangeEndAssumeSorted
-        // never returns past `end_bound`, so the group extends exactly to the end of what we scanned
-        // in this block -- the precondition for both the partition-end and cross-block cases below.
+        // No earlier boundary, so the run of peers reached the bound. The scan never returns past
+        // `end_bound`, so the group extends exactly to the end of what we scanned in this block --
+        // the precondition for both the partition-end and cross-block cases below.
         chassert(run_end == end_bound);
 
         if (partition_ends_in_block)
