@@ -10,6 +10,9 @@ namespace DB::GPU
 
 /// Turns the sizes of `count` strings into the offsets their ends are at: `offsets_end[0]` is where the first of them
 /// starts, and `offsets_end[1]` to `offsets_end[count]` are written.
+/// Moves `count` offsets back by `minus`; `from` and `to` may be the same.
+void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream);
+
 void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, rmm::cuda_stream_view stream);
 
 struct CoveredRows
