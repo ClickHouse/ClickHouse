@@ -35,20 +35,20 @@ struct NtileState
     {
         if (!buckets) [[unlikely]]
         {
-            const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
+            const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.input_columns[workspace.argument_column_indices[0]];
             if (!isColumnConst(arg_col))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
             auto type_id = argument_types[0]->getTypeId();
             if (type_id == TypeIndex::UInt8)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt8>();
+                buckets = arg_col[transform->current.location.row].safeGet<UInt8>();
             else if (type_id == TypeIndex::UInt16)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt16>();
+                buckets = arg_col[transform->current.location.row].safeGet<UInt16>();
             else if (type_id == TypeIndex::UInt32)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt32>();
+                buckets = arg_col[transform->current.location.row].safeGet<UInt32>();
             else if (type_id == TypeIndex::UInt64)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt64>();
+                buckets = arg_col[transform->current.location.row].safeGet<UInt64>();
 
             if (!buckets)
             {
@@ -60,7 +60,7 @@ struct NtileState
         {
             current_partition_rows = 0;
             current_partition_inserted_row = 0;
-            start_row = transform->current_row;
+            start_row = transform->current.location;
         }
         current_partition_rows++;
 
