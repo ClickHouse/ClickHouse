@@ -372,6 +372,13 @@ struct JoinActionRefPairHash
     }
 };
 
+/// `IDataType::equals` ignores the time zone of `DateTime` and custom names such as `Bool`, but functions
+/// over the key do not, so one key can stand in for another only if the full type names match.
+static bool areTypesIdentical(const IDataType & lhs, const IDataType & rhs)
+{
+    return lhs.getName() == rhs.getName();
+}
+
 /// Invokes `callback(lhs, rhs)` per Equals / NullSafeEquals predicate, `lhs` normalised to the left side.
 template <typename Callback>
 static void forEachEquiJoinKey(const JoinOperator & join_operator, Callback && callback)
@@ -394,7 +401,7 @@ static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperat
     std::vector<JoinActionRefPair> joining_keys;
     forEachEquiJoinKey(join_operator, [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
     {
-        if (!lhs.getColumn().type->equals(*rhs.getColumn().type))
+        if (!areTypesIdentical(*lhs.getColumn().type, *rhs.getColumn().type))
             return;
         joining_keys.emplace_back(lhs, rhs);
     });
@@ -532,7 +539,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             const auto & left_table_column = left_stream_input_header->getByName(left_table_key_name);
             const auto & right_table_column = right_stream_input_header->getByName(right_table_key_name);
 
-            if (!left_table_column.type->equals(*right_table_column.type))
+            if (!areTypesIdentical(*left_table_column.type, *right_table_column.type))
                 continue;
 
             equivalent_left_stream_column_to_right_stream_column[left_table_key_name] = right_table_column;
@@ -745,7 +752,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 return;
 
             const auto * replaced = join_output_header.findByName(replaced_name);
-            if (!replaced || !replaced->type->equals(*supertype))
+            if (!replaced || !areTypesIdentical(*replaced->type, *supertype))
                 return;
 
             /// A float key can be join-equal while bit-different: `-0.0` and `+0.0` are equal to the comparison a merge-based
@@ -788,8 +795,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// under its own name provided that name denotes a single type here: the JOIN republishes an
             /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
             const auto * source_in_output = join_output_header.findByName(source.getColumnName());
-            if (source.getType()->equals(*supertype)
-                && (!source_in_output || source_in_output->type->equals(*source.getType())))
+            if (areTypesIdentical(*source.getType(), *supertype)
+                && (!source_in_output || areTypesIdentical(*source_in_output->type, *source.getType())))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
@@ -802,7 +809,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
         forEachEquiJoinKey(logical_join->getJoinOperator(), [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
         {
-            /// Equal types are already covered by the equivalent sets above.
+            /// Equal types are already covered by the equivalent sets above, or not substituted if they are not identical.
             if (lhs.getType()->equals(*rhs.getType()))
                 return;
 
@@ -975,7 +982,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 {
                     /// A replacement renamed to keep its type unambiguous has nothing to convert.
                     const auto & arg = *args.at(0);
-                    if (arg.result_type->equals(*replacement.target_type))
+                    if (areTypesIdentical(*arg.result_type, *replacement.target_type))
                         return &dag.addAlias(arg, replacement.name);
                     return &dag.addCast(arg, replacement.target_type, replacement.name, nullptr);
                 }));
