@@ -55,7 +55,6 @@
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
-    M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
@@ -297,9 +296,6 @@
     M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
-    M(OptimizeFinalThreads, "Number of threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
-    M(OptimizeFinalThreadsActive, "Number of active threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
-    M(OptimizeFinalThreadsScheduled, "Number of queued or active jobs in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
@@ -574,7 +570,6 @@
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
-    M(StreamingExchangeSinksWithFullSendQueue, "Number of streaming exchange sinks that take no chunks because their queue of packets waiting for the socket is full.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \

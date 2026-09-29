@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class ASTSelectQuery;
-
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:

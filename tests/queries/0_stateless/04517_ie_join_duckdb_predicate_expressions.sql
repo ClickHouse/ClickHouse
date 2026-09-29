@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Join conditions that are expressions (`ifNull` over a nullable range end), an SCD2-style
 -- range aggregation, and both orders of the two range conditions.
 -- Each result is compared with the cross join with a filter (`join_algorithm` without `ie_join`).
