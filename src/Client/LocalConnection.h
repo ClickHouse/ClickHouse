@@ -132,10 +132,8 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
-    /// Compression method the client application already detected for its own default stdin
-    /// decompression (see ClientBase::default_input_compression_method). Used to resolve an
-    /// explicit `COMPRESSION 'auto'` clause on `input()`-based inserts, which read `in` directly
-    /// and so cannot rely on ClientBase::sendDataFrom's own handling of that clause.
+    /// The client's already-detected stdin compression (see ClientBase::default_input_compression_method),
+    /// used to resolve `COMPRESSION 'auto'` on `input()`-based inserts that read `in` directly.
     void setDefaultInputCompressionMethod(CompressionMethod method) { default_input_compression_method = method; }
 
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
@@ -245,9 +243,7 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
-    /// Owns the buffer created when the INSERT query carries a `COMPRESSION` clause next to a bare
-    /// `FORMAT` and reads through the `input()` table function, mirroring what
-    /// ClientBase::sendDataFrom does for the networked-client insert path.
+    /// Owns the decompression buffer for a `COMPRESSION` clause on the `input()` path (see in_to_read).
     std::unique_ptr<ReadBuffer> compressed_in;
     /// See setDefaultInputCompressionMethod. Defaulted in the constructor (CompressionMethod is
     /// only forward-declared here).

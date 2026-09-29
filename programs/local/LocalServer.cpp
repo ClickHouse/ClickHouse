@@ -1221,10 +1221,8 @@ void LocalServer::connect()
 
     /// This is needed for table function input(...).
     ReadBuffer * in = nullptr;
-    /// Compression to resolve an explicit `COMPRESSION 'auto'` clause against for input(): the real
-    /// stdin descriptor's name when reading from stdin (same detection ClientBase already did for its
-    /// own default), or the actual `--table-file` name otherwise -- `default_input_compression_method`
-    /// alone only covers the stdin case.
+    /// Fallback for `COMPRESSION 'auto'` on the input() path: stdin's detected method, or the
+    /// `--table-file` name when reading a file (default_input_compression_method covers only stdin).
     CompressionMethod input_compression_method = default_input_compression_method;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")

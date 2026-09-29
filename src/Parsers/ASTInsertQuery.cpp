@@ -163,12 +163,9 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(select);
     }
 
-    /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
-    /// `COMPRESSION` requires a data stream to apply to -- `INFILE`, a bare `format`, or an
-    /// `input()` `select` with `format`. `formatImpl`, `ClientBase`, `AsynchronousInsertQueue`
-    /// and `getReadBufferFromASTInsertQuery` later downcast these with `as<ASTLiteral &>()` and
-    /// read them as strings, so a wrong node type or a non-string literal from malformed
-    /// `clickhouse_json` must be rejected at the boundary.
+    /// `infile`/`compression` are string `ASTLiteral`s that later call sites downcast with
+    /// `as<ASTLiteral &>()`, so reject a wrong node type or non-string literal from malformed
+    /// `clickhouse_json` here at the boundary.
     child = r.readChildOfType<ASTLiteral>("infile");
     if (child)
     {
@@ -181,9 +178,8 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTLiteral>("compression");
     if (child)
     {
-        /// Mirrors ParserInsertQuery's own invariant: 'compression' is only valid together with
-        /// 'infile', a bare 'format' (no SELECT), or a SELECT that reads via input() and also
-        /// carries a 'format' -- otherwise there is no data stream for it to apply to.
+        /// Mirrors ParserInsertQuery: 'compression' needs a data stream ('infile', bare 'format', or
+        /// an input() 'select' with 'format').
         bool has_data_stream = infile || (!format.empty() && (!select || selectReadsInlineDataViaInputFunction(select)));
         if (!has_data_stream)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -291,9 +287,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     ///
     char delim = settings_ast ? settings.nl_or_ws : ' ';
 
-    /// COMPRESSION for inline data (bare FORMAT or via input()) is parsed before the whole
-    /// VALUES/FORMAT/SELECT clause, so it must be printed before it too -- mirroring the FROM
-    /// INFILE case above, which already prints its own COMPRESSION right after the file name.
+    /// Inline-data COMPRESSION is parsed before the VALUES/FORMAT/SELECT clause, so print it before
+    /// that too (FROM INFILE prints its own COMPRESSION right after the file name, above).
     if (!infile && compression)
     {
         ostr << delim

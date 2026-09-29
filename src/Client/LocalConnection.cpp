@@ -400,9 +400,8 @@ void LocalConnection::sendQuery(
 
         chassert(in, "ReadBuffer should be initialized");
 
-        /// A `COMPRESSION` clause next to a bare `FORMAT` (no `FROM INFILE`) means the data read
-        /// through `input()` is compressed, same as ClientBase::sendDataFrom handles for the
-        /// networked-client insert path.
+        /// `COMPRESSION` next to a bare `FORMAT` means the `input()` data is compressed, mirroring
+        /// ClientBase::sendDataFrom on the networked-client path.
         ReadBuffer * in_to_read = in;
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
@@ -411,8 +410,7 @@ void LocalConnection::sendQuery(
 
             if (!insert->infile && insert->compression)
             {
-                /// "auto" has no filename to sniff an extension from here; reuse the detection the
-                /// client application already did once against its real stdin descriptor.
+                /// 'auto' falls back to the client's already-detected stdin method (see resolveCompressionMethod).
                 CompressionMethod compression_method = insert->resolveCompressionMethod(default_input_compression_method);
                 compressed_in = wrapReadBufferWithCompressionMethod(
                     wrapReadBufferReference(*in), compression_method,
@@ -421,9 +419,8 @@ void LocalConnection::sendQuery(
             }
         }
 
-        /// `input_format` / `format` settings override the FORMAT for input (mirrors
-        /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
-        /// `SETTINGS input_format = ...` take effect on the `clickhouse-local` `input()` path.
+        /// `input_format` / `format` settings override the query FORMAT, mirroring
+        /// `getSourceFromASTInsertQuery` on the server.
         if (!settings[Setting::input_format].value.empty())
             current_format = settings[Setting::input_format];
         else if (!settings[Setting::format].value.empty())

@@ -574,9 +574,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             insert_query && insert_query->infile && query_context->getApplicationType() == Context::ApplicationType::SERVER)
             throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
-        /// `COMPRESSION 'none'` (or 'auto' with nothing to detect from) is not actually compressed, so
-        /// there is nothing here the server could fail to decompress; only reject a clause that resolves
-        /// to a real compression method.
+        /// isCompressionEffective() excludes 'none'/'auto'-with-nothing-to-detect: the server cannot decompress.
         if (const auto * insert_query = query->as<ASTInsertQuery>();
             insert_query && query_context->getApplicationType() == Context::ApplicationType::SERVER && insert_query->isCompressionEffective())
             throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");

@@ -1029,10 +1029,8 @@ namespace
         insert_query = ast->as<ASTInsertQuery>();
         if (insert_query)
         {
-            /// `COMPRESSION` next to `FORMAT`/`input()` is decompressed by clickhouse-client/clickhouse-local
-            /// before sending the query, never by the server. gRPC has its own, separate compression field
-            /// (`input_compression_type`, handled below) and does not go through `getSourceFromASTInsertQuery`,
-            /// so it needs its own copy of this guard.
+            /// gRPC does not go through `getSourceFromASTInsertQuery` and has its own compression field
+            /// (`input_compression_type`, below), so it needs its own copy of the client-only guard.
             if (query_context->getApplicationType() == Context::ApplicationType::SERVER && insert_query->isCompressionEffective())
                 throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
 

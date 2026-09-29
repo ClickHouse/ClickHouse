@@ -174,13 +174,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         "COMPRESSION for FROM INFILE must be written directly after the file name, "
                         "before SETTINGS: INSERT INTO t FROM INFILE 'file' COMPRESSION 'type' SETTINGS ... FORMAT ...");
 
-    /// Check for 'COMPRESSION' parameter (optional), for insert data supplied inline (bare FORMAT
-    /// or via input()), as opposed to FROM INFILE (whose own COMPRESSION, if any, was already
-    /// consumed above, right after the file name). Parsed here, after SETTINGS but before
-    /// VALUES/FORMAT/SELECT are recognized, so it can never be confused with insert data: the data
-    /// zone hasn't opened yet at this position, unlike a clause placed after FORMAT would be. This
-    /// order (SETTINGS then COMPRESSION) matches formatImpl's printing order, so round-tripping
-    /// through EXPLAIN AST / query logging stays reparseable.
+    /// Optional `COMPRESSION` for inline data (bare FORMAT or input()); FROM INFILE consumed its own
+    /// above. Parsed after SETTINGS but before the data zone opens, so it is never confused with data.
+    /// The SETTINGS-then-COMPRESSION order matches formatImpl's printing order (stays reparseable).
     if (!infile && s_compression.ignore(pos, expected))
     {
         ParserStringLiteral compression_p;
@@ -265,10 +261,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    /// COMPRESSION is only meaningful when there's a real data stream to decompress: bare FORMAT
-    /// (no SELECT), input() with a trailing FORMAT, or FROM INFILE. Reject it next to VALUES, a
-    /// plain SELECT (no input()), or an input() SELECT without a trailing FORMAT -- in all of
-    /// those cases there's nothing to decompress.
+    /// COMPRESSION needs a real data stream: bare FORMAT, input() with a trailing FORMAT, or FROM
+    /// INFILE. Reject it next to VALUES / a plain SELECT / input() without a trailing FORMAT.
     bool has_data_stream = has_format_clause && (!select || selectReadsInlineDataViaInputFunction(select));
     if (compression && !infile && !has_data_stream)
         throw Exception(ErrorCodes::SYNTAX_ERROR,
