@@ -83,12 +83,9 @@ private:
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
-        /// Created only when the coordinator asked for logs and the task's forwarded `send_logs_level`
-        /// is above `none`; filled by the task's threads via the thread-group attachment, drained by
-        /// status polls in `getStatus`.
+        /// Created only when logs are collected; drained by `getStatus`.
         InternalTextLogsQueuePtr logs_queue;
-        /// Cumulative log lines drained into status replies; lets the coordinator detect lines lost to a
-        /// retried status poll (the worker cannot observe that loss itself).
+        /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
     };
 

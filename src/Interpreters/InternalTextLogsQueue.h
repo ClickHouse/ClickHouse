@@ -16,8 +16,7 @@ public:
     /// You should not push logs in the queue if their priority greater max_priority
     int max_priority;
 
-    /// Log lines dropped because the queue was full, read to report best-effort forwarding loss to
-    /// the coordinator. Stays zero at the default capacity, which is never reached in practice.
+    /// Log lines dropped because the queue was full.
     std::atomic<UInt64> dropped_logs{0};
 
     /// The default capacity: never reached in practice, so the queue behaves as unbounded.
@@ -39,9 +38,7 @@ public:
     /// Is used to pass block from remote server to the client
     void pushBlock(Block && log_block);
 
-    /// Build and enqueue a single synthetic log line (current wall-clock time, this host's name), to
-    /// inject a message into a client's `send_logs_level` stream from code that is not itself attached
-    /// to the queue.
+    /// Enqueues one synthetic line, for code that is not attached to the queue.
     void pushMessage(int priority, std::string_view source, const String & query_id, const String & text);
 
     /// Converts priority from Poco::Message::Priority to a string

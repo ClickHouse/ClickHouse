@@ -113,9 +113,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     task_state->completion_future = task_promise->get_future();
     task_state->collectors = collectors;
 
-    /// Collect this task's logs for forwarding to the coordinator only when it asked for them at
-    /// `start` and the initiator's `send_logs_level` actually enables any: a coordinator that did not
-    /// ask would never drain the queue.
+    /// Collect logs only when the coordinator asked for them and `send_logs_level` is not `none`.
     const LogsLevel client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
     if (collectors.logs && client_logs_level != LogsLevel::none)
     {
@@ -223,11 +221,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 namespace
 {
 
-/// Drain everything currently buffered and read the running loss counters. `forwarded_logs` counts
-/// every line handed to a reply (whether or not the coordinator receives it); `begin_offset` is its
-/// value before this batch, so a retried poll that re-drains an emptied queue reports a higher offset
-/// than the end of the batch the coordinator last received and lets it detect the loss.
-/// Unset when the task collects no logs: the protocol writer emits an empty payload itself if asked.
+/// Drains the queue. `begin_offset` is the number of lines handed to earlier replies; unset when logs are not collected.
 std::optional<TaskLogsPayload> drainLogs(const InternalTextLogsQueuePtr & logs_queue, StatelessTaskExecutor::ForwardedLogsCounter & forwarded_logs)
 {
     if (!logs_queue)

@@ -1557,10 +1557,7 @@ protected:
             cancellation->throwIfCancelled();
         }
 
-        /// Push a synthetic warning line into the client's log stream. The status-check threads are not
-        /// attached to the initiator log queue, so a plain LOG_ would not reach the client; forward it the
-        /// same way worker log blocks are forwarded. Honors the client's `send_logs_level` and
-        /// `send_logs_source_regexp` like any other line.
+        /// Status-check threads are not attached to the query, so a plain `LOG_WARNING` would not reach the client.
         void pushInitiatorLogLine(const String & query_id, const String & text)
         {
             static const String source = "DistributedQueryPlanExecutor";
@@ -1568,16 +1565,8 @@ protected:
                 initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, source, query_id, text);
         }
 
-        /// Forward one batch of worker log lines from a status reply to the initiator's `send_logs_level`
-        /// stream, checking it against the per-task cursor. The batch starts at `begin_offset`; a gap
-        /// before it is lines lost in transit (a retried status poll re-drained an already-emptied
-        /// queue). A batch starting before the cursor is not expected; if it happens the rows are still
-        /// forwarded and the cursor is left alone. Worker-side drops (`dropped_total`, buffer full) are
-        /// reported as they grow.
-        /// Important: polls for one task are sequential until `cancel` starts; from then on a teardown poll
-        /// from `waitForTaskTerminal` can overlap a normal one, and their replies can be handled in either
-        /// order. So once cancellation has started the rows are still forwarded, but neither losses nor
-        /// worker-side drops are reported.
+        /// Forwards the batch and warns about lines lost to a retried poll (a gap before `begin_offset`) and
+        /// about lines dropped on the worker. After `cancel`, polls of one task can overlap, so only rows are forwarded.
         void handleWorkerLogs(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status)
         {
             if (!initiator_logs_queue || !task_status.logs)
@@ -1835,10 +1824,8 @@ protected:
         std::mutex lock;
         UnorderedMapWithMemoryTracking<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, MapWithMemoryTracking<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock);
-        /// Where the next batch of a task's forwarded log lines should start, and how many worker-side
-        /// drops were already reported to the client. Checked per status reply. Kept until the tracker
-        /// dies with the query: a task can still be polled after it went terminal (e.g. the teardown poll
-        /// when `forget` failed), and only a surviving cursor lets that reply read as "nothing new".
+        /// Per task: where the next batch should start and how many worker drops were already reported.
+        /// Kept after the task ends, so a late poll reads as "nothing new".
         struct WorkerLogCursor
         {
             UInt64 expected_offset = 0;

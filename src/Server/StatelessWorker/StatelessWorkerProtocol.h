@@ -12,24 +12,15 @@ namespace DB
 class WriteBuffer;
 class ReadBuffer;
 
-/// Native revision of the payload blocks a worker appends to a `get_status` reply. Frozen on purpose:
-/// a writer and a reader of any age agree on it by construction, so there is nothing to negotiate.
-/// Revision 0 is the layout the persistent storages write to disk (no `BlockInfo` prefix, no
-/// custom-serialization byte) and is readable by every build. The blocks themselves are
-/// self-describing (every column carries its name and type), which is what lets the two sides
-/// evolve independently; see `readTaskLogsPayload`.
+/// Native revision of the payload blocks. Fixed, so there is nothing to negotiate. Revision 0 has no
+/// `BlockInfo` and no custom serialization, and every build reads it.
 constexpr UInt64 STATELESS_WORKER_PAYLOAD_NATIVE_REVISION = 0;
 
-/// Payload tags of a `get_status` reply. A tag names a shape; a shape only ever gains columns (never
-/// retypes or removes one), and a genuinely new shape is a new tag. A reader skips tags it does not
-/// know by their byte length, so a coordinator and a worker of different ages can talk.
+/// Payload tags of a `get_status` reply. A new payload shape gets a new tag; unknown tags are skipped by length.
 constexpr UInt64 TASK_STATUS_PAYLOAD_END = 0;
 constexpr UInt64 TASK_STATUS_PAYLOAD_LOGS = 1;
 
-/// What the coordinator asked the worker to collect for a task: the `collect` URL parameter of the
-/// `start` request, a comma-separated list. The worker attaches only the listed collectors and
-/// appends only their payloads to status replies. Names a worker does not know are ignored, which
-/// is how an older worker answers a newer coordinator: with fewer payloads, never with an error.
+/// The `collect` parameter of `start`: which payloads the worker adds to status replies. Unknown names are ignored.
 struct TaskCollectors
 {
     bool logs = false;
@@ -42,8 +33,7 @@ struct TaskCollectors
 /// Forwarded worker text logs. Present on every reply while logs are collected, also when empty.
 struct TaskLogsPayload
 {
-    /// Lines this task already put into earlier replies. The coordinator compares it with the end
-    /// of the previous batch it received; a gap is a batch lost to a retried status poll.
+    /// Lines this task put into earlier replies.
     UInt64 begin_offset = 0;
     /// Lines dropped on the worker because its forwarding buffer was full, cumulative.
     UInt64 dropped_total = 0;
@@ -71,20 +61,9 @@ struct DistributedQueryTaskStatus
     /// appended nothing (older, or not asked) leaves `logs` unset.
     void read(ReadBuffer & in, UInt64 version);
 
-    /// Reads one payload of the list into the matching field; a tag this build does not know is left
-    /// for `forEachTaskStatusPayload` to skip. One branch per collector.
     void readPayload(UInt64 tag, ReadBuffer & payload);
 
-    /// Walks the payload list that follows the fixed body: for every payload calls `readPayload` with
-    /// its tag and a buffer bounded to exactly its bytes, then skips whatever was left unread, and
-    /// stops at the end tag.
-    ///
-    /// The list is a set, not a sequence. The worker appends one payload per collector the coordinator
-    /// asked for, in whatever order it likes, and a reader may know only some of the tags. So the
-    /// reader never assumes a position: it dispatches on the tag, skips unknown tags by their length,
-    /// and skips bytes a newer worker appended inside a known payload. That is what lets collectors be
-    /// added and combined later without both sides agreeing on an order. A truncated body throws
-    /// instead of desynchronizing the list.
+    /// Reads payloads until the end tag. Unknown tags and unread bytes inside a payload are skipped by length.
     void forEachTaskStatusPayload(ReadBuffer & in);
 };
 
@@ -98,10 +77,7 @@ void writeTaskLogsPayloadFrame(WriteBuffer & out, const TaskLogsPayload & logs);
 /// rows block. Both at `STATELESS_WORKER_PAYLOAD_NATIVE_REVISION`.
 void writeTaskLogsPayload(const TaskLogsPayload & logs, WriteBuffer & out);
 
-/// Reads the counters by column name, so a meta block with extra columns (newer worker) or missing
-/// ones (older worker) reads fine: unknown columns are ignored, missing ones keep their defaults.
-/// Consumes exactly the two blocks; whatever a newer worker appended after them is left to the
-/// caller, which skips the rest of the payload by its length.
+/// Reads the counters by column name; unknown columns are ignored, missing ones default to 0.
 TaskLogsPayload readTaskLogsPayload(ReadBuffer & in);
 
 }

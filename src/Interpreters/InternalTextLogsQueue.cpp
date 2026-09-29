@@ -20,7 +20,7 @@ InternalTextLogsQueue::InternalTextLogsQueue(size_t max_entries_)
 
 void InternalTextLogsQueue::pushOrDrop(MutableColumns && columns)
 {
-    /// The unbounded queue never fills, so take the plain push with a zero-timeout
+    /// The unbounded queue never fills, so a blocking push never waits.
     if (maxFill() == UNBOUNDED) [[likely]]
     {
         [[maybe_unused]] bool pushed = emplace(std::move(columns));

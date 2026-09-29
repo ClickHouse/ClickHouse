@@ -212,9 +212,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
-        /// A newer coordinator may append data this build does not know after the fields it reads.
-        /// Drain it explicitly: `HTTPServerRequest::canKeepAlive` requires the body to be at eof,
-        /// and leaving bytes unread would make the HTTP layer close the keep-alive connection.
+        /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();
 
