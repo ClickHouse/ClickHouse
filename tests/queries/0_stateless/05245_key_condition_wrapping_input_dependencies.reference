@@ -1,13 +1,6 @@
-Input-only statistics key
-Parts: 2/2
-Parts: 1/2
-Parts: 1/1
-64	6112
-Aliased derived key, equality
-Granules: 510/512
-Granules: 2/512
-1	257
-Aliased derived key, set
-Granules: 510/512
-Granules: 4/512
-2	516
+x = 1 AND y = 0	64	64	PrimaryKey Parts: 2/2 Granules: 2/2
+x = 1 AND y = 0	64	64	Statistics Parts: 1/2 Granules: 1/2 PrimaryKey Parts: 1/1 Granules: 1/1
+u = 0 AND x = 257 AND y = 7	1	1	510
+u = 0 AND x = 257 AND y = 7	1	1	2
+u = 0 AND x IN (257, 259) AND y = 7	2	2	510
+u = 0 AND x IN (257, 259) AND y = 7	2	2	4
