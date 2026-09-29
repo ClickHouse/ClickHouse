@@ -336,12 +336,12 @@ private:
     /// The exact mode measures from the last sample before the window if it is not older than `window` before the window's
     /// start, so the buckets must hold the samples in `[grid_timestamp - 2 * window, grid_timestamp]`: the base class gets
     /// the window `2 * window + 1` for its buckets, while the aggregator keeps `window` (see `getAggregatorWindow`).
-    static typename Traits::GridScaleIntervalType getBucketsWindow(typename Traits::GridScaleIntervalType window, bool exact_rate)
+    static typename Traits::GridScaleIntervalType getBucketsWindow(typename Traits::GridScaleIntervalType window_, bool exact_rate_)
     {
         /// A negative window is rejected by the base class.
-        const Int64 window_value = static_cast<Int64>(window);
-        if (!exact_rate || window_value <= 0)
-            return window;
+        const Int64 window_value = static_cast<Int64>(window_);
+        if (!exact_rate_ || window_value <= 0)
+            return window_;
         /// A window this big covers every timestamp anyway.
         static constexpr Int64 max_window = std::numeric_limits<Int64>::max();
         if (window_value > (max_window - 1) / 2)
