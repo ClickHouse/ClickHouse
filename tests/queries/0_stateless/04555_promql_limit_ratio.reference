@@ -6,6 +6,12 @@
 6
 -- limit_ratio(1.5, up): out-of-range r is clamped to 1, keeps all 6 series.
 6
+-- limit_ratio(NaN, up): a NaN ratio is rejected, as in Prometheus.
+Ratio of aggregation operator limit_ratio must not be NaN
+-- limit_ratio(scalar(up), up): a computed NaN ratio (scalar() of 6 series) is rejected too.
+Ratio of aggregation operator limit_ratio must not be NaN
+-- The same for a computed ratio which varies along the grid of a subquery.
+Ratio of aggregation operator limit_ratio must not be NaN
 -- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets.
 r=0.5:  host2 host4 host6 
 r=-0.5: host1 host3 host5 

@@ -58,6 +58,12 @@ promql_count()
         -q "$1" | wc -l | tr -d ' '
 }
 
+promql_nan_ratio_error()
+{
+    $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 \
+        -q "$1" 2>&1 | grep -o "Ratio of aggregation operator limit_ratio must not be NaN" | head -1
+}
+
 echo "-- limit_ratio(1, up): the whole ratio, keeps all 6 series."
 promql_count "limit_ratio(1, up)"
 
@@ -69,6 +75,15 @@ promql_count "limit_ratio(-1, up)"
 
 echo "-- limit_ratio(1.5, up): out-of-range r is clamped to 1, keeps all 6 series."
 promql_count "limit_ratio(1.5, up)"
+
+echo "-- limit_ratio(NaN, up): a NaN ratio is rejected, as in Prometheus."
+promql_nan_ratio_error "limit_ratio(NaN, up)"
+
+echo "-- limit_ratio(scalar(up), up): a computed NaN ratio (scalar() of 6 series) is rejected too."
+promql_nan_ratio_error "limit_ratio(scalar(up), up)"
+
+echo "-- The same for a computed ratio which varies along the grid of a subquery."
+promql_nan_ratio_error "limit_ratio(scalar(up), up)[200s:100s]"
 
 echo "-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets."
 echo -n "r=0.5:  "; promql_instances "limit_ratio(0.5, up)"

@@ -129,9 +129,11 @@ namespace
     }
 
     /// Clamps the ratio argument of `limit_ratio` to [-1, 1], like Prometheus does instead of failing.
-    /// NaN passes through and then keeps nothing, which is what Prometheus's ratio sampler does too.
+    /// NaN causes an exception, as in Prometheus.
     ScalarType clampRatio(ScalarType scalar)
     {
+        if (std::isnan(scalar))
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Ratio of aggregation operator limit_ratio must not be NaN");
         if (scalar > 1)
             return 1;
         if (scalar < -1)
@@ -139,12 +141,22 @@ namespace
         return scalar;
     }
 
-    /// SQL version of clampRatio(): greatest(-1, least(1, x)).
+    /// SQL version of clampRatio(): if(throwIf(isNaN(x), '...'), x, greatest(-1, least(1, x))).
+    /// `throwIf` returns 0 unless it throws, so the clamped value is always chosen. NaN has to be rejected
+    /// before `least` and `greatest`, which do not keep it consistently: their JIT-compiled versions return
+    /// the other argument, so NaN would become 1 and keep every series.
     ASTPtr clampRatio(ASTPtr scalar)
     {
-        return makeASTFunction("greatest",
+        /// Build the arguments in separate statements: the order of evaluation of function arguments is unspecified,
+        /// so `scalar` must not be cloned and moved within the same call.
+        auto reject_nan = makeASTFunction("throwIf",
+            makeASTFunction("isNaN", scalar->clone()),
+            make_intrusive<ASTLiteral>("Ratio of aggregation operator limit_ratio must not be NaN"));
+        auto unclamped = scalar->clone();
+        auto clamped = makeASTFunction("greatest",
             make_intrusive<ASTLiteral>(-1.0),
             makeASTFunction("least", make_intrusive<ASTLiteral>(1.0), std::move(scalar)));
+        return makeASTFunction("if", std::move(reject_nan), std::move(unclamped), std::move(clamped));
     }
 
     struct RatioArgument
@@ -165,12 +177,22 @@ namespace
             }
             case StoreMethod::SINGLE_SCALAR:
             {
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(r_arg.select_query), SQLSubqueryType::SCALAR});
+                /// SELECT clampRatio(value) AS value FROM <single_scalar>
+                /// The ratio is clamped in the scalar subquery, which has one row, so a NaN ratio is rejected even if
+                /// the instant vector has no series, as in Prometheus and in the SCALAR_GRID case below.
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(r_arg.select_query), SQLSubqueryType::TABLE});
+                String inner_subquery_name = context.subqueries.back().name;
+
+                SelectQueryBuilder builder;
+                builder.from_table = inner_subquery_name;
+                builder.select_list.push_back(clampRatio(make_intrusive<ASTIdentifier>(ColumnNames::Value)));
+                builder.select_list.back()->setAlias(ColumnNames::Value);
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::SCALAR});
                 auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
                 /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
                 /// but StoreMethod::SINGLE_SCALAR always means one row.
-                auto assumed = makeASTFunction("assumeNotNull", std::move(subquery_id));
-                return {clampRatio(std::move(assumed)), /* per_step = */ false};
+                return {makeASTFunction("assumeNotNull", std::move(subquery_id)), /* per_step = */ false};
             }
             case StoreMethod::SCALAR_GRID:
             {
