@@ -200,7 +200,7 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
     /// `COLUMNS('re')` takes a real regexp, so that form also gets constructs no glob can express.
     /// Nothing turns `format_as_asterisk_like` back on, so the glob can stay empty.
     static const Strings matcher_regexps
-        = {"^c", "c$", "c0|c1", "^(c|col)[0-9]*$", "[[:digit:]]", "(?i)^C", "(?s).", "^$", "\\bc", "("};
+        = {"^c", "c$", "c0|c1", "^(c|col)[0-9]*$", "[[:digit:]]", "(?i)^C", "(?s).", "^$", "\\bc"};
 
     if (!as_like && rng() % 2 == 0)
     {
@@ -961,11 +961,12 @@ ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
         switch (fuzz_rand() % 3)
         {
             case 0: {
-                /// Applied unanchored with `PartialMatch`: `''` erases every column, `^$` none, and the
-                /// last three do not compile.
+                /// Applied unanchored with `PartialMatch`: `''` erases every column, `^$` none. All
+                /// compile - one that does not throws at analysis, losing the `APPLY` and `REPLACE`
+                /// attached beside it as well.
                 static const Strings except_regexps
                     = {"c.*", ".*", "^c", "[0-9]", "col.*", "", "^$", "1$", "^_",
-                       "(?i)C.*", "\\d+", "[[:alpha:]]", "a'b", "\\\\", "(", "(?=c)", "a{1001}"};
+                       "(?i)C.*", "\\d+", "[[:alpha:]]", "a'b", "\\\\"};
                 /// Half the time anchor on a column that is really there, so the transformer removes
                 /// something. The name is escaped because the pool holds formatted expressions too.
                 const auto * ident = column_like.empty()
