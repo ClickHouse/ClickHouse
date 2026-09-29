@@ -133,6 +133,9 @@ public:
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_);
 
+        /// Retained queue and scheduler copies are freed independently of the inserting query.
+        std::shared_ptr<const InsertQuery> cloneForQueue() const;
+
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
@@ -264,7 +267,7 @@ private:
 
     struct Container
     {
-        InsertQuery key;
+        std::shared_ptr<const InsertQuery> key;
         InsertDataPtr data;
     };
 
