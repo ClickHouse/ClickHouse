@@ -8315,10 +8315,7 @@ void Context::setClientInterface(ClientInfo::Interface interface)
 
 void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
 {
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+    client_info.setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
 }
 
 void Context::setInitiatorVersionIfUnset()
