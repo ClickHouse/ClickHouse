@@ -6490,8 +6490,7 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
             query_info.prewhere_info->prewhere_column_name,
             query_info.prewhere_info->remove_prewhere_column,
             row_level_output_header,
-            final_output_positions,
-            true);
+            final_output_positions);
         removed_output_from_prewhere = prewhere_pruning.changed;
         required_row_level_output_positions = std::move(prewhere_pruning.required_input_positions);
     }
@@ -6510,8 +6509,7 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
             query_info.row_level_filter->column_name,
             query_info.row_level_filter->do_remove_column,
             storage_header,
-            required_row_level_output_positions,
-            true);
+            required_row_level_output_positions);
         removed_output_from_row_level_filter = row_level_pruning.changed;
         required_storage_positions_from_filters = std::move(row_level_pruning.required_input_positions);
     }

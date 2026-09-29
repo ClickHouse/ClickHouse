@@ -16,8 +16,7 @@ struct FilterDAGOutputPruningResult
 /// What pruneFilterDAGOutputsByPosition would do, computed without touching the DAG.
 struct FilterDAGOutputPruningPlan
 {
-    /// Whether inputs may be removed, and the value the filter column flag takes.
-    bool remove_inputs = false;
+    /// The value the filter column flag takes.
     bool remove_filter_column = false;
     /// DAG output positions to keep, before the filter column is erased from the header, the filter
     /// column included: it is needed to filter, whether or not anyone reads it.
@@ -38,8 +37,6 @@ struct FilterDAGOutputPruningPlan
     /// The position of the filter column in the DAG's outputs, before any is removed.
     size_t filter_output_position = 0;
 
-    /// Input header positions of the pass-through columns nobody asked for.
-    std::vector<size_t> droppedPassThroughPositions() const;
     FilterDAGOutputPruningResult toResult() const;
 };
 
@@ -48,14 +45,7 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     const String & filter_column_name,
     bool remove_filter_column,
     const Block & input_header,
-    const std::vector<size_t> & required_output_positions,
-    bool remove_inputs);
-
-void applyFilterDAGOutputPruning(
-    ActionsDAG & dag,
-    bool & remove_filter_column,
-    const Block & input_header,
-    const FilterDAGOutputPruningPlan & plan);
+    const std::vector<size_t> & required_output_positions);
 
 /// Prune filter DAG outputs by position and return the input positions needed to compute the remaining
 /// outputs and filter. The analysis above plus its application.
@@ -64,8 +54,7 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     const String & filter_column_name,
     bool & remove_filter_column,
     const Block & input_header,
-    const std::vector<size_t> & required_output_positions,
-    bool remove_inputs);
+    const std::vector<size_t> & required_output_positions);
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
@@ -82,7 +71,6 @@ public:
         , actions_dag(other.actions_dag.clone())
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
-        , prevent_input_removal(other.prevent_input_removal)
         , condition(other.condition)
     {}
 
@@ -121,9 +109,6 @@ public:
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
     bool canRemoveColumnsFromOutput() const override;
 
-    void setPreventInputRemoval() { prevent_input_removal = true; }
-    bool isInputRemovalPrevented() const { return prevent_input_removal; }
-
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
@@ -136,7 +121,6 @@ private:
     ActionsDAG actions_dag;
     String filter_column_name;
     bool remove_filter_column;
-    bool prevent_input_removal = false;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
 };

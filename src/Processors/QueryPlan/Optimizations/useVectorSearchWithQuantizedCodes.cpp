@@ -447,8 +447,6 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     auto discard_approx_step = std::make_unique<ExpressionStep>(shortlist_header, std::move(discard_approx_dag));
     discard_approx_step->setStepDescription("quantized shortlist discard approximate distance");
-    /// Keep the discarded inputs, or a later pass strips them and re-exposes the column.
-    discard_approx_step->setPreventInputRemoval();
 
     auto & discard_approx_node = nodes.emplace_back();
     discard_approx_node.step = std::move(discard_approx_step);

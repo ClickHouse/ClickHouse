@@ -165,9 +165,6 @@ ActionsDAG::NodeRawConstPtrs ExpressionStep::UnneededColumnsPlan::neededDAGOutpu
 std::vector<size_t> ExpressionStep::UnneededColumnsPlan::unneededInputPositions() const
 {
     std::vector<size_t> positions;
-    if (!remove_inputs)
-        return positions;
-
     for (size_t position = 0; position < input_columns.size(); ++position)
     {
         const auto column = input_columns[position];
@@ -186,10 +183,6 @@ ExpressionStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_outp
 
     UnneededColumnsPlan plan;
     plan.unneeded_output_positions = unneeded_output_positions;
-
-    /// When extra columns were absorbed from a child step that cannot reduce its output,
-    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
-    plan.remove_inputs = !prevent_input_removal;
 
     const auto & input_header = input_headers.front();
 
