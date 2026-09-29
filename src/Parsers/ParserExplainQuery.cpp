@@ -210,9 +210,12 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (parenthesized_source)
         {
             ++pos;
-            /// find the closing parenthesis on a private stream so errors inside the source are not reported at it
-            Tokens bracket_tokens(pos->begin, end);
-            Pos source_end(bracket_tokens, pos);
+            /// Find the closing parenthesis on the token stream being parsed. `end` does not always
+            /// bound it, because the debug check in `executeQuery` parses the formatted query back
+            /// with the parser built for the original one. The scan only delimits the source, so it
+            /// must not move the rightmost token read, where an error inside the source is reported.
+            const size_t max_pos_before_scan = pos.getMaxPos();
+            auto source_end = pos;
             size_t depth{1};
             while (!source_end->isEnd() && !source_end->isError())
             {
@@ -224,14 +227,19 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 ++source_end;
             }
 
+            /// Taken before the restore. Accessing `source_end` afterwards would mark the closing
+            /// parenthesis read again, and an error inside the source would be reported at it.
+            const char * const source_end_begin = source_end->begin;
+            pos.restoreMaxPos(max_pos_before_scan);
+
             if (depth != 0)
                 return false;
 
             /// bound both the token stream and the raw input so `ParserInsertQuery` cannot
             /// mistake the closing parenthesis or actions for inline data
-            Tokens source_tokens(pos->begin, source_end->begin);
+            Tokens source_tokens(pos->begin, source_end_begin);
             Pos source_pos(source_tokens, pos);
-            ParserQuery source_parser(source_end->begin, allow_settings_after_format_in_insert);
+            ParserQuery source_parser(source_end_begin, allow_settings_after_format_in_insert);
 
             const bool parsed = source_parser.parse(source_pos, query, expected);
             pos.backtracks = std::max(pos.backtracks, source_pos.backtracks);
@@ -241,7 +249,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             /// advance the shared stream to where the source parser stopped reading
             const bool complete = parsed && source_pos->type == TokenType::EndOfStream;
-            const char * read_end = complete ? source_end->begin : source_pos.max().begin;
+            const char * read_end = complete ? source_end_begin : source_pos.max().begin;
             while (pos->begin < read_end)
                 ++pos;
 
@@ -533,7 +541,7 @@ Actions are applied from left to right. Separate consecutive actions with commas
 
 `MODIFY OFFSET` and `PAGE` are not supported when the source query uses `LIMIT ... AFTER` or `LIMIT ... UNTIL`, including their combined form. This restriction also applies to `PAGE 1`.
 
-For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. Fractional limit literals between zero and one are not supported, including with `PAGE 1`. An expression limit remains an expression in the generated offset; its value is not evaluated or validated.
+For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. Fractional limit literals between zero and one and negative integer limit literals are not supported, including with `PAGE 1`. An expression limit remains an expression in the generated offset; its value is not evaluated or validated.
 
 **Source and result options**
 
@@ -546,6 +554,8 @@ In the bare form with actions, output options before the first action belong to 
 Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, including a parametrised alias such as `AS {name:Identifier}` (the parser drops one inside parentheses or function arguments, so it does not appear in the result either), even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected when given in the outer `SETTINGS` clause because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead. A clause hoisted onto an enclosing `EXECUTE AS` reaches the session settings instead and is ignored like any other effective setting.
 
 In bare syntax, action keywords take precedence over implicit aliases when they form a complete action. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting, while `EXPLAIN TEXT SELECT 1 PAGE` (no page number) formats `SELECT 1 AS PAGE`. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
+
+When a bare source ends with a nested `EXPLAIN TEXT` that has no actions of its own, actions after it could belong to either statement, so the query is rejected with a syntax error. This includes a nested `EXPLAIN TEXT` reached through `EXECUTE AS`, the last statement of `PARALLEL WITH`, the query of `CREATE HANDLER` or `ALTER HANDLER`, or another `EXPLAIN`. Parenthesize the outer source to choose: `EXPLAIN TEXT (EXPLAIN TEXT SELECT 1 ONELINE)` applies `ONELINE` to the nested statement, and `EXPLAIN TEXT (EXPLAIN TEXT SELECT 1) ONELINE` applies it to the outer one.
 
 **Examples**
 

@@ -6,7 +6,10 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/TokenIterator.h>
 
+#include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExplainTextAction.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -16,6 +19,10 @@
 #include <memory>
 #include <string_view>
 #include <vector>
+
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+#include <Parsers/Access/ASTExecuteAsQuery.h>
+#endif
 
 namespace DB
 {
@@ -112,6 +119,65 @@ bool tokenEqualsKeyword(const Token & token, Keyword keyword)
                                     std::string_view(token.begin, token.size()),
                                     toStringView(keyword));
 }
+
+/// Whether an action list written after the query `node` could also belong to a nested `EXPLAIN TEXT`
+/// that ends the text of `node` reached through the subquery of `EXECUTE AS`, the last statement of
+/// `PARALLEL WITH`, the query of `CREATE HANDLER` or `ALTER HANDLER`, or the query of another `EXPLAIN`.
+/// Such an `EXPLAIN TEXT` could take the actions unless it already has its own.
+bool endsWithExplainTextThatCanTakeActions(const IAST * node)
+{
+    while (node)
+    {
+        if (const auto * explain = node->as<ASTExplainQuery>())
+        {
+            /// Output options after the source of a nested `EXPLAIN TEXT` that takes no actions are
+            /// its own, but the same text followed by actions would give them to its source instead.
+            if (explain->getKind() == ASTExplainQuery::FormattedQuery)
+                return !explain->getActions();
+
+            /// Output options of another `EXPLAIN` follow all the text of its explained query, so a
+            /// nested `EXPLAIN TEXT` cannot take actions written after them.
+            if (explain->hasOutputOptions())
+                return false;
+
+            node = explain->getExplainedQuery().get();
+            continue;
+        }
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+        /// Output options of `EXECUTE AS` are hoisted from the end of its subquery.
+        if (const auto * execute_as = node->as<ASTExecuteAsQuery>())
+        {
+            node = execute_as->subquery.get();
+            continue;
+        }
+#endif
+
+        /// `AS <query>` is the last clause of a `CREATE HANDLER` and `ALTER HANDLER`.
+        if (const auto * handler = node->as<ASTCreateHandlerQuery>())
+        {
+            node = handler->query.get();
+            continue;
+        }
+
+        if (const auto * parallel = node->as<ASTParallelWithQuery>())
+        {
+            if (parallel->children.empty())
+                return false;
+
+            node = parallel->children.back().get();
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
+/// Keep what `from` expected at its rightmost position, as if it had been collected in `to`.
+void addExpectedVariants(Expected & to, const Expected & from)
+{
+    for (const auto * variant : from.variants)
+        to.add(from.max_parsed_pos, variant);
+}
 }
 bool canFollowExplainTextActions(const Token & token)
 {
@@ -157,11 +223,12 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
 
     auto source_begin = pos;
 
-    /// Look ahead on a private token stream with a private `Expected`. A syntax error is reported
-    /// at the rightmost token read from the shared stream, so scanning it to the end of the
-    /// statement would move every error in the source to the end of the query.
-    Tokens lookahead_tokens(source_begin->begin, end);
-    Expected lookahead_expected;
+    /// The scan and the rejected action lists below only look for where the source ends. A syntax
+    /// error is reported at the rightmost token read, so each lookahead restores it. Otherwise every
+    /// error in the source would be reported at the end of the statement. The lookahead reads the
+    /// token stream being parsed, which `end` does not always bound. The debug check in
+    /// `executeQuery` parses the formatted query back with the parser built for the original one.
+    const size_t max_pos_before_lookahead = pos.getMaxPos();
     std::vector<IParser::Pos> candidates;
 
     size_t round_depth{0};
@@ -169,7 +236,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     size_t curly_depth{0};
     TokenType previous_type{TokenType::EndOfStream};
 
-    IParser::Pos scan(lookahead_tokens, pos);
+    auto scan = pos;
     while (!scan->isEnd() && !scan->isError())
     {
         const bool at_top_level = round_depth == 0 && square_depth == 0 && curly_depth == 0;
@@ -211,43 +278,77 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         ++scan;
     }
 
+    pos.restoreMaxPos(max_pos_before_lookahead);
+
     ParserExplainTextActions actions_parser;
+
+    /// What the rejected candidates expected at their rightmost position. The error is reported
+    /// where the whole-source parse below stops, so this is added only if that is the same token.
+    Expected rejected_expected;
 
     for (auto candidate : candidates)
     {
         candidate.backtracks = pos.backtracks;
-        auto actions_pos = candidate;
+        pos = candidate;
+
+        /// Collected apart from `expected`. A rejected candidate is a reading of the statement that
+        /// is not taken, so its highlights would color tokens wrongly and its variants may not
+        /// describe the token the error is reported at.
+        Expected candidate_expected;
+        candidate_expected.enable_highlighting = expected.enable_highlighting;
 
         ASTPtr candidate_actions;
-        const bool parsed_actions = actions_parser.parse(actions_pos, candidate_actions, lookahead_expected);
-        const bool valid_actions_end = parsed_actions && canFollowExplainTextActions(*actions_pos);
-        const bool missing_comma = parsed_actions && isExplainTextActionLeadingToken(*actions_pos);
-        pos.backtracks = std::max(pos.backtracks, actions_pos.backtracks);
+        const bool parsed_actions = actions_parser.parse(pos, candidate_actions, candidate_expected);
+        const bool valid_actions_end = parsed_actions && canFollowExplainTextActions(*pos);
+        const bool missing_comma = parsed_actions && isExplainTextActionLeadingToken(*pos);
+        auto actions_end = pos;
 
-        if (!valid_actions_end && !missing_comma)
-            continue;
-
-        const char * prefix_end = candidate->begin;
-        Tokens prefix_tokens(source_begin->begin, prefix_end);
-        IParser::Pos prefix_pos(prefix_tokens, pos);
-        ParserQuery source_parser(prefix_end, allow_settings_after_format_in_insert);
+        /// Return to the source beginning and charge the candidate
+        /// against the shared parser backtrack budget.
+        auto rewind = source_begin;
+        rewind.backtracks = pos.backtracks;
+        pos = rewind;
 
         ASTPtr candidate_query;
-        const bool parsed_query = source_parser.parse(prefix_pos, candidate_query, lookahead_expected)
-                                && prefix_pos->type == TokenType::EndOfStream;
+        bool parsed_query = false;
+        if (valid_actions_end || missing_comma)
+        {
+            const char * prefix_end = candidate->begin;
+            Tokens prefix_tokens(source_begin->begin, prefix_end);
+            IParser::Pos prefix_pos(prefix_tokens, pos);
+            ParserQuery source_parser(prefix_end, allow_settings_after_format_in_insert);
 
-        pos.backtracks = std::max(pos.backtracks, prefix_pos.backtracks);
+            parsed_query = source_parser.parse(prefix_pos, candidate_query, candidate_expected)
+                        && prefix_pos->type == TokenType::EndOfStream;
+
+            pos.backtracks = std::max(pos.backtracks, prefix_pos.backtracks);
+        }
 
         if (!parsed_query)
+        {
+            pos.restoreMaxPos(max_pos_before_lookahead);
+            addExpectedVariants(rejected_expected, candidate_expected);
             continue;
+        }
+
+        if (endsWithExplainTextThatCanTakeActions(candidate_query.get()))
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "The EXPLAIN TEXT actions starting at '{}' could belong to the nested EXPLAIN TEXT or to the enclosing one. "
+                "Put the source of the enclosing EXPLAIN TEXT in parentheses: "
+                "EXPLAIN TEXT (EXPLAIN TEXT SELECT 1 ONELINE) applies them to the nested one, "
+                "EXPLAIN TEXT (EXPLAIN TEXT SELECT 1) ONELINE to the enclosing one",
+                std::string_view(candidate->begin, candidate->size()));
 
         /// confirm a complete source prefix then diagnose a missing separator
         if (missing_comma)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(actions_pos->begin, actions_pos->size()));
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(actions_end->begin, actions_end->size()));
 
-        /// move the shared stream past the actions read on a lookahead stream
-        while (pos->begin < actions_pos->begin)
-            ++pos;
+        /// the action list and the token after it stay read. The statement is parsed that way
+        addExpectedVariants(expected, candidate_expected);
+        for (const auto & range : candidate_expected.highlights)
+            expected.highlight(range);
+
+        pos = actions_end;
 
         query = std::move(candidate_query);
         actions = std::move(candidate_actions);
@@ -258,7 +359,14 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     /// `EXPLAIN TEXT` like the `FORMAT` itself, whatever `allow_settings_after_format_in_insert`
     /// says, so the insert parser must not consume it here; the outer `ParserQueryWithOutput` will.
     ParserQuery source_parser(end, /*allow_settings_after_format_in_insert=*/ false, /*implicit_select=*/ false, /*parse_output_options=*/ false);
-    if (!source_parser.parse(pos, query, expected))
+
+    const bool parsed_source = source_parser.parse(pos, query, expected);
+    /// A rejected action list can describe the token the statement fails at, as `unsigned integer`
+    /// after `PAGE`, which the whole-source reading does not mention.
+    if (rejected_expected.max_parsed_pos && rejected_expected.max_parsed_pos == expected.max_parsed_pos)
+        addExpectedVariants(expected, rejected_expected);
+
+    if (!parsed_source)
         return false;
 
     /// `ParserQueryWithOutput` is disabled above so that a trailing `FORMAT` or `INTO OUTFILE` stays

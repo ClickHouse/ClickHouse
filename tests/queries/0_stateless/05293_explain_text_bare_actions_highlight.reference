@@ -1,0 +1,4 @@
+[(0,7,'keyword'),(8,12,'keyword'),(13,19,'keyword'),(20,21,'number'),(22,24,'keyword'),(25,26,'alias'),(27,34,'keyword')]
+[(0,7,'keyword'),(8,12,'keyword'),(14,20,'keyword'),(21,22,'number'),(23,25,'keyword'),(26,27,'alias'),(29,36,'keyword')]
+[(0,7,'keyword'),(8,12,'keyword'),(13,19,'keyword'),(20,24,'string'),(25,29,'keyword'),(30,32,'string'),(32,33,'string_metacharacter'),(33,34,'string'),(35,40,'keyword'),(41,42,'number'),(43,49,'keyword'),(50,55,'keyword'),(56,57,'number'),(59,66,'keyword'),(67,73,'keyword'),(74,78,'identifier')]
+[(0,7,'keyword'),(8,12,'keyword'),(14,20,'keyword'),(21,25,'string'),(26,30,'keyword'),(31,33,'string'),(33,34,'string_metacharacter'),(34,35,'string'),(36,41,'keyword'),(42,43,'number'),(45,51,'keyword'),(52,57,'keyword'),(58,59,'number'),(61,68,'keyword'),(69,75,'keyword'),(76,80,'identifier')]
