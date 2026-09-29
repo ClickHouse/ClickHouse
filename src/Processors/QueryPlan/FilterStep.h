@@ -27,7 +27,7 @@ struct FilterDAGOutputPruningPlan
     /// that column first, and the filter column is then added whether or not it was asked for.
     std::vector<size_t> required_dag_positions;
     /// One entry per column of the input header, in header order.
-    std::vector<IQueryPlanStep::InputColumn> input_columns;
+    std::vector<IQueryPlanStep::InputColumnUsage> input_columns;
     /// Whether the output header changes - a DAG output goes away, or the filter column is dropped from
     /// it now - and whether removeUnusedActions would erase any node.
     bool changes_output_header = false;

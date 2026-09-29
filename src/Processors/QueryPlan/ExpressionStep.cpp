@@ -152,7 +152,7 @@ std::vector<size_t> ExpressionStep::RequiredColumnsPlan::droppedPassThroughPosit
 {
     std::vector<size_t> positions;
     for (size_t position = 0; position < input_columns.size(); ++position)
-        if (input_columns[position] == InputColumn::PassesThroughDropped)
+        if (input_columns[position] == InputColumnUsage::PassesThroughDropped)
             positions.push_back(position);
 
     return positions;
@@ -181,7 +181,7 @@ IQueryPlanStep::RemoveUnusedColumnsResult ExpressionStep::RequiredColumnsPlan::t
     for (size_t position = 0; position < input_columns.size(); ++position)
     {
         const auto column = input_columns[position];
-        if (!remove_inputs || column == InputColumn::ReadNeeded || column == InputColumn::PassesThroughNeeded)
+        if (!remove_inputs || column == InputColumnUsage::ReadNeeded || column == InputColumnUsage::PassesThroughNeeded)
             required_input_positions.push_back(position);
     }
 
@@ -258,7 +258,7 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
         {
             const auto * input = actions_dag.getInputs()[header_columns.read_by[position]];
             const bool is_needed = surviving_nodes.contains(input);
-            plan.input_columns[position] = is_needed ? InputColumn::ReadNeeded : InputColumn::ReadDropped;
+            plan.input_columns[position] = is_needed ? InputColumnUsage::ReadNeeded : InputColumnUsage::ReadDropped;
             unread_input_count += !is_needed;
             continue;
         }
@@ -269,7 +269,7 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
         if (is_required)
             ++next_required_passthrough;
 
-        plan.input_columns[position] = is_required ? InputColumn::PassesThroughNeeded : InputColumn::PassesThroughDropped;
+        plan.input_columns[position] = is_required ? InputColumnUsage::PassesThroughNeeded : InputColumnUsage::PassesThroughDropped;
         ++passthrough_index;
     }
 

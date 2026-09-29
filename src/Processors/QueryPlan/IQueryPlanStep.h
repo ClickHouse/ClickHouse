@@ -172,7 +172,7 @@ public:
     RemoveUnusedColumnsResult keepEverything() const;
 
     /// What one column of a step's input header is to the step once the unused columns are gone.
-    enum class InputColumn : uint8_t
+    enum class InputColumnUsage : uint8_t
     {
         ReadNeeded,           /// an input reads it, and what that input feeds is still needed
         ReadDropped,          /// an input reads it, and nothing needs that input any more
