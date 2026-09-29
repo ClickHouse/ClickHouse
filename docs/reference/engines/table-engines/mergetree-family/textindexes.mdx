@@ -1480,8 +1480,6 @@ The guards above are controlled by four settings:
 - [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index)
 - [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text)
 
-`text_index_like_max_postings_rows_to_read` and `use_text_index_like_pattern_bypass` were introduced in version 26.10. Setting [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) to an older version restores the previous planning: the rows budget becomes unlimited and the bypass is disabled.
-
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
