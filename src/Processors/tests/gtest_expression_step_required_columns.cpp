@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <numeric>
-
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -83,8 +81,9 @@ String namesAt(const Block & header, const std::vector<size_t> & positions)
     return fmt::format("{}", fmt::join(names, ", "));
 }
 
-/// Asks the step what it needs, prunes it with a child that keeps exactly that, and checks that the step
-/// outputs exactly the required columns and reads exactly what it asked for.
+/// Tells the step that only the columns at `required_output_positions` are needed, asks it what it does not
+/// need, prunes it with a child that drops exactly that, and checks that the step outputs exactly the
+/// required columns and reads exactly what it did not give up.
 template <typename Step>
 void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, const std::vector<size_t> & required_output_positions)
 {
@@ -93,19 +92,20 @@ void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, cons
     const auto dag_before = step->getExpression().dumpDAG();
     const auto output_before = *step->getOutputHeader();
     const auto input_header = *step->getInputHeaders().front();
+    const auto unneeded_output_positions = IQueryPlanStep::complementPositions(output_before.columns(), required_output_positions);
 
-    const auto needed = step->getRequiredColumns(required_output_positions);
+    const auto unneeded = step->getUnneededColumns(unneeded_output_positions);
 
     /// The question must not change the step.
     EXPECT_EQ(step->getOutputHeader()->dumpStructure(), before);
     EXPECT_EQ(step->getExpression().dumpDAG(), dag_before);
-    ASSERT_EQ(needed.size(), 1u);
+    ASSERT_EQ(unneeded.size(), 1u);
 
-    const auto & required_inputs = needed.front();
-    const auto applied = step->removeUnusedColumns(required_output_positions, {prunedChild(input_header, required_inputs)});
+    const auto required_inputs = IQueryPlanStep::complementPositions(input_header.columns(), unneeded.front());
+    const auto applied = step->removeUnusedColumns(unneeded_output_positions, {prunedChild(input_header, required_inputs)});
 
-    EXPECT_EQ(applied.dropped_output_positions, IQueryPlanStep::complementPositions(output_before.columns(), required_output_positions));
-    EXPECT_EQ(applied.step_changed, required_output_positions.size() != output_before.columns());
+    EXPECT_EQ(applied.dropped_output_positions, unneeded_output_positions);
+    EXPECT_EQ(applied.step_changed, !unneeded_output_positions.empty());
     EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), namesAt(input_header, required_inputs));
     EXPECT_EQ(step->getOutputHeader()->dumpNames(), namesAt(output_before, required_output_positions));
 }
@@ -150,12 +150,12 @@ TEST(FilterStepRequiredColumns, KeepsTheFilterInputAndDropsTheRest)
     const auto step = makeFilterStep(/*remove_filter_column=*/true);
     const auto input_header = *step->getInputHeaders().front();
 
-    /// Output header is (x, c). Asking for c only still needs a, because the filter reads it.
-    const auto needed = step->getRequiredColumns({1});
-    ASSERT_EQ(needed.size(), 1u);
-    EXPECT_EQ(needed.front(), std::vector<size_t>({0, 2}));
+    /// Output header is (x, c). Without x, b is not needed, but a is, because the filter reads it.
+    const auto unneeded = step->getUnneededColumns({0});
+    ASSERT_EQ(unneeded.size(), 1u);
+    EXPECT_EQ(unneeded.front(), std::vector<size_t>({1}));
 
-    step->removeUnusedColumns({1}, {prunedChild(input_header, needed.front())});
+    step->removeUnusedColumns({0}, {prunedChild(input_header, {0, 2})});
     EXPECT_EQ(step->getOutputHeader()->dumpNames(), "c");
     EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, c");
 }
@@ -164,21 +164,23 @@ TEST(ExpressionStepRequiredColumns, ReportsThePositionEachInputReads)
 {
     const auto step = makeStep();
 
-    /// Output 1 is an alias of b, which reads header position 1.
-    const auto needed = step->getRequiredColumns({1});
-    ASSERT_EQ(needed.size(), 1u);
-    EXPECT_EQ(needed.front(), std::vector<size_t>({1}));
+    /// Output header is (x, y, c). Output 1 is an alias of b, which reads header position 1, so without the
+    /// other outputs a and c are not needed.
+    const auto unneeded = step->getUnneededColumns({0, 2});
+    ASSERT_EQ(unneeded.size(), 1u);
+    EXPECT_EQ(unneeded.front(), std::vector<size_t>({0, 2}));
 }
 
 TEST(ExpressionStepRequiredColumns, DuplicateNamesKeepTheirOwnPosition)
 {
     const auto step = makeStepWithDuplicateNames();
 
-    /// Output 1 is an alias of the second input, which reads header position 1. Resolving the surviving
-    /// input by name would answer 0 and feed the expression the wrong column.
-    const auto needed = step->getRequiredColumns({1});
-    ASSERT_EQ(needed.size(), 1u);
-    EXPECT_EQ(needed.front(), std::vector<size_t>({1}));
+    /// Output 1 is an alias of the second input, which reads header position 1, so without output 0 the
+    /// first input is not needed. Resolving the surviving input by name would answer 1 and feed the
+    /// expression the wrong column.
+    const auto unneeded = step->getUnneededColumns({0});
+    ASSERT_EQ(unneeded.size(), 1u);
+    EXPECT_EQ(unneeded.front(), std::vector<size_t>({0}));
 }
 
 /// Asked for every output, the step needs every input, and pruning it with a child that did not change
@@ -188,14 +190,11 @@ TEST(ExpressionStepRequiredColumns, ChangesNothingWhenEverythingIsRequired)
     const auto step = makeStep();
     const auto input_header = step->getInputHeaders().front();
 
-    std::vector<size_t> all_outputs(step->getOutputHeader()->columns());
-    std::iota(all_outputs.begin(), all_outputs.end(), 0);
+    const auto unneeded = step->getUnneededColumns({});
+    ASSERT_EQ(unneeded.size(), 1u);
+    EXPECT_TRUE(unneeded.front().empty());
 
-    const auto needed = step->getRequiredColumns(all_outputs);
-    ASSERT_EQ(needed.size(), 1u);
-    EXPECT_EQ(needed.front().size(), input_header->columns());
-
-    const auto applied = step->removeUnusedColumns(all_outputs, {IQueryPlanStep::PrunedInput::unchanged(input_header)});
+    const auto applied = step->removeUnusedColumns({}, {IQueryPlanStep::PrunedInput::unchanged(input_header)});
     EXPECT_FALSE(applied.step_changed);
     EXPECT_TRUE(applied.dropped_output_positions.empty());
 }
@@ -207,11 +206,11 @@ TEST(ExpressionStepRequiredColumns, ConsumesWhatTheChildKeepsBeyondTheAsk)
     const auto step = makeStep();
     const auto input_header = *step->getInputHeaders().front();
 
-    /// Asked for x only, the step needs a; the child keeps a, b and c, and appends z.
-    const auto needed = step->getRequiredColumns({0});
-    EXPECT_EQ(needed.front(), std::vector<size_t>({0}));
+    /// Without y and c, the step needs only a; the child keeps a, b and c, and appends z.
+    const auto unneeded = step->getUnneededColumns({1, 2});
+    EXPECT_EQ(unneeded.front(), std::vector<size_t>({1, 2}));
 
-    const auto applied = step->removeUnusedColumns({0}, {prunedChild(input_header, {0, 1, 2}, {column("z")})});
+    const auto applied = step->removeUnusedColumns({1, 2}, {prunedChild(input_header, {0, 1, 2}, {column("z")})});
     EXPECT_TRUE(applied.step_changed);
     EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, b, c, z");
     EXPECT_EQ(step->getOutputHeader()->dumpNames(), "x");
@@ -222,11 +221,11 @@ TEST(FilterStepRequiredColumns, ConsumesWhatTheChildKeepsBeyondTheAsk)
     const auto step = makeFilterStep(/*remove_filter_column=*/true);
     const auto input_header = *step->getInputHeaders().front();
 
-    /// Output header is (x, c). Asked for x, the step needs a and b; the child keeps c as well.
-    const auto needed = step->getRequiredColumns({0});
-    EXPECT_EQ(needed.front(), std::vector<size_t>({0, 1}));
+    /// Output header is (x, c). Without c, the step needs a and b; the child keeps c as well.
+    const auto unneeded = step->getUnneededColumns({1});
+    EXPECT_EQ(unneeded.front(), std::vector<size_t>({2}));
 
-    step->removeUnusedColumns({0}, {prunedChild(input_header, {0, 1, 2})});
+    step->removeUnusedColumns({1}, {prunedChild(input_header, {0, 1, 2})});
     EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, b, c");
     EXPECT_EQ(step->getOutputHeader()->dumpNames(), "x");
 }

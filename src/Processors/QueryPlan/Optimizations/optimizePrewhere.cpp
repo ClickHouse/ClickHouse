@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <numeric>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -359,19 +358,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     auto & parent_step = parent_node.step;
-    if (source_step_with_filter->canRemoveUnusedColumns() && parent_step->canGetRequiredColumns())
+    if (source_step_with_filter->canRemoveUnusedColumns() && parent_step->canGetUnneededColumns())
     {
         /// Keep the outputs as they are, and prune what the new step and the read below it no longer need. A
         /// column the read keeps anyway - `ReadFromMergeTree` with FINAL keeps the sorting key for the merge -
         /// is consumed by the step.
-        const auto & parent_output = parent_step->getOutputHeader();
-        std::vector<size_t> all_positions(parent_output->columns());
-        std::iota(all_positions.begin(), all_positions.end(), 0);
-
-        const auto needed = parent_step->getRequiredColumns(all_positions);
-        auto source_result = source_step_with_filter->removeUnusedColumns(needed.at(0), {});
+        const auto unneeded = parent_step->getUnneededColumns({});
+        auto source_result = source_step_with_filter->removeUnusedColumns(unneeded.at(0), {});
         parent_step->removeUnusedColumns(
-            all_positions, {{std::move(source_result.dropped_output_positions), source_step_with_filter->getOutputHeader()}});
+            {}, {{std::move(source_result.dropped_output_positions), source_step_with_filter->getOutputHeader()}});
 #if defined(DEBUG_OR_SANITIZER_BUILD)
         {
             assertBlocksHaveEqualStructure(

@@ -205,10 +205,10 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 /// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
 /// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
 /// the JOIN condition, then the column may become unused in the plan.
-/// One walk over the plan: going down, each step that supports it (canRemoveUnusedColumns) is asked what it needs
-/// of its children for the columns its parent needs; coming back up, it removes the rest, its children already
-/// pruned. A column a child keeps beyond what it was asked for is consumed by the step above it. A step that does
-/// not support it needs everything of its children. Returns whether anything changed.
+/// One walk over the plan: going down, each step that supports it (canRemoveUnusedColumns) is asked what it does
+/// not need of its children once its parent does not need some of its columns; coming back up, it removes those,
+/// its children already pruned. A column a child keeps beyond what it was asked for is consumed by the step above
+/// it. A step that does not support it needs everything of its children. Returns whether anything changed.
 bool removeUnusedColumns(QueryPlan::Node & root);
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.

@@ -152,16 +152,17 @@ public:
         bool step_changed = false;
 
         /// The positions of the step's former output header that went away, sorted; empty when all of
-        /// them remain. The new output header has the remaining columns first, in their former order, and
-        /// may append columns of its own after them, such as the dummy column a join adds when nothing
-        /// else is left; only the header shows those.
+        /// them remain. These are the unneeded positions it was given, or fewer of them where the step has
+        /// to keep a column anyway, such as the sorting key of a `FINAL` read. The new output header has
+        /// the remaining columns first, in their former order, and may append columns of its own after
+        /// them, such as the dummy column a join adds when nothing else is left; only the header shows those.
         std::vector<size_t> dropped_output_positions;
     };
 
-    /// Per child, in the order of the children: the positions of the child's current output header a step
-    /// reads, sorted. Always one entry per child, and every position of a child whose columns are all
-    /// still read. An empty entry means the step reads nothing of that child.
-    using RequiredInputPositions = std::vector<std::vector<size_t>>;
+    /// Per child, in the order of the children: the positions of the child's current output header the step
+    /// does not need, sorted. Always one entry per child; an empty entry means the step needs every column
+    /// of that child.
+    using UnneededInputPositions = std::vector<std::vector<size_t>>;
 
     /// The sorted positions in `[0, count)` that are not in `positions`, which is sorted too: the dropped
     /// positions of the kept ones, and the other way round.
@@ -190,22 +191,22 @@ public:
         static PrunedInput unchanged(const SharedHeader & header);
     };
 
-    /// Removes what the step no longer needs to produce the columns at `required_output_positions`, a sorted
-    /// list of positions in its current output header, and takes on the new headers of its children, which
-    /// have already been pruned themselves, one `PrunedInput` per child. A column a child keeps that the step
-    /// does not need - more than it was asked for, or one it appended - is consumed by the step, so the step
-    /// outputs the required columns only. A column the child dropped must be one the step does not need.
-    /// The order of the remaining outputs is preserved. Can be used only if canRemoveUnusedColumns returns
-    /// true.
+    /// Removes what the step no longer needs once nobody needs the columns at `unneeded_output_positions`, a
+    /// sorted list of positions in its current output header, and takes on the new headers of its children,
+    /// which have already been pruned themselves, one `PrunedInput` per child. A column a child keeps that
+    /// the step does not need - more than it was asked for, or one it appended - is consumed by the step. A
+    /// column the child dropped must be one the step does not need. The order of the remaining outputs is
+    /// preserved. Can be used only if canRemoveUnusedColumns returns true.
     virtual RemoveUnusedColumnsResult removeUnusedColumns(
-        const std::vector<size_t> & /*required_output_positions*/, const std::vector<PrunedInput> & /*inputs*/);
+        const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & /*inputs*/);
 
-    /// What removeUnusedColumns would need of each child for these outputs, leaving the step untouched. The
-    /// children are to be pruned to that before the step itself is. Requires canGetRequiredColumns.
-    virtual RequiredInputPositions getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/) const;
+    /// What removeUnusedColumns would not need of each child once nobody needs these outputs, leaving the
+    /// step untouched. The children are to be pruned by that before the step itself is. Requires
+    /// canGetUnneededColumns.
+    virtual UnneededInputPositions getUnneededColumns(const std::vector<size_t> & /*unneeded_output_positions*/) const;
 
-    /// Returns true if the step has implemented getRequiredColumns.
-    virtual bool canGetRequiredColumns() const { return false; }
+    /// Returns true if the step has implemented getUnneededColumns.
+    virtual bool canGetUnneededColumns() const { return false; }
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
@@ -225,9 +226,6 @@ public:
     virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
-    /// Every position of every input header: what a step needs of its children when it drops nothing.
-    RequiredInputPositions allInputPositions() const;
-
     /// For a step with one child and one expression: brings the inputs of `dag`, whose outputs are pruned
     /// already, in line with the child's new header. An input reading a column the child keeps stays, also
     /// where nothing needs it any more, and one reading a column the child dropped goes. A column the child
