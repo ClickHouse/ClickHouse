@@ -1,0 +1,50 @@
+-- { echo }
+
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT u32, sum(x) OVER (PARTITION BY u32) FROM t_hash_window_low_cardinality SETTINGS query_plan_window_functions_hash_partitioning = 1)
+WHERE explain LIKE '%Hash partitioning%';
+Hash partitioning: 1
+-- One fixed-size key.
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, u32, sum(x) OVER w, count() OVER w, any(s) OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u32)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, u32, sum(x) OVER w, count() OVER w, any(s) OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u32)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, fs, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY fs)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, fs, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY fs)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY toLowCardinality(n % 10))) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY toLowCardinality(n % 10))) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- Several fixed-size keys, packed into `UInt64` and `UInt128`.
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u8, u32)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u8, u32)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u32, n % 3, fs)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u32, n % 3, fs)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- Serialized keys.
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, nu32, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY nu32)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, nu32, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY nu32)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, s, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY s)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, s, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY s)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, ns, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY ns)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, ns, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY ns)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY s, nu32, u8)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY s, nu32, u8)) SETTINGS query_plan_window_functions_hash_partitioning = 1);
+1
+-- More partitions than are grouped as the rows come.
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY toLowCardinality(toUInt32(n % 50000)))) SETTINGS query_plan_window_functions_hash_partitioning = 0, max_threads = 1)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY toLowCardinality(toUInt32(n % 50000)))) SETTINGS query_plan_window_functions_hash_partitioning = 1, max_threads = 1);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY toLowCardinality(toString(n % 50000)))) SETTINGS query_plan_window_functions_hash_partitioning = 0, max_threads = 1)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY toLowCardinality(toString(n % 50000)))) SETTINGS query_plan_window_functions_hash_partitioning = 1, max_threads = 1);
+1
+-- Spilling to disk.
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, u32, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u32)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, u32, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY u32)) SETTINGS query_plan_window_functions_hash_partitioning = 1, max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0, max_block_size = 1000);
+1
+SELECT (SELECT sum(cityHash64(*)) FROM (SELECT n, s, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY s)) SETTINGS query_plan_window_functions_hash_partitioning = 0)
+    = (SELECT sum(cityHash64(*)) FROM (SELECT n, s, sum(x) OVER w, count() OVER w FROM t_hash_window_low_cardinality WINDOW w AS (PARTITION BY s)) SETTINGS query_plan_window_functions_hash_partitioning = 1, max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0, max_block_size = 1000);
+1
+DROP TABLE t_hash_window_low_cardinality;

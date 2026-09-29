@@ -54,16 +54,18 @@ PartitionAggregateTransform::PartitionAggregateTransform(
     size_t keys_bytes = 0;
     for (auto position : key_positions)
     {
-        const auto & type = *input_header->getByPosition(position).type;
-        if (!type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        /// `getKeyColumns` removes `LowCardinality` from the keys.
+        const auto type = recursiveRemoveLowCardinality(input_header->getByPosition(position).type);
+        if (!type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             break;
-        key_sizes.push_back(type.getSizeOfValueInMemory());
+        key_sizes.push_back(type->getSizeOfValueInMemory());
         keys_bytes += key_sizes.back();
     }
     if (key_sizes.size() != key_positions.size() || keys_bytes > sizeof(UInt256))
     {
         key_sizes.clear();
-        single_string_key = key_positions.size() == 1 && isString(input_header->getByPosition(key_positions[0]).type);
+        single_string_key = key_positions.size() == 1
+            && isString(recursiveRemoveLowCardinality(input_header->getByPosition(key_positions[0]).type));
         grouping.emplace<Grouping<SerializedKeyToGroup>>();
     }
     else if (keys_bytes > sizeof(UInt128))
@@ -121,7 +123,7 @@ ColumnRawPtrs PartitionAggregateTransform::getKeyColumns(const Columns & columns
     ColumnRawPtrs key_columns;
     for (auto position : key_positions)
     {
-        holders.push_back(columns[position]->convertToFullIfWrapped());
+        holders.push_back(recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped()));
         key_columns.push_back(holders.back().get());
     }
     return key_columns;
