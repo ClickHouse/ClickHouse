@@ -487,18 +487,31 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
+    [[maybe_unused]] const std::optional<FormatSettings> & format_settings,
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
-
-    if (getMetadataLookupSettings()[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE does not support the iceberg_metadata_file_path setting");
 
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "OPTIMIZE does not support iceberg_snapshot_id or iceberg_timestamp_ms settings");
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported with iceberg_snapshot_id or iceberg_timestamp_ms");
+
+    /// `iceberg_metadata_file_path` also carries the catalog's metadata pointer, so reject it only without a catalog.
+    if (!catalog)
+    {
+        const auto lookup_settings = getMetadataLookupSettings();
+        if (lookup_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE is not supported with iceberg_metadata_file_path on a standalone Iceberg table");
+
+        if (lookup_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
+    }
 
 #if CLICKHOUSE_CLOUD
     if (!compaction_enabled)
@@ -512,7 +525,13 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    /// `compactIcebergTable` rewrites files directly and cannot commit through a catalog.
+    if (catalog)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build");
+
+    if (settings[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
