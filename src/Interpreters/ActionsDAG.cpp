@@ -2427,6 +2427,16 @@ static bool isNonDeterministicOrStateful(const ActionsDAG::Node & node)
         node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery() && !function.isStateful(); });
 }
 
+/// A higher-order call runs its lambda body, so it counts as non-deterministic when the body is. The lambda itself does not move alone.
+static bool isNonDeterministicOrStatefulCall(const ActionsDAG::Node & node)
+{
+    auto is_lambda = [](const ActionsDAG::Node & n) { return WhichDataType(n.result_type).isFunction(); };
+    if (is_lambda(node))
+        return false;
+    return isNonDeterministicOrStateful(node)
+        || std::ranges::any_of(node.children, [&](const ActionsDAG::Node * child) { return is_lambda(*child) && isNonDeterministicOrStateful(*child); });
+}
+
 bool ActionsDAG::hasStatefulFunctions() const
 {
     for (const auto & node : nodes)
@@ -3245,7 +3255,7 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
                     changed = depends_on_join.insert(&node).second || changed;
         }
         for (const auto & node : nodes)
-            if (!depends_on_join.contains(&node) && isNonDeterministicOrStateful(node))
+            if (!depends_on_join.contains(&node) && isNonDeterministicOrStatefulCall(node))
                 split_nodes.insert(&node);
     }
     auto split_res = split(split_nodes, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);

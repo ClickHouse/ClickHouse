@@ -30,7 +30,7 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (dag.hasStatefulFunctions())
         return 0;
 
-    auto extracted = dag.extractFirstArrayJoin(settings.array_join_nondeterministic_before_expansion);
+    auto extracted = dag.extractFirstArrayJoin(settings.legacy_array_join_function_nondeterministic_evaluation);
     if (!extracted)
         return 0;
 

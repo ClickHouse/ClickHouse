@@ -50,7 +50,7 @@ DROP TABLE t_reuse;
 
 -- rand() is drawn once per output row, like with the ARRAY JOIN clause; the setting restores one draw per source row
 SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1) = 6;
-SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1, arrayjoin_nondeterministic_functions_before_expansion = 1) <= 2;
+SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1, legacy_array_join_function_nondeterministic_evaluation = 1) <= 2;
 
 -- a WHERE with rand() next to the arrayJoin lowers as well
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 0 AND rand() % 2 = 0 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
