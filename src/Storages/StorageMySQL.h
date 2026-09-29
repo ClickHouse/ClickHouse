@@ -129,6 +129,7 @@ private:
 class ReadFromMySQLStep final : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromMySQLStep(
         const Block & sample_block_,
         mysqlxx::PoolWithFailoverPtr pool_,

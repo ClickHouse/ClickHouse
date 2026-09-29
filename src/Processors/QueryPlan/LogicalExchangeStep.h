@@ -24,6 +24,7 @@ protected:
     }
 
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
 
     /// Number of buckets before the exchange. E.g. 1 for ScatterExchange
     virtual size_t getSourceBucketCount() const = 0;

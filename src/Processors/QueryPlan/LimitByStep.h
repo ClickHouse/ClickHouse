@@ -9,6 +9,7 @@ namespace DB
 class LimitByStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit LimitByStep(
             const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);

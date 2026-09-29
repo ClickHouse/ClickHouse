@@ -11,6 +11,7 @@ namespace DB
 class LimitStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     LimitStep(
         const SharedHeader & input_header_,
         size_t limit_, size_t offset_,

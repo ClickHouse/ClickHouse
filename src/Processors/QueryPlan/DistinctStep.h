@@ -18,6 +18,7 @@ bool preliminaryDistinctIsUseful(size_t max_threads);
 class DistinctStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     struct Settings
     {
         /// Restrictions on the maximum size of the `DISTINCT` set.

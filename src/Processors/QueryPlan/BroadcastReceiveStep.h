@@ -9,6 +9,7 @@ namespace DB
 class BroadcastReceiveStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     BroadcastReceiveStep(SharedHeader header_, const String & exchange_id_, const Strings & source_shards_)
         : ISourceStep(std::move(header_))
         , exchange_id(exchange_id_)

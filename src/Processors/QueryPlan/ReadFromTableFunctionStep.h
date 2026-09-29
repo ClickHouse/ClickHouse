@@ -8,6 +8,7 @@ namespace DB
 class ReadFromTableFunctionStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromTableFunctionStep(SharedHeader header, std::string serialized_ast_, TableExpressionModifiers table_expression_modifiers_);
 
     String getName() const override { return "ReadFromTableFunction"; }

@@ -15,6 +15,7 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit ReadFromPreparedSource(Pipe pipe_);
 
     String getName() const override { return "ReadFromPreparedSource"; }

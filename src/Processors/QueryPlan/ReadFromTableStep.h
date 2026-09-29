@@ -8,6 +8,7 @@ namespace DB
 class ReadFromTableStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromTableStep(
         SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool use_parallel_replicas_ = false);
 

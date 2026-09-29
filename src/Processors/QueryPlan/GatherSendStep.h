@@ -13,6 +13,7 @@ namespace DB
 class GatherSendStep final : public IQueryPlanStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     /// `maintain_sort_description_`, when set, must match `GatherReceiveStep`'s - see `updatePipeline`.
     GatherSendStep(SharedHeader input_header_, const String & exchange_id_,
                    std::optional<SortDescription> maintain_sort_description_ = std::nullopt)

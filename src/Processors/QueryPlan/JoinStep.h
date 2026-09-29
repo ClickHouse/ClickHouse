@@ -23,6 +23,7 @@ struct LogicalJoinInfo
 class JoinStep : public IQueryPlanStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
 
     enum class JoinStage : size_t
     {
@@ -140,6 +141,7 @@ public:
 class FilledJoinStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }

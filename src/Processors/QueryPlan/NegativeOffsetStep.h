@@ -9,6 +9,7 @@ namespace DB
 class NegativeOffsetStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     NegativeOffsetStep(const SharedHeader & input_header_, UInt64 offset_);
 
     String getName() const override { return "NegativeOffset"; }

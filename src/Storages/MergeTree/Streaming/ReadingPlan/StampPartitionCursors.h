@@ -21,6 +21,7 @@ class StampPartitionCursorsStep : public ITransformingStep
     void updateOutputHeader() override;
 
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     StampPartitionCursorsStep(SharedHeader input_header_, String partition_id_, bool unordered_);
 
     String getName() const override { return "StampPartitionCursors"; }

@@ -22,6 +22,7 @@ using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
 class SaveSubqueryResultToBufferStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     SaveSubqueryResultToBufferStep(
         const SharedHeader & header_,
         ColumnIdentifiers columns_to_save_,

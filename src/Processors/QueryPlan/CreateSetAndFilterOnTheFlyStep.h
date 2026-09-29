@@ -17,6 +17,7 @@ namespace DB
 class CreateSetAndFilterOnTheFlyStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     /// Two instances of step need some shared state to connect processors crosswise
     class CrosswiseConnection;
     using CrosswiseConnectionPtr = std::shared_ptr<CrosswiseConnection>;

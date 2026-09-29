@@ -10,6 +10,7 @@ namespace DB
 class FractionalLimitStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     FractionalLimitStep(
         const SharedHeader & input_header_,
         Float64 limit_fraction_,

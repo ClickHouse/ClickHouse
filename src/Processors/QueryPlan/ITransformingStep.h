@@ -15,6 +15,7 @@ namespace ErrorCodes
 class ITransformingStep : public IQueryPlanStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     /// This flags are used to automatically set properties for output stream.
     /// They are specified in constructor and cannot be changed.
     struct DataStreamTraits

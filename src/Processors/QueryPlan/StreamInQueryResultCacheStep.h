@@ -10,6 +10,7 @@ class QueryResultCacheWriter;
 class StreamInQueryResultCacheStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     StreamInQueryResultCacheStep(const SharedHeader & input_header_, std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
 
     String getName() const override { return "StreamInQueryResultCache"; }

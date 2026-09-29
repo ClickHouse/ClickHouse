@@ -16,6 +16,7 @@ namespace DB
 class ParallelReplicasSplitStep final : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit ParallelReplicasSplitStep(SharedHeader input_header_)
         : ITransformingStep(input_header_, input_header_, {})
     {

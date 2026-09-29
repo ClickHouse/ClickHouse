@@ -281,6 +281,7 @@ private:
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_);
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;

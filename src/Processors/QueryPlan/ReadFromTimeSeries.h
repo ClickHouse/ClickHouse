@@ -12,6 +12,7 @@ namespace DB
 class ReadFromTimeSeriesStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromTimeSeriesStep(QueryPlanPtr query_plan_, ContextPtr read_context_);
 
     String getName() const override { return "ReadFromTimeSeries"; }

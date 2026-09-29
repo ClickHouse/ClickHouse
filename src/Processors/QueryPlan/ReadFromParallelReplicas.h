@@ -21,6 +21,7 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 class ReadFromParallelReplicasStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromParallelReplicasStep(
         std::shared_ptr<const QueryPlan> query_plan_,
         ClusterPtr cluster_,

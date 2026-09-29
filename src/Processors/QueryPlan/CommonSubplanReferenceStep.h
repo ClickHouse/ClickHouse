@@ -12,6 +12,7 @@ using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 class CommonSubplanReferenceStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit CommonSubplanReferenceStep(
         const SharedHeader & header_,
         QueryPlan::Node * subplan_root_,

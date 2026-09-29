@@ -9,6 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     OffsetStep(const SharedHeader & input_header_, size_t offset_);
 
     String getName() const override { return "Offset"; }

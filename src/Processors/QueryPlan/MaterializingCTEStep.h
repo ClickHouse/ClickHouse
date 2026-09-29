@@ -16,6 +16,7 @@ using MaterializedCTESet = std::unordered_set<MaterializedCTEPtr>;
 class MaterializingCTEStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit MaterializingCTEStep(
         SharedHeader input_header_,
         MaterializedCTEWeakPtr materialized_cte_
@@ -44,6 +45,7 @@ private:
 class MaterializingCTEsStep : public IQueryPlanStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     MaterializingCTEsStep(SharedHeaders input_headers_, std::vector<MaterializedCTEPtr> ctes_);
 
     String getName() const override { return "MaterializingCTEs"; }
@@ -74,6 +76,7 @@ private:
 class DelayedMaterializingCTEsStep final : public IQueryPlanStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
 
     DelayedMaterializingCTEsStep(SharedHeader input_header, std::vector<MaterializedCTEPtr> ctes_);
 

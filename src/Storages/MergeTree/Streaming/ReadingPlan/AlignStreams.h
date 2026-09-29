@@ -21,6 +21,7 @@ class AlignStreamsStep : public IQueryPlanStep
     void updateOutputHeader() override;
 
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     AlignStreamsStep(SharedHeader metadata_header_, SharedHeader data_header_, String partition_id_, Field initial_watermark_);
 
     String getName() const override { return "AlignStreams"; }

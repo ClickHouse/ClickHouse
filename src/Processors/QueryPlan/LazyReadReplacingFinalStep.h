@@ -16,6 +16,7 @@ class LazyFinalKeyAnalysisStep;
 class LazyReadReplacingFinalStep : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     LazyReadReplacingFinalStep(
         StorageMetadataPtr metadata_snapshot_,
         const MergeTreeData & data_,

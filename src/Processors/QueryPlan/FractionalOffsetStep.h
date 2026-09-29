@@ -10,6 +10,7 @@ namespace DB
 class FractionalOffsetStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     FractionalOffsetStep(const SharedHeader & input_header_, Float64 fractional_offset_);
 
     String getName() const override { return "FractionalOffset"; }

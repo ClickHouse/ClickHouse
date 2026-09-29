@@ -16,6 +16,7 @@ namespace DB
 class ReadFromTextIndexCount : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     /// The text search query recovered from the index read tasks at plan time.
     struct ResolvedQuery
     {

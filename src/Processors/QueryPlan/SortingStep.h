@@ -14,6 +14,7 @@ class QueryPipelineProcessorsCollector;
 class SortingStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
 
     enum class SortingStage : uint8_t
     {

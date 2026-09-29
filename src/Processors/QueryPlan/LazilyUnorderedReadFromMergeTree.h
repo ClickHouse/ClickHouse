@@ -22,6 +22,7 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class LazilyUnorderedReadFromMergeTree final : public ISourceStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     LazilyUnorderedReadFromMergeTree(
         SharedHeader header,
         size_t max_block_size_,

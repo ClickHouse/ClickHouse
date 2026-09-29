@@ -10,6 +10,7 @@ namespace DB
 class CommonSubplanStep : public ITransformingStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit CommonSubplanStep(const SharedHeader & header_);
 
     CommonSubplanStep(const CommonSubplanStep &) = default;

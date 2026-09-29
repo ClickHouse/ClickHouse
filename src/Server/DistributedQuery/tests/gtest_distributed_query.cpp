@@ -144,6 +144,8 @@ private:
 class PrintTSVStep : public IQueryPlanStep
 {
 public:
+    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
+
     explicit PrintTSVStep(SharedHeader input_header_)
     {
         updateInputHeaders({input_header_});
