@@ -83,7 +83,7 @@ uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & b
     CompressionCodecAdaptive adaptive(type(type_name), defaultCodec());
 
     PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-    const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
+    const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data(), adaptive.createCompressionState().get());
 
     const uint8_t method = ICompressionCodec::readMethod(encoded.data());
     auto decoder = CompressionCodecFactory::instance().get(method);
@@ -256,7 +256,7 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
                 const UInt32 size = static_cast<UInt32>(bytes.size());
 
                 PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-                const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
+                const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data(), adaptive.createCompressionState().get());
 
                 auto decoder = CompressionCodecFactory::instance().get(ICompressionCodec::readMethod(encoded.data()));
                 PODArray<char> decoded(size);
