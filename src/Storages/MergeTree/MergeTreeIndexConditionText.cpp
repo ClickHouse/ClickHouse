@@ -265,9 +265,9 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
 }
 
-String MergeTreeIndexConditionText::getPreprocessorExpressionName(const MergeTreeIndexTextPreprocessor & preprocessor, ContextPtr context)
+String MergeTreeIndexConditionText::getPreprocessorExpressionName(const MergeTreeIndexTextPreprocessor & preprocessor, ContextPtr context_)
 {
-    RPNBuilderTreeContext tree_context(std::move(context));
+    RPNBuilderTreeContext tree_context(std::move(context_));
     return RPNBuilderTreeNode(preprocessor.getOriginalActionsDAG().getOutputs().front(), tree_context).getColumnName();
 }
 

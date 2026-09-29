@@ -105,7 +105,7 @@ public:
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
     /// The preprocessor expression named as the query side names its nodes, like the index expression in `header`.
-    static String getPreprocessorExpressionName(const MergeTreeIndexTextPreprocessor & preprocessor, ContextPtr context);
+    static String getPreprocessorExpressionName(const MergeTreeIndexTextPreprocessor & preprocessor, ContextPtr context_);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
