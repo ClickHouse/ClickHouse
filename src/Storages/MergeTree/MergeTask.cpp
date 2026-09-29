@@ -1405,6 +1405,7 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
         case MergeTreeData::MergingParams::Summing:
         case MergeTreeData::MergingParams::Aggregating:
         case MergeTreeData::MergingParams::Coalescing:
+        case MergeTreeData::MergingParams::VersionedCoalescing:
         case MergeTreeData::MergingParams::Graphite:
             return false;
     }
