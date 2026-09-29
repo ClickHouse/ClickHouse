@@ -949,9 +949,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_scope = QueryScope::createForQueryContext();
         auto query_context = session->makeQueryContext();
         assignStatementQueryId(query_context);
-        QueryScope query_scope = QueryScope::create(query_context);
+        query_scope.attachToQueryContext(query_context);
 
         pinCopyFormatSettings(query_context);
 
@@ -1036,10 +1037,11 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_TO)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_scope = QueryScope::createForQueryContext();
         auto query_context = session->makeQueryContext();
         assignStatementQueryId(query_context);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        query_scope.attachToQueryContext(query_context);
 
         pinCopyFormatSettings(query_context);
 
@@ -1126,16 +1128,13 @@ void PostgreSQLHandler::processQuery()
         if (processCopyQuery(query_text))
             return;
 
-        auto query_context = session->makeQueryContext();
-        assignStatementQueryId(query_context);
-
         if (should_init_system_tables)
         {
-            initializeSystemTables(query_context);
+            initializeSystemTables(session->sessionContext());
             should_init_system_tables = false;
         }
 
-        if (processExecute(query_text, query_context))
+        if (processExecute(query_text))
             return;
 
         auto parse_res = splitMultipartQuery(
@@ -1151,9 +1150,11 @@ void PostgreSQLHandler::processQuery()
 
         for (auto & sql_query : queries)
         {
+            auto query_scope = QueryScope::createForQueryContext();
+            auto query_context = session->makeQueryContext();
             assignStatementQueryId(query_context);
 
-            QueryScope query_scope = QueryScope::create(query_context);
+            query_scope.attachToQueryContext(query_context);
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
@@ -1240,7 +1241,7 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
     return true;
 }
 
-bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr query_context)
+bool PostgreSQLHandler::processExecute(const String & query)
 {
     auto parser = ParserExecute();
     ASTPtr prepare;
@@ -1258,7 +1259,10 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
 
-    QueryScope query_scope = QueryScope::create(query_context);
+    auto query_scope = QueryScope::createForQueryContext();
+    auto query_context = session->makeQueryContext();
+    assignStatementQueryId(query_context);
+    query_scope.attachToQueryContext(query_context);
 
     UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
 
@@ -1372,16 +1376,16 @@ void PostgreSQLHandler::processExecuteQuery()
                 "Execute on a named portal is not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
 
-        auto query_context = session->makeQueryContext();
-        assignStatementQueryId(query_context);
-
         if (should_init_system_tables)
         {
-            initializeSystemTables(query_context);
+            initializeSystemTables(session->sessionContext());
             should_init_system_tables = false;
         }
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        auto query_scope = QueryScope::createForQueryContext();
+        auto query_context = session->makeQueryContext();
+        assignStatementQueryId(query_context);
+        query_scope.attachToQueryContext(query_context);
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command =
@@ -1519,7 +1523,7 @@ Int32 PostgreSQLHandler::parseNumberColumns(const std::vector<char> & output)
     return result;
 }
 
-void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
+void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr session_context)
 {
     /// Create an internal context from the global context (which has full access, bypassing grant checks)
     /// but sharing the same session context, so that temporary views created here
@@ -1527,7 +1531,7 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     auto internal_context = Context::createCopy(server.context());
     internal_context->makeQueryContext();
     internal_context->setCurrentQueryId(fmt::format("postgres-init:{:d}", connection_id));
-    internal_context->setSessionContext(query_context->getSessionContext());
+    internal_context->setSessionContext(session_context);
 
     String out_str;
     auto out_buffer = WriteBufferFromString(out_str);
