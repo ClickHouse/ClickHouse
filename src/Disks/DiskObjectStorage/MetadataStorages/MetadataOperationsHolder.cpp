@@ -95,6 +95,18 @@ void MetadataOperationsHolder::commit()
             tryLogCurrentException(__PRETTY_FUNCTION__);
             error.rethrow();
         }
+        catch (...)
+        {
+            /// Some object storages (Azure) throw their own exception types.
+            state = MetadataStorageTransactionState::FAILED;
+
+            Exception error(getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/ true), getCurrentExceptionCode());
+            error.addMessage(fmt::format("While committing metadata operation #{}", i));
+            rollback(i, error);
+
+            tryLogException(std::make_exception_ptr(error), __PRETTY_FUNCTION__);
+            throw error;
+        }
     }
 
     state = MetadataStorageTransactionState::COMMITTED;

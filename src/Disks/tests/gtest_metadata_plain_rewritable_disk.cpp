@@ -2527,8 +2527,13 @@ public:
     {
         if (!exists(object_from))
             throw std::runtime_error("The source object does not exist");
+        if (object_from.remote_path == fail_copy_of)
+            throw std::runtime_error("Injected foreign error");
         LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
     }
+
+    /// The copy of this existing key fails.
+    std::string fail_copy_of;
 };
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlobOnForeignErrors)
@@ -2566,4 +2571,54 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlobOnForeignErrors)
     expectCommitReportsDivergence(tx, b_blob);
 
     EXPECT_EQ(allObjects(object_storage, key_prefix), objects_before);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ForeignErrorRollsBackTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "ForeignErrorRollback";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto other_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/other").serialize(), "the other file");
+        tx->createMetadataFile("/A/other", {StoredObject("/A/other", "other", other_size)});
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    object_storage->fail_copy_of = metadata->getStorageObjects("/A/target").front().remote_path;
+    const auto objects_before = allObjects(object_storage, key_prefix);
+
+    /// The backup of the target fails after the unlink and after the move saved the source.
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/other", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->replaceFile("/A/source", "/A/target");
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction with a failed copy succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_THAT(e.message(), testing::HasSubstr("Injected foreign error"));
+        EXPECT_THAT(e.message(), testing::Not(testing::HasSubstr("did not complete")));
+    }
+
+    EXPECT_EQ(allObjects(object_storage, key_prefix), objects_before);
+    EXPECT_TRUE(metadata->existsFile("/A/other"));
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_TRUE(metadata->existsFile("/A/target"));
 }
