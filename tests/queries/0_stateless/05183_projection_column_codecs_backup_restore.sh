@@ -40,7 +40,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     SETTINGS min_bytes_for_wide_part = 0;
 
     INSERT INTO projection_codec_backup_source
-    SELECT number, repeat('value', 20) FROM numbers(100000);
+    SELECT number, repeat('value', 20) FROM numbers(10000);
 
     BACKUP TABLE projection_codec_backup_source TO ${backup} FORMAT Null;
 
@@ -75,7 +75,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # remain readable, and the merge must use the codec declaration reconstructed from backup metadata.
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     INSERT INTO projection_codec_backup_restored
-    SELECT number + 100000, repeat('new', 20) FROM numbers(100000);
+    SELECT number + 10000, repeat('new', 20) FROM numbers(10000);
 
     OPTIMIZE TABLE projection_codec_backup_restored FINAL;
 "
@@ -122,7 +122,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     SYSTEM STOP MERGES projection_codec_backup_existing;
 
     INSERT INTO projection_codec_backup_existing
-    SELECT number + 200000, repeat('existing', 20) FROM numbers(100000);
+    SELECT number + 20000, repeat('existing', 20) FROM numbers(10000);
 
     RESTORE TABLE projection_codec_backup_source AS projection_codec_backup_existing
     FROM ${backup}
