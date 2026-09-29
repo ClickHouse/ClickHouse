@@ -2031,8 +2031,8 @@ void addWindowSteps(QueryPlan & query_plan,
 
         // Fan out streams only for the last window to preserve the ordering between windows,
         // and WindowTransform works on single stream anyway.
-        const bool streams_fan_out
-            = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == window_descriptions_size);
+        const bool streams_fan_out = !use_hash_partitioning
+            && settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == window_descriptions_size);
 
         std::optional<SortingStep::Settings> hash_partitioning_settings;
         if (use_hash_partitioning)

@@ -29,9 +29,6 @@ SELECT count() FROM (EXPLAIN PIPELINE SELECT k, sum(x) OVER (PARTITION BY k) FRO
 WHERE explain LIKE '%ScatterByPartitionTransform%';
 SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 0)
     = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 1);
--- The streams are resized after the last window, as with sorting.
-SELECT (SELECT count() FROM (EXPLAIN PIPELINE SELECT k, sum(x) OVER (PARTITION BY k) FROM t_hash_window_partitions SETTINGS query_plan_window_functions_hash_partitioning = 0) WHERE explain LIKE '%Resize%')
-    = (SELECT count() FROM (EXPLAIN PIPELINE SELECT k, sum(x) OVER (PARTITION BY k) FROM t_hash_window_partitions SETTINGS query_plan_window_functions_hash_partitioning = 1) WHERE explain LIKE '%Resize%');
 
 -- `DISTINCT` after the window.
 SELECT (SELECT groupArraySorted(100)((k, s)) FROM (SELECT DISTINCT k, sum(x) OVER (PARTITION BY k) AS s FROM t_hash_window_partitions) SETTINGS query_plan_window_functions_hash_partitioning = 0)
