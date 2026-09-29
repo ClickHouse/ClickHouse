@@ -25,7 +25,7 @@ int mainEntryExampleReadBufferPerf(int, char **)
             DB::readIntText(a, in);
             in.ignore();
 
-            DB::readFloatText(b, in);
+            DB::readFloatTextPrecise(b, in);
             in.ignore();
 
             DB::readEscapedString(c, in);

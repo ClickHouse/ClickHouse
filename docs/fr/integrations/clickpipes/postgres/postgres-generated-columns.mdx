@@ -1,0 +1,42 @@
+---
+title: 'Colonnes générées dans Postgres : pièges et bonnes pratiques'
+slug: /integrations/clickpipes/postgres/generated_columns
+description: 'Page décrivant les points importants à prendre en compte lors de l’utilisation de colonnes générées PostgreSQL dans des tables répliquées'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Lorsque vous utilisez des colonnes générées de PostgreSQL dans des tables répliquées, il y a plusieurs points importants à prendre en compte. Ces pièges peuvent affecter le processus de réplication ainsi que la cohérence des données dans vos systèmes de destination.
+
+<div id="the-problem-with-generated-columns">
+  ## Le problème des colonnes générées
+</div>
+
+1. **Non publiées via `pgoutput` :** Les colonnes générées ne sont pas publiées par le plugin de réplication logique `pgoutput`. Cela signifie que lorsque vous répliquez des données de PostgreSQL vers un autre système, les valeurs des colonnes générées ne sont pas incluses dans le flux de réplication.
+
+2. **Problèmes avec les clés primaires :** Si une colonne générée fait partie de votre clé primaire, cela peut entraîner des problèmes de déduplication dans le système de destination. Comme les valeurs des colonnes générées ne sont pas répliquées, le système de destination ne disposera pas des informations nécessaires pour identifier correctement les lignes et les dédupliquer.
+
+3. **Problèmes avec les modifications de schéma** : Si vous ajoutez une colonne générée à une table déjà en cours de réplication, la nouvelle colonne ne sera pas renseignée dans le système de destination, car Postgres ne nous fournit pas le `RelationMessage` pour cette nouvelle colonne. Si vous ajoutez ensuite une nouvelle colonne non générée à la même table, le ClickPipe, lorsqu&#39;il tentera de synchroniser le schéma, ne pourra pas trouver la colonne générée dans le système de destination, ce qui entraînera un échec du processus de réplication.
+
+<div id="best-practices">
+  ## Bonnes pratiques
+</div>
+
+Pour contourner ces limitations, tenez compte des bonnes pratiques suivantes :
+
+1. **Recréez les colonnes générées sur le système de destination :** Au lieu de vous appuyer sur le processus de réplication pour gérer les colonnes générées, il est recommandé de recréer ces colonnes sur le système de destination à l&#39;aide d&#39;outils comme dbt (outil de transformation des données) ou d&#39;autres mécanismes de transformation des données.
+
+2. **Évitez d&#39;utiliser des colonnes générées dans les clés primaires :** Lors de la conception de tables qui seront répliquées, il est préférable d&#39;éviter d&#39;inclure des colonnes générées dans la clé primaire.
+
+<div id="upcoming-improvements-to-ui">
+  ## Améliorations à venir de l’UI
+</div>
+
+Dans les prochaines versions, nous prévoyons d’ajouter une UI pour vous aider sur les points suivants :
+
+1. **Identifier les tables avec des colonnes générées :** l’UI comprendra une fonctionnalité permettant d’identifier les tables contenant des colonnes générées. Cela vous aidera à comprendre quelles tables sont concernées par ce problème.
+
+2. **Documentation et bonnes pratiques :** l’UI inclura des bonnes pratiques pour l’utilisation des colonnes générées dans les tables répliquées, ainsi que des recommandations pour éviter les pièges courants.

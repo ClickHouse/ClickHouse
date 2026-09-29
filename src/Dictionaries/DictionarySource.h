@@ -5,6 +5,7 @@
 #include <Core/Names.h>
 #include <Core/Types.h>
 #include <Dictionaries/IDictionary.h>
+#include <Processors/Chunk.h>
 #include <boost/noncopyable.hpp>
 
 
@@ -12,6 +13,18 @@ namespace DB
 {
 
 class DictionarySource;
+
+/// Attached to every chunk produced by `DictionarySource` so that consumers can recover the
+/// original sequential read order of the dictionary even when it is read with several streams.
+/// Block `n` always covers the key range `[n * max_block_size, (n + 1) * max_block_size)`,
+/// so ordering chunks by `number` reproduces the single-stream scan order.
+struct DictionaryBlockNumber : public ChunkInfoCloneable<DictionaryBlockNumber>
+{
+    explicit DictionaryBlockNumber(size_t number_) : number(number_) {}
+    DictionaryBlockNumber(const DictionaryBlockNumber &) = default;
+
+    size_t number = 0;
+};
 
 class DictionarySourceCoordinator final : public std::enable_shared_from_this<DictionarySourceCoordinator>
                                         , private boost::noncopyable
@@ -85,7 +98,7 @@ private:
 
     friend class DictionarySource;
 
-    bool getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns);
+    bool getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns, size_t & block_number);
 
     const SharedHeader & getHeader() const { return header; }
 

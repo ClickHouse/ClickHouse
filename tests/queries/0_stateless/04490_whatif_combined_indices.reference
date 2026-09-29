@@ -1,0 +1,40 @@
+--- two hyp indexes: independent rows + combined row ---
+  marks:       100
+With idx_b (minmax, hypothetical):
+  marks:        1
+  skip_ratio:   99.0%
+With idx_c (bloom_filter, hypothetical):
+  marks:        3
+  skip_ratio:   97.0%
+(combined: idx_b, idx_c):
+  marks:        0
+  skip_ratio:   100.0%
+--- three hyp indexes: independent rows + combined row ---
+  marks:       100
+With idx_b (minmax, hypothetical):
+  marks:        1
+  skip_ratio:   99.0%
+With idx_c (bloom_filter, hypothetical):
+  marks:        3
+  skip_ratio:   97.0%
+With idx_d (set, hypothetical):
+  marks:        100
+  skip_ratio:   0.0%
+(combined: idx_b, idx_c, idx_d):
+  marks:        0
+  skip_ratio:   100.0%
+--- redundant hyp indexes (same column): combined equals each single ---
+  marks:       100
+With idx_b (minmax, hypothetical):
+  marks:        1
+  skip_ratio:   99.0%
+With idx_b_set (set, hypothetical):
+  marks:        1
+  skip_ratio:   99.0%
+(combined: idx_b, idx_b_set):
+  marks:        1
+  skip_ratio:   99.0%
+--- single hyp index: no combined block ---
+0
+--- combined name cannot be forced (INDEX_NOT_USED) ---
+INDEX_NOT_USED

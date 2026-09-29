@@ -1,0 +1,23 @@
+---
+description: 'Documentação para DDL distribuído'
+sidebarTitle: 'DDL distribuído'
+slug: /sql-reference/distributed-ddl
+title: 'Consultas DDL distribuídas (cláusula ON CLUSTER)'
+doc_type: 'reference'
+---
+
+Por padrão, as consultas `CREATE`, `DROP`, `ALTER` e `RENAME` afetam apenas o servidor atual em que são executadas. Em uma configuração de cluster, é possível executar essas consultas de forma distribuída com a cláusula `ON CLUSTER`.
+
+Por exemplo, a consulta a seguir cria a tabela `all_hits` do tipo `Distributed` em cada host no `cluster`:
+
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+```
+
+Para executar essas consultas corretamente, cada host deve ter a mesma definição de cluster (para simplificar a sincronização das configurações, você pode usar substituições do ZooKeeper). Todos eles também devem se conectar aos servidores ZooKeeper.
+
+A versão local da consulta acabará sendo executada em cada host do cluster, mesmo que alguns hosts não estejam disponíveis no momento.
+
+<Warning>
+  A ordem de execução das consultas em um único host é garantida.
+</Warning>

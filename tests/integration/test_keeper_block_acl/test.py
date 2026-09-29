@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
-import time
 import pytest
-from kazoo.client import KazooClient
-from kazoo.security import make_acl, make_digest_acl
-from kazoo.exceptions import NoAuthError, AuthFailedError, BadVersionError, NoNodeError
+from kazoo.security import make_acl
+from kazoo.exceptions import NoAuthError
 
 from helpers.cluster import ClickHouseCluster
 

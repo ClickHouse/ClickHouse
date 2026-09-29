@@ -77,6 +77,11 @@ public:
 
     void expand(const IColumn::Filter & mask, bool inverted);
 
+    /// Set the stored index to `value` for every row where `mask` is zero.
+    /// When `offset` is given, only the rows in `[offset, offset + mask.size())` are affected and `mask`
+    /// covers just that range; otherwise it must cover the whole column.
+    void setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset = 0);
+
 private:
     size_t getMaxIndexForCurrentType() const;
 

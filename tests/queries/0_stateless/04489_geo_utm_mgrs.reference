@@ -1,0 +1,34 @@
+-- geoToUTM: forward conversion
+448251.598	5411935.126	31	U
+326132.286	2787898.607	40	R
+551130.768	4180998.882	10	S
+334368.634	6250948.345	56	H
+166021.443	0	31	N
+-- geoToUTM: Norway and Svalbard zone exceptions
+32
+33
+31
+-- geoToUTM: forced zone
+8303.806	5433409.649	32	U
+-- UTMToGeo: inverse conversion round-trips back to the input (within 1e-6 degrees)
+1
+1
+1
+-- geoToMGRS: encoding at several precisions
+31UDQ4825111935
+31UDQ4825111935
+31UDQ482119
+31UDQ
+40RCN2613287898
+56HLH3436850948
+-- MGRSToGeo: decoding to the centre of the grid square
+2.2945	48.85823
+1
+1
+-- MGRSToGeo(geoToMGRS(...)) re-encodes to the same string
+1
+-- vectorized over a table
+31UDQ48251193
+40RCN26138789
+56HLH34365094
+-- error handling

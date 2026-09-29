@@ -535,7 +535,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     }
 
     /// Extract ranges/bounds implied by the WHERE clause.
-    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr, context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr, context, /* boolean_context */ true);
     KeyCondition condition(inverted_dag, context, column_names, key_expression);
 
     const auto extracted_ranges = NumbersLikeUtils::extractRanges(condition);

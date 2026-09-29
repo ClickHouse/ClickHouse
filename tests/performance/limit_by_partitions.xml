@@ -40,6 +40,9 @@
 
     <query>SELECT a FROM t_skew_{size}_{partitions} LIMIT 10 BY a FORMAT Null</query>
 
+    <!-- propagation through ARRAY JOIN -->
+    <query>SELECT a FROM t_{size}_{partitions} ARRAY JOIN range(a % 4) AS e LIMIT 10 BY a FORMAT Null</query>
+
     <drop_query>DROP TABLE t_{size}_{partitions}</drop_query>
     <drop_query>DROP TABLE t_skew_{size}_{partitions}</drop_query>
 </test>

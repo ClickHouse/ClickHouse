@@ -1,0 +1,46 @@
+---
+slug: /cloud/get-started/cloud/use-cases/observability
+title: 'オブザーバビリティ'
+description: '分散アプリケーションにおけるオブザーバビリティ、監視、ロギング、システムパフォーマンス分析に ClickHouse Cloud を活用'
+keywords: ['ユースケース', 'オブザーバビリティ']
+sidebarTitle: 'オブザーバビリティ'
+doc_type: 'guide'
+---
+
+import { PrimaryButton } from "/snippets/ja/components/PrimaryButton/PrimaryButton.jsx";
+
+<div id="clickstack">
+  ## オブザーバビリティ向け ClickHouse
+</div>
+
+ClickHouse の初期導入者たちは、オブザーバビリティは本質的にデータの問題だと見抜いていました。
+どのデータベースを選ぶかによって、オブザーバビリティプラットフォームのコスト、スケール、機能が決まります。そのため、時系列データに適したデータベースの選定は、社内で構築する場合でも、オブザーバビリティ企業を立ち上げる場合でも、しばしば最も重要なアーキテクチャ上の意思決定となります。
+
+まさにこのため、ClickHouse は長年にわたってオブザーバビリティスタックの中核を担ってきました。
+Netflix や eBay のような業界大手から、Sentry や Dash0 のようなオブザーバビリティ分野のスタートアップまで、ClickHouse は大規模なログ、メトリクス、トレースを支えています。
+カラム指向ストレージ、高度な圧縮、ベクトル化実行エンジンにより、コストを大幅に削減し、遅いツールに足を引っ張られることなく、稼働中のシステムをデバッグするためにエンジニアが必要とするサブ秒クエリを実現します。
+
+## ClickStack
+
+オブザーバビリティのユースケースにおける ClickHouse の中核を成すのが ClickStack です。これは、ログ、トレース、メトリクスを単一の ClickHouse データベースに保存することで、それらの扱い方を大きく変える革新的なオブザーバビリティプラットフォームです。
+この統合されたアプローチにより、インフラストラクチャ全体とアプリケーション全体にわたるシグナルを非常に簡単に相関付けることができます。
+
+ClickStack は、シームレスに連携する 3 つの中核コンポーネントを中心に構築されています。
+
+<Tabs>
+  <Tab title="OpenTelemetry" icon="/images/integrations/logos/logo_otel.webp">
+    > ClickStack の OpenTelemetry Collector ディストリビューションは、データインジェストのゲートウェイとして機能します。OpenTelemetry はオブザーバビリティデータの業界標準となっており、この collector はテレメトリーストリームを扱うための最適な選択肢です。
+  </Tab>
+
+  <Tab title="ClickHouse" icon="/images/icons/icon-clickhouse-tab.svg">
+    > ClickHouse が選ばれているのは、オブザーバビリティのワークロードで求められる高カーディナリティデータに対する卓越した性能と、きわめて高速な集計を備えているためです。
+  </Tab>
+
+  <Tab title="HyperDX" icon="/images/hyperdx-logo.webp">
+    > HyperDX は、強力なクエリ機能と相関付け機能により、すべてのデータをひとつにまとめて扱える直感的なユーザーインターフェイスを提供します。
+  </Tab>
+</Tabs>
+
+ClickStack をとりわけ魅力的にしているのは、その柔軟性です。OpenTelemetry ネイティブであり、OpenTelemetry エコシステムとの組み合わせで最適に機能しますが、それに限定されるわけではありません。S3、Kafka、そのほかのエージェントを含むさまざまなソースからデータを取り込めるため、既存のインフラストラクチャを活かしたまま運用できます。
+
+<PrimaryButton label="ClickStack のドキュメントを読む" href="/ja/clickstack" />

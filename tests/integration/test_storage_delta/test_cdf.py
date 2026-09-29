@@ -1,51 +1,17 @@
-import json
 import logging
 import os
 import random
 import string
-import time
-import threading
-from datetime import datetime
 
-import delta
 import pyspark
 import pytest
-from delta import *
-from pyspark.sql.functions import (
-    col,
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
-from pyspark.sql.types import (
-    ArrayType,
-    BooleanType,
-    DateType,
-    IntegerType,
-    LongType,
-    ShortType,
-    StringType,
-    DecimalType,
-    StructField,
-    StructType,
-    TimestampType,
-)
-from decimal import Decimal
-from pyspark.sql.window import Window
 
-import helpers.client
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_access_key, minio_secret_key
-from helpers.mock_servers import start_mock_servers
-from helpers.network import PartitionManager
+from helpers.config_cluster import minio_secret_key
 from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
-    get_file_contents,
-    list_s3_objects,
-    prepare_s3_bucket,
     upload_directory,
-    LocalDownloader,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
@@ -53,7 +19,7 @@ from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
     os.path.dirname(os.path.realpath(__file__))
 )
-cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
+cluster = ClickHouseCluster(__file__, with_spark=True)
 
 S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
@@ -159,10 +125,8 @@ def test_cdf(started_cluster, column_mapping):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_cdf")
-    partition_columns = ["year"]
     minio_client = started_cluster.minio_client
     spark = started_cluster.spark_session
-    num_rows = 10
     path = f"/{table_name}"
 
     # Omit _commit_timestamp

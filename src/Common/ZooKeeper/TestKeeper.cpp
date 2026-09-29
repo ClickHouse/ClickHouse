@@ -2,11 +2,19 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/TestKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
+#include <Common/SipHash.h>
+
 #include <base/types.h>
+
+#include <algorithm>
 #include <functional>
+#include <string_view>
+
+#ifdef ZOOKEEPER_IMPL
+#  error "TestKeeper must not use ZooKeeper implementation"
+#endif
 
 namespace Coordination
 {
@@ -141,6 +149,14 @@ struct TestKeeperListRecursiveRequest final : ListRecursiveRequest, TestKeeperRe
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
+struct TestKeeperListWithOptionsRequest final : ListWithOptionsRequest, TestKeeperRequest
+{
+    TestKeeperListWithOptionsRequest() = default;
+    explicit TestKeeperListWithOptionsRequest(const ListWithOptionsRequest & base) : ListWithOptionsRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
 struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 {
     TestKeeperExistsRequest() = default;
@@ -176,25 +192,6 @@ struct TestKeeperListRequest : ListRequest, TestKeeperRequest
     explicit TestKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
-};
-
-struct TestKeeperFilteredListRequest : TestKeeperListRequest
-{
-    TestKeeperFilteredListRequest() = default;
-    explicit TestKeeperFilteredListRequest(const ZooKeeperFilteredListRequest & base)
-        : TestKeeperListRequest(base), list_request_type(base.list_request_type) {}
-
-    ListRequestType list_request_type{};
-};
-
-struct TestKeeperFilteredListWithStatsAndDataRequest final : TestKeeperFilteredListRequest
-{
-    TestKeeperFilteredListWithStatsAndDataRequest() = default;
-    explicit TestKeeperFilteredListWithStatsAndDataRequest(const ZooKeeperFilteredListWithStatsAndDataRequest & base)
-        : TestKeeperFilteredListRequest(base), with_stat(base.with_stat), with_data(base.with_data) {}
-
-    bool with_stat{};
-    bool with_data{};
 };
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
@@ -285,6 +282,11 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
                 validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperListRecursiveRequest>(*concrete_request_list_recursive));
             }
+            else if (const auto * concrete_request_list_with_options = dynamic_cast<const ListWithOptionsRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperListWithOptionsRequest>(*concrete_request_list_with_options));
+            }
             else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
             {
                 validateOrSpecifyRequestType(/*is_read=*/true);
@@ -294,11 +296,6 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
             {
                 validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
-            }
-            else if (const auto * concrete_request_list_with_stat_and_data = dynamic_cast<const ZooKeeperFilteredListWithStatsAndDataRequest *>(generic_request.get()))
-            {
-                validateOrSpecifyRequestType(/*is_read=*/true);
-                requests.push_back(std::make_shared<TestKeeperFilteredListWithStatsAndDataRequest>(*concrete_request_list_with_stat_and_data));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -357,6 +354,8 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             created_node.data = data;
             created_node.is_ephemeral = is_ephemeral;
             created_node.is_sequental = is_sequential;
+            created_node.is_ttl = include_ttl;
+            created_node.ttl = include_ttl ? ttl : 0;
             std::string path_created = path;
 
             if (is_sequential)
@@ -548,6 +547,84 @@ std::pair<ResponsePtr, Undo> TestKeeperListRecursiveRequest::process(TestKeeper:
     return { std::make_shared<ListRecursiveResponse>(response), {} };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    ListWithOptionsResponse response;
+    response.zxid = zxid;
+    response.expected_options_version = options_version;
+    response.expected_with_stat = options.with_stat;
+    response.expected_with_data = options.with_data;
+
+    if (options_version != ListOptionsVersion::V1 || path.empty() || path[0] != '/')
+    {
+        response.error = Error::ZMARSHALLINGERROR;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+    const auto root = container.find(path);
+    if (root == container.end())
+    {
+        response.error = Error::ZNONODE;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+
+    response.stat = root->second.stat;
+    const String prefix = path == "/" ? "/" : path + "/";
+    std::vector<TestKeeper::Container::const_iterator> candidates;
+    bool limit_reached = false;
+    for (auto it = std::next(root); it != container.end() && it->first.starts_with(prefix); ++it)
+    {
+        if (!options.recursive && parentPath(it->first) != path)
+            continue;
+
+        const bool is_ephemeral = it->second.stat.ephemeralOwner != 0;
+        if ((options.filter == ListRequestType::PERSISTENT_ONLY && is_ephemeral)
+            || (options.filter == ListRequestType::EPHEMERAL_ONLY && !is_ephemeral))
+            continue;
+
+        if (!options.shuffle)
+        {
+            /// One additional matching candidate is enough to determine truncation.
+            if (options.max_results != 0 && candidates.size() >= options.max_results)
+            {
+                limit_reached = true;
+                break;
+            }
+        }
+
+        candidates.push_back(it);
+    }
+    if (options.shuffle)
+    {
+        std::ranges::sort(candidates, [&](const auto & lhs, const auto & rhs)
+        {
+            const std::string_view lhs_relative{lhs->first.data() + prefix.size(), lhs->first.size() - prefix.size()};
+            const std::string_view rhs_relative{rhs->first.data() + prefix.size(), rhs->first.size() - prefix.size()};
+            const UInt64 lhs_rank = sipHash64Keyed(0, static_cast<UInt64>(zxid), lhs_relative.data(), lhs_relative.size());
+            const UInt64 rhs_rank = sipHash64Keyed(0, static_cast<UInt64>(zxid), rhs_relative.data(), rhs_relative.size());
+            return std::pair{lhs_rank, lhs_relative} < std::pair{rhs_rank, rhs_relative};
+        });
+    }
+
+    for (const auto & it : candidates)
+    {
+        if (options.max_results != 0 && response.names.size() >= options.max_results)
+        {
+            response.truncated = true;
+            break;
+        }
+
+        response.names.emplace_back(it->first.substr(prefix.size()));
+        if (options.with_stat)
+            response.stats.emplace_back(it->second.stat);
+        if (options.with_data)
+            response.data.emplace_back(it->second.data);
+    }
+
+    response.truncated = response.truncated || limit_reached;
+    response.error = Error::ZOK;
+    return { std::make_shared<ListWithOptionsResponse>(response), {} };
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     SetResponse response;
@@ -613,29 +690,22 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
             using enum ListRequestType;
             if (parentPath(child_it->first) == path)
             {
-                ListRequestType list_request_type = ALL;
-                bool with_stat = false;
-                bool with_data = false;
+                const bool is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
+                const bool should_return = !list_request_type.has_value()
+                    || list_request_type.value() == ALL
+                    || (is_ephemeral && list_request_type.value() == EPHEMERAL_ONLY)
+                    || (!is_ephemeral && list_request_type.value() == PERSISTENT_ONLY);
 
-                if (const auto * filtered_list = dynamic_cast<const TestKeeperFilteredListRequest *>(this))
-                    list_request_type = filtered_list->list_request_type;
-
-                if (const auto * filtered_list_with_stat_and_data = dynamic_cast<const TestKeeperFilteredListWithStatsAndDataRequest *>(this))
+                if (should_return)
                 {
-                    with_stat = filtered_list_with_stat_and_data->with_stat;
-                    with_data = filtered_list_with_stat_and_data->with_data;
-                }
-
-                const auto is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
-                if (list_request_type == ALL || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
-                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY))
                     response.names.emplace_back(baseName(child_it->first));
 
-                if (with_data)
-                    response.data.emplace_back(child_it->second.data);
+                    if (with_data.value_or(false))
+                        response.data.emplace_back(child_it->second.data);
 
-                if (with_stat)
-                    response.stats.emplace_back(child_it->second.stat);
+                    if (with_stat.value_or(false))
+                        response.stats.emplace_back(child_it->second.stat);
+                }
             }
         }
 
@@ -826,6 +896,7 @@ ResponsePtr TestKeeperReconfigRequest::createResponse() const { return std::make
 ResponsePtr TestKeeperGetACLRequest::createResponse() const { return std::make_shared<GetACLResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 ResponsePtr TestKeeperListRecursiveRequest::createResponse() const { return std::make_shared<ListRecursiveResponse>(); }
+ResponsePtr TestKeeperListWithOptionsRequest::createResponse() const { return std::make_shared<ListWithOptionsResponse>(); }
 
 
 TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
@@ -839,6 +910,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
             args.chroot.pop_back();
     }
 
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
@@ -847,6 +919,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -875,6 +948,8 @@ void TestKeeper::processingThread()
     {
         while (!expired)
         {
+            clearExpiredTTLNodes();
+
             RequestInfo info;
 
             UInt64 max_wait = static_cast<UInt64>(args.operation_timeout_ms);
@@ -897,7 +972,7 @@ void TestKeeper::processingThread()
                     /// or if it was exists request which allows to add watches for non existing nodes.
                     if (response->error == Error::ZOK)
                     {
-                        auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
+                        auto & watches_type = (dynamic_cast<const ListRequest *>(info.request.get()) || dynamic_cast<const ListWithOptionsRequest *>(info.request.get()))
                             ? list_watches
                             : watches;
 
@@ -922,6 +997,43 @@ void TestKeeper::processingThread()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         finalize(__PRETTY_FUNCTION__);
+    }
+}
+
+void TestKeeper::clearExpiredTTLNodes()
+{
+    const int64_t now_ms = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+
+    /// This is called on every iteration of the processing thread, i.e. before processing every
+    /// request. Scanning the whole container each time would make request processing O(container size),
+    /// which is prohibitively slow when there are many nodes (see TestConcurrentUpdatesFromHints).
+    /// TTL granularity is coarse anyway, so it is enough to sweep at most once per `TTL_CLEANUP_INTERVAL_MS`.
+    static constexpr int64_t TTL_CLEANUP_INTERVAL_MS = 100;
+    if (now_ms - last_ttl_cleanup_ms < TTL_CLEANUP_INTERVAL_MS)
+        return;
+    last_ttl_cleanup_ms = now_ms;
+
+    std::vector<String> expired_paths;
+    for (const auto & [path, node] : container)
+        if (node.is_ttl && now_ms >= node.stat.mtime + node.ttl)
+            expired_paths.push_back(path);
+
+    for (const auto & path : expired_paths)
+    {
+        auto it = container.find(path);
+        if (it == container.end() || it->second.stat.numChildren)
+            continue;
+
+        container.erase(it);
+
+        auto parent_it = container.find(parentPath(path));
+        if (parent_it != container.end())
+        {
+            --parent_it->second.stat.numChildren;
+            ++parent_it->second.stat.cversion;
+        }
+
+        TestKeeperRequest::processWatchesImpl(path, watches, list_watches);
     }
 }
 
@@ -1103,6 +1215,28 @@ void TestKeeper::listRecursive(
     pushRequest(std::move(request_info));
 }
 
+void TestKeeper::listWithOptions(
+    const String & path,
+    const ListOptions & options,
+    ListWithOptionsCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (options.recursive && watch)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+
+    TestKeeperListWithOptionsRequest request;
+    request.path = path;
+    request.options_version = requiredListOptionsVersion(options);
+    request.options = options;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<TestKeeperListWithOptionsRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListWithOptionsResponse &>(response)); };
+    request_info.watch = std::move(watch);
+    pushRequest(std::move(request_info));
+}
+
 void TestKeeper::exists(
     const String & path,
     ExistsCallback callback,
@@ -1158,7 +1292,7 @@ void TestKeeper::list(
     bool with_stat,
     bool with_data)
 {
-    TestKeeperFilteredListWithStatsAndDataRequest request;
+    TestKeeperListRequest request;
     request.path = path;
     request.list_request_type = list_request_type;
     request.with_stat = with_stat;

@@ -1,0 +1,6 @@
+--- pattern A, first dictGetKeys (~1000 read rows) is within the per-pattern limit ---
+allowed
+--- pattern A, second dictGetKeys (cumulative ~2000 > 1500) exceeds the limit of its own bucket ---
+QUOTA_EXCEEDED
+--- pattern B (a structurally different dictGetKeys) has its own bucket and is still allowed ---
+allowed

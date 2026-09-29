@@ -55,6 +55,20 @@ EVP_CIPHER_ptr fetchCipher(std::string_view cipher_name)
     return EVP_CIPHER_ptr(fetched, EVP_CIPHER_free);
 }
 
+std::string_view ecbEquivalentCipherName(std::string_view mode)
+{
+    /// Only plain AES block ciphers. The list is intentionally exact: e.g.
+    /// aes-128-cbc-hmac-sha1 also reports EVP_CIPH_CBC_MODE but is not a plain
+    /// block cipher and must not take the block-composed fast path.
+    if (mode == "aes-128-ecb" || mode == "aes-128-cbc")
+        return "aes-128-ecb";
+    if (mode == "aes-192-ecb" || mode == "aes-192-cbc")
+        return "aes-192-ecb";
+    if (mode == "aes-256-ecb" || mode == "aes-256-cbc")
+        return "aes-256-ecb";
+    return {};
+}
+
 }
 
 }

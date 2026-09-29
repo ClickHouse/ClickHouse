@@ -1,10 +1,10 @@
+#include <algorithm>
+#include <Common/StringUtils.h>
 #include <Access/Common/AccessFlags.h>
+
+#include <array>
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
 
@@ -35,18 +35,27 @@ namespace
             return access_type_to_flags_mapping[static_cast<size_t>(type)];
         }
 
-        Flags keywordToFlags(std::string_view keyword) const
+        bool tryKeywordToFlags(std::string_view keyword, Flags & result) const
         {
             auto it = keyword_to_flags_map.find(keyword);
             if (it == keyword_to_flags_map.end())
             {
                 String uppercased_keyword{keyword};
-                boost::to_upper(uppercased_keyword);
+                toUpperASCII(uppercased_keyword);
                 it = keyword_to_flags_map.find(uppercased_keyword);
                 if (it == keyword_to_flags_map.end())
-                    throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
+                    return false;
             }
-            return it->second;
+            result = it->second;
+            return true;
+        }
+
+        Flags keywordToFlags(std::string_view keyword) const
+        {
+            Flags result;
+            if (!tryKeywordToFlags(keyword, result))
+                throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
+            return result;
         }
 
         Flags keywordsToFlags(const std::vector<std::string_view> & keywords) const
@@ -157,16 +166,21 @@ namespace
         static String replaceUnderscoreWithSpace(std::string_view str)
         {
             String res{str};
-            boost::replace_all(res, "_", " ");
+            std::replace(res.begin(), res.end(), '_', ' ');
             return res;
         }
 
         static Strings splitAliases(std::string_view str)
         {
             Strings aliases;
-            boost::split(aliases, str, boost::is_any_of(","));
-            for (auto & alias : aliases)
-                boost::trim(alias);
+            for (size_t begin = 0; begin <= str.length();)
+            {
+                size_t end = str.find(',', begin);
+                if (end == std::string_view::npos)
+                    end = str.length();
+                aliases.emplace_back(trim(String{str.substr(begin, end - begin)}, isWhitespaceASCII));
+                begin = end + 1;
+            }
             return aliases;
         }
 
@@ -223,6 +237,18 @@ namespace
             it_parent->second->addChild(std::move(node));
         }
 
+        /// One entry per access type. Expanding `makeNode` at each of the 258 call sites instead
+        /// compiled to 35 KB, since every call has to materialize four string views; driving it
+        /// from a table costs a loop and some rodata.
+        struct NodeDescriptor
+        {
+            AccessType access_type;
+            std::string_view name;
+            std::string_view aliases;
+            NodeType node_type;
+            std::string_view parent_group_name;
+        };
+
         void makeNodes()
         {
             std::unordered_map<std::string_view, NodePtr> owned_nodes;
@@ -230,11 +256,19 @@ namespace
             size_t next_flag = 0;
 
 #           define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
-                makeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
+                NodeDescriptor{AccessType::name, #name, aliases, node_type, #parent_group_name},
 
+            static constexpr std::array node_descriptors
+            {
                 APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
+            };
 
 #           undef MAKE_ACCESS_FLAGS_NODE
+
+            for (const auto & descriptor : node_descriptors)
+                makeNode(
+                    descriptor.access_type, descriptor.name, descriptor.aliases, descriptor.node_type,
+                    descriptor.parent_group_name, nodes, owned_nodes, next_flag);
 
             if (!owned_nodes.contains("NONE"))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "'NONE' not declared");
@@ -266,7 +300,7 @@ namespace
             start_node->aliases.emplace_back(start_node->keyword);
             for (auto & alias : start_node->aliases)
             {
-                boost::to_upper(alias);
+                toUpperASCII(alias);
                 keyword_to_flags_map[alias] = start_node->flags;
             }
 
@@ -449,6 +483,12 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
 
 AccessFlags::AccessFlags(AccessType type) : flags(Helper::instance().accessTypeToFlags(type)) {}
 AccessFlags::AccessFlags(std::string_view keyword) : flags(Helper::instance().keywordToFlags(keyword)) {}
+
+bool AccessFlags::tryFromKeyword(std::string_view keyword, AccessFlags & result)
+{
+    return Helper::instance().tryKeywordToFlags(keyword, result.flags);
+}
+
 AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 AccessFlags::AccessFlags(const Strings & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 String AccessFlags::toString() const { return Helper::instance().flagsToString(flags); }

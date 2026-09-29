@@ -1,0 +1,42 @@
+---
+title: Seleccionar proveedor
+---
+
+<Info>
+  **Scale vs Enterprise**
+
+  Recomendamos este [nivel Scale](/es/products/cloud/features/cloud-tiers) para la mayoría de las cargas de trabajo de ClickStack. Elija el nivel Enterprise si necesita funciones de seguridad avanzadas, como SAML, CMEK o cumplimiento de HIPAA. También ofrece perfiles de hardware personalizados para implementaciones de ClickStack de gran tamaño. En estos casos, le recomendamos ponerse en contacto con el soporte.
+</Info>
+
+Seleccione el proveedor de Cloud y la región.
+
+<img src="/images/clickstack/getting-started/region_resources.webp" alt="" />
+
+Al seleccionar la CPU y la memoria, calcúlelas en función del throughput de ingestión esperado de ClickStack. La tabla siguiente ofrece una guía para dimensionar estos recursos.
+
+| Volumen mensual de ingestión | Capacidad de cómputo recomendada |
+| ---------------------------- | -------------------------------- |
+| &lt; 10 TB / mes             | 2 vCPU × 3 réplicas              |
+| 10–50 TB / mes               | 4 vCPU × 3 réplicas              |
+| 50–100 TB / mes              | 8 vCPU × 3 réplicas              |
+| 100–500 TB / mes             | 30 vCPU × 3 réplicas             |
+| 1 PB+ / mes                  | 59 vCPU × 3 réplicas             |
+
+Estas recomendaciones se basan en los siguientes supuestos:
+
+* El volumen de datos se refiere al **volumen mensual de ingestión sin comprimir** y se aplica tanto a logs como a traces.
+* Los patrones de consulta son típicos de los casos de uso de observabilidad, y la mayoría de las consultas se centran en **datos recientes**, por lo general de las últimas 24 horas.
+* La ingestión es relativamente **uniforme a lo largo del mes**. Si espera tráfico irregular o picos, debe aprovisionar capacidad adicional.
+* El almacenamiento se gestiona por separado mediante object storage de ClickHouse Cloud y no es un factor limitante para la retención. Suponemos que a los datos retenidos durante periodos más largos se accede con poca frecuencia.
+
+Puede que se necesite más capacidad de cómputo para patrones de acceso que consultan regularmente intervalos de tiempo más amplios, realizan agregaciones intensivas o dan soporte a un gran número de usuarios concurrentes.
+
+Aunque dos réplicas pueden cubrir los requisitos de CPU y memoria para un throughput de ingestión determinado, recomendamos usar tres réplicas siempre que sea posible para lograr la misma capacidad total y mejorar la redundancia del servicio.
+
+<Note>
+  Estos valores son **solo estimaciones** y deben utilizarse como referencia inicial. Los requisitos reales dependen de la complejidad de las consultas, la concurrencia, las políticas de retención y la variación del throughput de ingestión. Supervise siempre el uso de recursos y escale según sea necesario.
+</Note>
+
+Una vez que haya especificado los requisitos, su servicio de Managed ClickStack tardará varios minutos en aprovisionarse. No dude en explorar el resto de la [consola de ClickHouse Cloud](/es/products/cloud/getting-started/intro) mientras espera a que finalice el aprovisionamiento.
+
+Una vez que **se complete el aprovisionamiento, la opción &#39;ClickStack&#39; del menú de la izquierda estará habilitada**.

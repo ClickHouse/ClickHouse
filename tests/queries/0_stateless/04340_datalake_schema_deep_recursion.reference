@@ -1,0 +1,3 @@
+delta_depth: Maximum allowed JSON depth exceeded
+iceberg_depth: Maximum allowed JSON depth exceeded
+paimon_depth: Maximum allowed JSON depth exceeded

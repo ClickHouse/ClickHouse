@@ -1,0 +1,77 @@
+-- SHOW CREATE USER shows the GRANTS clause with the database name bound
+CREATE USER user IDENTIFIED WITH plaintext_password, plaintext_password VALID UNTIL \'2077-01-01 00:00:00\' GRANTS (SELECT, INSERT ON db.t1)
+-- system.users exposes the grants of each authentication method
+['','SELECT, INSERT ON db.t1']
+-- Login with the full credential: both tables are accessible (t2 via the role)
+1
+2
+-- Login with the token: t1 is accessible
+1
+-- Login with the token: t2 is not accessible (the role rights are limited as well)
+ACCESS_DENIED
+-- Login with the token: INSERT is listed in GRANTS but not granted to the user, so it is denied
+ACCESS_DENIED
+-- Login with the token: cannot grant its privileges (no grant option after the intersection)
+ACCESS_DENIED
+-- Login with the token: cannot administer roles
+ACCESS_DENIED
+-- Login with the token: cannot create other tokens (no ALTER USER right)
+ACCESS_DENIED
+-- Reattaching to a named session with the token does not reuse the full access rights
+2
+ACCESS_DENIED
+2
+-- ALTER USER ADD IDENTIFIED with the GRANTS clause adds a new token
+CREATE USER user IDENTIFIED WITH plaintext_password, plaintext_password VALID UNTIL \'2077-01-01 00:00:00\' GRANTS (SELECT, INSERT ON db.t1), plaintext_password GRANTS (SELECT(x) ON db.t2)
+2
+ACCESS_DENIED
+-- The GRANTS clause requires a non-empty list of grants in parentheses
+SYNTAX_ERROR
+SYNTAX_ERROR
+-- SHOW CREATE USER keeps the no-privileges clause (it does not collapse to no limit or to unparseable empty parentheses)
+CREATE USER user2 IDENTIFIED WITH plaintext_password, plaintext_password GRANTS (USAGE ON *.*)
+-- system.users exposes USAGE ON *.* for the deny-all method
+['','USAGE ON *.*']
+-- The full credential can read t1
+1
+-- The deny-all token cannot read t1 even though the user can
+ACCESS_DENIED
+-- A filtered source grant in the GRANTS clause is rejected (CREATE USER)
+NOT_IMPLEMENTED
+-- A filtered source grant in the GRANTS clause is rejected (ALTER USER)
+NOT_IMPLEMENTED
+-- A GRANTS clause on an externally verified authentication method is rejected (CREATE USER, ldap)
+NOT_IMPLEMENTED
+-- A GRANTS clause on an externally verified authentication method is rejected (CREATE USER, kerberos)
+NOT_IMPLEMENTED
+-- A GRANTS clause on an externally verified authentication method is rejected (ALTER USER, http)
+NOT_IMPLEMENTED
+-- A non-grantable element in the GRANTS clause is rejected (CREATE USER, global privilege on a table)
+INVALID_GRANT
+-- A non-grantable element in the GRANTS clause is rejected (ALTER USER, global privilege on a database)
+INVALID_GRANT
+-- A source-level grant keeps its exact access type in the GRANTS clause (not widened to the full source)
+CREATE USER user3 IDENTIFIED WITH plaintext_password GRANTS (READ ON S3)
+['READ ON S3']
+-- Role DDL is denied for a limited credential even when CREATE/ALTER/DROP ROLE are listed and granted
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- A token limited to SELECT cannot create a temporary table, though the user (granted CREATE TEMPORARY TABLE) can
+ACCESS_DENIED
+-- An ambiguous credential (two methods, same password) is limited to the intersection of the matching grants
+1
+ACCESS_DENIED
+-- An ambiguous credential with disjoint grants is denied everything (empty intersection is deny-all, not no limit)
+ACCESS_DENIED
+ACCESS_DENIED
+-- An ambiguous credential where one matching method has already expired is rejected (earliest VALID UNTIL wins)
+AUTHENTICATION_FAILED
+1
+-- An expired token method expires the shared credential instead of widening it to the unrestricted method
+AUTHENTICATION_FAILED
+-- An externally verified method sharing the credential does not shorten the session (documented limitation)
+1
+-- Default-role administration is denied for a limited credential even when ALTER USER is listed and granted
+ACCESS_DENIED
+ACCESS_DENIED
