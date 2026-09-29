@@ -10093,6 +10093,10 @@ If set to true, allow using the text index.
         {"26.2", true, true, "The text index is now GA. This also applies to the alias `allow_experimental_full_text_index`."}, \
         {"25.12", true, false, "Text index was moved to Beta."}, \
         {"24.6", true, false, "Enable experimental text index. At the time the setting was named `allow_experimental_full_text_index`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_json_bloom_filter_index, false, R"(
+Allows creating the `jsonbf_v1` data skipping index on `JSON` columns with `CREATE TABLE` and `ALTER TABLE ... ADD INDEX`.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to allow the experimental `jsonbf_v1` data skipping index."}) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0, \

@@ -127,6 +127,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_json_bloom_filter_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -958,6 +959,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                /// Only a fresh `CREATE`: attaching existing tables, such as at server startup, must keep working.
+                if (index_desc.type == "jsonbf_v1" && mode <= LoadingStrictnessLevel::CREATE
+                    && !settings[Setting::allow_experimental_json_bloom_filter_index])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The `jsonbf_v1` index is experimental. Enable the setting `allow_experimental_json_bloom_filter_index` to use it");
 
                 properties.indices.push_back(index_desc);
             }
