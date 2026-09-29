@@ -94,8 +94,9 @@ SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE x > 20 ORDER
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE x > 20 ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- LIMIT BY between the sort and the ARRAY JOIN';
-SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 1 BY x LIMIT 5) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
-SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 1 BY x LIMIT 5) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
+-- Tie-break on `e` so `LIMIT 1 BY x` picks a deterministic row per `x` after ARRAY JOIN.
+SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x, e LIMIT 1 BY x LIMIT 5) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
+SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x, e LIMIT 1 BY x LIMIT 5) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- constant array';
 SELECT x, e FROM (SELECT x, e FROM t_aj ARRAY JOIN [1, 2] AS e ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;

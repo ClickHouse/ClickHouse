@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: `rows_before_limit_at_least` depends on the local limit/sort pipeline, not the parallel-replicas read path.
+
 -- `rows_before_limit_at_least` remains the number of expanded rows actually seen by the outer
 -- query limit. With the optimization enabled only the three selected input rows are expanded, so
 -- this lower bound decreases from all 5000 expanded rows to 15. `exact_rows_before_limit` refuses

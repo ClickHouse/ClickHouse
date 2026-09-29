@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: `tryTopKThroughArrayJoin` skips rewrite when `ReadFromMergeTree` uses parallel replicas.
+
 DROP TABLE IF EXISTS t_aj_explain;
 
 CREATE TABLE t_aj_explain (pk UInt64, x UInt64, payload String, arr Array(UInt32), arr2 Array(UInt32))
