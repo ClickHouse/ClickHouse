@@ -20,6 +20,8 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Core/Names.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
@@ -27,6 +29,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -154,26 +157,6 @@ void collectNullRejectedColumnsFromFilter(const FilterStep & filter, NameSet & n
         null_rejected_columns.insert(input->result_name);
 }
 
-/// Returns the candidates whose NULL fraction, according to their statistics, reaches `min_null_ratio`.
-NameSet columnsWorthFiltering(const ReadFromMergeTree & read, const NameSet & candidates, double min_null_ratio)
-{
-    Names required_columns(candidates.begin(), candidates.end());
-    auto estimator = read.getConditionSelectivityEstimator(required_columns);
-    if (!estimator)
-        return {};
-
-    const auto profile = estimator->estimateRelationProfile();
-
-    NameSet result;
-    for (const auto & name : candidates)
-    {
-        auto it = profile.column_stats.find(name);
-        if (it != profile.column_stats.end() && it->second.null_fraction && *it->second.null_fraction >= min_null_ratio)
-            result.insert(name);
-    }
-    return result;
-}
-
 bool addNotNullFilterAboveRead(QueryPlan::Node & node, const NameSet & null_rejected_columns, const FilterStep * parent_filter, double min_null_ratio, QueryPlan::Nodes & nodes)
 {
     if (null_rejected_columns.empty())
@@ -199,28 +182,67 @@ bool addNotNullFilterAboveRead(QueryPlan::Node & node, const NameSet & null_reje
     if (candidates.empty())
         return false;
 
-    const auto columns_to_filter = min_null_ratio <= 0.0 ? candidates : columnsWorthFiltering(*read, candidates, min_null_ratio);
-    if (columns_to_filter.empty())
-        return false;
+    /// Add an `indexHint` if the null fraction of the column does not qualify it for an executable
+    /// filter. This enables index analysis without the potential cost of running the filter.
+    const auto [columns_to_filter, columns_to_index_hint] = [&] -> std::pair<NameSet, NameSet>
+    {
+        if (min_null_ratio <= 0.0)
+            return {candidates, {}};
+
+        auto estimator = read->getConditionSelectivityEstimator(Names(candidates.begin(), candidates.end()));
+        if (!estimator)
+            return {{}, candidates};
+
+        NameSet to_filter;
+        NameSet to_index_hint;
+        const auto & column_stats = estimator->estimateRelationProfile().column_stats;
+        for (const auto & name : candidates)
+        {
+            const auto it = column_stats.find(name);
+            if (it != column_stats.end() && it->second.null_fraction && *it->second.null_fraction >= min_null_ratio)
+                to_filter.insert(name);
+            else
+                to_index_hint.insert(name);
+        }
+
+        return {std::move(to_filter), std::move(to_index_hint)};
+    }();
 
     auto context = Context::getGlobalContextInstance();
     auto is_not_null = FunctionFactory::instance().get("isNotNull", context);
 
-    ActionsDAG dag(node.step->getOutputHeader()->getColumnsWithTypeAndName());
-    ActionsDAG::NodeRawConstPtrs conjuncts;
-    for (const auto * input : dag.getInputs())
-        if (columns_to_filter.contains(input->result_name))
-            conjuncts.push_back(&dag.addFunction(is_not_null, {input}, {}));
+    auto buildNotNullFilterOn = [&](ActionsDAG & target, const NameSet & columns)
+    {
+        ActionsDAG::NodeRawConstPtrs result;
+        for (const auto * input : target.getInputs())
+            if (columns.contains(input->result_name))
+                result.push_back(&target.addFunction(is_not_null, {input}, {}));
+        return result;
+    };
 
-    if (conjuncts.empty())
+    ActionsDAG filter_dag(header.getColumnsWithTypeAndName());
+    auto filter_conjuncts = buildNotNullFilterOn(filter_dag, columns_to_filter);
+
+    if (!columns_to_index_hint.empty())
+    {
+        ActionsDAG index_hint_dag(header.getColumnsWithTypeAndName());
+        index_hint_dag.getOutputs() = buildNotNullFilterOn(index_hint_dag, columns_to_index_hint);
+        auto index_hint_name = fmt::format("indexHint({})", fmt::join(index_hint_dag.getOutputs()
+            | std::views::transform([](const auto * output) -> const String & { return output->result_name; }), ", "));
+        auto index_hint = std::make_shared<FunctionIndexHint>();
+        index_hint->setActions(std::move(index_hint_dag));
+        filter_conjuncts.push_back(&filter_dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint)), {}, std::move(index_hint_name)));
+    }
+
+    if (filter_conjuncts.empty())
         return false;
 
-    const ActionsDAG::Node * filter_node = conjuncts.front();
-    if (conjuncts.size() > 1)
-        filter_node = &dag.addFunction(FunctionFactory::instance().get("and", context), std::move(conjuncts), {});
-    dag.addOrReplaceInOutputs(*filter_node);
+    const ActionsDAG::Node * filter_node = filter_conjuncts.front();
+    if (filter_conjuncts.size() > 1)
+        filter_node = &filter_dag.addFunction(FunctionFactory::instance().get("and", context), std::move(filter_conjuncts), {});
+    filter_dag.addOrReplaceInOutputs(*filter_node);
 
-    return makeFilterNodeOnTopOf(node, std::move(dag), filter_node->result_name, /*remove_filer=*/true, nodes, makeDescription("Derived NOT NULL filter"));
+    return makeFilterNodeOnTopOf(node, std::move(filter_dag), filter_node->result_name, /*remove_filer=*/true, nodes, makeDescription("Derived NOT NULL filter and index hint"));
 }
 
 void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right)

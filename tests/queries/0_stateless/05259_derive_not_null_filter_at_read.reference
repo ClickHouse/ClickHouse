@@ -12,6 +12,10 @@
 0
 -- The same column gets one once the threshold is lowered below its NULL fraction.
 1
+-- Under the threshold the condition is added as an index hint instead.
+1	0
+-- The index hint from not null filters is used for index analysis.
+Granules: 10/13
 -- A column without statistics gets no filter.
 0
 -- A conjunct already sitting above the read that rejects NULL makes the derived one redundant.

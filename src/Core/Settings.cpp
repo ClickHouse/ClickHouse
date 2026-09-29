@@ -7436,7 +7436,7 @@ Add an `IS NOT NULL` filter at a table read for a column that a `JOIN` condition
 )", 0, \
         {"26.10", false, true, "New setting that adds an IS NOT NULL filter at a table read for a column already proven not NULL higher in the plan, so PREWHERE and index analysis can use it."}) \
     DECLARE(Double, query_plan_derive_not_null_filter_at_read_min_null_ratio, 0.6, R"(
-The smallest fraction of NULL values a column must hold, according to its statistics, for `query_plan_derive_not_null_filter_at_read` to add a filter on it. A column whose statistics carry no null count is never filtered, unless the setting is `0`, which adds the filter to every column the optimization proves not NULL and reads no statistics at all.
+The smallest fraction of NULL values a column must hold for `query_plan_derive_not_null_filter_at_read` to add a filter on it. Otherwise, the filter is added wrapped in `indexHint` so it can be used for index analysis. Setting it to `0` adds the derived filters unconditionally.
 )", 0, \
         {"26.10", 0.6, 0.6, "New setting giving the smallest NULL fraction a column must have for query_plan_derive_not_null_filter_at_read to filter on it."}) \
     DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
