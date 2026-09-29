@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int INSERT_WAS_DEDUPLICATED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_STATUS_OF_INSERT;
 }
 
 namespace Setting
@@ -484,11 +485,12 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             {
                 duplicates = deduplication_log->addPart(block_ids, part->info);
             }
-            catch (Exception & e)
+            catch (...)
             {
-                e.addMessage("while publishing the deduplication block IDs of part {}, which is already committed. "
-                    "A retry of this insert may insert its rows again", part->name);
-                throw;
+                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                    "Part {} is committed, but its deduplication block IDs could not be recorded: {}. "
+                    "Check the table before retrying this insert: a retry would insert its rows again",
+                    part->name, getCurrentExceptionMessage(/* with_stacktrace= */ false));
             }
 
             if (!duplicates.empty())
