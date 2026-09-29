@@ -92,19 +92,9 @@ void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
 String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
 {
     /// A value that is not a plain scalar can nest a credential in a form no masker recognizes, so only its type is named.
-    switch (value.getType())
-    {
-        case Field::Types::Array:
-        case Field::Types::Tuple:
-        case Field::Types::Map:
-        case Field::Types::Object:
-        case Field::Types::AggregateFunctionState:
-        case Field::Types::CustomType:
-        case Field::Types::Number:
-            return fmt::format("of type {}", value.getTypeName());
-        default:
-            return formatValueForErrorMessage(applyVisitor(FieldVisitorToString(), value));
-    }
+    if (!Field::isScalar(value.getType()))
+        return fmt::format("of type {}", value.getTypeName());
+    return formatValueForErrorMessage(applyVisitor(FieldVisitorToString(), value));
 }
 
 String BaseSettingsHelpers::formatValueForErrorMessage(String str)
