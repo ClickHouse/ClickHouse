@@ -20,6 +20,6 @@ SELECT timeSeriesGroupArray([90, 95, 95]::Array(UInt32), [1, nan, nan]::Array(Fl
 SELECT arrayMap(x -> (x.1, hex(reinterpretAsUInt64(x.2))), timeSeriesGroupArray([95, 95]::Array(UInt32), [reinterpretAsFloat64(0x7ff0000000000002), nan]));
 SELECT arrayMap(x -> (x.1, hex(reinterpretAsUInt64(x.2))), timeSeriesGroupArray([95, 95]::Array(UInt32), [nan, reinterpretAsFloat64(0x7ff0000000000002)]));
 
--- Of +0 and -0 the +0 wins in either order.
-SELECT timeSeriesGroupArray([95, 95]::Array(UInt32), [0., -0.]::Array(Float64));
-SELECT timeSeriesGroupArray([95, 95]::Array(UInt32), [-0., 0.]::Array(Float64));
+-- Of +0 and -0 the +0 wins in either order. Its bits are checked: `hex` prints +0 as '00', -0 would be '8000000000000000'.
+SELECT arrayMap(x -> (x.1, hex(reinterpretAsUInt64(x.2))), timeSeriesGroupArray([95, 95]::Array(UInt32), [0., -0.]::Array(Float64)));
+SELECT arrayMap(x -> (x.1, hex(reinterpretAsUInt64(x.2))), timeSeriesGroupArray([95, 95]::Array(UInt32), [-0., 0.]::Array(Float64)));
