@@ -140,7 +140,7 @@ public:
 
     explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
@@ -1316,7 +1316,7 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
 {
 }
 
-ASTPtr CompressionCodecALP::getCodecDesc() const
+ASTPtr CompressionCodecALP::getCodecDescription() const
 {
     ASTs arguments;
     if (variant != Variant::DEFAULT)
@@ -1343,7 +1343,7 @@ uint8_t CompressionCodecALP::getMethodByte() const
 
 void CompressionCodecALP::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+    getCodecDescription()->updateTreeHash(hash, /* ignore_aliases */ true);
     hash.update(float_width);
 }
 

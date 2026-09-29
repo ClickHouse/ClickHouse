@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# Regression test for the Iceberg write retry loop bug.
-# When a table has iceberg_metadata_file_path set (for time-travel reads),
-# the write retry loop must ignore the explicit path and discover the actual
-# latest metadata version. Otherwise, the retry keeps targeting the same
-# version that already exists, exhausting all 100 retries and failing with
-# DATALAKE_DATABASE_ERROR.
+# A write to a table pinned by iceberg_metadata_file_path (for time-travel reads)
+# must land on the newest committed version, not on the pinned one.
+#
+# This began as a regression test for the retry loop: the first attempt used to
+# resolve through the pin, target a version that already exists, and rely on the
+# retry to discover the real latest. The write root now resolves the latest
+# directly, so the conflict no longer arises and the retry loop is not reached.
+# What is asserted here is the outcome, and it holds either way.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,12 +35,10 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json'
 "
 
-# Step 3: INSERT with explicit v1 path.
-# The first write attempt reads v1 and targets v2, but v2 already exists
-# on disk (from Step 1). This triggers the retry loop.
-# BUG (before fix): retry re-reads v1 (explicit path) -> targets v2 again
-#   -> conflict -> loop -> DATALAKE_DATABASE_ERROR after 100 retries.
-# FIX: retry ignores explicit path -> discovers v3 -> creates v4 -> success.
+# Step 3: INSERT while pinned to v1.
+# The write ignores the pin, resolves v3 and creates v4. Pinning at the version
+# the write starts from is what once made this fail: targeting v2, which Step 1
+# already wrote, and burning all 100 retries into DATALAKE_DATABASE_ERROR.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (3)"
 
 # Step 4: Verify all data is present by reading from the latest metadata.
