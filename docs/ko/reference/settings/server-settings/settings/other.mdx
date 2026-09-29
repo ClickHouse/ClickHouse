@@ -1212,6 +1212,33 @@ SSL 클라이언트/서버 구성.
 
 각 스레드가 공유 per-CPU 예산에 접근하지 않고 보유할 수 있는 추적되지 않은 메모리의 양(바이트)입니다. 이는 작은 메모리 할당에 대한 per-CPU bookkeeping 비용을 분산시키며, 최악의 경우 `max_per_cpu_untracked_memory * number_of_cpus` 위에 추가되는 여유분입니다. 값이 `0`이면 이 여유분이 제거됩니다. 즉, 모든 allocation이 공유 per-CPU 카운터를 업데이트합니다(가장 정확하지만 contention이 더 커집니다). Linux에서만 지원됩니다.
 
+## placement {#placement}
+
+서버가 실행되는 클라우드 가용 영역(availability zone)과 리전입니다. 가용 영역은 ZooKeeper 클라이언트가 같은 영역의 호스트를 우선적으로 선택할 때([zookeeper](/ko/reference/settings/server-settings/settings/zookeeper#zookeeper) 섹션의 `prefer_local_availability_zone`) 사용되며, ClickHouse Keeper에서도 사용됩니다. ClickHouse Keeper는 이 값을 `/keeper/availability_zone` 노드에 게시합니다.
+
+`placement` 섹션이 없으면 가용 영역과 리전은 빈 값이 됩니다.
+
+사용할 수 있는 설정은 다음과 같습니다.
+
+| 설정                            | 설명                                                                                                                                | 기본값                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | 클라우드 제공업체의 인스턴스 메타데이터 서비스(instance metadata service)에서 가용 영역을 가져옵니다. AWS를 먼저 조회한 후 GCP를 조회합니다. 활성화하면 다른 모든 설정은 무시되며 리전은 빈 값이 됩니다. | `false`                              |
+| `availability_zone`           | 가용 영역입니다.                                                                                                                         | 빈 값                                  |
+| `availability_zone_from_file` | `availability_zone`이 비어 있을 때 가용 영역을 읽어 올 파일입니다. 파일이 없으면 가용 영역은 빈 값이 됩니다.                                                          | `/run/instance-metadata/node-zone`   |
+| `region`                      | 리전입니다.                                                                                                                            | 빈 값                                  |
+| `region_from_file`            | `region`이 비어 있을 때 리전을 읽어 올 파일입니다. 파일이 없으면 리전은 빈 값이 됩니다.                                                                           | `/run/instance-metadata/node-region` |
+
+placement 설정은 서버 시작 시 한 번만 읽힙니다.
+
+**예시**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />

@@ -153,14 +153,6 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_plan`이 활성화된 경우에만 적용됩니다.
 
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "병렬 레플리카를 사용하는 분산 INSERT SELECT에서 로컬 파이프라인을 사용합니다. 현재는 성능 문제로 인해 비활성화되어 있습니다"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "병렬 레플리카를 사용하는 분산 INSERT SELECT에서 로컬 파이프라인을 사용합니다. 현재는 성능 문제로 인해 비활성화되어 있습니다"}]}]} />
-
-병렬 레플리카를 사용하는 분산 INSERT SELECT에서 로컬 파이프라인을 사용합니다
-
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

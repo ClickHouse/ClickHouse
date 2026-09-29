@@ -822,6 +822,24 @@ aplicarse reescribiendo la parte, por lo que las fusiones que limpian las column
 se siguen asignando cuando esta configuración está habilitada. De todos modos, dicha fusión reescribe
 la parte y, por lo tanto, también elimina las filas que hayan caducado en ella.
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "Nueva configuración de tabla: cómo resuelve un INSERT en una tabla con UNIQUE KEY una clave que ya está activa en la partición (overwrite \/ ignore \/ abort)"}]}]} />
+
+En tablas con `UNIQUE KEY`, determina cómo resuelve un INSERT una clave que ya está activa en la partición:
+
+* `overwrite` — la fila entrante sustituye a la fila activa existente (UPSERT). Valor predeterminado.
+* `ignore` — se conserva la fila existente y se descarta la fila entrante en conflicto.
+* `abort` — el INSERT falla en el primer duplicado activo y no publica nada.
+
+La política es una propiedad de la tabla, por lo que todos los escritores están obligados a respetarla. Tenga en cuenta que un INSERT es
+atómico solo cuando genera una única parte, por lo que `abort` puede rechazar una parte de un INSERT de varias partes
+después de que se hayan confirmado las partes anteriores, exactamente igual que ocurre con un MergeTree convencional.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="0" />

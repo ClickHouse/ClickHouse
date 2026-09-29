@@ -74,7 +74,7 @@ doc_type: 'reference'
 * `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 同じクエリチェーン内の初期クエリのマイクロ秒精度の開始時刻。
 * `authenticated_user` ([String](/ja/reference/data-types/string)) — セッションで認証されたユーザー名。
-* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/ja/reference/data-types/enum)) — クライアントから報告された、クエリの開始元インターフェイス。報告されたインターフェイスがこのサーバーで認識できないものである場合は `Unknown` です。
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10, &#39;IcebergRESTCatalog&#39; = 11)](/ja/reference/data-types/enum)) — クライアントから報告された、クエリの開始元インターフェイス。報告されたインターフェイスがこのサーバーで認識できないものである場合は `Unknown` です。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — クエリがセキュアなインターフェイス経由で実行されたかどうかを示すフラグ
 * `os_user` ([String](/ja/reference/data-types/string)) — clickhouse-client を実行しているオペレーティングシステムのユーザー名。
 * `client_hostname` ([String](/ja/reference/data-types/string)) — clickhouse-client または別の TCP クライアントを実行しているクライアントマシンのホスト名。

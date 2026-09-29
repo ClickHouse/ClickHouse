@@ -206,9 +206,9 @@ Valores possíveis:
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova otimização que transforma uma função arrayJoin em uma etapa ARRAY JOIN real; desabilitada por padrão."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova otimização que transforma uma função arrayJoin em uma etapa ARRAY JOIN real; desabilitada por padrão."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilita query_plan_lower_array_join_function por padrão."}]}]} />
 
 Ativa ou desativa uma otimização no nível do plano de consulta que transforma uma função `arrayJoin` dentro de uma expressão em uma etapa `ARRAY JOIN` real, para que ela use o mesmo mecanismo de execução da cláusula `ARRAY JOIN` (replicação lazy e fusão de filtros).
 Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) estiver definida como 1.

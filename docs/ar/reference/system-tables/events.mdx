@@ -6146,6 +6146,22 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إجمالي الوقت الذي قضاه الاستعلام في وضع السكون امتثالًا لجميع إعدادات تقييد المعدل.
 
+### TimeSeriesMetricFamiliesDeduplicationCacheHits {#timeseriesmetricfamiliesdeduplicationcachehits}
+
+عدد الصفوف التي لم تُكتب في جداول عائلات المقاييس التابعة لجداول TimeSeries، إما لأنها كانت موجودة مسبقًا في ذاكرة التخزين المؤقت لإزالة التكرار، أو لأن عملية الإدراج نفسها كانت قد كتبتها من قبل.
+
+### TimeSeriesMetricFamiliesDeduplicationCacheMisses {#timeseriesmetricfamiliesdeduplicationcachemisses}
+
+عدد الصفوف التي كُتبت في جداول عائلات المقاييس التابعة لجداول TimeSeries بعد تعذّر العثور عليها في ذاكرة التخزين المؤقت لإزالة التكرار.
+
+### TimeSeriesTagsDeduplicationCacheHits {#timeseriestagsdeduplicationcachehits}
+
+عدد الصفوف التي لم تُكتب في جداول الوسوم التابعة لجداول TimeSeries، إما لوجودها مسبقًا في ذاكرة التخزين المؤقت الخاصة بإزالة التكرار، أو لأن عملية الإدراج نفسها قد كتبتها بالفعل.
+
+### TimeSeriesTagsDeduplicationCacheMisses {#timeseriestagsdeduplicationcachemisses}
+
+عدد الصفوف التي كُتبت في جداول الوسوم التابعة لجداول TimeSeries بعد تعذّر العثور عليها في ذاكرة التخزين المؤقت الخاصة بإزالة التكرار.
+
 ### TinyS3Clients {#tinys3clients}
 
 عدد نُسخ عميل S3 التي تعيد استخدام موفّر مصادقة موجود من عميل آخر.
@@ -6190,9 +6206,17 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 الوقت المستغرق في قراءة الملفات الجانبية لـ delete-bitmap الخاصة بـ UNIQUE KEY وفك تسلسلها عند حدوث إخفاق في DeleteBitmapCache.
 
-### UniqueKeyBitmapUpdates {#uniquekeybitmapupdates}
+### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
-عدد الملفات الجانبية الخاصة بـ delete-bitmap التي تمت كتابتها في UNIQUE KEY (ملف واحد لكل supersession / عملية commit لـ DELETE).
+عدد الصفوف الواردة التي حُذفت بسبب الإعداد unique&#95;key&#95;conflict&#95;action = ignore، لأن المفتاح كان موجودًا مسبقًا في التقسيم.
+
+### UniqueKeyConflictOverwriteRows {#uniquekeyconflictoverwriterows}
+
+عدد مفاتيح الصفوف الجديدة التي حلّت محل صف قائم في جزء بيانات موجود، وذلك ضمن مسار الكتابة الخاص بعمليات UNIQUE KEY INSERT.
+
+### UniqueKeyDedupProbes {#uniquekeydedupprobes}
+
+عدد مفاتيح الصفوف الجديدة التي يجري فحصها مقابل أجزاء البيانات الموجودة ضمن مسار الكتابة لعمليات UNIQUE KEY INSERT.
 
 ### مرات العثور في ذاكرة التخزين المؤقتة لفهرس UniqueKeyIndex {#uniquekeyindexcachehits}
 
@@ -6213,6 +6237,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### UniqueKeyLoadTimeSSTRebuildMicroseconds {#uniquekeyloadtimesstrebuildmicroseconds}
 
 إجمالي الوقت المستغرق في إعادة بناء `unique_key_index.sst` أثناء التحميل (قراءة تسلسلية لأعمدة UK + كتابة SST).
+
+### UniqueKeyMutexHoldMicroseconds {#uniquekeymutexholdmicroseconds}
+
+إجمالي زمن الساعة الفعلي الذي ظلّ فيه mutex الخاص بـ UNIQUE KEY لكل تقسيم محجوزًا، عبر جميع مرات الحصول عليه على هذا الخادم (مجموع مدد الاحتجاز بالميكروثانية).
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 

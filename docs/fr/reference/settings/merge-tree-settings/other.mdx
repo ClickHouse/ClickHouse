@@ -807,6 +807,24 @@ honoré qu&#39;en réécrivant la part ; les fusions qui purgent les colonnes ex
 donc toujours affectées lorsque ce paramètre est activé. Une telle fusion réécrit la part
 de toute façon, et supprime donc également les lignes qui y ont expiré.
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "Nouveau paramètre de table : définit comment un INSERT sur une table avec UNIQUE KEY résout une clé déjà active dans la partition (overwrite \/ ignore \/ abort)"}]}]} />
+
+Pour les tables avec `UNIQUE KEY`, ce paramètre détermine comment un INSERT résout une clé déjà présente et active dans la partition :
+
+* `overwrite` — la ligne entrante remplace la ligne active existante (UPSERT). Valeur par défaut.
+* `ignore` — la ligne existante est conservée et la ligne entrante en conflit est abandonnée.
+* `abort` — l&#39;INSERT échoue dès le premier doublon actif et ne publie rien.
+
+Cette politique est une propriété de la table : tous les processus d&#39;écriture y sont donc soumis. Notez qu&#39;un INSERT n&#39;est
+atomique que s&#39;il produit une seule part ; `abort` peut donc rejeter une part d&#39;un INSERT
+multi-part alors que les parts précédentes ont déjà été validées, exactement comme avec un MergeTree classique.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="0" />

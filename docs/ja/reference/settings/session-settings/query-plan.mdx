@@ -206,11 +206,11 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 関数を実際の ARRAY JOIN ステップに変換する新しい最適化。デフォルトでは無効。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 関数を実際の ARRAY JOIN ステップに変換する新しい最適化。デフォルトでは無効。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "query_plan_lower_array_join_function をデフォルトで有効化。"}]}]} />
 
-式内の `arrayJoin` 関数を実際の `ARRAY JOIN` ステップに変換するクエリプランレベルの最適化を有効または無効にします。これにより、遅延実行レプリケーションやフィルター融合を含む、`ARRAY JOIN` 句と同じ実行機構で処理されます。
+式内の `arrayJoin` 関数を実際の `ARRAY JOIN` ステップに変換するクエリプランレベルの最適化を有効または無効にします。これにより、遅延実行レプリケーションやフィルタ融合を含む、`ARRAY JOIN` 句と同じ実行機構で処理されます。
 設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>

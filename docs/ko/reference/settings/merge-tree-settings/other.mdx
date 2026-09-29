@@ -772,6 +772,24 @@ tmp&#95;-directories를 유지하는 기간(초)입니다. 이 값을 낮추지 
 
 이는 행을 삭제하는 TTL에만 적용됩니다. 컬럼 `TTL`은 파트를 재작성해야만 적용할 수 있으므로, 이 설정이 활성화되어 있어도 만료된 컬럼을 정리하는 머지는 여전히 할당됩니다. 이러한 머지는 어차피 파트를 재작성하므로, 해당 파트에서 만료된 행도 함께 삭제됩니다.
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "새 테이블 설정: UNIQUE KEY 테이블에 대한 INSERT가 파티션에 이미 활성 상태로 존재하는 키를 처리하는 방식 (overwrite \/ ignore \/ abort)"}]}]} />
+
+`UNIQUE KEY` 테이블에서 INSERT가 파티션에 이미 활성 상태로 존재하는 키를 처리하는 방식을 지정합니다.
+
+* `overwrite` — 새로 들어오는 행이 기존 활성 행을 대체합니다(UPSERT). 기본값입니다.
+* `ignore` — 기존 행을 유지하고, 충돌하는 새 행은 버립니다.
+* `abort` — 활성 상태의 중복 키가 처음 발견되는 즉시 INSERT가 실패하며, 아무것도 반영되지 않습니다.
+
+이 정책은 테이블 자체의 속성이므로 모든 쓰기 작업에 동일하게 적용됩니다. 단, INSERT는 단일 파트를 생성하는 경우에만
+원자적으로 처리됩니다. 따라서 여러 파트로 구성된 INSERT에서는 앞선 파트가 이미 커밋된 뒤에 `abort`로 인해 일부 파트가
+거부될 수 있으며, 이는 일반 MergeTree의 동작과 동일합니다.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />

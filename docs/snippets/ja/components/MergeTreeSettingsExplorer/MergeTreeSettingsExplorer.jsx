@@ -901,7 +901,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "その他",
-      count: 53,
+      count: 54,
       settings: [
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
         { name: "add_implicit_sign_column_constraint_for_collapsing_engine", path: "/other#add_implicit_sign_column_constraint_for_collapsing_engine", default: "0" },
@@ -954,6 +954,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "temporary_directories_lifetime", path: "/other#temporary_directories_lifetime", default: "86400" },
         { name: "try_fetch_recompressed_part_timeout", path: "/other#try_fetch_recompressed_part_timeout", default: "7200" },
         { name: "ttl_only_drop_parts", path: "/other#ttl_only_drop_parts", default: "0" },
+        { name: "unique_key_conflict_action", path: "/other#unique_key_conflict_action", default: "overwrite" },
         { name: "wait_for_unique_parts_send_before_shutdown_ms", path: "/other#wait_for_unique_parts_send_before_shutdown_ms", default: "0" },
         { name: "zookeeper_session_expiration_check_period", path: "/other#zookeeper_session_expiration_check_period", default: "60" }
       ],
@@ -1130,7 +1131,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           <path d="m21 21-4.3-4.3" />
         </svg>
         <input
-          aria-label="設定を検索"
+          aria-label="Search settings"
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
@@ -1141,7 +1142,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            一致する設定 {matchingCount} 件
+            {matchingCount} matching {matchingCount === 1 ? "setting" : "settings"}
           </span>
         </div>
       )}
@@ -1150,7 +1151,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           <div className="min-w-max font-semibold">/merge-tree-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}
+            aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -1159,13 +1160,13 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}</span>
+            <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">一致する設定はありません</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No matching settings</div>
         )}
       </div>
     </div>

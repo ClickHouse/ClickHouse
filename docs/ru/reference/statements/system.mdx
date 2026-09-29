@@ -181,6 +181,14 @@ SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+Очищает кэши таблицы `TimeSeries`, которые позволяют при вставке пропускать строки, уже присутствующие в её целевых таблицах. Таких кэшей два: кэш дедупликации таблицы семейств метрик и кэш дедупликации таблицы tags (используется только при отключённой настройке `store_min_time_and_max_time`); см. настройки таблицы `metric_families_deduplication_cache_expiration_seconds` и `tags_deduplication_cache_expiration_seconds`. Кэши локальны для сервера и не учитывают изменения, внесённые непосредственно в целевые таблицы. Такое расхождение устраняется само собой по истечении срока действия записей; чтобы следующая вставка записала все свои строки без ожидания (например, после очистки таблицы семейств метрик), используйте этот оператор. `TRUNCATE TABLE` для таблицы `TimeSeries` очищает кэши только на том сервере, где выполняется запрос, поэтому, если целевые таблицы реплицируются, после этого выполните данный оператор с `ON CLUSTER`, чтобы очистить кэши на остальных репликах.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
+```
+
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
 
 Синхронизирует хранящееся в памяти состояние файлового кэша ClickHouse с файлами кэша, фактически находящимися на диске, и возвращает `cache_name`, `path` и загруженный `size` каждого кэшированного сегмента файла. Необязательное имя кэша ограничивает операцию одним кэшем.

@@ -6146,6 +6146,22 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее время, в течение которого запрос ожидал, чтобы соответствовать всем настройкам throttling.
 
+### TimeSeriesMetricFamiliesDeduplicationCacheHits {#timeseriesmetricfamiliesdeduplicationcachehits}
+
+Количество строк, не записанных в таблицы семейств метрик таблиц TimeSeries, поскольку они уже были в кэше дедупликации или уже были записаны в рамках той же вставки.
+
+### TimeSeriesMetricFamiliesDeduplicationCacheMisses {#timeseriesmetricfamiliesdeduplicationcachemisses}
+
+Количество строк, записанных в таблицы семейств метрик таблиц TimeSeries, которые не были найдены в кэше дедупликации.
+
+### TimeSeriesTagsDeduplicationCacheHits {#timeseriestagsdeduplicationcachehits}
+
+Количество строк, не записанных в таблицы tags таблиц TimeSeries, поскольку они уже находились в кэше дедупликации или уже были записаны той же операцией вставки.
+
+### TimeSeriesTagsDeduplicationCacheMisses {#timeseriestagsdeduplicationcachemisses}
+
+Количество строк, записанных в таблицы tags таблиц TimeSeries, которые не были найдены в кэше дедупликации.
+
 ### TinyS3Clients {#tinys3clients}
 
 Количество копий клиентов S3, повторно использующих существующий провайдер аутентификации другого клиента.
@@ -6190,9 +6206,17 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Время, затраченное на чтение и десериализацию вспомогательных файлов delete-bitmap для UNIQUE KEY при промахе кэша DeleteBitmapCache.
 
-### UniqueKeyBitmapUpdates {#uniquekeybitmapupdates}
+### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
-Количество записанных sidecar-файлов delete-bitmap для UNIQUE KEY (по одному на каждое вытеснение / DELETE-коммит).
+Количество входящих строк, отброшенных при unique&#95;key&#95;conflict&#95;action = ignore, поскольку в партиции уже существует актуальная строка с таким ключом.
+
+### UniqueKeyConflictOverwriteRows {#uniquekeyconflictoverwriterows}
+
+Количество ключей новых строк, которые заменили ещё не удалённую строку в существующей части на пути записи при UNIQUE KEY INSERT.
+
+### UniqueKeyDedupProbes {#uniquekeydedupprobes}
+
+Количество ключей новых строк, проверенных на наличие в существующих частях на пути записи UNIQUE KEY INSERT.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 
@@ -6213,6 +6237,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### UniqueKeyLoadTimeSSTRebuildMicroseconds {#uniquekeyloadtimesstrebuildmicroseconds}
 
 Общее время, затраченное на перестроение `unique_key_index.sst` при загрузке (последовательное чтение столбцов UK + запись SST).
+
+### UniqueKeyMutexHoldMicroseconds {#uniquekeymutexholdmicroseconds}
+
+Суммарное реальное (wall-clock) время удержания мьютекса UNIQUE KEY уровня партиции на этом сервере по всем захватам (сумма времени удержания в микросекундах).
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 

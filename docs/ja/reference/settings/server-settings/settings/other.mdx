@@ -1214,6 +1214,33 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
 
 各スレッドが、共有の CPU ごとの予算に触れることなく保持できる未追跡メモリの量 (バイト単位) 。これは、小さな割り当てにおける CPU ごとの管理コストを償却するもので、最悪の場合には `max_per_cpu_untracked_memory * number_of_cpus` に上乗せされる余裕分でもあります。値を `0` にすると、この余裕分はなくなります。つまり、各割り当てで共有の CPU ごとのカウンターが更新されます (最も正確ですが、競合は増えます) 。Linux のみ。
 
+## placement {#placement}
+
+サーバーが稼働するクラウドのアベイラビリティゾーンとリージョンです。アベイラビリティゾーンは、ZooKeeper クライアントが同一ゾーン内のホストを優先的に選択する際に使用されます ([zookeeper](/ja/reference/settings/server-settings/settings/zookeeper#zookeeper) セクションの `prefer_local_availability_zone`) 。また、ClickHouse Keeper でも使用され、`/keeper/availability_zone` ノードにパブリッシュされます。
+
+`placement` セクションがない場合、アベイラビリティゾーンとリージョンは空になります。
+
+以下の設定を使用できます:
+
+| 設定                            | 説明                                                                                               | デフォルト値                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| `use_imds`                    | クラウドプロバイダーのインスタンスメタデータサービスからアベイラビリティゾーンを取得します (AWS、GCP の順に試行) 。有効にすると、他の設定はすべて無視され、リージョンは空になります。 | `false`                              |
+| `availability_zone`           | アベイラビリティゾーン。                                                                                     | 空                                    |
+| `availability_zone_from_file` | `availability_zone` が空の場合に、アベイラビリティゾーンの読み込み元となるファイル。ファイルが存在しない場合、アベイラビリティゾーンは空になります。             | `/run/instance-metadata/node-zone`   |
+| `region`                      | リージョン。                                                                                           | 空                                    |
+| `region_from_file`            | `region` が空の場合に、リージョンの読み込み元となるファイル。ファイルが存在しない場合、リージョンは空になります。                                    | `/run/instance-metadata/node-region` |
+
+placement はサーバー起動時に一度だけ読み込まれます。
+
+**例**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />

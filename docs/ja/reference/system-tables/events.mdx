@@ -6145,6 +6145,22 @@ ThreadPoolReader の非同期ジョブ内で、page cache からではなくデ�
 
 すべてのスロットリング設定に従うためにクエリがスリープしていた合計時間です。
 
+### TimeSeriesMetricFamiliesDeduplicationCacheHits {#timeseriesmetricfamiliesdeduplicationcachehits}
+
+重複排除キャッシュにすでに存在していた、または同じ挿入処理ですでに書き込まれていたため、TimeSeries テーブルのメトリクスファミリーテーブルに書き込まれなかった行の数。
+
+### TimeSeriesMetricFamiliesDeduplicationCacheMisses {#timeseriesmetricfamiliesdeduplicationcachemisses}
+
+TimeSeries テーブルのメトリクスファミリーテーブルに、重複排除キャッシュ内で見つからなかったために書き込まれた行の数。
+
+### TimeSeriesTagsDeduplicationCacheHits {#timeseriestagsdeduplicationcachehits}
+
+重複排除キャッシュにすでに存在していた、または同じ挿入処理によってすでに書き込まれていたため、TimeSeries テーブルの tags テーブルに書き込まれなかった行数。
+
+### TimeSeriesTagsDeduplicationCacheMisses {#timeseriestagsdeduplicationcachemisses}
+
+重複排除キャッシュ内に見つからなかったために、TimeSeries テーブルの tags テーブルに書き込まれた行の数。
+
 ### TinyS3Clients {#tinys3clients}
 
 別のクライアントが持つ既存の認証プロバイダーを再利用する S3 クライアントのコピー数。
@@ -6189,9 +6205,17 @@ Poco の TLS 実装を使用するサーバープロトコル (ネイティブ T
 
 DeleteBitmapCache でキャッシュミスが発生した際に、UNIQUE KEY の delete-bitmap サイドカーファイルを読み込んでデシリアライズするのに費やされた時間。
 
-### UniqueKeyBitmapUpdates {#uniquekeybitmapupdates}
+### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
-書き込まれた UNIQUE KEY の delete-bitmap サイドカーファイルの数 (supersession / DELETE コミットごとに 1 つ) 。
+キーがパーティション内にすでに存在していたため、unique&#95;key&#95;conflict&#95;action = ignore により破棄された受信行の数。
+
+### UniqueKeyConflictOverwriteRows {#uniquekeyconflictoverwriterows}
+
+UNIQUE KEY の INSERT 書き込みパスにおいて、既存パーツ内の有効な行を置き換えた新規行のキーの数。
+
+### UniqueKeyDedupProbes {#uniquekeydedupprobes}
+
+UNIQUE KEY INSERT の書き込みパスで、既存パーツに対して照合された新規行のキーの数。
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 
@@ -6212,6 +6236,10 @@ crash-before-flush ウィンドウの後、ロード時に `unique_key_index.sst
 ### UniqueKeyLoadTimeSSTRebuildMicroseconds {#uniquekeyloadtimesstrebuildmicroseconds}
 
 ロード時 に `unique_key_index.sst` の再構築に費やされた合計時間 (UK カラムの sequential read + SST 書き込み) 。
+
+### UniqueKeyMutexHoldMicroseconds {#uniquekeymutexholdmicroseconds}
+
+このサーバー上で、パーティションごとの UNIQUE KEY ミューテックスが保持されていた実時間の合計 (全取得にわたる保持時間をマイクロ秒単位で合計した値) 。
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 

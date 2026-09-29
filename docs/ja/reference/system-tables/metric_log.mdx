@@ -111,7 +111,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_MarkCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — エントリが mark cache で見つかり、mark file を読み込まずに済んだ回数。
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — エントリが mark cache で見つからず、mark file をメモリに読み込む必要があった回数。この操作は高コストで、クエリのレイテンシ増加につながります。
 * `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — DeleteBitmapCache のキャッシュミス時に、UNIQUE KEY delete-bitmap sidecar files の読み取りとデシリアライズに費やされた時間。
-* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/ja/reference/data-types/int-uint)) — 書き込まれた UNIQUE KEY delete-bitmap sidecar files の数 (置換または DELETE commit ごとに 1 つ) 。
+* `ProfileEvent_UniqueKeyMutexHoldMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — このサーバーでパーティションごとの UNIQUE KEY ミューテックスが保持された実時間の合計 (すべての取得における保持時間のマイクロ秒数の合計) 。
+* `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/ja/reference/data-types/int-uint)) — UNIQUE KEY INSERT の書き込みパスで、新規行のキーを既存のパーツに対して照合した回数。
+* `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/ja/reference/data-types/int-uint)) — UNIQUE KEY INSERT の書き込みパスで、既存パーツ内の生存中の行を置き換えた新規行のキー数。
+* `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/ja/reference/data-types/int-uint)) — キーがパーティション内の生存中の行にすでに存在していたため、unique&#95;key&#95;conflict&#95;action = ignore によって破棄された入力行数。
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — エントリがプライマリインデックスキャッシュで見つかり、index file を読み込まずに済んだ回数。
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — エントリがプライマリインデックスキャッシュで見つからず、index file をメモリに読み込む必要があった回数。この操作は高コストで、クエリのレイテンシ増加につながります。
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg メタデータファイルが cache で見つかった回数。
@@ -121,6 +124,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — paimon メタデータファイルが cache で見つかった回数。
 * `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — paimon メタデータファイルが paimon メタデータキャッシュで見つからず、 (リモート) ディスクから読み取る必要があった回数。
 * `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/ja/reference/data-types/int-uint)) — paimon メタデータキャッシュから追い出されたおおよそのバイト数。
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — 重複排除キャッシュにすでに存在するか、同じ挿入処理ですでに書き込まれていたため、TimeSeries テーブルのメトリクスファミリーテーブルに書き込まれなかった行数。
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — 重複排除キャッシュで見つからず、TimeSeries テーブルのメトリクスファミリーテーブルに書き込まれた行数。
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — 重複排除キャッシュにすでに存在するか、同じ挿入処理ですでに書き込まれていたため、TimeSeries テーブルの Tags テーブルに書き込まれなかった行数。
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — 重複排除キャッシュで見つからず、TimeSeries テーブルの Tags テーブルに書き込まれた行数。
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — データリーダーが Iceberg メタデータファイルの読み取りと解析の完了を待機した合計時間。すべてのリーダースレッドの合計です。
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet メタデータが cache で見つかった回数。
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet メタデータが cache で見つからず、ディスクから読み取る必要があった回数。
@@ -696,8 +703,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasDeniedRequests` ([UInt64](/ja/reference/data-types/int-uint)) — イニシエーターへのリクエストが完全に拒否された回数
 * `ProfileEvent_CacheWarmerBytesDownloaded` ([UInt64](/ja/reference/data-types/int-uint)) — 専用のバックグラウンドスレッドによってファイルシステムキャッシュに取り込まれたデータ量
 * `ProfileEvent_CacheWarmerDataPartsDownloaded` ([UInt64](/ja/reference/data-types/int-uint)) — CacheWarmer によって完全に取得されたデータパーツ数
-* `ProfileEvent_IgnoredColdParts` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 `ignore&#95;cold&#95;parts&#95;seconds` を参照してください。読み取りクエリが、まだ CacheWarmer によってキャッシュに取り込まれていない非常に新しいパーツを無視した回数
-* `ProfileEvent_PreferredWarmedUnmergedParts` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 `prefer&#95;warmed&#95;unmerged&#95;parts&#95;seconds` を参照してください。読み取りクエリが、まだ CacheWarmer によってキャッシュに取り込まれていないマージ済みパーツではなく、キャッシュ内にある古いマージ前パーツを使用した回数
+* `ProfileEvent_IgnoredColdParts` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 ignore&#95;cold&#95;parts&#95;seconds を参照してください。読み取りクエリが、まだ CacheWarmer によってキャッシュに取り込まれていない非常に新しいパーツを無視した回数
+* `ProfileEvent_PreferredWarmedUnmergedParts` ([UInt64](/ja/reference/data-types/int-uint)) — 設定 prefer&#95;warmed&#95;unmerged&#95;parts&#95;seconds を参照してください。読み取りクエリが、まだ CacheWarmer によってキャッシュに取り込まれていないマージ済みパーツではなく、キャッシュ内にある古いマージ前パーツを使用した回数
 * `ProfileEvent_PerfCPUCycles` ([UInt64](/ja/reference/data-types/int-uint)) — 総サイクル数。CPU 周波数のスケーリング時の挙動に注意してください。
 * `ProfileEvent_PerfInstructions` ([UInt64](/ja/reference/data-types/int-uint)) — リタイアした命令数。さまざまな要因、特にハードウェア割り込み回数の影響を受ける可能性があるため注意してください。
 * `ProfileEvent_PerfCacheReferences` ([UInt64](/ja/reference/data-types/int-uint)) — cache アクセス数。通常は Last Level Cache へのアクセスを示しますが、CPU によって異なる場合があります。これには prefetches やコヒーレンシメッセージが含まれることがあり、これも CPU の設計に依存します。
@@ -914,7 +921,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_MergeTreePrefetchedReadPoolInit` ([UInt64](/ja/reference/data-types/int-uint)) — MergeTreePrefetchedReadPool でタスクを準備するのに費やした時間
 * `ProfileEvent_WaitPrefetchTaskMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — プリフェッチされたリーダーの待機に費やした時間
 * `ProfileEvent_ThreadpoolReaderTaskMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期読み取りでデータを取得するのに費やした時間
-* `ProfileEvent_ThreadpoolReaderPrepareMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 準備に費やした時間 (例: reader の `seek()` メソッドの呼び出し)
+* `ProfileEvent_ThreadpoolReaderPrepareMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 準備に費やした時間 (例: reader の seek() メソッドの呼び出し)
 * `ProfileEvent_ThreadpoolReaderReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期読み取りで threadpool タスクから読み取られたバイト数
 * `ProfileEvent_ThreadpoolReaderSubmit` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期読み取りで threadpool タスクから読み取られたバイト数
 * `ProfileEvent_ThreadpoolReaderSubmitReadSynchronously` ([UInt64](/ja/reference/data-types/int-uint)) — thread pool にタスクをスケジュールせず、代わりに同期的に読み取った回数
@@ -923,8 +930,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ThreadpoolReaderSubmitLookupInCacheMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 内容が cache されているかどうかの確認に費やした時間
 * `ProfileEvent_AsynchronousReaderIgnoredBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期読み取り中に無視されたバイト数
 * `ProfileEvent_ReadBufferSeekCancelConnection` ([UInt64](/ja/reference/data-types/int-uint)) — 新しい接続につながるシークの回数 (S3、HTTP)
-* `ProfileEvent_SleepFunctionCalls` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) が呼び出された回数。
-* `ProfileEvent_SleepFunctionMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) で設定された sleep 時間。
+* `ProfileEvent_SleepFunctionCalls` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (sleep、sleepEachRow) が呼び出された回数。
+* `ProfileEvent_SleepFunctionMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (sleep、sleepEachRow) で設定された sleep 時間。
 * `ProfileEvent_SleepFunctionElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) で実際に sleep していた時間。
 * `ProfileEvent_SystemPartsEnumerationSlowdownSleeps` ([UInt64](/ja/reference/data-types/int-uint)) — system.parts ファミリーのテーブルを充填する際に、テスト専用 failpoint &#39;slowdown&#95;system&#95;parts&#95;enumeration&#39; が sleep した回数。テスト以外では常にゼロです。
 * `ProfileEvent_ThreadPoolReaderPageCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — ThreadPoolReader 内の読み取りがページキャッシュから行われた回数。
@@ -2069,6 +2076,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `CurrentMetric_QueryConditionCacheEntries` ([Int64](/ja/reference/data-types/int-uint)) — クエリ条件キャッシュ内のエントリ総数
 * `CurrentMetric_EncryptionHeaderCacheBytes` ([Int64](/ja/reference/data-types/int-uint)) — 暗号化ヘッダーキャッシュの合計サイズ (バイト)
 * `CurrentMetric_EncryptionHeaderCacheEntries` ([Int64](/ja/reference/data-types/int-uint)) — 暗号化ヘッダーキャッシュ内のエントリ総数
+* `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheEntries` ([Int64](/ja/reference/data-types/int-uint)) — TimeSeries テーブルの metric families テーブルにおける重複排除キャッシュ内のエントリ数
+* `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheBytes` ([Int64](/ja/reference/data-types/int-uint)) — TimeSeries テーブルの metric families テーブルにおける重複排除キャッシュのおおよそのサイズ (バイト)
+* `CurrentMetric_TimeSeriesTagsDeduplicationCacheEntries` ([Int64](/ja/reference/data-types/int-uint)) — TimeSeries テーブルの Tags テーブルにおける重複排除キャッシュ内のエントリ数
+* `CurrentMetric_TimeSeriesTagsDeduplicationCacheBytes` ([Int64](/ja/reference/data-types/int-uint)) — TimeSeries テーブルの Tags テーブルにおける重複排除キャッシュのおおよそのサイズ (バイト)
 * `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/ja/reference/data-types/int-uint)) — キャッシュされた JIT コンパイル済み関数の実行可能セクションおよびデータセクション用に `JITModuleMemoryManager` が保持する予約済みページブロック容量 (2 倍の過剰割り当て係数を適用し、ページ全体に切り上げ) 。実際に使用中の機械語コードのバイト数ではありません (実際の値はこれより小さい) 。`posix_memalign` 経由で割り当てられ、jemalloc にインターセプトされるため、専用の JIT アリーナ内で計上され、`jemalloc.jit_arena.active_bytes` のサブセットとなります。
 * `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/ja/reference/data-types/int-uint)) — JIT コンパイル済み機械語コードのキャッシュ内のエントリ総数。
 * `CurrentMetric_SerializationCacheBytesInMemoryAllocated` ([Int64](/ja/reference/data-types/int-uint)) — キーおよび空のスロットによるオーバーヘッドを含む、シリアライゼーションキャッシュの合計サイズ (バイト)

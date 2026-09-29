@@ -6146,6 +6146,22 @@ Temps passé à récupérer les données en lecture asynchrone
 
 Temps total pendant lequel une requête a été suspendue pour respecter tous les paramètres de limitation de débit.
 
+### TimeSeriesMetricFamiliesDeduplicationCacheHits {#timeseriesmetricfamiliesdeduplicationcachehits}
+
+Nombre de lignes non écrites dans les tables de familles de métriques des tables TimeSeries, car elles figuraient déjà dans le cache de déduplication ou avaient déjà été écrites par la même insertion.
+
+### TimeSeriesMetricFamiliesDeduplicationCacheMisses {#timeseriesmetricfamiliesdeduplicationcachemisses}
+
+Nombre de lignes écrites dans les tables de familles de métriques des tables TimeSeries parce qu&#39;elles étaient introuvables dans le cache de déduplication.
+
+### TimeSeriesTagsDeduplicationCacheHits {#timeseriestagsdeduplicationcachehits}
+
+Nombre de lignes non écrites dans les tables des tags des tables TimeSeries, car elles étaient déjà présentes dans le cache de déduplication ou avaient déjà été écrites par la même insertion.
+
+### TimeSeriesTagsDeduplicationCacheMisses {#timeseriestagsdeduplicationcachemisses}
+
+Nombre de lignes écrites dans les tables des tags des tables TimeSeries parce qu&#39;elles étaient absentes du cache de déduplication.
+
 ### TinyS3Clients {#tinys3clients}
 
 Nombre de copies de clients S3 réutilisant un fournisseur d’authentification existant d’un autre client.
@@ -6190,9 +6206,17 @@ Nombre d’octets expulsés du cache décompressé.
 
 Temps consacré à la lecture et à la désérialisation des fichiers sidecar de bitmap de suppression associés à UNIQUE KEY en cas de défaut de cache dans DeleteBitmapCache.
 
-### Mises à jour du bitmap UniqueKey {#uniquekeybitmapupdates}
+### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
-Nombre de fichiers sidecar de bitmap de suppression pour UNIQUE KEY écrits (un par remplacement / commit DELETE).
+Nombre de lignes entrantes écartées par `unique_key_conflict_action = ignore`, car la clé était déjà présente dans la partition.
+
+### UniqueKeyConflictOverwriteRows {#uniquekeyconflictoverwriterows}
+
+Nombre de clés de nouvelles lignes ayant remplacé une ligne active d&#39;une partie de données existante dans le chemin d&#39;écriture d&#39;un UNIQUE KEY INSERT.
+
+### UniqueKeyDedupProbes {#uniquekeydedupprobes}
+
+Nombre de clés de nouvelles lignes vérifiées dans les parties de données existantes sur le chemin d&#39;écriture d&#39;un UNIQUE KEY INSERT.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 
@@ -6213,6 +6237,10 @@ Nombre de parts UNIQUE KEY dont le fichier `unique_key_index.sst` a été recons
 ### UniqueKeyLoadTimeSSTRebuildMicroseconds {#uniquekeyloadtimesstrebuildmicroseconds}
 
 Temps total consacré à la reconstruction de `unique_key_index.sst` au moment du chargement (lecture séquentielle des colonnes UK + écriture SST).
+
+### UniqueKeyMutexHoldMicroseconds {#uniquekeymutexholdmicroseconds}
+
+Temps d’horloge total pendant lequel le mutex UNIQUE KEY propre à chaque partition a été détenu, cumulé sur l’ensemble des acquisitions effectuées sur ce serveur (somme des durées de détention en microsecondes).
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 

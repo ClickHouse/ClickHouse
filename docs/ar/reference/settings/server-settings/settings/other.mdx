@@ -1212,6 +1212,33 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 مقدار الذاكرة غير المتتبَّعة، بالبايت، الذي يمكن لكل خيط تنفيذ الاحتفاظ به دون المساس بالميزانية المشتركة لكل CPU. يخفّض ذلك كلفة الاحتساب لكل CPU عند التخصيصات الصغيرة، وهو الهامش المُضاف فوق `max_per_cpu_untracked_memory * number_of_cpus` في أسوأ الحالات. تؤدي القيمة `0` إلى إزالة هذا الهامش: إذ يُحدِّث كل تخصيص العداد المشترك لكل CPU (وهو الأدق، لكنه يسبّب تنازعًا أكبر). Linux فقط.
 
+## placement {#placement}
+
+منطقة التوافر والمنطقة السحابية اللتان يعمل فيهما الخادم. يستخدم عميل ZooKeeper منطقة التوافر لتفضيل المضيفين الموجودين في منطقة التوافر نفسها (`prefer_local_availability_zone` في قسم [zookeeper](/ar/reference/settings/server-settings/settings/zookeeper#zookeeper))، كما يستخدمها ClickHouse Keeper الذي ينشرها في العقدة `/keeper/availability_zone`.
+
+إذا لم يكن القسم `placement` موجودًا، تكون منطقة التوافر والمنطقة فارغتين.
+
+تتوفر الإعدادات التالية:
+
+| الإعداد                       | الوصف                                                                                                                                                                 | القيمة الافتراضية                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | الحصول على منطقة التوافر من خدمة البيانات الوصفية للمثيل لدى مزود الخدمة السحابية: AWS أولًا، ثم GCP. عند تفعيله، تُتجاهَل جميع الإعدادات الأخرى وتكون المنطقة فارغة. | `false`                              |
+| `availability_zone`           | منطقة التوافر.                                                                                                                                                        | فارغة                                |
+| `availability_zone_from_file` | الملف الذي تُقرأ منه منطقة التوافر عندما يكون `availability_zone` فارغًا. إذا لم يكن الملف موجودًا، تكون منطقة التوافر فارغة.                                         | `/run/instance-metadata/node-zone`   |
+| `region`                      | المنطقة.                                                                                                                                                              | فارغة                                |
+| `region_from_file`            | الملف الذي تُقرأ منه المنطقة عندما يكون `region` فارغًا. إذا لم يكن الملف موجودًا، تكون المنطقة فارغة.                                                                | `/run/instance-metadata/node-region` |
+
+تُقرأ إعدادات placement مرة واحدة فقط عند بدء تشغيل الخادم.
+
+**مثال**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />

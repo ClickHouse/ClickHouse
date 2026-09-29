@@ -153,14 +153,6 @@ Ce paramètre ne concerne que les requêtes avec `JOIN`, dans lesquelles tous le
 
 L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel&#95;replicas&#95;local&#95;plan est activé
 
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Utiliser le pipeline local lors d'un INSERT SELECT distribué avec des répliques parallèles. Actuellement désactivé en raison de problèmes de performances"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Utiliser le pipeline local lors d'un INSERT SELECT distribué avec des répliques parallèles. Actuellement désactivé en raison de problèmes de performances"}]}]} />
-
-Utiliser le pipeline local lors d&#39;un INSERT SELECT distribué avec des répliques parallèles
-
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

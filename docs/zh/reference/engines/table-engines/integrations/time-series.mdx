@@ -221,7 +221,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 6, recent_samples_ttl_seconds = 345600
+SETTINGS version = 7, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -256,11 +256,11 @@ METRIC FAMILIES INNER COLUMNS
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
-因此，列会自动生成。此外，还有四个内部目标端表，各自的列定义存储在 `INNER COLUMNS` 子句中。
+因此，列会自动生成。此外，还有四个内部目标表，各自的列定义存储在 `INNER COLUMNS` 子句中。
 `recent_samples_ttl_seconds` 设置以其默认值写入 `SETTINGS` 子句：该设置定义最近样本表的 TTL，因此其有效值在创建时便已固定。
 此外，最新的 schema 版本已固定写入 `version` 设置中 (参见 [Schema 版本控制](#schema-versioning)) 。
 
-内部目标端表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+内部目标表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，
 并且每个目标端表都有各自的一组列：
@@ -417,16 +417,20 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   除指标名称外的所有标签。
 </Note>
 
-## 内部目标端表的表引擎 {#inner-table-engines}
+## 内部目标表的表引擎 {#inner-table-engines}
 
-默认情况下，内部目标端表使用以下表引擎：
+默认情况下，内部目标表使用以下表引擎：
 
 * [samples](#samples-table) 表使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)；
 * [最近样本](#recent-samples-table) 表使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)，按 5 小时分桶进行分区 (请参见 [recent&#95;samples&#95;partition&#95;by](#settings) 设置)，其 `TTL` 源自
   [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置，并启用 `ttl_only_drop_parts`，因此会整体删除过期的 parts；
 * [标签](#tags-table) 表使用 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)，因为相同的数据通常会多次插入该表，因此需要一种去重方式，
-  同时还需要对列 `min_time` 和 `max_time` 进行聚合；
+  同时还需要对列 `min_time` 和 `max_time` 进行聚合。如果不存储这些列
+  (请参见 `store_min_time_and_max_time` 设置)，大多数重复数据甚至不会进入该表：`TimeSeries` 表的去重缓存
+  会跳过最近写入的时间序列 (请参见 `tags_deduplication_cache_expiration_seconds` 设置)；
 * [指标族](#metric-families-table) 表使用 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)，因为相同的数据通常会多次插入该表，因此需要一种去重方式。
+  大多数重复数据甚至不会进入该表：`TimeSeries` 表的去重缓存会跳过最近写入的指标族
+  (请参见 `metric_families_deduplication_cache_expiration_seconds` 设置)。
 
 生成的内部表的引擎家族遵循 `default_table_engine` 查询级别设置：
 当 `default_table_engine = ReplicatedMergeTree` 或 `SharedMergeTree` 时，内部表使用相应的
@@ -438,7 +442,7 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 声明 `SAMPLES INNER ENGINE = ReplicatedMergeTree(...)` 要求其他内部引擎也使用复制引擎 -
 要么显式声明，要么通过 `default_table_engine = ReplicatedMergeTree` 生成。
 
-如果指定了其他表引擎，内部目标端表也可以使用它们：
+如果指定了其他表引擎，内部目标表也可以使用它们：
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
@@ -486,18 +490,23 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 
 ## 修改设置 {#altering-settings}
 
-执行 `CREATE` 后，可更改以下两个设置：
+执行 `CREATE` 后，可更改以下设置：
 
 * `id_generator`
 * `filter_by_min_time_and_max_time`
+* `metric_families_deduplication_cache_size_bytes`、`metric_families_deduplication_cache_expiration_seconds`
+* `tags_deduplication_cache_size_bytes`、`tags_deduplication_cache_expiration_seconds`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
 ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 请注意，如果在标签表中已有数据后更改 `id_generator`，同一指标+标签组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
+更改去重缓存的任一设置都会将该缓存替换为一个空缓存，因此下一次插入时会重新写入其全部行。
+将大小或过期时间设为 0 即可禁用该缓存。
 
 其他设置不能通过 `ALTER ... MODIFY SETTING` 更改：其中大多数在 `CREATE` 时就已经固化在内部表的 schema 中，
 而 `version` 设置会在 `CREATE` 时自动固定，并用于标识 schema 本身 (参见 [Schema 版本控制](#schema-versioning)) 。
@@ -506,28 +515,32 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 
 以下列出了在定义 `TimeSeries` 表时可指定的设置：
 
-| 名称                                   | 类型     | 默认值                                                           | 说明                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------ | ------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id_type`                            | 数据类型   | 取决于 `id` 列                                                    | 目标端表中 `id` 列的类型。通常该类型在内部表的 `INNER COLUMNS` 子句中声明，或在[外部](#external-target-tables)标签表中声明；如果类型未以其他方式保留在定义中，则该设置会在 `CREATE` 时自动记录：即当标签目标为外部表时，或设置了 `id_generator` 设置时。该设置也可以显式指定，以替代 `TAGS INNER COLUMNS (id <type>)`。要求 `version` 至少为 2                                                                                           |
-| `id_generator`                       | 表达式    | 取决于 `id` 类型                                                   | 根据时间序列的标签计算其标识符 (指纹) 的表达式。如果未设置，则使用 `id` 列的默认表达式。如果 `id` 列的默认表达式也未设置，则会自动选择该表达式。对于外部标签表，如果 `version` 至少为 2，则该设置会在 `CREATE` 时自动记录 (请参阅 [外部目标端表](#external-target-tables))                                                                                                                                                       |
-| `tags_to_columns`                    | Map    | {}                                                            | 指定哪些标签应映射到 [标签](#tags-table) 表中的独立列。语法：`{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                            |
-| `use_all_tags_column_to_generate_id` | Bool   | false                                                         | 已废弃设置，不执行任何操作                                                                                                                                                                                                                                                                                                                  |
-| `store_min_time_and_max_time`        | Bool   | true                                                          | 如果设置为 true，则该表会为每个时间序列存储 `min_time` 和 `max_time`                                                                                                                                                                                                                                                                               |
-| `aggregate_min_time_and_max_time`    | Bool   | true                                                          | 创建内部目标 `tags` 表时，此标志会启用将 `min_time` 列的类型设为 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`，而不是仅使用 `Nullable(DateTime64(3))`；`max_time` 列同样如此                                                                                                                                                                           |
-| `filter_by_min_time_and_max_time`    | Bool   | true                                                          | 如果设置为 true，则该表会使用 `min_time` 和 `max_time` 列来过滤时间序列                                                                                                                                                                                                                                                                             |
-| `samples_index_granularity`          | UInt64 | 32768                                                         | 设置内部 [samples](#samples-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部 samples 表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                |
-| `recent_samples_ttl_seconds`         | UInt64 | 345600                                                        | 附加 `最近样本` 目标表的保留期，每个插入的样本也会写入该表。内部最近样本表始终会根据此设置获得 `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` (覆盖引擎声明中的任何生存时间 (TTL)) ；外部最近样本表必须至少保留这么多秒的数据。时间范围落在生存时间 (TTL) 窗口内的查询会优先使用最近样本表，而非主 samples 表 (请参阅查询级别设置 `time_series_prefer_recent_samples_table`) 。默认值为 4 天；有效值会在 CREATE 时固定写入表定义。设置为 0 可禁用最近样本表 |
-| `recent_samples_partition_by`        | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `最近样本` 表的分区键，例如 `toStartOfHour(timestamp)`。显式设置时，会覆盖引擎声明中的分区键；如果两者均未设置，则每 5 小时使用一个分区。对于外部最近样本表，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                   |
-| `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 设置内部 `最近样本` 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部最近样本表和非 MergeTree 引擎，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                     |
-| `tags_index_granularity`             | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                               |
-| `version`                            | UInt64 | 6                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
+| 名称                                                       | 类型     | 默认值                                                           | 说明                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------- | ------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`                                                | UInt64 | 7                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
+| `id_type`                                                | 数据类型   | 取决于 `id` 列                                                    | 目标端表中 `id` 列的类型。通常该类型在内部表的 `INNER COLUMNS` 子句中声明，或在[外部](#external-target-tables)标签表中声明；如果类型未以其他方式保留在定义中，则该设置会在 `CREATE` 时自动记录：即当标签目标为外部表时，或设置了 `id_generator` 设置时。该设置也可以显式指定，以替代 `TAGS INNER COLUMNS (id <type>)`。要求 `version` 至少为 2                                                                                           |
+| `id_generator`                                           | 表达式    | 取决于 `id` 类型                                                   | 根据时间序列的标签计算其标识符 (指纹) 的表达式。如果未设置，则使用 `id` 列的默认表达式。如果 `id` 列的默认表达式也未设置，则会自动选择该表达式。对于外部标签表，如果 `version` 至少为 2，则该设置会在 `CREATE` 时自动记录 (请参阅 [外部目标端表](#external-target-tables))                                                                                                                                                       |
+| `tags_to_columns`                                        | Map    | {}                                                            | 指定哪些标签应映射到 [标签](#tags-table) 表中的独立列。语法：`{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                            |
+| `use_all_tags_column_to_generate_id`                     | Bool   | false                                                         | 已废弃设置，不执行任何操作                                                                                                                                                                                                                                                                                                                  |
+| `store_min_time_and_max_time`                            | Bool   | true                                                          | 如果设置为 true，则该表会为每个时间序列存储 `min_time` 和 `max_time`                                                                                                                                                                                                                                                                               |
+| `aggregate_min_time_and_max_time`                        | Bool   | true                                                          | 创建内部目标 `tags` 表时，此标志会启用将 `min_time` 列的类型设为 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`，而不是仅使用 `Nullable(DateTime64(3))`；`max_time` 列同样如此                                                                                                                                                                           |
+| `filter_by_min_time_and_max_time`                        | Bool   | true                                                          | 如果设置为 true，则该表会使用 `min_time` 和 `max_time` 列来过滤时间序列                                                                                                                                                                                                                                                                             |
+| `metric_families_deduplication_cache_size_bytes`         | UInt64 | 10485760                                                      | [指标族](#metric-families-table)表去重缓存的最大大小 (以字节为单位) 。该缓存会记录最近写入的指标族描述，以免每次插入时都重复写入。缓存已满时，会先淘汰仅使用过一次的条目，再淘汰最近最少使用的条目 (SLRU) 。设置为 0 可禁用该缓存，另请参见 `metric_families_deduplication_cache_expiration_seconds`                                                                                                                            |
+| `metric_families_deduplication_cache_expiration_seconds` | UInt64 | 3600                                                          | [指标族](#metric-families-table)表去重缓存中条目的过期时间，从该指标族写入时起计算。因此，每个指标族在每个周期内至少会重新写入一次，从而限制缓存与表之间的差异。该缓存仅存在于本地服务器上，可通过在该服务器上执行 `TRUNCATE TABLE` 或 `SYSTEM DROP TIME SERIES CACHES` 来清除。设置为 0 可禁用该缓存                                                                                                                                    |
+| `tags_deduplication_cache_size_bytes`                    | UInt64 | 104857600                                                     | [标签](#tags-table) 表的去重缓存大小上限，单位为字节。缓存会记录最近写入的时间序列，因此无需在每次插入时重复写入其标签。缓存已满时，会先逐出仅使用过一次的条目，再逐出最近最少使用的条目 (SLRU)。仅当 `store_min_time_and_max_time` 被禁用时才使用该缓存，否则每次插入都会更改 `min_time` 和 `max_time`：此时默认值会被忽略，显式指定的非零值则会被拒绝。设置为 0 可禁用缓存；另请参见 `tags_deduplication_cache_expiration_seconds`                                              |
+| `tags_deduplication_cache_expiration_seconds`            | UInt64 | 3600                                                          | [标签](#tags-table) 表的去重缓存条目从对应时间序列写入时起，经过指定时间后过期。因此，每个时间序列在这段时间内至少会重新写入一次，从而限制缓存与表之间的差异。缓存仅存在于本地服务器上；对该表执行 `TRUNCATE TABLE` 或执行 `SYSTEM DROP TIME SERIES CACHES` 均可清空缓存。仅在禁用 `store_min_time_and_max_time` 时使用，请参阅 `tags_deduplication_cache_size_bytes`。设置为 0 可禁用缓存                                                            |
+| `samples_index_granularity`                              | UInt64 | 32768                                                         | 设置内部 [samples](#samples-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部 samples 表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                |
+| `recent_samples_ttl_seconds`                             | UInt64 | 345600                                                        | 附加 `最近样本` 目标表的保留期，每个插入的样本也会写入该表。内部最近样本表始终会根据此设置获得 `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` (覆盖引擎声明中的任何生存时间 (TTL)) ；外部最近样本表必须至少保留这么多秒的数据。时间范围落在生存时间 (TTL) 窗口内的查询会优先使用最近样本表，而非主 samples 表 (请参阅查询级别设置 `time_series_prefer_recent_samples_table`) 。默认值为 4 天；有效值会在 CREATE 时固定写入表定义。设置为 0 可禁用最近样本表 |
+| `recent_samples_partition_by`                            | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `最近样本` 表的分区键，例如 `toStartOfHour(timestamp)`。显式设置时，会覆盖引擎声明中的分区键；如果两者均未设置，则每 5 小时使用一个分区。对于外部最近样本表，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                   |
+| `recent_samples_index_granularity`                       | UInt64 | 8192                                                          | 设置内部 `最近样本` 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部最近样本表和非 MergeTree 引擎，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                     |
+| `tags_index_granularity`                                 | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                               |
 
 ## Schema 版本控制 {#schema-versioning}
 
 `TimeSeries` 表引擎与 PromQL 执行层仍处于活跃开发阶段：
 目标端表的集合及其结构可能在不同 ClickHouse 版本之间发生变化。
 为了让此类变化可被检测，每个 `TimeSeries` 表都会将自身版本记录在 [version](#settings) 设置中。
-建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 6) ——
+建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 7) ——
 并持久化在表的元数据中，且无法通过 `ALTER` 修改。在该设置引入之前创建的表被视为版本 0。
 通常在 `CREATE TABLE` 查询中省略该设置即可——此时表会自动采用最新版本。
 如果服务器支持所指定的版本，也可以显式指定 `version`；此时该表会按照该版本的方式来定义 (请参阅[版本历史](#version-history)) 。
@@ -555,6 +568,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | 4  | `metrics` 目标端表更名为 `metric families`：内部表命名为 `.inner_id.metricfamilies.<uuid>`，而非 `.inner_id.metrics.<uuid>`，并且定义使用关键字 `METRIC FAMILIES` 而非 `METRICS` 编写。存储的数据没有变化                                                                                                   |
 | 5  | 使用 `MergeTree` 家族引擎的新建内部标签表，默认会在 `tags` map 上创建 `keyValuePairs` 文本索引 (参见 [Tags table](#tags-table))                                                                                                                                                                |
 | 6  | [指标族](#metric-families-table)表中的 `metric_family_name` 列更名为 `metric_family`，与对应外部列的名称保持一致。早期版本的表仍沿用该列的旧名称，[timeSeriesMetricFamilies](/zh/reference/functions/table-functions/timeSeriesMetricFamilies) 表函数也会按表所使用的名称返回该列。外部指标族表中该列的命名必须与 `TimeSeries` 表所属版本的命名方式一致     |
+| 7  | 引入了[指标族](#metric-families-table)表和[标签](#tags-table)表的去重缓存及其相关设置 (参见 [`metric_families_deduplication_cache_expiration_seconds`](#settings) 和 [`tags_deduplication_cache_expiration_seconds`](#settings)) 。早期版本的表不使用这些缓存。存储的数据没有变化                                   |
 
 # 函数 {#functions}
 

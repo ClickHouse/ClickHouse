@@ -206,9 +206,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增优化：将 arrayJoin 函数降为真正的 ARRAY JOIN 步骤；默认禁用。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增优化：将 arrayJoin 函数降为真正的 ARRAY JOIN 步骤；默认禁用。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用 query_plan_lower_array_join_function。"}]}]} />
 
 启用或禁用一项查询计划级别的优化：将表达式中的 `arrayJoin` 函数降为真正的 `ARRAY JOIN` 步骤，使其采用与 `ARRAY JOIN` 子句相同的执行机制 (惰性复制和过滤器融合) 。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。

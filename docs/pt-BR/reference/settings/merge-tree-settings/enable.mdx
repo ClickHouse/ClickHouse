@@ -23,7 +23,7 @@ Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração."}]}]} />
 
 Quando habilitada, a execução de mesclagem e mutações escolhe um codec por bloco para colunas que usam o codec padrão (sem cláusula `CODEC` ou com `CODEC(Default)`).
-Os candidatos são o codec padrão da tabela (consulte a configuração `default_compression_codec`), `NONE` e codecs especializados adequados ao tipo da coluna.
+Os candidatos são o codec padrão da tabela (consulte a configuração `default_compression_codec`), `NONE` e codecs especializados adequados ao tipo da coluna, cada um isoladamente e também seguido do codec padrão, quando este for uma compressão de uso geral, como `LZ4` ou `ZSTD`.
 O menor resultado é escolhido. Portanto, a compressão nunca é pior que a padrão, e blocos incompressíveis são armazenados brutos.
 Uma coluna cujo codec padrão inclui criptografia (por exemplo, `AES_128_GCM_SIV`) nunca é selecionada de forma adaptativa, de modo que a criptografia é sempre aplicada.
 Os codecs por bloco são informados pela função de tabela [`mergeTreeCodecBlockCounts`](/pt-BR/reference/functions/table-functions/index).

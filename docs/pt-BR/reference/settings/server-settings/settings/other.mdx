@@ -1212,6 +1212,33 @@ O caminho para o diretório que contém os dados.
 
 Quantidade de memória não rastreada, em bytes, que cada thread pode manter sem acessar o orçamento compartilhado por CPU. Isso amortiza o custo da contabilidade compartilhada por CPU para pequenas alocações e corresponde à folga adicionada a `max_per_cpu_untracked_memory * number_of_cpus` no pior caso. Um valor de `0` remove essa folga: cada alocação atualiza o contador compartilhado por CPU (mais preciso, mas com maior contenção). Somente no Linux.
 
+## placement {#placement}
+
+A zona de disponibilidade e a região da nuvem em que o servidor é executado. A zona de disponibilidade é usada pelo cliente ZooKeeper para dar preferência a hosts na mesma zona (`prefer_local_availability_zone` na seção [zookeeper](/pt-BR/reference/settings/server-settings/settings/zookeeper#zookeeper)) e pelo ClickHouse Keeper, que a publica no nó `/keeper/availability_zone`.
+
+Se a seção `placement` não estiver presente, a zona de disponibilidade e a região ficam vazias.
+
+As seguintes configurações estão disponíveis:
+
+| Configuração                  | Descrição                                                                                                                                                                                                           | valor default                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | Obtém a zona de disponibilidade a partir do serviço de metadados de instância do provedor de nuvem: primeiro AWS, depois GCP. Quando habilitado, todas as outras configurações são ignoradas e a região fica vazia. | `false`                              |
+| `availability_zone`           | A zona de disponibilidade.                                                                                                                                                                                          | Vazio                                |
+| `availability_zone_from_file` | O arquivo de onde a zona de disponibilidade é lida quando `availability_zone` está vazio. Se o arquivo não existir, a zona de disponibilidade fica vazia.                                                           | `/run/instance-metadata/node-zone`   |
+| `region`                      | A região.                                                                                                                                                                                                           | Vazio                                |
+| `region_from_file`            | O arquivo de onde a região é lida quando `region` está vazio. Se o arquivo não existir, a região fica vazia.                                                                                                        | `/run/instance-metadata/node-region` |
+
+A configuração de `placement` é lida uma única vez, na inicialização do servidor.
+
+**Exemplo**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Sim" />

@@ -153,14 +153,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel&#95;replicas&#95;local&#95;plan
 
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "استخدم مسار المعالجة المحلي أثناء عملية INSERT SELECT الموزعة مع النسخ المتماثلة المتوازية. وهو معطّل حاليًا بسبب مشكلات في الأداء"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "استخدم مسار المعالجة المحلي أثناء عملية INSERT SELECT الموزعة مع النسخ المتماثلة المتوازية. وهو معطّل حاليًا بسبب مشكلات في الأداء"}]}]} />
-
-استخدم مسار المعالجة المحلي أثناء عملية INSERT SELECT الموزعة مع النسخ المتماثلة المتوازية
-
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

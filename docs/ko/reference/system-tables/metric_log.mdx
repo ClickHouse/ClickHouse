@@ -111,7 +111,10 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_MarkCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 마크 캐시에서 발견되어 마크 파일을 로드할 필요가 없었던 횟수입니다.
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 마크 캐시에서 발견되지 않아 마크 파일을 메모리로 로드해야 했던 횟수입니다. 이는 비용이 큰 작업으로, 쿼리 지연 시간을 증가시킵니다.
 * `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — DeleteBitmapCache 미스 시 UNIQUE KEY delete-bitmap sidecar 파일을 읽고 역직렬화하는 데 소요된 시간입니다.
-* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/ko/reference/data-types/int-uint)) — 기록된 UNIQUE KEY delete-bitmap sidecar 파일 수입니다(대체 또는 DELETE commit당 1개).
+* `ProfileEvent_UniqueKeyMutexHoldMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 이 서버에서 파티션별 UNIQUE KEY 뮤텍스를 획득할 때마다 보유한 시간을 모두 더한 총 실제 경과 시간입니다(보유 시간의 마이크로초 합계).
+* `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/ko/reference/data-types/int-uint)) — UNIQUE KEY INSERT write-path에서 기존 파트를 대상으로 조회한 새 행 키 수입니다.
+* `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/ko/reference/data-types/int-uint)) — UNIQUE KEY INSERT write-path에서 기존 파트의 활성 행을 대체한 새 행 키 수입니다.
+* `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/ko/reference/data-types/int-uint)) — 파티션에 이미 활성 상태인 키가 있어 unique&#95;key&#95;conflict&#95;action = ignore에 따라 버려진 수신 행 수입니다.
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 프라이머리 인덱스 캐시에서 발견되어 인덱스 파일을 로드할 필요가 없었던 횟수입니다.
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 프라이머리 인덱스 캐시에서 발견되지 않아 인덱스 파일을 메모리로 로드해야 했던 횟수입니다. 이는 비용이 큰 작업으로, 쿼리 지연 시간을 증가시킵니다.
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 메타데이터 파일이 캐시에서 발견된 횟수입니다.
@@ -121,12 +124,16 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — paimon 메타데이터 파일이 캐시에서 발견된 횟수입니다.
 * `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — paimon 메타데이터 파일이 paimon 메타데이터 캐시에서 발견되지 않아 (원격) 디스크에서 읽어야 했던 횟수입니다.
 * `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/ko/reference/data-types/int-uint)) — paimon 메타데이터 캐시에서 축출된 대략적인 바이트 수입니다.
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에 이미 있거나 동일한 삽입에서 이미 기록되어 TimeSeries 테이블의 메트릭 패밀리 테이블에 기록되지 않은 행 수입니다.
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에서 찾지 못해 TimeSeries 테이블의 메트릭 패밀리 테이블에 기록된 행 수입니다.
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에 이미 있거나 동일한 삽입에서 이미 기록되어 TimeSeries 테이블의 Tags 테이블에 기록되지 않은 행 수입니다.
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에서 찾지 못해 TimeSeries 테이블의 Tags 테이블에 기록된 행 수입니다.
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 리더가 Iceberg 메타데이터 파일이 읽히고 파싱될 때까지 대기한 총 시간으로, 모든 리더 스레드에 걸쳐 합산한 값입니다.
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet 메타데이터가 캐시에서 발견된 횟수입니다.
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet 메타데이터가 캐시에서 발견되지 않아 디스크에서 읽어야 했던 횟수입니다.
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet 메타데이터 캐시에서 축출된 대략적인 바이트 수입니다.
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 데이터 iterator의 동기 초기화에 소요된 총 시간입니다.
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 상태에서 Iceberg 스토리지 메타데이터를 업데이트하는 데 소요된 총 시간입니다(`buildStorageMetadataFromState`).
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 상태에서 Iceberg 스토리지 메타데이터를 업데이트하는 데 소요된 총 시간입니다(buildStorageMetadataFromState).
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg iterator에서 반환된 객체 정보의 총 개수입니다.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파티셔닝 및 시퀀스 번호 기준으로 적합한 쌍 중 minmax 분석으로 채택된 data files-position delete file 쌍의 총 개수입니다.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파티셔닝 및 시퀀스 번호 기준으로 적합한 쌍 중 minmax 분석으로 채택된 data files-position delete file 쌍의 총 개수입니다.
@@ -2069,6 +2076,10 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_QueryConditionCacheEntries` ([Int64](/ko/reference/data-types/int-uint)) — 쿼리 조건 캐시 엔트리의 총 개수
 * `CurrentMetric_EncryptionHeaderCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — 암호화 헤더 캐시의 총 크기(바이트)
 * `CurrentMetric_EncryptionHeaderCacheEntries` ([Int64](/ko/reference/data-types/int-uint)) — 암호화 헤더 캐시 엔트리의 총 개수
+* `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheEntries` ([Int64](/ko/reference/data-types/int-uint)) — TimeSeries 테이블에 속한 메트릭 패밀리 테이블의 중복 제거 캐시 엔트리 수
+* `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — TimeSeries 테이블에 속한 메트릭 패밀리 테이블의 중복 제거 캐시 크기 근사값(바이트)
+* `CurrentMetric_TimeSeriesTagsDeduplicationCacheEntries` ([Int64](/ko/reference/data-types/int-uint)) — TimeSeries 테이블에 속한 Tags 테이블의 중복 제거 캐시 엔트리 수
+* `CurrentMetric_TimeSeriesTagsDeduplicationCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — TimeSeries 테이블에 속한 Tags 테이블의 중복 제거 캐시 크기 근사값(바이트)
 * `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — 캐시된 JIT 컴파일 함수의 실행형/데이터 섹션을 위해 `JITModuleMemoryManager`가 보유하는 예약된 페이지 블록 용량입니다(전체 페이지 단위로 올림하며, 2배의 오버프로비저닝 계수를 적용). 실제 사용 중인 머신 코드 바이트 수가 아닙니다(이보다 작음). `posix_memalign`을 통해 할당되며, jemalloc으로 가로채지므로 전용 JIT arena 내에 집계되고 `jemalloc.jit_arena.active_bytes`의 부분 집합입니다.
 * `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/ko/reference/data-types/int-uint)) — JIT 컴파일된 머신 코드 캐시 엔트리의 총 개수입니다.
 * `CurrentMetric_SerializationCacheBytesInMemoryAllocated` ([Int64](/ko/reference/data-types/int-uint)) — 키와 빈 슬롯의 오버헤드를 포함한 직렬화 캐시의 총 크기(바이트)

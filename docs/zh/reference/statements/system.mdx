@@ -181,6 +181,14 @@ SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+清除 `TimeSeries` 表的缓存。借助这些缓存，插入操作可以跳过其目标端表中已存在的行。此类缓存共有两个：指标族表的去重缓存，以及标签表的去重缓存 (仅在禁用 `store_min_time_and_max_time` 时使用) ，详见该表的 `metric_families_deduplication_cache_expiration_seconds` 和 `tags_deduplication_cache_expiration_seconds` 设置。这些缓存仅存在于本地服务器上，无法感知直接对目标端表所做的更改。缓存条目过期后，这种不一致会自行消除；如需让下一次插入立即写入全部行而无需等待 (例如在清空指标族表之后) ，可使用该语句。对 `TimeSeries` 表执行 `TRUNCATE TABLE` 只会清除执行该操作的服务器上的缓存，因此如果目标端表是复制表，请随后使用 `ON CLUSTER` 运行该语句，以清除其他副本上的缓存。
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
+```
+
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
 
 将 ClickHouse 文件系统缓存的内存状态与磁盘上实际存在的缓存文件进行同步，并返回每个已缓存 File 段的 `cache_name`、`path` 和已下载的 `size`。可选的缓存名称可将该操作限制为仅针对单个缓存。

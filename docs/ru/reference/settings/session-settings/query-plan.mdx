@@ -206,9 +206,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая оптимизация, преобразующая функцию arrayJoin в полноценный шаг ARRAY JOIN; по умолчанию отключена."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая оптимизация, преобразующая функцию arrayJoin в полноценный шаг ARRAY JOIN; по умолчанию отключена."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "query_plan_lower_array_join_function включена по умолчанию."}]}]} />
 
 Включает или отключает оптимизацию на уровне плана запроса, которая преобразует функцию `arrayJoin` внутри выражения в полноценный шаг `ARRAY JOIN`, благодаря чему она обрабатывается тем же механизмом выполнения, что и предложение `ARRAY JOIN` (отложенная репликация и слияние фильтров).
 Действует только в том случае, если настройка [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равна 1.

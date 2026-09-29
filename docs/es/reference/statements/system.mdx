@@ -181,6 +181,14 @@ Limpia la caché de metadatos del disco especificado.
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+Vacía las cachés de una tabla `TimeSeries` que permiten a las inserciones omitir las filas que ya existen en sus tablas de destino. Hay dos cachés de este tipo: la caché de deduplicación de la tabla de familias de métricas y la caché de deduplicación de la tabla de etiquetas (que solo se utiliza cuando `store_min_time_and_max_time` está deshabilitado); consulte las opciones de configuración `metric_families_deduplication_cache_expiration_seconds` y `tags_deduplication_cache_expiration_seconds` de la tabla. Las cachés son locales de cada servidor y no detectan los cambios realizados directamente en las tablas de destino. Esta discrepancia desaparece por sí sola cuando las entradas caducan; utilice esta sentencia para que la siguiente inserción escriba todas sus filas sin tener que esperar (por ejemplo, después de truncar la tabla de familias de métricas). `TRUNCATE TABLE` sobre una tabla `TimeSeries` vacía únicamente las cachés del servidor que lo ejecuta, por lo que, si las tablas de destino están replicadas, ejecute a continuación la sentencia con `ON CLUSTER` para vaciar las cachés de las demás réplicas.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
+```
+
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
 
 Sincroniza el estado en memoria de la caché del sistema de archivos de ClickHouse con los archivos de caché realmente presentes en disco y devuelve el `cache_name`, la `path` y el `size` descargado de cada segmento de archivo en caché. Un nombre de caché opcional limita la operación a una sola caché.

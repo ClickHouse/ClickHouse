@@ -181,6 +181,14 @@ SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+`TimeSeries` 테이블의 캐시를 지웁니다. 이 캐시는 삽입 시 대상 테이블에 이미 존재하는 행을 건너뛰는 데 사용됩니다. 해당 캐시는 두 가지로, 메트릭 패밀리 테이블의 중복 제거 캐시와 Tags 테이블의 중복 제거 캐시(`store_min_time_and_max_time`이 비활성화된 경우에만 사용됨)입니다. 자세한 내용은 테이블의 `metric_families_deduplication_cache_expiration_seconds` 및 `tags_deduplication_cache_expiration_seconds` 설정을 참고하십시오. 캐시는 각 서버에 로컬로 존재하며, 대상 테이블을 직접 변경한 내용은 반영하지 못합니다. 이러한 불일치는 엔트리가 만료되면 저절로 해소되지만, 만료를 기다리지 않고 다음 삽입에서 모든 행이 기록되도록 하려면(예: 메트릭 패밀리 테이블을 비운 후) 이 SQL 문을 사용하십시오. `TimeSeries` 테이블에 `TRUNCATE TABLE`을 실행하면 해당 명령을 실행한 서버의 캐시만 지워집니다. 따라서 대상 테이블이 복제된 테이블(Replicated Table)이라면 이후에 이 SQL 문을 `ON CLUSTER`로 실행하여 다른 레플리카의 캐시도 지우십시오.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
+```
+
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
 
 ClickHouse의 파일 시스템 캐시에 대해 메모리에 있는 상태를 디스크에 실제로 존재하는 캐시 파일과 동기화하고, 캐시된 각 파일 세그먼트의 `cache_name`, `path`, 다운로드된 `size`를 반환합니다. 필요에 따라 캐시 이름을 지정하면 작업이 단일 캐시로 제한됩니다.

@@ -118,7 +118,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MarkCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在标记缓存中找到某个条目的次数，因此无需加载标记文件。
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在标记缓存中未找到某个条目的次数，因此必须将标记文件加载到内存中，这是一项开销较高的操作，会增加查询延迟。
 * `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — DeleteBitmapCache 未命中时，读取和反序列化 UNIQUE KEY delete-bitmap 辅助文件所花费的时间。
-* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 写入的 UNIQUE KEY delete-bitmap 辅助文件数量 (每次替换 / DELETE 提交各一个) 。
+* `ProfileEvent_UniqueKeyMutexHoldMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 此服务器上每个分区的 UNIQUE KEY 互斥锁在所有获取操作中的总持有挂钟时间 (持有时间的微秒数之和) 。
+* `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY INSERT 写入路径上，将新行的键与现有数据分区片段进行比对的次数。
+* `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY INSERT 写入路径上，新行的键替换现有分区片段中有效行的次数。
+* `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/zh/reference/data-types/int-uint)) — 由于键在分区中已对应有效行，而被 unique&#95;key&#95;conflict&#95;action = ignore 丢弃的传入行数。
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在主索引缓存中找到某个条目的次数，因此无需加载索引文件。
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在主索引缓存中未找到某个条目的次数，因此必须将索引文件加载到内存中，这是一项开销较高的操作，会增加查询延迟。
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中找到 Iceberg 元数据文件的次数。
@@ -128,6 +131,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中找到 paimon 元数据文件的次数。
 * `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在 paimon 元数据缓存中未找到 paimon 元数据文件，因此必须从 (远程) 磁盘读取的次数。
 * `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 paimon 元数据缓存中被驱逐的近似字节数。
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 因去重缓存中已有相应行，或同一次插入已写入这些行，而未写入 TimeSeries 表的指标族表的行数。
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 因去重缓存中未找到而写入 TimeSeries 表的指标族表的行数。
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 因去重缓存中已有相应行，或同一次插入已写入这些行，而未写入 TimeSeries 表的标签表的行数。
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 因去重缓存中未找到而写入 TimeSeries 表的标签表的行数。
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 数据读取器等待 Iceberg 元数据文件被读取和解析所花费的总时间，对所有读取器线程求和。
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中找到 Parquet 元数据的次数。
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未找到 Parquet 元数据，因此必须从磁盘读取的次数。
@@ -1167,7 +1174,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_BackupLockFileReads` ([UInt64](/zh/reference/data-types/int-uint)) — 创建备份时读取 &#39;.lock&#39; 文件的次数
 * `ProfileEvent_RestorePartsSkippedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 恢复数据分区片段时跳过的文件数量
 * `ProfileEvent_RestorePartsSkippedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 恢复数据分区片段时跳过的文件总大小
-* `ProfileEvent_ReadTaskRequestsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 为选择读取任务，从远程服务器回调到发起端服务器的请求次数 (用于 `s3Cluster` 表函数及类似场景) 。在发起端服务器侧统计。
+* `ProfileEvent_ReadTaskRequestsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 为选择读取任务，从远程服务器回调到发起端服务器的请求次数 (用于 s3Cluster 表函数及类似场景) 。在发起端服务器侧统计。
 * `ProfileEvent_MergeTreeReadTaskRequestsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 为选择读取任务，从远程服务器回调到发起端服务器的请求次数 (用于 MergeTree 表) 。在发起端服务器侧统计。
 * `ProfileEvent_ReadTaskRequestsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 为选择读取任务，从远程服务器回调到发起端服务器的请求次数 (用于 `s3Cluster` 表函数及类似场景) 。在远程服务器侧统计。
 * `ProfileEvent_MergeTreeReadTaskRequestsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 为选择读取任务，从远程服务器回调到发起端服务器的请求次数 (用于 MergeTree 表) 。在远程服务器侧统计。

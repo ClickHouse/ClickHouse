@@ -6145,6 +6145,22 @@ ThreadPoolReader 내부의 읽기 작업이 페이지 캐시(page cache)에서 �
 
 쿼리가 모든 스로틀링 설정을 준수하기 위해 일시 중지된 총 시간입니다.
 
+### TimeSeriesMetricFamiliesDeduplicationCacheHits {#timeseriesmetricfamiliesdeduplicationcachehits}
+
+중복 제거 캐시에 이미 있거나 동일한 삽입 작업에서 이미 기록되어 TimeSeries 테이블의 메트릭 패밀리 테이블에 기록되지 않은 행의 수입니다.
+
+### TimeSeriesMetricFamiliesDeduplicationCacheMisses {#timeseriesmetricfamiliesdeduplicationcachemisses}
+
+중복 제거 캐시에서 찾을 수 없어 TimeSeries 테이블의 메트릭 패밀리 테이블에 기록된 행의 수입니다.
+
+### TimeSeriesTagsDeduplicationCacheHits {#timeseriestagsdeduplicationcachehits}
+
+중복 제거 캐시에 이미 존재하거나 동일한 삽입 작업에서 이미 기록되어, TimeSeries 테이블의 Tags 테이블에 기록되지 않은 행의 수입니다.
+
+### TimeSeriesTagsDeduplicationCacheMisses {#timeseriestagsdeduplicationcachemisses}
+
+중복 제거 캐시에서 찾지 못해 TimeSeries 테이블의 tags 테이블에 기록된 행의 수입니다.
+
 ### TinyS3Clients {#tinys3clients}
 
 다른 클라이언트의 기존 인증 제공자를 재사용하는 S3 클라이언트 복사본의 수입니다.
@@ -6189,9 +6205,17 @@ Poco TLS 구현을 사용하는 서버 프로토콜(네이티브 TCP, HTTPS, MyS
 
 DeleteBitmapCache에서 캐시 미스가 발생했을 때 UNIQUE KEY 삭제 비트맵 사이드카 파일을 읽고 역직렬화하는 데 소요된 시간입니다.
 
-### UniqueKeyBitmapUpdates {#uniquekeybitmapupdates}
+### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
-기록된 UNIQUE KEY 삭제 비트맵 사이드카 파일의 수입니다(대체 또는 DELETE 커밋당 1개).
+키가 이미 파티션에 존재하여 unique&#95;key&#95;conflict&#95;action = ignore 설정에 따라 삭제된 수신 행의 수입니다.
+
+### UniqueKeyConflictOverwriteRows {#uniquekeyconflictoverwriterows}
+
+UNIQUE KEY INSERT 쓰기 경로(write-path)에서 기존 파트의 활성 행(live row)을 대체한 새 행 키의 개수입니다.
+
+### UniqueKeyDedupProbes {#uniquekeydedupprobes}
+
+UNIQUE KEY INSERT 쓰기 경로(write-path)에서 기존 파트를 대상으로 조회한 새 행 키의 수입니다.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 
@@ -6212,6 +6236,10 @@ crash-before-flush 윈도우 이후 로드 시점에 `unique_key_index.sst`가 �
 ### UniqueKeyLoadTimeSSTRebuildMicroseconds {#uniquekeyloadtimesstrebuildmicroseconds}
 
 로드 시점에 `unique_key_index.sst`를 재구성하는 데 소요된 총 시간(UK 컬럼 순차 읽기 + SST 쓰기).
+
+### UniqueKeyMutexHoldMicroseconds {#uniquekeymutexholdmicroseconds}
+
+이 서버에서 파티션별 UNIQUE KEY 뮤텍스를 획득할 때마다 보유한 시간을 모두 합산한 총 실제 경과 시간입니다(보유 시간의 마이크로초 단위 합계).
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 

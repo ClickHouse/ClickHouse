@@ -6145,6 +6145,22 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 查询为满足所有限流设置而休眠的总时间。
 
+### TimeSeriesMetricFamiliesDeduplicationCacheHits {#timeseriesmetricfamiliesdeduplicationcachehits}
+
+因去重缓存中已存在，或已由同一次插入写入，而未写入 TimeSeries 表的指标族表的行数。
+
+### TimeSeriesMetricFamiliesDeduplicationCacheMisses {#timeseriesmetricfamiliesdeduplicationcachemisses}
+
+因未在去重缓存中找到而写入 TimeSeries 表的指标族表的行数。
+
+### TimeSeriesTagsDeduplicationCacheHits {#timeseriestagsdeduplicationcachehits}
+
+因去重缓存中已存在或已由同一次插入写入，而未写入 TimeSeries 表的标签表的行数。
+
+### TimeSeriesTagsDeduplicationCacheMisses {#timeseriestagsdeduplicationcachemisses}
+
+在去重缓存中未找到、随后写入 TimeSeries 表的标签表的行数。
+
 ### TinyS3Clients {#tinys3clients}
 
 复用另一客户端现有身份验证提供商的 S3 客户端副本数。
@@ -6189,9 +6205,17 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 辅助文件所耗费的时间。
 
-### UniqueKeyBitmapUpdates {#uniquekeybitmapupdates}
+### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
-已写入的 UNIQUE KEY delete-bitmap 辅助文件数量 (每次替换 / DELETE 提交各写入一个) 。
+由于 unique&#95;key&#95;conflict&#95;action = ignore 的设置，因键在分区中已存在 (live) 而被丢弃的传入行数。
+
+### UniqueKeyConflictOverwriteRows {#uniquekeyconflictoverwriterows}
+
+在 UNIQUE KEY INSERT 写入路径中，覆盖了现有分片中有效行的新行键的数量。
+
+### UniqueKeyDedupProbes {#uniquekeydedupprobes}
+
+在 UNIQUE KEY INSERT 写入路径中，针对已有 parts 进行探测的新行键的数量。
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 
@@ -6212,6 +6236,10 @@ DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 
 ### UniqueKeyLoadTimeSSTRebuildMicroseconds {#uniquekeyloadtimesstrebuildmicroseconds}
 
 在加载时重建 `unique_key_index.sst` 所耗费的总时间 (顺序读取 UK 列 + 写入 SST) 。
+
+### UniqueKeyMutexHoldMicroseconds {#uniquekeymutexholdmicroseconds}
+
+此服务器上每次获取分区级 UNIQUE KEY 互斥锁后持有该锁的挂钟时间总和 (以微秒计的持有时间之和) 。
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 

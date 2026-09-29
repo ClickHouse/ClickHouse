@@ -1323,7 +1323,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 122,
+      count: 123,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
@@ -1423,6 +1423,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "part_log", path: "/other#part_log" },
         { name: "path", path: "/other#path", default: "/var/lib/clickhouse/" },
         { name: "per_cpu_untracked_memory_thread_buffer", path: "/other#per_cpu_untracked_memory_thread_buffer", default: "32768" },
+        { name: "placement", path: "/other#placement" },
         { name: "point_in_polygon_cache_size", path: "/other#point_in_polygon_cache_size", default: "268435456" },
         { name: "prefixes_deserialization_thread_pool_thread_pool_queue_size", path: "/other#prefixes_deserialization_thread_pool_thread_pool_queue_size", default: "10000" },
         { name: "prepare_system_log_tables_on_startup", path: "/other#prepare_system_log_tables_on_startup", default: "0" },

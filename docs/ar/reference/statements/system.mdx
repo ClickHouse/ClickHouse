@@ -181,6 +181,14 @@ SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
+## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
+
+تمسح ذاكرات التخزين المؤقت لجدول `TimeSeries`، وهي الذاكرات التي تتيح لعمليات الإدراج تخطي الصفوف الموجودة مسبقًا في جداول الهدف التابعة له. وتوجد ذاكرتان من هذا النوع: ذاكرة إزالة التكرار الخاصة بجدول عائلات المقاييس، وذاكرة إزالة التكرار الخاصة بجدول الوسوم (ولا تُستخدم إلا عند تعطيل `store_min_time_and_max_time`)؛ راجع إعدادَي الجدول `metric_families_deduplication_cache_expiration_seconds` و`tags_deduplication_cache_expiration_seconds`. وتكون ذاكرات التخزين المؤقت محلية على الخادم، ولا ترصد التغييرات التي تُجرى مباشرةً على جداول الهدف. ويزول هذا التباين من تلقاء نفسه عند انتهاء صلاحية العناصر؛ لكن يمكنك استخدام هذه العبارة لتكتب عملية الإدراج التالية جميع صفوفها دون انتظار (على سبيل المثال، بعد اقتطاع جدول عائلات المقاييس). ولا يؤدي تنفيذ `TRUNCATE TABLE` على جدول `TimeSeries` إلا إلى مسح ذاكرات التخزين المؤقت على الخادم المنفِّذ، لذا إذا كانت جداول الهدف متماثلة، فنفِّذ العبارة بعد ذلك مع `ON CLUSTER` لمسح ذاكرات التخزين المؤقت على النسخ المتماثلة الأخرى.
+
+```sql
+SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
+```
+
 ## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
 
 يُطابِق الحالة الموجودة في الذاكرة لذاكرة التخزين المؤقت لنظام الملفات في ClickHouse مع ملفات ذاكرة التخزين المؤقت الموجودة فعليًا على القرص، ويُرجع `cache_name` و`path` و`size` المُنزَّل لكل جزء ملف مخزَّن مؤقتًا. ويمكن استخدام اسم ذاكرة تخزين مؤقت اختياري لقصر العملية على ذاكرة تخزين مؤقت واحدة.

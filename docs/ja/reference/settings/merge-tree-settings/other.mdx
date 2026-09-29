@@ -805,6 +805,24 @@ TTL 設定に基づいて有効期限が切れた行のみが削除されます�
 引き続き割り当てられます。そのようなマージはいずれにせよパーツを書き換えるため、
 その中で有効期限が切れた行も併せて削除されます。
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "新しいテーブル設定: UNIQUE KEY テーブルへの INSERT において、パーティション内に既に生存中のキーが存在する場合の解決方法を指定します (overwrite \/ ignore \/ abort)"}]}]} />
+
+`UNIQUE KEY` テーブルへの INSERT において、パーティション内に既に生存中のキーが存在する場合の解決方法を指定します。
+
+* `overwrite` — 挿入される行で既存の生存中の行を置き換えます (UPSERT)。デフォルトです。
+* `ignore` — 既存の行を保持し、競合する挿入行は破棄します。
+* `abort` — 生存中の重複を最初に検出した時点で INSERT を失敗させ、何もパブリッシュしません。
+
+このポリシーはテーブルのプロパティであるため、すべての書き込み元に適用されます。なお、INSERT が
+アトミックになるのは単一のパーツを生成する場合に限られます。そのため `abort` を指定した場合、複数パーツからなる
+INSERT では、先行するパーツがコミットされた後で一部のパーツが拒否されることがあります。これは通常の MergeTree とまったく同じ挙動です。
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />

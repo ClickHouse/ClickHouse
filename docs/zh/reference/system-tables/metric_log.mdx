@@ -112,7 +112,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MarkCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在标记缓存中命中条目的次数，因此无需加载标记文件。
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在标记缓存中未命中条目的次数，因此必须将标记文件加载到内存中；这是开销较高的操作，会增加查询延迟。
 * `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 辅助文件所花费的时间。
-* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 写入的 UNIQUE KEY delete-bitmap 辅助文件数量 (每次替代 / DELETE 提交写入一个) 。
+* `ProfileEvent_UniqueKeyMutexHoldMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 此服务器上各分区的 UNIQUE KEY 互斥锁在所有获取操作中被持有的总挂钟时间 (持锁时间的微秒数之和) 。
+* `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY INSERT 写入路径上，对照现有数据分区片段探测新行键的次数。
+* `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY INSERT 写入路径上，替代现有数据分区片段中仍有效行的新行键数量。
+* `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/zh/reference/data-types/int-uint)) — 由于键在分区中已有仍有效的行，因 unique&#95;key&#95;conflict&#95;action = ignore 而丢弃的传入行数。
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在主索引缓存中命中条目的次数，因此无需加载索引文件。
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在主索引缓存中未命中条目的次数，因此必须将索引文件加载到内存中；这是开销较高的操作，会增加查询延迟。
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中 Iceberg 元数据文件的次数。
@@ -122,6 +125,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中 paimon 元数据文件的次数。
 * `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在 paimon 元数据缓存中未命中 paimon 元数据文件，因此必须从 (远程) 磁盘读取的次数。
 * `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 paimon 元数据缓存中被淘汰的近似字节数。
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 因去重缓存中已存在相应行，或同一次插入已写入相应行，而未写入 TimeSeries 表的指标族表的行数。
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在去重缓存中未找到、因而写入 TimeSeries 表的指标族表的行数。
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 因去重缓存中已存在相应行，或同一次插入已写入相应行，而未写入 TimeSeries 表的标签表的行数。
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在去重缓存中未找到、因而写入 TimeSeries 表的标签表的行数。
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 数据读取器等待 Iceberg 元数据文件被读取并解析所花费的总时间，按所有读取器线程累加。
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中命中 Parquet 元数据的次数。
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未命中 Parquet 元数据，因此必须从磁盘读取的次数。
@@ -380,10 +387,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ZooKeeperMultiRead` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发起只读 &#39;multi&#39; 请求的次数 (复合事务) 。
 * `ProfileEvent_ZooKeeperMultiWrite` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发起写入 &#39;multi&#39; 请求的次数 (复合事务) 。
 * `ProfileEvent_ZooKeeperCheck` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发起 &#39;check&#39; 请求的次数。通常这类请求单独出现时没有意义，只有作为复杂事务的一部分时才有意义。
-* `ProfileEvent_ZooKeeperSync` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 `sync` 请求次数。这类请求通常很少需要，也很少会用到。
-* `ProfileEvent_ZooKeeperReconfig` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 `reconfig` 请求次数。
+* `ProfileEvent_ZooKeeperSync` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 &#39;sync&#39; 请求次数。这类请求通常很少需要，也很少会用到。
+* `ProfileEvent_ZooKeeperReconfig` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 &#39;reconfig&#39; 请求次数。
 * `ProfileEvent_ZooKeeperClose` ([UInt64](/zh/reference/data-types/int-uint)) — 与 ZooKeeper 的连接被主动关闭的次数。
-* `ProfileEvent_ZooKeeperGetACL` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 `getACL` 请求次数。
+* `ProfileEvent_ZooKeeperGetACL` ([UInt64](/zh/reference/data-types/int-uint)) — 向 ZooKeeper 发出的 &#39;getACL&#39; 请求次数。
 * `ProfileEvent_ZooKeeperWatchResponse` ([UInt64](/zh/reference/data-types/int-uint)) — 从 ZooKeeper 收到 watch 通知的次数。
 * `ProfileEvent_ZooKeeperWatchCallbackDurationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 ZooKeeper watch 回调 (网络线程) 中花费的总时间。
 * `ProfileEvent_ZooKeeperWatchCallbackErrors` ([UInt64](/zh/reference/data-types/int-uint)) — ZooKeeper watch 回调抛出的异常次数。
@@ -577,7 +584,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MergeTreeDataWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块排序所花费的时间
 * `ProfileEvent_MergeTreeDataWriterMergingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并输入块所花费的时间 (适用于特殊的 MergeTree 引擎)
 * `ProfileEvent_MergeTreeDataWriterProjectionsCalculationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 计算投影所花费的时间
-* `ProfileEvent_MergeTreeDataProjectionWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块排序所花费的时间 (对于投影，其键可能与表&#39;的排序键不同)
+* `ProfileEvent_MergeTreeDataProjectionWriterSortingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 对块排序所花费的时间 (对于投影，其键可能与表的排序键不同)
 * `ProfileEvent_MergeTreeDataProjectionWriterMergingBlocksMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 合并块所花费的时间
 * `ProfileEvent_InsertedWideParts` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Wide 格式插入的 parts 数量。
 * `ProfileEvent_InsertedCompactParts` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Compact 格式插入的 parts 数量。
@@ -2070,6 +2077,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_QueryConditionCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 查询条件缓存中的条目总数
 * `CurrentMetric_EncryptionHeaderCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — 加密头缓存的总大小 (字节)
 * `CurrentMetric_EncryptionHeaderCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — 加密头缓存中的条目总数
+* `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — TimeSeries 表的指标族表去重缓存中的条目数
+* `CurrentMetric_TimeSeriesMetricFamiliesDeduplicationCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — TimeSeries 表的指标族表去重缓存的近似大小 (字节)
+* `CurrentMetric_TimeSeriesTagsDeduplicationCacheEntries` ([Int64](/zh/reference/data-types/int-uint)) — TimeSeries 表的标签表去重缓存中的条目数
+* `CurrentMetric_TimeSeriesTagsDeduplicationCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — TimeSeries 表的标签表去重缓存的近似大小 (字节)
 * `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — `JITModuleMemoryManager` 为缓存的 JIT 编译函数的可执行代码段和数据段保留的页块容量 (按 2 倍超额预留系数向上取整到整页) 。这并非实际使用的机器代码字节数 (实际值更小) 。内存通过 `posix_memalign` 分配，该调用会被拦截至 jemalloc，因此此值计入专用 JIT Arena，且是 `jemalloc.jit_arena.active_bytes` 的子集。
 * `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/zh/reference/data-types/int-uint)) — JIT 编译机器代码缓存中的条目总数。
 * `CurrentMetric_SerializationCacheBytesInMemoryAllocated` ([Int64](/zh/reference/data-types/int-uint)) — 序列化缓存的总大小 (字节) ，包括键以及空槽位带来的额外开销

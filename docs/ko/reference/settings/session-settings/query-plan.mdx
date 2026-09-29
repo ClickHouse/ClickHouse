@@ -206,9 +206,9 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 함수를 실제 ARRAY JOIN 단계로 낮추는 새로운 최적화입니다. 기본적으로 비활성화되어 있습니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 함수를 실제 ARRAY JOIN 단계로 낮추는 새로운 최적화입니다. 기본적으로 비활성화되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "query_plan_lower_array_join_function을 기본적으로 활성화합니다."}]}]} />
 
 표현식 내부의 `arrayJoin` 함수를 실제 `ARRAY JOIN` 단계로 낮춰, `ARRAY JOIN` 절과 동일한 실행 메커니즘(지연 실행 복제 및 필터 융합)을 거치도록 하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
 [query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.

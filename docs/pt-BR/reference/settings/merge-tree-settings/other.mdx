@@ -822,6 +822,24 @@ respeitado com a reescrita da parte, portanto as mesclagens que limpam colunas e
 continuam sendo atribuídas quando esta configuração está habilitada. Essa mesclagem reescreve a parte
 de qualquer forma e, por isso, também remove as linhas que nela expiraram.
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "Nova configuração de tabela: como um INSERT em uma tabela com UNIQUE KEY resolve uma chave que já está ativa na partição (overwrite \/ ignore \/ abort)"}]}]} />
+
+Para tabelas com `UNIQUE KEY`, define como um INSERT resolve uma chave que já existe e está ativa na partição:
+
+* `overwrite` — a linha recebida substitui a linha ativa existente (UPSERT). Padrão.
+* `ignore` — a linha existente é mantida e a linha recebida conflitante é descartada.
+* `abort` — o INSERT falha na primeira duplicata ativa e nada é publicado.
+
+A política é uma propriedade da tabela, portanto todos os processos de gravação estão sujeitos a ela. Observe que um INSERT só é
+atômico quando produz uma única parte; assim, `abort` pode rejeitar uma parte de um INSERT
+com várias partes depois que as partes anteriores já foram confirmadas, exatamente como ocorre no MergeTree convencional.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milissegundos" default_value="0" />

@@ -206,9 +206,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تحسين جديد يحوّل دالة arrayJoin إلى خطوة ARRAY JOIN فعلية؛ وهو معطّل افتراضيًا."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تحسين جديد يحوّل دالة arrayJoin إلى خطوة ARRAY JOIN فعلية؛ وهو معطّل افتراضيًا."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "تفعيل query_plan_lower_array_join_function افتراضيًا."}]}]} />
 
 يُفعّل أو يعطّل تحسينًا على مستوى خطة الاستعلام يحوّل دالة `arrayJoin` داخل تعبير إلى خطوة `ARRAY JOIN` فعلية، بحيث تستخدم آلية التنفيذ نفسها لعبارة `ARRAY JOIN` (النسخ المتماثل الكسول ودمج عوامل التصفية).
 لا يسري مفعوله إلا إذا كان الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) مضبوطًا على 1.

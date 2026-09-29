@@ -787,6 +787,24 @@ tmp&#95; 目录会保留多少秒。不要调低此值，
 因此即使启用了此设置，用于清理过期列的合并仍然会被分配。此类合并
 无论如何都会重写该 part，因而也会移除其中已过期的行。
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "新增表设置：向 UNIQUE KEY 表执行 INSERT 时，如果键在分区中已存在且仍有效，如何处理冲突（overwrite \/ ignore \/ abort）"}]}]} />
+
+对于 `UNIQUE KEY` 表，执行 INSERT 时，如果键在分区中已存在且仍有效，可按以下方式处理：
+
+* `overwrite` — 用新插入的行取代现有的有效行 (UPSERT) 。默认行为。
+* `ignore` — 保留现有行，丢弃与之冲突的新插入行。
+* `abort` — 遇到第一个仍有效的重复键时，INSERT 失败，不写入任何数据。
+
+此策略属于表的属性，所有写入方都必须遵循。请注意，只有生成单个 part 时，INSERT 才具有
+原子性。因此，与普通 MergeTree 一样，对于生成多个 part 的 INSERT，`abort` 可能在
+前面的 part 已提交后才拒绝后续的某个 part。
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="0" />

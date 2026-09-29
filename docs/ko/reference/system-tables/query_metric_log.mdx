@@ -117,7 +117,10 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_MarkCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 마크 캐시에서 발견되어 마크 파일을 로드할 필요가 없었던 횟수.
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 마크 캐시에서 발견되지 않아 마크 파일을 메모리로 로드해야 했던 횟수이며, 이는 비용이 큰 작업으로 쿼리 지연 시간을 증가시킵니다.
 * `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — DeleteBitmapCache 미스 시 UNIQUE KEY delete-bitmap 사이드카 파일을 읽고 역직렬화하는 데 소요된 시간입니다.
-* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/ko/reference/data-types/int-uint)) — 기록된 UNIQUE KEY delete-bitmap 사이드카 파일 수입니다(대체 또는 DELETE 커밋당 1개).
+* `ProfileEvent_UniqueKeyMutexHoldMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 이 서버에서 파티션별 UNIQUE KEY 뮤텍스를 획득할 때마다 유지한 실제 경과 시간을 합산한 값입니다(단위: 마이크로초).
+* `ProfileEvent_UniqueKeyDedupProbes` ([UInt64](/ko/reference/data-types/int-uint)) — UNIQUE KEY INSERT 쓰기 경로에서 새 행의 키를 기존 파트와 대조한 횟수입니다.
+* `ProfileEvent_UniqueKeyConflictOverwriteRows` ([UInt64](/ko/reference/data-types/int-uint)) — UNIQUE KEY INSERT 쓰기 경로에서 기존 파트의 활성 행을 대체한 새 행의 키 수입니다.
+* `ProfileEvent_UniqueKeyConflictIgnoredRows` ([UInt64](/ko/reference/data-types/int-uint)) — 키가 파티션에 이미 활성 상태로 존재하여 unique&#95;key&#95;conflict&#95;action = ignore에 따라 버려진 입력 행 수입니다.
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 프라이머리 인덱스 캐시에서 발견되어 인덱스 파일을 로드할 필요가 없었던 횟수.
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 항목이 프라이머리 인덱스 캐시에서 발견되지 않아 인덱스 파일을 메모리로 로드해야 했던 횟수이며, 이는 비용이 큰 작업으로 쿼리 지연 시간을 증가시킵니다.
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg metadata files가 캐시에서 발견된 횟수.
@@ -127,6 +130,10 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — paimon 메타데이터 파일이 캐시에서 발견된 횟수.
 * `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — paimon 메타데이터 파일이 paimon 메타데이터 캐시에서 발견되지 않아 (원격) 디스크에서 읽어야 했던 횟수.
 * `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/ko/reference/data-types/int-uint)) — paimon 메타데이터 캐시에서 제거된 바이트 수의 대략적인 값.
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에 이미 있거나 동일한 삽입 작업에서 이미 기록되어 TimeSeries 테이블의 메트릭 패밀리 테이블에 기록되지 않은 행 수입니다.
+* `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에서 찾지 못해 TimeSeries 테이블의 메트릭 패밀리 테이블에 기록된 행 수입니다.
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에 이미 있거나 동일한 삽입 작업에서 이미 기록되어 TimeSeries 테이블의 Tags 테이블에 기록되지 않은 행 수입니다.
+* `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 중복 제거 캐시에서 찾지 못해 TimeSeries 테이블의 Tags 테이블에 기록된 행 수입니다.
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 리더가 Iceberg metadata files를 읽고 파싱할 때까지 대기한 총 시간으로, 모든 리더 스레드에 걸쳐 합산한 값입니다.
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet metadata가 캐시에서 발견된 횟수.
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — Parquet metadata가 캐시에서 발견되지 않아 디스크에서 읽어야 했던 횟수.

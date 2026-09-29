@@ -109,7 +109,7 @@ ORDER BY event_time_microseconds;
 * `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 同一查询链中初始查询的开始时间。
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 同一查询链中初始查询的开始时间，精确到微秒。
 * `authenticated_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 该会话中已通过身份验证的用户名。
-* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/zh/reference/data-types/enum)) — 客户端上报的、发起该查询所使用的接口。如果上报的接口不是该服务器能够识别的接口，则为 `Unknown`。
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10, &#39;IcebergRESTCatalog&#39; = 11)](/zh/reference/data-types/enum)) — 客户端上报的、发起该查询所使用的接口。如果上报的接口不是该服务器能够识别的接口，则为 `Unknown`。
 * `is_secure` ([UInt8](/zh/reference/data-types/int-uint)) — 表示查询是否通过安全接口执行的标志
 * `os_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 运行 clickhouse-client 的操作系统用户名。
 * `client_hostname` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 运行 clickhouse-client 或其他 TCP 客户端的客户端主机的主机名。

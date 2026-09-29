@@ -1212,6 +1212,33 @@ SSL 客户端/服务器配置。
 
 每个线程在不占用每 CPU 共享预算的情况下，可保留的未跟踪内存量，单位为字节。它通过在小额内存分配时分摊每 CPU 记账开销来降低成本；在最坏情况下，还会作为额外余量叠加到 `max_per_cpu_untracked_memory * number_of_cpus` 之上。值为 `0` 时会移除这部分余量：每次 allocation 都会更新共享的每 CPU 计数器 (精度最高，但 contention 也更高) 。仅限 Linux。
 
+## placement {#placement}
+
+服务器所在的云可用区和区域。ZooKeeper 客户端会根据可用区优先选择同一可用区内的主机 (参见 [zookeeper](/zh/reference/settings/server-settings/settings/zookeeper#zookeeper) 部分中的 `prefer_local_availability_zone`) ；ClickHouse Keeper 也会使用可用区，并将其发布到 `/keeper/availability_zone` 节点中。
+
+如果未配置 `placement` 部分，则可用区和区域均为空。
+
+可用的设置如下：
+
+| 设置                            | 描述                                                       | 默认值                                  |
+| ----------------------------- | -------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | 从云提供商的实例元数据服务获取可用区：先尝试 AWS，再尝试 GCP。启用后，所有其他设置均被忽略，且区域为空。 | `false`                              |
+| `availability_zone`           | 可用区。                                                     | 空                                    |
+| `availability_zone_from_file` | 当 `availability_zone` 为空时，用于读取可用区的文件。如果该文件不存在，则可用区为空。    | `/run/instance-metadata/node-zone`   |
+| `region`                      | 区域。                                                      | 空                                    |
+| `region_from_file`            | 当 `region` 为空时，用于读取区域的文件。如果该文件不存在，则区域为空。                 | `/run/instance-metadata/node-region` |
+
+placement 配置仅在服务器启动时读取一次。
+
+**示例**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
+```
+
 ## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
