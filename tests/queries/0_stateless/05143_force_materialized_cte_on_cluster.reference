@@ -1,0 +1,9 @@
+default entry format: rejected on the initiator
+entry format 2: rejected on the host
+entry format 1: rejected on the host
+guard off, default entry format: accepted
+9
+guard off, entry format 2: the host receives the setting and accepts
+9
+guard off, entry format 1: the host uses its own defaults and rejects
+MODIFY QUERY on cluster: rejected on the host, accepted with the guard off

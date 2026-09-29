@@ -1,0 +1,23 @@
+materialized CTE bypasses the Distributed fast path (local shard)
+0	5
+materialized CTE bypasses the Distributed fast path (text route)
+0	5
+route evidence: a plain CTE is forwarded, a materialized CTE is not
+1	0
+materialized CTE bypasses the parallel replicas route (Distributed destination)
+0	5
+materialized CTE bypasses the parallel replicas route (ReplicatedMergeTree destination)
+0	5
+nested declaration with inner SETTINGS bypasses the routes
+0	5
+0	5
+a CTE with ORDER BY LIMIT in FROM is not distributed per replica
+1	1
+1	1
+materialization disabled: rejected, and inlined with the guard off
+1
+WITH aliases still resolve on every route
+1
+11
+1
+11

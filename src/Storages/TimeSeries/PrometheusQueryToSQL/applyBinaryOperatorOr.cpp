@@ -179,8 +179,8 @@ SQLQueryPiece applyBinaryOperatorOr(
             make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        /// If the left grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
-        /// here a second time, which is still correct because group ids are the same within one query.
+        /// Correctness does not depend on the left grid being materialized: evaluating it a second time
+        /// gives the same group ids within one query.
         builder.from_table = left;
         builder.join_kind = JoinKind::Full;
         builder.join_strictness = JoinStrictness::All;

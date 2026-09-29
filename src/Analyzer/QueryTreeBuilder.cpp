@@ -71,12 +71,15 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool force_materialized_cte;
 }
 
 
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int NOT_IMPLEMENTED;
@@ -369,6 +372,29 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
                     continue;
 
                 with_union_node->setIsRecursiveCTE(true);
+            }
+        }
+
+        /// A materialized CTE that cannot be materialized is inlined silently unless `force_materialized_cte` is set.
+        const auto & settings = current_context->getSettingsRef();
+        if (!settings[Setting::enable_materialized_cte] && settings[Setting::force_materialized_cte])
+        {
+            for (const auto & with_node : current_query_tree->getWith().getNodes())
+            {
+                const auto * with_union_node = with_node->as<UnionNode>();
+                const auto * with_query_node = with_node->as<QueryNode>();
+
+                const std::string * cte_name = nullptr;
+                if (with_query_node && with_query_node->isMaterialized())
+                    cte_name = &with_query_node->getCTEName();
+                else if (with_union_node && with_union_node->isMaterialized())
+                    cte_name = &with_union_node->getCTEName();
+
+                if (cte_name)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "CTE `{}` is declared `AS MATERIALIZED`, but materialized CTEs are disabled. "
+                        "Enable setting `enable_materialized_cte` to materialize it, or disable setting `force_materialized_cte` to inline it as a regular CTE",
+                        *cte_name);
             }
         }
     }

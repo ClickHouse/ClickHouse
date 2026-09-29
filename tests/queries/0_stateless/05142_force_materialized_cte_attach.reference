@@ -1,0 +1,8 @@
+-- fresh full-definition ATTACH is rejected with the guard on, whatever enable_materialized_cte is
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+-- with the guard off it is accepted
+9
+-- a short ATTACH replays the stored metadata with the guard on and materialization off
+SUPPORT_IS_DISABLED
+9
