@@ -2159,10 +2159,40 @@ void ColumnObject::fixDynamicStructure()
 
 ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 {
-    if (statistics)
+    /// Typed path serialization estimates are only valid if they were computed for exactly
+    /// this column's typed paths, with a row count taken from a full block. A size-only check
+    /// or an `empty()` bypass could accept stale disk statistics or a partial-block estimate
+    /// copied from a merge source, which must never drive the per-part serialization decision.
+    bool typed_stats_valid = statistics && statistics->typed_path_serialization_statistics.size() == typed_paths.size();
+    if (typed_stats_valid && !statistics->typed_path_serialization_statistics.empty())
+    {
+        for (const auto & [path, counts] : statistics->typed_path_serialization_statistics)
+        {
+            if (!typed_paths.contains(path) || counts.num_rows == 0)
+            {
+                typed_stats_valid = false;
+                break;
+            }
+        }
+    }
+
+    if (statistics && typed_stats_valid)
         return statistics;
 
-    auto calculated_statistics = std::make_shared<Statistics>();
+    auto calculated_statistics = statistics ? std::make_shared<Statistics>(*statistics) : std::make_shared<Statistics>();
+    /// Recompute typed path estimates from scratch: drop any entries that are stale
+    /// (unknown path) or incomplete (no row count), never fill in {0,0} stubs.
+    calculated_statistics->typed_path_serialization_statistics.clear();
+    for (const auto & [path, column] : typed_paths)
+    {
+        /// Disk statistics describe a whole source part and do not contain typed defaults
+        /// or a row count. Never combine them with the size of a partially read block.
+        if (!column->empty())
+            calculated_statistics->typed_path_serialization_statistics[path] = {column->size(), column->getNumberOfDefaultRows()};
+    }
+    if (statistics)
+        return calculated_statistics;
+
     for (const auto & [path, column] : dynamic_paths)
         calculated_statistics->dynamic_paths_statistics[path] = column->size() - column->getNumberOfDefaultRows();
 
@@ -2189,6 +2219,11 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     {
         const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
         const auto & source_statistics = source_object.getOrCalculateStatistics();
+
+        /// Keep the writer's first-block typed estimates when copying its fixed structure.
+        /// For multiple merge sources, calculate from the first output block instead.
+        if (source_columns.size() == 1)
+            new_statistics.typed_path_serialization_statistics = source_statistics->typed_path_serialization_statistics;
 
         /// For dynamic paths in source statistics: if the path is in our dynamic structure, add directly;
         /// otherwise accumulate in shared data candidates.

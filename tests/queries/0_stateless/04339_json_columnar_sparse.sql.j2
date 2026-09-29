@@ -1,0 +1,79 @@
+-- Tags: no-fasttest
+-- V4 stores typed paths with sparse encoding when their default ratio strictly
+-- exceeds `ratio_of_defaults_for_sparse_serialization`. The choice is fixed per
+-- part and recorded in the Object structure, so reads use the stored encoding
+-- regardless of the current table settings. Dynamic paths keep their compact
+-- Variant encoding and never gain sparse streams.
+--
+-- `j.half` is a default in half the rows, `j.t`/`j.n`/`j.always` in almost all
+-- rows, `j.d` is a dynamic path present in a few rows.
+
+DROP TABLE IF EXISTS json_sparse_source;
+CREATE TABLE json_sparse_source (id UInt64, j JSON(t UInt64, n Nullable(Int64), half UInt8)) ENGINE=Memory;
+INSERT INTO json_sparse_source SELECT number,
+concat('{"always":0,"half":', toString(number % 2), if(number % 64 = 0, ',"t":7,"n":0,"d":0', ''), '}')
+FROM numbers(512);
+
+{% for part, wide_limit in [('Wide', 0), ('Compact', 1000000000)] -%}
+{% for ratio in ['0', '1'] -%}
+DROP TABLE IF EXISTS json_sparse_test;
+CREATE TABLE json_sparse_test AS json_sparse_source ENGINE=MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part={{ wide_limit }}, min_rows_for_wide_part={{ wide_limit }},
+         object_serialization_version='v4',
+         ratio_of_defaults_for_sparse_serialization={{ ratio }};
+INSERT INTO json_sparse_test SELECT * FROM json_sparse_source ORDER BY id SETTINGS max_threads=1;
+
+-- ratio=0 selects sparse encoding for typed paths with defaults; ratio=1 disables it.
+SELECT throwIf((countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) > 0) != {{ 'false' if ratio == '1' else 'true' }})
+FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
+     AND active AND column='j';
+{% if ratio == '0' -%}
+SELECT throwIf(countIf(has(substreams, 'j.t.sparse.idx')) = 0),
+       throwIf(countIf(has(substreams, 'j.n.sparse.idx')) = 0),
+       throwIf(countIf(has(substreams, 'j.half.sparse.idx')) = 0)
+FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
+     AND active AND column='j';
+{% endif -%}
+-- Dynamic paths never get sparse streams.
+SELECT throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 0)
+FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
+     AND active AND column='j';
+
+-- Reads match the source, including a `Nullable` typed path and its `.null` subcolumn.
+SELECT throwIf(countIf(j.t != if(id % 64 = 0, 7, 0)
+           OR j.n.null != (id % 64 != 0)
+           OR j.half != id % 2
+           OR isNotNull(j.d) != (id % 64 = 0)) != 0)
+FROM json_sparse_test;
+SELECT throwIf(countIf(j_str != src_str) != 0)
+FROM (SELECT a.id AS id, toString(a.j) AS j_str, toString(b.j) AS src_str
+      FROM json_sparse_test a INNER JOIN json_sparse_source b USING id)
+SETTINGS join_algorithm='hash', max_block_size=1000;
+
+-- The recorded encoding drives reads, not the current writer settings.
+ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v3',
+       ratio_of_defaults_for_sparse_serialization=1;
+SELECT throwIf(countIf(j.t != if(id % 64 = 0, 7, 0) OR j.n.null != (id % 64 != 0)) != 0)
+FROM json_sparse_test;
+
+SELECT '{{ part }} ratio={{ ratio }} OK';
+{% endfor -%}
+
+-- A merge of a sparse V4 part and a legacy V3 part reads consistently.
+TRUNCATE TABLE json_sparse_test;
+SYSTEM STOP MERGES json_sparse_test;
+ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v3';
+INSERT INTO json_sparse_test SELECT * FROM json_sparse_source WHERE id < 256;
+ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v4',
+    ratio_of_defaults_for_sparse_serialization=0;
+INSERT INTO json_sparse_test SELECT * FROM json_sparse_source WHERE id >= 256;
+SYSTEM START MERGES json_sparse_test;
+OPTIMIZE TABLE json_sparse_test FINAL;
+SELECT throwIf(countIf(j.t != if(id % 64 = 0, 7, 0) OR j.n.null != (id % 64 != 0) OR j.half != id % 2) != 0)
+FROM json_sparse_test;
+CHECK TABLE json_sparse_test SETTINGS check_query_single_value_result=1;
+SELECT '{{ part }} mixed merge OK';
+{% endfor -%}
+
+DROP TABLE json_sparse_test;
+DROP TABLE json_sparse_source;
