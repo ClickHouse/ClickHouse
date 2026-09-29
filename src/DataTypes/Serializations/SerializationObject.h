@@ -140,7 +140,7 @@ private:
         ColumnObject::StatisticsPtr statistics;
 
         /// For flattened serialization only.
-        std::vector<String> flattened_paths;
+        VectorWithMemoryTracking<String> flattened_paths;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_)
             : serialization_version(serialization_version_)
