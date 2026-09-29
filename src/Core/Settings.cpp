@@ -9484,6 +9484,26 @@ Multiply the number of fetched nearest neighbors from the vector similarity inde
 )", 0, vector_search_postfilter_multiplier, \
         {"25.8", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"}, \
         {"25.5", 1.0, 1.0, "New setting. At the time the setting was named `vector_search_postfilter_multiplier`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_scann_index, false, R"(
+Allow creating `vector_similarity('scann', ...)` indexes. The ScaNN backend is experimental; set this to 1 to opt in.
+)", 0, \
+        {"26.10", false, false, "New setting. Gates creation of `vector_similarity('scann', ...)` indexes while the ScaNN backend is experimental."}) \
+    DECLARE(UInt64, scann_num_leaves_to_search, 0, R"(
+The number of IVF partitions to search at query time when using a `vector_similarity('scann', ...)` index.
+Value 0 means automatic. ClickHouse uses a balanced recall/latency default:
+`0.75 * floor(1 + num_leaves * exp(2.0 * 0.8) * 0.015)`, where `num_leaves`
+is either specified in the index definition or selected automatically as `sqrt(num_vectors)`.
+Higher values increase recall at the cost of query latency.
+)", 0, \
+        {"26.10", 0, 0, "New setting. Number of IVF partitions to probe at query time for a `vector_similarity('scann', ...)` index. `0` means a balanced automatic value."}) \
+    DECLARE(UInt64, scann_candidate_pool_size, 0, R"(
+The size of the approximate-hashing candidate pool fed into ScaNN's exact reranker when querying a `vector_similarity('scann', ...)` index.
+This is the number of vectors that are scored by the fast asymmetric hashing stage before the slower exact distance reranking.
+Value 0 means automatic. ClickHouse uses a balanced recall/latency default based on
+`20 * floor(LIMIT^0.65 * sqrt(2.0)) * 2.5`, adjusted for very large or high-dimensional granules.
+Higher values increase recall at the cost of query latency.
+)", 0, \
+        {"26.10", 0, 0, "New setting. AH candidate pool size for a `vector_similarity('scann', ...)` index before exact reranking. `0` means a balanced automatic value."}) \
     DECLARE(Bool, vector_search_use_quantized_codes, false, R"(
 Enables a two-stage approximate vector search without index (brute force scan) over a `Quantized`-compressed column. When enabled, `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` against a column encoded with a `Quantized(...)` codec will
 1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and
