@@ -428,11 +428,9 @@ namespace
         {
             EnabledRolesInfo roles_info;
             UnorderedSetWithMemoryTracking<UUID> skip_ids;
+            auto get_role = [this](const UUID & id) { return getRole(id); };
             for (const auto & role_id : role_ids)
-            {
-                collectRoles(
-                    roles_info, skip_ids, [this](const UUID & id) { return getRole(id); }, role_id, false, false, /* settings_only= */ true);
-            }
+                collectRoles(roles_info, skip_ids, get_role, role_id, false, false, /* settings_only= */ true);
             return foldElements(
                 access_control,
                 resolveSettingsProfileElements(
