@@ -27,13 +27,14 @@ DROP TABLE t_r1 SYNC;
 
 SYSTEM FLUSH LOGS zookeeper_log;
 
--- Per replica: some parts were removed, and each part with its children in exactly one request
-SELECT replica, count() > 0, countIf(requests != 1) = 0
+-- Per replica: the number of removed parts, and how many of them were removed in one request together with both children
+SELECT replica, count(), countIf(removals = 3 AND requests = 1)
 FROM
 (
     SELECT
         extract(path, '/replicas/([^/]+)/parts/') AS replica,
         extract(path, '^(.*/parts/[^/]+)') AS part,
+        count() AS removals,
         uniqExact(session_id, xid) AS requests
     FROM system.zookeeper_log
     WHERE event_date >= yesterday() AND type = 'Response' AND op_num = 'Remove' AND error = 'ZOK'
