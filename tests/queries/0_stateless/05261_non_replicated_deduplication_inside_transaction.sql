@@ -16,8 +16,8 @@ CREATE TABLE t_dedup_txn (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS non_replicated_deduplication_window = 100;
 
 BEGIN TRANSACTION;
+-- When an `INSERT` fails, the client reconnects, so the transaction ends with the old session and needs no `ROLLBACK`.
 INSERT INTO t_dedup_txn VALUES (1), (2); -- { serverError NOT_IMPLEMENTED }
-ROLLBACK;
 
 INSERT INTO t_dedup_txn SETTINGS implicit_transaction = 1 VALUES (1), (2); -- { serverError NOT_IMPLEMENTED }
 
