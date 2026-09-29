@@ -342,7 +342,16 @@ Tables getExternalTablesUsedInQuery(const ASTPtr & query, const ContextPtr & con
 
     IdentifierNameSet names;
     query->collectIdentifierNames(names);
-    std::erase_if(external_tables, [&](const auto & table) { return !names.contains(table.first); });
+    const auto & additional_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
+    std::erase_if(external_tables, [&](const auto & table)
+    {
+        if (names.contains(table.first))
+            return false;
+        return std::ranges::none_of(additional_filters, [&](const Field & additional_filter)
+        {
+            return additional_filter.safeGet<Tuple>().at(1).safeGet<String>().contains(table.first);
+        });
+    });
     return external_tables;
 }
 

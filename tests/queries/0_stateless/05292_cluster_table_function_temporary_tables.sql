@@ -18,6 +18,10 @@ SELECT sum(n), count() FROM fileCluster('test_cluster_one_shard_three_replicas_l
 SELECT sum(n), count() FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05292.tsv', 'TSV', 'n UInt64') WHERE n NOT IN (SELECT id FROM tmp);
 SELECT count() FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05292.tsv', 'TSV', 'n UInt64') WHERE n NOT IN (SELECT id FROM tmp_empty);
 
+-- The replicas also apply `additional_table_filters`, so the temporary tables a filter reads are sent too.
+SELECT sum(n), count() FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05292.tsv', 'TSV', 'n UInt64') SETTINGS additional_table_filters = {'_table_function.fileCluster': 'n IN (SELECT id FROM tmp)'};
+SELECT sum(n), count() FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05292.tsv', 'TSV', 'n UInt64') SETTINGS additional_table_filters = {'_table_function.fileCluster': 'n IN tmp'};
+
 -- A parallel distributed INSERT SELECT sends the whole INSERT to the replicas.
 DROP TABLE IF EXISTS dst SYNC;
 CREATE TABLE dst (n UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05292_dst', 'r1') ORDER BY n;
