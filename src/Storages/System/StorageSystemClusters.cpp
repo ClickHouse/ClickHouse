@@ -2,7 +2,6 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
-#include <base/EnumReflection.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -49,7 +48,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>(), "Seconds remaining until the replica error count is zeroed and it is considered to be back to normal."},
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
-        {"source", std::make_shared<DataTypeString>(), "The cluster source: `CONFIG` for clusters defined in the configuration file, or `SQL` for clusters created by DDL."},
+        {"source", std::make_shared<DataTypeString>(), "The cluster source: `CONFIG`, `SQL`, `DISCOVERY` (cluster discovery), `REPLICATED_DATABASE` (`Replicated` database), or empty for ephemeral clusters (e.g. `remote`)."},
         {"create_query", std::make_shared<DataTypeString>(), "The `CREATE CLUSTER` query for SQL-managed clusters. Empty for clusters defined in the configuration file."},
         {"is_shared_catalog_cluster", std::make_shared<DataTypeUInt8>(), "Bool indicating if the cluster belongs to shared catalog."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
@@ -122,7 +121,7 @@ void StorageSystemClusters::writeCluster(
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
-    const String source = String(magic_enum::enum_name(cluster->getSourceId()));
+    const String source = Cluster::formatSourceIdForSystemTable(cluster->getSourceId());
     const String create_query = cluster->getCreateStatement(access_secrets);
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();

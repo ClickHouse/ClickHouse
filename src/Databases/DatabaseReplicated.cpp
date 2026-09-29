@@ -477,7 +477,8 @@ ClusterPtr DatabaseReplicated::updateCluster(bool all_groups, bool force_overwri
         shards,
         params,
         db_settings[DatabaseReplicatedSetting::internal_replication],
-        /* shard_scope_key = */ Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path));
+        /* shard_scope_key = */ Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path),
+        Cluster::SourceId::REPLICATED_DATABASE);
 
     if (all_groups)
     {

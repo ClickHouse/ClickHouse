@@ -3167,7 +3167,7 @@ Contains information about clusters available in the configuration file or creat
 
 SQL-managed clusters created with [`CREATE CLUSTER`](/reference/statements/create/cluster) expose two additional columns:
 
-- `source` ([String](/reference/data-types/string)) — `CONFIG` for clusters defined in the configuration file, `SQL` for SQL-managed clusters.
+- `source` ([String](/reference/data-types/string)) — `CONFIG`, `SQL`, `DISCOVERY` (cluster discovery), `REPLICATED_DATABASE` (`Replicated` database), or empty for ephemeral clusters (e.g. `remote`).
 - `create_query` ([String](/reference/data-types/string)) — the stored `CREATE CLUSTER` statement for SQL-managed clusters. Empty for config-defined clusters. Secrets are hidden according to the same rules as [`system.named_collections`](/reference/system-tables/named_collections).
 
 See [SQL-managed clusters](/concepts/features/configuration/server-config/sql-clusters).

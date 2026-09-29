@@ -688,13 +688,31 @@ String Cluster::makeKeeperScopeKey(const String & zookeeper_name, const String &
     return toString(zookeeper_name.size()) + ':' + zookeeper_name + zookeeper_path;
 }
 
+String Cluster::formatSourceIdForSystemTable(SourceId source_id)
+{
+    switch (source_id)
+    {
+        case SourceId::CONFIG:
+            return "CONFIG";
+        case SourceId::SQL:
+            return "SQL";
+        case SourceId::DISCOVERY:
+            return "DISCOVERY";
+        case SourceId::REPLICATED_DATABASE:
+            return "REPLICATED_DATABASE";
+        case SourceId::NONE:
+            return {};
+    }
+}
+
 Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params,
     const Strings & shard_keys,
-    const String & shard_scope_key)
-    : source_id(SourceId::NONE)
+    const String & shard_scope_key,
+    SourceId source_id_)
+    : source_id(source_id_)
     , shard_scope_identity(
           makeShardScopeIdentity(HOSTS_BY_SHARD_SCOPE, shard_scope_key.empty() ? params.cluster_name : shard_scope_key, shard_keys))
 {
@@ -760,8 +778,9 @@ Cluster::Cluster(
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication,
-    const String & shard_scope_key)
-    : source_id(SourceId::NONE)
+    const String & shard_scope_key,
+    SourceId source_id_)
+    : source_id(source_id_)
     , shard_scope_identity(makeShardScopeIdentity(
           REPLICAS_BY_SHARD_SCOPE,
           shard_scope_key.empty() ? params.cluster_name : shard_scope_key,

@@ -341,7 +341,8 @@ void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
     std::lock_guard lock(mutex);
     loadIfNotImpl(lock);
 
-    if (!metadata_storage->removeIfExists(query.cluster_name))
+    const bool removed = metadata_storage->removeIfExists(query.cluster_name);
+    if (!removed)
     {
         if (query.if_exists)
             return;
@@ -351,6 +352,8 @@ void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
     auto context = Context::getGlobalContextInstance()->getGlobalContext();
     context->removeCluster(query.cluster_name);
     stored_cluster_names.erase(query.cluster_name);
+
+    LOG_INFO(log, "Dropped SQL cluster `{}`", query.cluster_name);
 }
 
 void SQLClusterFactory::updateFunc()

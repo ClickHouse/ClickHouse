@@ -71,6 +71,8 @@ public:
         NONE = 0,
         CONFIG = 1,
         SQL = 2,
+        DISCOVERY = 3,
+        REPLICATED_DATABASE = 4,
     };
 
     /// 'treat_local_port_as_remote' - never treat a configured replica as local, even when its address
@@ -114,7 +116,8 @@ public:
         const HostsByShard & names,
         const ClusterConnectionParameters & params,
         const Strings & shard_keys = {},
-        const String & shard_scope_key = {});
+        const String & shard_scope_key = {},
+        SourceId source_id_ = SourceId::NONE);
 
 
     /// The shards are renumbered `1..N` here as well, so the shard-scope identity comes from each
@@ -132,7 +135,8 @@ public:
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
         const ClusterConnectionParameters & params,
         bool internal_replication = false,
-        const String & shard_scope_key = {});
+        const String & shard_scope_key = {},
+        SourceId source_id_ = SourceId::NONE);
 
     /// The scope key of a cluster whose shards live in Keeper, for `ClusterDiscovery` and a `Replicated`
     /// database: the Keeper name together with the path. A path is unique only inside one Keeper - two
@@ -359,6 +363,9 @@ public:
 
     /// Where the cluster was defined. Subclusters derived from an existing cluster keep the source of the original.
     SourceId getSourceId() const { return source_id; }
+
+    /// Human-readable `source` value for `system.clusters`. Empty for clusters without a persisted definition (e.g. `remote`).
+    static String formatSourceIdForSystemTable(SourceId source_id);
 
     String getCreateStatement(bool show_secrets) const;
 

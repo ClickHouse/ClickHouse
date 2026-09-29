@@ -14,7 +14,7 @@ Contains information about clusters available in the configuration file or creat
 
 SQL-managed clusters created with [`CREATE CLUSTER`](/reference/statements/create/cluster) expose two additional columns:
 
-- `source` ([String](/reference/data-types/string)) — `CONFIG` for clusters defined in the configuration file, `SQL` for SQL-managed clusters.
+- `source` ([String](/reference/data-types/string)) — `CONFIG`, `SQL`, `DISCOVERY` (cluster discovery), `REPLICATED_DATABASE` (`Replicated` database), or empty for ephemeral clusters (e.g. `remote`).
 - `create_query` ([String](/reference/data-types/string)) — the stored `CREATE CLUSTER` statement for SQL-managed clusters. Empty for config-defined clusters. Secrets are hidden according to the same rules as [`system.named_collections`](/reference/system-tables/named_collections).
 
 See [SQL-managed clusters](/concepts/features/configuration/server-config/sql-clusters).
@@ -38,7 +38,7 @@ See [SQL-managed clusters](/concepts/features/configuration/server-config/sql-cl
 - `estimated_recovery_time` ([UInt32](/reference/data-types/int-uint)) — Seconds remaining until the replica error count is zeroed and it is considered to be back to normal.
 - `database_shard_name` ([String](/reference/data-types/string)) — The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database).
 - `database_replica_name` ([String](/reference/data-types/string)) — The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database).
-- `source` ([String](/reference/data-types/string)) — The cluster source: `CONFIG` for clusters defined in the configuration file, or `SQL` for clusters created by DDL.
+- `source` ([String](/reference/data-types/string)) — The cluster source: `CONFIG`, `SQL`, `DISCOVERY` (cluster discovery), `REPLICATED_DATABASE` (`Replicated` database), or empty for ephemeral clusters (e.g. `remote`).
 - `create_query` ([String](/reference/data-types/string)) — The `CREATE CLUSTER` query for SQL-managed clusters. Empty for clusters defined in the configuration file.
 - `is_shared_catalog_cluster` ([UInt8](/reference/data-types/int-uint)) — Bool indicating if the cluster belongs to shared catalog.
 - `is_active` ([Nullable(UInt8)](/reference/data-types/nullable)) — The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'.
