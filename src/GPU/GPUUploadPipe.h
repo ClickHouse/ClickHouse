@@ -95,6 +95,9 @@ private:
 };
 
 
+/// Moves one column from the host to the device: stages it in pinned memory and uploads it in batches.
+/// The implementations differ in where the column's data is decompressed:
+/// on the CPU before it reaches the pipe (`ColumnUploadPipe`) or on the device (`CompressedUploadPipe`).
 class IUploadPipe
 {
 public:
@@ -114,6 +117,10 @@ protected:
 };
 
 
+/// Uploads plain data, nothing is decompressed here: `stage` takes `IColumn`s that ClickHouse has already
+/// decompressed on the CPU while reading, and `reserveRaw`/`commitRaw` take bytes that are written into the
+/// staging area as they are. `GroupByGPUAccumulator` uses it only for plain columns; its compressed blocks bypass
+/// the pipes and are expanded by its device thread with an `AsyncDecompressor`.
 class ColumnUploadPipe final : public IUploadPipe
 {
 public:
@@ -176,6 +183,10 @@ private:
 };
 
 
+/// Uploads compressed blocks as they are stored in a part and decompresses them on the device: when the staging
+/// area fills up and on `flush`, the staged blocks are sent and expanded with nvcomp through a `SyncDecompressor`,
+/// blocking until done.
+/// The CPU never decompresses these blocks. Used by `GPUAccumulator` for a single aggregation over compressed columns.
 class CompressedUploadPipe final : public IUploadPipe
 {
 public:
