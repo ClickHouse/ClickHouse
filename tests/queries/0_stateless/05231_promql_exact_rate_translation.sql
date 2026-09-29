@@ -29,7 +29,7 @@ SELECT '--- range query, promql_exact_rate = 1: the previous sample is used insi
 SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[40s])', 1699999960, 1700000000, 20);
 
 SELECT '--- promql_exact_rate = 1: the sample before the window of the first grid point is read and used ---';
-SELECT value FROM prometheusQuery(ts, 'rate(counter[40s]) @ 1700000000', 1700000000);
+SELECT value FROM prometheusQuery(ts, 'rate(counter[40s])', 1700000000);
 SELECT value FROM prometheusQuery(ts, 'rate(counter[40s] @ 1700000000)', 1700000100);
 SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(counter[40s])', 1700000000, 1700000020, 20);
 
