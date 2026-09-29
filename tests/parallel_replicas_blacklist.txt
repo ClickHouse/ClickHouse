@@ -70,7 +70,6 @@
 02493_max_streams_for_merge_tree_reading
 02675_predicate_push_down_filled_join_fix
 02809_prewhere_and_in
-02918_optimize_count_for_merge_tables
 01655_plan_optimizations_optimize_read_in_window_order
 01625_constraints_index_append
     Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
@@ -86,7 +85,6 @@
 00443_preferred_block_size_bytes
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
-02156_storage_merge_prewhere
 02354_vector_search_subquery
 02451_order_by_monotonic
 02864_statistics_usage
@@ -115,7 +113,6 @@
 02713_array_low_cardinality_string
 01748_partition_id_pruning
 01201_read_single_thread_in_order
-02402_merge_engine_with_view
 
 
     plan and incorrect result
