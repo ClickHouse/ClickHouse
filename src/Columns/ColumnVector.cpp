@@ -917,15 +917,53 @@ alignas(16) constexpr auto compress_table = []
     return table;
 }();
 
-/// Filters whole blocks of `SIMD_ELEMENTS` rows, compressing mixed blocks with a table-driven byte shuffle.
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
-void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+/// Writes the rows of the block at `data_pos` selected by `mask` to `res` and returns their number. Mixed blocks are compressed
+/// with a table-driven byte shuffle. Up to `SIMD_ELEMENTS` elements from `res` may be written, past the returned count.
+/// `res` may alias `data_pos` if it is not ahead of it (filtering in place): each store ends within the rows already loaded.
+template <typename T, size_t SIMD_ELEMENTS>
+ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
 {
     static constexpr size_t ELEMENT_WIDTH = sizeof(T);
     static constexpr size_t ROWS = COMPRESS_ROWS<ELEMENT_WIDTH>;
     static constexpr size_t BYTES = ROWS * ELEMENT_WIDTH;
     static constexpr UInt64 ROWS_MASK = (1ULL << ROWS) - 1;
 
+    if (mask == static_cast<UInt64>(-1))
+    {
+        memmove(res, data_pos, SIMD_ELEMENTS * ELEMENT_WIDTH);
+        return SIMD_ELEMENTS;
+    }
+
+    size_t count = 0;
+    if (static_cast<size_t>(std::popcount(mask)) <= SIMD_ELEMENTS / ROWS)
+    {
+        /// Few selected rows: copying them one by one is cheaper than one shuffle per `ROWS` rows.
+        while (mask)
+        {
+            res[count++] = data_pos[std::countr_zero(mask)];
+            mask = blsr(mask);
+        }
+        return count;
+    }
+
+    for (size_t i = 0; i < SIMD_ELEMENTS; i += ROWS, mask >>= ROWS)
+    {
+        const UInt64 rows_mask = mask & ROWS_MASK;
+        UInt8x16 source{};
+        memcpy(&source, data_pos + i, BYTES);
+        UInt8x16 control;
+        memcpy(&control, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control));
+        UInt8x16 compressed = shuffleBytes(source, control);
+        memcpy(res + count, &compressed, BYTES);
+        count += std::popcount(rows_mask);
+    }
+    return count;
+}
+
+/// Filters whole blocks of `SIMD_ELEMENTS` rows into `res_data`.
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
+void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+{
     size_t current_offset = res_data.size();
     size_t reserve_size = res_data.size();
     size_t alloc_size = SIMD_ELEMENTS * 2;
@@ -934,7 +972,7 @@ void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
     while (filt_pos < filt_end_aligned)
     {
-        /// Every block writes at most `SIMD_ELEMENTS` elements from `current_offset`, including the unused tail of the last store.
+        /// `compressBlock` writes up to `SIMD_ELEMENTS` elements from `current_offset`.
         if (reserve_size - current_offset < SIMD_ELEMENTS)
         {
             reserve_size += alloc_size;
@@ -943,36 +981,7 @@ void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             alloc_size *= 2;
         }
 
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-
-        if (mask == static_cast<UInt64>(-1))
-        {
-            memcpy(res + current_offset, data_pos, SIMD_ELEMENTS * ELEMENT_WIDTH);
-            current_offset += SIMD_ELEMENTS;
-        }
-        else if (static_cast<size_t>(std::popcount(mask)) <= SIMD_ELEMENTS / ROWS)
-        {
-            /// Few selected rows: copying them one by one is cheaper than one shuffle per `ROWS` rows.
-            while (mask)
-            {
-                res[current_offset++] = data_pos[std::countr_zero(mask)];
-                mask = blsr(mask);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < SIMD_ELEMENTS; i += ROWS, mask >>= ROWS)
-            {
-                const UInt64 rows_mask = mask & ROWS_MASK;
-                UInt8x16 source{};
-                memcpy(&source, data_pos + i, BYTES);
-                UInt8x16 control;
-                memcpy(&control, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control));
-                UInt8x16 compressed = shuffleBytes(source, control);
-                memcpy(res + current_offset, &compressed, BYTES);
-                current_offset += std::popcount(rows_mask);
-            }
-        }
+        current_offset += compressBlock<T, SIMD_ELEMENTS>(bytes64MaskToBits64Mask(filt_pos), data_pos, res + current_offset);
 
         filt_pos += SIMD_ELEMENTS;
         data_pos += SIMD_ELEMENTS;
@@ -1052,8 +1061,18 @@ void ColumnVector<T>::filter(const IColumn::Filter & filt)
     static constexpr size_t SIMD_ELEMENTS = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
-    InPlaceResultInserter<T> inserter(result_data, result_size);
-    TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    if constexpr (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
+    {
+        for (; filt_pos < filt_end_aligned; filt_pos += SIMD_ELEMENTS, data_pos += SIMD_ELEMENTS)
+            result_size += compressBlock<T, SIMD_ELEMENTS>(bytes64MaskToBits64Mask(filt_pos), data_pos, result_data + result_size);
+    }
+    else
+#endif
+    {
+        InPlaceResultInserter<T> inserter(result_data, result_size);
+        TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+    }
 
     while (filt_pos < filt_end)
     {
