@@ -13,6 +13,7 @@ ClickHouse и Keeper позволяют управлять сэмплирова�
 * Собирать образцы в `system.trace_log` с типом `JemallocSample` для анализа отдельных запросов.
 * Просматривать статистику памяти в реальном времени и получать профили кучи через встроенный [веб-интерфейс jemalloc](#jemalloc-web-ui) (26.2+).
 * Запрашивать текущий профиль кучи напрямую из SQL с помощью [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql) (26.2+).
+* Анализировать фрагментацию памяти из SQL с помощью [`system.jemalloc_sampled_allocations`](#analyzing-fragmentation-from-sql) (26.9+).
 * Сбрасывать профили кучи на диск и анализировать их с помощью [`jeprof`](#analyzing-heap-profile-files-with-jeprof).
 
 <Note>
@@ -20,9 +21,7 @@ ClickHouse и Keeper позволяют управлять сэмплирова�
   Для более старых версий см. [профилирование выделения памяти для версий до 25.9](/ru/concepts/features/performance/allocation-profiling-old).
 </Note>
 
-<div id="sampling-allocations">
-  ## Сэмплирование выделений памяти
-</div>
+## Сэмплирование выделений памяти {#sampling-allocations}
 
 Для сэмплирования и профилирования выделений памяти запустите ClickHouse/Keeper с включенной настройкой `jemalloc_enable_global_profiler`:
 
@@ -42,9 +41,7 @@ ClickHouse и Keeper позволяют управлять сэмплирова�
   Поскольку ClickHouse активно использует аллокации памяти, сэмплирование jemalloc может снижать производительность.
 </Warning>
 
-<div id="storing-jemalloc-samples-in-system-trace-log">
-  ## Хранение образцов jemalloc в `system.trace_log`
-</div>
+## Хранение образцов jemalloc в `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
 
 Вы можете сохранять образцы jemalloc в `system.trace_log` с типом `JemallocSample`.
 Чтобы включить это глобально, используйте параметр конфигурации `jemalloc_collect_global_profile_samples_in_trace_log`:
@@ -63,9 +60,7 @@ ClickHouse и Keeper позволяют управлять сэмплирова�
 
 Вы также можете включать это для отдельных запросов с помощью настройки `jemalloc_collect_profile_samples_in_trace_log`.
 
-<div id="example-analyzing-memory-usage-trace-log">
-  ### Пример: анализ использования памяти запросом
-</div>
+### Пример: анализ использования памяти запросом {#example-analyzing-memory-usage-trace-log}
 
 Сначала выполните запрос с включенным профилировщиком jemalloc и соберите образцы в `system.trace_log`:
 
@@ -183,9 +178,7 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-<div id="jemalloc-web-ui">
-  ## Веб-интерфейс jemalloc
-</div>
+## Веб-интерфейс jemalloc {#jemalloc-web-ui}
 
 <Note>
   Этот раздел актуален для версий 26.2+.
@@ -201,7 +194,7 @@ ClickHouse предоставляет встроенный веб-интерфе
     http://localhost:8123/jemalloc
     ```
 
-    Интерфейс сервера включает все вкладки: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler и Raw Output.
+    Интерфейс сервера включает все вкладки: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Fragmentation и Raw Output.
   </Tab>
 
   <Tab title="Keeper">
@@ -221,7 +214,7 @@ ClickHouse предоставляет встроенный веб-интерфе
     </clickhouse>
     ```
 
-    После включения интерфейс предоставляет те же визуализации, что и сервер, — Summary, Allocations, Arenas, Operations, Global Profiler и Raw Output, — за исключением вкладки Query Profiler, для которой требуются SQL и `system.trace_log`.
+    После включения интерфейс предоставляет те же визуализации, что и сервер, — Summary, Allocations, Arenas, Operations, Global Profiler и Raw Output, — за исключением вкладок Query Profiler и Fragmentation, для которых требуется SQL-доступ к системным таблицам.
 
     <Warning>
       **Безопасность**
@@ -235,13 +228,11 @@ ClickHouse предоставляет встроенный веб-интерфе
 
     * `GET /jemalloc/stats` — сырой вывод `malloc_stats_print`
     * `GET /jemalloc/status` — состояние профилирования в формате JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — выгружает профиль кучи с символизацией на стороне сервера и возвращает свёрнутый стек, подходящий для построения флеймграфа (по умолчанию), либо сырой дамп jemalloc
+    * `GET /jemalloc/profile?format={collapsed|raw}` — сбрасывает профиль кучи с символизацией на стороне сервера и возвращает свёрнутый стек, подходящий для построения флеймграфа (по умолчанию), либо сырой дамп jemalloc
   </Tab>
 </Tabs>
 
-<div id="fetching-heap-profiles-from-sql">
-  ## Получение профилей кучи через SQL
-</div>
+## Получение профилей кучи через SQL {#fetching-heap-profiles-from-sql}
 
 <Note>
   Этот раздел относится к версиям 26.2+.
@@ -261,9 +252,7 @@ ClickHouse предоставляет встроенный веб-интерфе
 SELECT * FROM system.jemalloc_profile_text
 ```
 
-<div id="output-format">
-  ### Формат вывода
-</div>
+### Формат вывода {#output-format}
 
 Формат вывода задаётся настройкой `jemalloc_profile_text_output_format`, которая поддерживает три значения:
 
@@ -285,16 +274,12 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'symbolized'
 ```
 
-<div id="fetching-heap-profiles-settings">
-  ### Дополнительные настройки
-</div>
+### Дополнительные настройки {#fetching-heap-profiles-settings}
 
 * `jemalloc_profile_text_symbolize_with_inline` (Bool, по умолчанию: `true`) — Включать ли инлайн-фреймы при символизации. Отключение этого параметра значительно ускоряет символизацию, но снижает точность, поскольку инлайн-вызовы функций не будут отображаться в стеках. Влияет только на форматы `symbolized` и `collapsed`.
 * `jemalloc_profile_text_collapsed_use_count` (Bool, по умолчанию: `false`) — При использовании формата `collapsed` выполнять агрегацию по числу аллокаций, а не по байтам.
 
-<div id="example-flamegraph-from-sql">
-  ### Пример: создание флеймграфа из SQL
-</div>
+### Пример: создание флеймграфа из SQL {#example-flamegraph-from-sql}
 
 Поскольку формат вывода по умолчанию — `collapsed`, вы можете сразу передать вывод в FlameGraph:
 
@@ -308,9 +293,85 @@ clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text" | flamegraph.p
 clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
 ```
 
-<div id="flushing-heap-profiles">
-  ## Сброс профилей кучи на диск
-</div>
+## Анализ фрагментации из SQL {#analyzing-fragmentation-from-sql}
+
+<Note>
+  Этот раздел применим к версиям 26.9+.
+</Note>
+
+jemalloc обслуживает мелкие выделения из слэбов — блоков памяти фиксированного размера, разбитых на регионы одного size class. Слэб освобождается только тогда, когда свободны все его регионы. Если большинство выделений некоторого size class освобождаются быстро, а несколько живут долго, слэбы остаются удерживаемыми, хотя почти все их регионы свободны. Память остаётся резидентной, но не выделенной. Именно это здесь и понимается под фрагментацией.
+
+Найти источник помогают две системные таблицы:
+
+* [`system.jemalloc_arena_bins`](/ru/reference/system-tables/jemalloc_bins) показывает, сколько памяти расходуется впустую каждым size class в каждой arena. `waste` — это байты, удерживаемые в слэбах, но не используемые живыми выделениями. `purpose` помечает выделенные arenas (`mergetree`, `jit`, `cache`); они по своему назначению хранят долгоживущие данные, поэтому при поиске непредвиденной фрагментации отфильтруйте их условием `purpose = ''`. `system.jemalloc_bins` содержит те же данные, просуммированные по arenas.
+* `system.jemalloc_sampled_allocations` перечисляет попавшие в выборку выделения, которые в данный момент живы, по одной строке на образец: стек вызовов (`trace`), время жизни (`age_ns`), размер и size class, а также arena. Чтение таблицы вызывает сброс нового профиля кучи.
+
+JOIN этих таблиц по arena и size class показывает, какой код выделил старые объекты в расточительных size classes.
+
+При чтении результатов учитывайте следующее:
+
+* Образцы создают только потоки с включённым профилировщиком (`jemalloc_enable_global_profiler` в конфигурации или настройка `jemalloc_enable_profiler`).
+* Каждая строка соответствует примерно `weight` реальных выделений, а мелкие выделения попадают в выборку редко. Скорректируйте `jemalloc_profiler_sampling_rate`, если для интересующих вас size classes нет образцов.
+* Попавшие в выборку выделения не хранятся в слэбах, поэтому сами по себе они не увеличивают `waste`. Они лишь показывают, какой код выделяет память в этом size class.
+* Каждый живой образец обходится в две дополнительные страницы (128 КиБ в сборках со страницами по 64 КиБ), пока выделение не будет освобождено. Отключение профилировщика останавливает создание новых образцов, но не освобождает уже существующие.
+
+Следующий запрос выводит стеки вызовов выделений старше минуты в тех size classes, которые расходуют впустую более 1 МиБ:
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT
+    b.arena,
+    b.size AS reg_size,
+    b.waste AS class_waste,
+    s.est_old_objects,
+    s.stack
+FROM system.jemalloc_arena_bins AS b
+INNER JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 1048576
+ORDER BY b.waste DESC, s.est_old_objects DESC
+SETTINGS allow_introspection_functions=1
+```
+
+### Пример: построение флеймграфа фрагментации {#example-fragmentation-flamegraph}
+
+Тот же запрос может распределить потери каждого size class между его стеками вызовов пропорционально количеству старых выделений и вывести результат в формате `collapsed` для `flamegraph.pl`. Те size class, у которых есть потери, но нет достаточно старых образцов, попадают во фрейм `[unattributed]`, так что итог флеймграфа равен суммарным потерям. Обращайтесь к `system.jemalloc_sampled_allocations` только один раз за запрос: при каждом чтении сбрасывается новый profile, поэтому два подзапроса увидят разные данные.
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT format('{} {}',
+    if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+FROM system.jemalloc_arena_bins AS b
+LEFT JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 0
+SETTINGS allow_introspection_functions=1
+```
+
+```sh
+clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
+```
+
+## Сброс профилей кучи на диск {#flushing-heap-profiles}
 
 Если вам нужно сохранить профили кучи в виде файлов для офлайн-анализа с помощью `jeprof`, их можно сбросить на диск.
 
@@ -344,9 +405,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 К имени сгенерированного файла будут добавлены префикс PID и порядковый номер.
 
-<div id="analyzing-heap-profile-files-with-jeprof">
-  ## Анализ файлов профиля кучи с помощью `jeprof`
-</div>
+## Анализ файлов профиля кучи с помощью `jeprof` {#analyzing-heap-profile-files-with-jeprof}
 
 После записи профилей кучи на диск их можно анализировать с помощью инструмента [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in), входящего в `jemalloc`. Установить его можно несколькими способами:
 
@@ -355,9 +414,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 Доступно множество различных форматов вывода. Полный список параметров можно посмотреть, выполнив `jeprof --help`.
 
-<div id="symbolized-heap-profiles">
-  ### Символизированные профили кучи
-</div>
+### Символизированные профили кучи {#symbolized-heap-profiles}
 
 Начиная с версии 26.1+, ClickHouse автоматически создает символизированные профили кучи при выполнении `SYSTEM JEMALLOC FLUSH PROFILE`.
 Символизированный профиль (с расширением `.symbolized`) содержит встроенные символьные имена функций, поэтому его можно анализировать с помощью `jeprof` без бинарного файла ClickHouse.
@@ -408,9 +465,7 @@ jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
 jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
-<div id="examples">
-  ### Примеры
-</div>
+### Примеры {#examples}
 
 Использование символизированных профилей (рекомендуется):
 
@@ -440,9 +495,7 @@ jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result
 jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
-<div id="generating-flame-graph">
-  ### Создание флеймграфа
-</div>
+### Создание флеймграфа {#generating-flame-graph}
 
 `jeprof` позволяет формировать свёрнутые стеки для построения флеймграфов.
 
@@ -468,9 +521,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 Ещё один интересный инструмент — [speedscope](https://www.speedscope.app/), который позволяет более интерактивно анализировать собранные стеки.
 
-<div id="additional-options-for-profiler">
-  ## Дополнительные параметры профилировщика
-</div>
+## Дополнительные параметры профилировщика {#additional-options-for-profiler}
 
 У `jemalloc` есть множество параметров, связанных с профилировщиком. Ими можно управлять через переменную окружения `MALLOC_CONF`.
 Например, интервал между выборками выделения памяти задаётся с помощью `lg_prof_sample`.
@@ -478,9 +529,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 Полный список параметров рекомендуется смотреть на [справочной странице](https://jemalloc.net/jemalloc.3.html) `jemalloc`.
 
-<div id="other-resources">
-  ## Другие ресурсы
-</div>
+## Другие ресурсы {#other-resources}
 
 ClickHouse/Keeper предоставляют метрики, связанные с `jemalloc`, различными способами.
 
@@ -490,9 +539,7 @@ ClickHouse/Keeper предоставляют метрики, связанные 
   Важно учитывать, что эти метрики не синхронизированы между собой, и их значения могут расходиться.
 </Warning>
 
-<div id="system-table-asynchronous_metrics">
-  ### Системная таблица `asynchronous_metrics`
-</div>
+### Системная таблица `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -503,17 +550,13 @@ FORMAT Vertical
 
 [Справочник](/ru/reference/system-tables/asynchronous_metrics)
 
-<div id="system-table-jemalloc_bins">
-  ### Системная таблица `jemalloc_bins`
-</div>
+### Системная таблица `jemalloc_bins` {#system-table-jemalloc_bins}
 
 Содержит информацию о выделении памяти через аллокатор jemalloc в различных классах размеров (bins), агрегированную по всем аренам.
 
 [Справочник](/ru/reference/system-tables/jemalloc_bins)
 
-<div id="system-table-jemalloc_stats">
-  ### Системная таблица `jemalloc_stats` (26.2+)
-</div>
+### Системная таблица `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
 
 Возвращает полный вывод `malloc_stats_print()` в виде одной текстовой строки. Эквивалентна команде `SYSTEM JEMALLOC STATS`.
 
@@ -521,17 +564,13 @@ FORMAT Vertical
 SELECT * FROM system.jemalloc_stats
 ```
 
-<div id="prometheus">
-  ### Prometheus
-</div>
+### Prometheus {#prometheus}
 
 Все метрики, связанные с `jemalloc`, из `asynchronous_metrics` также доступны через конечную точку Prometheus и в ClickHouse, и в Keeper.
 
 [Справочник](/ru/reference/settings/server-settings/settings/other#prometheus)
 
-<div id="jmst-4lw-command-in-keeper">
-  ### Команда `jmst` 4LW в Keeper
-</div>
+### Команда `jmst` 4LW в Keeper {#jmst-4lw-command-in-keeper}
 
 Keeper поддерживает команду `jmst` 4LW, которая возвращает [основную статистику аллокатора](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics):
 
