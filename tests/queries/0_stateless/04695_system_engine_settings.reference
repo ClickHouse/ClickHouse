@@ -11,9 +11,9 @@ disallowed_values	Array(String)
 readonly	UInt8
 type	String
 is_obsolete	UInt8
-tier	Enum8('PRODUCTION' = 0, 'OBSOLETE' = 1, 'BETA' = 2, 'EXPERIMENTAL' = 3)
+tier	Enum8(\'Production\' = 0, \'Obsolete\' = 4, \'Experimental\' = 8, \'Beta\' = 12, \'PrivatePreview\' = 16)
 1
 1
 MergeTree	index_granularity	0	0	0
-Memory	compress	false	Bool
+Memory	compress	0	Bool
 1

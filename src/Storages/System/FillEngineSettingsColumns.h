@@ -18,8 +18,8 @@ void fillEngineSettingsColumnsFromImpl(MutableColumns & columns)
     {
         size_t col = 0;
         columns[col++]->insert(setting.getName());
-        columns[col++]->insert(setting.getValueString());
-        columns[col++]->insert(setting.getDefaultValueString());
+        columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
+        columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         columns[col++]->insert(setting.isValueChanged());
         columns[col++]->insert(setting.getDescription());
         columns[col++]->insertDefault(); // min (NULL)
