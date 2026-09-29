@@ -6,6 +6,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/memory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -43,26 +44,23 @@ PartitionAggregateTransform::PartitionAggregateTransform(
         const auto & aggregate_function = *function.aggregate_function;
         has_states_owning_memory = has_states_owning_memory || !aggregate_function.hasTrivialDestructor();
         const size_t alignment = aggregate_function.alignOfData();
-        total_state_size = (total_state_size + alignment - 1) / alignment * alignment;
-        state_offsets.push_back(total_state_size);
-        total_state_size += aggregate_function.sizeOfData();
+        state_stride = ::Memory::alignUp(state_stride, alignment);
+        state_offsets.push_back(state_stride);
+        state_stride += aggregate_function.sizeOfData();
         state_alignment = std::max(state_alignment, alignment);
     }
-    state_stride = (total_state_size + state_alignment - 1) / state_alignment * state_alignment;
+    state_stride = ::Memory::alignUp(state_stride, state_alignment);
 
     size_t keys_bytes = 0;
     for (auto position : key_positions)
     {
         const auto & type = *input_header->getByPosition(position).type;
         if (!type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        {
-            key_sizes.clear();
             break;
-        }
         key_sizes.push_back(type.getSizeOfValueInMemory());
         keys_bytes += key_sizes.back();
     }
-    if (key_sizes.empty() || keys_bytes > sizeof(UInt256))
+    if (key_sizes.size() != key_positions.size() || keys_bytes > sizeof(UInt256))
     {
         key_sizes.clear();
         single_string_key = key_positions.size() == 1 && isString(input_header->getByPosition(key_positions[0]).type);
@@ -81,13 +79,8 @@ PartitionAggregateTransform::PartitionAggregateTransform(
 
 PartitionAggregateTransform::~PartitionAggregateTransform()
 {
-    for (size_t i = 0; i < functions.size(); ++i)
-    {
-        const auto & aggregate_function = *functions[i].aggregate_function;
-        if (!aggregate_function.hasTrivialDestructor())
-            for (auto * place : places)
-                aggregate_function.destroy(place + state_offsets[i]);
-    }
+    for (auto * place : places)
+        destroyStates(place);
 }
 
 void PartitionAggregateTransform::consume(Chunk chunk)
@@ -113,7 +106,7 @@ void PartitionAggregateTransform::consume(Chunk chunk)
     /// The keys and the aggregate states cannot be spilled, but they count towards the threshold, so that
     /// the buffered rows are spilled earlier when the partitions take most of the memory.
     const size_t footprint = chunks_bytes + arena.allocatedBytes() + places.allocated_bytes() + row_places.allocated_bytes()
-        + std::visit([](const auto & state) { return state.map.getBufferSizeInBytes() + state.deferred_buckets.allocated_bytes(); }, grouping);
+        + deferred_buckets.allocated_bytes() + std::visit([](const auto & state) { return state.map.getBufferSizeInBytes(); }, grouping);
     if (spill_settings.max_bytes_before_external && footprint > spill_settings.max_bytes_before_external
         && (!spill_settings.max_query_bytes_before_external
             || getCurrentQueryMemoryUsage() > static_cast<Int64>(spill_settings.max_query_bytes_before_external)))
@@ -165,7 +158,7 @@ void PartitionAggregateTransform::aggregateChunk(Chunk & chunk, MutableColumnPtr
     /// The rows of partitions of one row are aggregated when they are output.
     IColumn::Filter in_groups;
     ColumnPtr filtered_groups;
-    if (std::find(all_group_data.begin(), all_group_data.end(), single_row_group) != all_group_data.end())
+    if (has_single_row_groups && std::find(all_group_data.begin(), all_group_data.end(), single_row_group) != all_group_data.end())
     {
         in_groups.resize(all_group_data.size());
         for (size_t row = 0; row < all_group_data.size(); ++row)
@@ -202,35 +195,22 @@ void PartitionAggregateTransform::aggregateChunk(Chunk & chunk, MutableColumnPtr
             row_places[row] = places[group_data[row]];
     }
 
-    std::unordered_map<size_t, ColumnPtr> materialized;
+    Columns argument_holders;
+    auto arguments = getArguments(columns, in_groups, num_rows, permutation, argument_holders);
     for (size_t i = 0; i < functions.size(); ++i)
     {
-        std::vector<const IColumn *> argument_columns;
-        for (auto position : argument_positions[i])
-        {
-            auto & argument = materialized[position];
-            if (!argument)
-            {
-                argument = recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped());
-                if (!in_groups.empty())
-                    argument = argument->filter(in_groups, num_rows);
-                if (by_partitions)
-                    argument = argument->permute(permutation, 0);
-            }
-            argument_columns.push_back(argument.get());
-        }
-
+        auto * argument_columns = arguments[i].data();
         const auto & aggregate_function = *functions[i].aggregate_function;
         if (by_partitions)
         {
             for (size_t group = 0; group < places.size(); ++group)
                 if (partition_offsets[group] != partition_offsets[group + 1])
                     aggregate_function.addBatchSinglePlace(
-                        partition_offsets[group], partition_offsets[group + 1], places[group] + state_offsets[i], argument_columns.data(), &arena);
+                        partition_offsets[group], partition_offsets[group + 1], places[group] + state_offsets[i], argument_columns, &arena);
         }
         else
         {
-            aggregate_function.addBatch(0, num_rows, row_places.data(), state_offsets[i], argument_columns.data(), &arena);
+            aggregate_function.addBatch(0, num_rows, row_places.data(), state_offsets[i], argument_columns, &arena);
         }
     }
 
@@ -238,6 +218,31 @@ void PartitionAggregateTransform::aggregateChunk(Chunk & chunk, MutableColumnPtr
     const size_t num_chunk_rows = groups->size();
     columns.push_back(std::move(groups));
     chunk.setColumns(std::move(columns), num_chunk_rows);
+}
+
+std::vector<ColumnRawPtrs> PartitionAggregateTransform::getArguments(
+    const Columns & columns, const IColumn::Filter & filter, size_t filtered_size, const IColumn::Permutation & permutation,
+    Columns & holders) const
+{
+    holders.assign(columns.size(), nullptr);
+    std::vector<ColumnRawPtrs> arguments(functions.size());
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        for (auto position : argument_positions[i])
+        {
+            auto & argument = holders[position];
+            if (!argument)
+            {
+                argument = recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped());
+                if (!filter.empty())
+                    argument = argument->filter(filter, filtered_size);
+                if (!permutation.empty())
+                    argument = argument->permute(permutation, 0);
+            }
+            arguments[i].push_back(argument.get());
+        }
+    }
+    return arguments;
 }
 
 size_t PartitionAggregateTransform::getBucket(size_t hash)
@@ -253,10 +258,10 @@ void PartitionAggregateTransform::deferChunk(Grouping<Map> & state, const Chunk 
     Columns holders;
     const auto key_columns = getKeyColumns(chunk.getColumns(), holders);
 
-    auto & buckets = state.deferred_buckets;
+    auto & buckets = deferred_buckets;
     const size_t offset = buckets.size();
     buckets.resize(offset + num_rows);
-    if constexpr (std::is_same_v<Map, SerializedKeyToGroup>)
+    if constexpr (is_serialized<Map>)
     {
         for (size_t row = 0; row < num_rows; ++row)
         {
@@ -268,7 +273,7 @@ void PartitionAggregateTransform::deferChunk(Grouping<Map> & state, const Chunk 
     }
     else
     {
-        PaddedPODArray<typename Grouping<Map>::Key> keys(num_rows);
+        PaddedPODArray<typename Map::key_type> keys(num_rows);
         packKeys(key_columns, num_rows, keys.data());
         for (size_t row = 0; row < num_rows; ++row)
             buckets[offset + row] = static_cast<UInt8>(getBucket(state.map.hash(keys[row])));
@@ -278,9 +283,9 @@ void PartitionAggregateTransform::deferChunk(Grouping<Map> & state, const Chunk 
 template <typename Map>
 void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last)
 {
-    using Key = typename Grouping<Map>::Key;
+    using Key = typename Map::key_type;
     static constexpr size_t num_buckets = 1 << num_buckets_bits;
-    const auto & buckets = state.deferred_buckets;
+    const auto & buckets = deferred_buckets;
 
     /// The deferred rows are partitioned by the buckets: `offsets[bucket]` is where the rows of a bucket begin.
     std::array<size_t, num_buckets + 1> offsets{};
@@ -289,13 +294,14 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     for (size_t bucket = 0; bucket < num_buckets; ++bucket)
         offsets[bucket + 1] += offsets[bucket];
 
-    /// The serialized keys of the deferred rows. They point into the buffered chunks if the key is one `String`.
+    /// The serialized keys of the deferred rows. They point into the buffered chunks, kept in `key_holders`, if
+    /// the key is one `String`.
     auto keys_arena = std::make_unique<Arena>();
     std::vector<Columns> key_holders;
     PaddedPODArray<Key> keys(buckets.size());
     /// The hashes of the serialized keys, taken while their bytes are in the cache: the keys of a bucket are
     /// scattered in memory.
-    PaddedPODArray<size_t> key_hashes(std::is_same_v<Map, SerializedKeyToGroup> ? buckets.size() : 0);
+    PaddedPODArray<size_t> key_hashes(is_serialized<Map> ? buckets.size() : 0);
     {
         auto positions = offsets;
         size_t deferred_row = 0;
@@ -303,8 +309,9 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
         for (size_t i = num_grouped_chunks; i < chunks.size(); ++i)
         {
             const size_t num_rows = chunks[i].getNumRows();
-            const auto key_columns = getKeyColumns(chunks[i].getColumns(), key_holders.emplace_back());
-            if constexpr (std::is_same_v<Map, SerializedKeyToGroup>)
+            Columns chunk_key_holders;
+            const auto key_columns = getKeyColumns(chunks[i].getColumns(), single_string_key ? key_holders.emplace_back() : chunk_key_holders);
+            if constexpr (is_serialized<Map>)
             {
                 for (size_t row = 0; row < num_rows; ++row, ++deferred_row)
                 {
@@ -324,7 +331,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     }
     auto get_hash = [&](size_t i)
     {
-        if constexpr (std::is_same_v<Map, SerializedKeyToGroup>)
+        if constexpr (is_serialized<Map>)
             return key_hashes[i];
         else
             return state.map.hash(keys[i]);
@@ -372,7 +379,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
             for (size_t i = offsets[bucket]; i < offsets[bucket + 1]; ++i)
             {
                 const size_t hash = get_hash(i);
-                if constexpr (std::is_same_v<Map, SerializedKeyToGroup>)
+                if constexpr (is_serialized<Map>)
                     groups[i] = emplaceGroup(state.map, ArenaKeyHolder{keys[i], arena}, hash);
                 else
                     groups[i] = emplaceGroup(state.map, keys[i], hash);
@@ -423,6 +430,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
     size_t num_single_row_groups = 0;
     for (auto rows : rows_of_new_groups)
         num_single_row_groups += rows == 1;
+    has_single_row_groups = has_single_row_groups || num_single_row_groups;
 
     /// The groups are created at once, and the partitions take them in the order of the rows.
     PaddedPODArray<UInt32> created_groups(num_new_groups);
@@ -460,7 +468,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
         }
         aggregateChunk(chunk, std::move(chunk_groups));
     }
-    PaddedPODArray<UInt8>().swap(state.deferred_buckets);
+    PaddedPODArray<UInt8>().swap(deferred_buckets);
 }
 
 template <typename Map, typename KeyHolder>
@@ -510,16 +518,16 @@ void PartitionAggregateTransform::createStates(AggregateDataPtr place)
     }
 }
 
+void PartitionAggregateTransform::destroyStates(AggregateDataPtr place) const noexcept
+{
+    for (size_t i = 0; i < functions.size(); ++i)
+        if (!functions[i].aggregate_function->hasTrivialDestructor())
+            functions[i].aggregate_function->destroy(place + state_offsets[i]);
+}
+
 UInt32 PartitionAggregateTransform::createGroup()
 {
-    checkNumberOfGroups(places.size() + 1);
-
-    /// Reserved before the states are created, so that they are always destroyed.
-    places.reserve(places.size() + 1);
-    auto * place = arena.alignedAlloc(total_state_size, state_alignment);
-    createStates(place);
-    places.push_back(place);
-    return static_cast<UInt32>(places.size() - 1);
+    return static_cast<UInt32>(createGroups(1));
 }
 
 size_t PartitionAggregateTransform::createGroups(size_t num_groups)
@@ -529,6 +537,7 @@ size_t PartitionAggregateTransform::createGroups(size_t num_groups)
     if (num_groups == 0)
         return first_group;
 
+    /// Reserved before the states are created, so that they are always destroyed.
     places.reserve(first_group + num_groups);
     auto * states = arena.alignedAlloc(num_groups * state_stride, state_alignment);
     for (size_t group = 0; group < num_groups; ++group)
@@ -543,8 +552,8 @@ size_t PartitionAggregateTransform::createGroups(size_t num_groups)
 template <typename Key>
 void PartitionAggregateTransform::packKeys(const ColumnRawPtrs & key_columns, size_t num_rows, Key * keys) const
 {
-    /// Column by column, unlike `packFixed`: a key assembled from narrower stores and read at once right after
-    /// stalls the store forwarding.
+    /// Column by column, like `packFixedBatch`, which takes only keys of 1, 2, 4, 8 and 16 bytes: a key assembled
+    /// from narrower stores and read at once right after, like in `packFixed`, stalls the store forwarding.
     std::fill(keys, keys + num_rows, Key{});
     size_t offset = 0;
     for (size_t i = 0; i < key_columns.size(); ++i)
@@ -580,7 +589,7 @@ std::string_view PartitionAggregateTransform::getSerializedKey(size_t row, const
 template <typename Map>
 void PartitionAggregateTransform::addGroups(Map & map, size_t num_rows, const ColumnRawPtrs & key_columns, UInt32 * group_data)
 {
-    if constexpr (std::is_same_v<Map, SerializedKeyToGroup>)
+    if constexpr (is_serialized<Map>)
     {
         for (size_t row = 0; row < num_rows; ++row)
         {
@@ -679,21 +688,15 @@ void PartitionAggregateTransform::insertResults(size_t function, AggregateDataPt
 
 PartitionAggregateTransform::SingleRowStates::~SingleRowStates()
 {
-    for (size_t i = 0; i < transform.functions.size(); ++i)
-    {
-        const auto & aggregate_function = *transform.functions[i].aggregate_function;
-        if (!aggregate_function.hasTrivialDestructor())
-            for (size_t row = 0; row < num_created; ++row)
-                aggregate_function.destroy(place(row) + transform.state_offsets[i]);
-    }
+    for (size_t row = 0; row < num_created; ++row)
+        transform.destroyStates(place(row));
 }
 
 void PartitionAggregateTransform::SingleRowStates::aggregate(const Columns & columns, const PaddedPODArray<UInt32> & group_data, size_t num_rows)
 {
     auto & buffer = transform.single_row_states_buffer;
     buffer.resize(num_rows * transform.state_stride + transform.state_alignment);
-    const auto begin = reinterpret_cast<uintptr_t>(buffer.data());
-    states = reinterpret_cast<char *>((begin + transform.state_alignment - 1) / transform.state_alignment * transform.state_alignment);
+    states = reinterpret_cast<char *>(::Memory::alignUp(reinterpret_cast<uintptr_t>(buffer.data()), transform.state_alignment));
     for (; num_created < num_rows; ++num_created)
         transform.createStates(place(num_created));
 
@@ -701,25 +704,16 @@ void PartitionAggregateTransform::SingleRowStates::aggregate(const Columns & col
     for (size_t row = 0; row < group_data.size(); ++row)
         is_single[row] = group_data[row] == single_row_group;
 
-    auto & places_of_rows = transform.single_row_places;
+    auto & places_of_rows = transform.row_places;
     places_of_rows.resize(num_rows);
     for (size_t row = 0; row < num_rows; ++row)
         places_of_rows[row] = place(row);
 
-    std::unordered_map<size_t, ColumnPtr> filtered;
+    Columns argument_holders;
+    auto arguments = transform.getArguments(columns, is_single, num_rows, {}, argument_holders);
     for (size_t i = 0; i < transform.functions.size(); ++i)
-    {
-        std::vector<const IColumn *> argument_columns;
-        for (auto position : transform.argument_positions[i])
-        {
-            auto & argument = filtered[position];
-            if (!argument)
-                argument = recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped())->filter(is_single, num_rows);
-            argument_columns.push_back(argument.get());
-        }
         transform.functions[i].aggregate_function->addBatch(
-            0, num_rows, places_of_rows.data(), transform.state_offsets[i], argument_columns.data(), &transform.arena);
-    }
+            0, num_rows, places_of_rows.data(), transform.state_offsets[i], arguments[i].data(), &transform.arena);
 }
 
 Chunk PartitionAggregateTransform::generate()
@@ -784,7 +778,7 @@ Chunk PartitionAggregateTransform::generate()
     columns.pop_back();
     const auto & group_data = assert_cast<const ColumnUInt32 &>(*groups).getData();
 
-    const size_t num_single_rows = std::count(group_data.begin(), group_data.end(), single_row_group);
+    const size_t num_single_rows = has_single_row_groups ? std::count(group_data.begin(), group_data.end(), single_row_group) : 0;
     if (results_for_each_row || num_single_rows)
     {
         SingleRowStates single_row_states(*this);
@@ -806,22 +800,20 @@ Chunk PartitionAggregateTransform::generate()
 
     for (const auto & result : results)
     {
-        if (result->valuesHaveFixedSize())
+        const auto * result_array = typeid_cast<const ColumnArray *>(result.get());
+        if (!result_array)
         {
             columns.push_back(result->index(*groups, 0));
             continue;
         }
-        /// `index` of an array takes each element on its own, this copies each value at once.
+        /// `index` of an array takes each element on its own, this copies each array at once.
+        const auto & offsets = result_array->getOffsets();
+        size_t num_elements = 0;
+        for (size_t row = 0; row < num_rows; ++row)
+            num_elements += offsets[group_data[row]] - offsets[static_cast<ssize_t>(group_data[row]) - 1];
         auto column = result->cloneEmpty();
         column->reserve(num_rows);
-        if (const auto * result_array = typeid_cast<const ColumnArray *>(result.get()))
-        {
-            const auto & offsets = result_array->getOffsets();
-            size_t num_elements = 0;
-            for (size_t row = 0; row < num_rows; ++row)
-                num_elements += offsets[group_data[row]] - offsets[static_cast<ssize_t>(group_data[row]) - 1];
-            assert_cast<ColumnArray &>(*column).getData().reserve(num_elements);
-        }
+        assert_cast<ColumnArray &>(*column).getData().reserve(num_elements);
         for (size_t row = 0; row < num_rows; ++row)
             column->insertFrom(*result, group_data[row]);
         columns.push_back(std::move(column));

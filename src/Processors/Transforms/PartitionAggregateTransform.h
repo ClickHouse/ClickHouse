@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Core/ColumnNumbers.h>
@@ -69,30 +70,13 @@ private:
         void increaseSize() { increaseSizeDegree(sizeDegree() >= 16 ? 1 : 2); }
     };
 
-    /// Mixes every word of the packed keys in turn: `DefaultHash` of a wide integer xors its words first, so
-    /// packed keys like (x, y) and (y, x) collide.
-    struct PackedKeysHash
-    {
-        template <typename Key>
-        size_t operator()(const Key & key) const
-        {
-            if constexpr (std::is_same_v<Key, UInt64>)
-            {
-                return intHash64(key);
-            }
-            else
-            {
-                UInt64 hash = 0;
-                for (auto item : key.items)
-                    hash = intHash64(hash ^ item);
-                return hash;
-            }
-        }
-    };
-
+    /// Not a CRC hash, which the scatter by the partitions into the streams takes, so that the keys of a stream
+    /// do not have the same bits of the hash.
     template <typename Key>
-    using FixedKeyToGroup = HashMap<Key, UInt32, PackedKeysHash, Grower>;
+    using FixedKeyToGroup = HashMap<Key, UInt32, DefaultHash<Key>, Grower>;
     using SerializedKeyToGroup = HashMapWithSavedHash<std::string_view, UInt32, DefaultHash<std::string_view>, Grower>;
+    template <typename Map>
+    static constexpr bool is_serialized = std::is_same_v<Map, SerializedKeyToGroup>;
 
     /** Up to `max_groups_to_group_eagerly` partitions, the rows are grouped as they come, in one table that fits
       * in the cache. With more partitions, a table of all of them would take a cache miss for most rows, and
@@ -103,16 +87,16 @@ private:
     template <typename Map>
     struct Grouping
     {
-        using Key = typename Map::key_type;
-
         /// The partitions of the rows grouped as they came.
         Map map;
-        /// The bucket of each deferred row.
-        PaddedPODArray<UInt8> deferred_buckets;
         Map bucket_map;
     };
 
     ColumnRawPtrs getKeyColumns(const Columns & columns, Columns & holders) const;
+    /// The arguments of each function, with `filter` and then `permutation` applied unless they are empty.
+    std::vector<ColumnRawPtrs> getArguments(
+        const Columns & columns, const IColumn::Filter & filter, size_t filtered_size, const IColumn::Permutation & permutation,
+        Columns & holders) const;
     template <typename Key>
     void packKeys(const ColumnRawPtrs & key_columns, size_t num_rows, Key * keys) const;
     /// The key of a row, serialized into `pool` unless it is one `String`.
@@ -148,6 +132,7 @@ private:
     };
 
     void createStates(AggregateDataPtr place);
+    void destroyStates(AggregateDataPtr place) const noexcept;
     UInt32 createGroup();
     /// Creates this many groups with the states next to each other, returns the first of them.
     size_t createGroups(size_t num_groups);
@@ -162,7 +147,6 @@ private:
     std::vector<ColumnNumbers> argument_positions;
     /// The states of all functions of a group are stored together, at these offsets.
     std::vector<size_t> state_offsets;
-    size_t total_state_size = 0;
     size_t state_alignment = 1;
     /// The size of the states of a group, rounded up to their alignment.
     size_t state_stride = 0;
@@ -183,9 +167,11 @@ private:
     PaddedPODArray<AggregateDataPtr> row_places;
     /// For `SingleRowStates`, reused for every chunk.
     PaddedPODArray<char> single_row_states_buffer;
-    PaddedPODArray<AggregateDataPtr> single_row_places;
+    bool has_single_row_groups = false;
 
     bool defer_grouping = false;
+    /// The bucket of each deferred row.
+    PaddedPODArray<UInt8> deferred_buckets;
 
     /// Input chunks, the first `num_grouped_chunks` of them with the group of every row appended as the last column.
     Chunks chunks;
