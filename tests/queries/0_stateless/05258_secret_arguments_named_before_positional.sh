@@ -64,6 +64,13 @@ other_queries=(
     "SELECT * FROM redis('127.0.0.1:6379', 'k', 'k String', 0, 'S10' = 'x')"
     "CREATE TABLE t (x Int32) ENGINE = ArrowFlight('127.0.0.1:5006', 'ds', 'user', 'S10' = 'x')"
     "CREATE TABLE t (x Int32) ENGINE = Redis(creds, host = 'h', port = 6379) PRIMARY KEY x"
+    "SELECT * FROM redis(localhost, 'k', 'k String', 0, 'S11' = 'x')"
+    "CREATE TABLE t (x Int32) ENGINE = ArrowFlight(localhost, 'ds', 'user', 'S11' = 'x')"
+    "SELECT * FROM mysql(localhost, 'db', 't', 'u', 'S11' = 'x')"
+    "SELECT * FROM mysql(creds, host = 'h', port = 1, db = 'd', table = 't')"
+    "CREATE TABLE t (dummy UInt8) ENGINE = Remote(creds, concat('pass', 'word') = 'S12')"
+    "SELECT * FROM remote(password = 'S12', '127.0.0.1:9000', 'system', 'one', 'u')"
+    "SELECT * FROM remoteSecure(creds, concat('pass', 'word') = 'S12')"
     # An identifier can be a positional endpoint rather than a named collection.
     "SELECT * FROM redis(localhost, 'k', 'k String', 0, 'S6')"
     "SELECT * FROM ytsaurus(proxy, '//p', 'S6', 'x Int32')"

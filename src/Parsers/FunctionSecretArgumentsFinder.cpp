@@ -420,13 +420,15 @@ void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const 
 
         /// The explicit form constant-folds its positionals, so an `equals` at the secret slot can be the
         /// folded secret with the secret as its left operand (`Redis('host:port', 0, 'password' = 'x')`):
-        /// hide it whole. Only when the first argument is not an identifier: after a collection name the
-        /// slot holds an ordinary override.
+        /// hide it whole. An identifier first argument does not prove a named collection (`redis(localhost, ...)`),
+        /// so there only an identifier left operand (`port = 6379`), which does not fold, is kept as an override.
         const size_t slot = *signature.positional_secret_slot;
-        if (slot < function->arguments->size() && !function->arguments->at(0)->isIdentifier())
+        if (slot < function->arguments->size())
         {
             const auto equals_func = function->arguments->at(slot)->getFunction();
-            if (equals_func && equals_func->name() == "equals")
+            if (equals_func && equals_func->name() == "equals"
+                && (!function->arguments->at(0)->isIdentifier() || !equals_func->arguments || equals_func->arguments->size() != 2
+                    || !equals_func->arguments->at(0)->isIdentifier()))
                 markSecretArgument(slot);
         }
     }
@@ -831,13 +833,11 @@ bool FunctionSecretArgumentsFinder::tryGetStringFromArgument(const AbstractFunct
 
 void FunctionSecretArgumentsFinder::findRemoteFunctionSecretArguments()
 {
-    if (isNamedCollectionName(0))
-    {
-        /// remote(named_collection, ..., password = 'password', ...)
-        findSecretNamedArgument("password", 1);
-        /// An identifier is also a cluster name when no such collection exists, and that form keeps the
-        /// password in a positional slot, so the walk below has to run for it too.
-    }
+    /// remote(named_collection, ..., password = 'password', ...), and a `password` written before the
+    /// positionals. An identifier is also a cluster name when no such collection exists, and that form
+    /// keeps the password in a positional slot, so the walk below has to run for it too.
+    findSecretNamedArgument("password");
+    markNamedArgumentsWithUnreadableKeys(0);
 
     /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
     /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
