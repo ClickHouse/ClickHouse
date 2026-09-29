@@ -8,14 +8,14 @@ toc_max_heading_level: 2
 keywords: ['clickstack', 'telemetrygen', 'synthetic data', 'OpenTelemetry', 'test', 'logs', 'traces', 'metrics', 'observability']
 ---
 
-[`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) is the OpenTelemetry Collector Contrib data generator. It emits synthetic OTLP logs, traces and metrics, and exposes flags that let you shape the data: multiple services, log severities, span statuses and child spans, and different metric types. Use it to confirm that a ClickStack OpenTelemetry collector is accepting data and that varied, realistic events surface in the ClickStack UI.
+[`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) is the OpenTelemetry Collector Contrib data generator. It emits synthetic OTLP logs, traces and metrics, and exposes flags that let you shape the data: multiple services, log severities, span statuses and child spans, and different metric types. Use it to confirm that a ClickStack OpenTelemetry collector is accepting data and that varied, realistic events surface in the observability UI.
 
 This guide assumes the collector is already running with OTLP endpoints on `4317` (gRPC) and `4318` (HTTP).
 
 <Steps>
 <Step title="Prerequisites" id="prerequisites-managed">
 
-This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/deployment/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `telemetrygen` on. If you [secured the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector) with an `OTLP_AUTH_TOKEN`, keep that value handy.
+This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/getting-started/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `telemetrygen` on. If you [secured the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector) with an `OTLP_AUTH_TOKEN`, keep that value handy.
 </Step>
 <Step title="Install telemetrygen" id="install-telemetrygen-managed">
 
@@ -121,8 +121,8 @@ tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.se
 
 `--metric-type` accepts `Gauge`, `Sum`, `Histogram`, or `ExponentialHistogram`. `--otlp-metric-name` names the series so you can find it in the UI, and `--aggregation-temporality` is `delta` or `cumulative`.
 </Step>
-<Step title="Verify in ClickStack" id="verify-managed">
+<Step title="Verify in the observability UI" id="verify-managed">
 
-Open the ClickStack UI from the ClickHouse Cloud console. In the `Search` view, set the time range to `Last 15 minutes` and switch the source between `Logs` and `Traces`. Filter on `ServiceName` to see the `frontend`, `checkout`, `cart`, and `payment` services, and on `SeverityText` to find the warning and error log lines. Open a `payment` trace to see the child spans and the error status. Open the `Chart Explorer`, select `Metrics`, and chart one of the metric names you set above (for example `http.server.requests`) to verify metrics ingestion.
+Open the observability UI from the ClickHouse Cloud console. In the `Search` view, set the time range to `Last 15 minutes` and switch the source between `Logs` and `Traces`. Filter on `ServiceName` to see the `frontend`, `checkout`, `cart`, and `payment` services, and on `SeverityText` to find the warning and error log lines. Open a `payment` trace to see the child spans and the error status. Open the `Chart Explorer`, select `Metrics`, and chart one of the metric names you set above (for example `http.server.requests`) to verify metrics ingestion.
 </Step>
 </Steps>

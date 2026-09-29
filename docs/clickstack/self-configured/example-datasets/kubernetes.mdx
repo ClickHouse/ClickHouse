@@ -1,7 +1,7 @@
 ---
 slug: /clickstack/self-configured/example-datasets/kubernetes
 title: 'Monitoring Kubernetes'
-description: 'Getting started with ClickStack and monitoring Kubernetes'
+description: 'Monitoring Kubernetes with ClickHouse Observability - Self Configured'
 doc_type: 'guide'
 keywords: ['clickstack', 'kubernetes', 'logs', 'observability', 'container monitoring']
 sidebarTitle: 'Monitoring Kubernetes'
@@ -10,7 +10,7 @@ sidebarTitle: 'Monitoring Kubernetes'
 import { Image } from "/snippets/components/Image.jsx";
 import DemoArchitecture from '/snippets/_demo.mdx';
 
-This guide allows you to collect logs and metrics from your Kubernetes system, sending them to **ClickStack** for visualization and analysis. For demo data we use optionally use the ClickStack fork of the official OpenTelemetry demo.
+This guide allows you to collect logs and metrics from your Kubernetes system, sending them to **ClickHouse Observability — Self Configured** for visualization and analysis. For demo data we use optionally use the ClickStack fork of the official OpenTelemetry demo.
 
 <Frame>
 <iframe src="https://www.youtube.com/embed/winI7256Ejk?si=TRThhzCJdq87xg_x" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
@@ -45,7 +45,7 @@ helm install cert-manager jetstack/cert-manager --namespace cert-manager --creat
 </Step>
 <Step title="Deploy the OpenTelemetry Demo (Optional)" id="deploy-otel-demo">
 
-This **step is optional and intended if you have no existing pods to monitor**. Although users with existing services deployed in their Kubernetes environment can skip, this demo does include instrumented microservices which generate trace and session replay data - allowing users to explore all features of ClickStack.
+This **step is optional and intended if you have no existing pods to monitor**. Although users with existing services deployed in their Kubernetes environment can skip, this demo does include instrumented microservices which generate trace and session replay data - allowing users to explore the observability features.
 
 The following deploys the ClickStack fork of the OpenTelemetry Demo application stack within a Kubernetes cluster, tailored for observability testing and showcasing instrumentation. It includes backend microservices, load generators, telemetry pipelines, supporting infrastructure (e.g., Kafka, Redis), and SDK integrations with ClickStack.
 
@@ -95,7 +95,7 @@ valkey-cart-5f7b667bb7-gl5v4         1/1     Running   0          13m
 </Step>
 <Step title="Add the ClickStack Helm chart repository" id="add-helm-clickstack">
 
-To deploy ClickStack, we use the [official Helm chart](/clickstack/deployment/helm).
+To deploy the collector and its supporting components, we use the [official Helm chart](/clickstack/deployment/helm).
 
 This requires us to add the HyperDX Helm repository:
 
@@ -104,12 +104,12 @@ helm repo add hyperdx https://hyperdxio.github.io/helm-charts
 helm repo update
 ```
 </Step>
-<Step title="Deploy ClickStack" id="deploy-clickstack">
+<Step title="Deploy the collector and supporting components" id="deploy-clickstack">
 
 With the Helm chart installed, deploy the collector and its supporting components to your cluster, using ClickHouse Cloud for the database.
 <br/>
 
-Deploy ClickStack and [disable the included ClickHouse](/clickstack/deployment/helm#using-clickhouse-cloud). 
+Deploy the chart and [disable the included ClickHouse](/clickstack/deployment/helm#using-clickhouse-cloud).
 
 <Note>
 The chart currently always deploys both HyperDX and MongoDB. While these components offer an alternative access path, they're not integrated with ClickHouse Cloud authentication. These components are intended for administrators in this deployment model, [providing access to the secure ingestion key](#retrieve-ingestion-api-key) needed to ingest through the deployed OTel collector, but shouldn't be exposed to end users.
@@ -186,9 +186,9 @@ Restart the OpenTelemetry demo application pods to take into account the Ingesti
 kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
 ```
 
-Trace and log data from demo services should now begin to flow into HyperDX.
+Trace and log data from demo services should now be available in the observability UI.
 
-<Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="HyperDX Kubernetes Data" size="lg"/>
+<Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="Kubernetes data" size="lg"/>
 </Step>
 <Step title="Add the OpenTelemetry Helm repo" id="add-otel-helm-repo">
 
@@ -209,7 +209,7 @@ To collect logs and metrics from both the cluster itself and each node, we'll ne
 
 - `k8s_daemonset.yaml` deploys a **DaemonSet-based collector** that runs on every node in your cluster. It collects **node-level and pod-level metrics**, as well as container logs, using components like `kubeletstats`, `hostmetrics`, and Kubernetes attribute processors. These collectors enrich logs with metadata and send them to HyperDX using the OTLP exporter.
 
-Together, these manifests enable full-stack observability across the cluster, from infrastructure to application-level telemetry, and send the enriched data to ClickStack for centralized analysis.
+Together, these manifests enable full-stack observability across the cluster, from infrastructure to application-level telemetry, and send the enriched data to your service for centralized analysis.
 
 First, install the collector as a deployment:
 
@@ -397,7 +397,7 @@ config:
 ```
 </Accordion>
 </Step>
-<Step title="Explore Kubernetes data in HyperDX" id="explore-kubernetes-data-hyperdx">
+<Step title="Explore Kubernetes data in the observability UI" id="explore-kubernetes-data-hyperdx">
 
 Open the observability UI in ClickHouse Cloud.
 

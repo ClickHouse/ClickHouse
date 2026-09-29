@@ -1,7 +1,7 @@
 ---
 slug: /clickstack/self-configured/example-datasets/sample-data
 title: 'Sample logs, traces and metrics'
-description: 'Getting started with ClickStack and a sample dataset with logs, sessions, traces and metrics'
+description: 'Getting started with ClickHouse Observability - Self Configured and a sample dataset with logs, sessions, traces and metrics'
 doc_type: 'guide'
 toc_max_heading_level: 2
 keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
@@ -12,7 +12,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 This guide demonstrates ClickHouse Observability — Self Configured using a sample data set.
 
-The following guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/deployment/managed) and have the [connection credentials recorded](/clickstack/self-configured/getting-started/managed#next-steps).
+The following guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/getting-started/managed) and have the [connection credentials recorded](/clickstack/self-configured/getting-started/managed#next-steps).
 
 <Steps>
 <Step title="Select your service" id="select-your-service-managed">
@@ -21,11 +21,11 @@ Select the service with ClickHouse Observability — Self Configured from the ma
 
 <Image img="/images/clickstack/select_service.webp" alt="Select Service" size="lg"/>
 </Step>
-<Step title="Navigate to the ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
+<Step title="Navigate to the observability UI" id="navigate-to-the-hyperdx-ui-managed">
 
-Select `ClickStack` from the left menu to navigate to the ClickStack UI, where you will be automatically authenticated.
+Select `ClickStack` from the left menu to navigate to the observability UI, where you will be automatically authenticated.
 
-<Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg"/>
+<Image img="/images/use-cases/observability/hyperdx.webp" alt="Observability UI" size="lg"/>
 </Step>
 <Step title="Download sample data" id="download-sample-data-managed">
 
@@ -64,13 +64,13 @@ This simulates OTLP log, trace, and metric sources sending data to the OTel coll
 
 Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
 
-<Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX search" size="lg"/>
+<Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Search view" size="lg"/>
 
 Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
 </Step>
 <Step title="Explore sessions" id="explore-sessions-managed">
 
-Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using HyperDX's session replay capabilities. 
+Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using session replay.
 
 Select `Client Sessions` from the left menu.
 

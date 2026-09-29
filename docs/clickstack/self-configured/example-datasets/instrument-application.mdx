@@ -2,14 +2,14 @@
 slug: /clickstack/self-configured/example-datasets/instrument-application
 title: 'HackerNews Analyzer demo'
 sidebarTitle: 'HackerNews Analyzer demo'
-description: 'Instrument a Node.js app with an agent and send logs, traces, metrics, and session replay to ClickStack'
+description: 'Instrument a Node.js app with an agent and send logs, traces, metrics, and session replay to ClickHouse Observability - Self Configured'
 doc_type: 'guide'
 keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'instrumentation', 'session replay', 'Node.js', 'OTLP']
 ---
 
-<Warning>
-This guide is a placeholder for ClickHouse Observability — Self Configured. The instructions below have not yet been updated or verified for this offering and may describe a different setup.
-</Warning>
+<Note>
+The ClickHouse Cloud endpoint and ingestion-token steps below are carried over from the existing guide and need verification for Self Configured.
+</Note>
 
 import InstrumentApplication from '/snippets/clickstack/_instrument_application.mdx';
 
@@ -28,7 +28,7 @@ This is a different job from the [session replay demo](/clickstack/example-datas
 ## Prerequisites {#prerequisites}
 
 - Node 18+ and npm
-- A ClickStack OTLP/HTTP endpoint and ingestion token:
+- An OTLP/HTTP endpoint and ingestion token:
   - **ClickHouse Cloud:** open the service, then **ClickStack** → **Configure your OpenTelemetry exporter** → **Env vars**. Protocol is `http/protobuf`. Headers are `authorization=<ingestion token>` with no `Bearer` prefix.
   - **Local collector:** use `http://localhost:4318`. If the collector is unsecured, leave `authorization=` empty.
 
@@ -50,7 +50,7 @@ You'll fill `.env` in the next steps, then instrument from this directory.
 ## Learn more {#learn-more}
 
 - [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): the demo repository this guide instruments.
-- [Session Replay](/clickstack/features/session-replay): feature overview, SDK options, and privacy controls.
+- [Session Replay](/clickstack/self-configured/features/session-replay): feature overview, SDK options, and privacy controls.
 - [Session Replay Demo](/clickstack/example-datasets/session-replay): a self-contained demo with a local ClickStack instance.
-- [ClickStack Getting Started](/clickstack/getting-started/index): deploy ClickStack and ingest your first data.
-- [All Sample Datasets](/clickstack/example-datasets/index): other example datasets and guides.
+- [Getting started with Self Configured](/clickstack/self-configured/getting-started/managed): set up your service and ingest your first data.
+- [All Sample Datasets](/clickstack/self-configured/example-datasets/index): other example datasets and guides.

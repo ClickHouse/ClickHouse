@@ -25,14 +25,11 @@ This guide requires you to have:
 
 ## Deployment options {#deployment-options}
 
-You can follow this guide using either of the following deployment options:
+This guide deploys ClickStack entirely within your Kubernetes cluster, including:
 
-- **Open Source ClickStack**: Deploy ClickStack entirely within your Kubernetes cluster, including:
-  - ClickHouse
-  - HyperDX
-  - MongoDB (used for dashboard state and configuration)
-
-- **Managed ClickStack**, with ClickHouse and the ClickStack UI (HyperDX) managed in ClickHouse Cloud. This eliminates the need to run ClickHouse or HyperDX inside your cluster.
+- ClickHouse
+- HyperDX
+- MongoDB (used for dashboard state and configuration)
 
 To simulate application traffic, you can optionally deploy the ClickStack fork of the [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). This generates telemetry data including logs, metrics, and traces. If you already have workloads running in your cluster, you can skip this step and monitor existing pods, nodes, and containers.
 
@@ -112,10 +109,9 @@ helm repo update
 </Step>
 <Step title="Deploy ClickStack" id="deploy-clickstack">
 
-With the Helm chart installed, you can deploy ClickStack to your cluster. You can either run all components, including ClickHouse and HyperDX, within your Kubernetes environment, or just deploy the collector and rely on Managed ClickStack for ClickHouse and the UI HyperDX.
+With the Helm chart installed, you can deploy ClickStack to your cluster.
 <br/>
 
-<Accordion title="ClickStack Open Source (self-managed)">
 The following command installs ClickStack to the `otel-demo` namespace. The helm chart deploys:
 
 - A ClickHouse instance
@@ -137,7 +133,7 @@ helm install my-hyperdx hyperdx/hdx-oss-v2   --set clickhouse.persistence.dataSi
 **ClickStack in production**
 
 
-This chart also installs ClickHouse and the OTel collector. For production, it is recommended that you use the clickhouse and OTel collector operators and/or use Managed ClickStack.
+This chart also installs ClickHouse and the OTel collector. For production, it is recommended that you use the clickhouse and OTel collector operators.
 
 To disable clickhouse and OTel collector, set the following values:
 
@@ -145,26 +141,8 @@ To disable clickhouse and OTel collector, set the following values:
 helm install myrelease <chart-name-or-path> --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.enabled=false
 ```
 </Warning>
-</Accordion>
 
-<Accordion title="Managed ClickStack">
-If you'd rather use Managed ClickStack, you can deploy ClickStack and [disable the included ClickHouse](/clickstack/deployment/helm#using-clickhouse-cloud). 
-
-<Note>
-The chart currently always deploys both HyperDX and MongoDB. While these components offer an alternative access path, they're not integrated with ClickHouse Cloud authentication. These components are intended for administrators in this deployment model, [providing access to the secure ingestion key](#retrieve-ingestion-api-key) needed to ingest through the deployed OTel collector, but shouldn't be exposed to end users.
-</Note>
-
-```shell
-# specify ClickHouse Cloud credentials
-export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # full https url
-export CLICKHOUSE_USER=<CLICKHOUSE_USER>
-export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-
-helm install my-hyperdx hyperdx/hdx-oss-v2  --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} --set clickhouse.config.users.otelUserName=${CLICKHOUSE_USER} --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD} --set global.storageClassName="standard-rwo" -n otel-demo
-```
-</Accordion>
-
-To verify the deployment status, run the following command and confirm all components are in the `Running` state. Note that ClickHouse will be absent if you're using Managed ClickStack:
+To verify the deployment status, run the following command and confirm all components are in the `Running` state:
 
 ```shell
 kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
@@ -177,10 +155,6 @@ my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0     
 ```
 </Step>
 <Step title="Access the HyperDX UI" id="access-the-hyperdx-ui">
-
-<Note>
-Even when using Managed ClickStack, the local HyperDX instance deployed in the Kubernetes cluster is still required. It provides an ingestion key managed by the OpAMP server bundled with HyperDX, with secures ingestion through the deployed OTel collector - a capability not currently available in Managed ClickStack.
-</Note>
 
 For security, the service uses `ClusterIP` and isn't exposed externally by default.
 
@@ -440,16 +414,9 @@ config:
 </Step>
 <Step title="Explore Kubernetes data in HyperDX" id="explore-kubernetes-data-hyperdx">
 
-Navigate to your HyperDX UI - either using your Kubernetes-deployed instance or via Managed ClickStack.
+Navigate to your Kubernetes-deployed HyperDX UI.
 
 <p/>
-<Accordion title="Managed ClickStack">
-If using Managed ClickStack, simply log in to your ClickHouse Cloud service and select "ClickStack" from the left menu. You will be automatically authenticated and won't need to create a user.
-
-Data sources for logs, metrics and traces will be pre-created for you.
-</Accordion>
-
-<Accordion title="ClickStack Open Source">
 To access the local deployed HyperDX, you can port forward using the local command and access HyperDX at [http://localhost:8080](http://localhost:8080).
 
 ```shell
@@ -462,7 +429,7 @@ kubectl port-forward \
 <Info>
 **ClickStack in production**
 
-In production, we recommend using an ingress with TLS if you're not using Managed ClickStack. For example:
+In production, we recommend using an ingress with TLS. For example:
 
 ```shell
 helm upgrade my-hyperdx hyperdx/hdx-oss-v2 \
@@ -471,7 +438,6 @@ helm upgrade my-hyperdx hyperdx/hdx-oss-v2 \
 --set hyperdx.ingress.tls.enabled=true
 ```
 </Info>
-</Accordion>
 
 To explore the Kubernetes data, navigate to the dedicated present dashboard at `/kubernetes` e.g. [http://localhost:8080/kubernetes](http://localhost:8080/kubernetes).
 
