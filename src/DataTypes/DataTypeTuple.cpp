@@ -350,10 +350,17 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     SerializationTuple::ElementSerializations serializations(elems.size());
     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
 
+    /// The part's SerializationInfo may describe an older structure of the tuple
+    /// (a metadata-only ALTER that added trailing elements). Derive the serialization
+    /// for the extra trailing elements from their types directly instead of indexing
+    /// past the end of the recorded element infos.
+    const size_t info_elems = info_tuple.getElementCount();
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
+        auto serialization = i < info_elems
+            ? elems[i]->getSerialization(*info_tuple.getElementInfo(i))
+            : elems[i]->getSerialization(info.getSettings());
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
