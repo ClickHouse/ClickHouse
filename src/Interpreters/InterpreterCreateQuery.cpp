@@ -1009,19 +1009,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     if (!is_restore_from_backup)
                         throw;
                     /// A backup can contain a projection preserved as unavailable on the source.
-                    /// Its output types are unknown until analysis succeeds, but a fresh RESTORE
-                    /// must still enforce codec settings before retaining the raw declaration.
-                    if (validate_projection_codecs)
+                    /// Analyze codec declarations in a temporary context so `RESTORE` checks their
+                    /// output types even when positional arguments are currently disabled.
+                    const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
+                    if (validate_projection_codecs && hasDeclaredProjectionColumnCodec(declaration))
                     {
-                        const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
-                        if (declaration.columns)
-                            for (const auto & child : declaration.columns->children)
-                                if (const auto * column = child->as<const ASTColumnDeclaration>(); column && column->getCodec())
-                                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                                        column->getCodec(), {}, CodecValidationSettings(getContext()->getSettingsRef()));
+                        auto analysis_context = Context::createCopy(getContext());
+                        analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
+                        auto checked_projection = ProjectionDescription::getProjectionFromAST(
+                            projection_ast, properties.columns, nullptr, analysis_context, mode, create.attach_short_syntax);
+                        ProjectionDescription::validateDeclaredColumnCodecs(
+                            checked_projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
                     }
                     /// Keep the declaration so it can be analyzed after the missing setting or
-                    /// dependency is restored. Type-sensitive validation runs at that point.
+                    /// dependency is restored.
                     properties.projections.addUnavailable(projection_ast->clone());
                     tryLogCurrentException(
                         __PRETTY_FUNCTION__,

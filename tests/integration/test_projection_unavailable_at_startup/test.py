@@ -119,6 +119,41 @@ def event_value(event):
     )
 
 
+def test_restore_unavailable_projection_validates_codec_output_type(started_cluster):
+    node.query("DROP DATABASE IF EXISTS codec_restore SYNC")
+    node.query("CREATE DATABASE codec_restore")
+    node.query(
+        "CREATE TABLE codec_restore.source (a UInt64, b UInt64) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+    node.query(
+        "ALTER TABLE codec_restore.source ADD PROJECTION pp (b CODEC(Gorilla)) "
+        "AS (SELECT b, a GROUP BY 1, 2)",
+        settings={**POSITIONAL, "allow_suspicious_codecs": 1},
+    )
+
+    backup = f"unavailable_projection_gorilla_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE codec_restore.source TO Disk('backups', '{backup}')")
+    restore_query = (
+        "RESTORE TABLE codec_restore.source AS codec_restore.restored "
+        f"FROM Disk('backups', '{backup}')"
+    )
+    unavailable = {"enable_positional_arguments_for_projections": 0}
+    error = node.query_and_get_error(restore_query, settings=unavailable)
+    assert "suspicious" in error.lower(), error
+    assert node.query("EXISTS TABLE codec_restore.restored").strip() == "0"
+
+    node.query(
+        restore_query,
+        settings={**unavailable, "allow_suspicious_codecs": 1},
+    )
+    assert node.query(
+        "SELECT count() FROM system.projections "
+        "WHERE database = 'codec_restore' AND table = 'restored'"
+    ).strip() == "0"
+    assert "CODEC(Gorilla)" in node.query("SHOW CREATE TABLE codec_restore.restored")
+
+
 def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     node.query("DROP DATABASE IF EXISTS dl SYNC")
     node.query("CREATE DATABASE dl")
