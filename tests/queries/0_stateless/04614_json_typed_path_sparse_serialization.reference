@@ -1,0 +1,14 @@
+json_typed_path_sparse_compact	t.a	Sparse
+json_typed_path_sparse_compact	t.b	Default
+json_typed_path_sparse_compact	x	Sparse
+json_typed_path_sparse_compact	y	Default
+json_typed_path_sparse_wide	t.a	Sparse
+json_typed_path_sparse_wide	t.b	Default
+json_typed_path_sparse_wide	x	Sparse
+json_typed_path_sparse_wide	y	Default
+100	1	100	1	100
+t.a	Sparse
+t.b	Default
+x	Sparse
+y	Default
+200	200	2	2	200

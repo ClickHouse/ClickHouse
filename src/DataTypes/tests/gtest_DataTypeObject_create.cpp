@@ -1,5 +1,8 @@
+#include <Columns/ColumnBLOB.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationDetached.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -194,4 +197,13 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
 
     auto type_default = factory.get("JSON");
     ASSERT_NE(type_default, nullptr);
+}
+
+TEST(DataTypeObject, CreateColumnWithDetachedSerialization)
+{
+    auto type = DataTypeFactory::instance().get("JSON(x Nullable(String), max_dynamic_paths=0)");
+    auto serialization = SerializationDetached::create(type->getDefaultSerialization());
+    auto column = type->createColumn(*serialization);
+
+    EXPECT_NE(typeid_cast<const ColumnBLOB *>(column.get()), nullptr);
 }
