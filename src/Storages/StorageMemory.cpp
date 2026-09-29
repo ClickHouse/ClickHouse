@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
@@ -740,23 +741,31 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
         current_data = data.get();
     }
     /// The collector writes the table definition before it collects the data, so an `ALTER` in between would make them differ.
-    if (const auto create_query = backup_entries_collector.getTableCreateQuery(data_path_in_backup))
+    if (const auto create_query = backup_entries_collector.getTableCreateQuery(*this))
     {
         const auto & create = create_query->as<const ASTCreateQuery &>();
         if (create.columns_list && create.columns_list->columns)
         {
-            NameSet definition_names;
+            std::unordered_map<String, DataTypePtr> definition_columns;
             for (const auto & child : create.columns_list->columns->children)
             {
                 const auto & declaration = child->as<const ASTColumnDeclaration &>();
                 if (declaration.default_specifier != ColumnDefaultSpecifier::Alias
                     && declaration.default_specifier != ColumnDefaultSpecifier::Ephemeral)
-                    definition_names.insert(declaration.name);
+                {
+                    const auto type_ast = declaration.getType();
+                    definition_columns.emplace(declaration.name, type_ast ? DataTypeFactory::instance().tryGet(type_ast) : nullptr);
+                }
             }
-            NameSet data_names;
-            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-                data_names.insert(column.name);
-            if (definition_names != data_names)
+            const auto data_columns = metadata_snapshot->getColumns().getAllPhysical();
+            bool same_columns = definition_columns.size() == data_columns.size();
+            for (const auto & column : data_columns)
+            {
+                const auto it = definition_columns.find(column.name);
+                /// A type that cannot be built from the definition is compared by the column name only.
+                same_columns = same_columns && it != definition_columns.end() && (!it->second || it->second->equals(*column.type));
+            }
+            if (!same_columns)
                 throw Exception(
                     ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
                     "Columns of table {} were changed by an ALTER during the backup, retry the backup",
@@ -783,6 +792,8 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
 
     /// The blocks in the backup have the column names of its `columns.txt`. When they are the names of this
     /// metadata, the columns renamed or dropped by later `ALTER`s can be converted in `restoreDataImpl`.
+    /// Otherwise the blocks are restored by their names, which is right unless a column of this table was renamed or
+    /// dropped: the inner table of a materialized view is created with the columns of the view, not of the backup.
     auto metadata_snapshot = getInMemoryMetadataPtr(restorer.getContext(), false);
     bool names_verified = false;
     String columns_file_path = fs::path(data_path_in_backup) / "columns.txt";
@@ -799,12 +810,19 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
             table_names.insert(column.name);
 
-        if (backup_names != table_names)
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "The column names of table {} in the backup do not match the table, it was altered during the backup or the restore",
-                getStorageID().getNameForLogs());
-        names_verified = true;
+        if (backup_names == table_names)
+        {
+            names_verified = true;
+        }
+        else
+        {
+            std::lock_guard lock(mutex);
+            if (!column_changes.empty())
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "The column names of table {} in the backup do not match the table, whose columns were renamed or dropped",
+                    getStorageID().getNameForLogs());
+        }
     }
 
     restorer.addDataRestoreTask(

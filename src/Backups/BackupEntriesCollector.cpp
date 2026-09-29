@@ -894,14 +894,15 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
-        create_table_queries_by_data_path[table_info.data_path_in_backup.string()] = new_create_query;
+        if (table_info.storage)
+            create_table_queries_by_storage[table_info.storage.get()] = new_create_query;
     }
 }
 
-ASTPtr BackupEntriesCollector::getTableCreateQuery(const String & data_path_in_backup) const
+ASTPtr BackupEntriesCollector::getTableCreateQuery(const IStorage & storage) const
 {
-    auto it = create_table_queries_by_data_path.find(data_path_in_backup);
-    return it != create_table_queries_by_data_path.end() ? it->second : nullptr;
+    auto it = create_table_queries_by_storage.find(&storage);
+    return it != create_table_queries_by_storage.end() ? it->second : nullptr;
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTablesData()
