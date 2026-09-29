@@ -333,7 +333,7 @@ template <typename Derived>
 bool FunctionArrayEnumerateExtended<Derived>::executeFixedString(
         const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
 {
-    const auto * nested = checkAndGetColumn<ColumnString>(&data);
+    const auto * nested = checkAndGetColumn<ColumnFixedString>(&data);
     if (nested)
         executeMethod<MethodFixedString>(offsets, {nested}, {}, null_map, res_values);
 
