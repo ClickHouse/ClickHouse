@@ -259,6 +259,58 @@ def test_a_stored_selector_table_needs_the_select_grant_on_its_source():
         node.query("DROP TABLE IF EXISTS stored_selector")
 
 
+def test_a_stored_prometheus_query_table_checks_its_reader():
+    """A table created AS prometheusQuery is configured once, so its reader is held to the wrapper's
+    SELECT grant and row policy when it is read, as a prometheusQuery call is."""
+    node.query(
+        f"CREATE TABLE stored_dist_query AS prometheusQuery(ts_dist, 'm', {EVALUATION_TIME})"
+    )
+    node.query(
+        f"CREATE TABLE stored_local_query AS prometheusQuery(shard_0.ts_local, 'm', {EVALUATION_TIME})"
+    )
+    reader = "stored_query_reader"
+    node.query(f"CREATE USER {reader} IDENTIFIED WITH no_password")
+    for grant in [
+        "SELECT ON default.stored_dist_query",
+        "SELECT ON default.stored_local_query",
+        "READ ON REMOTE",
+        "CREATE TEMPORARY TABLE ON *.*",
+        "SELECT ON shard_0.*",
+        "SELECT ON shard_1.*",
+    ]:
+        node.query(f"GRANT {grant} TO {reader}")
+    try:
+        # A TimeSeries target stored the same way still answers.
+        assert (
+            int(node.query("SELECT count() FROM stored_local_query", user=reader)) > 0
+        )
+
+        denied = node.query_and_get_error(
+            "SELECT count() FROM stored_dist_query", user=reader
+        ).split("Stack trace:")[0]
+        assert "Not enough privileges" in denied, denied
+        assert "default.ts_dist" in denied, denied
+
+        node.query(f"GRANT SELECT ON default.ts_dist TO {reader}")
+        assert (
+            int(node.query("SELECT count() FROM stored_dist_query", user=reader)) == 4
+        )
+
+        node.query(
+            f"CREATE ROW POLICY stored_query_policy ON default.ts_dist USING metric_name = 'nothing' TO {reader}"
+        )
+        refused = node.query_and_get_error(
+            "SELECT count() FROM stored_dist_query", user=reader
+        )
+        assert "NOT_IMPLEMENTED" in refused, refused
+        assert "while a row policy applies to it" in refused, refused
+    finally:
+        node.query("DROP ROW POLICY IF EXISTS stored_query_policy ON default.ts_dist")
+        node.query(f"DROP USER IF EXISTS {reader}")
+        node.query("DROP TABLE IF EXISTS stored_dist_query")
+        node.query("DROP TABLE IF EXISTS stored_local_query")
+
+
 def test_remote_write_needs_the_insert_grant():
     denied = get_response_to_remote_write(
         node.ip_address,

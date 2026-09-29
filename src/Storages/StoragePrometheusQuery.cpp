@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
 namespace Setting
@@ -218,10 +219,22 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    const auto & time_series_storage_id = config.evaluation_settings.time_series_storage_id;
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!config.evaluation_settings.distributed)
         checkTimeSeriesVersionSupportedByPromQL(
-            *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context)));
+            *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context)));
+    /// Also checked here: a table created AS this function is configured once, not on the reader's context.
+    else if (prometheusQueryReadsTimeSeries(*config.promql_query))
+    {
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
+        const auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+        const auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+        if (!distributed_target)
+            throw Exception(
+                ErrorCodes::UNEXPECTED_TABLE_ENGINE, "Table {} is no longer a Distributed table", time_series_storage_id.getNameForLogs());
+        checkPrometheusQueryDistributedRead(*time_series_storage, *distributed_target, context);
+    }
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
