@@ -131,6 +131,10 @@ protected:
     /// Without a refiner or without maps, returns `read_request_map`.
     MarkRangesPtr mapWithoutDroppedRanges(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & read_request_map) const;
 
+    /// The maps of the patch readers for `map`, a map of the readers of the part narrower than its own, so that they also
+    /// leave out the patch ranges of what this reader does not read. Empty when the part's own patch maps apply.
+    std::vector<MarkRangesPtr> patchMapsFor(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & map) const;
+
     MergeTreeReadRangesRefinerPtr ranges_refiner;
 
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
@@ -140,20 +144,25 @@ protected:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
 
 private:
-    struct DroppedRanges
+    /// The narrowed maps of a part, kept so that its tasks share one map until it changes.
+    struct PartMaps
     {
-        MarkRanges ranges;
+        /// The ranges the refiner has dropped from the part so far.
+        MarkRanges dropped;
         size_t version = 0;
-        /// The last map built from `ranges`, kept so that tasks of the part share one map until the refiner drops more.
+        /// The last map built: `map_base` without `dropped`.
         MarkRangesPtr map_base;
         size_t map_version = 0;
         MarkRangesPtr map;
+        /// The patch maps derived from `patch_maps_of`.
+        MarkRangesPtr patch_maps_of;
+        std::vector<MarkRangesPtr> patch_maps;
     };
 
     void recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const;
 
-    mutable std::mutex dropped_ranges_mutex;
-    mutable std::unordered_map<const MergeTreeReadTaskInfo *, DroppedRanges> dropped_ranges TSA_GUARDED_BY(dropped_ranges_mutex);
+    mutable std::mutex part_maps_mutex;
+    mutable std::unordered_map<const MergeTreeReadTaskInfo *, PartMaps> part_maps TSA_GUARDED_BY(part_maps_mutex);
 };
 
 }

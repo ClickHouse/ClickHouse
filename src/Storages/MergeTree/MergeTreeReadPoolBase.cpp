@@ -499,22 +499,23 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTask::Readers task_readers;
 
     const auto map = mapWithoutDroppedRanges(*read_info, read_request_map);
+    const auto patch_maps = patchMapsFor(*read_info, map);
 
     if (!previous_task)
     {
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, map);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, map, patch_maps);
     }
     else if (get_part_name(previous_task->getInfo()) != get_part_name(*read_info))
     {
         extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, map);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, map, patch_maps);
     }
     else
     {
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges, patches_ranges);
         if (map)
-            task_readers.updateRequestMap(map);
+            task_readers.updateRequestMap(map, patch_maps);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
@@ -582,9 +583,9 @@ void MergeTreeReadPoolBase::recordDroppedRanges(const MergeTreeReadTaskInfo & in
     std::sort(refined.begin(), refined.end(), by_begin);
     auto dropped = subtractMarkRanges(cut, refined);
 
-    std::lock_guard lock(dropped_ranges_mutex);
-    auto & part = dropped_ranges[&info];
-    part.ranges = uniteMarkRanges(part.ranges, dropped);
+    std::lock_guard lock(part_maps_mutex);
+    auto & part = part_maps[&info];
+    part.dropped = uniteMarkRanges(part.dropped, dropped);
     ++part.version;
 }
 
@@ -595,19 +596,42 @@ MarkRangesPtr MergeTreeReadPoolBase::mapWithoutDroppedRanges(const MergeTreeRead
 
     const auto & base = read_request_map ? read_request_map : info.read_request_map;
 
-    std::lock_guard lock(dropped_ranges_mutex);
-    auto it = dropped_ranges.find(&info);
-    if (it == dropped_ranges.end())
+    std::lock_guard lock(part_maps_mutex);
+    auto it = part_maps.find(&info);
+    if (it == part_maps.end() || it->second.dropped.empty())
         return base;
 
     auto & part = it->second;
     if (part.map_base != base || part.map_version != part.version)
     {
-        part.map = std::make_shared<const MarkRanges>(subtractMarkRanges(*base, part.ranges));
+        part.map = std::make_shared<const MarkRanges>(subtractMarkRanges(*base, part.dropped));
         part.map_base = base;
         part.map_version = part.version;
     }
     return part.map;
+}
+
+std::vector<MarkRangesPtr> MergeTreeReadPoolBase::patchMapsFor(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & map) const
+{
+    if (!map || map == info.read_request_map || info.patch_read_request_maps.empty())
+        return {};
+
+    {
+        std::lock_guard lock(part_maps_mutex);
+        auto it = part_maps.find(&info);
+        if (it != part_maps.end() && it->second.patch_maps_of == map)
+            return it->second.patch_maps;
+    }
+
+    std::vector<MarkRangesPtr> patch_maps;
+    for (auto & ranges : ranges_in_patch_parts.getRanges(info.data_part_info->getDataPart(), info.patch_parts, *map))
+        patch_maps.push_back(std::make_shared<const MarkRanges>(std::move(ranges)));
+
+    std::lock_guard lock(part_maps_mutex);
+    auto & part = part_maps[&info];
+    part.patch_maps_of = map;
+    part.patch_maps = patch_maps;
+    return patch_maps;
 }
 
 }

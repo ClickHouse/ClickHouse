@@ -165,7 +165,8 @@ public:
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
-        void updateRequestMap(const MarkRangesPtr & request_map);
+        /// `patch_request_maps` is empty or holds one map for each patch reader.
+        void updateRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
     };
 
     struct BlockSizeParams
@@ -236,13 +237,15 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
-    /// `read_request_map` is set when the pool knows only a part of `read_info->read_request_map` goes to this reader.
+    /// `read_request_map` is set when the pool knows only a part of `read_info->read_request_map` goes to this reader,
+    /// and `patch_read_request_maps` then holds the matching maps of the patch readers.
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
         const MarkRanges & ranges,
         const std::vector<MarkRanges> & patches_ranges,
-        const MarkRangesPtr & read_request_map = nullptr);
+        const MarkRangesPtr & read_request_map = nullptr,
+        const std::vector<MarkRangesPtr> & patch_read_request_maps = {});
 
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,

@@ -114,12 +114,15 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
-void MergeTreeReadTask::Readers::updateRequestMap(const MarkRangesPtr & request_map)
+void MergeTreeReadTask::Readers::updateRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
 {
     main->updateRequestMap(request_map);
 
     for (auto & reader : prewhere)
         reader->updateRequestMap(request_map);
+
+    for (size_t i = 0; i < patch_request_maps.size(); ++i)
+        patches[i]->getReader()->updateRequestMap(patch_request_maps[i]);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -238,7 +241,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const Extras & extras,
     const MarkRanges & ranges,
     const std::vector<MarkRanges> & patches_ranges,
-    const MarkRangesPtr & read_request_map)
+    const MarkRangesPtr & read_request_map,
+    const std::vector<MarkRangesPtr> & patch_read_request_maps)
 {
     Readers new_readers;
 
@@ -300,11 +304,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_patch_reader = [&](size_t part_idx)
     {
+        const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
         std::optional<MergeTreeReaderSettings> patch_settings_with_map;
-        if (!read_info->patch_read_request_maps.empty())
+        if (!patch_maps.empty())
         {
             patch_settings_with_map = extras.reader_settings;
-            patch_settings_with_map->request_map = read_info->patch_read_request_maps[part_idx];
+            patch_settings_with_map->request_map = patch_maps[part_idx];
         }
 
         return createMergeTreeReader(
