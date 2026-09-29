@@ -21,7 +21,7 @@ CREATE TABLE alp_random
     f32_rd Float32 CODEC(ALP(RD))
 ) ENGINE = MergeTree ORDER BY i;
 
--- hex compares raw bits, so NaN payloads and signed zeros count.
+-- Bits are compared, so NaN payloads and signed zeros count. hex shows them for mismatching rows.
 CREATE VIEW alp_random_check AS
 SELECT
     (SELECT seed FROM alp_random_seed) AS seed,
@@ -34,11 +34,15 @@ SELECT
     hex(f32_auto) AS f32_auto_bits,
     hex(f32_std) AS f32_std_bits,
     hex(f32_rd) AS f32_rd_bits,
-    f64_bits != f64_auto_bits OR f64_bits != f64_std_bits OR f64_bits != f64_rd_bits
-        OR f32_bits != f32_auto_bits OR f32_bits != f32_std_bits OR f32_bits != f32_rd_bits AS mismatch
+    reinterpretAsUInt64(f64) != reinterpretAsUInt64(f64_auto)
+        OR reinterpretAsUInt64(f64) != reinterpretAsUInt64(f64_std)
+        OR reinterpretAsUInt64(f64) != reinterpretAsUInt64(f64_rd)
+        OR reinterpretAsUInt32(f32) != reinterpretAsUInt32(f32_auto)
+        OR reinterpretAsUInt32(f32) != reinterpretAsUInt32(f32_std)
+        OR reinterpretAsUInt32(f32) != reinterpretAsUInt32(f32_rd) AS mismatch
 FROM alp_random;
 
--- 0: decimals, the STD path, with a rare full-precision outlier for the exception path.
+-- The STD path, with a rare full-precision outlier for the exception path.
 INSERT INTO alp_random
 WITH
     (SELECT seed FROM alp_random_seed) AS seed,
@@ -50,7 +54,7 @@ WITH
     toFloat32(v64) AS v32
 SELECT number, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
 
--- 1: full-precision values: STD cannot encode them, AUTO must fall back to RD.
+-- Full-precision values: STD cannot encode them, AUTO must fall back to RD.
 INSERT INTO alp_random
 WITH
     (SELECT seed FROM alp_random_seed) AS seed,
@@ -59,7 +63,7 @@ WITH
     toFloat32(v64) AS v32
 SELECT number + 100000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
 
--- 2: uniformly random bit patterns: NaNs, infinities, subnormals, -0.0.
+-- Uniformly random bit patterns.
 INSERT INTO alp_random
 WITH
     (SELECT seed FROM alp_random_seed) AS seed,
@@ -68,7 +72,7 @@ WITH
     reinterpretAsFloat32(toUInt32(h)) AS v32
 SELECT number + 200000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
 
--- 3: every other row is a special value; Float32 builds its own, since toFloat32 would alter them.
+-- Every other row is a special value. Float32 builds its own, since toFloat32 would alter them.
 INSERT INTO alp_random
 WITH
     (SELECT seed FROM alp_random_seed) AS seed,
@@ -96,7 +100,7 @@ WITH
         toFloat32(v64)) AS v32
 SELECT number + 300000, v64, v64, v64, v64, v32, v32, v32, v32 FROM numbers(100000);
 
--- 4: monotonic values with few fractional parts: narrow ranges and small RD dictionaries.
+-- Monotonic values with few fractional parts -> narrow ranges and small RD dictionaries.
 INSERT INTO alp_random
 WITH
     (SELECT seed FROM alp_random_seed) AS seed,
