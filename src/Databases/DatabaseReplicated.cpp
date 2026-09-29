@@ -1583,7 +1583,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     bool looks_like_replicated = metadata.contains("Replicated");
     bool looks_like_shared = metadata.contains("Shared");
     bool looks_like_merge_tree = metadata.contains("MergeTree");
-    if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
+    bool looks_like_keeper_map = metadata.contains("KeeperMap");
+    if (!((looks_like_replicated || looks_like_shared) && looks_like_merge_tree) && !looks_like_keeper_map)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -1594,8 +1595,10 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
-    if (!(startsWith(create.storage->engine->name, "Replicated") || startsWith(create.storage->engine->name, "Shared"))
-        || !endsWith(create.storage->engine->name, "MergeTree"))
+    const String & engine_name = create.storage->engine->name;
+    bool is_replicated_merge_tree = (startsWith(engine_name, "Replicated") || startsWith(engine_name, "Shared"))
+        && endsWith(engine_name, "MergeTree");
+    if (!is_replicated_merge_tree && engine_name != "KeeperMap")
         return UUIDHelpers::Nil;
     chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
@@ -1625,6 +1628,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
+    /// KeeperMap tables are matched by UUID too: their data is stored in Keeper, so re-creating them would lose it.
     /// We need to handle renamed tables only.
     /// TODO maybe we should also update MergeTree SETTINGS if required?
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
@@ -1658,7 +1662,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_TEST(log, "Existing table {}", name);
 
         UUID local_replicated_id = UUIDHelpers::Nil;
-        if (existing_tables_it->table()->supportsReplication())
+        if (existing_tables_it->table()->supportsReplication() || existing_tables_it->table()->as<StorageKeeperMap>())
         {
             /// Check if replicated tables have the same UUID
             local_replicated_id = existing_tables_it->table()->getStorageID().uuid;
@@ -1752,7 +1756,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
         /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
-        /// so it's ok to save UUID of replicated table.
+        /// so it's ok to save UUID of replicated table. KeeperMap tables go there too, because they require a UUID.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
@@ -1800,7 +1804,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             ++moved_tables;
         };
 
-        if (drop_broken_tables || !table->storesDataOnDisk())
+        bool is_keeper_map = table->as<StorageKeeperMap>() != nullptr;
+        if (drop_broken_tables || (!table->storesDataOnDisk() && !is_keeper_map))
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
@@ -1827,7 +1832,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             tables_metadata_digest = new_digest;
             assertDigest(getContext());
         }
-        else if (!table->supportsReplication())
+        else if (!table->supportsReplication() && !is_keeper_map)
         {
             move_table_to_database(table_name, to_db_name);
         }
