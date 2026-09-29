@@ -262,29 +262,6 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     }
 }
 
-/// Collect the lazy reads inside one lazy-materialization branch, i.e. the branch of a
-/// `JoinLazyColumnsStep` that does not lead to the coordinated read. The branch is a plan of its own
-/// (`optimizeLazyMaterialization2` unites the main plan with a single-step lazy plan), so there is
-/// normally exactly one lazy read and it sits at the branch root. Walk the branch anyway, so that a
-/// later pass putting a step on top of it, or nesting another lazy materialization inside it, is seen
-/// rather than silently missed.
-void collectLazyReads(const QueryPlan::Node & branch_root, std::vector<LazilyReadFromMergeTree *> & lazy_reads)
-{
-    std::vector<const QueryPlan::Node *> to_visit{&branch_root};
-    while (!to_visit.empty())
-    {
-        const auto * node = to_visit.back();
-        to_visit.pop_back();
-
-        /// The step is reached through a `shared_ptr`, so a const node still hands out a mutable step.
-        if (auto * lazy = typeid_cast<LazilyReadFromMergeTree *>(node->step.get()))
-            lazy_reads.push_back(lazy);
-
-        for (const auto * child : node->children)
-            to_visit.push_back(child);
-    }
-}
-
 /// The two reads the decision is about: the one whose ranges parallel replicas would split between them,
 /// and the one standing in its place in the single-node plan - the plan whose steps get instrumented.
 ///
@@ -299,12 +276,48 @@ struct CoordinatedReads
 {
     ReadFromMergeTree * in_replicas_plan = nullptr;
     ReadFromMergeTree * to_instrument = nullptr;
-    std::vector<LazilyReadFromMergeTree *> lazy_to_instrument;
+    LazilyReadFromMergeTree * lazy_to_instrument = nullptr;
+    bool several_lazy_reads = false;
     /// Cleared by anything that makes the answer untrustworthy: the two plans disagreeing about the shape,
     /// several reads being coordinated, or a step on the way that cannot be attributed to one of its
     /// inputs.
     bool usable = true;
 };
+
+/// Collect the lazy read inside one lazy-materialization branch, i.e. the branch of a
+/// `JoinLazyColumnsStep` that does not lead to the coordinated read. The branch is a plan of its own
+/// (`optimizeLazyMaterialization2` unites the main plan with a single-step lazy plan), so there is
+/// normally exactly one lazy read and it sits at the branch root. Walk the branch anyway, so that a
+/// later pass putting a step on top of it, or nesting another lazy materialization inside it, is seen
+/// rather than silently missed.
+void collectLazyReads(const QueryPlan::Node & branch_root, CoordinatedReads & reads)
+{
+    std::vector<const QueryPlan::Node *> to_visit{&branch_root};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+
+        /// The step is reached through a `shared_ptr`, so a const node still hands out a mutable step.
+        if (auto * lazy = typeid_cast<LazilyReadFromMergeTree *>(node->step.get()))
+        {
+            // TODO(nickitat): support multiple read steps with parallel replicas
+            if (reads.lazy_to_instrument || reads.several_lazy_reads)
+            {
+                /// Nothing here says which of them belongs to the coordinated read, so leave the lazy half
+                /// out of the statistics rather than guess.
+                reads.several_lazy_reads = true;
+                reads.lazy_to_instrument = nullptr;
+            }
+            else
+                reads.lazy_to_instrument = lazy;
+        }
+
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+}
+
 
 /// Walk the two plans together and fill `reads`, returning whether the coordinated read is at or below
 /// this pair of nodes. They can be walked together because they are identical below the node whose output
@@ -345,61 +358,40 @@ bool collectCoordinatedReads(const QueryPlan::Node & replicas_node, const QueryP
         return false;
     }
 
-    bool below = false;
+    bool found = false;
     for (size_t i = 0; i < replicas_node.children.size(); ++i)
     {
         if (!collectCoordinatedReads(*replicas_node.children[i], *single_node.children[i], reads))
             continue;
-        /// One coordinated read is what this optimization prices; see the `TODO(nickitat): support multiple
-        /// read steps with parallel replicas` notes above.
-        if (below)
+        if (found)
+        {
+            /// One coordinated read is what this optimization prices; see the `TODO(nickitat): support
+            /// multiple read steps with parallel replicas` notes above.
             reads.usable = false;
-        below = true;
+            return false;
+        }
+        found = true;
     }
 
-    if (!below)
+    if (!found)
         return false;
 
     /// This node is on the way to the read, so it is one of the steps the statistics have to survive.
     if (typeid_cast<const JoinLazyColumnsStep *>(single_node.step.get()))
     {
-        /// Unlike the `JoinStep` below, which side is which is not a decision here: this is not a SQL
-        /// join, the step has neither a kind nor `swap_streams`, and its inputs are positional - input
-        /// 0 is the main branch, input 1 the lazy one. `updatePipeline` hands the two pipelines to
-        /// `LazyMaterializingTransform` in exactly that order, so the order is what makes the step
-        /// work at all, not a convention this function relies on. Both places that build it
-        /// (`optimizeLazyMaterialization2` and `optimizeLazyFinal`) unite the plans that way, and
-        /// `unitePlans` rejects any other order because the headers would not line up.
+        /// Which side is which is not a decision here: this is not a SQL join, the step has neither a kind
+        /// nor `swap_streams`, and its inputs are positional - input 0 is the main branch, input 1 the lazy
+        /// one. `updatePipeline` hands the two pipelines to `LazyMaterializingTransform` in exactly that
+        /// order, so the order is what makes the step work at all, not a convention this function relies
+        /// on. Both places that build it (`optimizeLazyMaterialization2` and `optimizeLazyFinal`) unite the
+        /// plans that way, and `unitePlans` rejects any other order because the headers would not line up.
         chassert(single_node.children.size() == 2);
-        collectLazyReads(*single_node.children.back(), reads.lazy_to_instrument);
+        collectLazyReads(*single_node.children.back(), reads);
     }
-    else if (const auto * join_step = typeid_cast<const JoinStep *>(single_node.step.get());
-             join_step && single_node.children.size() == 2)
+    else if (single_node.children.size() > 1 && !typeid_cast<const JoinStep *>(single_node.step.get()))
     {
-        // `swap_streams` swaps the physical pipelines at execution without reordering the plan children,
-        // so which relation a plan child stands for at execution is no longer what the plan says, and the
-        // two plans are walked child by child. In the analyzer path that AutoPR requires this is never
-        // set: joins are built as `JoinStepLogical` and the logical->physical conversion applies any swap
-        // by reordering the children and flipping the kind together (only the dead `optimizeJoinLegacy`
-        // path sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
-        // it, AutoPR fails closed.
-        if (join_step->swap_streams)
-            reads.usable = false;
-
-        // Splitting exactly one side is only a valid decomposition for join kinds that can be evaluated by
-        // parallelizing one input while the other is read in full on every replica: `INNER` (ALL), `LEFT`,
-        // and a leftmost `RIGHT`. It is NOT valid for `FULL` or position-sensitive joins like `PASTE`,
-        // where a preserved-side row matched on another replica would be emitted as unmatched here (or
-        // duplicated once per replica). We rely on the upstream parallel-replicas eligibility checks for
-        // that: `findParallelReplicasQuery` (`getSupportingParallelReplicasQueries` /
-        // `findTableForParallelReplicas`) admits only those decomposable kinds and rejects
-        // `FULL`/`PASTE`/`CROSS`/etc., so for any other kind no parallel-replicas plan is built and this
-        // function is never reached. It is therefore safe by that invariant, not by a check here.
-    }
-    else if (single_node.children.size() > 1)
-    {
-        /// Any other step with several inputs: the walk knows which one leads to the read, but the rest of
-        /// the optimization assumes a single read, so fail closed as before.
+        /// A join is walked child by child like everything else. Any other step with several inputs is one
+        /// the rest of the optimization has no account of, so fail closed.
         reads.usable = false;
     }
 
@@ -817,12 +809,8 @@ void considerEnablingParallelReplicas(
     auto * coordinated_read_in_replicas_plan = reads.in_replicas_plan;
     auto * source_reading_step = reads.to_instrument;
 
-    // TODO(nickitat): support multiple read steps with parallel replicas
-    LazilyReadFromMergeTree * lazy_reading_step = nullptr;
-    if (reads.lazy_to_instrument.size() > 1)
+    if (reads.several_lazy_reads)
         LOG_DEBUG(getLogger("optimizeTree"), "More than one lazy reading step, not collecting their statistics");
-    else if (reads.lazy_to_instrument.size() == 1)
-        lazy_reading_step = reads.lazy_to_instrument.front();
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
@@ -995,8 +983,8 @@ void considerEnablingParallelReplicas(
         /// `input_bytes`. Without it the statistics describe only the sorting column, while the lazy
         /// read is the larger of the two by far, and the cost model prices the query on a fraction of
         /// what replicas read.
-        if (lazy_reading_step)
-            lazy_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+        if (reads.lazy_to_instrument)
+            reads.lazy_to_instrument->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
 }
 
