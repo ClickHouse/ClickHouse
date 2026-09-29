@@ -49,6 +49,52 @@ namespace
         url = url2.toString();
         return file_name;
     }
+
+    /// Beside explicit credentials the destination reads a plain storage account URL only, so anything
+    /// that carries a credential of its own (userinfo, a query string, a fragment) or that is no URL at
+    /// all is rejected here, before the SDK reports it as a bare `std::exception`.
+    void validatePlainStorageAccountURL(const String & connection_url)
+    {
+        try
+        {
+            Poco::URI uri(connection_url);
+            const String & scheme = uri.getScheme();
+            const size_t scheme_end = connection_url.find("://");
+            bool has_userinfo = false;
+            if (scheme_end != String::npos)
+            {
+                const size_t authority_start = scheme_end + 3;
+                const size_t authority_end = connection_url.find_first_of("/?#", authority_start);
+                const size_t userinfo_end = connection_url.find('@', authority_start);
+                has_userinfo = userinfo_end != String::npos
+                    && (authority_end == String::npos || userinfo_end < authority_end);
+            }
+
+            if ((scheme != "http" && scheme != "https")
+                || uri.getHost().empty()
+                || connection_url.find_first_of("?#") != String::npos
+                || has_userinfo)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Azure storage account URL");
+            }
+
+            Azure::Core::Url{connection_url};
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AzureBlobStorage with explicit credentials requires a plain storage account URL "
+                "without userinfo, query, or fragment");
+        }
+        catch (const std::logic_error &)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AzureBlobStorage with explicit credentials requires a plain storage account URL "
+                "without userinfo, query, or fragment");
+        }
+    }
 }
 #endif
 
@@ -75,14 +121,15 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 return collection->has(key) ? std::optional<String>(collection->get<String>(key)) : std::nullopt;
             };
 
+            const auto account_name = get_optional("account_name");
+            const auto account_key = get_optional("account_key");
+            const auto client_id = get_optional("client_id");
+            const auto tenant_id = get_optional("tenant_id");
+            if (account_name || account_key || client_id || tenant_id)
+                validatePlainStorageAccountURL(connection_url);
+
             connection_params = getAzureConnectionParams(
-                connection_url,
-                container_name,
-                get_optional("account_name"),
-                get_optional("account_key"),
-                get_optional("client_id"),
-                get_optional("tenant_id"),
-                params.context);
+                connection_url, container_name, account_name, account_key, client_id, tenant_id, params.context);
 
             if (args.size() > 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -110,6 +157,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 auto account_name = args[3].safeGet<String>();
                 auto account_key = args[4].safeGet<String>();
 
+                validatePlainStorageAccountURL(connection_url);
                 connection_params = getAzureConnectionParams(
                     connection_url, container_name, account_name, account_key, std::nullopt, std::nullopt, params.context);
             }
