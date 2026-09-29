@@ -24,3 +24,9 @@ to value of type Array
 in query: SET url_base = '[HIDDEN]'
 to value of type Tuple
 0
+in query: SET url_base = disk(type = 'local', path = '[HIDDEN]'
+to value of type CustomType
+0
+in query: SET url_base = '[HIDDEN]'
+to value of type Number
+0

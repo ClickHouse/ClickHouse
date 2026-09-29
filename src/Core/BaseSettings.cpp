@@ -91,7 +91,7 @@ void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
 
 String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
 {
-    /// A composite value can nest a credential in a form no masker recognizes, so only its type is named.
+    /// A value that is not a plain scalar can nest a credential in a form no masker recognizes, so only its type is named.
     switch (value.getType())
     {
         case Field::Types::Array:
@@ -100,6 +100,7 @@ String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
         case Field::Types::Object:
         case Field::Types::AggregateFunctionState:
         case Field::Types::CustomType:
+        case Field::Types::Number:
             return fmt::format("of type {}", value.getTypeName());
         default:
             return formatValueForErrorMessage(applyVisitor(FieldVisitorToString(), value));

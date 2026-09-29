@@ -52,15 +52,18 @@ for setting in nats_url rabbitmq_address after_processing_move_connection_string
     echo "$LOGGED" | grep -o "$MAP_CANARY" | wc -l
 done
 
-# 5. An Array or a Tuple reaches a setting only as a typed query parameter, and so can a Map. Each is
-# hidden the same way, and the error that rejects it names only the type of the value.
-check_param() {
-    LOGGED=$($CLICKHOUSE_CLIENT --send_logs_level=error --param_p="$2" -q "SET url_base = {p:$1}" 2>&1 |
-        grep -F '<Error> executeQuery')
+# 5. A value of any other type reaches a setting too: an Array or a Tuple only as a typed query
+# parameter, a `disk(...)` AST in SQL, and the raw text of a number literal in the AST JSON dialect.
+# Each is hidden the same way, and the error that rejects it names only the type of the value.
+check() {
+    LOGGED=$($CLICKHOUSE_CLIENT --send_logs_level=error "$@" 2>&1 | grep -F '<Error> executeQuery')
     echo "$LOGGED" | grep -oE "in query: [^)]*" | head -1
     echo "$LOGGED" | grep -oE "to value of type [A-Za-z]+" | head -1
     echo "$LOGGED" | grep -o "$MAP_CANARY" | wc -l
 }
-check_param "Map(String, String)" "{'u':'u:$MAP_CANARY@h'}"
-check_param "Array(String)" "['u:$MAP_CANARY@h']"
-check_param "Tuple(String, String)" "('u', 'u:$MAP_CANARY@h')"
+check --param_p="{'u':'u:$MAP_CANARY@h'}" -q "SET url_base = {p:Map(String, String)}"
+check --param_p="['u:$MAP_CANARY@h']" -q "SET url_base = {p:Array(String)}"
+check --param_p="('u', 'u:$MAP_CANARY@h')" -q "SET url_base = {p:Tuple(String, String)}"
+check -q "SET url_base = disk(type = 'local', path = '/$MAP_CANARY/')"
+check --dialect clickhouse_json --enable_json_ast_dialect 1 -q \
+    "{\"type\":\"SetQuery\",\"is_standalone\":true,\"changes\":[{\"name\":\"url_base\",\"value\":{\"field_type\":\"Number\",\"value\":\"Number_u:$MAP_CANARY@h\"}}]}"
