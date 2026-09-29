@@ -1685,16 +1685,23 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_top_k_prewhere_query_condition_cache,
+    bool use_sampling,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
+    /// A TopK-salted entry records granules that hold no row of the top N of the whole table, but
+    /// `SAMPLE` computes the threshold from a subset of the rows, whose top N can lie in exactly those
+    /// granules. So a sampled read consults only plain entries, which stay sound: a granule without a
+    /// row matching the condition has none in any sample. The writers skip sampled reads altogether.
+    const bool consult_top_k_entries = top_k_filter_info && !use_sampling;
+
     /// A TopK read analyzed before `installTopKDynamicFilter` has run (projection candidate analysis
     /// does that) does not have `__topKFilter` in its PREWHERE yet, but the executed read writes its
     /// entries under the PREWHERE with it. Consult under that one, or a warm query never hits them.
     PrewhereInfoPtr prewhere_info_for_cache = select_query_info.prewhere_info;
-    if (top_k_filter_info && top_k_filter_info->dynamic_filter_pending && !select_query_info.input_order_info)
+    if (consult_top_k_entries && top_k_filter_info->dynamic_filter_pending && !select_query_info.input_order_info)
     {
         if (auto with_top_k_filter = QueryPlanOptimizations::buildTopKDynamicFilterPrewhere(prewhere_info_for_cache, *top_k_filter_info))
             prewhere_info_for_cache = std::move(with_top_k_filter);
@@ -1939,6 +1946,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 /// unrestricted user before a restrictive policy gets a chance to filter rows.
                 if (apply_top_k_salt && select_query_info.row_level_filter)
                     break;
+                if (apply_top_k_salt && !consult_top_k_entries)
+                    break;
                 auto stats = drop_mark_ranges(outputs, apply_top_k_salt, /*prewhere_top_k_salt=*/apply_top_k_salt);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
@@ -1957,8 +1966,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         const auto * output = filter_actions_dag->getOutputs().front();
         /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on
         /// (the gate returns early above otherwise), so the WHERE consult key is always partitioned
-        /// by the TopK plan (with the predicate-only reuse path) for TopK reads.
-        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/true, /*prewhere_top_k_salt=*/false);
+        /// by the TopK plan (with the predicate-only reuse path) for TopK reads, unless they sample.
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/!use_sampling, /*prewhere_top_k_salt=*/false);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
