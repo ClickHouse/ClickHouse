@@ -123,7 +123,9 @@ rm -f "${CLICKHOUSE_TMP}"/04506_data12.csv
 
 # Method-name plumbing: COMPRESSION works with 'bz2' too, not just 'gzip'/'zstd' -- exercises a
 # third distinct entry of the method-name whitelist, backed by a different external tool.
-if command -v bzip2 &> /dev/null; then
+# `bzip2` here is only the CLI tool used to prepare the fixture file; the server also needs the
+# `bz2` codec compiled in (USE_BZIP2), which e.g. the Fast test build lacks -- check both.
+if command -v bzip2 &> /dev/null && [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options WHERE name = 'USE_BZIP2' LIMIT 1")" == "1" ]; then
     printf '25,Y\n26,Z\n' > "${CLICKHOUSE_TMP}"/04506_data10.csv
     bzip2 -k -f "${CLICKHOUSE_TMP}"/04506_data10.csv
 
