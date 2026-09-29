@@ -55,8 +55,10 @@ CREATE VIEW v_with_pr_rewrite_shapes AS
 -- the ones that exist need credentials or a `TimeSeries` context to be planned at all.
 CREATE VIEW v_stateful_pr_rewrite_shapes AS
     SELECT tenant, ts, rowNumberInAllBlocks() AS rn FROM t_pr_rewrite_shapes ORDER BY ts;
--- The control: non-deterministic but not stateful. A condition does go below this one, so the read
--- orders itself off it - which is what tells statefulness apart from non-determinism as the reason.
+-- Non-deterministic but not stateful. The condition still reaches the local read as a PREWHERE, but the
+-- query shipped to the replicas is not rewritten: `hasNonRewritableFunction` refuses a non-deterministic
+-- select list too, because the pushed copy of the condition would see a different value than the outer
+-- one. So the read is not ordered.
 CREATE VIEW v_nondet_pr_rewrite_shapes AS
     SELECT tenant, ts, rand() AS r FROM t_pr_rewrite_shapes ORDER BY ts;
 -- The rest of the list `rewriteSubquery` refuses on. A `LIMIT` of any kind keeps the condition from
