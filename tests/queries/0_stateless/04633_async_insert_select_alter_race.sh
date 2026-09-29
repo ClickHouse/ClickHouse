@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case3_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case3_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_alter_race MODIFY COLUMN b UInt32 FIRST"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_alter_race WHERE b != a * 2"
@@ -45,7 +45,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case4_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case4_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_single ADD COLUMN c UInt32 DEFAULT 42"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_single"
@@ -67,7 +67,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case5_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case5_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_multi ADD COLUMN c UInt32 DEFAULT 42"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_multi"
@@ -95,7 +95,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case6_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case6_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 # Waits out the SELECT above, then takes the write lock while the INSERT waits for its flush. Short
 # timeout: it bounds what the deadlock costs here, and the good path needs only the SELECT to end.
 ${CLICKHOUSE_CLIENT} --lock_acquire_timeout=10 -q "

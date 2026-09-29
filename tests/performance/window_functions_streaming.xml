@@ -12,6 +12,13 @@
     <query>SELECT lagInFrame(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), leadInFrame(number) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM numbers(20000000) FORMAT Null</query>
     <query>SELECT nth_value(number, 3) OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(20000000) FORMAT Null</query>
 
+    <!-- Ranking functions over one stream: one peer group for the whole input, a sort with unique keys, and a sort with a thousand large peer groups. -->
+    <query>SELECT percent_rank() OVER () FROM numbers(25000000) FORMAT Null</query>
+    <query>SELECT cume_dist() OVER () FROM numbers(20000000) FORMAT Null</query>
+    <query>SELECT ntile(4) OVER (ORDER BY number) FROM numbers(20000000) FORMAT Null</query>
+    <query>SELECT percent_rank() OVER (ORDER BY number % 1000) FROM numbers(15000000) FORMAT Null</query>
+    <query>SELECT cume_dist() OVER (ORDER BY number % 1000) FROM numbers(15000000) FORMAT Null</query>
+
     <!-- The same lag over a wide row: the pass-through columns dominate. -->
     <query>SELECT number, toString(number) AS s, [number, number] AS a, lag(number) OVER () FROM numbers(20000000) FORMAT Null</query>
 </test>

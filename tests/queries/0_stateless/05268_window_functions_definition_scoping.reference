@@ -1,5 +1,11 @@
 -- Unknown identifiers in the window definition or in the argument
 -- A window name is visible only in the query that defines it
+0	1
+1	2
+2	3
+0	1
+1	2
+2	3
 -- The same window name may be defined independently in sibling subqueries and in the outer query
 0	3	2	1
 1	3	2	2

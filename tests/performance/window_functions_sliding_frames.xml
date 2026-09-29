@@ -3,14 +3,14 @@
 CREATE TABLE window_functions_sliding (i UInt32, v UInt32) ENGINE = MergeTree ORDER BY i
     </create_query>
     <create_query>
-CREATE TABLE window_functions_sliding_big (i UInt32, v UInt32) ENGINE = MergeTree ORDER BY i
+CREATE TABLE window_functions_sliding_big (i UInt32, d Date, v UInt32) ENGINE = MergeTree ORDER BY i
     </create_query>
     <create_query>
 CREATE TABLE window_functions_sliding_parts (i UInt32, p UInt16, d Date, v UInt32) ENGINE = MergeTree ORDER BY tuple()
     </create_query>
 
     <fill_query>INSERT INTO window_functions_sliding SELECT number, (number * 7919) % 100000 FROM numbers_mt(1500000)</fill_query>
-    <fill_query>INSERT INTO window_functions_sliding_big SELECT number, (number * 7919) % 100000 FROM numbers_mt(15000000)</fill_query>
+    <fill_query>INSERT INTO window_functions_sliding_big SELECT number, toDate('2020-01-01') + intDiv(number, 15000), (number * 7919) % 100000 FROM numbers_mt(15000000)</fill_query>
     <fill_query>INSERT INTO window_functions_sliding_parts SELECT number, number % 7, toDate('2020-01-01') + intDiv(number, 60000), (number * 7919) % 100000 FROM numbers_mt(60000000)</fill_query>
 
     <!-- Holistic aggregates over a fixed sliding frame: the state cannot be updated incrementally, every row rebuilds it from about 100 values. -->
@@ -30,9 +30,9 @@ CREATE TABLE window_functions_sliding_parts (i UInt32, p UInt16, d Date, v UInt3
     <query>SELECT groupArray(v) OVER (PARTITION BY p ORDER BY i ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM window_functions_sliding_parts WHERE i &lt; 40000000 FORMAT Null</query>
     <query>SELECT sum(v) OVER (PARTITION BY p ORDER BY i ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM window_functions_sliding_parts FORMAT Null</query>
 
-    <!-- RANGE offsets on a Date key: the frame is a few days of rows inside each partition. -->
-    <query>SELECT count() OVER (PARTITION BY p ORDER BY d RANGE BETWEEN 3 PRECEDING AND CURRENT ROW) FROM window_functions_sliding_parts WHERE i &lt; 40000000 FORMAT Null</query>
-    <query>SELECT sum(v) OVER (PARTITION BY p ORDER BY d RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING) FROM window_functions_sliding_parts WHERE i &lt; 40000000 FORMAT Null</query>
+    <!-- RANGE offsets on a Date key over one stream: the frame is a few days of rows, 15000 rows per day. -->
+    <query>SELECT count() OVER (ORDER BY d RANGE BETWEEN 3 PRECEDING AND CURRENT ROW) FROM window_functions_sliding_big FORMAT Null</query>
+    <query>SELECT sum(v) OVER (ORDER BY d RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING) FROM window_functions_sliding_big FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS window_functions_sliding</drop_query>
     <drop_query>DROP TABLE IF EXISTS window_functions_sliding_big</drop_query>
