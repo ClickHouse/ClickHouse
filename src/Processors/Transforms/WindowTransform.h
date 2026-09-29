@@ -100,11 +100,14 @@ public:
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
-    /// Whether the ORDER BY keys are equal at two positions, honouring the ORDER BY collation.
-    bool orderByEqualAt(const Columns & lhs_columns, size_t lhs_row, const Columns & rhs_columns, size_t rhs_row) const;
+    /// Whether the ORDER BY keys are equal at two rows, honouring the ORDER BY collation.
+    bool orderByEqualAt(const RowNumber & x, const RowNumber & y) const;
 
-    /// End of the run of rows whose ORDER BY keys equal those at `begin`, within [begin, end).
-    size_t orderByEqualRangeEnd(const Columns & columns, size_t begin, size_t end) const;
+    /// End of the run of rows whose ORDER BY keys equal those at `begin`, within [begin.row, end) of its block.
+    size_t orderByEqualRangeEnd(const RowNumber & begin, size_t end) const;
+
+    bool orderByEqualAtWithCollation(RowNumber x, RowNumber y) const;
+    size_t orderByEqualRangeEndWithCollation(RowNumber begin, size_t end) const;
 
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();
