@@ -222,6 +222,9 @@ private:
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
         SubstreamsCache * cache);
 
+    /// The readers apply the chunk layout of the first bucket to all of them.
+    static void checkChunksMatchFirstBucket(const ChunkStructures & chunks, const ChunkStructures & first_bucket_chunks, size_t bucket);
+
     /// Deserialize prefix of the chunk in ObjectSharedDataStructure(Prefix) stream.
     static void deserializeChunkStructurePrefix(
         ReadBuffer & buf,
