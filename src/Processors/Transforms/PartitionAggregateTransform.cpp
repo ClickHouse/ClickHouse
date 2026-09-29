@@ -54,7 +54,7 @@ PartitionAggregateTransform::PartitionAggregateTransform(
     size_t keys_bytes = 0;
     for (auto position : key_positions)
     {
-        /// `getKeyColumns` removes `LowCardinality` from the keys.
+        /// `getKeyColumns` removes `LowCardinality` from the keys packed here.
         const auto type = recursiveRemoveLowCardinality(input_header->getByPosition(position).type);
         if (!type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             break;
@@ -123,7 +123,10 @@ ColumnRawPtrs PartitionAggregateTransform::getKeyColumns(const Columns & columns
     ColumnRawPtrs key_columns;
     for (auto position : key_positions)
     {
-        holders.push_back(recursiveRemoveLowCardinality(columns[position]->convertToFullIfWrapped()));
+        /// Only the packed keys need plain columns: the serialized keys read `LowCardinality` from its dictionary, so
+        /// the keys are not materialized for all the buffered rows in `groupDeferred`.
+        auto column = columns[position]->convertToFullIfWrapped();
+        holders.push_back(key_sizes.empty() ? std::move(column) : recursiveRemoveLowCardinality(column));
         key_columns.push_back(holders.back().get());
     }
     return key_columns;
@@ -297,7 +300,7 @@ void PartitionAggregateTransform::groupDeferred(Grouping<Map> & state, bool last
         offsets[bucket + 1] += offsets[bucket];
 
     /// The serialized keys of the deferred rows. They point into the buffered chunks, kept in `key_holders`, if
-    /// the key is one `String`.
+    /// `single_string_key`.
     auto keys_arena = std::make_unique<Arena>();
     std::vector<Columns> key_holders;
     PaddedPODArray<Key> keys(buckets.size());

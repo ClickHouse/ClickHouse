@@ -549,6 +549,10 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 
     window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
 
+    /// The planner uses hash partitioning only for the windows it supports; fail closed for any other.
+    if (hash_partitioning_settings && !canUseHashPartitioning(window_description, *ctx.input_headers.front()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: hash partitioning is not supported for window {}", window_description.window_name);
+
     return std::make_unique<WindowStep>(
         ctx.input_headers.front(),
         window_description,

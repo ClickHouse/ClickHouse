@@ -157,7 +157,7 @@ private:
     Arena arena;
     /// The sizes of the keys if they are packed, empty if they are serialized.
     std::vector<size_t> key_sizes;
-    /// The key is one `String`, whose bytes are used as they are instead of being serialized.
+    /// The key is one `String` or `LowCardinality(String)`, whose bytes are used as they are instead of being serialized.
     bool single_string_key = false;
     std::variant<
         Grouping<FixedKeyToGroup<UInt64>>,
