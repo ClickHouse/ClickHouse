@@ -229,7 +229,7 @@ def test_remote_write_time_series_and_metadata_together_are_stored():
 def test_remote_write_skips_time_series_without_metric_name():
     """
     A timeseries without a non-empty __name__ label is skipped and counted,
-    and the rest of the batch is still written.
+    and the rest of the batch, including its metadata, is still written.
     """
     metric_name = "skip_nameless_test"
     skipped_series_sql = (
@@ -238,19 +238,41 @@ def test_remote_write_skips_time_series_without_metric_name():
     )
     skipped_before = int(node.query(skipped_series_sql))
 
-    protobuf = convert_time_series_to_protobuf(
+    write_request = convert_time_series_to_protobuf(
         [
-            ({"job": "test"}, {1753176720.0: 1}),
-            ({"__name__": metric_name, "job": "test"}, {1753176720.0: 2}),
+            ({"job": metric_name}, {1753176720.0: 1}),
+            ({"__name__": metric_name, "job": metric_name}, {1753176720.0: 2}),
         ]
     )
+    metadata = convert_metrics_metadata_to_protobuf(
+        [(metric_name, "GAUGE", "Skip nameless test metric.", "")]
+    )
+    write_request.metadata.extend(metadata.metadata)
+
     response = get_response_to_remote_write(
-        node.ip_address, 9093, "/write", protobuf
+        node.ip_address, 9093, "/write", write_request
     )
     assert response.status_code == requests.codes.no_content
+
+    # Only the named series and its sample are stored.
     assert_eq_with_retry(
         node,
-        timeseries_data_has_metric_sql("prometheus", metric_name),
+        f"SELECT tags.metric_name, data.value "
+        f"FROM timeSeriesData(prometheus) AS data "
+        f"JOIN timeSeriesTags(prometheus) AS tags ON data.id = tags.id "
+        f"WHERE tags.tags['job'] = '{metric_name}'",
+        f"{metric_name}\t2\n",
+    )
+    assert (
+        node.query(
+            f"SELECT count() FROM timeSeriesTags(prometheus) "
+            f"WHERE tags['job'] = '{metric_name}'"
+        )
+        == "1\n"
+    )
+    assert_eq_with_retry(
+        node,
+        timeseries_metrics_has_metric_family_sql("prometheus", metric_name),
         "1\n",
     )
     assert int(node.query(skipped_series_sql)) == skipped_before + 1
