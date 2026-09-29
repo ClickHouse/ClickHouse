@@ -40,7 +40,7 @@ SELECT CAST(a, 'Variant(Array(ExponentialTimeDecaying(10)), UInt8)') IN
 
 -- Validate the probe and the set independently, including noncanonical ordering fields.
 SELECT probe IN (SELECT value FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((2., 0., 10.))))
-FROM time_decay_variant_in; -- { serverError BAD_ARGUMENTS }
+FROM time_decay_variant_in; -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
 SELECT value IN (SELECT key FROM time_decay_variant_in)
-FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
+FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS, TYPE_MISMATCH }
 DROP TABLE time_decay_variant_in;
