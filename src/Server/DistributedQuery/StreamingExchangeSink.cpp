@@ -211,7 +211,6 @@ ISink::Status StreamingExchangeSink::prepare()
     /// would keep computing data that nobody reads.
     if (no_more_data_needed)
     {
-        LOG_TRACE(log, "Closing input of exchange stream {}, no more data needed", stream_name);
         /// A peer that closes after reading the end-of-stream packet also lands here, but that
         /// stream ran out of data instead of being stopped.
         if (!end_of_stream_added)
