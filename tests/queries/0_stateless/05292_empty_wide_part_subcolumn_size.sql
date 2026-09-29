@@ -1,31 +1,76 @@
 -- Random settings limits: optimize_functions_to_subcolumns=(1, 1); optimize_move_to_prewhere=(1, 1); query_plan_optimize_prewhere=(1, 1); allow_calculating_subcolumns_sizes_for_merge_tree_reading=(1, 1)
 
--- An active Wide part without rows, left here by a mutation that deleted all its rows, must not break
--- the subcolumn size estimate of the PREWHERE optimization.
+-- An active part without rows, left here by a mutation that deleted all its rows, must not break
+-- the subcolumn size estimate of the PREWHERE optimization, for Wide (full and packed storage) and Compact parts.
 
-DROP TABLE IF EXISTS t_empty_part;
+DROP TABLE IF EXISTS t_empty_wide;
+DROP TABLE IF EXISTS t_empty_packed;
+DROP TABLE IF EXISTS t_empty_compact;
 
-CREATE TABLE t_empty_part (p UInt8, m Map(LowCardinality(String), String))
+CREATE TABLE t_empty_wide
+(
+    p UInt8,
+    m Map(LowCardinality(String), String),
+    t Tuple(a LowCardinality(String), b UInt64),
+    v Variant(String, UInt64),
+    d Dynamic,
+    j JSON
+)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, remove_empty_parts = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, remove_empty_parts = 0;
 
-INSERT INTO t_empty_part VALUES (1, {'k': 'v'});
-ALTER TABLE t_empty_part DELETE WHERE p = 1 SETTINGS mutations_sync = 2;
-INSERT INTO t_empty_part VALUES (2, {'k': 'v'});
-ALTER TABLE t_empty_part MODIFY SETTING min_bytes_for_wide_part = 1000000000;
-INSERT INTO t_empty_part VALUES (3, {'k': 'v'});
+CREATE TABLE t_empty_packed AS t_empty_wide ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 1000000000, remove_empty_parts = 0;
 
-SELECT partition, part_type, rows FROM system.parts
-WHERE database = currentDatabase() AND table = 't_empty_part' AND active
-ORDER BY partition;
+CREATE TABLE t_empty_compact AS t_empty_wide ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0, remove_empty_parts = 0;
+
+INSERT INTO t_empty_wide VALUES (1, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+ALTER TABLE t_empty_wide DELETE WHERE p = 1 SETTINGS mutations_sync = 2;
+INSERT INTO t_empty_wide VALUES (2, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+ALTER TABLE t_empty_wide MODIFY SETTING min_bytes_for_wide_part = 1000000000;
+INSERT INTO t_empty_wide VALUES (3, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+
+INSERT INTO t_empty_packed VALUES (1, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+ALTER TABLE t_empty_packed DELETE WHERE p = 1 SETTINGS mutations_sync = 2;
+INSERT INTO t_empty_packed VALUES (2, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+ALTER TABLE t_empty_packed MODIFY SETTING min_bytes_for_wide_part = 1000000000;
+INSERT INTO t_empty_packed VALUES (3, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+
+INSERT INTO t_empty_compact VALUES (1, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+ALTER TABLE t_empty_compact DELETE WHERE p = 1 SETTINGS mutations_sync = 2;
+INSERT INTO t_empty_compact VALUES (2, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+INSERT INTO t_empty_compact VALUES (3, {'k': 'v'}, ('v', 1), 'v', 'v', '{"a": "v"}');
+
+SELECT table, partition, part_type, part_storage_type, rows FROM system.parts
+WHERE database = currentDatabase() AND table LIKE 't_empty_%' AND active
+ORDER BY table, partition;
 
 -- Only a Compact part is left after partition pruning.
-SELECT count() FROM t_empty_part WHERE p = 3 AND m['k'] = 'v';
+SELECT count() FROM t_empty_wide WHERE p = 3 AND m['k'] = 'v';
+SELECT count() FROM t_empty_wide WHERE p = 3 AND t.a = 'v';
+SELECT count() FROM t_empty_wide WHERE p = 3 AND v.String = 'v';
+SELECT count() FROM t_empty_wide WHERE p = 3 AND d.String = 'v';
+SELECT count() FROM t_empty_wide WHERE p = 3 AND j.a::String = 'v';
+
+SELECT count() FROM t_empty_packed WHERE p = 3 AND m['k'] = 'v';
+SELECT count() FROM t_empty_packed WHERE p = 3 AND t.a = 'v';
+SELECT count() FROM t_empty_packed WHERE p = 3 AND v.String = 'v';
+SELECT count() FROM t_empty_packed WHERE p = 3 AND d.String = 'v';
+SELECT count() FROM t_empty_packed WHERE p = 3 AND j.a::String = 'v';
+
+SELECT count() FROM t_empty_compact WHERE p = 3 AND m['k'] = 'v';
+SELECT count() FROM t_empty_compact WHERE p = 3 AND t.a = 'v';
+SELECT count() FROM t_empty_compact WHERE p = 3 AND v.String = 'v';
+SELECT count() FROM t_empty_compact WHERE p = 3 AND d.String = 'v';
+SELECT count() FROM t_empty_compact WHERE p = 3 AND j.a::String = 'v';
 
 -- Automatic parallel replicas.
-SELECT count() FROM t_empty_part WHERE m['k'] = 'v'
+SELECT count() FROM t_empty_wide WHERE m['k'] = 'v'
 SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     automatic_parallel_replicas_min_bytes_per_replica = 0, max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'parallel_replicas', parallel_replicas_for_non_replicated_merge_tree = 1;
 
-DROP TABLE t_empty_part;
+DROP TABLE t_empty_wide;
+DROP TABLE t_empty_packed;
+DROP TABLE t_empty_compact;
