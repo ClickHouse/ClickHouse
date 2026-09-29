@@ -445,4 +445,29 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'fo
 
 DROP TABLE tab;
 
+SELECT '19. An empty Array element is not a token, even when the postprocessor fills it.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = concat(message, ' x'), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+-- index tokens are [a x, b x]
+INSERT INTO tab VALUES (1, 'a b'), (2, 'zz');
+
+-- text_index_hint_max_selectivity = 1 makes the index answer final; the other two go through the row filter.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', '', 'b']) SETTINGS text_index_hint_max_selectivity = 1.;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', '', 'b']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', '', 'b']) SETTINGS use_skip_indexes = 0;
+
+-- The set predicates keep it instead: an empty token matches nothing, as it does without a postprocessor.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['a', '', 'b']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['a', '', 'b']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

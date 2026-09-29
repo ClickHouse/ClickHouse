@@ -115,3 +115,9 @@
 [1]
 [2]
 [2]
+19. An empty Array element is not a token, even when the postprocessor fills it.
+[1]
+[1]
+[1]
+[]
+[]

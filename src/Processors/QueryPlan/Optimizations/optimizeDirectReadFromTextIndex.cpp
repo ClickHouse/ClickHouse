@@ -898,9 +898,17 @@ private:
             {
                 const auto & src_array = needles_field.safeGet<Array>();
                 VectorWithMemoryTracking<String> tokens;
+                /// `hasPhrase` ignores an empty element, the set predicates keep it as a token that never matches.
+                const bool drop_empty_needles = function_name == "hasPhrase";
                 for (const Field & element : src_array)
-                    if (element.getType() == Field::Types::String)
-                        tokens.push_back(element.safeGet<String>());
+                {
+                    if (element.getType() != Field::Types::String)
+                        continue;
+
+                    const auto & element_value = element.safeGet<String>();
+                    if (!drop_empty_needles || !element_value.empty())
+                        tokens.push_back(element_value);
+                }
                 /// Compaction is unsound after a postprocessor, and the functions collapse duplicates themselves.
                 tokens = postprocessor->processTokens(std::move(tokens));
                 needles_field = Array(tokens.begin(), tokens.end());
