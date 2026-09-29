@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
-# long: flaky-check runs reach the 180s limit for non-`long` tests (184-208s under `amd_tsan`).
+# Tags: no-fasttest
 # no-fasttest: the remote distributed plan needs the stateless worker configuration.
 # A satisfied LIMIT must stop the upstream stages of a distributed plan. The LIMIT is inside a
 # subquery, so its stage is in the middle of the plan, not at the root. The query runs twice:
@@ -36,7 +35,7 @@ COMMON_SETTINGS="make_distributed_plan = 1, enable_parallel_replicas = 0,
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
     min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0,
-    max_execution_time = 300, distributed_plan_fallback_to_local_execution = 0"
+    max_execution_time = 300"
 
 # Actions traced by an endpoint that received the stop while its own stage was idle. The receipt
 # of the packet is deliberately not among them: it predates the propagation this test guards.
