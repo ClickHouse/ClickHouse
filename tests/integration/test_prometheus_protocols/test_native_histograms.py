@@ -1,3 +1,4 @@
+import json
 import struct
 
 import pytest
@@ -708,8 +709,10 @@ def test_http_json_coarse_schema():
         make_write_request({"__name__": "test_hist_coarse", "job": "test"}, [histogram])
     )
 
-    data = execute_query_via_http_api(
-        node.ip_address, 9093, "/api/v1/query", "test_hist_coarse", timestamp=1704067201
+    data = json.loads(
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", "test_hist_coarse", timestamp=1704067201
+        )
     )
     assert data == {
         "resultType": "vector",
@@ -752,8 +755,10 @@ def test_http_json_nhcb():
     )
     send(make_write_request({"__name__": "test_hist_nhcb", "job": "test"}, [histogram]))
 
-    data = execute_query_via_http_api(
-        node.ip_address, 9093, "/api/v1/query", "test_hist_nhcb", timestamp=1704067202
+    data = json.loads(
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", "test_hist_nhcb", timestamp=1704067202
+        )
     )
     assert data == {
         "resultType": "vector",
@@ -790,13 +795,15 @@ def test_http_query_range_stale_only_series():
         )
     )
 
-    data = execute_range_query_via_http_api(
-        node.ip_address,
-        9093,
-        "/api/v1/query_range",
-        "test_hist_stale_range",
-        1704067200,
-        1704067260,
-        15,
+    data = json.loads(
+        execute_range_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/api/v1/query_range",
+            "test_hist_stale_range",
+            1704067200,
+            1704067260,
+            15,
+        )
     )
     assert data == {"resultType": "matrix", "result": []}
