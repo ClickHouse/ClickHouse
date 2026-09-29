@@ -196,12 +196,30 @@ function makeElement(tag) {
         applyColumnColors() {},
         applyPinnedColumns() {},
         refreshColumnColor() {},
+        refreshSortIndicators() {},
+        refreshFilterIndicators() {},
+        refreshCellControls() {},
+        renderPagination() {},
         transposeIfNeeded() {},
         _changeTableLayout() {},
+        finalizeFailedTable() {},
+        /// Read by `postSingle` before a failed run drops its page (the offset the streamed rows
+        /// were numbered from); the stub never paginates, so it is the unpaginated first page.
+        _rowNumberOffset() { return 0; },
         start() {},
         finish() {},
         updateProgress() {},
         updateText() {},
+        resetViewToggles() {},
+        setViewState() {},
+        showView() {},
+        enableViews() {},
+        finalizeMetrics() {},
+        feedProfileEvents() {},
+        adoptResourceState() {},
+        renderResourcesFrom() {},
+        appendLog() {},
+        updateMetrics() {},
         attachShadow() { return makeElement('shadow-root'); },
     };
     return el;
@@ -417,7 +435,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
         atob: (b64) => Buffer.from(b64, 'base64').toString('binary'),
         btoa: (bin) => Buffer.from(bin, 'binary').toString('base64'),
         TextEncoder, TextDecoder,
-        URL, URLSearchParams,
+        URL, URLSearchParams, FormData,
         Event, CustomEvent,
         AbortController,
         structuredClone,
@@ -1221,6 +1239,51 @@ async function main() {
             r.sandbox.location.href);
     }
 
+    /// Contract (a result shape reaches the URL and the history entry only through the run that
+    /// applies it): `commitResultShape` launches the re-run WITHOUT stamping the chosen shape, because
+    /// the launch is what decides whether the shape still belongs to the statement (and the context)
+    /// being run. Stamping it first would leave a `sort_columns` / `filters` / `page` in the entry and
+    /// the URL that a `Stop` or a reload before the run's own history write turns into a shape rebound
+    /// to an unrelated draft on the next load.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: 'SELECT a FROM t', params: {}, result: null,
+                  lastSavedQuery: 'SELECT a FROM t' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+        /// Stand in for the launch: the shape must be committed by a click in the result view exactly
+        /// as the header arrows do it, but nothing must actually run here - the point is what the page
+        /// looks like BETWEEN the click and the run.
+        vm.runInContext(
+            "(() => { globalThis.__launched = 0; postOne = async () => { ++globalThis.__launched; };" +
+            " const t = getActiveTab(); t.sortColumns.push({ name: 'a', desc: true });" +
+            " commitResultShape({ _ownerTab: t, _queryText: t.query }); })()",
+            r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the shape change launched the re-run',
+            vm.runInContext('globalThis.__launched', r.sandbox) === 1,
+            vm.runInContext('globalThis.__launched', r.sandbox));
+        check('shape-not-stamped-before-run', 'the URL carries no shape until the run applies it',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns') === null,
+            r.sandbox.location.href);
+        check('shape-not-stamped-before-run', 'the history entry carries none either',
+            !(r.sandbox.history.state && r.sandbox.history.state.sort_columns
+                && r.sandbox.history.state.sort_columns.length),
+            r.sandbox.history.state);
+        /// And the launch DOES stamp it, once it has resolved the shape for the statement it runs -
+        /// this is the call `postSingle` makes right after `resolveShapeForRun`.
+        vm.runInContext('persistResultShape(getActiveTab())', r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the run stamps the shape it resolved',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns')
+                === JSON.stringify([{ name: 'a', desc: true }]),
+            r.sandbox.location.href);
+    }
+
     /// Contract (parameters follow the editor on every keystroke): the query parameters, unlike the
     /// browser history, ARE kept in sync per keypress. An edit that removes a placeholder must drop
     /// its binding from the tab's snapshot right away, so the next history write — a run or a
@@ -1576,6 +1639,80 @@ async function main() {
         check('close-folds-draft', 'Back recreates the closed tab with the draft',
             vm.runInContext("tabs.some(t => t.query === 'SELECT 2')", r.sandbox),
             vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
+    }
+
+    /// Guard (dirty-startup Format): clicking "Format" while the saved workspace is still loading
+    /// is a user action on the live editor. It must mark the bootstrap workspace dirty before its
+    /// server round-trip (`runScenario` asserts that `duringLoad` did), otherwise reconciliation can
+    /// activate the saved tab and the formatted text is discarded as stale when the response arrives.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            openDelayMs: 30,
+            duringLoad: (sandbox) => {
+                vm.runInContext(
+                    "query_area.value = 'select 999';" +
+                    "format_button.dispatchEvent({ type: 'click', isTrusted: true });",
+                    sandbox);
+            },
+            seedTabs: [
+                { id: 't8', title: 'Report', query: 'SELECT 1', params: {}, result: null, lastSavedQuery: 'SELECT 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        check('dirty-startup-format', 'reconciliation keeps the live editor text the Format click was sent for',
+            vm.runInContext("query_area.value", r.sandbox) === 'select 999',
+            vm.runInContext("query_area.value", r.sandbox));
+    }
+
+    /// Guard (Format across a connection change): the result of a `formatQuery` request sent to the
+    /// previous server/user must not replace the editor text once the connection has changed, even
+    /// though the tab and the text are the same. The control run (no connection change) proves the
+    /// stubbed round-trip does apply the result.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't8', title: 'Report', query: 'select 1', params: {}, result: null, lastSavedQuery: 'select 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        const query_area = r.sandbox.document.getElementById('query');
+        r.sandbox.document.execCommand = (command, show_ui, text) => {
+            query_area.value = text;
+            return true;
+        };
+        const formatWith = async (during_request) => {
+            let respond;
+            const responded = new Promise(resolve => { respond = resolve; });
+            r.sandbox.fetch = async () => {
+                await responded;
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: { get: () => null },
+                    text: async () => '',
+                    json: async () => ({ data: [{ formatted: 'SELECT 1' }] }),
+                };
+            };
+            vm.runInContext("query_area.value = 'select 1';" +
+                "format_button.dispatchEvent({ type: 'click', isTrusted: true });", r.sandbox);
+            during_request();
+            respond();
+            await sleep(50);
+            return query_area.value;
+        };
+        const control = await formatWith(() => {});
+        check('format-connection-change', 'the Format result is applied when the connection is unchanged',
+            control === 'SELECT 1', control);
+        const switched = await formatWith(() => {
+            vm.runInContext("user_elem.value = 'other_user';" +
+                "user_elem.dispatchEvent({ type: 'input', isTrusted: true });", r.sandbox);
+        });
+        check('format-connection-change', 'the Format result for the previous connection is discarded',
+            switched === 'select 1', switched);
     }
 
     if (failures) {

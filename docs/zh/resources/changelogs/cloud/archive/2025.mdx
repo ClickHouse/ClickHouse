@@ -89,7 +89,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * **适用于 AWS Glue 的 ClickHouse 连接器**
   现在，您可以使用在 [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s) 上提供的官方[适用于 AWS Glue 的 ClickHouse 连接器](/zh/integrations/connectors/data-ingestion/AWS/glue)。该连接器利用 AWS Glue 基于 Apache
-  Spark 的 serverless 引擎，在 ClickHouse 与其他数据源之间执行提取、转换和加载。请参阅这篇公告[博文](http://clickhouse.com/blog/clickhouse-connector-aws-glue)快速上手，了解如何创建表，以及如何在 ClickHouse 和 Spark 之间写入和读取数据。
+  Spark 的 serverless 引擎，在 ClickHouse 与其他数据源之间执行提取、转换和加载。请参阅这篇公告[博文](https://clickhouse.com/blog/clickhouse-connector-aws-glue)快速上手，了解如何创建表，以及如何在 ClickHouse 和 Spark 之间写入和读取数据。
 * **服务最小副本数变更**
   已扩容的服务现在可以[缩容](/zh/products/cloud/features/autoscaling/overview)至仅使用单个副本 (此前最少为 2 个副本) 。注意：单副本服务的可用性较低，不建议在生产环境中使用。
 * 默认情况下，ClickHouse Cloud 将开始向管理员角色发送与服务扩缩容和服务版本升级相关的通知。您可以在通知设置中调整相关通知偏好。
@@ -241,7 +241,7 @@ ClickPipes 中的 MySQL CDC 连接器现已面向广大用户开放 Public Beta�
   在 VPC、AWS 服务、本地系统与 ClickHouse Cloud 之间建立安全连接。
   这样在从 AWS 上的 Postgres、MySQL 和 MSK 等来源移动数据时，
   无需将流量暴露在公共互联网之上。它还支持通过 VPC service endpoints 实现跨区域访问。
-  现在可通过 ClickPipes [完全自助完成](/zh/integrations/clickpipes/aws-privatelink)
+  现在可通过 ClickPipes [完全自助完成](/zh/integrations/clickpipes/networking/aws-privatelink)
   PrivateLink 连接设置。
 
 <div id="april-4-2025">

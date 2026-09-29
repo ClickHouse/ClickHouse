@@ -44,13 +44,13 @@
       ]
     },
     {
-      "group": "Développement d'intégrations",
+      "group": "Développement d’intégrations",
       "pages": [
+        "fr/resources/develop-contribute/integrations/index",
         "fr/resources/develop-contribute/integrations/building-integrations",
         "fr/resources/develop-contribute/integrations/testing-your-integration",
         "fr/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "fr/resources/develop-contribute/integrations/index"
+      ]
     },
     {
       "group": "Feuille de route",
@@ -60,6 +60,6 @@
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Développement et contribution",
+  "item": "Développement et contributions",
   "root": "fr/resources/develop-contribute/index"
 }

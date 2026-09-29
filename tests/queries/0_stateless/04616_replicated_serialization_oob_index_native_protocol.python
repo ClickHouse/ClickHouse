@@ -173,7 +173,15 @@ def sendQuery(s, query):
     writeVarUInt(1, ba)  # Query
     writeStringBinary(query_id, ba)
     serializeClientInfo(ba, query_id)
-    writeStringBinary("", ba)  # empty per-query settings (they are set in the query text)
+    # The server symbolizes a text stack trace before it can answer, which costs seconds on an
+    # instrumented build, and readException below discards the trace field. This has to travel in
+    # the protocol settings field: TCPHandler snapshots calculate_text_stack_trace from the query
+    # context before executeQuery parses the query text, so an inline SETTINGS clause reaches the
+    # logging path but not the one that answers the client.
+    writeStringBinary("calculate_text_stack_trace", ba)
+    writeVarUInt(1, ba)  # is_important
+    writeStringBinary("0", ba)
+    writeStringBinary("", ba)  # end of per-query settings
     writeStringBinary("", ba)  # interserver externally granted roles (>= 54472)
     writeStringBinary("", ba)  # interserver secret (>= 54441)
     writeVarUInt(2, ba)  # stage = Complete
@@ -436,10 +444,8 @@ def indexRowCountMismatchScenario():
 
 
 def sendSparseOverReplicatedBlock(s):
-    # A Sparse-over-Replicated kind stack makes SerializationSparse hand its values column
-    # (a fresh ColumnSparse always seeds one default value) to the nested Replicated
-    # deserialization, which then hits the "non-empty column" check. That check is decided
-    # by the wire-supplied kind stack and must be INCORRECT_DATA, not LOGICAL_ERROR.
+    # Sparse can sit inside Replicated but not the other way round, so this kind stack is rejected as
+    # out of order. A wire-supplied kind stack must produce INCORRECT_DATA, not LOGICAL_ERROR.
     END_OF_GRANULE_FLAG = 1 << 62
     limit = 4
 
@@ -474,7 +480,7 @@ def sparseOverReplicatedScenario():
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         connectAndStartInsert(s)
         sendSparseOverReplicatedBlock(s)
-        expectIncorrectData(s, "Reading into non-empty column ColumnReplicated")
+        expectIncorrectData(s, "is out of order")
         print("sparse over replicated: caught expected exception INCORRECT_DATA")
 
 

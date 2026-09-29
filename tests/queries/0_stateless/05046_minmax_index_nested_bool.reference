@@ -1,0 +1,39 @@
+array	3	6
+array noidx	3	6
+map	3	6
+map noidx	3	6
+scalar	3	6
+scalar noidx	3	6
+partition	3	6
+partition noidx	3	6
+partition uint8	3	6
+partition uint8 noidx	3	6
+order by =	6
+order by = oracle	6
+order by >=	21
+order by >= oracle	21
+nullable <=	3	6
+nullable <= noidx	3	6
+nullable >=	6	21
+nullable >= noidx	6	21
+nullable map >=	6	21
+nullable map >= noidx	6	21
+json >=	6	21
+json >= noidx	6	21
+json <=	3	6
+json <= noidx	3	6
+top-k asc	[false,false,false,false,false,false]
+top-k asc noidx	[false,false,false,false,false,false]
+top-k desc	[true,true,true,true,true,true]
+top-k desc noidx	[true,true,true,true,true,true]
+top-k uint8 asc	[0,0,0,0,0,0]
+top-k uint8 desc	[1,1,1,1,1,1]
+array prunes	1
+map prunes	1
+scalar prunes	1
+partition prunes	1
+partition minmax entry	1
+pk prunes	1
+json prunes	1
+top-k wide	8	false	false
+top-k wide skips	1
