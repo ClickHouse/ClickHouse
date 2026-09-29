@@ -32,7 +32,7 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
-class ASTFunction;
+class ASTStorage;
 struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
@@ -215,7 +215,7 @@ public:
 
     virtual bool isDatalakeCatalog() const { return false; }
 
-    virtual void validateCreateTableEngine(const ASTFunction & /*engine*/) const {}
+    virtual void validateCreateTableEngine(const ASTStorage & /*storage*/) const {}
 
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.

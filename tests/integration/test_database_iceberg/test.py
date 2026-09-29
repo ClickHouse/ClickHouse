@@ -19,7 +19,7 @@ from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
@@ -1829,8 +1829,9 @@ def test_create_table_as(started_cluster):
         additional_settings={"default_base_location": "s3://warehouse-rest/data"},
     )
 
+    node.query(f"DROP TABLE IF EXISTS default.{src_table}_mv")
     node.query(f"DROP TABLE IF EXISTS default.{src_table}")
-    for table in ["from_as", "from_as_explicit_engine", "override"]:
+    for table in ["from_as", "from_as_explicit_engine", "from_mv_explicit_engine", "override"]:
         node.query(
             f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.{table}` SETTINGS allow_database_iceberg=1"
         )
@@ -1846,6 +1847,16 @@ def test_create_table_as(started_cluster):
         ENGINE = MergeTree
         PARTITION BY toYearNumSinceEpoch(dt)
         ORDER BY (id, name)
+    """
+    )
+
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW default.{src_table}_mv
+        ENGINE = MergeTree
+        PARTITION BY toYearNumSinceEpoch(dt)
+        ORDER BY (id, name)
+        AS SELECT * FROM default.{src_table}
     """
     )
 
@@ -1882,6 +1893,19 @@ def test_create_table_as(started_cluster):
         },
     )
 
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.from_mv_explicit_engine`
+        AS default.{src_table}_mv
+        ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/ctas-mv-explicit-engine/',
+            '{minio_access_key}', '{minio_secret_key}');
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
     tables = catalog.list_tables(namespace)
     table_names = [t[1] for t in tables]
     assert "from_as" in table_names
@@ -1892,12 +1916,13 @@ def test_create_table_as(started_cluster):
     col_names = [f.name for f in tbl.schema().fields]
     assert col_names == ["id", "name", "dt"]
 
-    tbl = catalog.load_table(f"{namespace}.from_as_explicit_engine")
-    assert len(tbl.spec().fields) == 1
-    assert tbl.spec().fields[0].source_id == 3
-    assert str(tbl.spec().fields[0].transform) == "year"
-    assert [field.source_id for field in tbl.sort_order().fields] == [1, 2]
-    assert all(str(field.transform) == "identity" for field in tbl.sort_order().fields)
+    for table in ["from_as_explicit_engine", "from_mv_explicit_engine"]:
+        tbl = catalog.load_table(f"{namespace}.{table}")
+        assert len(tbl.spec().fields) == 1
+        assert tbl.spec().fields[0].source_id == 3
+        assert str(tbl.spec().fields[0].transform) == "year"
+        assert [field.source_id for field in tbl.sort_order().fields] == [1, 2]
+        assert all(str(field.transform) == "identity" for field in tbl.sort_order().fields)
 
     tbl = catalog.load_table(f"{namespace}.override")
     assert len(tbl.spec().fields) == 1
@@ -1907,10 +1932,11 @@ def test_create_table_as(started_cluster):
     col_names = [f.name for f in tbl.schema().fields]
     assert col_names == ["id", "name", "dt"]
 
-    for table in ["from_as", "from_as_explicit_engine", "override"]:
+    for table in ["from_as", "from_as_explicit_engine", "from_mv_explicit_engine", "override"]:
         node.query(
             f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table}` SETTINGS allow_database_iceberg=1"
         )
+    node.query(f"DROP TABLE default.{src_table}_mv")
     node.query(f"DROP TABLE default.{src_table}")
 
 
@@ -2597,6 +2623,47 @@ def test_show_create_table_round_trip_partition_and_sort_order(started_cluster):
 
     node.query(f"DROP TABLE {source_table}", settings=settings)
     node.query(f"DROP TABLE {target_table}", settings=settings)
+
+
+def test_show_create_table_omits_unrepresentable_partition_and_sort_order(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    suffix = uuid.uuid4().hex[:8]
+    namespace = f"test_show_create_unrepresentable_keys_{suffix}"
+    table_name = f"table_{suffix}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    schema = Schema(
+        NestedField(field_id=1, name="symbol", field_type=StringType(), required=False),
+        NestedField(
+            field_id=2,
+            name="details",
+            field_type=StructType(
+                NestedField(field_id=3, name="created_by", field_type=StringType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    create_table(
+        catalog,
+        namespace,
+        table_name,
+        schema=schema,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="created_by")
+        ),
+        sort_order=SortOrder(
+            SortField(source_id=1, transform=IdentityTransform(), null_order=NullOrder.NULLS_LAST)
+        ),
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    create_query = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` FORMAT TSVRaw")
+    assert "ENGINE = Iceberg(" in create_query
+    assert "PARTITION BY" not in create_query
+    assert "ORDER BY" not in create_query
 
 
 def test_create_table_with_engine_virtual_hosted_location_rejected(started_cluster):

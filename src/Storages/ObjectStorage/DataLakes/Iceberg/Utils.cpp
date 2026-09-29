@@ -1783,24 +1783,20 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
 }
 
-static String formatIcebergTransformExpression(
+/// Returns `std::nullopt` when the field cannot be represented in `CREATE TABLE`, and an empty string for a `void` field.
+static std::optional<String> formatIcebergTransformExpression(
     Poco::JSON::Object::Ptr field, const std::unordered_map<Int32, String> & source_id_to_column_name)
 {
-    const auto transform_name = Poco::toLower(field->getValue<String>(f_transform));
-    const auto transform = parseTransformAndArgument(transform_name);
+    const auto transform = parseTransformAndArgument(field->getValue<String>(f_transform));
     if (!transform)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform '{}' cannot be represented in `CREATE TABLE`", transform_name);
+        return std::nullopt;
 
     if (transform->transform_name == "tuple")
-        return {};
+        return String{};
 
-    const auto source_id = field->getValue<Int32>(f_source_id);
-    const auto it = source_id_to_column_name.find(source_id);
+    const auto it = source_id_to_column_name.find(field->getValue<Int32>(f_source_id));
     if (it == source_id_to_column_name.end())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Iceberg field with source id {} is not a top-level column of the current schema, so it cannot be represented in `CREATE TABLE`",
-            source_id);
+        return std::nullopt;
 
     auto column_name = backQuoteIfNeed(it->second);
     if (transform->transform_name == "identity")
@@ -1847,14 +1843,19 @@ std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::
     ASTPtr partition_by;
     if (partition_fields)
     {
+        /// `PARTITION BY` is omitted entirely if any field cannot be represented.
+        bool representable = true;
         std::vector<String> expressions;
-        for (UInt32 i = 0; i < partition_fields->size(); ++i)
+        for (UInt32 i = 0; representable && i < partition_fields->size(); ++i)
         {
-            if (auto expression = formatIcebergTransformExpression(partition_fields->getObject(i), source_id_to_column_name); !expression.empty())
-                expressions.push_back(std::move(expression));
+            auto expression = formatIcebergTransformExpression(partition_fields->getObject(i), source_id_to_column_name);
+            if (!expression)
+                representable = false;
+            else if (!expression->empty())
+                expressions.push_back(std::move(*expression));
         }
 
-        if (!expressions.empty())
+        if (representable && !expressions.empty())
         {
             String partition_by_str = fmt::format("{}", fmt::join(expressions, ", "));
             if (expressions.size() > 1)
@@ -1875,20 +1876,28 @@ std::pair<ASTPtr, ASTPtr> getPartitionAndSortingKeyASTsFromMetadata(const Poco::
             if (sort_order->getValue<Int64>(f_order_id) != default_sort_order_id)
                 continue;
 
+            /// `ORDER BY` is omitted entirely if any field cannot be represented. Table `ORDER BY` has no
+            /// `NULLS FIRST/LAST`, and `CREATE TABLE` writes `nulls-first`, so any other null order is unrepresentable.
+            bool representable = true;
             std::vector<String> expressions;
             const auto sort_fields = sort_order->getArray(f_fields);
-            for (UInt32 field_index = 0; field_index < sort_fields->size(); ++field_index)
+            for (UInt32 field_index = 0; representable && field_index < sort_fields->size(); ++field_index)
             {
                 const auto sort_field = sort_fields->getObject(field_index);
                 auto expression = formatIcebergTransformExpression(sort_field, source_id_to_column_name);
-                if (expression.empty())
+                if (!expression || Poco::toLower(sort_field->getValue<String>("null-order")) != "nulls-first")
+                {
+                    representable = false;
+                    continue;
+                }
+                if (expression->empty())
                     continue;
                 if (Poco::toLower(sort_field->getValue<String>(f_direction)) == "desc")
-                    expression += " DESC";
-                expressions.push_back(std::move(expression));
+                    *expression += " DESC";
+                expressions.push_back(std::move(*expression));
             }
 
-            if (!expressions.empty())
+            if (representable && !expressions.empty())
             {
                 String order_by_str = fmt::format("{}", fmt::join(expressions, ", "));
                 if (expressions.size() > 1)

@@ -1116,8 +1116,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     return result_storage;
 }
 
-void DatabaseDataLake::validateCreateTableEngine(const ASTFunction & engine) const
+void DatabaseDataLake::validateCreateTableEngine(const ASTStorage & storage) const
 {
+    const ASTFunction & engine = *storage.engine;
     const auto catalog = getCatalog();
 
     String family_name;
@@ -1159,13 +1160,37 @@ void DatabaseDataLake::validateCreateTableEngine(const ASTFunction & engine) con
         engine_backend = DatabaseDataLakeStorageType::HDFS;
     else if (backend_name == "Local")
         engine_backend = DatabaseDataLakeStorageType::Local;
+    else if (backend_name.empty())
+    {
+        /// The generic family engine picks its backend from the `disk` setting and defaults to S3,
+        /// the same way the storage factory does. An unsupported disk type is rejected by the factory.
+        engine_backend = DatabaseDataLakeStorageType::S3;
+        const Field * disk_name = storage.settings ? storage.settings->changes.tryGet("disk") : nullptr;
+        if (disk_name)
+        {
+            switch (Context::getGlobalContextInstance()->getDisk(disk_name->safeGet<String>())->getObjectStorage()->getType())
+            {
+                case ObjectStorageType::S3:
+                    break;
+                case ObjectStorageType::Azure:
+                    engine_backend = DatabaseDataLakeStorageType::Azure;
+                    break;
+                case ObjectStorageType::Local:
+                    engine_backend = DatabaseDataLakeStorageType::Local;
+                    break;
+                default:
+                    engine_backend.reset();
+                    break;
+            }
+        }
+    }
 
     if (engine_backend.has_value() && catalog_storage_type.has_value() && *catalog_storage_type != *engine_backend)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table engine '{}' uses the {} storage backend, but this DataLakeCatalog stores tables on {}. "
             "The table would be reopened with the catalog's storage backend and become unreadable "
-            "immediately after creation. Use a matching {} engine or the generic '{}' engine",
-            engine.name, *engine_backend, *catalog_storage_type, family_name, family_name);
+            "immediately after creation. Use the {}{} engine",
+            engine.name, *engine_backend, *catalog_storage_type, family_name, *catalog_storage_type);
 
     validateCreateTableEngineArguments(engine);
 }

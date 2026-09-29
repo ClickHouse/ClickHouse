@@ -367,6 +367,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=[
+                "configs/disks.xml",
                 "configs/query_log.xml",
                 "configs/text_log.xml",
             ],
@@ -943,6 +944,7 @@ def test_create_table_engine_backend_mismatch_rejected(started_cluster):
         "IcebergAzure('http://acc.blob.core.windows.net/cont/tbl/', 'acc', 'key')",
         "IcebergLocal('/var/lib/clickhouse/user_files/tbl/')",
         "IcebergHDFS('hdfs://namenode:9000/tbl/')",
+        "Iceberg('/var/lib/clickhouse/user_files/tbl/') SETTINGS disk = 'local_blob_disk'",
     ]:
         error = node.query_and_get_error(
             f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.mismatch` (x String) ENGINE = {engine}",

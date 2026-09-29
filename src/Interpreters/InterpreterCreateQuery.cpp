@@ -54,6 +54,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -998,7 +999,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// Secondary indices and projections make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
-        if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
+        if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
         {
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
@@ -1625,6 +1626,19 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
         }
+        else if (as_create.storage)
+        {
+            /// A `DataLakeCatalog` that assigns table locations itself shows its tables without `ENGINE`.
+            /// Only a `DataLakeCatalog` target can be created from such a table: it builds its own storage
+            /// and copies the keys from the source metadata.
+            const auto target_database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
+            if (!target_database || !target_database->isDatalakeCatalog())
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Cannot CREATE a table AS {}, it has no table engine. Specify ENGINE explicitly",
+                    qualified_name);
+            return;
+        }
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
@@ -2207,7 +2221,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "views, dictionaries, ATTACH, CLONE AS, and REPLACE TABLE are not allowed");
 
         if (engine_user_specified)
-            database->validateCreateTableEngine(*create.storage->engine);
+            database->validateCreateTableEngine(*create.storage);
 
         if (datalake_unsupported_storage_clause)
         {
@@ -2649,6 +2663,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         String as_database_name = getContext()->resolveDatabase(as_database_saved);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+        /// A materialized view keeps its keys in its target table.
+        if (const auto * materialized_view = as_storage->as<StorageMaterializedView>())
+            as_storage = materialized_view->getTargetTable();
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
 
         if (engine_user_specified)
