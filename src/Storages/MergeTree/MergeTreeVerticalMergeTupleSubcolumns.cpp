@@ -128,10 +128,26 @@ bool anyLeafNameIsAmbiguous(const DataTypePtr & parent_type, const std::vector<N
 template <typename Part>
 bool partCanReadLeafDirectly(const Part & part, const NameAndTypePair & leaf, const String & parent)
 {
-    auto column = part.tryGetColumn(leaf.name);
-    if (!column)
+    /// `tryGetColumn` answers from the storage-wide `columns_description` cache. Its key equality is
+    /// `IDataType::equals` and its hash ignores types, so parts whose column lists differ only by an
+    /// attribute `equals` drops share one entry, and whichever part is loaded first decides what the
+    /// other reports. A leaf this part's own parent type cannot express would then still count toward
+    /// `vertical_merge_algorithm_min_columns_to_activate`. Resolve it from this part's column list,
+    /// the same way `tryGetPartOwnType` does.
+    if (!leaf.isSubcolumn() || leaf.getNameInStorage() != parent)
         return false;
-    return column->isSubcolumn() && column->getNameInStorage() == parent;
+
+    const auto & own_columns = part.getColumns();
+    /// A physical column already stored under the leaf name is not this parent's subcolumn.
+    if (own_columns.tryGetByName(leaf.name))
+        return false;
+
+    auto own_parent = own_columns.tryGetByName(parent);
+    if (!own_parent)
+        return false;
+
+    auto own_leaf_type = own_parent->type->tryGetSubcolumnType(leaf.getSubcolumnName());
+    return own_leaf_type && own_leaf_type->equals(*leaf.type);
 }
 
 bool anySourceOrApplicablePatchCannotReadLeaves(
