@@ -12,12 +12,12 @@ HAVING NOT (
 
 -- Empty aggregates use the canonical zero representation.
 SELECT
-    tupleElement(decaying_sum, 'sign'),
-    tupleElement(decaying_sum, 'signed_unit_time') = 0,
+    tupleElement(decaying_sum, 'value_at_anchor'),
+    tupleElement(decaying_sum, 'anchor_time') = 0,
     exponentialTimeDecayingDecayLength(decaying_sum),
     isNaN(decaying_avg),
-    tupleElement(decaying_count, 'sign'),
-    tupleElement(decaying_count, 'signed_unit_time') = 0,
+    tupleElement(decaying_count, 'value_at_anchor'),
+    tupleElement(decaying_count, 'anchor_time') = 0,
     exponentialTimeDecayingDecayLength(decaying_count)
 FROM
 (
