@@ -2797,19 +2797,20 @@ def test_catalog_commit_refused_is_not_reported_as_committed(started_cluster):
 
 
 def test_catalog_commit_transport_failure_keeps_committed_snapshot(started_cluster):
-    # A connection dropped mid-commit arrives as a plain Poco exception carrying no HTTP status, so
-    # it can only be resolved by reading the table back. The commit did take effect here, so the
-    # read-back confirms it and the INSERT succeeds with the snapshot's files intact.
+    # A connection dropped after the catalog applied the commit carries no HTTP status, so it can
+    # only be resolved by reading the table back. The read-back confirms the commit, so the INSERT
+    # succeeds with the snapshot's files intact. The fault is injected after the response arrives:
+    # before it, the catalog may still be applying the commit when the table is read back.
     node = started_cluster.instances["node1"]
     catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
         started_cluster, node, f"test_commit_transport_{uuid.uuid4()}"
     )
 
     try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_transport_net_fail")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost_net")
         node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings)
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_transport_net_fail")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost_net")
 
     snapshot = _current_snapshot(catalog, root_namespace, table_name)
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
@@ -2853,17 +2854,18 @@ def test_catalog_commit_transport_failure_unknown_keeps_files(started_cluster):
 def test_catalog_commit_std_exception_keeps_committed_snapshot(started_cluster):
     # A failure that is outside the Poco hierarchy, such as an allocation failure while the response
     # body is read, carries no status either and none of the transport's handlers cover it. The
-    # commit did take effect here, so the read-back confirms it and the INSERT succeeds.
+    # commit did take effect here, so the read-back confirms it and the INSERT succeeds. As above,
+    # the fault is injected once the response has arrived.
     node = started_cluster.instances["node1"]
     catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
         started_cluster, node, f"test_commit_std_{uuid.uuid4()}"
     )
 
     try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost_std")
         node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings)
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost_std")
 
     snapshot = _current_snapshot(catalog, root_namespace, table_name)
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (

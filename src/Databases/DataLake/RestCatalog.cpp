@@ -78,6 +78,8 @@ namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
     extern const char iceberg_catalog_commit_response_lost[];
+    extern const char iceberg_catalog_commit_response_lost_net[];
+    extern const char iceberg_catalog_commit_response_lost_std[];
     extern const char iceberg_catalog_commit_superseded[];
     extern const char iceberg_catalog_commit_stale_parent[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
@@ -2189,6 +2191,17 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR,
                 "Injected lost response",
                 "");
+        });
+
+        /// The same lost response, reaching the handlers for failures that carry no HTTP status.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost_net,
+        {
+            throw Poco::Net::NetException("Injected lost response");
+        });
+
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost_std,
+        {
+            throw std::runtime_error("Injected lost response");
         });
     }
     catch (const DB::HTTPException & ex)
