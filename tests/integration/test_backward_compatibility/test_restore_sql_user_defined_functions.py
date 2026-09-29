@@ -32,6 +32,8 @@ FUNCTIONS = {
     "udf_nested_dotted_argument": "x -> arrayMap(y.z -> (y.z + x), [1, 2])",
     "udf_lambda": "(x, y) -> (x + y)",
 }
+# No version created this one: RESTORE refuses it.
+INVALID_FUNCTION = "udf_not_identifiers"
 
 LIST_FUNCTIONS = "SELECT name, create_query FROM system.functions WHERE origin = 'SQLUserDefined' ORDER BY name"
 
@@ -53,8 +55,19 @@ def cleanup():
 
 
 def drop_functions():
-    for name in FUNCTIONS:
+    for name in [*FUNCTIONS, INVALID_FUNCTION]:
         node.query(f"DROP FUNCTION IF EXISTS {name}")
+
+
+def store_function(name, definition):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo 'CREATE FUNCTION {name} AS {definition}' > /var/lib/clickhouse/user_defined/function_{name}.sql",
+        ],
+        user="root",
+    )
 
 
 def new_backup(prefix):
@@ -66,14 +79,7 @@ def test_restore_functions_created_by_older_version(start_cluster):
         if name not in STORED_FUNCTIONS:
             node.query(f"CREATE FUNCTION {name} AS {definition}")
     for name, definition in STORED_FUNCTIONS.items():
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"echo 'CREATE FUNCTION {name} AS {definition}' > /var/lib/clickhouse/user_defined/function_{name}.sql",
-            ],
-            user="root",
-        )
+        store_function(name, definition)
     node.restart_clickhouse()
     old_backup = new_backup("old")
     node.query(f"BACKUP TABLE system.functions TO {old_backup}")
@@ -102,3 +108,13 @@ def test_restore_functions_created_by_older_version(start_cluster):
         assert "BAD_ARGUMENTS" in node.query_and_get_error(
             f"CREATE FUNCTION {name}_new AS {definition}"
         )
+
+    store_function(INVALID_FUNCTION, "f(g(1), 2)")
+    node.restart_clickhouse()
+    invalid_backup = new_backup("invalid")
+    node.query(f"BACKUP TABLE system.functions TO {invalid_backup}")
+    drop_functions()
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        f"RESTORE TABLE system.functions FROM {invalid_backup}"
+    )
+    assert INVALID_FUNCTION not in node.query(LIST_FUNCTIONS)
