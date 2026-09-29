@@ -21,10 +21,20 @@ const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & arg
 
 
 NodeEvaluationRange getRangeAggregationRange(
-    const PrometheusQueryTree::Offset * fixed_at_node, const NodeEvaluationRange & node_range, ConverterContext & context)
+    const SQLQueryPiece & range_argument, const NodeEvaluationRange & node_range, ConverterContext & context)
 {
+    const auto * fixed_at_node = getFixedAtModifier(range_argument);
     if (!fixed_at_node)
-        return node_range;
+    {
+        if (range_argument.type != ResultType::RANGE_VECTOR || !range_argument.node || range_argument.node->node_type != NodeType::Offset)
+            return node_range;
+
+        /// The offset expression is evaluated on the grid shifted back by the offset.
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
+        NodeEvaluationRange shifted_range = context.node_range_getter.get(offset_node->getExpression());
+        shifted_range.window = node_range.window;
+        return shifted_range;
+    }
 
     /// Under a fixed @ modifier the range function's sample window is frozen at the fixed timestamp, while
     /// the range-vector argument retains its own inner grid.
