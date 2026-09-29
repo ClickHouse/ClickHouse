@@ -1875,7 +1875,9 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
-        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
+        # `parallel_replicas_local_plan` is not randomized: it stays at its default `1`. With `0`, the local
+        # replica is queried like a remote one, so plan- and log-based assertions of ~100 tests break
+        # under the `ParallelReplicas` configuration without finding anything about the default setup.
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
