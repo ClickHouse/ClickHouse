@@ -2,6 +2,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -42,6 +43,21 @@ namespace
 
 namespace
 {
+
+/// Width of the values of a stream when it is fixed, 0 otherwise (variable-length values or an unknown type).
+size_t getFixedValueWidth(const ISerialization::SubstreamPath & substream_path)
+{
+    const auto & type = substream_path.back().data.type;
+    if (!type || !type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return 0;
+    return type->getSizeOfValueInMemory();
+}
+
+/// Type-specific codecs read a block as values, so the buffer must not split a value across two blocks.
+size_t roundDownToWholeValues(size_t size, size_t value_width)
+{
+    return std::max(value_width, size - size % value_width);
+}
 
 /// Get granules for block using index_granularity
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark)
@@ -250,6 +266,14 @@ void MergeTreeDataPartWriterWide::addStreams(
             (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
+
+        /// Otherwise bytes of a single value will be split across two blocks and won't compress well.
+        if (const size_t value_width = getFixedValueWidth(substream_path); value_width > 1)
+        {
+            max_compress_block_size = roundDownToWholeValues(max_compress_block_size, value_width);
+            query_write_settings.adaptive_write_buffer_initial_size
+                = roundDownToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, value_width);
+        }
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
         {
