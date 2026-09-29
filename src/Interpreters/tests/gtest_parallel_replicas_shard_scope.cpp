@@ -360,7 +360,6 @@ TEST(ParallelReplicasShardScope, LocalPlanPredicateResolvesNoCluster)
     auto with_local_plan = [](const ContextMutablePtr & context)
     {
         context->setSetting("allow_experimental_analyzer", Field{true});
-        context->setSetting("parallel_replicas_local_plan", Field{true});
         context->setSetting("parallel_replicas_prefer_local_replica", Field{true});
         /// Deliberately unset, as it is on a server that cannot resolve the initiator's cluster.
         context->setSetting("cluster_for_parallel_replicas", Field{""});

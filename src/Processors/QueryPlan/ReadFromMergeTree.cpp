@@ -315,7 +315,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
@@ -2014,7 +2013,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     /// Only the local-plan follower path needs all parts replicated across per-split pools
     /// (each split reads from a copy and filters down to its assigned subset). The legacy
-    /// single-pool path (`parallel_replicas_local_plan=0`) consumes `parts_with_ranges` exactly
+    /// single-pool path (no local plan) consumes `parts_with_ranges` exactly
     /// once with a `std::move`, so a separate copy would just be wasted work on the legacy
     /// in-order parallel-replica hot path.
     RangesInDataParts all_parts_for_replicas;
@@ -2147,7 +2146,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else if (is_parallel_reading_from_replicas)
     {
-        /// parallel_replicas_local_plan=0: old behavior, single pool with all parts. We never
+        /// No local plan: old behavior, single pool with all parts. We never
         /// took the local-plan-follower branch above, so `parts_with_ranges` is still intact —
         /// move it directly into the only pool that will consume it (no copy needed).
         pipes.emplace_back(readInOrder(
@@ -3655,7 +3654,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
     /// the initiator's parts, which are not the parts this replica reads.
     if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
-        && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)

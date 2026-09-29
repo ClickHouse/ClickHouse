@@ -654,7 +654,7 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.enable_parallel_replicas = false;
                 /// Plan-based PR adds the join runtime filters on the outer plan before cloning the
                 /// fragment, so they are already in this local plan; re-adding them would filter the
-                /// coordinated read twice. Classic PR (this same step, with parallel_replicas_local_plan)
+                /// coordinated read twice. Classic PR (this same step, with the local plan)
                 /// builds a fresh local plan with no filters yet, so it must still add them.
                 if (optimization_settings.enable_parallel_replicas)
                     local_optimization_settings.enable_join_runtime_filters = false;
