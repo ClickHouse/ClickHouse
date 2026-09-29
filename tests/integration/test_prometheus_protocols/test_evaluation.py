@@ -355,6 +355,44 @@ def send_test_data():
         ]
     )
 
+    # Groups with a NaN or an infinite sample for `stddev` and `stdvar`: such a group is NaN, even with one sample.
+    send_data(
+        [
+            (
+                {"__name__": "nan_group", "label": "a"},
+                {120: 1},
+            ),
+            (
+                {"__name__": "nan_group", "label": "b"},
+                {120: 2},
+            ),
+            (
+                {"__name__": "nan_group", "label": "c"},
+                {120: float("nan")},
+            ),
+            (
+                {"__name__": "inf_group", "label": "a"},
+                {120: 1},
+            ),
+            (
+                {"__name__": "inf_group", "label": "b"},
+                {120: 2},
+            ),
+            (
+                {"__name__": "inf_group", "label": "c"},
+                {120: float("inf")},
+            ),
+            (
+                {"__name__": "nan_single"},
+                {120: float("nan")},
+            ),
+            (
+                {"__name__": "inf_single"},
+                {120: float("inf")},
+            ),
+        ]
+    )
+
     # Classic Prometheus histogram buckets for `histogram_quantile` testing.
     # At t=300 the cumulative counts are: le=0.1 -> 10, le=0.5 -> 30, le=1.0 -> 50, le=+Inf -> 60.
     # That describes 10 observations <= 0.1s, 20 in (0.1, 0.5], 20 in (0.5, 1.0], and 10 in (1.0, +Inf).
@@ -4931,6 +4969,39 @@ def test_aggregation_operators():
         '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
         [["[]", "1970-01-01 00:02:00.000", 0]],
     )
+
+    # A NaN or an infinite sample makes its group NaN. A group with one finite sample is 0.
+    for metric in ["nan_group", "inf_group"]:
+        for operator in ["stddev", "stdvar"]:
+            do_query_test(
+                f"{operator}({metric})",
+                120,
+                '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+                [["[]", "1970-01-01 00:02:00.000", "nan"]],
+            )
+
+            # A range query, so both sides sort the groups by labels.
+            do_range_query_test(
+                f"{operator} by (label) ({metric})",
+                120,
+                120,
+                10,
+                '{"resultType": "matrix", "result": [{"metric": {"label": "a"}, "values": [[120, "0"]]}, {"metric": {"label": "b"}, "values": [[120, "0"]]}, {"metric": {"label": "c"}, "values": [[120, "NaN"]]}]}',
+                [
+                    ["[('label','a')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','b')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','c')]", "[('1970-01-01 00:02:00.000',nan)]"],
+                ],
+            )
+
+    for metric in ["nan_single", "inf_single"]:
+        for operator in ["stddev", "stdvar"]:
+            do_query_test(
+                f"{operator}({metric})",
+                120,
+                '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+                [["[]", "1970-01-01 00:02:00.000", "nan"]],
+            )
 
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # group replaces all values with 1.
