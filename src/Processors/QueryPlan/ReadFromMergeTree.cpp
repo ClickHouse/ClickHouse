@@ -3628,6 +3628,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
+    /// A masking policy rewrites, for this user only, the values the cached verdicts were computed on.
+    const bool table_has_masking_policy = data.hasEnabledMaskingPolicies(context_);
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -3665,7 +3668,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
+        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && !table_has_masking_policy
+            && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 res_parts,
                 query_info_,
@@ -4117,6 +4121,49 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         prewhere_info_value));
 
     updateSortDescription();
+
+    /// `analyzed_result_ptr` already carries the cache verdict of the conditions it was analyzed with: probe only the new PREWHERE.
+    SelectQueryInfo probe_query_info = query_info;
+    probe_query_info.filter_actions_dag = nullptr;
+
+    /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking policy rewrites
+    /// for this user, or a non-deterministic virtual column's value. A TopK read keys its PREWHERE entries on the dropped filter too.
+    if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
+        && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
+        && !top_k_filter_info
+        && !storage_snapshot->metadata->hasUniqueKey()
+        && !data.hasEnabledMaskingPolicies(context)
+        && !filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info)
+        && MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
+            probe_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
+    {
+        RangesInDataParts narrowed = analyzed_result_ptr->parts_with_ranges;
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+            narrowed, probe_query_info, vector_search_parameters, top_k_filter_info,
+            allow_top_k_prewhere_query_condition_cache, mutations_snapshot, *indexes, context, log);
+
+        UInt64 marks = 0;
+        UInt64 ranges = 0;
+        UInt64 rows = 0;
+        for (const auto & part : narrowed)
+        {
+            ranges += part.ranges.size();
+            marks += part.getMarksCount();
+            rows += part.getRowsCount();
+        }
+
+        if (marks < analyzed_result_ptr->selected_marks)
+        {
+            auto updated = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+            updated->parts_with_ranges = std::move(narrowed);
+            updated->selected_parts = updated->parts_with_ranges.size();
+            updated->selected_ranges = ranges;
+            updated->selected_marks = marks;
+            updated->selected_rows = rows;
+            updated->has_exact_ranges = updated->selected_parts == 0 || analyzed_result_ptr->has_exact_ranges;
+            analyzed_result_ptr = std::move(updated);
+        }
+    }
 }
 
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
