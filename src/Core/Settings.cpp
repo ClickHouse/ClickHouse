@@ -10010,6 +10010,10 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_alter_modify_engine, false, R"(
+Allows `ALTER TABLE ... MODIFY ENGINE` to change the engine of a MergeTree-family table in place (for example, `MergeTree` to `ReplacingMergeTree`).
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting to allow `ALTER TABLE ... MODIFY ENGINE` to change a MergeTree-family table's engine in place."}) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA, \
