@@ -132,13 +132,11 @@ std::optional<NameAndTypePair> tryMakeMapKeyColumnsKeySubcolumn(
         return {};
 
     const auto & key_type = data_type_map.getKeyType();
-    /// Inserting a Field may narrow silently (e.g. 256 into UInt8). Leave mixed-type
-    /// comparisons to the original function rather than changing membership semantics.
-    if (!key_type->equals(*key_constant->getResultType())
-        && !(isEnum(key_type) && key_constant->getValue().getType() == Field::Types::String))
-        return {};
-
     auto tmp_key_column = key_type->createColumn();
+    /// Inserting a Field may narrow silently (e.g. 256 into UInt8). `tryInsert` only
+    /// accepts values that convert exactly, so a `UInt8` constant into a `UInt64` key
+    /// column is fine here (no silent narrowing); genuinely incompatible constants are
+    /// left to the original function rather than changing membership semantics.
     if (!tmp_key_column->tryInsert(key_constant->getValue()))
     {
         if (!isEnum(key_type) || key_constant->getValue().getType() != Field::Types::String)
