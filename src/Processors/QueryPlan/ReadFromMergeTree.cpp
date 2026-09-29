@@ -5227,6 +5227,18 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
+    /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
+    /// in the read, not only on the part being read. The per-part `appliesMutationsBeforePrewhere` guard
+    /// of the write paths is therefore not enough: a part without mutations of its own may record its
+    /// granules as empty under a threshold tightened by rows that an on-fly mutation or a patch part
+    /// rewrote in another part. The part names stay the same until the mutation is materialized, so a
+    /// later read that does not apply it (`apply_mutations_on_fly = 0`, `apply_patch_parts = 0`, or any
+    /// read after `KILL MUTATION`) would skip rows. A read with such a snapshot never consults the cache
+    /// (see `filterPartsByQueryConditionCache`), so don't write from it either. See issue #122564.
+    if (top_k_filter_info && mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        reader_settings.use_query_condition_cache = false;
+
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
     /// recorded in the query condition cache under a key salted with the TopK plan parameters,
     /// part set, and a deterministic post-PREWHERE filter that determines the running threshold (see
