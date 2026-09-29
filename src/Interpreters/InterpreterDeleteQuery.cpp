@@ -67,23 +67,6 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 {
 }
 
-static MutationCommands createDeleteMutationCommands(const ASTDeleteQuery & delete_query, const Settings & settings)
-{
-    MutationCommands mutation_commands;
-    MutationCommand mut_command;
-
-    mut_command.type = MutationCommand::Type::DELETE;
-    auto alter_command = make_intrusive<ASTAlterCommand>();
-    alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
-    mut_command.ast_text = alter_command->formatWithSecretsOneLine();
-    mut_command.max_parser_depth = settings[Setting::max_parser_depth];
-    mut_command.max_parser_backtracks = settings[Setting::max_parser_backtracks];
-
-    mutation_commands.emplace_back(mut_command);
-    return mutation_commands;
-}
-
 BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
@@ -124,11 +107,9 @@ BlockIO InterpreterDeleteQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        validateMutationBeforeEnqueue(table, createDeleteMutationCommands(delete_query, settings), getContext());
-
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -148,7 +129,19 @@ BlockIO InterpreterDeleteQuery::execute()
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
 
-        auto mutation_commands = createDeleteMutationCommands(delete_query, settings);
+        /// Convert to MutationCommand
+        MutationCommands mutation_commands;
+        MutationCommand mut_command;
+
+        mut_command.type = MutationCommand::Type::DELETE;
+        auto alter_command = make_intrusive<ASTAlterCommand>();
+        alter_command->type = ASTAlterCommand::DELETE;
+        alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
+        mut_command.ast_text = alter_command->formatWithSecretsOneLine();
+        mut_command.max_parser_depth = settings[Setting::max_parser_depth];
+        mut_command.max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
+        mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         /// Checked ahead of the full validation below, which repeats it, so that a

@@ -330,7 +330,9 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (preserve_user && !entry.initiator_user.empty())
+    if (submitting_user_id)
+        query_context->setUser(*submitting_user_id, submitting_user_roles);
+    else if (preserve_user && !entry.initiator_user.empty())
     {
         const auto & access_control = from_context->getAccessControl();
 

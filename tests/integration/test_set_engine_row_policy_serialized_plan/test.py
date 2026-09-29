@@ -141,7 +141,7 @@ def test_replicated_mutation_checks_set_row_policy(started_cluster):
 
 
 @pytest.fixture(scope="module")
-def replicated_view_over_set(started_cluster):
+def replicated_set_with_row_policy(started_cluster):
     initiator.query(
         "CREATE DATABASE replicated_view_rp "
         "ENGINE = Replicated('/test/replicated_view_rp', 'shard1', 'replica1')"
@@ -179,20 +179,27 @@ def replicated_view_over_set(started_cluster):
     assert_set_policy_error(select_error, "replicated_view_rp.set_rp")
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        pytest.param(
-            "ALTER TABLE replicated_view_rp.data_rp DELETE WHERE {}", id="alter_delete"
-        ),
-        pytest.param("DELETE FROM replicated_view_rp.data_rp WHERE {}", id="delete"),
-        pytest.param(
-            "UPDATE replicated_view_rp.data_rp SET v = v + 1 WHERE {}", id="update"
-        ),
-    ],
-)
+REPLICATED_MUTATIONS = [
+    pytest.param(
+        "ALTER TABLE replicated_view_rp.data_rp DELETE WHERE {}", id="alter_delete"
+    ),
+    pytest.param("DELETE FROM replicated_view_rp.data_rp WHERE {}", id="delete"),
+    pytest.param(
+        "UPDATE replicated_view_rp.data_rp SET v = v + 1 WHERE {}", id="update"
+    ),
+]
+
+
+def assert_replicated_data_unchanged():
+    assert (
+        initiator.query("SELECT count(), sum(v) FROM replicated_view_rp.data_rp")
+        == "3\t60\n"
+    )
+
+
+@pytest.mark.parametrize("mutation", REPLICATED_MUTATIONS)
 def test_replicated_mutation_checks_set_row_policy_through_view(
-    replicated_view_over_set, mutation
+    replicated_set_with_row_policy, mutation
 ):
     # The DDL worker of a `Replicated` database would run the mutation with full access.
     error = initiator.query_and_get_error(
@@ -202,10 +209,45 @@ def test_replicated_mutation_checks_set_row_policy_through_view(
     )
 
     assert_set_policy_error(error, "replicated_view_rp.set_rp")
-    assert (
-        initiator.query("SELECT count(), sum(v) FROM replicated_view_rp.data_rp")
-        == "3\t60\n"
+    assert_replicated_data_unchanged()
+
+
+@pytest.mark.parametrize("mutation", REPLICATED_MUTATIONS)
+def test_replicated_mutation_checks_set_row_policy_behind_temporary_table(
+    replicated_set_with_row_policy, mutation
+):
+    # The session sees its temporary `set_rp`, the DDL worker sees the `Set` table.
+    error = initiator.query_and_get_error(
+        "CREATE TEMPORARY TABLE set_rp (k UInt64); " + mutation.format("k IN set_rp"),
+        user="view_mutator",
+        settings={"enable_lightweight_update": 1},
     )
+
+    assert_set_policy_error(error, "replicated_view_rp.set_rp")
+    assert_replicated_data_unchanged()
+
+
+@pytest.mark.parametrize(
+    "mutation, settings",
+    [
+        pytest.param(
+            "UPDATE replicated_view_rp.data_rp SET v = {} WHERE k = 3",
+            {"enable_lightweight_update": 1},
+            id="update",
+        ),
+    ],
+)
+def test_replicated_mutation_checks_set_row_policy_in_assigned_value(
+    replicated_set_with_row_policy, mutation, settings
+):
+    error = initiator.query_and_get_error(
+        mutation.format("(SELECT max(number) FROM replicated_view_rp.v)"),
+        user="view_mutator",
+        settings=settings,
+    )
+
+    assert_set_policy_error(error, "replicated_view_rp.set_rp")
+    assert_replicated_data_unchanged()
 
 
 def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
