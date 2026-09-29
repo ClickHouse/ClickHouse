@@ -89,6 +89,43 @@ namespace
             }
         }
     }
+
+    /// Prometheus orders NaN before every other value, so the quantile counts NaN as -Inf
+    /// and the result is NaN if the rank falls on a NaN.
+    ASTPtr makeQuantileForEach(const ASTPtr & phi)
+    {
+        auto x = [] { return make_intrusive<ASTIdentifier>("x"); };
+        auto values = [] { return make_intrusive<ASTIdentifier>(ColumnNames::Values); };
+
+        ASTPtr quantiles = addParametersToAggregateFunction(
+            makeASTFunction("quantileExactInclusiveForEach",
+                makeASTFunction("arrayMap",
+                    makeASTLambda({"x"},
+                        makeASTFunction("if",
+                            makeASTFunction("isNaN", x()),
+                            make_intrusive<ASTLiteral>(-std::numeric_limits<Float64>::infinity()),
+                            x())),
+                    values())),
+            phi->clone());
+
+        ASTPtr sample_counts = makeASTFunction("countForEach", values());
+        ASTPtr nan_counts = makeASTFunction("sumForEach",
+            makeASTFunction("arrayMap", makeASTLambda({"x"}, makeASTFunction("isNaN", x())), values()));
+
+        /// arrayMap((value, sample_count, nan_count) -> if(floor(phi * (sample_count - 1)) < nan_count, nan, value), ...)
+        ASTPtr rank = makeASTFunction("floor",
+            makeASTFunction("multiply",
+                phi->clone(),
+                makeASTFunction("minus", make_intrusive<ASTIdentifier>("sample_count"), make_intrusive<ASTLiteral>(1u))));
+
+        return makeASTFunction("arrayMap",
+            makeASTLambda({"value", "sample_count", "nan_count"},
+                makeASTFunction("if",
+                    makeASTFunction("less", std::move(rank), make_intrusive<ASTIdentifier>("nan_count")),
+                    make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()),
+                    make_intrusive<ASTIdentifier>("value"))),
+            std::move(quantiles), std::move(sample_counts), std::move(nan_counts));
+    }
 }
 
 
@@ -175,7 +212,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
             /// arrayMap(x -> if(isNotNull(x),
             ///                  multiIf(isNaN(phi), nan, phi < 0, -inf, phi > 1, inf, x),
             ///                  NULL),
-            ///          quantileExactInclusiveForEach(least(greatest(phi, 0.), 1.))(values))
+            ///          makeQuantileForEach(least(greatest(phi, 0.), 1.)))
             ///
             /// least() and greatest() clamp a NaN phi to a valid value too, which one doesn't
             /// matter because the result is replaced with NaN anyway.
@@ -203,16 +240,11 @@ SQLQueryPiece applyAggregationOperatorQuantile(
                         makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
                         std::move(substituted_element),
                         make_intrusive<ASTLiteral>(Field{} /* NULL */))),
-                addParametersToAggregateFunction(
-                    makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                    std::move(clamped_phi)));
+                makeQuantileForEach(clamped_phi));
         }
         else
         {
-            /// quantileExactInclusiveForEach(phi)(values)
-            quantile_expr = addParametersToAggregateFunction(
-                makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                getPhi(std::move(phi_arg), context));
+            quantile_expr = makeQuantileForEach(getPhi(std::move(phi_arg), context));
         }
         builder.select_list.push_back(std::move(quantile_expr));
         builder.select_list.back()->setAlias(ColumnNames::Values);
