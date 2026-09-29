@@ -1,8 +1,6 @@
 -- Tags: zookeeper, no-replicated-database, no-ordinary-database, need-query-parameters
 -- no-replicated-database: we explicitly run this test by creating a replicated database
 
-SET allow_experimental_alias_table_engine = 1;
-
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} FORMAT NULL;
 
 -- Create Replicated database (using unique path based on database name)

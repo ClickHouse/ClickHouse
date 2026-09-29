@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 
 set enable_analyzer = 1;
-set allow_experimental_json_type = 1;
 
 -- Case 1: Null whole JSON object via VALUES format
 -- Triggers ObjectJSONNode::insertResultToColumn null path (JSONExtractTree.cpp)

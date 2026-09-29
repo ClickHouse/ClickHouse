@@ -3,7 +3,7 @@ SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_optimiz
 -- Parallel replicas add plan steps around the read, which shifts the indentation of every
 -- `sort description` row matched below.
 SET enable_parallel_replicas = 0;
-SET optimize_monotonous_functions_in_order_by = 1, optimize_redundant_functions_in_order_by = 1;
+SET optimize_redundant_functions_in_order_by = 1;
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 
 drop table if exists tab;

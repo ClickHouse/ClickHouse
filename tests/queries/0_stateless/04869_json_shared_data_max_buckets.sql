@@ -9,7 +9,6 @@
 DROP TABLE IF EXISTS t_json_max_buckets_wide;
 DROP TABLE IF EXISTS t_json_max_buckets_compact;
 DROP TABLE IF EXISTS t_array_json_max_buckets;
-SET enable_json_type = 1;
 SET output_format_json_quote_64bit_integers = 0;
 
 CREATE TABLE t_json_max_buckets_wide (id UInt64, json JSON(max_dynamic_paths = 0))

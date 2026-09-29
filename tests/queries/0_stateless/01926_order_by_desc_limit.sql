@@ -3,7 +3,6 @@
 DROP TABLE IF EXISTS order_by_desc;
 
 SET enable_filesystem_cache=0;
-SET read_through_distributed_cache=0;
 SET use_top_k_dynamic_filtering=0;
 SET use_skip_indexes_for_top_k=0;
 

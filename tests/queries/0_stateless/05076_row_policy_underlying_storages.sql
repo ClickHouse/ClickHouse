@@ -6,7 +6,6 @@ DROP TABLE IF EXISTS rp_merge;
 DROP TABLE IF EXISTS rp_alias;
 DROP TABLE IF EXISTS rp_target;
 
-SET allow_experimental_alias_table_engine = 1;
 SET optimize_trivial_count_query = 1;
 SET make_distributed_plan = 0;
 SET serialize_query_plan = 0;

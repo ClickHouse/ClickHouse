@@ -4,8 +4,6 @@
 -- Default (true): throw an exception on mismatch.
 -- When set to false: return NULL for incompatible rows instead.
 
-SET allow_experimental_variant_type = 1;
-SET allow_experimental_dynamic_type = 1;
 SET use_variant_as_common_type = 1;
 SET allow_suspicious_variant_types = 1;
 

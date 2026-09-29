@@ -1,8 +1,6 @@
 -- Tags: zookeeper, no-replicated-database, no-ordinary-database
 -- no-replicated-database: the test explicitly creates a replicated database
 
-SET allow_experimental_alias_table_engine = 1;
-
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier} FORMAT Null;
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE = Replicated('/clickhouse/04239_storage_alias_missing_target_replicated_database_drop/{database}', 'shard1', 'replica1') FORMAT Null;
 USE {CLICKHOUSE_DATABASE:Identifier};

@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
 SET input_format_orc_dictionary_as_low_cardinality = 1;
 
 -- Reading ORC unions with string-like branches must not depend on the stripes' physical encodings:

@@ -264,7 +264,6 @@ def test_corrupted_columns_substreams_detection(started_cluster):
                  enable_block_number_column = 0, enable_block_offset_column = 0,
                  replace_long_file_name_to_hash = 0, ratio_of_defaults_for_sparse_serialization = 1
         """,
-        settings={"allow_experimental_json_type": 1},
     )
 
     node1.query("""INSERT INTO t_corrupted_substreams_json VALUES (1, '{"a": 1, "b": "hello"}'), (2, '{"a": 2, "c": [1, 2, 3]}')""")

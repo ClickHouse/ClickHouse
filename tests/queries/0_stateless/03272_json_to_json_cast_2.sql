@@ -1,6 +1,5 @@
 -- Tags: long
 
-SET enable_json_type = 1;
 set enable_analyzer = 1;
 set output_format_native_write_json_as_string = 0;
 

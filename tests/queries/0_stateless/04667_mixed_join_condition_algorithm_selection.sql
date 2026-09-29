@@ -1,7 +1,6 @@
 -- Session SET (not per-statement SETTINGS) so it also covers the oracle subqueries
 -- and is not overridden by `compatibility` randomization.
 SET enable_analyzer = 1;
-SET allow_experimental_join_condition = 1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

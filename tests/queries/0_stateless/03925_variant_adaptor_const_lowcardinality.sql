@@ -4,7 +4,6 @@
 -- when Nullable(UInt8) is expected, causing a LOGICAL_ERROR.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=97242&sha=c49a5e0ed10ad8d8ac924af7287bc1c44116c271&name_0=PR&name_1=AST%20fuzzer%20%28amd_debug%29
 
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET allow_suspicious_low_cardinality_types = 1;

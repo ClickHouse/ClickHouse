@@ -1,9 +1,9 @@
-SET enable_json_type = 1, type_json_skip_duplicated_paths = 1, allow_simdjson = 1;
+SET type_json_skip_duplicated_paths = 1, allow_simdjson = 1;
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t0 (c0 JSON, c1 Array(Nullable(Decimal))) ENGINE = Memory();
 CREATE TABLE t1 AS t0;
-SET min_compress_block_size = 2654980, cross_join_min_rows_to_compress = 1, insert_null_as_default = 1, check_query_single_value_result = 1, partial_merge_join_optimizations = 1, use_uncompressed_cache = 0;
+SET min_compress_block_size = 2654980, cross_join_min_rows_to_compress = 1, insert_null_as_default = 1, check_query_single_value_result = 1, use_uncompressed_cache = 0;
 INSERT INTO t0 (c0, c1) VALUES ('{"c1":[{"c1":"Uw"}]}', [-5205545.0]), ('{"c1":{"c0":{"c2":["j^)7`{"]}}}', [-183841.0, 1232295168.0]), ('{"c2":["Dh X,r<"]}', [-518583.0, -563.0, -2442132402.0, -4991142492.0, -34823.0, -5.0, -6.0]), ('{"c2":"n 8k]wa_V"}', NULL), ('{"c2":{"c0":{"c1":-98}}}', NULL), ('{"c2":36}', [-89513.0, -9306968710.0, 6332325249.0, -48245723.0]), ('{"c2":{}}', [-10755380.0, 60433.0, 4047617.0, -98905.0, -993.0, NULL, 93055562.0, 917699.0, NULL]), ('{"c0":true,"c1":"g=n4"}', [752.0, 1.0, 96.0]), ('{"c3":false}', [NULL, 4039255.0, -88372248.0, 1256111069.0, 2383.0]);
 INSERT INTO t1 (c0, c1) VALUES ('{"c2":["7AKy`Zh",[[-94]]],"c0":"&A:2ho","c3":[[{}],{"c2":257}]}', [-7451549.0, 633.0, 7009760932.0, NULL, NULL]), ('{"c2":65}', [-12226902.0]), ('{"c1":[{"c2":{}},"Tk26#E)"],"c3":"","c3":-608}', [-342709852.0, -6359192.0, -13.0, 403.0, 88126338.0, -31192275.0, -5.0, -4840.0, -82845285.0]);
 INSERT INTO t0 (c0, c1) VALUES ('{"c0":[":+k,"]}', [-265468152.0, 96787546.0, -8980013521.0, 9164448735.0, -1447.0]), ('{"c0":[[{}]],"c0":{"c0":973,"c0":-345}}', [50.0, NULL, 805297790.0, 3038967.0, 7847438.0, 5716507241.0, 26414475.0]), ('{"c2":["7/jinz|"]}', NULL), ('{"c2":972}', [10507.0, -9616192.0, 595.0, -6102996.0, NULL, -17.0]);

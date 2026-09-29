@@ -1,7 +1,5 @@
 -- Tags: no-fasttest, long
 
-SET enable_json_type = 1;
-
 drop table if exists test;
 
 {% for create_command in ['create table test (json Nullable(JSON(a UInt32, b Array(UInt32), c Nullable(UInt32), d Tuple(e UInt32, f Nullable(UInt32))))) engine=Memory;',

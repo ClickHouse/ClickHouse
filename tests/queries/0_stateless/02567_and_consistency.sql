@@ -5,8 +5,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(sum(number))
-ORDER BY ALL
-SETTINGS enable_optimize_predicate_expression = 0;
+ORDER BY ALL;
 
 SELECT '=====';
 
@@ -17,8 +16,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(1)
-ORDER BY ALL
-SETTINGS enable_optimize_predicate_expression = 0;
+ORDER BY ALL;
 
 SELECT '=====';
 
@@ -29,8 +27,7 @@ FROM
 )
 GROUP BY number
 HAVING x AND sin(sum(number))
-ORDER BY ALL
-SETTINGS enable_optimize_predicate_expression = 1;
+ORDER BY ALL;
 
 SELECT '=====';
 
@@ -41,8 +38,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(sum(number))
-ORDER BY ALL
-SETTINGS enable_optimize_predicate_expression = 0;
+ORDER BY ALL;
 
 SELECT '=====';
 
@@ -61,8 +57,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(sum(number))
-ORDER BY ALL
-SETTINGS enable_optimize_predicate_expression = 1;
+ORDER BY ALL;
 
 select '#45440';
 
@@ -84,11 +79,11 @@ SELECT '=';
 
 SELECT MAX(left.c0), min2(left.c0, -(-left.c0) * (radians(left.c0) - radians(left.c0))) as g, (((-1925024212 IS NOT NULL) IS NOT NULL) != radians(tan(1216286224))) AND cos(lcm(MAX(left.c0), -1966575216) OR (MAX(left.c0) * 1180517420)) as h, not h, h is null
                   FROM t2 AS left
-                  GROUP BY g HAVING h ORDER BY g DESC SETTINGS enable_optimize_predicate_expression = 0;
+                  GROUP BY g HAVING h ORDER BY g DESC;
 SELECT  '=';
 
 SELECT MAX(left.c0), min2(left.c0, -(-left.c0) * (radians(left.c0) - radians(left.c0))) as g, (((-1925024212 IS NOT NULL) IS NOT NULL) != radians(tan(1216286224))) AND cos(lcm(MAX(left.c0), -1966575216) OR (MAX(left.c0) * 1180517420)) as h, not h, h is null
                   FROM t2 AS left
-                  GROUP BY g HAVING h ORDER BY g DESC SETTINGS enable_optimize_predicate_expression = 1;
+                  GROUP BY g HAVING h ORDER BY g DESC;
 
 DROP TABLE IF EXISTS t2;

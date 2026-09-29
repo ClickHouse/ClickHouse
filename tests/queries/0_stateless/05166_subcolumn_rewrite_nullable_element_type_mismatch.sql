@@ -4,7 +4,6 @@
 
 SET enable_analyzer = 1;
 SET enable_nullable_tuple_type = 1;
-SET enable_variant_type = 1;
 
 DROP TABLE IF EXISTS t_nullable_tuple_element;
 DROP TABLE IF EXISTS t_plain_tuple_element;

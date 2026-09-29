@@ -51,8 +51,6 @@ USING n
 ORDER BY n
 SETTINGS max_bytes_in_join = 10000000;
 
-SET partial_merge_join_optimizations = 1;
-
 SELECT n, j FROM
 (
     SELECT number * 200000 as n FROM numbers(5)

@@ -3,8 +3,6 @@
 -- covering all AST types and all AST fields.
 -- ==========================================================================
 
-SET allow_experimental_json_type = 0; -- avoid interference with JSON column type
-
 -- ==========================================================================
 -- 1. ASTSelectWithUnionQuery
 -- Fields: union_mode(string), list_of_modes(array), list_of_selects(child)

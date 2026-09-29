@@ -4,8 +4,6 @@
 -- inside a `Variant` state) are not registered in any deserialize-states cache, so both are
 -- reachable only through the dedicated validator traversals.
 
-SET allow_experimental_variant_type = 1;
-
 DROP TABLE IF EXISTS t_lc_shared_dict_wide;
 
 -- A Wide part with a single LowCardinality dictionary: the reader shares the dictionary from the

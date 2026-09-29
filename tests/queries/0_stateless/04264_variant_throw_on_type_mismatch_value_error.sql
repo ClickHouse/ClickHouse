@@ -8,9 +8,7 @@
 -- must NOT be silently converted to NULL even when throw_on_type_mismatch is disabled.
 -- https://github.com/ClickHouse/ClickHouse/issues/103484
 
-SET enable_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
-SET allow_experimental_dynamic_type = 1;
 SET variant_throw_on_type_mismatch = false;
 SET dynamic_throw_on_type_mismatch = false;
 

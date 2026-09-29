@@ -6,7 +6,6 @@
 -- the optimization fires. The Variant branch is exercised for dotProductTransposed, which 04493 does not cover.
 
 SET enable_analyzer = 1;
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 DROP TABLE IF EXISTS qbit_plain;

@@ -14,7 +14,6 @@
 -- Read-in-order on the base table would decline the forced projections in this series
 -- (`PROJECTION_NOT_USED`), so the series disables it: plan shape is not its subject.
 SET optimize_read_in_order = 0;
-SET enable_json_type = 1;
 SET enable_json_lazy_type_hints = 1;
 SET allow_suspicious_types_in_order_by = 1;
 

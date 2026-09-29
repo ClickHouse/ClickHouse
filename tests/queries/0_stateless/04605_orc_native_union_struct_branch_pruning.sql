@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
-
 -- ORC uniontype<struct<a:uniontype<int,int>,b:string>,string>: the struct branch's field `a` is
 -- itself an ORC union with two identical-type branches, which the native ORC reader always
 -- rejects once it is actually inspected (see 04602_orc_native_union_nested for the closely

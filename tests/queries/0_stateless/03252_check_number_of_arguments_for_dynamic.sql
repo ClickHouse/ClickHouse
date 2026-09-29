@@ -1,5 +1,4 @@
 set enable_analyzer=1;
-set enable_json_type=1;
 
 CREATE TABLE t
 (

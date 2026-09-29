@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET enable_json_type = 1;
-
 SELECT 'Basic usage';
 SELECT materialize('{"a": 42}')::JSON as json, JSONAllValues(json);
 SELECT materialize('{"b": "Hello"}')::JSON as json, JSONAllValues(json);

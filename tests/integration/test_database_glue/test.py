@@ -1345,7 +1345,7 @@ def test_sts_smoke(started_cluster):
     try:
         result = node.query(
             f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
-            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+            f"SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000"
         )
         assert False, f"Expected query to fail with wrong session name but got result: {result}"
     except Exception as e:
@@ -1570,7 +1570,7 @@ def test_sts_external_id(started_cluster):
     try:
         result = node.query(
             f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
-            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+            f"SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000"
         )
         assert False, f"Expected query to fail with wrong external id but got result: {result}"
     except Exception as e:

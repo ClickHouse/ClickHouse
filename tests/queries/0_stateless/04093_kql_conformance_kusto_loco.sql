@@ -9,8 +9,6 @@ set enable_analyzer=1;
 set allow_experimental_kusto_dialect=1;
 set joined_subquery_requires_alias=0;
 set prefer_column_name_to_alias=1;
-set allow_experimental_dynamic_type=1;
-set allow_experimental_json_type=1;
 -- A KQL timespan is an Interval; this is how Kusto renders one.
 set interval_output_format='kusto';
 set dialect='kusto';

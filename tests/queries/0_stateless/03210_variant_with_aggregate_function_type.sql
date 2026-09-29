@@ -1,4 +1,3 @@
-SET allow_experimental_variant_type = 1;
 
 DROP TABLE IF EXISTS source;
 CREATE TABLE source 

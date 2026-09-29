@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 
-set enable_json_type=1;
 set enable_analyzer=1;
 set output_format_native_write_json_as_string=0;
 set input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;

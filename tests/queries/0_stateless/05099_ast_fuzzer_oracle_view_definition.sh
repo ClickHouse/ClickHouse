@@ -139,7 +139,6 @@ $CLICKHOUSE_CLIENT --query "
 
     -- \`Alias\` reports its own engine name while reading, and reporting the metadata of,
     -- its target, so the target view's body is reachable but not named here.
-    SET allow_experimental_alias_table_engine = 1;
     CREATE TABLE oracle_definition_alias_engine ENGINE = Alias(currentDatabase(), 'oracle_definition_nondet_view');
 
     -- A materialized view read is forwarded to its target table, whose engine and column

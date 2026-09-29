@@ -18,5 +18,4 @@ FROM
             floor(multiIf(cpu_total_7 = 0, 0, cpu_total - cpu_total_7), 2) AS cpu_total_week
         FROM t
         ) AS t_table_471873
-WHERE (rDate >= '2022-03-06') AND (rDate <= '2022-03-06')
-SETTINGS enable_optimize_predicate_expression = 1;
+WHERE (rDate >= '2022-03-06') AND (rDate <= '2022-03-06');

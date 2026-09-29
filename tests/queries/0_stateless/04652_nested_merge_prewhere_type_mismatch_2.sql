@@ -221,7 +221,6 @@ DROP TABLE IF EXISTS sub_buf;
 DROP TABLE IF EXISTS sub_merge;
 DROP TABLE IF EXISTS sub_merge_bad;
 
-SET enable_json_type = 1;
 CREATE TABLE sub_leaf (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO sub_leaf SELECT '{"a":1}'::JSON, tuple(number), number FROM numbers(10);
 CREATE TABLE sub_buf (j JSON, t Tuple(a UInt64), x UInt64)

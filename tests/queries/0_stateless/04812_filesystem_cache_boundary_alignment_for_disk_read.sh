@@ -27,7 +27,6 @@ INSERT INTO test SELECT number, randomString(100) FROM numbers(500000);
 
 SYSTEM DROP FILESYSTEM CACHE '$CLICKHOUSE_TEST_UNIQUE_NAME';
 
-SET read_through_distributed_cache = 0;
 SET filesystem_cache_boundary_alignment = $ALIGNMENT;
 
 -- Read a granule from the middle of the table, so that the file segments

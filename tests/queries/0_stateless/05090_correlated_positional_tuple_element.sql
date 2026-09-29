@@ -51,7 +51,6 @@ DROP TABLE t_correlated_tuple;
 -- The same invariant for the chained rewrite of a JSON array element: the outer column of a
 -- correlated subquery keeps its whole-column read, while the same access to a column of the
 -- subquery's own table is still rewritten into the subcolumn.
-SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS t_correlated_json;
 CREATE TABLE t_correlated_json (json JSON) ENGINE = MergeTree ORDER BY tuple();

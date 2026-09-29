@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 
 -- Bool is a custom-named UInt8, and the ORC writer maps Bool -> BOOLEAN while a plain UInt8 goes

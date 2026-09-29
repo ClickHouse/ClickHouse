@@ -1,7 +1,6 @@
 <test>
     <settings>
         <max_threads>1</max_threads>
-        <allow_experimental_bfloat16_type>1</allow_experimental_bfloat16_type>
     </settings>
 
     <create_query>

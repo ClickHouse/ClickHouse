@@ -14,7 +14,6 @@
 -- triggering the assertion in `executeActionForPartialResult` at planning time.
 
 SET enable_analyzer = 1;
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 -- Minimal reproducer: no table required.

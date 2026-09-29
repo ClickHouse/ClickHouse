@@ -12,7 +12,6 @@
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET max_insert_threads = 1;
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS t_variant_subcol_index;

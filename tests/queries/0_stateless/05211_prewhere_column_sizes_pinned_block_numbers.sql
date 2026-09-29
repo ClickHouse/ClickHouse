@@ -14,7 +14,7 @@ SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, move_all_co
 -- The conditions are spelled as `notEmpty` directly, so the randomized `optimize_empty_string_comparisons`
 -- rewrite of `!= ''` cannot change the printed plan.
 SET optimize_functions_to_subcolumns = 0;
-SET query_plan_optimize_primary_key = 1, convert_query_to_cnf = 0, enable_parallel_replicas = 0;
+SET convert_query_to_cnf = 0, enable_parallel_replicas = 0;
 SET use_statistics = 0, materialize_statistics_on_insert = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET insert_keeper_fault_injection_probability = 0;

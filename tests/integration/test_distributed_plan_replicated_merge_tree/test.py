@@ -78,7 +78,6 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "distributed_plan_optimize_exchanges = 1",
     "query_plan_join_swap_table = 'false'",
     "query_plan_optimize_join_order_limit = 0",
-    "query_plan_use_new_logical_join_step = 1",
     "query_plan_convert_join_to_in = 0",
     "query_plan_convert_outer_join_to_inner_join = 0",
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",

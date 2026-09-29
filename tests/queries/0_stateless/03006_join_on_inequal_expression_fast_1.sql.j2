@@ -8,7 +8,6 @@ INSERT INTO t2 VALUES ('key1', 'A', 1, 2, 1), ('key1', 'B', 2, 1, 2), ('key1', '
 
 SET query_plan_join_swap_table=0; -- result is not deterministic for ANY join
 SET enable_analyzer=1;
-SET allow_experimental_join_condition=1;
 SET join_use_nulls=0;
 -- { echoOn }
 {% for algorithm in ['hash', 'grace_hash'] -%}

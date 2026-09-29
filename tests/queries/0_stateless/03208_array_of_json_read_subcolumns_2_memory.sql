@@ -2,8 +2,6 @@
 -- too slow for sanitizers and flaky check
 -- index_granularity=1 with 40K rows of complex JSON causes timeout
 
-SET enable_json_type = 1;
-set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 
 drop table if exists test;

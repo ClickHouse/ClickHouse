@@ -1,5 +1,3 @@
-set allow_experimental_dynamic_type=1;
-set enable_json_type=1;
 SET enable_analyzer=1;
 
 select d.String from (select 'str'::Dynamic as d);

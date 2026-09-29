@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_DIR=$CUR_DIR/data_avro
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1"
+CH_CLIENT="$CLICKHOUSE_CLIENT"
 
 file_name="$CLICKHOUSE_DATABASE"_union_in_complex_types.avro
 cp $DATA_DIR/union_in_complex_types.avro $CLICKHOUSE_USER_FILES/$file_name

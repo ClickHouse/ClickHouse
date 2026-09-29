@@ -18,8 +18,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Full part storage is pinned: a Packed part takes the full-rewrite path, which never reaches
 # the stale-file accounting this test covers.
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_variant_type = 1;
-    SET allow_experimental_dynamic_type = 1;
     SET use_variant_as_common_type = 1;
 
     DROP TABLE IF EXISTS t_modify_to_dyn;
@@ -58,8 +56,6 @@ ${CLICKHOUSE_CLIENT} --query "
 # passes with or without the fix. Variant -> JSON is rejected outright (only String/Map/Object/
 # Tuple/JSON can be cast to JSON), so Dynamic is the only reachable colliding target here.
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_variant_type = 1;
-    SET allow_experimental_dynamic_type = 1;
 
     DROP TABLE IF EXISTS t_modify_variant_to_dyn;
     -- PARTITION BY keeps the number of source parts (and so of MutatePart log entries)
@@ -106,8 +102,6 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_variant_type = 1;
-    SET allow_experimental_dynamic_type = 1;
 
     DETACH TABLE t_modify_variant_to_dyn;
     ATTACH TABLE t_modify_variant_to_dyn;

@@ -7,7 +7,6 @@ DROP TABLE IF EXISTS test_variant_compatible;
 DROP TABLE IF EXISTS test_variant_incompatible;
 DROP TABLE IF EXISTS test_variant_array;
 
-SET enable_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET allow_suspicious_types_in_order_by = 1;
 

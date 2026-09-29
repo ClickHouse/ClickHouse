@@ -3,7 +3,6 @@
 -- gate unquoted numeric 1/0 would greedily land in Bool during Variant/Dynamic JSON
 -- inference. By default it must fall through to the wider integer; with the opt-in it
 -- resolves to Bool.
-SET enable_variant_type = 1;
 
 SET allow_special_bool_values_inside_variant = 0;
 SELECT v, variantType(v) FROM format(JSONEachRow, 'v Variant(Bool, UInt32)', '{"v":1}');
