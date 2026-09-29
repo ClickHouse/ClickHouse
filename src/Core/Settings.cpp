@@ -10488,7 +10488,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
 If greater than zero, a range query of the Prometheus HTTP API (`/api/v1/query_range`) at least this long is evaluated in chunks, one after another, and the results of the chunks are merged.
 The chunks start at the first steps at or after multiples of this interval since the Unix epoch, so the same chunks repeat when a dashboard is refreshed.
 This bounds the peak memory of the query by the memory of one chunk, but makes the query slower unless the chunks are read from the query cache (see `promql_range_query_cache_min_age`).
-A query using `@ start()` or `@ end()` is not split. 0 disables splitting.
+A query using `@ start()` or `@ end()` is not split, nor is a query with `max_result_rows`, `max_result_bytes`, `limit` or `offset`, which apply to the whole result. 0 disables splitting.
 The chunks are separate queries, so a check over the whole range, like the one for series with the same labels, sees one chunk at a time.
 )", PRIVATE_PREVIEW, \
         {"26.10", 0, 0, "New setting."}) \

@@ -63,7 +63,11 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsDouble limit;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsDouble offset;
     extern const SettingsSeconds promql_range_query_cache_min_age;
     extern const SettingsSeconds promql_range_query_split_interval;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -311,11 +315,15 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
 
         /// A query shorter than the split interval isn't split, nor is a query with too many steps, which fails as without splitting.
-        const auto split_interval_seconds = getContext()->getSettingsRef()[Setting::promql_range_query_split_interval].totalSeconds();
+        /// Result limits apply to the whole response, so a query with them isn't split either.
+        const auto & settings = getContext()->getSettingsRef();
+        const auto split_interval_seconds = settings[Setting::promql_range_query_split_interval].totalSeconds();
         const Int128 split_interval = static_cast<Int128>(split_interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(time_scale);
         const Int128 length = static_cast<Int128>(evaluation_settings.end_time->value) - evaluation_settings.start_time->value;
         const Int64 step = evaluation_settings.step->value;
-        if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS
+        const bool has_result_limits = settings[Setting::max_result_rows] || settings[Setting::max_result_bytes]
+            || settings[Setting::limit] != 0 || settings[Setting::offset] != 0;
+        if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS && !has_result_limits
             && getNextChunkStart(evaluation_settings, split_interval, evaluation_settings.start_time->value)
             && !usesWholeEvaluationRange(*query_tree->getRoot()))
         {

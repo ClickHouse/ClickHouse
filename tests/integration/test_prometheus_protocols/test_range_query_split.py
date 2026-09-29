@@ -196,3 +196,27 @@ def test_use_query_cache_of_request_caches_no_chunk(query):
     assert query_range(query, H, H + 6 * 3600, 60, params) == expected
     assert int(node.query("SELECT count() FROM system.query_cache")) == 0
 
+
+# Every hour has its own series, so each chunk has one series and the whole range seven.
+HOURLY = 'count_values("hour", floor(vector(time() / 3600)))'
+
+
+@pytest.mark.parametrize(
+    "query, params",
+    [
+        (HOURLY, {"max_result_rows": 3}),
+        (HOURLY, {"max_result_rows": 3, "result_overflow_mode": "break", "max_block_size": 2}),
+        (HOURLY, {"offset": 1}),
+        # The `limit` parameter belongs to the API, so the setting `limit` comes from the user.
+        (HOURLY, {"user": "range_split_limit"}),
+        ("rate(node_cpu_seconds_total[5m])", {"max_result_bytes": 20000}),
+    ],
+)
+def test_result_limits_apply_to_whole_response(query, params):
+    node.query("CREATE USER IF NOT EXISTS range_split_limit SETTINGS PROFILE 'default', limit = 3")
+    node.query("GRANT SELECT ON *.* TO range_split_limit")
+    expected = send_query_range(query, H, H + 6 * 3600, 60, params)
+
+    split_params = {**params, "promql_range_query_split_interval": INTERVAL}
+    response = send_query_range(query, H, H + 6 * 3600, 60, split_params)
+    assert (response.status_code, response.text) == (expected.status_code, expected.text)
