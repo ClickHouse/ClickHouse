@@ -314,7 +314,7 @@ ASTPtr CompressionCodecFactory::normalizeCodecForUntypedColumn(const ASTPtr & as
 
         const auto canonicalizer = untyped_canonicalizers.find(family_name);
         if (canonicalizer != untyped_canonicalizers.end() && canonicalizer->second(arguments ? arguments->children.size() : 0))
-            normalized.push_back(getImpl(family_name, arguments, nullptr)->getCodecDescription());
+            normalized.push_back(getImpl(family_name, arguments, nullptr)->getCodecDescriptionForUntypedColumn());
         else
             normalized.push_back(child->clone());
     }

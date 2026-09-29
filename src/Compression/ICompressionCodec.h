@@ -36,6 +36,10 @@ public:
     /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)". Constructed on demand.
     virtual ASTPtr getCodecDescription() const = 0;
 
+    /// Description for an untyped column declaration when equivalent spellings must compare
+    /// identically across replicas. Most codecs use their ordinary description.
+    virtual ASTPtr getCodecDescriptionForUntypedColumn() const { return getCodecDescription(); }
+
     /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
     /// "CODEC(LZ4,LZ4HC(5))"
     ASTPtr getFullCodecDescription() const;

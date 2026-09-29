@@ -141,6 +141,7 @@ public:
     explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
+    ASTPtr getCodecDescriptionForUntypedColumn() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
@@ -1319,8 +1320,7 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
 ASTPtr CompressionCodecALP::getCodecDescription() const
 {
     ASTs arguments;
-    /// `AUTO` and the omitted variant use the same compression path for every supported type.
-    if (variant != Variant::DEFAULT && variant != Variant::AUTO)
+    if (variant != Variant::DEFAULT)
     {
         String variant_str;
         switch (variant)
@@ -1335,6 +1335,15 @@ ASTPtr CompressionCodecALP::getCodecDescription() const
     }
 
     return makeCodecDescription("ALP", arguments);
+}
+
+ASTPtr CompressionCodecALP::getCodecDescriptionForUntypedColumn() const
+{
+    /// `AUTO` and the omitted variant use the same compression path for every supported type.
+    /// Keep the ordinary description distinct for adaptive codec candidates and codec hashes.
+    if (variant == Variant::AUTO)
+        return makeCodecDescription("ALP");
+    return getCodecDescription();
 }
 
 uint8_t CompressionCodecALP::getMethodByte() const
