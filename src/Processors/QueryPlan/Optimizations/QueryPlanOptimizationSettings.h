@@ -68,6 +68,8 @@ struct QueryPlanOptimizationSettings
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
     bool convert_outer_join_to_inner_join_transitively;
+    bool derive_not_null_filter_at_read;
+    double derive_not_null_filter_at_read_min_null_ratio;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;

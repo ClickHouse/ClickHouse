@@ -12,17 +12,24 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Core/Names.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -148,6 +155,94 @@ void collectNullRejectedColumnsFromFilter(const FilterStep & filter, NameSet & n
 
     for (const auto * input : collectNullRejectedInputs(predicate))
         null_rejected_columns.insert(input->result_name);
+}
+
+bool addNotNullFilterAboveRead(QueryPlan::Node & node, const NameSet & null_rejected_columns, const FilterStep * parent_filter, double min_null_ratio, QueryPlan::Nodes & nodes)
+{
+    if (null_rejected_columns.empty())
+        return false;
+
+    const auto * read = typeid_cast<const ReadFromMergeTree *>(node.step.get());
+    if (!read)
+        return false;
+
+    /// A conjunct that already rejects NULL there makes the derived one redundant.
+    NameSet already_rejected;
+    if (parent_filter)
+        collectNullRejectedColumnsFromFilter(*parent_filter, already_rejected);
+
+    const auto & header = *node.step->getOutputHeader();
+    NameSet candidates;
+    for (const auto & name : null_rejected_columns)
+    {
+        if (const auto * column = header.findByName(name); column && isNullableOrLowCardinalityNullable(column->type) && !already_rejected.contains(name))
+            candidates.insert(name);
+    }
+
+    if (candidates.empty())
+        return false;
+
+    /// Add an `indexHint` if the null fraction of the column does not qualify it for an executable
+    /// filter. This enables index analysis without the potential cost of running the filter.
+    const auto [columns_to_filter, columns_to_index_hint] = [&] -> std::pair<NameSet, NameSet>
+    {
+        if (min_null_ratio <= 0.0)
+            return {candidates, {}};
+
+        auto estimator = read->getConditionSelectivityEstimator(Names(candidates.begin(), candidates.end()));
+        if (!estimator)
+            return {{}, candidates};
+
+        NameSet to_filter;
+        NameSet to_index_hint;
+        const auto & column_stats = estimator->estimateRelationProfile().column_stats;
+        for (const auto & name : candidates)
+        {
+            const auto it = column_stats.find(name);
+            if (it != column_stats.end() && it->second.null_fraction && *it->second.null_fraction >= min_null_ratio)
+                to_filter.insert(name);
+            else
+                to_index_hint.insert(name);
+        }
+
+        return {std::move(to_filter), std::move(to_index_hint)};
+    }();
+
+    auto context = Context::getGlobalContextInstance();
+    auto is_not_null = FunctionFactory::instance().get("isNotNull", context);
+
+    auto buildNotNullFilterOn = [&](ActionsDAG & target, const NameSet & columns)
+    {
+        ActionsDAG::NodeRawConstPtrs result;
+        for (const auto * input : target.getInputs())
+            if (columns.contains(input->result_name))
+                result.push_back(&target.addFunction(is_not_null, {input}, {}));
+        return result;
+    };
+
+    ActionsDAG filter_dag(header.getColumnsWithTypeAndName());
+    auto filter_conjuncts = buildNotNullFilterOn(filter_dag, columns_to_filter);
+
+    if (!columns_to_index_hint.empty())
+    {
+        ActionsDAG index_hint_dag(header.getColumnsWithTypeAndName());
+        index_hint_dag.getOutputs() = buildNotNullFilterOn(index_hint_dag, columns_to_index_hint);
+        auto index_hint_name = fmt::format("indexHint({})", fmt::join(index_hint_dag.getOutputs()
+            | std::views::transform([](const auto * output) -> const String & { return output->result_name; }), ", "));
+        auto index_hint = std::make_shared<FunctionIndexHint>();
+        index_hint->setActions(std::move(index_hint_dag));
+        filter_conjuncts.push_back(&filter_dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint)), {}, std::move(index_hint_name)));
+    }
+
+    if (filter_conjuncts.empty())
+        return false;
+
+    const ActionsDAG::Node * filter_node = filter_conjuncts.front();
+    if (filter_conjuncts.size() > 1)
+        filter_node = &filter_dag.addFunction(FunctionFactory::instance().get("and", context), std::move(filter_conjuncts), {});
+    filter_dag.addOrReplaceInOutputs(*filter_node);
+
+    return makeFilterNodeOnTopOf(node, std::move(filter_dag), filter_node->result_name, /*remove_filer=*/true, nodes, makeDescription("Derived NOT NULL filter and index hint"));
 }
 
 void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right)
@@ -295,16 +390,22 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
         join_operator.kind = JoinKind::Inner;
 }
 
-void visit(QueryPlan::Node & root)
+bool visit(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     struct Frame
     {
         QueryPlan::Node * node;
         NameSet null_rejected_columns;
+        /// The `FilterStep` directly above this node.
+        const FilterStep * parent_filter = nullptr;
     };
 
+    const bool convert_joins = settings.convert_outer_join_to_inner_join_transitively;
+    const bool derive_filters = settings.derive_not_null_filter_at_read;
+    bool filters_added = false;
+
     std::vector<Frame> stack;
-    stack.push_back({&root, {}});
+    stack.push_back({&root, {}, nullptr});
 
     while (!stack.empty())
     {
@@ -314,13 +415,13 @@ void visit(QueryPlan::Node & root)
         auto & node = *frame.node;
         auto & null_rejected_columns = frame.null_rejected_columns;
 
-        if (!node.step || node.children.empty())
+        if (!node.step)
             continue;
 
         if (!node.step->hasOutputHeader())
         {
             for (auto * child : node.children)
-                stack.push_back({child, {}});
+                stack.push_back({child, {}, nullptr});
             continue;
         }
 
@@ -329,6 +430,13 @@ void visit(QueryPlan::Node & root)
         for (const auto & column : *node.step->getOutputHeader())
             ++occurrences[column.name];
         std::erase_if(null_rejected_columns, [&](const auto & name) { return occurrences[name] != 1; });
+
+        if (node.children.empty())
+        {
+            if (derive_filters)
+                filters_added |= addNotNullFilterAboveRead(node, null_rejected_columns, frame.parent_filter, settings.derive_not_null_filter_at_read_min_null_ratio, nodes);
+            continue;
+        }
 
         const auto & step = *node.step;
 
@@ -346,7 +454,8 @@ void visit(QueryPlan::Node & root)
             if (join->getJoinOperator().strictness == JoinStrictness::Asof)
                 right.clear();
 
-            convertJoinKind(*join, node, left, right);
+            if (convert_joins)
+                convertJoinKind(*join, node, left, right);
 
             /// NULLs on a side this join can still null-extend may be introduced here, so a constraint
             /// observed above it is not guaranteed below it.
@@ -373,7 +482,7 @@ void visit(QueryPlan::Node & root)
 
             auto child_null_rejected_columns = remapNullRejectedColumnsThroughActions(filter->getExpression(), null_rejected_columns);
             collectNullRejectedColumnsFromFilter(*filter, child_null_rejected_columns);
-            stack.push_back({node.children.front(), std::move(child_null_rejected_columns)});
+            stack.push_back({node.children.front(), std::move(child_null_rejected_columns), filter});
             continue;
         }
 
@@ -498,16 +607,24 @@ void visit(QueryPlan::Node & root)
         for (auto * child : node.children)
             stack.push_back({child, {}});
     }
+
+    return filters_added;
 }
 
 }
 
-void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+bool convertOuterToInnerAndAddNotNullFilters(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    if (!optimization_settings.optimize_plan || !optimization_settings.convert_outer_join_to_inner_join_transitively)
-        return;
+    if (!optimization_settings.optimize_plan)
+        return false;
 
-    visit(root);
+    const bool convert_joins = optimization_settings.convert_outer_join_to_inner_join_transitively;
+    const bool derive_filters = optimization_settings.derive_not_null_filter_at_read;
+    if (!convert_joins && !derive_filters)
+        return false;
+
+    return visit(root, nodes, optimization_settings);
 }
 
 }
