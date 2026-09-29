@@ -651,6 +651,12 @@ QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
     return {&child_plan};
 }
 
+QueryPlanRawPtrs JoinStepLogicalLookup::getBuiltChildPlans()
+{
+    /// The plan is held, not built on demand, so observing it costs nothing.
+    return {&child_plan};
+}
+
 void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (optimized)

@@ -136,7 +136,14 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    /// Some steps build their child plans here rather than handing over plans they already hold, so this
+    /// changes what the query has done by the time it returns. Callers that only observe a plan must use
+    /// `getBuiltChildPlans` instead.
     virtual QueryPlanRawPtrs getChildPlans() { return {}; }
+
+    /// The child plans this step has already built. A step that builds them on demand reports none until
+    /// something else has asked for them, which keeps observing a plan from changing the work a query does.
+    virtual QueryPlanRawPtrs getBuiltChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);

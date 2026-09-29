@@ -32,7 +32,7 @@ std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * ro
         for (const auto * child : node->children)
             to_visit.push_back(child);
 
-        for (const auto * child_plan : node->step->getChildPlans())
+        for (const auto * child_plan : node->step->getBuiltChildPlans())
             if (child_plan && child_plan->isInitialized())
                 to_visit.push_back(child_plan->getRootNode());
     }

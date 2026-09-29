@@ -15,7 +15,7 @@ StepWallClockRegistry::StepWallClockRegistry()
 {
 }
 
-void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan)
+void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan, bool only_built_child_plans)
 {
     std::vector<const QueryPlan::Node *> stack;
     stack.push_back(plan.getRootNode());
@@ -36,7 +36,7 @@ void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan)
 
         for (const auto * child : cur->children)
             stack.push_back(child);
-        for (const auto * child_plan : cur->step->getChildPlans())
+        for (const auto * child_plan : only_built_child_plans ? cur->step->getBuiltChildPlans() : cur->step->getChildPlans())
             stack.push_back(child_plan->getRootNode());
     }
 }

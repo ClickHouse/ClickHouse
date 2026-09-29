@@ -15,7 +15,10 @@ class StepWallClockRegistry
 public:
     StepWallClockRegistry();
 
-    void populateFromPlan(const QueryPlan & plan);
+    /// `only_built_child_plans` keeps the walk from asking a step to build child plans it does not
+    /// already hold, which would make attaching the clocks change the work the query does. `EXPLAIN`
+    /// wants those plans and so passes false.
+    void populateFromPlan(const QueryPlan & plan, bool only_built_child_plans);
 
     StepWallClock * find(const String & step_uniq_id, size_t group);
 

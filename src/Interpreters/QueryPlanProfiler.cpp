@@ -109,7 +109,9 @@ void recordConsumedSubqueries(QueryPlan & plan)
             stack.push_back(child);
 
         /// A child plan is its own tree but the same query, and its steps can consume the same sets.
-        for (auto * child_plan : node->step->getChildPlans())
+        /// Only the ones already built: asking a step to build them would be the capture changing
+        /// what the query does.
+        for (auto * child_plan : node->step->getBuiltChildPlans())
             if (child_plan && child_plan->getRootNode())
                 stack.push_back(child_plan->getRootNode());
     }
@@ -216,7 +218,7 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
         return;
 
     auto registry = std::make_unique<StepWallClockRegistry>();
-    registry->populateFromPlan(*running.query_plan);
+    registry->populateFromPlan(*running.query_plan, /*only_built_child_plans=*/ true);
     pipeline.setStepWallClockRegistry(std::move(registry));
 }
 
@@ -318,7 +320,7 @@ void SubPlanCapture::instrument(QueryPipeline & pipeline)
     try
     {
         auto registry = std::make_unique<StepWallClockRegistry>();
-        registry->populateFromPlan(*plan);
+        registry->populateFromPlan(*plan, /*only_built_child_plans=*/ true);
         pipeline.setStepWallClockRegistry(std::move(registry));
     }
     catch (...)

@@ -193,7 +193,7 @@ std::vector<CapturedStep> capturePlanSteps(
         }
 
         /// Collect child plans
-        for (auto * child_plan : step.getChildPlans())
+        for (auto * child_plan : step.getBuiltChildPlans())
         {
             if (!child_plan)
                 continue;

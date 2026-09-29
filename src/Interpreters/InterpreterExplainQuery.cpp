@@ -1271,7 +1271,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             planning_ns += watch.elapsed();
 
             auto step_wall_clock_registry = std::make_unique<StepWallClockRegistry>();
-            step_wall_clock_registry->populateFromPlan(plan);
+            step_wall_clock_registry->populateFromPlan(plan, /*only_built_child_plans=*/ false);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
             pipeline.setCollectWorkIntervals(analyzed.time);
