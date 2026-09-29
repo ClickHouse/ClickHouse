@@ -67,7 +67,6 @@ SETTINGS
 
 INSERT INTO tab SELECT number, 0, if(number < 10, 'Hello World', 'foo bar') FROM numbers(1000);
 
--- The preprocessor applies on the index path only, so these two legitimately differ.
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 1;
 

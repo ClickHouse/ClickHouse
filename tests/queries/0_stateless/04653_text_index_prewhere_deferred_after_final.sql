@@ -70,6 +70,6 @@ SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
 SELECT count() FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'World') WHERE hasPhrase(text, 'world')
 SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
 
-SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Deferred prewhere filter column%' AND explain LIKE '%lower(%';
+SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%FUNCTION hasPhrase(lower(text)%hello world%';
 
 DROP TABLE t_text_defer_final_pp;
