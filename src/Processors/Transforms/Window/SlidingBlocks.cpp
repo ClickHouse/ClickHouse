@@ -7,22 +7,29 @@
 namespace DB
 {
 
-SlidingBlock & SlidingBlocks::add(Chunk chunk, const WindowTransformParams & params)
+namespace
 {
-    SlidingBlock block{
-        .original_input_columns = chunk.getColumns(),
-        .input_columns = chunk.getColumns(),
-        .output_columns = {},
-        .rows_count = static_cast<int64_t>(chunk.getNumRows()),
-        .block_number = next_block_number++,
-    };
 
-    /// Materialize all requested columns
-    for (auto && [column, should_materialize] : std::views::zip(block.input_columns, params.should_materialize))
-        if (should_materialize)
+Columns materializeColumns(Columns columns, const std::vector<bool> & should_materialize)
+{
+    for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
+        if (materialize)
             column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
 
-    return blocks.emplace_back(std::move(block));
+    return columns;
+}
+
+}
+
+SlidingBlock & SlidingBlocks::add(Chunk chunk, const WindowTransformParams & params)
+{
+    return blocks.emplace_back(SlidingBlock{
+        .input_columns = chunk.getColumns(),
+        .materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize),
+        .rows_count = static_cast<int64_t>(chunk.getNumRows()),
+        .block_number = next_block_number++,
+        .result_columns = {},
+    });
 }
 
 void SlidingBlocks::pop()

@@ -93,13 +93,13 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         size_t function_index) const override
     {
         const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
-        IColumn & to = *current_block.output_columns[function_index];
+        IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
         Int64 offset = 1;
         if (argument_types.size() > 1)
         {
-            offset = (*current_block.input_columns[
+            offset = (*current_block.materialized_columns[
                     workspace.argument_column_indices[1]])[
                         transform->current_row.row].safeGet<Int64>();
 
@@ -123,7 +123,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                const IColumn & default_column = *current_block.input_columns[workspace.argument_column_indices[2]];
+                const IColumn & default_column = *current_block.materialized_columns[workspace.argument_column_indices[2]];
 
                 to.insert(default_column[transform->current_row.row]);
             }
@@ -135,7 +135,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blocks.blockAt(target_row->block).input_columns[
+            to.insertFrom(*transform->blocks.blockAt(target_row->block).materialized_columns[
                     workspace.argument_column_indices[0]],
                 target_row->row);
         }

@@ -51,10 +51,10 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         size_t function_index) const override
     {
         const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
-        IColumn & to = *current_block.output_columns[function_index];
+        IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        Int64 offset = (*current_block.input_columns[
+        Int64 offset = (*current_block.materialized_columns[
                 workspace.argument_column_indices[1]])[
             transform->current_row.row].safeGet<Int64>();
 
@@ -78,7 +78,7 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blocks.blockAt(target_row->block).input_columns[
+            to.insertFrom(*transform->blocks.blockAt(target_row->block).materialized_columns[
                     workspace.argument_column_indices[0]],
                target_row->row);
         }

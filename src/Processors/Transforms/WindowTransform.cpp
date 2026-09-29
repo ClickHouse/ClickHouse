@@ -175,9 +175,9 @@ void WindowTransform::advancePartitionEnd()
         for (; i < partition_by_columns; ++i)
         {
             const auto * reference_column
-                = blocks.blockAt(prev_frame_start.block).input_columns[params.partition_by_indices[i]].get();
+                = blocks.blockAt(prev_frame_start.block).materialized_columns[params.partition_by_indices[i]].get();
             const auto * compared_column
-                = blocks.blockAt(partition_end.block).input_columns[params.partition_by_indices[i]].get();
+                = blocks.blockAt(partition_end.block).materialized_columns[params.partition_by_indices[i]].get();
 
             if (compared_column->compareAt(partition_end.row,
                     prev_frame_start.row, *reference_column,
@@ -198,7 +198,7 @@ void WindowTransform::advancePartitionEnd()
     // the contiguous run of rows equal to it. The input is sorted by PARTITION BY, so we find that
     // run's end within this block with a fast equal-range scan.
     const Int64 partition_end_row = getEqualRangeEndAssumeSorted(
-        blocks.blockAt(partition_end.block).input_columns, params.partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
+        blocks.blockAt(partition_end.block).materialized_columns, params.partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
 
     if (partition_end_row < block_rows)
     {
@@ -262,13 +262,13 @@ void WindowTransform::advanceFrameStartRangeOffset()
     const bool preceding = params.window_description.frame.begin_preceding
         == (direction > 0);
     const auto * reference_column
-        = blocks.blockAt(current_row.block).input_columns[params.order_by_indices[0]].get();
+        = blocks.blockAt(current_row.block).materialized_columns[params.order_by_indices[0]].get();
     for (; frame_start < partition_end; frame_start = blocks.next(frame_start))
     {
         // The first frame value is [current_row] with offset, so we advance
         // while [frames_start] < [current_row] with offset.
         const auto * compared_column
-            = blocks.blockAt(frame_start.block).input_columns[params.order_by_indices[0]].get();
+            = blocks.blockAt(frame_start.block).materialized_columns[params.order_by_indices[0]].get();
         if (params.range_offset_comparator(compared_column, frame_start.row,
             reference_column, current_row.row,
             params.window_description.frame.begin_offset,
@@ -363,7 +363,7 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return true;
     }
 
-    return params.arePeers(blocks.blockAt(x.block).input_columns, x.row, blocks.blockAt(y.block).input_columns, y.row);
+    return params.arePeers(blocks.blockAt(x.block).materialized_columns, x.row, blocks.blockAt(y.block).materialized_columns, y.row);
 }
 
 void WindowTransform::advanceFrameEndCurrentRow()
@@ -415,8 +415,8 @@ void WindowTransform::advanceFrameEndCurrentRow()
         size_t i = 0;
         for (; i < order_by_columns; ++i)
         {
-            const auto * reference_column = blocks.blockAt(current_row.block).input_columns[params.order_by_indices[i]].get();
-            const auto * compared_column = blocks.blockAt(frame_end.block).input_columns[params.order_by_indices[i]].get();
+            const auto * reference_column = blocks.blockAt(current_row.block).materialized_columns[params.order_by_indices[i]].get();
+            const auto * compared_column = blocks.blockAt(frame_end.block).materialized_columns[params.order_by_indices[i]].get();
             if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -434,7 +434,7 @@ void WindowTransform::advanceFrameEndCurrentRow()
         // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
         // so the scan will just return the end of the block.
         const Int64 peer_group_end_row
-            = getEqualRangeEndAssumeSorted(blocks.blockAt(frame_end.block).input_columns, params.order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+            = getEqualRangeEndAssumeSorted(blocks.blockAt(frame_end.block).materialized_columns, params.order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
 
         if (peer_group_end_row < rows_end)
         {
@@ -526,14 +526,14 @@ void WindowTransform::advanceFrameEndRangeOffset()
     const bool preceding = params.window_description.frame.end_preceding
         == (direction > 0);
     const auto * reference_column
-        = blocks.blockAt(current_row.block).input_columns[params.order_by_indices[0]].get();
+        = blocks.blockAt(current_row.block).materialized_columns[params.order_by_indices[0]].get();
     for (; frame_end < partition_end; frame_end = blocks.next(frame_end))
     {
         // The last frame value is current_row with offset, and we need a
         // past-the-end pointer, so we advance while
         // [frame_end] <= [current_row] with offset.
         const auto * compared_column
-            = blocks.blockAt(frame_end.block).input_columns[params.order_by_indices[0]].get();
+            = blocks.blockAt(frame_end.block).materialized_columns[params.order_by_indices[0]].get();
         if (params.range_offset_comparator(compared_column, frame_end.row,
             reference_column, current_row.row,
             params.window_description.frame.end_offset,
@@ -575,7 +575,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
         // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
         // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
         const Int64 run_end = getEqualRangeEndAssumeSorted(
-            blocks.blockAt(cur.block).input_columns, params.order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
+            blocks.blockAt(cur.block).materialized_columns, params.order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
 
         if (run_end < end_bound)
             return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
@@ -804,7 +804,7 @@ void WindowTransform::updateAggregationState()
             {
                 for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
                 {
-                    ws.argument_columns[i] = block.input_columns[
+                    ws.argument_columns[i] = block.materialized_columns[
                         ws.argument_column_indices[i]].get();
                 }
                 ws.cached_block_number = block_number;
@@ -848,7 +848,7 @@ void WindowTransform::writeOutCurrentRow()
             continue;
         }
 
-        IColumn * result_column = block.output_columns[wi].get();
+        IColumn * result_column = block.result_columns[wi].get();
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
@@ -883,8 +883,8 @@ void WindowTransform::addInputBlock(Chunk chunk)
     // Initialize output columns.
     for (auto & ws : workspaces)
     {
-        block.output_columns.push_back(ws.aggregate_function->getResultType()->createColumn());
-        block.output_columns.back()->reserve(block.rows_count);
+        block.result_columns.push_back(ws.aggregate_function->getResultType()->createColumn());
+        block.result_columns.back()->reserve(block.rows_count);
     }
 }
 
@@ -1095,8 +1095,8 @@ IProcessor::Status WindowTransform::prepare()
         {
             // Output the ready block.
             const auto & block = blocks.blockAt(next_output_block_number);
-            auto columns = block.original_input_columns;
-            for (const auto & res : block.output_columns)
+            auto columns = block.input_columns;
+            for (const auto & res : block.result_columns)
             {
                 columns.push_back(res->getPtr());
             }

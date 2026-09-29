@@ -23,7 +23,7 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
         size_t function_index) const override
     {
         IColumn & to = *transform->blocks.blockAt(transform->current_row.block)
-            .output_columns[function_index];
+            .result_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->current_row_number);
     }
