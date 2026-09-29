@@ -22,6 +22,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeReceiveWaitMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
+    extern const Event DistributedPlanExchangeSourceEarlyCloses;
 }
 
 namespace DB
@@ -332,6 +333,7 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     if (output_finished)
     {
         LOG_TRACE(log, "NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, bytes_read);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanExchangeSourceEarlyCloses);
 
         /// Best effort: nothing more is needed from the peer, so a peer that is gone is no failure
         /// here; it notices the closed socket by itself. Any other error is this source's own.

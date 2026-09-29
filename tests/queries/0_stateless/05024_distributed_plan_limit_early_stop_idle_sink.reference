@@ -1,2 +1,11 @@
 1
-idle exchanges: stop propagated on every expected exchange stream
+idle exchanges	stage_0_0	3	0
+idle exchanges	stage_0_1	3	0
+idle exchanges	stage_0_2	3	0
+idle exchanges	stage_2_0	3	3
+idle exchanges	stage_2_1	3	3
+idle exchanges	stage_2_2	3	3
+idle exchanges	stage_4_0	1	3
+idle exchanges	stage_4_1	1	3
+idle exchanges	stage_4_2	1	3
+idle exchanges	stage_5_0	0	3

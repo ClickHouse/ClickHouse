@@ -1423,6 +1423,8 @@ The server successfully detected this situation and will download merged part fr
     M(StreamingExchangeReceiveWaitMicroseconds, "Time a streaming exchange source waited for the next bytes from its sender.", ValueType::Microseconds) \
     M(StreamingExchangeConnectionWaitMicroseconds, "Time a streaming exchange sink waited for the receiving task to connect.", ValueType::Microseconds) \
     M(StreamingExchangeEarlyCloses, "How many times a streaming exchange source told its sender to stop before the stream was read to the end, for example because a LIMIT was satisfied. A sender that was already gone is not counted.", ValueType::Number) \
+    M(DistributedPlanExchangeSourceEarlyCloses, "How many times an exchange source of a distributed query plan, streaming or in-memory, told its producer to stop because its own output was closed, for example by a satisfied LIMIT downstream. Unlike `StreamingExchangeEarlyCloses`, a producer that was already gone is counted too.", ValueType::Number) \
+    M(DistributedPlanExchangeSinkEarlyCloses, "How many times an exchange sink of a distributed query plan, streaming or in-memory, closed its input before the input was finished because its reader needed no more data, which propagates the stop to the upstream stages.", ValueType::Number) \
     \
     M(SharedMergeTreeVirtualPartsUpdates, "Virtual parts update count", ValueType::Number) \
     M(SharedMergeTreeVirtualPartsUpdatesByLeader, "Virtual parts updates by leader", ValueType::Number) \
