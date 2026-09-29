@@ -137,6 +137,8 @@ _COVERAGE_PIPELINE_PATHS = (
     "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
+    # Schedules the coverage jobs and their `arm_binary` replacements in pull requests.
+    "ci/workflows/pull_request.py",
     "tests/clickhouse-test",
     "tests/config/",
 )
