@@ -1483,17 +1483,6 @@ std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
     return fs::path(zk_data_path) / key;
 }
 
-bool StorageKeeperMap::isPathUsedByAnotherTable() const
-{
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::isPathUsedByAnotherTable");
-    Strings tables;
-    if (getClient()->tryGetChildren(zk_tables_path, tables) != Coordination::Error::ZOK)
-        return false;
-    /// A registration is the table UUID followed by the server UUID.
-    const String uuid = toString(getStorageID().uuid);
-    return std::ranges::any_of(tables, [&](const String & table) { return !table.starts_with(uuid); });
-}
-
 UInt64 StorageKeeperMap::keysLimit() const
 {
     return keys_limit;

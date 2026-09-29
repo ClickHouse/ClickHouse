@@ -1756,7 +1756,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
         /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
-        /// so it's ok to save UUID of replicated table. KeeperMap tables go there too, because they require a UUID.
+        /// so it's ok to save UUID of replicated table.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
@@ -1804,9 +1804,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             ++moved_tables;
         };
 
-        const auto * keeper_map = table->as<StorageKeeperMap>();
-        bool drop_deletes_keeper_data = keeper_map && !keeper_map->isPathUsedByAnotherTable();
-        if (drop_broken_tables || (!table->storesDataOnDisk() && !drop_deletes_keeper_data))
+        if (drop_broken_tables || !table->storesDataOnDisk())
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
@@ -1833,7 +1831,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             tables_metadata_digest = new_digest;
             assertDigest(getContext());
         }
-        else if (!table->supportsReplication() && !keeper_map)
+        else if (!table->supportsReplication())
         {
             move_table_to_database(table_name, to_db_name);
         }
