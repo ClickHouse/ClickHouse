@@ -743,7 +743,6 @@ void ReadFromRemote::addPipe(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-    bool parallel_replicas_disabled = context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
     if (stage == QueryProcessingStage::Complete)
     {
         if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
@@ -848,20 +847,22 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
-        if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
-        {
-            // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
-            // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
-            // The coordinator will return query result from the shard.
-            // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
-            // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
-            // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
-            //
-            // In case parallel replicas are disabled, there also should be a single connection to each shard to prevent result duplication
-            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
-        }
-        else
+        // Several connections to a shard are correct only when every replica reads its own part of the data,
+        // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
+        // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
+        //
+        // In every other case a replica executes the whole query, so there should be a single connection
+        // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
+        //   * with parallel reading from replicas (`ParallelReplicasMode::READ_TASKS`) the replica we
+        //     connect to instantiates the coordinator which manages the reading on the whole shard and
+        //     returns the result of the shard, so several connections mean several coordinators;
+        //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
+        //     `automatic_parallel_replicas_mode` or `parallel_replicas_only_with_analyzer`), a replica
+        //     just executes the query over all of its data.
+        if (context->canUseOffsetParallelReplicas())
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+        else
+            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
 
         if (!table_func_ptr)
             remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
