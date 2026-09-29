@@ -25,8 +25,15 @@ using Partitioned = PartitionedFixedHashMap<Key, UInt64, size_bits, BITS_FOR_BUC
 template <typename Key, size_t size_bits>
 using Plain = FixedHashMapWithSizeBits<Key, UInt64, size_bits>;
 
+/// The flat table that `Partitioned` wraps.
+template <typename Key, size_t size_bits>
+using PlainUncounted = FixedHashMapWithSizeBitsAndCalculatedSize<Key, UInt64, size_bits>;
+
 /// The buckets add no state to the flat table.
-static_assert(sizeof(Partitioned<UInt16, 16, 8>) == sizeof(Plain<UInt16, 16>));
+static_assert(sizeof(Partitioned<UInt16, 16, 8>) == sizeof(PlainUncounted<UInt16, 16>));
+
+/// And it has no element counter, unlike `Plain`.
+static_assert(sizeof(Partitioned<UInt16, 16, 8>) < sizeof(Plain<UInt16, 16>));
 
 template <typename Map>
 void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)

@@ -16,7 +16,9 @@
   * range would put every key into one bucket, so a key is routed by the cache line its cell starts on.
   * `FixedHashMapCell` is padded so that its size divides the line, so two keys on one line share a bucket.
   *
-  * Distinct keys are distinct cells, and `FixedHashTableStoredSize` counts the size with an atomic.
+  * A key always goes to one bucket, so writers under different bucket locks never write the same cell.
+  * The table keeps no element counter: every thread would write it, and that one cache line would slow
+  * the fill. `size` walks the cells instead, so do not call `size` or `empty` during the fill.
   * The min/max bounds of the flat table are the one thing concurrent writers would race on.
   * They stay off while there is more than one bucket. `restoreMinMaxOptimization` derives them after the fill.
   */
@@ -24,9 +26,6 @@ template <typename Impl, size_t BITS_FOR_BUCKET>
 class PartitionedFixedHashTable
 {
     static_assert(BITS_FOR_BUCKET < 32, "the bucket is taken from the low 32 bits of the hash");
-    static_assert(
-        std::is_base_of_v<FixedHashTableStoredSize<typename Impl::cell_type>, Impl>,
-        "several threads insert at once, so the size counter has to be atomic");
 
 public:
     using key_type = typename Impl::key_type;
