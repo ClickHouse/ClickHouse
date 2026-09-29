@@ -216,40 +216,15 @@ namespace
     class AccessGraph
     {
     public:
-        explicit AccessGraph(
-            const AccessControl & access_control_,
-            bool read_all_users,
-            const PendingAccessEntities & pending,
-            const PendingAccessEntities & current)
-            : access_control(access_control_)
-            , default_profile_id(access_control_.getDefaultProfileId())
-            , has_all_users(read_all_users)
+        explicit AccessGraph(const AccessControl & access_control_)
+            : access_control(access_control_), default_profile_id(access_control_.getDefaultProfileId())
         {
-            if (read_all_users)
+            /// The storages return their entities in lookup order, so the first user of a name is the
+            /// one a login resolves to and the rest are shadowed.
+            for (auto && [id, user] : access_control_.readAllWithIDs<User>())
             {
-                /// The storages return their entities in lookup order, so the first user of a name is the
-                /// one a login resolves to and the rest are shadowed.
-                for (auto && [id, user] : access_control_.readAllWithIDs<User>())
-                {
-                    user_order.emplace_back(id);
-                    users.emplace(id, std::move(user));
-                }
-            }
-            else
-            {
-                UnorderedSetWithMemoryTracking<UUID> ids;
-                for (const auto & item : pending)
-                    ids.emplace(item.first);
-                for (const auto & item : current)
-                    ids.emplace(item.first);
-
-                for (const auto & id : ids)
-                {
-                    auto current_it = current.find(id);
-                    auto entity = current_it == current.end() ? access_control_.tryRead(id) : current_it->second;
-                    if (typeid_cast<const User *>(entity.get()))
-                        users.emplace(id, std::static_pointer_cast<const User>(std::move(entity)));
-                }
+                user_order.emplace_back(id);
+                users.emplace(id, std::move(user));
             }
             for (auto && [id, role] : access_control_.readAllWithIDs<Role>())
                 roles.emplace(id, std::move(role));
@@ -292,13 +267,11 @@ namespace
 
         AccessEntityPtr get(const UUID & id) const
         {
-            if (auto it = users.find(id); it != users.end())
-                return it->second;
-            if (auto it = roles.find(id); it != roles.end())
-                return it->second;
-            if (auto it = profiles.find(id); it != profiles.end())
-                return it->second;
-            return nullptr;
+            if (auto user = getUser(id))
+                return user;
+            if (auto role = getRole(id))
+                return role;
+            return getProfile(id);
         }
 
         UserPtr getUser(const UUID & id) const
@@ -308,8 +281,8 @@ namespace
         }
 
         const UsersByID & allUsers() const { return users; }
-
-        bool hasAllUsers() const { return has_all_users; }
+        const RolesByID & allRoles() const { return roles; }
+        const SettingsProfilesByID & allProfiles() const { return profiles; }
 
         /// The user a login of this name resolves to, or a null entity if no storage holds that name.
         std::pair<UUID, UserPtr> visibleUser(const String & name) const
@@ -323,60 +296,20 @@ namespace
             return {UUIDHelpers::Nil, nullptr};
         }
 
-        ResolvedSettings resolveForUser(const UUID & user_id, const User & user) const
+        /// An id the graph does not hold resolves as a blank entity. That is the state a user or role the
+        /// statement creates is compared against, so that a setting the server already puts in effect for
+        /// everybody is not read as something the statement introduced.
+        ResolvedSettings resolveForUser(const UUID & user_id) const
         {
-            EnabledRolesInfo roles_info;
-            UnorderedSetWithMemoryTracking<UUID> skip_ids;
-            auto get_role = [this](const UUID & id) -> RolePtr
-            {
-                auto it = roles.find(id);
-                return it == roles.end() ? nullptr : it->second;
-            };
-
-            for (const auto & role_id : user.granted_roles.findGranted(user.default_roles))
-                collectRoles(roles_info, skip_ids, get_role, role_id, true, false, /* settings_only= */ true);
-            for (const auto & role_id : user.granted_roles.findGrantedWithAdminOption(user.default_roles))
-                collectRoles(roles_info, skip_ids, get_role, role_id, true, true, /* settings_only= */ true);
-
-            return foldElements(
-                access_control,
-                resolveSettingsProfileElements(
-                    default_profile_id, profiles, user_id, roles_info.enabled_roles, roles_info.settings_from_enabled_roles, user.settings)
-                    .elements);
-        }
-
-        /// What a user of this name would resolve to if it carried nothing of its own. This is the state a
-        /// user that the statement creates is compared against, so that a setting the server already puts
-        /// in effect for everybody is not read as something the statement introduced.
-        ResolvedSettings resolveForNewUser(const UUID & user_id, const String & user_name) const
-        {
-            User blank;
-            blank.setName(user_name);
-            blank.default_roles.clear();
-            return resolveForUser(user_id, blank);
+            auto user = getUser(user_id);
+            if (!user)
+                user = std::make_shared<User>();
+            return resolve(default_profile_id, user_id, user->granted_roles.findGranted(user->default_roles), user->settings);
         }
 
         ResolvedSettings resolveForRole(const UUID & role_id) const
         {
-            EnabledRolesInfo roles_info;
-            UnorderedSetWithMemoryTracking<UUID> skip_ids;
-            auto get_role = [this](const UUID & id) -> RolePtr
-            {
-                auto it = roles.find(id);
-                return it == roles.end() ? nullptr : it->second;
-            };
-
-            collectRoles(roles_info, skip_ids, get_role, role_id, true, false, /* settings_only= */ true);
-            return foldElements(
-                access_control,
-                resolveSettingsProfileElements(
-                    /* default_profile_id= */ {},
-                    profiles,
-                    UUIDHelpers::Nil,
-                    roles_info.enabled_roles,
-                    roles_info.settings_from_enabled_roles,
-                    /* settings_from_user= */ {})
-                    .elements);
+            return resolve(/* default_profile= */ {}, UUIDHelpers::Nil, std::vector<UUID>{role_id}, /* own_settings= */ {});
         }
 
         ResolvedSettings resolveForProfile(const UUID & profile_id) const
@@ -386,17 +319,10 @@ namespace
             std::vector<UUID> profile_ids;
             std::vector<UUID> substituted_profile_ids;
             std::unordered_map<UUID, String> profile_names;
-            auto get_profile = [this](const UUID & id) -> SettingsProfilePtr
-            {
-                auto it = profiles.find(id);
-                return it == profiles.end() ? nullptr : it->second;
-            };
-            substituteProfiles(elements, get_profile, profile_ids, substituted_profile_ids, profile_names);
+            substituteProfiles(
+                elements, [this](const UUID & id) { return getProfile(id); }, profile_ids, substituted_profile_ids, profile_names);
             return foldElements(access_control, elements);
         }
-
-        const RolesByID & allRoles() const { return roles; }
-        const SettingsProfilesByID & allProfiles() const { return profiles; }
 
         /// Returns the entities whose effective settings can change after `pending`. Dependencies
         /// point from a setting carrier to the entity which uses it; profile targets point the other
@@ -482,15 +408,47 @@ namespace
         }
 
     private:
+        RolePtr getRole(const UUID & id) const
+        {
+            auto it = roles.find(id);
+            return it == roles.end() ? nullptr : it->second;
+        }
+
+        SettingsProfilePtr getProfile(const UUID & id) const
+        {
+            auto it = profiles.find(id);
+            return it == profiles.end() ? nullptr : it->second;
+        }
+
+        ResolvedSettings resolve(
+            const std::optional<UUID> & default_profile,
+            const UUID & user_id,
+            const std::vector<UUID> & role_ids,
+            const SettingsProfileElements & own_settings) const
+        {
+            EnabledRolesInfo roles_info;
+            UnorderedSetWithMemoryTracking<UUID> skip_ids;
+            for (const auto & role_id : role_ids)
+            {
+                collectRoles(
+                    roles_info, skip_ids, [this](const UUID & id) { return getRole(id); }, role_id, false, false, /* settings_only= */ true);
+            }
+            return foldElements(
+                access_control,
+                resolveSettingsProfileElements(
+                    default_profile, profiles, user_id, roles_info.enabled_roles, roles_info.settings_from_enabled_roles, own_settings)
+                    .elements);
+        }
+
         const AccessControl & access_control;
         UsersByID users;
         VectorWithMemoryTracking<UUID> user_order;
         RolesByID roles;
         SettingsProfilesByID profiles;
         std::optional<UUID> default_profile_id;
-        bool has_all_users;
     };
 
+    /// A created entity which takes the name and type of a removed one continues it, as in `CREATE OR REPLACE`.
     Replacements findReplacements(const AccessGraph & before, const PendingAccessEntities & pending)
     {
         Replacements replacements;
@@ -547,7 +505,9 @@ namespace
 
     /// Whether writing `new_entity` over `old_entity` can change the settings some user resolves to.
     /// Everything an access statement does that has nothing to do with settings - granting a privilege,
-    /// renaming, changing authentication - is answered here, without resolving the graph.
+    /// changing authentication - is answered here, without resolving the graph. A user's name counts:
+    /// a login resolves by name across storages, so creating, dropping or renaming a user can expose or
+    /// hide a same-name user of another storage.
     bool mayChangeSettingsInEffect(const AccessEntityPtr & old_entity, const AccessEntityPtr & new_entity)
     {
         const auto * old_user = typeid_cast<const User *>(old_entity.get());
@@ -555,11 +515,8 @@ namespace
         if (old_user && new_user)
         {
             return old_user->settings != new_user->settings || old_user->granted_roles != new_user->granted_roles
-                || old_user->default_roles != new_user->default_roles;
+                || old_user->default_roles != new_user->default_roles || old_user->getName() != new_user->getName();
         }
-        /// Dropping a user constrains nothing: no other user's settings depend on it.
-        if (old_user && !new_entity)
-            return false;
 
         const auto * old_role = typeid_cast<const Role *>(old_entity.get());
         const auto * new_role = typeid_cast<const Role *>(new_entity.get());
@@ -582,40 +539,6 @@ namespace
         return is_relevant_type(old_entity) || is_relevant_type(new_entity);
     }
 
-    /// Whether the write can change which same-name user a login resolves to. A user that only one
-    /// storage holds cannot shadow or unshadow anything, so its name needs no separate check.
-    bool mayChangeVisibleUserByName(
-        const AccessControl & access_control, const AccessEntityPtr & old_entity, const AccessEntityPtr & new_entity)
-    {
-        auto is_user = [](const AccessEntityPtr & entity)
-        { return entity && entity->getType() == AccessEntityType::USER; };
-
-        size_t storages_with_name = 0;
-        if (is_user(old_entity))
-            storages_with_name = access_control.countStoragesWithEntityName(AccessEntityType::USER, old_entity->getName());
-        /// A rename onto a name another storage already holds creates the collision itself.
-        if (is_user(new_entity) && (!is_user(old_entity) || old_entity->getName() != new_entity->getName()))
-        {
-            storages_with_name = std::max(
-                storages_with_name, access_control.countStoragesWithEntityName(AccessEntityType::USER, new_entity->getName()) + 1);
-        }
-        return storages_with_name > 1;
-    }
-
-    bool
-    changesOnlyUsers(const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
-    {
-        for (const auto & [id, new_entity] : pending)
-        {
-            auto current_it = current.find(id);
-            auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
-            if ((old_entity && old_entity->getType() != AccessEntityType::USER)
-                || (new_entity && new_entity->getType() != AccessEntityType::USER))
-                return false;
-        }
-        return true;
-    }
-
     void checkFeatureTierForPendingAccessEntitiesWithGraph(
         const AccessGraph & initial,
         const AccessControl & access_control,
@@ -623,15 +546,14 @@ namespace
         const PendingAccessEntities & current,
         bool new_users_are_shadowed)
     {
-        auto refuse_if_restricted = [&](const String & setting_name)
-        {
-            if (auto reason = getFeatureTierRestriction(access_control, setting_name, settingGetTier(setting_name)))
-                throw Exception(*reason, ErrorCodes::READONLY);
-        };
-
         AccessGraph before = initial;
         before.apply(current);
         auto replacements = findReplacements(before, pending);
+        auto old_id_of = [&](const UUID & id)
+        {
+            auto it = replacements.find(id);
+            return it == replacements.end() ? id : it->second;
+        };
 
         /// Writing a setting of a disabled tier into an entity is refused even when no user resolves to that
         /// entity yet, because the entity is what a later `GRANT` or `TO` clause would put in effect. Rewriting
@@ -642,115 +564,57 @@ namespace
             if (!new_elements)
                 continue;
 
-            auto old_entity = before.get(id);
-            if (!old_entity)
-            {
-                if (auto it = replacements.find(id); it != replacements.end())
-                    old_entity = before.get(it->second);
-            }
-            const auto * old_elements = ownSettings(old_entity);
+            const auto * old_elements = ownSettings(before.get(old_id_of(id)));
             auto old_folded = old_elements ? foldElements(access_control, *old_elements) : ResolvedSettings{};
             for (const auto & [setting_name, element] : foldElements(access_control, *new_elements))
             {
                 auto it = old_folded.find(setting_name);
                 if (it != old_folded.end() && it->second == element)
                     continue;
-                refuse_if_restricted(setting_name);
+                if (auto reason = getFeatureTierRestriction(access_control, setting_name, settingGetTier(setting_name)))
+                    throw Exception(*reason, ErrorCodes::READONLY);
             }
         }
 
         AccessGraph after = before;
         after.apply(pending, new_users_are_shadowed);
 
-        /// A login is resolved by name across storages, so creating, dropping or renaming a user can
-        /// expose or hide a same-name user of another storage. Compare what each touched name resolves
-        /// to instead of what each id holds.
-        if (before.hasAllUsers())
+        /// A name which resolved to another user before the write: what a login under it gets changes even
+        /// though neither user's definition did. A name which resolved to nobody, or keeps resolving to the
+        /// same entity, is covered by the checks by id below.
+        SetWithMemoryTracking<String> touched_names;
+        for (const auto & [id, entity] : pending)
         {
-            SetWithMemoryTracking<String> touched_names;
-            for (const auto & [id, entity] : pending)
-            {
-                if (auto old_user = before.getUser(id))
-                    touched_names.emplace(old_user->getName());
-                if (typeid_cast<const User *>(entity.get()))
-                    touched_names.emplace(entity->getName());
-            }
-
-            for (const auto & name : touched_names)
-            {
-                auto [before_id, before_user] = before.visibleUser(name);
-                auto [after_id, after_user] = after.visibleUser(name);
-                /// Nobody can log in under a name no storage holds any more, and a name which keeps
-                /// resolving to the same entity is checked by id below.
-                if (!after_user || before_id == after_id)
-                    continue;
-
-                auto before_settings
-                    = before_user ? before.resolveForUser(before_id, *before_user) : before.resolveForNewUser(after_id, name);
-                checkResolvedSettings(access_control, before_settings, after.resolveForUser(after_id, *after_user));
-            }
+            if (auto old_user = before.getUser(id))
+                touched_names.emplace(old_user->getName());
+            if (typeid_cast<const User *>(entity.get()))
+                touched_names.emplace(entity->getName());
+        }
+        for (const auto & name : touched_names)
+        {
+            auto [before_id, before_user] = before.visibleUser(name);
+            auto [after_id, after_user] = after.visibleUser(name);
+            if (before_user && after_user && before_id != after_id)
+                checkResolvedSettings(access_control, before.resolveForUser(before_id), after.resolveForUser(after_id));
         }
 
         auto affected = before.findAffectedEntities(after, pending);
-
-        auto check_user = [&](const UUID & user_id, const UserPtr & user)
+        for (const auto & item : after.allUsers())
         {
-            auto after_settings = after.resolveForUser(user_id, *user);
-
-            auto old_id = user_id;
-            if (auto it = replacements.find(user_id); it != replacements.end())
-                old_id = it->second;
-            auto old_user = before.getUser(old_id);
-            auto before_settings = old_user ? before.resolveForUser(old_id, *old_user) : before.resolveForNewUser(user_id, user->getName());
-
-            checkResolvedSettings(access_control, before_settings, after_settings);
-        };
-
-        auto check_role = [&](const UUID & role_id)
-        {
-            auto after_settings = after.resolveForRole(role_id);
-            auto old_id = role_id;
-            if (auto it = replacements.find(role_id); it != replacements.end())
-                old_id = it->second;
-            auto before_settings = before.allRoles().contains(old_id) ? before.resolveForRole(old_id) : ResolvedSettings{};
-            checkResolvedSettings(access_control, before_settings, after_settings);
-        };
-
-        auto check_profile = [&](const UUID & profile_id)
-        {
-            auto after_settings = after.resolveForProfile(profile_id);
-            auto old_id = profile_id;
-            if (auto it = replacements.find(profile_id); it != replacements.end())
-                old_id = it->second;
-            auto before_settings = before.allProfiles().contains(old_id) ? before.resolveForProfile(old_id) : ResolvedSettings{};
-            checkResolvedSettings(access_control, before_settings, after_settings);
-        };
-
-        bool changes_only_users = changesOnlyUsers(access_control, pending, current);
-        if (changes_only_users)
-        {
-            for (const auto & [id, entity] : pending)
-            {
-                if (auto user = after.getUser(id))
-                    check_user(id, user);
-            }
+            if (affected.contains(item.first))
+                checkResolvedSettings(access_control, before.resolveForUser(old_id_of(item.first)), after.resolveForUser(item.first));
         }
-        else
+        for (const auto & item : after.allRoles())
         {
-            for (const auto & [id, user] : after.allUsers())
+            if (affected.contains(item.first))
+                checkResolvedSettings(access_control, before.resolveForRole(old_id_of(item.first)), after.resolveForRole(item.first));
+        }
+        for (const auto & item : after.allProfiles())
+        {
+            if (affected.contains(item.first))
             {
-                if (affected.contains(id))
-                    check_user(id, user);
-            }
-            for (const auto & item : after.allRoles())
-            {
-                if (affected.contains(item.first))
-                    check_role(item.first);
-            }
-            for (const auto & item : after.allProfiles())
-            {
-                if (affected.contains(item.first))
-                    check_profile(item.first);
+                checkResolvedSettings(
+                    access_control, before.resolveForProfile(old_id_of(item.first)), after.resolveForProfile(item.first));
             }
         }
     }
@@ -767,7 +631,6 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
     if (!isAnyFeatureTierRestricted(access_control))
         return {};
 
-    bool may_change_visible_user = false;
     if (!force)
     {
         bool relevant = false;
@@ -775,19 +638,13 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
         {
             auto current_it = current.find(id);
             auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
-            if (mayChangeVisibleUserByName(access_control, old_entity, entity))
-                may_change_visible_user = true;
-            else if (!mayChangeSettingsInEffect(old_entity, entity))
-                continue;
-            relevant = true;
+            relevant |= mayChangeSettingsInEffect(old_entity, entity);
         }
         if (!relevant)
             return {};
     }
 
-    /// Resolving a name needs every user, not only the ones the write names.
-    bool changes_only_users = !force && !may_change_visible_user && changesOnlyUsers(access_control, pending, current);
-    auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
+    auto graph = std::make_shared<AccessGraph>(access_control);
     return [&access_control, graph, new_users_are_shadowed](
                const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
     {
@@ -815,14 +672,11 @@ void checkFeatureTierForVisibleUserChange(
     if (!isAnyFeatureTierRestricted(access_control))
         return;
 
-    AccessGraph graph(access_control, /* read_all_users= */ true, /* pending= */ {}, /* current= */ {});
-    auto before_user = graph.getUser(before_user_id);
-    auto after_user = graph.getUser(after_user_id);
-    if (!before_user || !after_user)
+    AccessGraph graph(access_control);
+    if (!graph.getUser(before_user_id) || !graph.getUser(after_user_id))
         return;
 
-    checkResolvedSettings(
-        access_control, graph.resolveForUser(before_user_id, *before_user), graph.resolveForUser(after_user_id, *after_user));
+    checkResolvedSettings(access_control, graph.resolveForUser(before_user_id), graph.resolveForUser(after_user_id));
 }
 
 }

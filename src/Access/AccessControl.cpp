@@ -638,18 +638,6 @@ bool AccessControl::insertImpl(
     return inserted;
 }
 
-size_t AccessControl::countStoragesWithEntityName(AccessEntityType type, const String & name) const
-{
-    size_t count = 0;
-    for (const auto & storage : getStorages())
-    {
-        if (storage->find(type, name))
-            ++count;
-    }
-    return count;
-}
-
-
 bool AccessControl::checkNameCollisionInOtherStorage(
     IAccessStorage & storage, const AccessEntityPtr & entity, bool throw_if_exists, UUID * conflicting_id) const
 {
