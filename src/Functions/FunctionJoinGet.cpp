@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/TableLockHolder.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
@@ -174,7 +175,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
 
     auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
-    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
+    auto storage_join = castStorage<StorageJoin>(table, DeferredTable::Load);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
     /// Resolved on the executing server: a `make_distributed_plan` worker would look it up in its own catalog.

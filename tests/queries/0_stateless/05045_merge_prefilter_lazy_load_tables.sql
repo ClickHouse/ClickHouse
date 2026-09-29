@@ -4,10 +4,10 @@
 
 -- In a database with `lazy_load_tables = 1`, an unloaded table is a `StorageTableProxy`.
 -- The proxy must forward `readsFromOtherTables` to the nested storage: otherwise a
--- `WHERE _table = ...` filter over a `Merge` table would prune a lazily loaded `Distributed`
--- (or `Merge`, `Buffer`, `Alias`) child by the proxy's own name and silently return no rows
--- after a restart or `ATTACH DATABASE` (found by review in
--- https://github.com/ClickHouse/ClickHouse/pull/116371).
+-- `WHERE _table = ...` filter over a `Merge` table would prune such a child by the proxy's own
+-- name and silently return no rows after a restart or `ATTACH DATABASE` (found by review in
+-- https://github.com/ClickHouse/ClickHouse/pull/116371). The engines that delegate their reads
+-- are loaded eagerly, so the child below is a real `Distributed` while the leaf is deferred.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
@@ -20,12 +20,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t05045_dist (x UInt64) ENGINE = 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- Prove the child is still an unloaded proxy at the time of the query below.
--- The `system.tables` filter is spelled with `currentDatabase()` rather than the equivalent
--- `{CLICKHOUSE_DATABASE_1:String}` because the style check only recognizes the former; `USE`
--- does not load the lazy tables, so the engine reported below is still the proxy.
+-- Show the state of both children at the time of the query below. The `system.tables` filter is
+-- spelled with `currentDatabase()` rather than the equivalent `{CLICKHOUSE_DATABASE_1:String}`
+-- because the style check only recognizes the former, and reading it loads neither table.
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't05045_dist';
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 USE {CLICKHOUSE_DATABASE:Identifier};
 
 -- The rows of the `Distributed` child carry the leaf's name; the proxy must not be pruned.

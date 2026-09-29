@@ -509,6 +509,7 @@ SELECT * FROM odbc_t
 
         },
         {
+            .supports_deferred_load = true,
             .source_access_type = BridgeHelperMixin::getSourceAccessObject(),
         },
         documentation);
