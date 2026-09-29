@@ -12,6 +12,7 @@
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
 
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <chrono>
@@ -308,6 +309,29 @@ private:
         /// A thread is "running" (holds a slot and is on CPU) iff leased and neither preempted nor parked.
         bool isRunning(size_t thread_num) const { return leased[thread_num] && !preempted[thread_num] && !parked[thread_num]; }
 
+        /// Maintain running_count/last_running as a thread starts or stops running. The caller updates
+        /// the leased/preempted/parked bits first, so isRunning() already reflects the new state
+        /// (exitRunning rescans backwards for the new highest running thread).
+        void enterRunning(size_t thread_num)
+        {
+            if (++running_count == 1)
+                last_running = thread_num;
+            else
+                last_running = std::max(last_running, thread_num);
+        }
+        void exitRunning(size_t thread_num)
+        {
+            --running_count;
+            if (last_running == thread_num)
+            {
+                while (last_running-- > 0)
+                {
+                    if (isRunning(last_running))
+                        break;
+                }
+            }
+        }
+
         // For optimization (could be computed based on leased, preempted and parked fields)
         size_t running_count = 0; /// Number of currently running threads (leased & !preempted & !parked)
         size_t last_running = boost::dynamic_bitset<>::npos; /// Highest thread num of a running threads
@@ -317,7 +341,10 @@ private:
     /// Resource accounting
     std::atomic_bool acquirable{false}; // Tracks `(granted > 0 || exception) && !shutdown` value that could be read w/o locking mutex
     SlotCount allocated = 0; /// Current number of allocated (granted and acquired) slots
-    Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
+    /// Allocated but not acquired slots; the invariant is `granted == allocated - leased.count()`.
+    /// May be negative (a thread borrows a slot before it is granted). Because `allocated <= max_threads`,
+    /// `granted > 0` implies a free slot_id exists, which `upscale()` relies on.
+    Int64 granted = 0;
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
 

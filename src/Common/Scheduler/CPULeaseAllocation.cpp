@@ -59,6 +59,7 @@ namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
     extern const int RESOURCE_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 std::atomic<size_t> CPULeaseAllocation::lease_counter{0};
@@ -224,8 +225,9 @@ void CPULeaseAllocation::RequestChain::scheduled()
 CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
-    // Parking gives back a single scalar quantum from the shared queue, which is only correct when
-    // the master and worker threads use the same resource; disabled in any other configuration.
+    // Parking's give-back releases one scalar slot (requests.finish()) without attributing it to the
+    // master vs worker resource, so it is correct only when both share one resource (one semaphore);
+    // supported only when master_link == worker_link, and a no-op otherwise.
     , parking_supported(master_link_ && worker_link_ && master_link_ == worker_link_)
     , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
@@ -300,10 +302,8 @@ void CPULeaseAllocation::free()
     std::unique_lock lock{mutex};
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
-    // `granted > 0` should already imply a free slot_id (invariant granted == allocated -
-    // leased.count()); the leased-count guard is defence in depth so a future accounting slip can
-    // never make upscale() return an out-of-range slot_id (which would index tasks arrays OOB).
-    if (granted > 0 && threads.leased.count() < max_threads)
+    // granted > 0 implies a free slot_id (see `granted`); upscale() enforces this and fails safe.
+    if (granted > 0)
         return acquireImpl(lock);
     return {};
 }
@@ -338,17 +338,14 @@ size_t CPULeaseAllocation::upscale()
         {
             threads.leased.set(thread_num);
             chassert(!threads.preempted[thread_num]);
-            // Update fields about running threads
-            if (++threads.running_count == 1)
-                threads.last_running = thread_num;
-            else
-                threads.last_running = std::max(threads.last_running, thread_num);
+            threads.enterRunning(thread_num);
             LOG_EVENT(U);
             return thread_num;
         }
     }
-    chassert(false);
-    return max_threads;
+    // Unreachable: granted > 0 guarantees a free slot (see `granted`). Fail safe instead of returning
+    // an out-of-range slot_id, which would index the executor's task arrays out of bounds.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CPULeaseAllocation::upscale(): no free slot while granted > 0 (accounting invariant violated)");
 }
 
 void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
@@ -363,16 +360,7 @@ void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
         threads.preempted.reset(thread_num);
     else
     {
-        // Update fields about running threads
-        --threads.running_count;
-        if (threads.last_running == thread_num)
-        {
-            while (threads.last_running-- > 0)
-            {
-                if (threads.isRunning(threads.last_running))
-                    break;
-            }
-        }
+        threads.exitRunning(thread_num);
 
         // We have stopped a running thread that held an acquired slot, which becomes granted
         ++granted;
@@ -391,16 +379,7 @@ void CPULeaseAllocation::setPreempted(size_t thread_num)
     chassert(!threads.preempted[thread_num]);
     threads.preempted.set(thread_num);
 
-    // Update fields about running threads
-    --threads.running_count;
-    if (threads.last_running == thread_num)
-    {
-        while (threads.last_running-- > 0)
-        {
-            if (threads.isRunning(threads.last_running))
-                break;
-        }
-    }
+    threads.exitRunning(thread_num);
 
     // Preempted thread does not hold the slot, and it becomes granted
     // Note that at this point granted is almost always negative (see consume()), so it would not lead to acquiring more threads
@@ -421,11 +400,7 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
     chassert(threads.leased[thread_num]);
     threads.preempted.reset(thread_num);
 
-    // Update fields about running threads
-    if (++threads.running_count == 1)
-        threads.last_running = thread_num;
-    else
-        threads.last_running = std::max(threads.last_running, thread_num);
+    threads.enterRunning(thread_num);
 
     // Wake the thread
     threads.wake[thread_num].notify_one();
@@ -434,43 +409,28 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
 
 void CPULeaseAllocation::setParked(size_t thread_num)
 {
-    // Move a running thread to parked (a non-CPU wait: I/O or idle). Lighter than setPreempted
-    // (no clock read, no waitForGrant). Unlike preemption it must NOT touch `granted`/`acquirable`:
-    // the parked thread keeps its leased slot_id (for its own unpark) and frees no slot for another
-    // thread of this lease, so the invariant `granted == allocated - leased.count()` still holds
-    // (`granted > 0` must always imply a free slot_id, else upscale() hands out an out-of-range id).
-    // The CPU quantum is freed for other leases by parkLease's give-back (requests.finish).
+    // Move a running thread to parked (a non-CPU wait: I/O or idle). Lighter than setPreempted (no
+    // clock read, no waitForGrant), and it must NOT touch `granted`/`acquirable`: the parked thread
+    // keeps its leased slot, so the `granted` invariant holds; parkLease's give-back (requests.finish)
+    // is what frees a quantum for other leases.
     chassert(threads.isRunning(thread_num));
     threads.parked.set(thread_num);
     ++threads.parked_count;
 
-    --threads.running_count;
-    if (threads.last_running == thread_num)
-    {
-        while (threads.last_running-- > 0)
-        {
-            if (threads.isRunning(threads.last_running))
-                break;
-        }
-    }
+    threads.exitRunning(thread_num);
     LOG_EVENT(K);
 }
 
 void CPULeaseAllocation::resetParked(size_t thread_num)
 {
-    // Symmetric with setParked: the resuming thread already holds its leased slot, so unparking
-    // consumes no granted quantum here and must NOT touch `granted` (keeps the invariant
-    // `granted == allocated - leased.count()`). unparkLease re-requests the CPU quantum that the
-    // give-back released; until it is granted the thread runs on a borrow (allocated < leased →
-    // granted < 0), which the next renew() reconciles.
+    // Symmetric with setParked: the resuming thread already holds its leased slot, so unparking must
+    // NOT touch `granted` (preserves the invariant). unparkLease re-requests the quantum the give-back
+    // released; until it is granted the thread runs on a borrow (granted < 0), reconciled by renew().
     chassert(threads.parked[thread_num]);
     threads.parked.reset(thread_num);
     --threads.parked_count;
 
-    if (++threads.running_count == 1)
-        threads.last_running = thread_num;
-    else
-        threads.last_running = std::max(threads.last_running, thread_num);
+    threads.enterRunning(thread_num);
     LOG_EVENT(W);
 }
 
@@ -483,9 +443,8 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
     if (shutdown)
         return false;
 
-    // Enforce the parking mode at the source, not only at the executor's publication gate: parking
-    // is supported only when it is enabled and the master and worker threads share one resource.
-    // A direct park() caller in any other configuration is a no-op (returns false, so no unpark).
+    // Enforce the parking mode at the source, not only at the executor's publication gate (see
+    // parking_supported): a direct park() caller with parking off is a no-op (returns false, no unpark).
     if (!settings.parking_enabled || !parking_supported)
         return false;
 
