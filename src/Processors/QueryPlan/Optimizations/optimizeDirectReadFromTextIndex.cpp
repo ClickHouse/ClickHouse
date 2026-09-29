@@ -67,6 +67,7 @@ struct TextIndexReadInfo
     MergeTreeIndexPtr index_helper = nullptr;
     bool is_materialized = false;
     bool is_fully_materialized = false;
+    bool has_patched_parts = false;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -206,6 +207,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
     /// the queried parts have no on-the-fly updates for the index columns.
     NameSet all_updated_columns;
+    bool has_patched_parts = false;
     for (const auto & part : unique_parts)
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
@@ -215,7 +217,11 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         );
         const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
         all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
+        has_patched_parts |= alter_conversions->hasPatches();
     }
+
+    if (has_patched_parts)
+        LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: a part has a pending patch");
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
@@ -239,7 +245,8 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
             .condition = index.condition_template->generateUnsubstituted(),
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialized = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size(),
+            .has_patched_parts = has_patched_parts
         };
     }
 }
@@ -610,9 +617,11 @@ private:
             if (!text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 
-            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
-            /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
-            if (!direct_read_from_text_index || !info.index || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`) and has no
+            /// patched parts. Otherwise just inject the tokenizer/preprocessor/postprocessor (no virtual column),
+            /// same as None mode.
+            if (!direct_read_from_text_index || !info.index || info.has_patched_parts
+                || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
@@ -1117,7 +1126,8 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index)
+void processAndOptimizeTextIndexFunctions(
+    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1155,13 +1165,13 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed);
     }
 
-    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
-    /// header-converting step of `tryOptimizeTopK`. Merge it into the filter above so direct read stays possible.
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
+    /// filter. Merge it into the filter above so direct read stays possible.
     auto walk_begin = stack.rbegin() + 1;
     if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(walk_begin->node->step.get()))
     {
         QueryPlan::Node * node_above = (stack.rbegin() + 2)->node;
-        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, {}))
+        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, settings))
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 

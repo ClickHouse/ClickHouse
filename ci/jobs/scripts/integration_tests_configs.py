@@ -36,6 +36,14 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_distributed_respect_user_timeouts/",
 ]
 
+# Additionally skipped on the per-test coverage build (`WITH_COVERAGE_DEPTH`).
+PER_TEST_COVERAGE_SKIP_PREFIXES = [
+    # Keeper of this build uses 295-343 MiB right after start, above the 286 MiB
+    # `max_memory_usage_soft_limit` of the test, so it refuses every write and the
+    # test times out.
+    "test_keeper_memory_soft_limit/",
+]
+
 TEST_CONFIGS = [
     TC(
         "test_dns_cache/",
@@ -204,7 +212,6 @@ test_backup_restore_new/test.py	861676
 test_refreshable_mat_view/test.py	820257
 test_dictionaries_redis/test.py	802992
 test_storage_s3/test.py	765096
-test_storage_s3_queue/test_system_stop.py	727443
 test_storage_s3_queue/test_5.py	697632
 test_postgresql_replica_database_engine/test_3.py	696414
 test_distributed_load_balancing/test.py	656923
@@ -214,26 +221,22 @@ test_ttl_move/test.py	594060
 test_storage_nats/test_nats_jet_stream.py	590281
 test_dictionaries_all_layouts_separate_sources/test_clickhouse_remote.py	584146
 test_dictionaries_all_layouts_separate_sources/test_clickhouse_local.py	581875
-test_storage_kafka/test_system_stop.py	578780
 test_dictionaries_all_layouts_separate_sources/test_mysql.py	574945
 test_dictionaries_all_layouts_separate_sources/test_https.py	572651
 test_dictionaries_all_layouts_separate_sources/test_http.py	570682
 test_backup_restore_on_cluster/test_concurrency.py	567814
-test_unknown_config_option/test.py	562917
 test_storage_s3_queue/test_0.py	544757
 test_async_load_databases/test.py	535859
 test_mask_sensitive_info/test.py	504184
 test_storage_s3_queue/test_2.py	500351
 test_refreshable_mv/test.py	492746
 test_storage_iceberg_with_spark/test_minmax_pruning.py	476962
-test_storage_nats/test_system_stop.py	467940
 test_named_collections/test.py	457791
 test_storage_kafka/test_partition_affinity.py	455076
 test_distributed_ddl/test.py	447824
 test_backup_restore_on_cluster/test.py	426142
 test_parallel_replicas_insert_select/test.py	423016
 test_postgresql_replica_database_engine/test_1.py	421982
-test_storage_rabbitmq/test_system_stop.py	421061
 test_storage_iceberg_with_spark/test_cluster_table_function.py	414530
 test_refreshable_mat_view_replicated/test.py	410944
 test_database_iceberg/test.py	403519
@@ -284,7 +287,6 @@ test_create_handler/test.py	248148
 test_storage_iceberg_schema_evolution/test_tuple_evolved_simple.py	245230
 test_hedged_requests/test.py	244090
 test_storage_bigquery/test.py	242364
-test_refreshable_mv_no_multi_read/test.py	241415
 test_table_db_num_limit/test.py	241283
 test_storage_kafka/test_batch_slow_6.py	240826
 test_cleanup_dir_after_bad_zk_conn/test.py	236604
@@ -319,14 +321,12 @@ test_storage_iceberg_no_spark/test_writes_statistics_by_minmax_pruning.py	181985
 test_backward_compatibility/test_convert_ordinary.py	179211
 test_grant_and_revoke/test_with_table_engine_grant.py	178546
 test_replicated_mutations/test.py	176119
-test_hive_query/test.py	175595
 test_lost_part/test.py	175592
 test_merge_tree_azure_blob_storage/test.py	174545
 test_jbod_balancer/test.py	174319
 test_storage_kerberized_kafka/test.py	174187
 test_ytsaurus/test_dictionaries.py	174180
 test_replicated_users/test.py	173729
-test_executable_udf_async_metrics/test.py	173469
 test_disk_over_web_server/test.py	173232
 test_quorum_inserts/test.py	168584
 test_storage_kafka/test_batch_slow_2.py	167406
@@ -369,7 +369,6 @@ test_kafka_bad_messages/test_mv_target_missing.py	131787
 test_storage_url/test.py	130618
 test_system_logs_recreate/test.py	129868
 test_distributed_index_analysis/test.py	128188
-test_storage_kafka/test_keeper_session_loss_direct_read.py	127344
 test_ddl_worker_replicas/test.py	127111
 test_attach_without_fetching/test.py	126762
 test_quota/test.py	124224
@@ -387,7 +386,6 @@ test_storage_iceberg_schema_evolution/test_tuple_evolved_nested.py	117956
 test_storage_iceberg_with_spark/test_writes_create_partitioned_table.py	115810
 test_disk_configuration/test.py	114872
 test_storage_kafka/test_produce_http_interface.py	114664
-test_named_collections_encrypted2/test_integr.py	113908
 test_mutations_with_merge_tree/test.py	112989
 test_storage_hudi/test.py	111252
 test_reloading_storage_configuration/test.py	110453
@@ -428,7 +426,6 @@ test_keeper_back_to_back/test.py	91937
 test_storage_iceberg_with_spark/test_query_condition_cache.py	91648
 test_rocksdb_options/test.py	91566
 test_azure_blob_storage_plain_rewritable/test.py	90448
-test_executable_udf_profile_events/test.py	90183
 test_cluster_discovery/test_auxiliary_keeper.py	90112
 test_system_start_stop_listen/test.py	90065
 test_check_table/test.py	88731
@@ -458,15 +455,12 @@ test_system_metrics/test.py	83216
 test_s3_table_function_with_http_proxy/test.py	83090
 test_ddl_create_then_alter_offline_replica/test.py	82790
 test_s3_table_function_with_https_proxy/test.py	82593
-test_zookeeper_send_window_broken_promise/test.py	82424
 test_jbod_ha/test.py	82322
 test_storage_iceberg_with_spark/test_schema_inference.py	81757
 test_keeper_opentelemetry_tracing/test.py	81676
-test_refreshable_mv_watch_fault/test.py	81602
 test_system_flush_logs/test.py	81261
 test_paimon_incremental_read/test.py	81207
 test_store_cleanup/test.py	80336
-test_rmv_access_denied_on_rename_race/test.py	80216
 test_always_fetch_merged/test.py	80176
 test_hedged_requests_parallel/test.py	80085
 test_replicated_merge_tree_compatibility/test.py	79549
@@ -478,7 +472,6 @@ test_consistant_parts_after_move_partition/test.py	78876
 test_query_runner/test.py	77992
 test_dictionaries_dependency_xml/test.py	77866
 test_s3_credentials_hardening/test.py	77079
-test_catboost_evaluate/test.py	76772
 test_client_auto_secure_port/test.py	76656
 test_keeper_force_recovery/test.py	75310
 test_file_schema_inference_cache/test.py	75203
@@ -489,9 +482,7 @@ test_keeper_disks/test.py	74204
 test_storage_kafka/test_avro_schema_registry.py	74162
 test_log_family_hdfs/test.py	73123
 test_replicated_merge_tree_encryption_codec/test.py	72987
-test_database_catalog_shutdown_system_logs/test.py	72954
 test_index_filename_upgrade/test.py	72888
-test_keeper_ttl_nodes/test_disabled.py	72679
 test_replicated_table_attach/test.py	72307
 test_storage_iceberg_with_spark/test_writes_create_table.py	72062
 test_user_memory_tracker_log_drift/test.py	71996
@@ -508,7 +499,6 @@ test_storage_iceberg_schema_evolution/test_evolved_schema_complex.py	68678
 test_insert_into_distributed/test.py	68640
 test_merge_tree_s3_failover/test.py	68502
 test_default_compression_codec/test.py	68470
-test_keeper_container_nodes/test_disabled.py	68352
 test_keeper_nodes_remove/test.py	67862
 test_backward_compatibility/test_aggregate_function_state_contingency_functions.py	67408
 test_storage_iceberg_with_trino/test.py	67078
@@ -517,7 +507,6 @@ test_replicated_merge_tree_wait_on_shutdown/test.py	66528
 test_sharding_key_from_default_column/test.py	66465
 test_named_collections_if_exists_on_cluster/test.py	65646
 test_storage_iceberg_with_spark/test_iceberg_snapshot_reads.py	64850
-test_storage_kafka/test_poll_timeout_after_assignment.py	64316
 test_postgresql_remote_host_filter/test.py	63972
 test_keeper_4lw_reconfiguration/test.py	63949
 test_parallel_replicas_snapshot_from_initiator/test.py	63716
@@ -541,13 +530,11 @@ test_keeper_auth/test.py	59088
 test_settings_constraints/test.py	59058
 test_dictionaries_replace/test.py	59016
 test_keeper_reconfig_remove_many/test.py	58906
-test_phantom_parts_in_mutations/test.py	58841
 test_distributed_format/test.py	58835
 test_storage_iceberg_with_spark/test_writes_schema_evolution.py	58014
 test_table_function_mongodb/test.py	57977
 test_backup_restore_new/test_shutdown_wait_backup.py	57930
 test_keeper_snapshot_small_distance/test.py	57851
-test_executable_pool_udf_profile_events/test.py	57696
 test_create_union_system_log_tables/test.py	57644
 test_storage_iceberg_with_spark/test_delete_files.py	57614
 test_backward_compatibility/test_block_marshalling.py	57374
@@ -591,7 +578,6 @@ test_disabled_access_control_improvements/test_row_policy.py	51412
 test_replicated_merge_tree_with_auxiliary_zookeepers/test.py	51133
 test_storage_s3/test_sts.py	51050
 test_storage_iceberg_with_spark/test_writes_with_partitioned_table.py	50959
-test_nullable_tuple_subcolumns/test.py	50850
 test_backward_compatibility/test_bucketed_map_order.py	50844
 test_storage_numbers/test.py	50822
 test_replace_partition/test.py	50768
@@ -681,21 +667,18 @@ test_file_cluster/test.py	38736
 test_modify_engine_on_restart/test_storage_policies.py	38673
 test_storage_iceberg_with_spark_cache/test_metadata_cache.py	38591
 test_alter_database_on_cluster/test.py	38518
-test_ddl_worker_stale_task_name/test.py	38440
 test_db_ordinary_deprecated_warning/test.py	38418
 test_parts_delete_zookeeper/test.py	38146
 test_config_decryption/test_wrong_settings.py	37877
 test_backward_compatibility/test_ip_types_binary_compatibility.py	37836
 test_keeper_broken_logs/test.py	37817
 test_storage_iceberg_with_spark/test_metadata_file_selection_from_version_hint.py	37780
-test_storage_delta_shuffles/test.py	37489
 test_storage_iceberg_interoperability_azure/test_interoperability.py	37488
 test_parallel_replicas_failover/test.py	37354
 test_keeper_force_recovery_single_node/test.py	37280
 test_alternative_keeper_config/test.py	37262
 test_storage_iceberg_schema_evolution/test_map_evolved_nested.py	37044
 test_force_deduplication/test.py	36948
-test_zero_copy_drop_table_with_leftover/test.py	36750
 test_database_hms/test.py	36696
 test_database_hms/test_ttransport_exception_reproduction.py	36578
 test_storage_delta/test_cdf.py	36507
@@ -717,9 +700,7 @@ test_s3_cluster_insert_select/test.py	35709
 test_keeper_reconfig_replace_leader/test.py	35627
 test_prometheus_protocols/test_upgrade_from_prealpha.py	35537
 test_keeper_reconfig_remove/test.py	35527
-test_storage_iceberg_with_spark/test_file_stats_logging.py	35522
 test_storage_iceberg_no_spark/test_writes_rename_column.py	35492
-test_http_connection_socket_buffer_settings/test.py	35456
 test_replicated_fetches_timeouts/test.py	35429
 test_backward_compatibility/test_adaptive_codec.py	34747
 test_prometheus_endpoint/test.py	34691
@@ -750,8 +731,6 @@ test_distributed_respect_user_timeouts/test.py	32646
 test_zookeeper_fallback_session/test.py	32561
 test_force_restore_data_flag_for_keeper_dataloss/test.py	32364
 test_keeper_snapshot_rotation_race/test.py	32053
-test_parallel_replicas_alias_columns/test.py	31970
-test_user_query_log_config_validation/test.py	31804
 test_hot_reload_storage_policy/test.py	31548
 test_storage_iceberg_interoperability_local/test_interoperability.py	31528
 test_rocksdb_read_only/test.py	31522
@@ -779,12 +758,10 @@ test_secure_socket/test.py	29883
 test_keeper_reconfig_add/test.py	29876
 test_backward_compatibility/test_functions.py	29795
 test_cache_bypass_on_disk_failure/test.py	29769
-test_concurrent_part_removal_threshold_for_remote_disk/test.py	29675
 test_disabled_access_control_improvements/test_select_from_system_tables.py	29636
 test_storage_s3_queue/test_file_iterator_ttl.py	29607
 test_user_defined_object_persistence/test.py	29522
 test_merge_tree_s3_with_cache/test.py	29517
-test_play_reconcile_startup/test.py	29416
 test_modify_engine_on_restart/test_args.py	29283
 test_storage_iceberg_with_spark/test_column_names_with_dots.py	29254
 test_keeper_azure_s3_plain/test.py	29228
@@ -807,7 +784,6 @@ test_permissions_drop_replica/test.py	28460
 test_parallel_replicas_skip_inactive_replicas/test.py	28423
 test_dictionary_asynchronous_metrics/test.py	28387
 test_validate_only_initial_alter_query/test_replicated_database.py	28367
-test_parallel_replicas_skip_inactive_replicas_all_groups/test.py	28342
 test_storage_iceberg_with_spark/test_writes_field_ids_spark_read.py	28222
 test_system_queries/test.py	28209
 test_match_process_uid_against_data_owner/test.py	28138
@@ -824,7 +800,6 @@ test_experimental_codec_config_default/test.py	27533
 test_dictionary_allow_read_expired_keys/test_dict_get.py	27527
 test_filesystem_layout/test.py	27420
 test_reset_ddl_worker/test.py	27418
-test_filesystem_cache_eviction_metrics/test.py	27400
 test_dictionary_allow_read_expired_keys/test_default_reading.py	27289
 test_storage_iceberg_with_spark/test_minmax_pruning_with_null.py	27278
 test_keeper_persistent_log/test.py	27187
@@ -856,7 +831,6 @@ test_alter_comment_on_cluster/test.py	24797
 test_no_password_existing_user/test.py	24782
 test_userspace_page_cache/test.py	24599
 test_storage_iceberg_schema_evolution/test_correct_column_mapper_is_chosen.py	24584
-test_parallel_replicas_insert_select_coordinator_reuse/test.py	24567
 test_distributed_ddl_on_database_cluster/test.py	24551
 test_access_for_functions/test.py	24534
 test_max_rows_to_read_leaf_with_view/test.py	24505
@@ -891,7 +865,6 @@ test_storage_iceberg_no_spark/test_cluster_partition_pruning_reads.py	23150
 test_move_partition_to_disk_on_cluster/test.py	23132
 test_keeper_restore_from_snapshot/test_disk_s3.py	23104
 test_recovery_time_metric/test.py	22942
-test_storage_s3/test_parquet_prewhere.py	22926
 test_azure_disk_unreachable/test.py	22913
 test_cluster_discovery/test_password.py	22826
 test_broken_tmp_txn_version_startup/test.py	22820
@@ -913,11 +886,8 @@ test_shard_level_const_function/test.py	22266
 test_storage_iceberg_schema_evolution/test_full_drop.py	22237
 test_s3_storage_conf_new_proxy/test.py	22197
 test_format_schema_on_server/test.py	22172
-test_parallel_replicas_local_replica_forced_inactive/test.py	22060
 test_ldap_follow_referrals/test.py	22049
-test_limit_by_transform_kill_query/test.py	22024
 test_executable_user_defined_function/test_system_table.py	21873
-test_point_in_polygon_cache_size/test.py	21808
 test_prometheus_before_tables/test.py	21766
 test_storage_delta/test_imds.py	21763
 test_prefer_global_in_and_join/test.py	21743
@@ -932,7 +902,6 @@ test_create_query_constraints/test.py	21239
 test_restart_with_unavailable_azure/test.py	21226
 test_storage_iceberg_with_spark/test_multiple_iceberg_file.py	21212
 test_groupBitmapAnd_on_distributed/test_groupBitmapAndState_on_distributed_table.py	21194
-test_parallel_replicas_cluster_shadows_replicated_db/test.py	21146
 test_storage_iceberg_with_spark_cache/test_filesystem_cache.py	21133
 test_replicated_merge_tree_replicated_db_ttl/test.py	21105
 test_attach_table_from_s3_plain_readonly/test.py	21099
@@ -940,8 +909,6 @@ test_keeper_client_config/test.py	21036
 test_storage_iceberg_with_spark/test_geometry_types.py	20992
 test_runtime_configurable_cache_size/test.py	20977
 test_oom_canary/test.py	20974
-test_system_zookeeper_watches/test.py	20931
-test_index_uncompressed_cache_zero_size/test.py	20812
 test_storage_policies/test.py	20736
 test_s3_imds/test_simple.py	20657
 test_groupBitmapAnd_on_distributed/test.py	20640
@@ -961,7 +928,6 @@ test_union_header/test.py	19807
 test_backward_compatibility/test_rocksdb_upgrade.py	19765
 test_backward_compatibility/test.py	19732
 test_keeper_catchup_response_queue/test.py	19709
-test_insert_deduplication_version_guard/test.py	19680
 test_backward_compatibility/test_aggregate_fixed_key.py	19660
 test_allowed_client_hosts/test.py	19636
 test_mutations_analyzer_override/test.py	19629
@@ -969,10 +935,8 @@ test_replica_can_become_leader/test.py	19622
 test_os_thread_nice_value/test.py	19566
 test_geojson_format/test.py	19542
 test_storage_iceberg_no_spark/test_writes_multiple_threads.py	19496
-test_create_dictionary_in_startup_script/test.py	19488
 test_insert_distributed_async_extra_dirs/test.py	19446
 test_jbod_load_balancing/test.py	19338
-test_role/test_replicated_ddl_current_roles.py	19322
 test_replicated_engine_arguments/test.py	19274
 test_limit_materialized_view_count/test.py	19048
 test_thread_pool_free_size_shutdown/test.py	18970
@@ -993,7 +957,6 @@ test_japanese_tokenizer/test.py	18438
 test_plain_rewr_legacy_layout/test.py	18371
 test_alter_update_cast_keep_nullable/test.py	18257
 test_access_denied_hint_sanitized/test.py	18214
-test_storage_s3_queue/test_file_iterator_lost_lock.py	18106
 test_config_decryption/test_zk_secure.py	18037
 test_ssh/test.py	18010
 test_check_table_name_length/test.py	18008
@@ -1039,12 +1002,10 @@ test_distributed_system_query/test.py	16370
 test_keeper_java_client/test.py	16347
 test_kerberos_auth/test.py	16317
 test_azure_workload_identity/test.py	16256
-test_keeper_slow_connection_log/test.py	16192
 test_storage_s3_intelligent_tier/test.py	16168
 test_storage_delta/test_sts.py	16154
 test_prometheus_protocols/test_insert_select.py	16122
 test_storage_iceberg_with_spark/test_partition_pruning_with_subquery_set.py	16119
-test_keeper_sanitizer_logs/test.py	16118
 test_prometheus_protocols/test_query_cache.py	16070
 test_keeper_ipv4_fallback/test.py	15938
 test_user_ip_restrictions/test.py	15850
@@ -1065,7 +1026,6 @@ test_storage_iceberg_with_spark/test_iceberg_history_summary.py	15312
 test_build_sets_from_multiple_threads/test.py	15297
 test_materialized_view_restart_server/test.py	15242
 test_merge_tree_prewarm_cache/test.py	15231
-test_insert_query_profile_events/test.py	15214
 test_prometheus_protocols/test_query_api.py	15208
 test_projection_rebuild_with_required_columns/test.py	15177
 test_settings_constraints_config_profiles/test.py	15154
@@ -1078,20 +1038,17 @@ test_grpc_protocol_ssl/test.py	14994
 test_dot_in_user_name/test.py	14832
 test_dotnet_client/test.py	14692
 test_jdbc_bridge_hang/test.py	14599
-test_jemalloc_merge_tree_arenas/test.py	14596
 test_merge_tree_load_marks/test.py	14540
 test_config_xml_full/test.py	14533
 test_arrowflight_interface/test_ticket_expiration.py	14521
 test_storage_iceberg_no_spark/test_writes_with_snappy_compression_metadata.py	14505
 test_tcp_handler_connection_limits/test.py	14502
-test_drop_data/test.py	14491
 test_zookeeper_info/test.py	14449
 test_filesystem/test.py	14446
 test_distributed_config/test.py	14440
 test_concurrent_queries_for_all_users_restriction/test.py	14436
 test_ttl_to_disk_wrapped_by_cache/test.py	14412
 test_backward_compatibility/test_short_strings_aggregation.py	14343
-test_cache_s3_object_truncation/test.py	14326
 test_storage_iceberg_with_spark/test_partition_by.py	14326
 test_backward_compatibility/test_normalized_count_comparison.py	14272
 test_disabled_access_control_improvements/test_impersonate_user.py	14132
@@ -1101,7 +1058,6 @@ test_storage_azure_blob_storage/test_check_after_upload.py	14070
 test_backward_compatibility/test_select_aggregate_alias_column.py	14062
 test_config_xml_yaml_mix/test.py	14061
 test_storage_iceberg_with_spark/test_writes_field_partitioning.py	13964
-test_paimon_spark_smoke/test.py	13937
 test_ssh_keys_authentication/test.py	13921
 test_http_header_limits/test.py	13918
 test_user_grants_from_config/test.py	13868
@@ -1114,7 +1070,6 @@ test_allow_plaintext_and_no_password/test.py	13717
 test_system_reload_async_metrics/test.py	13716
 test_database_iceberg_seaweedfs_catalog/test.py	13627
 test_distributed_plan_cancel/test.py	13600
-test_spark_session_recovery/test.py	13591
 test_zookeeper_info_number_overflow/test.py	13591
 test_skip_local_missing_table/test.py	13584
 test_config_yaml_full/test.py	13578
@@ -1127,10 +1082,8 @@ test_text_log_level/test.py	13444
 test_config_yaml_merge_keys/test.py	13328
 test_keeper_availability_zone_quorum_reads/test.py	13319
 test_keeper_four_word_command/test_allow_list.py	13280
-test_executable_udf_driver_config_reload/test.py	13276
 test_custom_settings/test.py	13257
 test_merge_tree_settings_constraints/test.py	13252
-test_naive_bayes_xml_dictionary/test.py	13185
 test_concurrent_queries_for_user_restriction/test.py	13166
 test_storage_iceberg_no_spark/test_writes_with_compression_metadata.py	13162
 test_http_dictionary_named_collection/test.py	13108
@@ -1140,14 +1093,12 @@ test_geoparquet/test.py	12845
 test_dictionaries_null_value/test.py	12808
 test_keeper_path_acl/test.py	12807
 test_interserver_tables_status_auth/test.py	12805
-test_aggregating_in_order_transform_kill_query/test.py	12794
 test_unknown_column_dist_table_with_alias/test.py	12708
 test_freeze_table/test.py	12684
 test_keeper_invalid_digest/test.py	12588
 test_system_grants_url_regexp/test.py	12574
 test_inherit_multiple_profiles/test.py	12515
 test_parallel_replicas_skip_shards/test.py	12485
-test_system_users_predicate_pushdown/test.py	12401
 test_structured_logging_json/test.py	12381
 test_reload_query_masking_rules/test.py	12379
 test_config_xml_main/test.py	12354
@@ -1157,28 +1108,21 @@ test_disk_name_virtual_column/test.py	12304
 test_config_hide_in_preprocessed/test.py	12298
 test_keeper_profiler/test.py	12276
 test_remap_executable/test.py	12211
-test_user_query_log_distributed_backend/test.py	12146
 test_keeper_secure_client/test.py	12122
-test_keeper_nuraft_streaming/test.py	12087
 test_config_decryption/test.py	12081
 test_s3_non_deterministic_partition_by/test.py	12066
 test_keeper_and_access_storage/test.py	12060
 test_backward_compatibility/test_insert_profile_events.py	12042
 test_keeper_compression/test_with_compression.py	12041
 test_keeper_http_storage_control/test.py	12018
-test_memory_thread_stacks_metric/test.py	12009
 test_prometheus_protocols/test_http_port.py	12008
 test_custom_dashboards/test.py	11994
 test_keeper_compression/test_without_compression.py	11980
-test_compatibility_readonly_constrained_setting/test.py	11902
 test_dictionaries_with_invalid_structure/test.py	11901
-test_native_incorrect_data_deserialization/test.py	11826
-test_thread_pool_queue_size/test.py	11820
 test_disk_types/test.py	11740
 test_storage_iceberg_with_spark/test_single_iceberg_file.py	11738
 test_storage_iceberg_with_spark/test_writes_multiple_threads.py	11738
 test_remote_function_view/test.py	11694
-test_keeper_memory_soft_limit_ratio/test.py	11645
 test_s3_redirect_remote_host_filter/test.py	11630
 test_passing_max_partitions_to_read_remotely/test.py	11627
 test_s3_storage_class/test.py	11617
@@ -1193,7 +1137,6 @@ test_server_keep_alive/test.py	11174
 test_endpoint_macro_substitution/test.py	11160
 test_interserver_marker_requires_cluster_secret/test.py	11136
 test_server_initialization/test.py	11119
-test_core_dump_size_limit/test.py	11111
 test_play_image_preview/test.py	11084
 test_profile_settings_and_constraints_order/test.py	10970
 test_arrowflight_session_log/test.py	10955
@@ -1205,8 +1148,6 @@ test_composable_protocol_without_global_ssl/test.py	10798
 test_cancel_freeze/test.py	10789
 test_send_crash_reports/test.py	10749
 test_arrowflight_interface/test_prepared_statement_limit.py	10731
-test_play_chart_helpers/test.py	10724
-test_storage_iceberg_with_spark/test_manifest_read_performance.py	10719
 test_backward_compatibility/test_old_client_with_replicated_columns.py	10669
 test_keeper_memory_soft_limit/test.py	10657
 test_storage_iceberg_with_spark/test_metadata_file_path_security.py	10558
@@ -1218,21 +1159,18 @@ test_format_cannot_allocate_thread/test.py	10342
 test_tcp_query_body_oversized_read/test.py	10335
 test_delayed_remote_source/test.py	10325
 test_jemalloc_global_profiler/test.py	10315
-test_async_metrics_overload_warning/test.py	10293
 test_trace_log_memory_context/test.py	10279
 test_tcp_handler_interserver_listen_host/test_case.py	10271
 test_memory_profiler_min_max_borders/test.py	10269
 test_dirty_pages_force_purge/test.py	10262
 test_memory_limit/test.py	10252
 test_logs_level/test.py	10243
-test_jemalloc_profiler_sampling_rate/test.py	10242
 test_render_log_file_name_templates/test.py	10188
 test_host_regexp_hosts_file_resolution/test.py	10166
 test_tcp_handler_http_responses/test_case.py	10152
 test_webterminal_startup/test.py	10148
 test_system_reload_async_metrics/test_async_metrics_invalid_settings.py	9982
 test_http_auth_config_credentials/test.py	9951
-test_cgroup_metrics/test.py	9935
 test_storage_iceberg_no_spark/test_iceberg_history_operation_summary.py	9922
 test_arrowflight_interface/test_prepared_statement_malformed_params.py	9909
 test_filesystem_cache_uninitialized/test.py	9874
@@ -1246,7 +1184,6 @@ test_storage_iceberg_no_spark/test_time_travel_bug_fix_validation.py	9444
 test_config_corresponding_root/test.py	9317
 test_storage_iceberg_with_spark/test_compressed_metadata.py	9154
 test_storage_iceberg_no_spark/test_iceberg_history_missing_optional_summary_metrics.py	9147
-test_keeper_watch_profile_events/test.py	9037
 test_database_disk/test.py	8460
 test_storage_iceberg_with_spark/test_dates.py	8142
 test_storage_iceberg_with_spark/test_writes_drop_table.py	8114
@@ -1257,15 +1194,11 @@ test_storage_iceberg_no_spark/test_graceful_error_not_configured_iceberg_metadat
 test_storage_iceberg_with_spark/test_writes_create_version_hint.py	6830
 test_storage_iceberg_with_spark/test_cluster_table_function_with_partition_pruning.py	6680
 test_keeper_http_control_cli/test.py	6140
-test_keeper_request_total_with_subrequests/test.py	5859
-test_keeper_http_jemalloc/test.py	5705
 test_keeper_https_control_cli/test.py	5637
-test_kafka_bad_messages/test_delete_topic_helper.py	5005
 test_storage_iceberg_with_spark/test_multiple_partitions_on_one_column.py	4981
 test_storage_iceberg_with_spark/test_writes_different_path_format_error.py	4698
 test_cgroup_limit/test.py	4355
 test_disks_app_interactive/test.py	2392
-test_storage_iceberg_with_spark/test_local_table_safety.py	1464
 test_jemalloc_percpu_arena/test.py	1272
 """
 

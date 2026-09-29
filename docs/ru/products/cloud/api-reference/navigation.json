@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Организация",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Организация",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -14,12 +14,14 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "ru/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
         ]
       },
       {
-        "group": "Billing",
+        "group": "Оплата",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "ru/products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +29,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "Управление пользователями",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +42,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Управление ролями",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -69,10 +71,10 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "Сервис",
     "pages": [
       {
-        "group": "Service",
+        "group": "Сервис",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -103,7 +105,7 @@
         ]
       },
       {
-        "group": "Backup",
+        "group": "Резервная копия",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
@@ -114,11 +116,30 @@
           "ru/products/cloud/api-reference/backup/backup-bucket-update",
           "ru/products/cloud/api-reference/backup/backup-bucket-delete"
         ]
+      },
+      {
+        "group": "Снимок",
+        "pages": [
+          "ru/products/cloud/api-reference/snapshot/snapshot-get-list",
+          "ru/products/cloud/api-reference/snapshot/snapshot-get",
+          "ru/products/cloud/api-reference/snapshot/snapshot-configuration-get",
+          "ru/products/cloud/api-reference/snapshot/snapshot-configuration-update"
+        ]
+      },
+      {
+        "group": "Эндпоинты Query API",
+        "pages": [
+          "ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+          "ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+          "ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+          "ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+          "ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+        ]
       }
     ]
   },
   {
-    "group": "API keys",
+    "group": "Ключи API",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -131,7 +152,7 @@
     "group": "Prometheus",
     "pages": [
       "ru/products/cloud/api-reference/prometheus/organization-prometheus-get",
-      "ru/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+      "GET /v1/organizations/{organizationId}/prometheus/discovery",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "ru/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
       "ru/products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
@@ -142,6 +163,7 @@
     "pages": [
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
       "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+      "ru/products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",

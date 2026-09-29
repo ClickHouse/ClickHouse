@@ -40,10 +40,10 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
     void reinit(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
             chassert(per_offset_flags.size() <= size);
             need_flags = true;
@@ -57,20 +57,20 @@ public:
 
     /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
     /// Must be called only before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
     void reinitAllowShrinking(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
             need_flags = true;
             per_offset_flags = std::vector<std::atomic_bool>(size);
         }
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
     void reinit(UInt32 block_no, size_t rows, const ScatteredBlock::Selector & selector)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
             need_flags = true;
             auto & flags = pending_per_row_flags.emplace_back(block_no, UsedFlagsForColumns(rows)).second;

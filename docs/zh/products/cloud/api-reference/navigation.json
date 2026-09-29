@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "组织",
     "pages": [
       {
-        "group": "Organization",
+        "group": "组织",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -14,12 +14,14 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "zh/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
         ]
       },
       {
-        "group": "Billing",
+        "group": "账单",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "zh/products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +29,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "用户管理",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +42,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "角色管理",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -69,10 +71,10 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "服务",
     "pages": [
       {
-        "group": "Service",
+        "group": "服务",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -103,7 +105,7 @@
         ]
       },
       {
-        "group": "Backup",
+        "group": "备份",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
@@ -114,11 +116,30 @@
           "zh/products/cloud/api-reference/backup/backup-bucket-update",
           "zh/products/cloud/api-reference/backup/backup-bucket-delete"
         ]
+      },
+      {
+        "group": "快照",
+        "pages": [
+          "zh/products/cloud/api-reference/snapshot/snapshot-get-list",
+          "zh/products/cloud/api-reference/snapshot/snapshot-get",
+          "zh/products/cloud/api-reference/snapshot/snapshot-configuration-get",
+          "zh/products/cloud/api-reference/snapshot/snapshot-configuration-update"
+        ]
+      },
+      {
+        "group": "查询 API 端点",
+        "pages": [
+          "zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+          "zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+          "zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+          "zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+          "zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+        ]
       }
     ]
   },
   {
-    "group": "API keys",
+    "group": "API 密钥",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -131,7 +152,7 @@
     "group": "Prometheus",
     "pages": [
       "zh/products/cloud/api-reference/prometheus/organization-prometheus-get",
-      "zh/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+      "GET /v1/organizations/{organizationId}/prometheus/discovery",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "zh/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
       "zh/products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
@@ -142,6 +163,7 @@
     "pages": [
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
       "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+      "zh/products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
