@@ -35,7 +35,6 @@
 
 #include <bit>
 #include <chrono>
-#include <cmath>
 
 
 namespace ProfileEvents
@@ -112,7 +111,6 @@ void appendHistogramBuckets(
     const google::protobuf::RepeatedField<Int64> & deltas,
     const google::protobuf::RepeatedField<double> & counts,
     bool is_float,
-    bool is_stale_marker,
     std::string_view what,
     ColumnInt32 & out_span_offsets,
     ColumnUInt32 & out_span_lengths,
@@ -138,17 +136,9 @@ void appendHistogramBuckets(
 
     if (is_float)
     {
+        /// The float counts arrive verbatim, `validateTimeSeriesHistogramSample` checks them.
         for (double count : counts)
-        {
-            /// The int flavor is checked after delta decoding below; the float one arrives verbatim.
-            if (count < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a negative {} bucket count: {}", what, count);
-            if (std::isnan(count) && !is_stale_marker)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a NaN {} bucket count but is not a stale marker", what);
             out_values.insertValue(count);
-        }
     }
     else
     {
@@ -250,19 +240,10 @@ ColumnPtr makeHistogramsColumn(
             Float64 sum = histogram.sum();
             bool is_stale_marker = isPrometheusStaleMarker(sum);
 
-            /// Only the float arms can be negative or NaN: the int ones are unsigned on the wire.
-            /// NaN counts are allowed only in a stale marker (whose sum carries the stale NaN).
-            if (count < 0 || zero_count < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a negative {}: {}",
-                    count < 0 ? "count" : "zero count", count < 0 ? count : zero_count);
-            if (!is_stale_marker && (std::isnan(count) || std::isnan(zero_count)))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Native histogram has a NaN {} but is not a stale marker", std::isnan(count) ? "count" : "zero count");
-
             if (histogram.reset_hint() < prometheus::Histogram::UNKNOWN || histogram.reset_hint() > prometheus::Histogram::GAUGE)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an unknown counter reset hint: {}", static_cast<int>(histogram.reset_hint()));
+            /// Checked before the narrowing to `Int8`; `validateTimeSeriesHistogramSample` then rejects the undefined schemas in between.
             if (histogram.schema() < -53 || histogram.schema() > 8)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an out-of-range bucket schema: {}", histogram.schema());
@@ -286,12 +267,12 @@ ColumnPtr makeHistogramsColumn(
             zero_counts_int->insertValue(is_float ? 0 : histogram.zero_count_int());
 
             appendHistogramBuckets(
-                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, is_stale_marker, "positive",
+                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, "positive",
                 *positive_span_offsets, *positive_span_lengths, *positive_spans_offsets,
                 *positive_values, *positive_values_offsets,
                 *positive_int_values, *positive_int_values_offsets);
             appendHistogramBuckets(
-                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, is_stale_marker, "negative",
+                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, "negative",
                 *negative_span_offsets, *negative_span_lengths, *negative_spans_offsets,
                 *negative_values, *negative_values_offsets,
                 *negative_int_values, *negative_int_values_offsets);
@@ -342,8 +323,13 @@ ColumnPtr makeHistogramsColumn(
     tuple_columns[TimeSeriesHistogramsTupleIndex::NegativeValuesInt]
         = ColumnArray::create(std::move(negative_int_values), std::move(negative_int_values_offsets));
 
+    /// The semantic checks shared with an `INSERT` into the outer `histograms` column.
+    auto histograms_tuple = ColumnTuple::create(std::move(tuple_columns));
+    for (size_t i = 0; i != num_histograms; ++i)
+        validateTimeSeriesHistogramSample(*histograms_tuple, i);
+
     out_num_histograms = num_histograms;
-    return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(histograms_offsets));
+    return ColumnArray::create(std::move(histograms_tuple), std::move(histograms_offsets));
 }
 
 Block makeTimeSeriesBlock(

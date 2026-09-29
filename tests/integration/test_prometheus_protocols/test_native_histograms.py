@@ -494,6 +494,60 @@ def test_invalid_histograms_rejected():
         ),
         "Native histogram has a NaN negative bucket count but is not a stale marker",
     )
+    # Custom buckets (schema -53) must not use the zero bucket: neither a zero count ...
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=2,
+            sum=0.0,
+            schema=-53,
+            zero_count_int=1,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_deltas=[1],
+            custom_values=[1.0],
+            timestamp=1704067241000,
+        ),
+        "Native histogram with custom buckets must not use the zero bucket",
+    )
+    # ... nor a zero threshold.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-53,
+            zero_threshold=0.5,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_deltas=[1],
+            custom_values=[1.0],
+            timestamp=1704067242000,
+        ),
+        "Native histogram with custom buckets must not use the zero bucket",
+    )
+    # Custom bucket bounds must be strictly increasing ...
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-53,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_deltas=[1],
+            custom_values=[2.0, 1.0],
+            timestamp=1704067243000,
+        ),
+        "Native histogram has custom bucket bounds which are not finite and strictly increasing",
+    )
+    # ... and finite (the +Inf bound of the last bucket is implicit).
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-53,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_deltas=[1],
+            custom_values=[1.0, float("inf")],
+            timestamp=1704067244000,
+        ),
+        "Native histogram has custom bucket bounds which are not finite and strictly increasing",
+    )
 
 
 # The positive control for the NaN rejections above: in a stale marker NaN counts are legal.

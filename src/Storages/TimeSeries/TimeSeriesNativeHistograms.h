@@ -7,11 +7,14 @@
 namespace DB
 {
 
+class ColumnTuple;
+
 /// Bit layout of the `flags` column of the "histograms" target table.
 namespace TimeSeriesHistogramFlags
 {
     constexpr UInt8 IsFloat = 0x01;
     constexpr UInt8 CounterResetHintShift = 1;
+    constexpr UInt8 CounterResetHintMask = 0x06;  /// prometheus::Histogram::ResetHint (UNKNOWN/YES/NO/GAUGE) << 1
     /// 0x08 is reserved (was a gauge bit, dropped as redundant with reset hint == GAUGE).
     constexpr UInt8 StaleMarker = 0x10;
 }
@@ -58,5 +61,19 @@ NamesAndTypes getTimeSeriesHistogramPayloadColumns();
 /// Type of the outer `histograms` column of a TimeSeries table with a "histograms" target:
 /// Array(Tuple(timestamp, <payload columns>)), one tuple per histogram sample.
 DataTypePtr getTimeSeriesHistogramsOuterColumnType(const DataTypePtr & timestamp_type);
+
+/// Schema numbers of Prometheus native histograms: exponential schemas are in [-4, 8],
+/// and -53 selects custom buckets (Prometheus model/histogram/generic.go).
+constexpr Int32 HISTOGRAM_EXPONENTIAL_SCHEMA_MIN = -4;
+constexpr Int32 HISTOGRAM_EXPONENTIAL_SCHEMA_MAX = 8;
+constexpr Int32 HISTOGRAM_CUSTOM_BUCKETS_SCHEMA = -53;
+
+/// Checks the invariants later readers rely on for one sample of the outer `histograms` column: known flags and schema,
+/// non-negative counts which are NaN only in a stale marker, spans that cover exactly the bucket values, the custom-bucket
+/// rules (no negative buckets, an unused zero bucket, finite strictly increasing bounds covering the bucket indexes) or
+/// no custom bounds for an exponential schema, and exact integer carriers that match the counts of an integer histogram
+/// (and are zero/empty for a float one). Throws INCORRECT_DATA otherwise. `tuple` is indexed by TimeSeriesHistogramsTupleIndex.
+/// Both the Prometheus remote-write protocol and an `INSERT` into the outer `histograms` column run it.
+void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row);
 
 }
