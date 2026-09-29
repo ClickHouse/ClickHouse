@@ -10490,6 +10490,7 @@ The chunks start at the first steps at or after multiples of this interval since
 This bounds the peak memory of the query by the memory of one chunk, but makes the query slower unless the chunks are read from the query cache (see `promql_range_query_cache_min_age`).
 A query using `@ start()` or `@ end()` is not split, nor is a query with a setting that applies to the whole result, like `max_result_rows`, `limit` or `order`, or with a GROUP BY, sorting or JOIN limit, like `max_rows_to_group_by`. 0 disables splitting.
 The chunks are separate queries, so a check over the whole range, like the one for series with the same labels or the limit on the grid points of a subquery, sees one chunk at a time.
+Each chunk counts as one query against quotas.
 )", PRIVATE_PREVIEW, \
         {"26.10", 0, 0, "New setting."}) \
     \
