@@ -15,9 +15,9 @@ function to_json()
     ${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON(\$\$$1\$\$) FORMAT TSVRaw"
 }
 
-# A valid definition submitted as a JSON AST is masked like the SQL one.
+# A definition submitted as a JSON AST is masked like the SQL one.
 JSON=$(to_json "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.d_05142 (id UInt64, v String) PRIMARY KEY id
-    SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name 'API-KEY' value 'SEKRIT_JSON_VALID'))))
+    SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name 'API-KEY' value 'SEKRIT_JSON'))))
     LIFETIME(0) LAYOUT(FLAT())")
 ${CLICKHOUSE_CLIENT_JSON} --query "$JSON"
 ${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'HEADERS.*\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142' SETTINGS format_display_secrets_in_show_and_select = 0"
@@ -35,12 +35,12 @@ done
 ${CLICKHOUSE_CLIENT_JSON} --query "$JSON"
 ${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'CREDENTIALS.*\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142_case' SETTINGS format_display_secrets_in_show_and_select = 0"
 
-# The accepted JSON query is logged without the value.
+# The JSON queries are logged without the headers and the password.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() > 0, countIf(query LIKE concat('%', 'SEKRIT', '%'))
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND query_kind = 'Create' AND type != 'ExceptionBeforeStart' AND query LIKE '%d_05142%' AND event_date >= yesterday()"
+    WHERE current_database = currentDatabase() AND query_kind = 'Create' AND query LIKE '%d_05142%' AND event_date >= yesterday()"
 
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY d_05142"
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY d_05142_case"
