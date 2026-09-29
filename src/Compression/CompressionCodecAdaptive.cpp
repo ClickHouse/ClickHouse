@@ -150,10 +150,7 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, con
     chassert(!pool.empty());
 }
 
-ASTPtr CompressionCodecAdaptive::getCodecDescription() const
-{
-    return makeCodecDescription("Adaptive");
-}
+ASTPtr CompressionCodecAdaptive::getCodecDescription() const { return makeCodecDescription("Adaptive"); }
 
 UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest, CompressionState *) const
 {
@@ -232,19 +229,8 @@ void CompressionCodecAdaptive::updateHash(SipHash & hash) const
         entry.codec->updateHash(hash);
 }
 
-uint8_t CompressionCodecAdaptive::getMethodByte() const
-{
-    throwMustNotBeInvokedDirectly();
-}
-
-UInt32 CompressionCodecAdaptive::doCompressData(const char *, UInt32, char *) const
-{
-    throwMustNotBeInvokedDirectly();
-}
-
-UInt32 CompressionCodecAdaptive::doDecompressData(const char *, UInt32, char *, UInt32) const
-{
-    throwMustNotBeInvokedDirectly();
-}
+uint8_t CompressionCodecAdaptive::getMethodByte() const { throwMustNotBeInvokedDirectly(); }
+UInt32 CompressionCodecAdaptive::doCompressData(const char *, UInt32, char *) const { throwMustNotBeInvokedDirectly(); }
+UInt32 CompressionCodecAdaptive::doDecompressData(const char *, UInt32, char *, UInt32) const { throwMustNotBeInvokedDirectly(); }
 
 }
