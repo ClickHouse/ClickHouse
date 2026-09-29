@@ -350,6 +350,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     prev_stream->hashing_buf.next();
                 }
                 else if (prev_stream && settings.compress_per_substream_in_compact_parts && index_granularity_info.mark_type.with_substreams
+                    && settings.compress_per_column_in_compact_parts
                     && prev_stream->hashing_buf.offset() >= min_compress_block_size)
                 {
                     /// Cut a new block at a substream boundary only once it's worth closing: a subcolumn read

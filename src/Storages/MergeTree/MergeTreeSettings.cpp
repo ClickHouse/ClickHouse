@@ -1053,7 +1053,8 @@ a new compressed block once the current block reached `min_compress_block_size`,
 subcolumn (e.g. an `Array` size, a `Tuple` element, or a JSON path) decompresses only that substream,
 while small substreams still share a block. If false, all substreams of a column in a granule are packed
 into the same compressed block, improving compression ratio but requiring more data to be decompressed
-when reading a subcolumn. Has an effect only when `write_marks_for_substreams_in_compact_parts` is enabled.
+when reading a subcolumn. Has an effect only when `write_marks_for_substreams_in_compact_parts` and
+`compress_per_column_in_compact_parts` are enabled.
 )", 0, \
         {"26.10", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"}) \
     /** Inserts settings. */ \
