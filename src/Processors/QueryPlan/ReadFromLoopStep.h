@@ -10,8 +10,6 @@ namespace DB
 
     class ReadFromLoopStep final : public SourceStepWithFilter
     {
-public:
-
     public:
         ReadFromLoopStep(
                 const Names & column_names_,
