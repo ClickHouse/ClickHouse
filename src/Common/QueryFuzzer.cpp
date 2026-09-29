@@ -1646,9 +1646,9 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
         strategy.set(strategy.spread, std::move(spread));
     }
 
-    /// Toggle APPEND
+    /// Fuzz the refresh mode
     if (fuzz_rand() % 10 == 0)
-        strategy.append = !strategy.append;
+        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % 3);
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
@@ -2640,7 +2640,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
-    static const Strings posting_list_codecs = {"none", "bitpacking"};
+    static const Strings posting_list_codecs = {"none", "bitpacking", "pfor"};
     /// vector_similarity index parameters (positional):
     ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
     static const Strings vector_similarity_distances = {"L2Distance", "cosineDistance"};
@@ -3220,8 +3220,10 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (!table.database_and_table_name)
         return;
 
+    /// A fully parameterized name such as `{p:Identifier}` has only empty name parts, so
+    /// `getTableId` throws `UNKNOWN_TABLE` rather than returning an empty `StorageID`.
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
 
     /// Point the read at one of the table's live `__fuzz_N` clones
@@ -3292,7 +3294,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
         /// TimeSeries table functions (db, table → time-series views)
-        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
+        {"timeSeriesMetricFamilies", "timeSeriesSamples", "timeSeriesTags"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -3460,7 +3462,7 @@ void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
     if (table.database_and_table_name)
     {
         const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-        if (!identifier)
+        if (!identifier || identifier->isParam())
             return;
         const auto table_id = identifier->getTableId();
         if (table_id.getTableName().empty())
@@ -3495,7 +3497,7 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         return;
 
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
     const auto table_id = identifier->getTableId();
     const String table_name = table_id.getTableName();
@@ -4762,8 +4764,12 @@ ASTPtr QueryFuzzer::addJoinClause()
         }
 
         auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-        table->table_join = table_join;
-        table->table_expression = table_exp;
+        /// Every sub-node must also be in `children`: a generic AST walk visits only that vector,
+        /// so a member missing from it hides the joined relation from every visitor.
+        table->children.push_back(table_join);
+        table->table_join = table->children.back();
+        table->children.push_back(table_exp);
+        table->table_expression = table->children.back();
         return table;
     }
     return nullptr;
@@ -6076,7 +6082,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (!expr)
                 return nullptr;
             auto watermark = std::make_shared<WatermarkSettings>();
-            watermark->column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
+            watermark->time_attribute_column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
             watermark->expression = expr;
             if (fuzz_rand() % 2 == 0)
                 watermark->idle_timeout = std::chrono::milliseconds((fuzz_rand() % 1000 + 1) * 1000);

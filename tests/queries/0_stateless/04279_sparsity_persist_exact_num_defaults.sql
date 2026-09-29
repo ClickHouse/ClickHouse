@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 -- Sparsity based count acts only when `serialization.json` carries an
 -- `exact_num_defaults: true` flag for the column. The flag must survive a metadata
 -- reload, and the merged stats of `OPTIMIZE FINAL` must stay exact when every input

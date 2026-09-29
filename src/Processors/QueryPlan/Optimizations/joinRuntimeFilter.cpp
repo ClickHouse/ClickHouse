@@ -171,16 +171,18 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         common_type,
         id.name,
         id.key,
-        optimization_settings.join_runtime_filter_exact_values_limit,
-        optimization_settings.join_runtime_bloom_filter_bytes,
-        optimization_settings.join_runtime_bloom_filter_hash_functions,
+        RuntimeFilterBuildOptions{
+            .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
+            .bloom = RuntimeBloomFilterParameters{
+                optimization_settings.join_runtime_bloom_filter_bytes,
+                optimization_settings.join_runtime_bloom_filter_hash_functions},
+            .max_ratio_of_set_bits = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+            .polarity = check_left_does_not_contain ? RuntimeFilterPolarity::NotContains : RuntimeFilterPolarity::Contains,
+            .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
+            .distinct_keys_hint = distinct_keys_hint,
+            .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key},
         optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-        optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
-        optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-        /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
-        /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-        distinct_keys_hint,
-        distinct_keys_hint_matches_filter_key);
+        optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
     new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
@@ -316,11 +318,26 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
     /// Planning and pipeline overhead outweighs any saving on a tiny probe.
+    ///
+    /// The decision is recorded on the step and travels with a copy of it. It is the one decision
+    /// this pass takes from a row estimate, and estimates are not part of the plan format, so on a
+    /// step taken over the wire `getInputRowsEstimation` is always empty. A receiver re-deciding
+    /// from that empty estimate would add the filter its sender declined, and adding one erases
+    /// every non-hash algorithm below, which takes the sorting step with it. Under plan-based
+    /// parallel replicas that turns the coordinated side's read from `InOrder` into `Default`,
+    /// whose stream identity the initiator never registered with the coordinator, and the
+    /// coordinator then rejects the replica's read request with a logical error.
+    if (join_step->isRuntimeFilterDeclinedForSmallProbe())
+        return false;
+
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
         auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
         if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
+        {
+            join_step->setRuntimeFilterDeclinedForSmallProbe();
             return false;
+        }
     }
 
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
@@ -529,16 +546,18 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 tuple_type,
                 filter_name,
                 id.key,
-                optimization_settings.join_runtime_filter_exact_values_limit,
-                optimization_settings.join_runtime_bloom_filter_bytes,
-                optimization_settings.join_runtime_bloom_filter_hash_functions,
+                RuntimeFilterBuildOptions{
+                    .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
+                    .bloom = RuntimeBloomFilterParameters{
+                        optimization_settings.join_runtime_bloom_filter_bytes,
+                        optimization_settings.join_runtime_bloom_filter_hash_functions},
+                    .max_ratio_of_set_bits = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                    .polarity = RuntimeFilterPolarity::NotContains,
+                    .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
+                    .distinct_keys_hint = distinct_keys_hint,
+                    .distinct_keys_hint_matches_filter_key = true},
                 optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
-                optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                /*allow_to_use_not_exact_filter_=*/false,
-                /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-                distinct_keys_hint,
-                /*distinct_keys_hint_matches_filter_key_=*/true);
+                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
