@@ -681,6 +681,32 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
                     {
                         if (conflictsWithRemovedSubtree(path, kind, subtree_root))
                         {
+                            /// Some create/remove variants are no-ops that return before touching the
+                            /// parent's stats. `CreateIfNotExists` returns `ZOK` without modifying the
+                            /// parent when the target already exists; `TryRemove` returns `ZOK` and
+                            /// `Remove` returns `ZNONODE` when the target does not exist. In all three
+                            /// cases the request replays identically after orphan cleanup, so the
+                            /// `ParentStats` conflict is a false positive.
+                            ///
+                            /// We check the committed snapshot state: the log tail has not been replayed
+                            /// yet, so the snapshot reflects the last committed tree. An earlier tail
+                            /// entry that flips this node's existence would itself conflict with the same
+                            /// removed subtree (it is a create/remove under the repaired parent) and
+                            /// would have already been reported, so reaching this point means no earlier
+                            /// entry has changed the node.
+                            if (kind == RequestPathKind::ParentStats)
+                            {
+                                const auto op = request.getOpNum();
+                                const auto target = request.getPath();
+                                const bool target_exists = storage->nodes_storage->getCommittedNodeSimple(target, nullptr, nullptr);
+
+                                if (op == Coordination::OpNum::CreateIfNotExists && target_exists)
+                                    return;
+
+                                if ((op == Coordination::OpNum::TryRemove || op == Coordination::OpNum::Remove) && !target_exists)
+                                    return;
+                            }
+
                             OrphanLogTailConflict found;
                             found.log_idx = log_idx;
                             found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};

@@ -3836,6 +3836,126 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalNoConflictWhenNoLogTail)
     EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
 }
 
+/// `CreateIfNotExists` of a node that already exists is a no-op: the handler returns `ZOK` before
+/// touching the parent's stats (`KeeperStorageImpl.cpp`). A tail entry with this op under the
+/// repaired parent must not block recovery, because it replays identically after orphan cleanup.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsNoopCreateIfNotExistsUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// `/a/existing` is a present (non-orphan) node; `/a/missing/child` is the orphan.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/existing"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `CreateIfNotExists("/a/existing")` — the node already exists, so the create is a no-op.
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/a/existing";
+    create_request->data = "should_be_noop";
+    create_request->not_exists = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    /// The existing node keeps its original data — the create was a no-op.
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/a/existing"), "present");
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/missing/child"));
+}
+
+/// `TryRemove` of a node that does not exist is a no-op: it returns `ZOK` without touching the
+/// parent's stats. A tail entry with this op targeting a non-existent sibling of the removed
+/// subtree must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsNoopTryRemoveUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `TryRemove("/a/gone")` — the node does not exist in the snapshot, so the remove is a no-op.
+    auto remove_request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    remove_request->path = "/a/gone";
+    remove_request->version = -1;
+    remove_request->try_remove = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), remove_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+}
+
+/// A `CreateIfNotExists` that actually creates (node does not exist) MUST still conflict,
+/// because the create bumps the repaired parent's `numChildren` from a different base.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesEffectiveCreateIfNotExistsUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `CreateIfNotExists("/a/new")` — the node does NOT exist, so this create takes effect.
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/a/new";
+    create_request->data = "will_actually_create";
+    create_request->not_exists = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
 TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)
 {
     ChangelogDirTest snapshots("./snapshots");
