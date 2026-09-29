@@ -16,8 +16,6 @@ struct FilterDAGOutputPruningResult
 /// What pruneFilterDAGOutputsByPosition would do, computed without touching the DAG.
 struct FilterDAGOutputPruningPlan
 {
-    FilterDAGOutputPruningResult result;
-
     /// Whether inputs may be removed, and the value the filter column flag takes.
     bool remove_inputs = false;
     bool remove_filter_column = false;
@@ -30,12 +28,21 @@ struct FilterDAGOutputPruningPlan
     std::vector<size_t> required_dag_positions;
     /// Input header positions of the pass-through columns to drop.
     std::vector<size_t> dropped_passthrough_header_positions;
-    /// Whether removeUnusedActions would erase any node.
+    /// Input header positions read by the inputs that survive, sorted. Filled only where inputs may be
+    /// removed.
+    std::vector<size_t> required_input_positions;
+    /// Whether any DAG output goes away, whether the filter column flag flips, whether removeUnusedActions
+    /// would erase any node, and whether any input goes with it.
+    bool removes_any_output = false;
+    bool changes_filter_column_flag = false;
     bool removes_any_action = false;
+    bool removes_any_input = false;
     /// Whether the filter predicate folds to a constant through `materialize` once the filter column is
     /// dropped; the rest of the plan is worked out on the folded DAG.
     bool fold_filter_predicate = false;
     String filter_column_name;
+
+    FilterDAGOutputPruningResult toResult() const;
 };
 
 FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
