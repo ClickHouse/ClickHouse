@@ -3012,7 +3012,7 @@ The effective codecs are reported by the `codecs` column of
 Use the statement below to change the [`WITH SETTINGS`](#with-settings) clause of an existing projection without rebuilding its data:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name1 [type1] [CODEC(codec1)], ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
 For a [projection index](/reference/engines/table-engines/mergetree-family/mergetree#projection-index), restate the `INDEX` declaration instead of the `SELECT` query:
@@ -3021,7 +3021,7 @@ For a [projection index](/reference/engines/table-engines/mergetree-family/merge
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
-The statement restates the full projection definition, but only the `WITH SETTINGS` clause may differ from the existing definition.
+The statement restates the full projection definition, including any column list, but only the `WITH SETTINGS` clause may differ from the existing definition.
 The projection query itself (or, for a projection index, the index expression and type) must stay the same, because existing projection parts store data built from it; to change it, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
 
 The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
@@ -3147,7 +3147,10 @@ ENGINE = MergeTree ORDER BY id;
 - ["Materialized Views versus Projections"](/concepts/features/projections/materialized-views-versus-projections)
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] | [GROUP BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name [type] [CODEC(codec)], ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name INDEX <index_expr> TYPE <index_type> [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name [type] [CODEC(codec)], ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) WITH SETTINGS (setting_name = setting_value, ...)
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS (setting_name = setting_value, ...)
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ALTER TABLE [db.]name [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
