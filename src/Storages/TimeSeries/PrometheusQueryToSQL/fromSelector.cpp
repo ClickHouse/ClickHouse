@@ -12,6 +12,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -29,6 +30,15 @@ namespace
             "equals",
             makeASTFunction("reinterpretAsUInt64", std::move(value)),
             make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+    }
+
+    /// A native-histogram stale marker is flagged in the `flags` of its payload rather than carried in a value.
+    ASTPtr isStaleHistogramMarker(ASTPtr flags)
+    {
+        return makeASTFunction(
+            "notEquals",
+            makeASTFunction("bitAnd", std::move(flags), make_intrusive<ASTLiteral>(UInt64{TimeSeriesHistogramFlags::StaleMarker})),
+            make_intrusive<ASTLiteral>(UInt64{0}));
     }
 
     /// Makes a SELECT query reading from a table function, optionally filtered by `where`.
@@ -105,12 +115,19 @@ namespace
         };
 
         /// Prometheus range selectors omit the dedicated stale-NaN payload while preserving
-        /// ordinary NaN samples as data.
+        /// ordinary NaN samples as data, and omit the histogram stale markers the same way.
         auto make_float_filter = [&]() -> ASTPtr
         {
             if (!filter_stale_markers)
                 return nullptr;
             return makeASTFunction("not", isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)));
+        };
+
+        auto make_histogram_filter = [&]() -> ASTPtr
+        {
+            if (!filter_stale_markers)
+                return nullptr;
+            return makeASTFunction("not", isStaleHistogramMarker(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Flags)));
         };
 
         if (!context.storage_has_native_histograms)
@@ -186,12 +203,13 @@ namespace
 
         res.select_query = makeUnionAll(
             makeSelectorArm(std::move(float_arm_select_list), make_table_function("timeSeriesSelector"), make_float_filter()),
-            makeSelectorArm(std::move(histogram_arm_select_list), make_table_function("timeSeriesHistogramSelector")));
+            makeSelectorArm(
+                std::move(histogram_arm_select_list), make_table_function("timeSeriesHistogramSelector"), make_histogram_filter()));
         return res;
     }
 
     /// The same as replaceStaleMarkersWithNulls() below, but for a combined grid (StoreMethod::HISTOGRAM_GRID):
-    /// a step whose newest sample is a float stale marker gets no sample at all.
+    /// a step whose newest sample is a stale marker, a float or a histogram one, gets no sample at all.
     SQLQueryPiece replaceStaleMarkersWithNullsInHistogramGrid(SQLQueryPiece && histogram_grid, ConverterContext & context)
     {
         auto make_lambda = [](std::initializer_list<const char *> arg_names, ASTPtr body)
@@ -210,8 +228,18 @@ namespace
                 isStaleMarker(makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(arg_name))));
         };
 
+        /// The histogram arm holds `Nullable` payload tuples; `assumeNotNull` of a NULL one has zero `flags`.
+        auto is_stale_histogram = [](const char * arg_name)
+        {
+            return isStaleHistogramMarker(makeASTFunction(
+                "tupleElement",
+                makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(arg_name)),
+                make_intrusive<ASTLiteral>(UInt64{TimeSeriesHistogramPayloadTupleIndex::Flags + 1})));
+        };
+
         /// SELECT group, values, histogram_values,
-        ///        arrayMap((k, v) -> if((k = 0) AND <v is a stale marker>, NULL, k), sample_kinds, values) AS sample_kinds
+        ///        arrayMap((k, v, h) -> if(((k = 0) AND <v is a stale marker>) OR ((k = 1) AND <h is a stale marker>), NULL, k),
+        ///                 sample_kinds, values, histogram_values) AS sample_kinds
         /// FROM <histogram_grid>
         SelectQueryBuilder kinds_builder;
         kinds_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -219,24 +247,32 @@ namespace
         kinds_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
         kinds_builder.select_list.push_back(makeASTFunction(
             "arrayMap",
-            make_lambda({"k", "v"},
+            make_lambda({"k", "v", "h"},
                 makeASTFunction(
                     "if",
                     makeASTFunction(
-                        "and",
-                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(UInt64{0})),
-                        is_stale("v")),
+                        "or",
+                        makeASTFunction(
+                            "and",
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(UInt64{0})),
+                            is_stale("v")),
+                        makeASTFunction(
+                            "and",
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(UInt64{1})),
+                            is_stale_histogram("h"))),
                     make_intrusive<ASTLiteral>(Field{}),
                     make_intrusive<ASTIdentifier>("k"))),
             make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds),
-            make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+            make_intrusive<ASTIdentifier>(ColumnNames::Values),
+            make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues)));
         kinds_builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
 
         context.subqueries.emplace_back(context.subqueries.size(), std::move(histogram_grid.select_query), SQLSubqueryType::TABLE);
         kinds_builder.from_table = context.subqueries.back().name;
         context.subqueries.emplace_back(context.subqueries.size(), kinds_builder.getSelectQuery(), SQLSubqueryType::TABLE);
 
-        /// SELECT group, arrayMap(x -> if(<x is a stale marker>, NULL, x), values) AS values, histogram_values, sample_kinds
+        /// SELECT group, arrayMap(x -> if(<x is a stale marker>, NULL, x), values) AS values,
+        ///        arrayMap(x -> if(<x is a stale marker>, NULL, x), histogram_values) AS histogram_values, sample_kinds
         /// FROM <previous subquery>
         /// WHERE arrayExists(x -> isNotNull(x), sample_kinds)
         SelectQueryBuilder builder;
@@ -246,7 +282,12 @@ namespace
             make_lambda({"x"}, makeASTFunction("if", is_stale("x"), make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTIdentifier>("x"))),
             make_intrusive<ASTIdentifier>(ColumnNames::Values)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+        builder.select_list.push_back(makeASTFunction(
+            "arrayMap",
+            make_lambda({"x"},
+                makeASTFunction("if", is_stale_histogram("x"), make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTIdentifier>("x"))),
+            make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues)));
+        builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
         builder.from_table = context.subqueries.back().name;
 

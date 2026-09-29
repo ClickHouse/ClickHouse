@@ -124,14 +124,28 @@ SQLQueryPiece applyHistogramQuantile(
         }
 
         /// The float view of the same grid for the classic branch (same as dropHistogramValues):
-        /// SELECT group, values FROM <histogram_grid>
+        /// SELECT group, arrayMap((x, k) -> if(k = 0, x, NULL), values, sample_kinds) AS values FROM <histogram_grid>
+        /// WHERE has(sample_kinds, 0)
         {
             SelectQueryBuilder builder;
 
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            builder.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTLambda({"x", "k"}, makeASTFunction(
+                    "if",
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(UInt64{0})),
+                    make_intrusive<ASTIdentifier>("x"),
+                    make_intrusive<ASTLiteral>(Field{}))),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
 
             builder.from_table = grid_name;
+
+            builder.where = makeASTFunction("has",
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds),
+                make_intrusive<ASTLiteral>(UInt64{0}));
 
             expression.select_query = builder.getSelectQuery();
             expression.store_method = StoreMethod::VECTOR_GRID;

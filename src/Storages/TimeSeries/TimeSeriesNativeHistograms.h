@@ -302,10 +302,12 @@ struct HistogramBucket
 /// porting the span walk of `floatBucketIterator` in Prometheus model/histogram/float_histogram.go; `idx` is Int64 because offsets can be negative.
 std::vector<HistogramBucket> expandHistogramSpans(const IColumn & spans_column, const IColumn & values_column, size_t row);
 
-/// Checks the invariants later readers rely on for one sample of the outer `histograms` column:
-/// a known schema and flags, non-negative counts, spans that cover exactly the bucket values, and
-/// custom bucket bounds covering the bucket indexes the spans reach. Throws INCORRECT_DATA
-/// otherwise. `tuple` is indexed by TimeSeriesHistogramsTupleIndex.
+/// Checks the invariants later readers rely on for one sample of the outer `histograms` column: known flags and schema,
+/// non-negative counts which are NaN only in a stale marker, spans that cover exactly the bucket values, the custom-bucket
+/// rules (no negative buckets, an unused zero bucket, finite strictly increasing bounds covering the bucket indexes) or
+/// no custom bounds for an exponential schema, and exact integer carriers that match the counts of an integer histogram
+/// (and are zero/empty for a float one). Throws INCORRECT_DATA otherwise. `tuple` is indexed by TimeSeriesHistogramsTupleIndex.
+/// Both the Prometheus remote-write protocol and an `INSERT` into the outer `histograms` column run it.
 void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row);
 
 }
