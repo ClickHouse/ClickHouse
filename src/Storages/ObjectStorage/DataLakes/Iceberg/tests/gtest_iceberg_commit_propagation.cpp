@@ -9,10 +9,12 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <optional>
+#include <vector>
 
 using namespace DB;
 
@@ -66,18 +68,62 @@ private:
     size_t file_pos = 0;
 };
 
-/// Drives the real commit without an object storage. The conditional write always fails with
-/// `write_error_code`; what the store is then found to hold is `stored_content` (`std::nullopt` for
-/// an absent target), or the read-back itself fails when `read_throws` is set. That is exactly the
-/// input the commit has to distinguish: the error alone cannot tell a lost race from a response lost
-/// after the store accepted the object.
+/// Keeps what is written in `target` once the write is finalized. With `error_after_store` it then
+/// throws, which is a response lost after the store accepted the object.
+class StringWriter : public WriteBufferFromFileBase
+{
+public:
+    explicit StringWriter(std::optional<std::string> & target_, std::optional<int> error_after_store_ = {})
+        : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, /*existing_memory=*/nullptr, /*alignment=*/0)
+        , target(target_)
+        , error_after_store(error_after_store_)
+    {
+    }
+
+    void sync() override { }
+    std::string getFileName() const override { return "string_writer"; }
+
+private:
+    void nextImpl() override { data.append(working_buffer.begin(), pos); }
+
+    void finalizeImpl() override
+    {
+        next();
+        target = std::move(data);
+        if (error_after_store)
+            throw Exception(*error_after_store, "Response lost after the test stub stored the object");
+    }
+
+    std::optional<std::string> & target;
+    std::optional<int> error_after_store;
+    std::string data;
+};
+
+/// What the stub store holds and how it fails. The conditional metadata write fails with
+/// `write_error_code`: before storing anything, or after storing the written bytes when
+/// `accept_write` is set. The store then holds `stored_content` (`std::nullopt` for an absent
+/// target), the first `hidden_probes` probes after the write still report it absent, and the
+/// read-back fails when `read_throws` is set. That is exactly the input the commit has to
+/// distinguish: the error alone cannot tell a lost race from a response lost after the store
+/// accepted the object. `version-hint.text` holds `hint`, and its first `hint_probe_failures`
+/// probes throw.
+struct StoreState
+{
+    int write_error_code = ErrorCodes::NETWORK_ERROR;
+    bool accept_write = false;
+    std::optional<std::string> stored_content;
+    size_t hidden_probes = 0;
+    bool read_throws = false;
+    std::optional<std::string> hint;
+    size_t hint_probe_failures = 0;
+};
+
 class ReconcilingObjectStorage : public IObjectStorage
 {
 public:
-    ReconcilingObjectStorage(int write_error_code_, std::optional<std::string> stored_content_, bool read_throws_ = false)
-        : write_error_code(write_error_code_), stored_content(std::move(stored_content_)), read_throws(read_throws_)
-    {
-    }
+    explicit ReconcilingObjectStorage(StoreState state_) : state(std::move(state_)) { }
+
+    const std::optional<std::string> & hint() const { return state.hint; }
 
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -86,6 +132,9 @@ public:
         size_t,
         const WriteSettings & write_settings) override
     {
+        if (isVersionHint(object))
+            return std::make_unique<StringWriter>(state.hint);
+
         /// The commit must ask for the metadata file to be created exclusively: without the
         /// condition the write is a plain overwrite and one of two concurrent writers is lost.
         /// `EXPECT_*` keeps the throw below reachable.
@@ -93,30 +142,46 @@ public:
         EXPECT_TRUE(write_settings.object_storage_write_if_match.empty());
 
         ++writes;
-        throw Exception(write_error_code, "Write of {} failed in the test stub", object.remote_path);
+        if (state.accept_write)
+            return std::make_unique<StringWriter>(state.stored_content, state.write_error_code);
+        throw Exception(state.write_error_code, "Write of {} failed in the test stub", object.remote_path);
     }
 
     /// Before the write the target is absent so the commit proceeds; afterwards it reports whatever
-    /// the store was configured to hold.
-    bool exists(const StoredObject &) const override { return writes > 0 && stored_content.has_value(); }
+    /// the store holds.
+    bool exists(const StoredObject & object) const override
+    {
+        if (isVersionHint(object))
+        {
+            if (state.hint_probe_failures > 0)
+            {
+                --state.hint_probe_failures;
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Version hint probe failed in the test stub");
+            }
+            return state.hint.has_value();
+        }
+        return writes > 0 && state.stored_content.has_value() && ++probes_after_write > state.hidden_probes;
+    }
 
     ObjectMetadata getObjectMetadata(const std::string &, bool) const override
     {
         ObjectMetadata metadata;
-        metadata.size_bytes = stored_content ? stored_content->size() : 0;
+        metadata.size_bytes = state.stored_content ? state.stored_content->size() : 0;
         return metadata;
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
-        const StoredObject &,
+        const StoredObject & object,
         const ReadSettings &,
         std::optional<size_t>,
         bool,
         bool) const override
     {
-        if (read_throws)
+        if (isVersionHint(object))
+            return std::make_unique<StringReader>(state.hint.value_or(""));
+        if (state.read_throws)
             throw Exception(ErrorCodes::NETWORK_ERROR, "Read failed in the test stub");
-        return std::make_unique<StringReader>(stored_content.value_or(""));
+        return std::make_unique<StringReader>(state.stored_content.value_or(""));
     }
 
     std::string getName() const override { return "ReconcilingObjectStorage"; }
@@ -153,15 +218,16 @@ private:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not used by this test", method);
     }
 
-    int write_error_code;
-    std::optional<std::string> stored_content;
-    bool read_throws;
+    static bool isVersionHint(const StoredObject & object) { return object.remote_path.ends_with("version-hint.text"); }
+
+    mutable StoreState state;
     mutable size_t writes = 0;
+    mutable size_t probes_after_write = 0;
 };
 
 constexpr auto committed_content = "{\"format-version\":2}";
 
-bool commitAgainst(int write_error_code, std::optional<std::string> stored_content, bool read_throws = false)
+bool commit(const std::shared_ptr<ReconcilingObjectStorage> & storage, CompressionMethod compression_method = CompressionMethod::None)
 {
     Iceberg::IcebergPathResolver resolver(
         "/table",
@@ -170,7 +236,7 @@ bool commitAgainst(int write_error_code, std::optional<std::string> stored_conte
     GeneratedMetadataFileWithInfo metadata_file_info{
         .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
         .version = 2,
-        .compression_method = CompressionMethod::None,
+        .compression_method = compression_method,
     };
 
     return Iceberg::writeMetadataFileAndVersionHint(
@@ -178,9 +244,14 @@ bool commitAgainst(int write_error_code, std::optional<std::string> stored_conte
         metadata_file_info,
         committed_content,
         Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
-        std::make_shared<ReconcilingObjectStorage>(write_error_code, std::move(stored_content), read_throws),
+        storage,
         getContext().context,
         /*try_write_version_hint=*/ false);
+}
+
+bool commitAgainst(StoreState state, CompressionMethod compression_method = CompressionMethod::None)
+{
+    return commit(std::make_shared<ReconcilingObjectStorage>(std::move(state)), compression_method);
 }
 
 }
@@ -191,7 +262,9 @@ TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
     /// surface the refusal rather than return `false`, which callers read as a lost race.
     try
     {
-        bool committed = commitAgainst(ErrorCodes::UNSUPPORTED_METHOD, std::nullopt);
+        StoreState state;
+        state.write_error_code = ErrorCodes::UNSUPPORTED_METHOD;
+        bool committed = commitAgainst(state);
         FAIL() << "Expected the refusal to propagate, got " << committed;
     }
     catch (const Exception & e)
@@ -205,14 +278,55 @@ TEST(IcebergCommitPropagation, StoredContentOfThisWriterIsCommitted)
     /// The response was lost after the store accepted the object, so the commit did take effect and
     /// the files it staged are the ones the table now points at. Reporting a lost race here is what
     /// makes callers delete them.
-    EXPECT_TRUE(commitAgainst(ErrorCodes::NETWORK_ERROR, committed_content));
+    StoreState state;
+    state.stored_content = committed_content;
+    EXPECT_TRUE(commitAgainst(state));
+}
+
+TEST(IcebergCommitPropagation, CompressedDocumentOfThisWriterIsCommitted)
+{
+    /// The read-back must decode what the write path encoded, or this writer's own document reads as
+    /// another writer's and licenses the cleanup of a commit that took effect.
+    std::vector<CompressionMethod> methods{CompressionMethod::Gzip, CompressionMethod::Zstd};
+#if USE_SNAPPY
+    methods.push_back(CompressionMethod::Snappy);
+#endif
+    StoreState state;
+    state.accept_write = true;
+    for (auto method : methods)
+        EXPECT_TRUE(commitAgainst(state, method)) << toContentEncodingName(method);
+}
+
+TEST(IcebergCommitPropagation, TargetBecomingVisibleAfterTheErrorIsCommitted)
+{
+    /// The first read-back still finds nothing, which a single probe would misreport as unknown.
+    StoreState state;
+    state.stored_content = committed_content;
+    state.hidden_probes = 1;
+    EXPECT_TRUE(commitAgainst(state));
+}
+
+TEST(IcebergCommitPropagation, VersionHintAdvancesPastATransientProbeFailure)
+{
+    /// The commit has taken effect before the hint is touched, so a failure there must neither reach the
+    /// caller, whose cleanup would delete the files of the snapshot that is now current, nor stop the hint
+    /// from advancing.
+    StoreState state;
+    state.stored_content = committed_content;
+    state.hint = "1";
+    state.hint_probe_failures = 1;
+    auto storage = std::make_shared<ReconcilingObjectStorage>(state);
+    EXPECT_TRUE(commit(storage));
+    EXPECT_EQ(storage->hint().value_or("<absent>"), "2");
 }
 
 TEST(IcebergCommitPropagation, ContentOfAnotherWriterIsALostRace)
 {
     /// Someone else's document occupies the version, which is the only outcome that proves this
     /// commit did not happen, so the staged files are garbage and cleanup is correct.
-    EXPECT_FALSE(commitAgainst(ErrorCodes::NETWORK_ERROR, "{\"format-version\":2,\"other\":true}"));
+    StoreState state;
+    state.stored_content = R"({"format-version":2,"other":true})";
+    EXPECT_FALSE(commitAgainst(state));
 }
 
 TEST(IcebergCommitPropagation, AbsentTargetIsUnknownRatherThanALostRace)
@@ -222,7 +336,7 @@ TEST(IcebergCommitPropagation, AbsentTargetIsUnknownRatherThanALostRace)
     /// files of a commit that then becomes visible.
     try
     {
-        bool committed = commitAgainst(ErrorCodes::NETWORK_ERROR, std::nullopt);
+        bool committed = commitAgainst(StoreState{});
         FAIL() << "Expected an unknown commit state, got " << committed;
     }
     catch (const Exception & e)
@@ -238,7 +352,10 @@ TEST(IcebergCommitPropagation, FailingReadBackIsUnknownRatherThanALostRace)
     /// having happened.
     try
     {
-        bool committed = commitAgainst(ErrorCodes::NETWORK_ERROR, committed_content, /*read_throws=*/ true);
+        StoreState state;
+        state.stored_content = committed_content;
+        state.read_throws = true;
+        bool committed = commitAgainst(state);
         FAIL() << "Expected an unknown commit state, got " << committed;
     }
     catch (const Exception & e)
