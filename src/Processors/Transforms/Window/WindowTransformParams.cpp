@@ -12,9 +12,9 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
-#include <limits>
 #include <optional>
 #include <ranges>
 
@@ -34,19 +34,15 @@ namespace
 template <typename T>
 std::optional<T> shift(T value, T offset, bool preceding)
 {
-    if (preceding)
+    if constexpr (std::is_floating_point_v<T>)
     {
-        if (value < std::numeric_limits<T>::lowest() + offset)
-            return std::nullopt;
-
-        return value - offset;
+        return preceding ? value - offset : value + offset;
     }
     else
     {
-        if (value > std::numeric_limits<T>::max() - offset)
-            return std::nullopt;
-
-        return value + offset;
+        T result{};
+        const bool overflow = preceding ? common::subOverflow(value, offset, result) : common::addOverflow(value, offset, result);
+        return overflow ? std::nullopt : std::optional(result);
     }
 }
 
