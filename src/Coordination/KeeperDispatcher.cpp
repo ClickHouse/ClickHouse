@@ -711,9 +711,10 @@ void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
                 continue;
             }
 
-            ClusterUpdateAction action;
-            if (!cluster_update_queue.pop(action))
+            QueuedClusterUpdate update;
+            if (!cluster_update_queue.pop(update))
                 break;
+            const auto & action = update.action;
 
             /// We must wait this update from leader or apply it ourself (if we are leader)
             bool done = false;
@@ -750,17 +751,22 @@ void KeeperDispatcher::clusterUpdateThread()
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
-        ClusterUpdateAction action;
-        if (!cluster_update_queue.pop(action))
+        QueuedClusterUpdate update;
+        if (!cluster_update_queue.pop(update))
             return;
+        const auto & action = update.action;
 
         if (const auto res = server->applyConfigUpdate(action, last_command_was_leader_change); res == Accepted)
+        {
             LOG_DEBUG(log, "Processing config update {}: accepted", action);
+            if (update.accepted)
+                update.accepted->store(true);
+        }
         else
         {
             last_command_was_leader_change = res == WaitBeforeChangingLeader;
 
-            (void)cluster_update_queue.pushFront(action);
+            (void)cluster_update_queue.pushFront(update);
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
@@ -770,12 +776,12 @@ void KeeperDispatcher::clusterUpdateThread()
     }
 }
 
-void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
+void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions, std::shared_ptr<std::atomic<bool>> accepted)
 {
     if (keeper_context->isShutdownCalled()) return;
     for (auto && action : actions)
     {
-        if (!cluster_update_queue.push(std::move(action)))
+        if (!cluster_update_queue.push({std::move(action), accepted}))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push configuration update");
         LOG_DEBUG(log, "Processing config update {}: pushed", action);
     }
@@ -810,7 +816,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
 
     if (!reconfigEnabled())
         for (auto & change : diff)
-            if (!cluster_update_queue.push(change))
+            if (!cluster_update_queue.push({change, nullptr}))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
 
     snapshot_s3.updateS3Configuration(config, macros);
@@ -880,6 +886,7 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
     UInt64 max_total_wait_time_ms)
 {
     UInt64 attempt = 0;
+    auto copy_accepted = std::make_shared<std::atomic<bool>>(false);
     for (; attempt <= retry_count; ++attempt)
     {
         if (check_callback(server.get()))
@@ -895,10 +902,10 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
             break;
 
         /// A copy that is still queued is retried by `clusterUpdateThread` until it is accepted,
-        /// so a retry pushes the action again only once the queue is empty.
+        /// so a retry pushes the action again only once its previous copy was accepted.
         bool pushed = attempt == 0;
         if (pushed)
-            pushClusterUpdates({action});
+            pushClusterUpdates({action}, copy_accepted);
 
         Stopwatch watch;
         LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, wait_time_ms);
@@ -913,9 +920,10 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(
                 return;
             }
 
-            if (!pushed && cluster_update_queue.empty())
+            if (!pushed && copy_accepted->load())
             {
-                pushClusterUpdates({action});
+                copy_accepted = std::make_shared<std::atomic<bool>>(false);
+                pushClusterUpdates({action}, copy_accepted);
                 pushed = true;
             }
 

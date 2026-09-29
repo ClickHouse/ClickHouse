@@ -35,7 +35,13 @@ class KeeperDispatcher
 private:
     friend class KeeperDispatcherTestAccessor;
 
-    using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
+    struct QueuedClusterUpdate
+    {
+        ClusterUpdateAction action;
+        /// Set by `clusterUpdateThread` once the update is accepted, if the producer waits for that.
+        std::shared_ptr<std::atomic<bool>> accepted;
+    };
+    using ClusterUpdateQueue = ConcurrentBoundedQueue<QueuedClusterUpdate>;
 
     SnapshotsQueue snapshots_queue{1};
 
@@ -170,7 +176,7 @@ public:
     bool isServerActive() const;
 
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
-    void pushClusterUpdates(ClusterUpdateActions && actions);
+    void pushClusterUpdates(ClusterUpdateActions && actions, std::shared_ptr<std::atomic<bool>> accepted = nullptr);
     bool reconfigEnabled() const;
 
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration

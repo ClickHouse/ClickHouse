@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 `rcfg` makes as many attempts per action as its `retry` field asks (one retry when it is absent),
-never waits past `max_total_wait_time_ms`, does not queue an action again while its previous copy is
-still waiting to be applied, and rejects a negative `retry` before running any action.
+never waits past `max_total_wait_time_ms`, queues an action again once its previous copy was
+accepted (never while that copy is still waiting, whatever else is queued), and rejects a negative
+`retry` before running any action.
 """
 
 import json
 import re
+import threading
 import time
 
 import pytest
@@ -72,16 +74,25 @@ def waits_logged(member_id):
     return [int(ms) for ms in re.findall(r"will wait for (\d+) ms", lines)]
 
 
-def queue_events(member_id):
-    # This member's "pushed" and "accepted" update lines, in the order they were logged.
-    lines = node.grep_in_log(
-        f"Processing config update (Add server {member_id}): ", only_latest=True
-    )
-    return [
-        line.rsplit(": ", 1)[1]
-        for line in lines.splitlines()
-        if line.endswith((": pushed", ": accepted"))
-    ]
+def queue_events(*member_ids):
+    # These members' "pushed" and "accepted" update lines, in the order they were logged.
+    lines = node.grep_in_log("Processing config update (Add server ", only_latest=True)
+    events = []
+    for line in lines.splitlines():
+        match = re.search(r"\(Add server (\d+)\): (pushed|accepted)$", line)
+        if match and int(match.group(1)) in member_ids:
+            events.append((int(match.group(1)), match.group(2)))
+    return events
+
+
+def max_outstanding(events, member_id):
+    outstanding = 0
+    result = 0
+    for member, event in events:
+        if member == member_id:
+            outstanding += 1 if event == "pushed" else -1
+            result = max(result, outstanding)
+    return result
 
 
 def add_unreachable_member(member_id, retry, **limits):
@@ -218,14 +229,9 @@ def test_retries_do_not_pile_up_in_the_update_queue(started_cluster):
     )
     attempts = attempts_logged_since(7, before)
     events = queue_events(7)[events_before:]
-    pushes = events.count("pushed")
-    accepts = events.count("accepted")
-    outstanding = 0
-    max_outstanding = 0
-    for event in events:
-        outstanding += 1 if event == "pushed" else -1
-        max_outstanding = max(max_outstanding, outstanding)
-    info = (result, elapsed, attempts, pushes, accepts, max_outstanding)
+    pushes = events.count((7, "pushed"))
+    accepts = events.count((7, "accepted"))
+    info = (result, elapsed, attempts, pushes, accepts, max_outstanding(events, 7))
 
     assert result["status"] == "error", info
     assert "with retries count 10, attempts made 11" in result["message"], info
@@ -234,4 +240,43 @@ def test_retries_do_not_pile_up_in_the_update_queue(started_cluster):
     assert 1 <= accepts <= attempts - 5, info
     # The action is queued again once its previous copy was taken, never once per attempt.
     assert pushes >= 2, info
-    assert max_outstanding <= 2, info
+    assert max_outstanding(events, 7) <= 1, info
+
+
+def test_retry_does_not_wait_for_other_queued_updates(started_cluster):
+    node.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
+
+    events_before = len(queue_events(10, 11, 12))
+    accepts_before = queue_events(10).count((10, "accepted"))
+    command = {}
+
+    def add_member_10():
+        command["out"] = add_unreachable_member(
+            10, retry=1, max_action_wait_time_ms=6000, max_total_wait_time_ms=7000
+        )
+
+    thread = threading.Thread(target=add_member_10)
+    thread.start()
+    deadline = time.monotonic() + 30
+    while queue_events(10).count((10, "accepted")) == accepts_before:
+        assert time.monotonic() < deadline, queue_events(10, 11, 12)
+        time.sleep(0.1)
+    # While member 10 is joining, both updates are declined, so one of them is always queued.
+    for member_id in (11, 12):
+        action = {"add_members": [{"id": member_id, "endpoint": UNREACHABLE_ENDPOINT}]}
+        send_rcfg({"max_action_wait_time_ms": 0, "actions": [{**action, "retry": 0}]})
+    thread.join()
+    result, elapsed, before = command["out"]
+    attempts = attempts_logged_since(10, before)
+    events = queue_events(10, 11, 12)[events_before:]
+    info = (result, elapsed, attempts, events)
+
+    assert result["status"] == "error", info
+    assert "with retries count 1, attempts made 2" in result["message"], info
+    # The first copy was accepted, so the retry queues the action again behind the other updates.
+    assert events.count((10, "pushed")) == 2, info
+    second_push = [i for i, event in enumerate(events) if event == (10, "pushed")][1]
+    assert (12, "pushed") in events[:second_push], info
+    assert (12, "accepted") not in events[:second_push], info
+    assert max_outstanding(events, 10) <= 1, info
