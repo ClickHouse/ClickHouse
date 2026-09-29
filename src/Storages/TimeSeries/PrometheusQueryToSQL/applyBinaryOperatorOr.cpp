@@ -194,6 +194,8 @@ SQLQueryPiece applyBinaryOperatorOr(
         step3 = builder.getSelectQuery();
     }
 
+    /// `sort_rank_subquery` isn't carried over: the rank map of the left side has no ranks for the series
+    /// added from the right side, so an order fixed by an inner sort*() call is dropped.
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
     res.select_query = std::move(step3);
     res.metric_name_dropped = left_argument.metric_name_dropped && right_argument.metric_name_dropped;

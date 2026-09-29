@@ -67,6 +67,12 @@ promql_client -q "topk(2, sort(up))"
 echo "-- sort(topk(2, up)): the outer sort() orders the result of topk() ascending (20, 30)"
 promql_client -q "sort(topk(2, up))"
 
+echo "-- sort(up) and up: 'and' keeps the order fixed by sort() on its left side (10, 20, 30)"
+promql_client -q "sort(up) and up"
+
+echo "-- sort_desc(up) unless up{instance='host3'}: 'unless' keeps the order fixed by sort_desc() on its left side (30, 10)"
+promql_client -q "sort_desc(up) unless up{instance='host3'}"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"

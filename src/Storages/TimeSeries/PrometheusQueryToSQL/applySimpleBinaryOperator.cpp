@@ -377,6 +377,8 @@ namespace
             result_ast = builder.getSelectQuery();
         }
 
+        /// `sort_rank_subquery` isn't carried over: vector matching changes the series ids (`on`, `ignoring`,
+        /// `group_left`, `group_right`, dropping the metric name), so an order fixed by an inner sort*() call is dropped.
         SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
 
         res.select_query = std::move(result_ast);

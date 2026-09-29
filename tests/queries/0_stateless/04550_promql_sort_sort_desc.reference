@@ -37,3 +37,10 @@
 -- sort(topk(2, up)): the outer sort() orders the result of topk() ascending (20, 30)
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+-- sort(up) and up: 'and' keeps the order fixed by sort() on its left side (10, 20, 30)
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+-- sort_desc(up) unless up{instance='host3'}: 'unless' keeps the order fixed by sort_desc() on its left side (30, 10)
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
