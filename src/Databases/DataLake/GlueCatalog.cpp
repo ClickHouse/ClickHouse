@@ -670,10 +670,13 @@ std::optional<std::string> GlueCatalog::getDefaultTableLocation(
     auto outcome = glue_client->GetDatabase(request);
     if (!outcome.IsSuccess())
     {
-        LOG_DEBUG(
-            log, "Cannot get database {} from glue catalog: {}",
+        if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+            return std::nullopt;
+
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling GetDatabase for namespace {}: {}",
             namespace_name, outcome.GetError().GetMessage());
-        return std::nullopt;
     }
 
     const auto & location_uri = outcome.GetResult().GetDatabase().GetLocationUri();
