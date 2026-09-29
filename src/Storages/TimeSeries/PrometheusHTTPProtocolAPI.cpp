@@ -473,7 +473,11 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         }
         query_context->setSetting("use_query_cache", use_query_cache);
         if (use_query_cache)
+        {
             query_context->setSetting("query_cache_nondeterministic_function_handling", String("save"));
+            /// A subquery of the generated SQL fills or reads the tags of its own query, so it must not come from the query cache.
+            query_context->setSetting("query_cache_for_subqueries", false);
+        }
 
         auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 

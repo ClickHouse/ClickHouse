@@ -298,3 +298,23 @@ def test_chunk_with_non_throw_overflow_mode_is_not_cached(overflow_mode):
     }
     assert query_range("node_load1", H, H + 6 * 3600, 60, params) == expected
     assert int(node.query("SELECT count() FROM system.query_cache")) == 0
+
+
+@pytest.mark.parametrize("params", [{"query_cache_for_subqueries": 1}, {"user": "range_split_subqueries"}])
+def test_subqueries_of_cached_chunk_are_not_cached(params):
+    node.query("CREATE USER IF NOT EXISTS range_split_subqueries SETTINGS PROFILE 'default', query_cache_for_subqueries = 1")
+    node.query("GRANT SELECT, CREATE TEMPORARY TABLE ON *.* TO range_split_subqueries")
+    node.query("SYSTEM DROP QUERY CACHE")
+    query = "node_cpu_seconds_total or node_load1"
+    expected = query_range(query, H, H + 6 * 3600, 60)
+
+    # A subquery of the generated SQL fills or reads the tags of its own query, so it must not come from another query.
+    params = {
+        **params,
+        "promql_range_query_split_interval": INTERVAL,
+        "promql_range_query_cache_min_age": 600,
+        "query_cache_ttl": 3600,
+    }
+    query_range("node_load1", H, H + 6 * 3600, 60, params)
+    assert query_range(query, H, H + 6 * 3600, 60, params) == expected
+    assert node.query("SELECT is_subquery, count() FROM system.query_cache GROUP BY is_subquery") == "0\t12\n"
