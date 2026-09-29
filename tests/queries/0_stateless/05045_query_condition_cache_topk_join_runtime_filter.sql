@@ -60,9 +60,11 @@ SELECT '--- The join plan carries a runtime filter into the TopK-shaped read';
 -- The runtime filter is merged into the read's filter as an `RF...` conjunct, and no
 -- `__topKFilter` is stamped through the join (`topKThroughJoin` and `joinRuntimeFilter`
 -- target disjoint join shapes).
+-- The filter must be built from `dim`, so that it is applied to the read of `tab`.
 SELECT
     (countIf(explain LIKE '%BuildRuntimeFilter%') > 0)
 AND (countIf(explain LIKE '%__topKFilter%') = 0)
+AND (countIf(explain LIKE '%RF_(id, id from %.dim)%') > 0)
 FROM (
     EXPLAIN actions = 1
     SELECT t.v1, t.extra FROM tab t INNER JOIN dim d ON t.id = d.id WHERE t.v2 < 500000 ORDER BY t.v1 ASC LIMIT 5);
