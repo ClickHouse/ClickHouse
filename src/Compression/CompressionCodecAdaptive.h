@@ -21,10 +21,9 @@ struct Entry
 
 using Pool = VectorWithMemoryTracking<Entry>;
 
-/// The pool for `type`, in priority order. [0] is `NONE`: a block that no codec can shrink is stored uncompressed.
-/// [1] is the default codec, thus we get "no worse than the default" compression.
-/// Specialized candidates come from a per-type table. Beyond [0] and [1], they must be ordered by descending decompression speed
-/// as a draw in size should resolve to the fastest reads.
+/// The pool for `type`, in priority order. [0] is the default codec, thus we get "no worse than the default" compression.
+/// Specialized candidates come from a per-type table. Beyond [0], they must be ordered by descending decompression speed
+/// as a draw in size should resolve to the fastest reads. `NONE` is not a candidate as the raw block is what every candidate must beat.
 Pool poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default);
 
 }
@@ -42,7 +41,7 @@ public:
     void updateHash(SipHash & hash) const override;
 
     /// Compresses the block with whichever candidate produces the smallest output. Decompression cannot tell adaptive was involved.
-    /// Ties go to the earliest pool entry, so `NONE` beats an equal-sized compressor and a codec beats its own chain.
+    /// A candidate must beat the raw block, and ties go to the earliest pool entry, so a codec beats its own chain.
     /// Candidates reporting their size via `tryGetCompressedSize` are compressed only if they win, unless a chain needs their block.
     /// Selection cost scales with the block size, so there is no small-block skip.
     UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override;
@@ -52,7 +51,7 @@ public:
     String getDescription() const override { return "Resolve CODEC(Default) to the best per-block codec from a type-appropriate pool."; }
 
 protected:
-    /// Max across all codecs and chains in the pool. Exceeds `uncompressed_size` as this reserves the memory codecs need while compressing.
+    /// Max across `NONE` and every codec and chain in the pool. Exceeds `uncompressed_size` as this reserves the memory codecs need while compressing.
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     /// Adaptive never appears on disk: it self-describes each block via the winner's method byte, so these must never be invoked directly.
@@ -60,7 +59,6 @@ protected:
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
 private:
-    /// pool[0] is NONE, pool[1] is the deployment default
     AdaptiveCodec::Pool pool;
 };
 

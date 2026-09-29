@@ -51,18 +51,16 @@ std::vector<char> bytesOf(const std::vector<T> & values)
     return bytes;
 }
 
-/// Asserts order of codecs in the pool: [0] NONE, [1] the default, then `extras` in order, each with its chain with the default.
+/// Asserts order of codecs in the pool: [0] the default, then `extras` in order, each with its chain with the default.
 void expectPool(const char * name, std::initializer_list<std::string_view> extras)
 {
     AdaptiveCodec::Pool pool;
     ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(type(name), defaultCodec())) << "type " << name;
-    ASSERT_EQ(pool.size(), 2 + extras.size()) << "type " << name;
-    EXPECT_EQ(pool[0].codec->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
+    ASSERT_EQ(pool.size(), 1 + extras.size()) << "type " << name;
+    EXPECT_EQ(pool[0].codec.get(), defaultCodec().get()) << "type " << name;
     EXPECT_EQ(pool[0].chain, nullptr) << "type " << name;
-    EXPECT_EQ(pool[1].codec.get(), defaultCodec().get()) << "type " << name; /// default is always [1]
-    EXPECT_EQ(pool[1].chain, nullptr) << "type " << name;
 
-    size_t i = 2;
+    size_t i = 1;
     for (const auto extra : extras)
     {
         const auto & entry = pool[i++];
@@ -130,7 +128,7 @@ TEST(AdaptiveCodecPool, FloatTypesGetALPVariants)
         expectPool(name, {"ALP(STD)", "ALP(RD)"});
 }
 
-TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
+TEST(AdaptiveCodecPool, NonCandidateTypesGetDefaultOnly)
 {
     for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "UUID", "BFloat16"})
         expectPool(name, {});
@@ -215,7 +213,6 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
     Codecs codecs;
     for (const auto & entry : AdaptiveCodec::poolForType(type("UInt32"), defaultCodec()))
         codecs.push_back(entry.codec);
-    ASSERT_EQ(codecs.size(), 3u);
     CompressionCodecMultiple multiple(codecs);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());
 
@@ -279,8 +276,7 @@ TEST(TryGetCompressedSize, MatchesCompressForT64)
     const UInt32 size = static_cast<UInt32>(bytes.size());
 
     auto pool = AdaptiveCodec::poolForType(type("UInt32"), defaultCodec());
-    ASSERT_EQ(pool.size(), 3u);
-    const auto & t64 = pool[2].codec;
+    const auto & t64 = pool.back().codec;
     ASSERT_EQ(t64->getMethodByte(), T64);
 
     const auto calculated = t64->tryGetCompressedSize(bytes.data(), size);

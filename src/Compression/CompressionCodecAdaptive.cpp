@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <limits>
 #include <span>
 #include <string_view>
 #include <Compression/CompressionCodecMultiple.h>
+#include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
 #include <Core/TypeId.h>
@@ -71,6 +71,12 @@ CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & t
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecAdaptive must not be invoked directly: it never appears on disk");
 }
 
+const ICompressionCodec & getNoneCodec()
+{
+    static const CompressionCodecNone none;
+    return none;
+}
+
 /// Hands out destinations for candidate compressions: the external buffer if it is free, else one of two scratches allocated on first use.
 /// Not handed out: `best_destination` and `in_use`.
 class CompressionDestinationMultiplexer
@@ -119,8 +125,7 @@ AdaptiveCodec::Pool AdaptiveCodec::poolForType(const DataTypePtr & type, const C
     if (deployment_default->isEncryption())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
 
-    static const CompressionCodecPtr none_codec = CompressionCodecFactory::instance().get("NONE", {});
-    Pool pool{{none_codec}, {deployment_default}};
+    Pool pool{{deployment_default}};
     if (!type)
         return pool;
 
@@ -154,8 +159,9 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
 {
     chassert(dest != nullptr);
     CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
-    const ICompressionCodec * best_codec = nullptr;
-    UInt32 best_size = std::numeric_limits<UInt32>::max();
+    /// The raw block is the baseline
+    const ICompressionCodec * best_codec = &getNoneCodec();
+    UInt32 best_size = getHeaderSize() + source_size;
 
     /// `block` is nullptr for a measured-only size.
     auto update_best = [&](const ICompressionCodec & codec, UInt32 size, char * block)
@@ -195,7 +201,6 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
 
     if (!best_compressed)
     {
-        chassert(best_codec);
         const UInt32 size = best_codec->compress(source, source_size, dest);
         chassert(size == best_size);
         return size;
@@ -209,7 +214,8 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
 
 UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    UInt32 max_reserve = 0;
+    /// The raw block must fit too
+    UInt32 max_reserve = getNoneCodec().getCompressedReserveSize(uncompressed_size);
     for (const auto & [codec, chain] : pool)
     {
         max_reserve = std::max(max_reserve, codec->getCompressedReserveSize(uncompressed_size));
