@@ -93,6 +93,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExis
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> match(x, '^[0-9]{5}$'), tokens(msg));
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'Charg'), tokens(msg, 'splitByNonAlpha'));
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, '50%_\\'), tokens(msg));
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> x LIKE '50#%#_%' ESCAPE '#', tokens(msg));
 
 SELECT '-- the index prunes granules and is read directly';
 
@@ -129,6 +130,10 @@ SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'charg'), tokens(to
 SELECT '-- an invalid pattern raises the same exception';
 SELECT count() FROM tab WHERE arrayExists(x -> match(x, '('), tokens(msg)); -- { serverError CANNOT_COMPILE_REGEXP }
 SELECT count() FROM tab WHERE arrayExists(x -> match(x, '('), tokens(msg)) SETTINGS optimize_rewrite_array_exists_over_tokens = 0; -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT count() FROM tab WHERE arrayExists(x -> x LIKE 'ch#' ESCAPE '#', tokens(msg)); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM tab WHERE arrayExists(x -> x LIKE 'ch#' ESCAPE '#', tokens(msg)) SETTINGS optimize_rewrite_array_exists_over_tokens = 0; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+-- An ESCAPE that is not a single character is not rewritten, `like` raises the exception.
+SELECT count() FROM tab WHERE arrayExists(x -> x LIKE 'ch%' ESCAPE '##', tokens(msg)); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- a tokenizer other than the index tokenizer does not use the index';
 
@@ -197,6 +202,10 @@ SELECT 'FixedString', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> 
 SELECT 'FixedString', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> endsWith(x, '%'), tokens(fs, 'array')) SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 SELECT 'FixedString', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> startsWith(x, 'a\\'), tokens(fs, 'array'));
 SELECT 'FixedString', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> startsWith(x, 'a\\'), tokens(fs, 'array')) SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
+SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> x LIKE '50#%#_%' ESCAPE '#', tokens(msg, 'splitByString([\' \'])'));
+SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> x LIKE '50#%#_%' ESCAPE '#', tokens(msg, 'splitByString([\' \'])')) SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
+SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> x LIKE 'a\\b' ESCAPE '#', tokens(msg, 'splitByString([\' \'])'));
+SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> x LIKE 'a\\b' ESCAPE '#', tokens(msg, 'splitByString([\' \'])')) SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 
 SELECT '-- the rewrite is on by default, and compatibility with 26.9 turns it off';
 

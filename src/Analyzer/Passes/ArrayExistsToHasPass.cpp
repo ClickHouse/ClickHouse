@@ -245,8 +245,11 @@ private:
             is_position = true;
         }
 
+        const auto & filter_function_name = filter_node->getFunctionName();
         const auto & filter_arguments = filter_node->getArguments().getNodes();
-        if (filter_arguments.size() != 2 || !is_lambda_argument(filter_arguments[0]))
+        /// `x LIKE p ESCAPE 'c'` is `like(x, p, 'c')`.
+        const bool has_escape = filter_arguments.size() == 3 && filter_function_name == "like";
+        if ((filter_arguments.size() != 2 && !has_escape) || !is_lambda_argument(filter_arguments[0]))
             return false;
 
         const auto * needle_constant = filter_arguments[1]->as<ConstantNode>();
@@ -254,7 +257,6 @@ private:
             return false;
 
         const auto & needle = needle_constant->getValue().safeGet<String>();
-        const auto & filter_function_name = filter_node->getFunctionName();
         String function_name = "hasTokenLike";
         QueryTreeNodePtr pattern;
 
@@ -264,6 +266,19 @@ private:
             pattern = std::make_shared<ConstantNode>(escapeForLikePattern(needle) + "%");
         else if (filter_function_name == "endsWith")
             pattern = std::make_shared<ConstantNode>("%" + escapeForLikePattern(needle));
+        else if (filter_function_name == "like" && has_escape)
+        {
+            const auto * escape_constant = filter_arguments[2]->as<ConstantNode>();
+            if (!escape_constant || !isString(escape_constant->getResultType()))
+                return false;
+
+            /// An escape that is not a single ASCII character is left to `like`, which raises the exception.
+            const auto & escape = escape_constant->getValue().safeGet<String>();
+            if (escape.size() != 1 || static_cast<unsigned char>(escape[0]) > 0x7F)
+                return false;
+
+            pattern = std::make_shared<ConstantNode>(likePatternWithCustomEscapeToLikePattern(needle, escape[0]));
+        }
         else if (filter_function_name == "like")
             pattern = filter_arguments[1];
         else if (filter_function_name == "match")
