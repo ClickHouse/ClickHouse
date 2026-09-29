@@ -60,6 +60,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_compact_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_target_chunk_rows;
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
     extern const MergeTreeSettingsNonZeroUInt64 max_buckets_in_map;
     extern const MergeTreeSettingsMergeTreeMapBucketsStrategy map_buckets_strategy;
@@ -105,6 +106,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_serialization_version(data_part->isZeroLevel() ? (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts] : (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version])
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , object_shared_data_target_chunk_rows((*storage_settings)[MergeTreeSetting::object_shared_data_target_chunk_rows])
+    , object_paths_sparse_default_ratio(static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]))
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
     , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
