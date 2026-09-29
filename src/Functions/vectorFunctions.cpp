@@ -630,7 +630,7 @@ public:
             else
                 tuple_columns.resize(2);
 
-            tuple_columns[0] = arguments[0].column->convertToFullColumnIfConst();
+            tuple_columns[0] = arguments[0].column;
         }
         else if (first_tuple)
         {
@@ -675,15 +675,13 @@ public:
             {
                 auto minus = FunctionFactory::instance().get("minus", context);
                 auto elem_minus = minus->build({left, arguments[1]});
-                last_column = elem_minus->execute({left, arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false)
-                                        ->convertToFullColumnIfConst();
+                last_column = elem_minus->execute({left, arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false);
             }
             else
             {
                 auto plus = FunctionFactory::instance().get("plus", context);
                 auto elem_plus = plus->build({left, arguments[1]});
-                last_column = elem_plus->execute({left, arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false)
-                                        ->convertToFullColumnIfConst();
+                last_column = elem_plus->execute({left, arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false);
             }
         }
         else
@@ -699,6 +697,10 @@ public:
                 last_column = arguments[1].column;
             }
         }
+
+        /// Either operand can be a constant, which a tuple cannot hold.
+        for (auto & column : tuple_columns)
+            column = column->convertToFullColumnIfConst();
 
         return ColumnTuple::create(tuple_columns);
     }
