@@ -40,6 +40,7 @@ namespace ProfileEvents
 {
 extern const Event AutoParallelReplicasPlanBuildAttempts;
 extern const Event AutoParallelReplicasMicroseconds;
+extern const Event AutoParallelReplicasPlanBuildMicroseconds;
 extern const Event AutoParallelReplicasSkippedDueToSettings;
 extern const Event AutoParallelReplicasPlanShapeNotSupported;
 extern const Event AutoParallelReplicasPlanNotSuitable;
@@ -672,9 +673,13 @@ void considerEnablingParallelReplicas(
         return;
 
     /// Everything from here on is paid whether or not the plan with parallel replicas is adopted,
-    /// and this counter is the only way to see that cost from `system.query_log`.
+    /// and these counters are the only way to see that cost from `system.query_log`. Building the plan
+    /// is counted apart from the rest, so the two do not overlap.
     Stopwatch watch;
-    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::AutoParallelReplicasMicroseconds, watch.elapsedMicroseconds()); });
+    UInt64 plan_build_microseconds = 0;
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasMicroseconds, watch.elapsedMicroseconds() - plan_build_microseconds);
+    });
 
     /// Cannot guarantee projection usage with parallel replicas. `buildQueryPlanForAutomaticParallelReplicas`
     /// builds the candidate with projections off entirely - it clears `optimize_projection`,
@@ -862,8 +867,12 @@ void considerEnablingParallelReplicas(
     /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(
-        collectBuiltSets(query_plan), getLogger("AutoParallelReplicas"));
+    auto built_sets = collectBuiltSets(query_plan);
+    Stopwatch plan_build_watch;
+    auto plan_with_parallel_replicas
+        = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, getLogger("AutoParallelReplicas"));
+    plan_build_microseconds = plan_build_watch.elapsedMicroseconds();
+    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildMicroseconds, plan_build_microseconds);
     if (!plan_with_parallel_replicas)
     {
         /// The builder has logged why.

@@ -20,6 +20,8 @@ namespace ProfileEvents
 {
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
+extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 }
 
 namespace DB
@@ -186,7 +188,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    /// Reported in nanoseconds: a call often takes well under a microsecond, and rounding each one down would add up to nothing.
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    /// Only output columns get here, see above.
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
@@ -221,7 +227,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     statistics.bytes += res;
     statistics.sample_bytes += res;
     statistics.compressed_bytes += res;
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -352,7 +360,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
