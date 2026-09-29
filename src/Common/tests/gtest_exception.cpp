@@ -1,5 +1,6 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 
 #include <gtest/gtest.h>
 
@@ -66,22 +67,14 @@ TEST(Exception, CurrentExceptionWithoutHandledException)
 
 TEST(Exception, CurrentExceptionInDestructorDuringUnwinding)
 {
-    struct Probe
-    {
-        int & code;
-        std::string & message;
-        ~Probe()
-        {
-            code = getCurrentExceptionCode();
-            message = getCurrentExceptionMessage(false);
-        }
-    };
-
     int code = -1;
     std::string message = "unset";
     try
     {
-        Probe probe{code, message};
+        SCOPE_EXIT({
+            code = getCurrentExceptionCode();
+            message = getCurrentExceptionMessage(false);
+        });
         throw std::runtime_error("unwinding");
     }
     catch (const std::runtime_error &)
