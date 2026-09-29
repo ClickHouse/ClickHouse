@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Core/Field.h>
+#include <optional>
 
 
 namespace DB
@@ -127,11 +128,17 @@ private:
 
     bool isMapKeyColumnsTemplateStreamName(const String & stream_name) const;
 
-    /// The stream count is derived from the substreams inventory and read by addStreams(), so the
-    /// three initializations must happen in this order.
+    /// Ordinary columns are counted from `columns_substreams`. A `with_key_columns` Map is counted
+    /// from the template streams `addStreams` opens; `ensureMapKeyColumnsStreams` raises the count
+    /// when per-key streams are opened. `addStreamForPath` reads the count, so it is set first.
     void initStreamsAndSubstreamsIfNeeded();
 
     void initStreamsToOpenCount();
+
+    /// Stream name `addStreamForPath` would insert for this path, when it would insert one.
+    std::optional<String> newStreamNameForPath(
+        const NameAndTypePair & name_and_type,
+        const ISerialization::SubstreamPath & substream_path) const;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical

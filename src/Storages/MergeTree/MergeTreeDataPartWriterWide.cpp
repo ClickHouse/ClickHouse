@@ -180,22 +180,70 @@ void MergeTreeDataPartWriterWide::initStreamsAndSubstreamsIfNeeded()
     chassert(column_streams.size() == *streams_to_open_in_part);
 }
 
+std::optional<String> MergeTreeDataPartWriterWide::newStreamNameForPath(
+    const NameAndTypePair & name_and_type,
+    const ISerialization::SubstreamPath & substream_path) const
+{
+    if (substream_path.empty() || ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+        return std::nullopt;
+
+    auto full_stream_name = ISerialization::getFileNameForStream(
+        name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+    String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+
+    if (column_streams.contains(stream_name))
+        return std::nullopt;
+
+    /// Same skip as addStreamForPath: a Nested offset already written by another column is not opened here.
+    if (written_offset_substreams
+        && substream_path.back().type == ISerialization::Substream::ArraySizes
+        && written_offset_substreams->contains(stream_name))
+    {
+        return std::nullopt;
+    }
+
+    return stream_name;
+}
+
 void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
 {
     if (streams_to_open_in_part)
         return;
 
     NameSet stream_names;
-    for (size_t column_position = 0; column_position != columns_list.size(); ++column_position)
+    size_t column_position = 0;
+    for (const auto & name_and_type : columns_list)
     {
-        for (const auto & full_stream_name : columns_substreams.getColumnSubstreams(column_position))
+        auto serialization = getSerialization(name_and_type.name);
+        if (const auto * per_key = typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
         {
-            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
-            /// Skip offset streams that has been written before (not using this object)
-            if (written_offset_substreams && written_offset_substreams->contains(stream_name))
-                continue;
-            stream_names.insert(std::move(stream_name));
+            /// The dry-run inventory is a placeholder (or a partial LowCardinality prefix). The handles
+            /// opened for this column are its template streams; per-key streams are counted when registered.
+            auto data = ISerialization::SubstreamData(serialization)
+                .withType(name_and_type.type)
+                .withColumn(block_sample.getByName(name_and_type.name).column);
+            auto enumerate_settings = getEnumerateSettings(settings);
+            per_key->enumerateTemplateStreams(
+                enumerate_settings,
+                [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (auto stream_name = newStreamNameForPath(name_and_type, substream_path))
+                        stream_names.insert(std::move(*stream_name));
+                },
+                data);
         }
+        else
+        {
+            for (const auto & full_stream_name : columns_substreams.getColumnSubstreams(column_position))
+            {
+                String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+                /// Skip offset streams that has been written before (not using this object)
+                if (written_offset_substreams && written_offset_substreams->contains(stream_name))
+                    continue;
+                stream_names.insert(std::move(stream_name));
+            }
+        }
+        ++column_position;
     }
 
     streams_to_open_in_part = stream_names.size();
@@ -514,20 +562,58 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
         }
     }
 
+    /// Map the template substream path to this key's path: the front element becomes
+    /// the per-key value or exists substream, keeping the rest of the path.
+    auto keyPathFromTemplate = [&](const ISerialization::SubstreamPath & template_path, const Field & key)
+    {
+        auto key_path = template_path;
+        if (key_path.front().type == ISerialization::Substream::MapKeyValueTemplate)
+            key_path.front().type = ISerialization::Substream::MapKey;
+        else
+            key_path.front().type = ISerialization::Substream::MapKeyExists;
+        key_path.front().name_of_substream = per_key->getKeySubcolumnName(key);
+        return key_path;
+    };
+
+    /// Publish the widened total before opening handles. addStreamForPath reads it for the adaptive
+    /// write buffer, and the next initStreamsAndSubstreamsIfNeeded asserts it matches column_streams.
+    {
+        NameSet incoming;
+        for (const auto & key : new_keys)
+        {
+            if (has_history)
+            {
+                for (const auto & template_path : template_paths)
+                {
+                    if (auto stream_name = newStreamNameForPath(name_and_type, keyPathFromTemplate(template_path, key)))
+                        incoming.insert(std::move(*stream_name));
+                }
+            }
+            else
+            {
+                per_key->enumerateKeyStreams(
+                    enumerate_settings,
+                    [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        if (auto stream_name = newStreamNameForPath(name_and_type, substream_path))
+                            incoming.insert(std::move(*stream_name));
+                    },
+                    data,
+                    key);
+            }
+        }
+        chassert(streams_to_open_in_part.has_value());
+        chassert(column_streams.size() == *streams_to_open_in_part);
+        streams_to_open_in_part = *streams_to_open_in_part + incoming.size();
+    }
+
     for (const auto & key : new_keys)
     {
         if (has_history)
         {
             for (const auto & template_path : template_paths)
             {
-                /// Map the template substream path to this key's path: the front element becomes
-                /// the per-key value or exists substream, keeping the rest of the path.
-                auto key_path = template_path;
-                if (key_path.front().type == ISerialization::Substream::MapKeyValueTemplate)
-                    key_path.front().type = ISerialization::Substream::MapKey;
-                else
-                    key_path.front().type = ISerialization::Substream::MapKeyExists;
-                key_path.front().name_of_substream = per_key->getKeySubcolumnName(key);
+                auto key_path = keyPathFromTemplate(template_path, key);
 
                 auto template_full = ISerialization::getFileNameForStream(
                     name_and_type, template_path, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -570,6 +656,8 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
                 key);
         }
     }
+
+    chassert(column_streams.size() == *streams_to_open_in_part);
 
     per_key->addKeys(state, new_keys);
     if (has_history)
