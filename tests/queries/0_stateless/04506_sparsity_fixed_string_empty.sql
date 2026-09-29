@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 -- `optimize_empty_string_comparisons = 1` (default) rewrites `s = ''` / `!= ''` into
 -- `empty(s)` / `notEmpty(s)` before the sparsity classifier runs. The rewrite must
 -- fire for FixedString the same way it fires for String.

@@ -5,6 +5,7 @@
 namespace DB
 {
 
+///////////////////////////////////////////////////////////////////////////////////
 WatermarkSettingsPtr WatermarkSettings::clone() const
 {
     auto result = std::make_shared<WatermarkSettings>(*this);
@@ -16,7 +17,7 @@ WatermarkSettingsPtr WatermarkSettings::clone() const
 
 bool WatermarkSettings::operator==(const WatermarkSettings & rhs) const
 {
-    if (column != rhs.column)
+    if (time_attribute_column != rhs.time_attribute_column)
         return false;
 
     if (idle_timeout != rhs.idle_timeout)
@@ -28,6 +29,7 @@ bool WatermarkSettings::operator==(const WatermarkSettings & rhs) const
     return !expression || expression->getTreeHash(/*ignore_aliases=*/false) == rhs.expression->getTreeHash(/*ignore_aliases=*/false);
 }
 
+///////////////////////////////////////////////////////////////////////////////////
 StreamSettingsPtr StreamSettings::clone() const
 {
     auto result = std::make_shared<StreamSettings>(*this);

@@ -1,0 +1,10 @@
+<test>
+    <!-- Seed 0 gives the `JSON` columns a schema of about twenty leaves of every kind, seed 1 gives the
+         `Dynamic` column a `Date`, an `Int64` and an `Array(Nullable(String))` variant. -->
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('x JSON', 0, 10, 10) LIMIT 10000000);</query>
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_paths = 4)', 0, 10, 10) LIMIT 3000000);</query>
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('x Dynamic', 1, 10, 10) LIMIT 300000000);</query>
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('x Variant(UInt64, String, Array(UInt8))', 0, 10, 10) LIMIT 300000000);</query>
+    <!-- The same number of rows and about the same number of leaves as the first `JSON` query, as its baseline. -->
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('x Tuple(a String, b String, c Int64, d Int64, e UInt64, f Float64, g Float64, h Bool, i Nullable(String), j Array(Nullable(Int64)), k Tuple(String, Int64, Float64), l Date)', 0, 10, 10) LIMIT 10000000);</query>
+</test>

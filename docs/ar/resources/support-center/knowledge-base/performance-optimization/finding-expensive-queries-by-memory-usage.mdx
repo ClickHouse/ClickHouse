@@ -6,7 +6,7 @@ tags: ['الأداء والتحسينات']
 keywords: ['الاستعلامات المكلفة', 'استخدام الذاكرة']
 ---
 
-<div id="using-the-systemquery_log-table">
+<div id="using-the-systemquery-log-table">
   ## استخدام الجدول `system.query_log`
 </div>
 
@@ -29,6 +29,7 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -50,10 +51,16 @@ ORDER BY
 ```
 
 <Note>
-  إذا لم يكن لديك جدول `system.query_log`، فمن المرجّح أن تسجيل الاستعلامات غير مفعّل لديك. راجع تفاصيل [إعداد `query_log`](/ar/reference/settings/server-settings/settings#server_configuration_parameters-query-log) لمعرفة كيفية تفعيله.
+  إذا لم يكن لديك جدول `system.query_log`، فمن المرجّح أن تسجيل الاستعلامات غير مفعّل لديك. راجع تفاصيل [إعداد `query_log`](/ar/reference/settings/server-settings/settings/query#query_log) لمعرفة كيفية تفعيله.
 </Note>
 
-إذا لم يكن لديك عنقود، فيمكنك ببساطة الاستعلام مباشرةً من جدول `system.query_log` الوحيد لديك:
+<Note>
+  **يحتوي `query_log` على أكثر من مجرد الاستعلامات التي أرسلتها**
+
+  قد يظهر الاستعلام الواحد الذي أرسلته في عدة صفوف: الاستعلام الأوّلي (`is_initial_query = 1`) بالإضافة إلى الخطوات المشتقة أو الداخلية (`is_initial_query = 0`)، مثل الاستعلامات الثانوية للتنفيذ الموزّع أو الاستعلامات الداخلية المستخدمة لتقييم views. لهذه الصفوف الداخلية قيم `query_id` خاصة بها — يعيّنها ClickHouse، وتتضمن أحيانًا تسمية مثل `queryView...` — لذلك لا تفترض أن كل `query_id` يطابق ما أبلغ عنه عميلك. ولإسناد الاستخدام إلى الاستعلام كما شغّلته أنت، قم بالتصفية باستخدام `is_initial_query = 1` أو طابِق `query_id = initial_query_id`. راجع [كيفية تحديد الاستعلامات الأعلى كلفة](/ar/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) و[مرجع `query_log`](/ar/reference/system-tables/query_log) لمزيد من التفاصيل.
+</Note>
+
+إذا لم يكن لديك عنقود، فيمكنك الاستعلام مباشرةً من جدول `system.query_log` الوحيد لديك:
 
 ```sql
 SELECT
@@ -66,6 +73,7 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

@@ -16,9 +16,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+Throw exception if the current number of simultaneously processed queries reaches or exceeds this setting's value.
 
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for themselves to run queries for investigation even when the server is overloaded.
 
 Modifying the setting for one query or user does not affect other queries.
 

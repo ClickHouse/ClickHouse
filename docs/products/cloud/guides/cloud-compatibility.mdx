@@ -50,6 +50,7 @@ The following table engines are also supported and used as written. The supporte
 - Null
 - Buffer
 - Memory
+- `IcebergS3` and `IcebergAzure`
 - Deltalake
 - Hudi
 - MySQL
@@ -60,6 +61,8 @@ The following table engines are also supported and used as written. The supporte
 - S3
 - Kafka
 
+Experimental `PaimonS3` and `PaimonAzure` table engines can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability.
+
 ### Interfaces {#interfaces}
 ClickHouse Cloud supports HTTPS, native interfaces, and the [MySQL wire protocol](/concepts/features/interfaces/mysql). Support for more interfaces such as Postgres is coming soon.
 
@@ -68,6 +71,8 @@ Dictionaries are a popular way to speed up lookups in ClickHouse.  ClickHouse Cl
 
 ### Federated queries {#federated-queries}
 We support federated ClickHouse queries for cross-cluster communication in the cloud, and for communication with external self-managed ClickHouse clusters. ClickHouse Cloud currently supports federated queries using the following integration engines:
+- `IcebergS3` and `IcebergAzure`
+- `PaimonS3` and `PaimonAzure` (experimental; contact Support for availability)
 - Deltalake
 - Hudi
 - MySQL
@@ -102,7 +107,7 @@ Experimental features are disabled in ClickHouse Cloud services to ensure the st
 
 ### Named collections {#named-collections}
 
-[Named collections](/concepts/features/configuration/server-config/named-collections) aren't currently supported in ClickHouse Cloud.
+DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. Named collections defined in configuration files aren't available because users can't modify server configuration files in ClickHouse Cloud.
 
 ## Operational defaults and considerations {#operational-defaults-and-considerations}
 The following are default settings for ClickHouse Cloud services. In some cases, these settings are fixed to ensure the correct operation of the service, and in others, they can be adjusted.

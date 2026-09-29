@@ -13,7 +13,18 @@ namespace DB
 
 class ASTAlterCommand;
 class IDatabase;
+struct MergeTreeSettings;
 using DatabasePtr = std::shared_ptr<IDatabase>;
+
+/// Describes whether an ALTER requires rewriting existing parts.
+/// Non-empty `lazy_settings` means that the on-disk representation changes without an immediate
+/// mutation: old parts are converted on read and rewritten by later merges. Such conversions
+/// require additional safety checks for metadata persisted in existing parts.
+struct MutationStageDecision
+{
+    bool requires_mutation = false;
+    std::set<std::string_view> lazy_settings;
+};
 
 /// Operation from the ALTER query (except for manipulation with PART/PARTITION).
 /// Adding Nested columns is not expanded to add individual columns.
@@ -38,6 +49,7 @@ struct AlterCommand
         MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
+        MODIFY_PROJECTION,
         ADD_STATISTICS,
         DROP_STATISTICS,
         MODIFY_STATISTICS,
@@ -147,7 +159,7 @@ struct AlterCommand
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING or MODIFY COLUMN RESET SETTING
+    /// For RESET SETTING, MODIFY SETTING name = DEFAULT, or MODIFY COLUMN RESET SETTING
     std::set<String> settings_resets;
 
     /// For MODIFY_QUERY
@@ -172,15 +184,30 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
+    /// `MODIFY SETTING name = DEFAULT` means a reset, but `parse` leaves it in a MODIFY_SETTING command.
+    /// Engines key their checks on the command type, so the resets are moved out: the command itself
+    /// becomes RESET_SETTING, or, when it changes other settings too, the resets are returned as a
+    /// separate RESET_SETTING command which has to be executed before this one, in the order the
+    /// resets and the changes of one command are applied in.
+    std::optional<AlterCommand> extractSettingsResets();
+
     /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
     /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `columns_before_alter` are the columns of the table before the whole ALTER (of which this command
+    /// is a part) is applied; they let `MODIFY ORDER BY` suggest only the columns added by the ALTER for
+    /// a typo, because an expression added to the sorting key may use nothing else.
+    /// `settings_defaults` are the engine's config defaults, used to rebuild the metadata derived
+    /// from the `MergeTree` settings. Engines without such metadata pass nothing.
+    void apply(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const ColumnsDescription * columns_before_alter = nullptr,
+        const MergeTreeSettings * settings_defaults = nullptr) const;
 
-    /// Check that alter command require data modification (mutation) to be
-    /// executed. For example, cast from Date to UInt16 type can be executed
-    /// without any data modifications. But column drop or modify from UInt16 to
-    /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    /// Determines whether this command requires a mutation and identifies every setting
+    /// that enables a matching lazy metadata conversion.
+    MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -207,12 +234,6 @@ struct AlterCommand
 
 class Context;
 
-/// True if the ALTER MODIFY COLUMN from `from` to `to` is a "lazy" metadata-only conversion: the
-/// on-disk serialization changes but is applied lazily (old parts read with the old type and CAST,
-/// merges rewrite over time) rather than by a mutation. Unlike a byte-identical conversion it is
-/// unsafe for positionally-persisted values (keys, indexes), so `checkAlterIsPossible` re-checks those.
-bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context);
-
 /// Vector of AlterCommand with several additional functions
 class AlterCommands : public std::vector<AlterCommand>
 {
@@ -234,7 +255,12 @@ public:
     /// Commands have to be prepared before apply.
     /// share_nested_offsets is threaded to AlterCommand::apply so IF NOT EXISTS existence checks
     /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `settings_defaults` is threaded to AlterCommand::apply (see there).
+    void apply(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const MergeTreeSettings * settings_defaults = nullptr) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
