@@ -2883,10 +2883,11 @@ def test_catalog_commit_definite_rejection_keeps_error(started_cluster):
 
 
 def test_catalog_commit_conflict_cleans_up_and_retries(started_cluster):
-    # A 409 means another writer took this version, so the staged files are provably unreachable and
-    # deleting them is the one correct answer. The fault fires once, on a dispatched request whose
-    # body was not written, so the retry that follows must commit normally: the INSERT succeeds, the
-    # lost attempt leaves no manifest list behind, and the outcome is never reported as unknown.
+    # A 409 means another writer took this version, so this attempt's manifest list is provably
+    # unreachable and deleting it is the one correct answer (the retry reuses the data files and
+    # manifests). The fault fires once, on a dispatched request whose body was not written, so the
+    # retry that follows must commit normally: the INSERT succeeds, the lost attempt leaves no
+    # manifest list behind, and the outcome is never reported as unknown.
     node = started_cluster.instances["node1"]
     test_ref = f"test_commit_conflict_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
@@ -2915,7 +2916,7 @@ def test_catalog_commit_conflict_cleans_up_and_retries(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
 
     # Only the snapshot that did commit may have left a manifest list: the conflicting attempt's own
-    # must have been deleted, because a lost race makes its files unreachable.
+    # must have been deleted, because a lost race makes it unreachable.
     committed = after.manifest_list.rsplit("/", 1)[-1]
     assert _manifest_lists_in_storage(started_cluster, table_name) == sorted(manifest_lists_before + [committed])
 
