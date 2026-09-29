@@ -810,7 +810,7 @@ void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
 
     const size_t num_columns = numColumns();
 
-    std::vector<Decompressor::Piece> pieces;
+    std::vector<CompressedPiece> pieces;
     pieces.reserve(works.size());
     for (DeviceWork & work : works)
     {
@@ -826,7 +826,7 @@ void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
         });
     }
 
-    decompressor.start(works.front().codec, pieces);
+    decompressor.launch(works.front().codec, pieces);
     expanding = std::move(works);
 }
 
@@ -835,7 +835,7 @@ void GroupByGPUAccumulator::finishExpansion()
     if (expanding.empty())
         return;
 
-    const char * expanded = decompressor.finish();
+    const char * expanded = decompressor.wait();
 
     size_t compressed_bytes = 0;
     size_t at = 0;

@@ -108,48 +108,7 @@ size_t decompressedBytesOf(std::span<const CompressedBlock> blocks)
     return total;
 }
 
-Decompressor::Decompressor()
-    : device_compressed(StreamRegistry::get().decompression)
-    , device_arguments(StreamRegistry::get().decompression)
-    , device_results(StreamRegistry::get().decompression)
-    , device_temp(StreamRegistry::get().decompression)
-    , values(StreamRegistry::get().decompression)
-{
-}
-
-Decompressor::Decompressor(Decompressor && other) noexcept
-    : in_flight(std::exchange(other.in_flight, false))
-    , started_destination(std::exchange(other.started_destination, nullptr))
-    , host_arguments(std::move(other.host_arguments))
-    , host_results(std::move(other.host_results))
-    , device_compressed(std::move(other.device_compressed))
-    , device_arguments(std::move(other.device_arguments))
-    , device_results(std::move(other.device_results))
-    , device_temp(std::move(other.device_temp))
-    , expanded(std::move(other.expanded))
-    , expected_bytes(std::move(other.expected_bytes))
-    , values(std::move(other.values))
-    , values_copied_out(std::move(other.values_copied_out))
-    , values_in_use(std::exchange(other.values_in_use, false))
-{
-}
-
-Decompressor::~Decompressor()
-{
-    try
-    {
-        if (in_flight)
-            expanded.wait();
-        if (values_in_use)
-            values_copied_out.wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void Decompressor::decompress(
+void SyncDecompressor::decompress(
     GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks, char * device_destination)
 {
     size_t compressed_total = 0;
@@ -166,9 +125,6 @@ void Decompressor::decompress(
     if (blocks.empty())
         return;
 
-    if (in_flight)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was asked for while an expansion was in flight");
-
     DeviceEvent destination_ready;
     destination_ready.record(StreamRegistry::get().compute);
     destination_ready.waitOn(StreamRegistry::get().decompression);
@@ -176,47 +132,69 @@ void Decompressor::decompress(
     device_compressed.clear();
     device_compressed.append(host_compressed.substr(0, compressed_total));
 
-    const Piece piece{
+    const CompressedPiece piece{
         .device_compressed = device_compressed.data(),
         .compressed_bytes = compressed_total,
         .blocks = blocks,
     };
-    queue(codec, std::span<const Piece>(&piece, 1), device_destination);
-    waitAndCheck();
+    batch.launch(codec, std::span<const CompressedPiece>(&piece, 1), device_destination);
+    batch.waitAndCheck();
 }
 
-void Decompressor::start(GPUCodec codec, std::span<const Piece> pieces)
+AsyncDecompressor::AsyncDecompressor(AsyncDecompressor && other) noexcept
+    : batch(std::move(other.batch))
+    , in_flight(std::exchange(other.in_flight, false))
+    , values(std::move(other.values))
+    , values_copied_out(std::move(other.values_copied_out))
+    , values_in_use(std::exchange(other.values_in_use, false))
+{
+}
+
+AsyncDecompressor::~AsyncDecompressor()
+{
+    try
+    {
+        if (in_flight)
+            batch.wait();
+        if (values_in_use)
+            values_copied_out.wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces)
 {
     if (in_flight)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "An expansion was started while the last one was not finished");
-
-    size_t total = 0;
-    for (const Piece & piece : pieces)
-        total += decompressedBytesOf(piece.blocks);
-
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was launched while the last one was not waited for");
     if (values_in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was taken again before being released");
 
+    size_t total = 0;
+    for (const CompressedPiece & piece : pieces)
+        total += decompressedBytesOf(piece.blocks);
+
     values_copied_out.waitOn(StreamRegistry::get().decompression);
     values.clear();
-    started_destination = values.grow(total);
 
-    queue(codec, pieces, started_destination);
+    batch.launch(codec, pieces, values.grow(total));
     in_flight = true;
 }
 
-const char * Decompressor::finish()
+const char * AsyncDecompressor::wait()
 {
     if (!in_flight)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "An expansion was finished without being started");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was waited for without being launched");
 
-    waitAndCheck();
     in_flight = false;
+    batch.waitAndCheck();
     values_in_use = true;
-    return started_destination;
+    return values.data();
 }
 
-void Decompressor::release()
+void AsyncDecompressor::release()
 {
     if (!values_in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was released without being taken");
@@ -225,7 +203,7 @@ void Decompressor::release()
     values_in_use = false;
 }
 
-void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * destination)
+void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination)
 {
     const rmm::cuda_stream_view stream = StreamRegistry::get().decompression;
 
@@ -233,7 +211,7 @@ void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * d
     size_t decompressed_total = 0;
     size_t max_decompressed = 0;
 
-    for (const Piece & piece : pieces)
+    for (const CompressedPiece & piece : pieces)
     {
         size_t piece_compressed = 0;
         for (const CompressedBlock & block : piece.blocks)
@@ -261,7 +239,7 @@ void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * d
 
     if (num_blocks == 0)
     {
-        expanded.record(stream);
+        expanded_event.record(stream);
         return;
     }
 
@@ -277,7 +255,7 @@ void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * d
 
     size_t block_index = 0;
     size_t at = 0;
-    for (const Piece & piece : pieces)
+    for (const CompressedPiece & piece : pieces)
     {
         for (const CompressedBlock & block : piece.blocks)
         {
@@ -338,12 +316,17 @@ void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * d
         cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream),
         "Cannot copy the decompression statuses back");
 
-    expanded.record(stream);
+    expanded_event.record(stream);
 }
 
-void Decompressor::waitAndCheck()
+void DecompressionBatch::wait()
 {
-    expanded.wait();
+    expanded_event.wait();
+}
+
+void DecompressionBatch::waitAndCheck()
+{
+    wait();
 
     const size_t num_blocks = expected_bytes.size();
     if (num_blocks == 0)

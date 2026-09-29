@@ -34,7 +34,7 @@ DeviceFixedColumnBuffer::DeviceFixedColumnBuffer(GPUElementType element_type_, r
 }
 
 void DeviceFixedColumnBuffer::appendCompressed(
-    Decompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks)
+    SyncDecompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks)
 {
     decompressor.decompress(codec, host_compressed, blocks, values.grow(decompressedBytesOf(blocks)));
 }

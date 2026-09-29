@@ -220,7 +220,7 @@ private:
     std::optional<size_t> num_groups;
 
     std::vector<Reader> readers;
-    Decompressor decompressor;
+    AsyncDecompressor decompressor;
     std::vector<DeviceWork> expanding;
     Stopwatch expansion_watch;
 
