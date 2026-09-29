@@ -1,0 +1,16 @@
+one row in each partition	10018493105440789577
+one row in each partition	10018493105440789577
+two rows in each partition, one of them before the deferral	7260071463621957694
+two rows in each partition, one of them before the deferral	7260071463621957694
+hot partitions and partitions of one row	11312268276404264527
+hot partitions and partitions of one row	11312268276404264527
+String	4326752063973340033
+String	4326752063973340033
+keys packed into 16 bytes	13884972164102967693
+keys packed into 16 bytes	13884972164102967693
+keys packed into 32 bytes	13884972164102967693
+keys packed into 32 bytes	13884972164102967693
+serialized keys	7300766914117992723
+serialized keys	7300766914117992723
+spilling, which groups the deferred rows before the end	8633330242946129019
+spilling, which groups the deferred rows before the end	8633330242946129019
