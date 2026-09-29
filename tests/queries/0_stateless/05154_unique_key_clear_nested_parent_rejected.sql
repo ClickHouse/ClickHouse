@@ -116,3 +116,20 @@ ALTER TABLE uk_clear_after_add_nested
 SELECT 'state_intact_add_nested', * FROM uk_clear_after_add_nested ORDER BY id;
 
 DROP TABLE uk_clear_after_add_nested;
+
+-- Plain `DROP COLUMN` advances the working snapshot, so the dropped name can be
+-- reused by a later `ADD COLUMN` in the same statement.
+DROP TABLE IF EXISTS uk_drop_readd;
+CREATE TABLE uk_drop_readd (id UInt32, x UInt32)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);
+
+INSERT INTO uk_drop_readd VALUES (1, 10), (2, 20);
+
+SELECT 'drop_then_readd_reuses_name' AS step;
+ALTER TABLE uk_drop_readd
+    DROP COLUMN x,
+    ADD COLUMN x UInt32 DEFAULT 7;
+
+SELECT 'state_after_readd', * FROM uk_drop_readd ORDER BY id;
+
+DROP TABLE uk_drop_readd;

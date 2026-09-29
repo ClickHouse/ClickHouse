@@ -2145,6 +2145,25 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// Tmp alias of the default entry an earlier command of this ALTER installed, so a later
     /// type restatement replaces it instead of stacking a second entry for the same column.
     std::unordered_map<String, String> installed_default_aliases;
+    /// Drop the default an earlier command staged, together with its map entry.
+    /// Returns true if a staged default was present.
+    auto drop_staged_default = [&](const String & name) -> bool
+    {
+        auto it = installed_default_aliases.find(name);
+        if (it == installed_default_aliases.end())
+            return false;
+        const auto & previous_tmp = it->second;
+        auto & children = default_expr_list->children;
+        children.erase(
+            std::remove_if(children.begin(), children.end(), [&](const ASTPtr & child)
+            {
+                const auto alias = child->tryGetAlias();
+                return alias == name || alias == previous_tmp;
+            }),
+            children.end());
+        installed_default_aliases.erase(it);
+        return true;
+    };
     /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
     /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
@@ -2550,6 +2569,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
+            /// REMOVE of the default itself discards a default an earlier command staged,
+            /// so a later type restatement does not re-check a default the final schema lost.
+            if (command.type == AlterCommand::MODIFY_COLUMN && command.isRemovingProperty()
+                && (command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                    || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                    || command.to_remove == AlterCommand::RemoveProperty::ALIAS))
+                drop_staged_default(column_name);
+
             if (command.default_expression)
             {
                 DataTypePtr data_type_ptr;
@@ -2587,19 +2614,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 /// A default installed by an earlier command of this ALTER is re-checked against the
                 /// type it will finally have; a default the table already had keeps its entry, so two
                 /// type restatements over it still collide.
-                if (auto it = installed_default_aliases.find(final_column_name); it != installed_default_aliases.end())
-                {
-                    const auto & previous_tmp = it->second;
-                    auto & children = default_expr_list->children;
-                    children.erase(
-                        std::remove_if(children.begin(), children.end(), [&](const ASTPtr & child)
-                        {
-                            const auto alias = child->tryGetAlias();
-                            return alias == final_column_name || alias == previous_tmp;
-                        }),
-                        children.end());
-                    it->second = tmp_column_name;
-                }
+                if (drop_staged_default(final_column_name))
+                    installed_default_aliases[final_column_name] = tmp_column_name;
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));

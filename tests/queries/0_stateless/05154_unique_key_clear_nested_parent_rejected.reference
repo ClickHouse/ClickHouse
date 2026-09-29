@@ -19,3 +19,6 @@ state_intact_add	2
 clear_after_add_nested_child_rejected
 state_intact_add_nested	1
 state_intact_add_nested	2
+drop_then_readd_reuses_name
+state_after_readd	1	7
+state_after_readd	2	7

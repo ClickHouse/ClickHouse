@@ -5592,6 +5592,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     working_columns.rename(command.column_name, command.rename_to);
                 else if (command.type == AlterCommand::ADD_COLUMN && command.data_type)
                     command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets);
+                /// Plain `DROP COLUMN` advances the snapshot like `prepare()`/`validate()`,
+                /// so a later name reusing `ADD COLUMN` in this statement is not seen as duplicate.
+                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition
+                    && (working_columns.has(command.column_name)
+                        || (share_nested_offsets && working_columns.hasNested(command.column_name))))
+                    working_columns.remove(command.column_name);
             }
 
             const bool affects_column =

@@ -438,6 +438,25 @@ ALTER TABLE modify_chain_snapshot
 SELECT 'modify chain default', name, default_expression FROM system.columns
     WHERE database = currentDatabase() AND table = 'modify_chain_snapshot' AND name = 'x';
 
+-- A default staged by an earlier command and then removed is not re-checked by a later
+-- type change: the final schema has no default.
+ALTER TABLE modify_chain_snapshot
+    (MODIFY COLUMN x DEFAULT 7),
+    (MODIFY COLUMN x REMOVE DEFAULT),
+    (MODIFY COLUMN x Int8);
+SELECT 'modify chain remove then retype', name, type, default_expression FROM system.columns
+    WHERE database = currentDatabase() AND table = 'modify_chain_snapshot' AND name = 'x';
+
+DROP TABLE IF EXISTS add_chain_remove_default;
+CREATE TABLE add_chain_remove_default (k UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE add_chain_remove_default
+    (ADD COLUMN x String DEFAULT 'a'),
+    (MODIFY COLUMN x REMOVE DEFAULT),
+    (MODIFY COLUMN x Int8);
+SELECT 'add chain remove then retype', name, type, default_expression FROM system.columns
+    WHERE database = currentDatabase() AND table = 'add_chain_remove_default' AND name = 'x';
+DROP TABLE add_chain_remove_default;
+
 -- A type change advances the snapshot too: the codec is validated against the new type.
 ALTER TABLE modify_chain_snapshot
     (MODIFY COLUMN x String),

@@ -106,3 +106,5 @@ clear keeps column	1	0
 clear keeps comment	kept
 modify chain snapshot	x	
 modify chain default	x	
+modify chain remove then retype	x	Int8	
+add chain remove then retype	x	Int8	
