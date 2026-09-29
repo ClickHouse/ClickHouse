@@ -78,4 +78,12 @@ public:
     CompressionCodecPtr codec;
 };
 
+/** Decompresses one complete on-disk compressed block (checksum + compressed body with header). */
+void decompressOnDiskCompressedBlock(
+    const char * on_disk_block,
+    size_t on_disk_block_size,
+    PaddedPODArray<char> & decompressed,
+    bool verify_checksum = true,
+    bool allow_different_codecs = false);
+
 }

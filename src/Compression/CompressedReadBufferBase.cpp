@@ -359,4 +359,46 @@ off_t CompressedReadBufferBase::getPosition() const
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
 
+namespace
+{
+
+class OnDiskCompressedBlockDecompressor final : public CompressedReadBufferBase
+{
+public:
+    OnDiskCompressedBlockDecompressor(ReadBuffer & in_, bool verify_checksum, bool allow_different_codecs_)
+        : CompressedReadBufferBase(&in_, allow_different_codecs_)
+    {
+        if (!verify_checksum)
+            disableChecksumming();
+    }
+
+    void decompressToBuffer(PaddedPODArray<char> & out_decompressed)
+    {
+        size_t size_decompressed = 0;
+        size_t size_compressed_without_checksum = 0;
+        const size_t size_on_disk = readCompressedData(size_decompressed, size_compressed_without_checksum, true);
+        if (!size_on_disk)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Empty compressed block");
+
+        const auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+        out_decompressed.resize(size_decompressed + additional_size_at_the_end_of_buffer);
+        decompressTo(out_decompressed.data(), size_decompressed, size_compressed_without_checksum);
+        out_decompressed.resize(size_decompressed);
+    }
+};
+
+}
+
+void decompressOnDiskCompressedBlock(
+    const char * on_disk_block,
+    size_t on_disk_block_size,
+    PaddedPODArray<char> & decompressed,
+    bool verify_checksum,
+    bool allow_different_codecs)
+{
+    ReadBufferFromMemory in(on_disk_block, on_disk_block_size);
+    OnDiskCompressedBlockDecompressor decompressor(in, verify_checksum, allow_different_codecs);
+    decompressor.decompressToBuffer(decompressed);
+}
+
 }

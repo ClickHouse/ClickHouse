@@ -16,12 +16,12 @@
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/CompressedReadBufferBase.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Common/logger_useful.h>
-#include <base/unaligned.h>
-#include <city.h>
 
 namespace DB
 {
@@ -34,8 +34,6 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CORRUPTED_DATA;
 }
 
@@ -826,8 +824,7 @@ std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColum
 namespace
 {
 
-constexpr size_t POINT_READ_CHECKSUM_SIZE = sizeof(CityHash_v1_0_2::uint128);
-constexpr size_t POINT_READ_BLOCK_OVERHEAD = POINT_READ_CHECKSUM_SIZE + COMPRESSED_BLOCK_HEADER_SIZE;
+constexpr size_t POINT_READ_BLOCK_OVERHEAD = COMPRESSED_BLOCK_CHECKSUM_SIZE + COMPRESSED_BLOCK_HEADER_SIZE;
 
 }
 
@@ -893,7 +890,7 @@ std::unique_ptr<MergeTreeReaderWide::PointReadColumn> MergeTreeReaderWide::tryCr
     result->row_bytes = row_bytes;
     result->elements_per_row = params.dimensions;
     result->nested_serialization = serialization_array->getNestedSerialization();
-    result->block.resize(row_bytes + POINT_READ_BLOCK_OVERHEAD);
+    result->on_disk_block.resize(row_bytes + POINT_READ_BLOCK_OVERHEAD);
 
     auto storage = data_part_info_for_read->getDataPartStorage();
     auto read_settings = settings.read_settings.adjustBufferSize(row_bytes + POINT_READ_BLOCK_OVERHEAD);
@@ -934,7 +931,6 @@ void MergeTreeReaderWide::readPointRows(PointReadColumn & point_read, IColumn & 
     auto & data = column_array.getData();
 
     const size_t block_bytes = point_read.row_bytes + POINT_READ_BLOCK_OVERHEAD;
-    char * block = point_read.block.data();
 
     offsets.reserve(offsets.size() + num_rows);
 
@@ -948,43 +944,24 @@ void MergeTreeReaderWide::readPointRows(PointReadColumn & point_read, IColumn & 
             ++it;
             const size_t offset_in_file = row * block_bytes;
 
-            if (point_read.use_read_at)
-            {
-                size_t bytes_read = point_read.buf->readBigAt(block, block_bytes, offset_in_file, {});
-                if (bytes_read != block_bytes)
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Cannot read block of row {} at offset {}: read {} of {} bytes", row, offset_in_file, bytes_read, block_bytes);
-            }
-            else
-            {
-                point_read.buf->seek(offset_in_file, SEEK_SET);
-                point_read.buf->readStrict(block, block_bytes);
-            }
+            readBytesAtOffset(*point_read.buf, point_read.on_disk_block.data(), block_bytes, offset_in_file, point_read.use_read_at);
 
-            const char * header = block + POINT_READ_CHECKSUM_SIZE;
-            const UInt8 method = static_cast<UInt8>(header[0]);
-            const UInt32 size_compressed = unalignedLoadLittleEndian<UInt32>(header + 1);
-            const UInt32 size_decompressed = unalignedLoadLittleEndian<UInt32>(header + 5);
+            decompressOnDiskCompressedBlock(
+                point_read.on_disk_block.data(),
+                block_bytes,
+                point_read.decompressed,
+                settings.checksum_on_read);
 
-            if (method != static_cast<UInt8>(CompressionMethodByte::Quantized)
-                || size_compressed != point_read.row_bytes + COMPRESSED_BLOCK_HEADER_SIZE
-                || size_decompressed != point_read.row_bytes)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Unexpected block header for row {}: method 0x{:x}, compressed size {}, decompressed size {}, expected row size {}",
-                    row, static_cast<unsigned>(method), size_compressed, size_decompressed, point_read.row_bytes);
-
-            if (settings.checksum_on_read)
-            {
-                CityHash_v1_0_2::uint128 expected;
-                expected.low64 = unalignedLoadLittleEndian<UInt64>(block);
-                expected.high64 = unalignedLoadLittleEndian<UInt64>(block + sizeof(UInt64));
-                auto calculated = CityHash_v1_0_2::CityHash128(header, size_compressed);
-                if (expected != calculated)
-                    throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum doesn't match for the block of row {}", row);
-            }
+            if (point_read.decompressed.size() != point_read.row_bytes)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Unexpected decompressed size {} for row {}, expected {}",
+                    point_read.decompressed.size(),
+                    row,
+                    point_read.row_bytes);
 
             const size_t data_size_before = data.size();
-            ReadBufferFromMemory payload(header + COMPRESSED_BLOCK_HEADER_SIZE, point_read.row_bytes);
+            ReadBufferFromMemory payload(point_read.decompressed.data(), point_read.row_bytes);
             point_read.nested_serialization->deserializeBinaryBulk(data, payload, point_read.elements_per_row, 0);
             if (data.size() != data_size_before + point_read.elements_per_row)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialized {} values instead of {} for row {}",

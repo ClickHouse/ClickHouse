@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_ISTREAM;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -136,6 +137,27 @@ void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t 
     }
 
     *out_bytes_copied = copied;
+}
+
+void readBytesAtOffset(SeekableReadBuffer & buf, char * to, size_t size, size_t offset, std::optional<bool> use_read_at)
+{
+    const bool at = use_read_at.has_value() ? *use_read_at : buf.supportsReadAt();
+    if (at)
+    {
+        const size_t bytes_read = buf.readBigAt(to, size, offset, {});
+        if (bytes_read != size)
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read {} bytes at offset {}: read {} bytes",
+                size,
+                offset,
+                bytes_read);
+    }
+    else
+    {
+        buf.seek(offset, SEEK_SET);
+        buf.readStrict(to, size);
+    }
 }
 
 }

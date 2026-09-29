@@ -149,7 +149,8 @@ private:
         size_t row_bytes = 0;
         size_t elements_per_row = 0;
         SerializationPtr nested_serialization;
-        PaddedPODArray<char> block;
+        PaddedPODArray<char> on_disk_block;
+        PaddedPODArray<char> decompressed;
     };
 
     std::unique_ptr<PointReadColumn> tryCreatePointReadColumn(size_t pos) const;
