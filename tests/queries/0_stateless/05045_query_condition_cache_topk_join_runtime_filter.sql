@@ -26,6 +26,7 @@ SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000;
 SET optimize_move_to_prewhere = 0;
 SET enable_join_runtime_filters = 1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
