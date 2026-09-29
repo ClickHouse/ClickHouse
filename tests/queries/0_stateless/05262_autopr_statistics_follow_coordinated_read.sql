@@ -13,6 +13,7 @@
 
 DROP TABLE IF EXISTS t_coord_big;
 DROP TABLE IF EXISTS t_coord_small;
+DROP TABLE IF EXISTS t_coord_baseline;
 
 -- Pinned layout: the cost model works off estimated bytes, and leaving granularity or part format to
 -- randomization changes whether the optimization runs at all.
@@ -27,6 +28,8 @@ INSERT INTO t_coord_small SELECT number, number FROM numbers(3000);
 
 OPTIMIZE TABLE t_coord_big FINAL;
 OPTIMIZE TABLE t_coord_small FINAL;
+
+CREATE TABLE t_coord_baseline (c UInt64) ENGINE = Memory;
 
 SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
@@ -47,6 +50,11 @@ SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 
+-- What the query answers without parallel replicas, so the adopted plan can be checked against it.
+INSERT INTO t_coord_baseline
+SELECT sum(b.v) FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
 SET parallel_replicas_local_plan = 1;
@@ -62,6 +70,17 @@ FORMAT Null SETTINGS query_plan_join_swap_table = 'false', log_comment = 'coord_
 
 SELECT sum(b.v) FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
 FORMAT Null SETTINGS query_plan_join_swap_table = 'true', log_comment = 'coord_read_forced_swap';
+
+-- Second run of each shape. The statistics are in the cache now, so these reach the cost model and adopt
+-- the plan the runs above measured - which is what makes the measurement matter. Each one also answers the
+-- query, so a plan built around the wrong read shows up as a wrong result and not only as a wrong estimate.
+SELECT 'apply_no_swap', sum(b.v) = (SELECT c FROM t_coord_baseline)
+FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
+SETTINGS query_plan_join_swap_table = 'false', log_comment = 'coord_read_apply_no_swap';
+
+SELECT 'apply_forced_swap', sum(b.v) = (SELECT c FROM t_coord_baseline)
+FROM t_coord_small AS s, t_coord_big AS b WHERE s.key = b.key AND b.key < 200000
+SETTINGS query_plan_join_swap_table = 'true', log_comment = 'coord_read_apply_forced_swap';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -88,5 +107,21 @@ FROM
 )
 FORMAT TSVWithNames;
 
+-- Without this the two runs above could have answered correctly by not using parallel replicas at all.
+SELECT countIf(replicas_used > 0) = 2 AS both_apply_runs_used_replicas
+FROM
+(
+    SELECT
+        log_comment,
+        argMax(ProfileEvents['ParallelReplicasUsedCount'], event_time_microseconds) AS replicas_used
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+      AND event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
+      AND log_comment IN ('coord_read_apply_no_swap', 'coord_read_apply_forced_swap')
+    GROUP BY log_comment
+)
+FORMAT TSVWithNames;
+
 DROP TABLE t_coord_big;
 DROP TABLE t_coord_small;
+DROP TABLE t_coord_baseline;
