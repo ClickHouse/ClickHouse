@@ -926,12 +926,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
+                /// The parts are only there for a storage of the `MergeTree` family, and they are
+                /// only used by its condition selectivity estimator. Other storages that allow
+                /// moving conditions to `PREWHERE` either have no snapshot data at all or have
+                /// their own type of it (`StorageMemory`), so the type has to be checked.
                 RangesInDataParts parts_for_estimator;
-                if (storage_snapshot->data)
+                if (const auto * merge_tree_snapshot_data
+                    = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
                 {
-                    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
-                    if (parts)
-                        parts_for_estimator = *parts;
+                    if (merge_tree_snapshot_data->parts)
+                        parts_for_estimator = *merge_tree_snapshot_data->parts;
                 }
 
                 /// Just attempting to read statistics files on disk can increase query latencies.
@@ -1013,15 +1017,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             for (const auto & it : query_analyzer->getExternalTables())
                 if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
-        }
-
-        if (!options.only_analyze || options.modify_inplace)
-        {
-            if (syntax_analyzer_result->rewrite_subqueries)
-            {
-                /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
-            }
         }
 
         if (interpreter_subquery)
@@ -2738,7 +2733,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         return {};
 
     auto & query = getSelectQuery();
-    if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
+    if (!query.prewhere() && !query.where())
     {
         /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
         /// require reading some data (but much faster than reading columns).
