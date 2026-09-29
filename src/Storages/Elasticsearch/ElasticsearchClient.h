@@ -3,6 +3,7 @@
 #include <Storages/BigQuery/BigQueryConfiguration.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
@@ -26,7 +27,7 @@ private:
         const String & request_body) const;
 
     ElasticsearchConfiguration config;
+    Poco::Net::HTTPBasicCredentials credentials;
     ContextPtr context;
-    LoggerPtr log;
 };
 }

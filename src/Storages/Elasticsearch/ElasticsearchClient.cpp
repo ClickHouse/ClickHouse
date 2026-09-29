@@ -4,6 +4,8 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Interpreters/Context.h>
+#include <IO/copyData.h>
 
 namespace DB
 {
@@ -15,7 +17,6 @@ namespace ErrorCodes
     ElasticsearchClient::ElasticsearchClient(ElasticsearchConfiguration config_, ContextPtr context_)
     : config(config_)
     , context(context_)
-    , log(getLogger("ElasticsearchClient"))
     {
     }
 
@@ -67,7 +68,8 @@ namespace ErrorCodes
                 .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
                 .withHostFilter(&context->getRemoteHostFilter())
                 .withHeaders(headers)
-                .withOutCallback(std::move(out_stream_callback));
+                .withOutCallback(std::move(out_stream_callback))
+                .create(credentials);
 
             WriteBufferFromOwnString response;
             copyData(*buf, response);

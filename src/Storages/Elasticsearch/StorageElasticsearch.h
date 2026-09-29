@@ -6,6 +6,7 @@
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -30,6 +31,8 @@ public:
 
     bool isExternalDatabase() const override { return true; }
 
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -42,8 +45,9 @@ public:
 
 private:
 
+    VirtualColumnsDescription createVirtuals();
+
     ElasticsearchConfiguration config;
-    LoggerPtr log;
-}
+};
 
 }
