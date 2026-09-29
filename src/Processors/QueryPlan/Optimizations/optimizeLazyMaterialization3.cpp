@@ -416,15 +416,15 @@ public:
         /// above are brought in line.
         addCarriedOutputs(chain_top);
 
-        /// What the chain hands over: the sort keys and the values crossing the `LIMIT`.
-        std::vector<size_t> required;
+        /// What the chain hands over: the sort keys and the values crossing the `LIMIT`, and nothing else.
+        std::vector<size_t> unneeded;
         {
             const auto & values = header_values.at(chain_top);
             for (size_t position = 0; position < values.size(); ++position)
-                if (sort_key_nodes.contains(values[position]) || std::ranges::find(carried_values, values[position]) != carried_values.end())
-                    required.push_back(position);
+                if (!sort_key_nodes.contains(values[position]) && std::ranges::find(carried_values, values[position]) == carried_values.end())
+                    unneeded.push_back(position);
         }
-        auto main_plan = assemble(chain_top, required, nodes);
+        auto main_plan = assemble(chain_top, unneeded, nodes);
 
         /// Hand over exactly the sort keys, the crossing values and the row indexes; the sort then carries no
         /// more than that. What each column of the block holds is followed from here on, so that the
@@ -944,31 +944,31 @@ private:
         return pruned;
     }
 
-    /// Builds the main branch: prunes each step to what the step above needs of it, top-down, and
+    /// Builds the main branch: prunes from each step what the step above does not need of it, top-down, and
     /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
     /// the joins pass through, and prunes a step once its children are built, with their real headers.
-    QueryPlan assemble(QueryPlan::Node * node, const std::vector<size_t> & required, QueryPlan::Nodes & nodes)
+    QueryPlan assemble(QueryPlan::Node * node, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         if (const auto it = source_numbers.find(node); it != source_numbers.end())
             return assembleSource(node, it->second, nodes);
 
         auto * step = node->step.get();
 
-        std::vector<std::vector<size_t>> child_required;
+        IQueryPlanStep::UnneededInputPositions child_unneeded;
         if (auto * runtime_filter = typeid_cast<BuildRuntimeFilterStep *>(step))
         {
             /// Passes its input through, so it needs what is needed above it, and its key.
             const auto & header = *node->children.front()->step->getOutputHeader();
-            std::set<size_t> positions(required.begin(), required.end());
-            positions.insert(header.getPositionByName(runtime_filter->getFilterColumnName()));
-            child_required.emplace_back(positions.begin(), positions.end());
+            const auto key_position = header.getPositionByName(runtime_filter->getFilterColumnName());
+            auto & positions = child_unneeded.emplace_back(unneeded);
+            std::erase(positions, key_position);
         }
         else
-            child_required = step->getRequiredColumns(required);
+            child_unneeded = step->getUnneededColumns(unneeded);
 
         std::vector<QueryPlanPtr> children;
         for (size_t child = 0; child < node->children.size(); ++child)
-            children.emplace_back(std::make_unique<QueryPlan>(assemble(node->children[child], child_required.at(child), nodes)));
+            children.emplace_back(std::make_unique<QueryPlan>(assemble(node->children[child], child_unneeded.at(child), nodes)));
 
         if (typeid_cast<BuildRuntimeFilterStep *>(step))
         {
@@ -979,7 +979,7 @@ private:
             std::vector<IQueryPlanStep::PrunedInput> pruned;
             for (size_t child = 0; child < children.size(); ++child)
                 pruned.push_back(prunedInputOf(*step->getInputHeaders()[child], *children[child]->getCurrentHeader()));
-            step->removeUnusedColumns(required, pruned);
+            step->removeUnusedColumns(unneeded, pruned);
 
             /// The columns this rebuild added below pass through: a join is told to, the other steps do by
             /// themselves.
