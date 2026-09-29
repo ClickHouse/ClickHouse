@@ -28,3 +28,6 @@ timeSeriesCopyTags vectorized repeated sparse pairs:
 
 timeSeriesCopyTags vectorized repeated pairs with identical results:
 3	1	[[]]
+
+timeSeriesCopyTags vectorized crossed unique pairs:
+64	64

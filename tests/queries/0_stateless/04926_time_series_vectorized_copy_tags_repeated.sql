@@ -117,3 +117,37 @@ FROM
     SELECT timeSeriesCopyTags(dest_groups[[1, 2, 1][number + 1]], src_groups[1], ['dest']) AS new_group
     FROM numbers(3)
 );
+
+SELECT '';
+SELECT 'timeSeriesCopyTags vectorized crossed unique pairs:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+            FROM numbers(8)
+            ORDER BY number
+        )
+    ) AS dest_groups,
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('src', toString(number))]) AS group
+            FROM numbers(8)
+            ORDER BY number
+        )
+    ) AS src_groups
+SELECT count(), uniqExact(new_group)
+FROM
+(
+    SELECT timeSeriesCopyTags(
+               dest_groups[intDiv(number, 8) + 1],
+               src_groups[number % 8 + 1],
+               ['src']) AS new_group
+    FROM numbers(64)
+);
