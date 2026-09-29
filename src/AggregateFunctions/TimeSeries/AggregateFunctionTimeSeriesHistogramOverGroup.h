@@ -253,7 +253,9 @@ inline void mergeTimeSeriesHistogramOverGroupState(TimeSeriesHistogramOverGroupS
 }
 
 /// Merging two partial `avg` states (no upstream counterpart): running-sum states merge like the
-/// `sum` states; an incremental-mean state combines via the parallel-mean formula.
+/// `sum` states unless the merged sum would overflow; an incremental-mean state, or two running sums
+/// whose merge would overflow (like `doAdd`, which then switches to the incremental mean), combine via
+/// the parallel-mean formula.
 inline void mergeTimeSeriesHistogramOverGroupState(TimeSeriesHistogramAvgOverGroupState & state, const TimeSeriesHistogramAvgOverGroupState & rhs)
 {
     state.incompatible = state.incompatible || rhs.incompatible;
@@ -279,11 +281,18 @@ inline void mergeTimeSeriesHistogramOverGroupState(TimeSeriesHistogramAvgOverGro
             state.incompatible = true;
             return;
         }
-        state.kahan_c = state.value.kahanAdd(rhs.value, std::move(state.kahan_c)).updated_compensation;
+        /// Trial addition on a copy: if the merged running sum would overflow, combine the means below instead.
+        TimeSeriesFloatHistogram trial_value = state.value;
+        auto trial_c = trial_value.kahanAdd(rhs.value, state.kahan_c).updated_compensation;
         if (rhs.kahan_c)
-            state.kahan_c = state.value.kahanAdd(*rhs.kahan_c, std::move(state.kahan_c)).updated_compensation;
-        state.count = total_count;
-        return;
+            trial_c = trial_value.kahanAdd(*rhs.kahan_c, std::move(trial_c)).updated_compensation;
+        if (!timeSeriesHistogramHasOverflow(trial_value))
+        {
+            state.value = std::move(trial_value);
+            state.kahan_c = std::move(trial_c);
+            state.count = total_count;
+            return;
+        }
     }
 
     TimeSeriesFloatHistogram mean_lhs = state.incremental_mean ? state.mean : state.value;
