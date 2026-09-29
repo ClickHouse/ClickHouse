@@ -56,7 +56,6 @@ const StreamRegistry & StreamRegistry::get()
     {
         initializeDevice();
 
-        /// The streams live as long as the process, so their handles are not kept to destroy them.
         cudaStream_t upload_stream = nullptr;
         cudaStream_t decompression_stream = nullptr;
         checkCuda(cudaStreamCreateWithFlags(&upload_stream, cudaStreamNonBlocking), "Cannot create a stream for uploads");

@@ -140,7 +140,6 @@ void HashTable::finishBuild()
     onDevice(
         [&] { hash_join->build(keys, payloads); }, "Cannot build a hash table over {} rows of the right table on a GPU", build_rows);
 
-    /// The probes run on streams of their own, which do not wait for the compute stream.
     synchronizeDevice();
 
     ready.store(true, std::memory_order_release);
@@ -195,8 +194,6 @@ HashTable::Matches HashTable::probe(const IColumn & key_column)
 
     Stopwatch watch;
 
-    /// A probe that failed may still have work queued on its stream, and is dropped rather than
-    /// returned: its destructor waits for the stream.
     std::unique_ptr<Probe> probe = takeProbe();
 
     probe->keys.stage(key_column);

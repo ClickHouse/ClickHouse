@@ -46,7 +46,6 @@ void checkNoNulls(const DeviceColumnView & view)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A column from the device with a null mask, which nothing takes yet");
 }
 
-/// Puts `rows` values of `element_type` into an empty `column` from `values`.
 void fillFixed(IColumn & column, GPUElementType element_type, size_t rows, std::string_view values)
 {
     if (values.size() != rows * sizeOf(element_type))
@@ -56,8 +55,6 @@ void fillFixed(IColumn & column, GPUElementType element_type, size_t rows, std::
     memcpy(to.data, values.data(), values.size());
 }
 
-/// Puts `rows` values of varying width into an empty `ColumnString` from their bytes and their
-/// `rows + 1` offsets as the device keeps them, from 0 on.
 void fillVariable(IColumn & column, size_t rows, std::string_view offsets, std::string_view chars)
 {
     auto * strings = typeid_cast<ColumnString *>(&column);
@@ -76,7 +73,6 @@ void fillVariable(IColumn & column, size_t rows, std::string_view offsets, std::
     column_chars.resize(chars.size());
     memcpy(column_chars.data(), chars.data(), chars.size());
 
-    /// A `ColumnString` keeps the ends of its rows, without the leading 0.
     auto & column_offsets = strings->getOffsets();
     column_offsets.resize(rows);
     memcpy(column_offsets.data(), from + 1, rows * sizeof(UInt64));
@@ -97,8 +93,6 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
     if (from.size() != to.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} columns from the device into {} columns", from.size(), to.size());
 
-    /// Where each column lands in host memory: the values of a `Fixed` column, or the offsets and
-    /// the bytes of a `Variable` one.
     struct Landed
     {
         PinnedBuffer first;

@@ -38,9 +38,6 @@ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationK
     throwGPUError("unknown aggregation " + std::to_string(static_cast<int>(aggregation)));
 }
 
-/// What a group leaves a value in: a `sum` of integers in eight bytes - cuDF sums them all into
-/// `INT64`, whose bits are those of the `UInt64` sum ClickHouse wraps around to - and a `min` or
-/// `max` in the value's own type.
 GPUElementType leftInOf(const GPUGroupByValue & value)
 {
     return value.aggregation == GPUAggregationKind::Sum ? value.result_type : value.element_type;
@@ -61,14 +58,10 @@ struct CudfGroupBy::State
     const std::vector<GPUGroupByValue> values;
     const rmm::cuda_stream_view stream;
 
-    /// Tables of the keys followed by the values, in the types the groups leave them in: what the
-    /// last merge left, and the groups of the batches since.
     std::unique_ptr<cudf::table> merged;
     std::vector<std::unique_ptr<cudf::table>> partials;
     size_t partial_rows = 0;
 
-    /// After `finalize`: per key, the offsets of a key of strings as `INT64`, which cuDF may have left
-    /// in `INT32`; nothing for any other.
     std::vector<std::unique_ptr<cudf::column>> variable_offsets;
     bool finalized = false;
 
@@ -79,8 +72,6 @@ struct CudfGroupBy::State
     {
     }
 
-    /// Groups `table` - the keys, then one column per value - reducing the value columns by
-    /// `kinds`, and answers the keys followed by the reduced values.
     std::unique_ptr<cudf::table> group(const cudf::table_view & table, const std::vector<GPUAggregationKind> & kinds) const
     {
         std::vector<cudf::size_type> key_indices(keys.size());
@@ -116,7 +107,6 @@ struct CudfGroupBy::State
         return std::make_unique<cudf::table>(std::move(columns));
     }
 
-    /// Merges the partial groups and what the last merge left into one table of groups.
     void mergeAll()
     {
         if (partials.empty())
@@ -129,7 +119,6 @@ struct CudfGroupBy::State
         for (const auto & partial : partials)
             tables.push_back(partial->view());
 
-        /// The partial results merge by their own aggregation: sums of sums, minimums of minimums.
         std::vector<GPUAggregationKind> kinds;
         kinds.reserve(values.size());
         for (const auto & value : values)
@@ -309,8 +298,6 @@ DeviceFixedColumn CudfGroupBy::value(size_t index) const
     if (column.offset() != 0)
         throwGPUError("the device returned a value of the groups as a slice");
 
-    /// The width was checked when the column was made; a sum of unsigned integers is `INT64` here
-    /// and `UInt64` to the host, with the same bits.
     return {.element_type = left_in, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 

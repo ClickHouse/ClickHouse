@@ -29,8 +29,6 @@ public:
 
     void append(std::string_view bytes);
 
-    /// Queues a copy of `bytes` bytes from the device on `stream` to the end of the buffer. They
-    /// land when the stream reaches the copy; until then the buffer is not to be read or grown.
     void appendFromDevice(const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream);
 
     char * grow(size_t bytes);
@@ -42,7 +40,6 @@ public:
     char * data() { return memory; }
     size_t size() const { return used; }
     bool empty() const { return used == 0; }
-    /// Bytes that fit after `size` without growing.
     size_t available() const { return capacity - used; }
 
 private:
@@ -86,8 +83,6 @@ private:
 };
 
 
-/// A non-blocking stream of the device's own, for work that must not queue behind the shared
-/// streams of `StreamRegistry`. Destroying it waits for what was queued on it.
 class DeviceStream
 {
 public:
@@ -105,7 +100,6 @@ public:
     void synchronize() const;
 
 private:
-    /// Owned, so kept as the handle it is created and destroyed by.
     cudaStream_t stream = nullptr;
 };
 

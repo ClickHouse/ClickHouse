@@ -44,9 +44,6 @@ std::string describeForeign(const std::exception & exception)
 {
     const std::string type = typeNameOf(exception);
 
-    /// Every exception cuDF and rmm throw derives from `std::logic_error` or `std::runtime_error`,
-    /// whose libstdc++ layout is the vtable pointer and then the message's characters, behind one
-    /// pointer; the standard exceptions without a message do not.
     static const char * const without_message[] = {"bad_alloc", "bad_cast", "bad_typeid", "bad_function_call", "bad_variant_access", "bad_optional_access", "bad_exception", "std::exception"};
     for (const char * bare : without_message)
     {
@@ -70,9 +67,6 @@ void checkCuda(cudaError_t status, const std::string & what)
         throwGPUError(what + ": " + cudaGetErrorString(status));
 }
 
-/// Not `std::call_once`: an exception out of its callable aborts the process in the island's
-/// standard library instead of reaching the query, and a device that is missing or refuses its
-/// memory pool is a query's error, not the server's.
 void initializeCudf()
 {
     static std::mutex mutex;
@@ -82,9 +76,6 @@ void initializeCudf()
     if (initialized)
         return;
 
-    /// The island's allocations and cuDF's own calls without a stream go to cuDF's default stream,
-    /// and the host side queues what the kernels read on the compute stream, so the two have to
-    /// be the one default stream of the device, whichever handle spells it.
     if (!cudf::get_default_stream().is_default() || !StreamRegistry::get().compute.is_default())
         throwGPUError("cuDF's default stream and the compute stream are not both the device's default stream");
 

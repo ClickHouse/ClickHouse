@@ -21,22 +21,9 @@
 namespace DB::GPU
 {
 
-/** A hash table over the right table of an `INNER JOIN`, living on the device.
-  *
-  * The right table's key and payload columns are uploaded as its blocks arrive and stay there. A
-  * probe sends only the left block's key column and brings back, for each matching pair, the index
-  * of the left row and the right table's payload gathered to match - so the left table, normally
-  * the larger one, never crosses the link.
-  *
-  * The build is not thread-safe: the caller serializes `addBuildBlock` and `finishBuild`. Once
-  * built, `probe` may be called from any number of threads at once. Each takes a probe of its own
-  * from a pool - a stream and the pinned buffers its keys and matches pass through - so that the
-  * probes of different blocks overlap on the device instead of waiting for one another.
-  */
 class HashTable
 {
 public:
-    /// The result of one probe: one row per matching pair, in the order the device found them.
     struct Matches
     {
         ColumnUInt32::MutablePtr probe_row_indices;
@@ -65,13 +52,9 @@ public:
 
     Matches probe(const IColumn & key_column);
 
-    /// An empty result, with a column of the right type per payload column.
     Matches noMatches() const;
 
 private:
-    /// What one probe at a time passes through: a stream of its own on the device, and the pipe
-    /// the keys go up by. The members go in the reverse order of their construction, the stream
-    /// last, after everything queued on it.
     struct Probe
     {
         DeviceStream stream;
@@ -103,11 +86,9 @@ private:
     size_t build_rows = 0;
     size_t build_bytes = 0;
     bool built = false;
-    /// Set once the table is built, and read by the probes without a lock.
     std::atomic<bool> ready = false;
 
     std::mutex idle_probes_mutex;
-    /// Destroyed before `hash_join`, which they probe.
     std::vector<std::unique_ptr<Probe>> idle_probes;
 };
 

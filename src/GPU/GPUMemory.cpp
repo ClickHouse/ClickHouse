@@ -238,7 +238,6 @@ DeviceStream::~DeviceStream()
     if (stream == nullptr)
         return;
 
-    /// Nothing can be reported from here, and the work queued on the stream is waited for anyway.
     cudaStreamSynchronize(stream);
     cudaStreamDestroy(stream);
 }

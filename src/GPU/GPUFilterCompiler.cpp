@@ -53,8 +53,6 @@ std::optional<GPUFilterOp> comparisonOf(const String & name)
     return {};
 }
 
-/// What a register holds after the action that filled it: the kind of its value, and the
-/// constant it was loaded with, when it was one.
 struct Register
 {
     GPUFilterValueKind kind = GPUFilterValueKind::Unsigned;
@@ -137,7 +135,6 @@ private:
         if (!element_type)
             return refused("a column of the predicate of a type the device has no element type for");
 
-        /// The action's one argument numbers the column among the actions' required columns.
         const size_t required_index = action.arguments.front().pos;
         const NamesAndTypesList & required = actions.getRequiredColumnsWithTypes();
         if (required_index >= required.size())
@@ -253,10 +250,6 @@ private:
         return refused("a function the device does not evaluate: `" + name + "`");
     }
 
-    /// The register to compare in place of `own` against `other`: `own` itself when both hold
-    /// integers or both floats, or when `own` holds the float; else, when `own` holds an integer
-    /// constant a double holds exactly, a spare register loaded with that double. An integer
-    /// column against a float is refused.
     std::optional<size_t> reconciled(size_t own, size_t other)
     {
         const Register & mine = registers[own];
@@ -315,9 +308,7 @@ std::optional<CompiledGPUFilter> compileGPUFilter(const ActionsDAG & dag, const 
         return {};
     }
 
-    /// Only the predicate's own actions, laid out as the CPU would run them: without aliases, and
-    /// without short-circuiting, which the device does not do.
-    const ExpressionActions actions(ActionsDAG::cloneSubDAG({root}, /*remove_aliases=*/ true));
+    const ExpressionActions actions(ActionsDAG::cloneSubDAG({root},  true));
     return Compiler(refusal).compile(actions);
 }
 

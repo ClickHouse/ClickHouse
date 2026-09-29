@@ -21,11 +21,6 @@
 #include <utility>
 #include <vector>
 
-/** The host side of the `GROUP BY`: what the aggregation is over (`Shape`), the table of groups
-  * and its growth (`GroupTable`), the two-pass path's buffers (`BucketedPass`), the choice between
-  * the paths (`PathChoice`), and `State`, which cuts a batch into chunks and drives the kernels of
-  * `GroupByKernels.cuh` over them.
-  */
 namespace DB::GPU
 {
 
@@ -34,19 +29,10 @@ namespace
 
 using namespace Grouping;
 
-/// Below this many rows a chunk is not worth sorting into buckets.
 constexpr size_t min_bucketed_rows = size_t{num_buckets} * 4096;
 
-/// How many rows the two passes are measured on: little next to a query, so that one the direct
-/// kernel serves better loses little to finding that out.
 constexpr size_t measurement_rows = 2UL << 20;
 
-/// The two passes are taken only where the direct kernel costs at least this many nanoseconds a
-/// row. Below that the grouping takes less of the device than expanding and copying the row's
-/// bytes do - a dozen bytes at the link's few gigabytes a second come to about this - so a cheaper
-/// kernel gains nothing, while the sort's traffic slows the expansion that runs beside it. A
-/// `sum` by a key of a hundred thousand values costs 1.4 ns a row and lost 5% in two passes; a
-/// `sum`, `min` and `max` by the same key cost 2.6 ns a row and gained 15%.
 constexpr double min_direct_cost_for_buckets = 2.0;
 
 unsigned blocksFor(size_t work)
@@ -99,7 +85,6 @@ Fold foldOf(const GPUGroupByValue & value)
     throwGPUError("unknown aggregation " + std::to_string(static_cast<int>(value.aggregation)));
 }
 
-/// What an accumulator holds before any row is folded into it.
 uint64_t identityOf(Fold fold)
 {
     switch (fold)
@@ -122,7 +107,6 @@ uint64_t identityOf(Fold fold)
     return 0;
 }
 
-/// What a group of this value leaves in its output column, and how wide.
 std::pair<Store, uint32_t> storeOf(const GPUGroupByValue & value)
 {
     if (value.aggregation == GPUAggregationKind::Sum)
@@ -139,8 +123,6 @@ GPUElementType leftIn(const GPUGroupByValue & value)
     return value.aggregation == GPUAggregationKind::Sum ? value.result_type : value.element_type;
 }
 
-/// What the aggregation is over: its keys and values, and what follows from them once - where
-/// each key sits in the packed word, how each value folds, and what an empty record holds.
 struct Shape
 {
     std::vector<GPUElementType> key_element_types;
@@ -183,7 +165,6 @@ struct Shape
 
     uint32_t numValues() const { return static_cast<uint32_t>(values.size()); }
 
-    /// The kernels' view of the batch's columns from row `offset` on, `rows` rows of them.
     Chunk chunkAt(
         GPUSpan<DeviceFixedColumn> keys,
         GPUSpan<DeviceFixedColumn> value_views,
@@ -229,9 +210,6 @@ struct Shape
     }
 };
 
-/// Times what is queued on the compute stream between `begin` and `end`, apart from what it
-/// waited for: the events are queued in the stream, so the first completes only when everything
-/// before it has.
 class KernelTimer
 {
 public:
@@ -253,7 +231,6 @@ public:
     void begin(rmm::cuda_stream_view stream) { checkCuda(cudaEventRecord(started, stream.value()), "cannot record an event"); }
     void end(rmm::cuda_stream_view stream) { checkCuda(cudaEventRecord(finished, stream.value()), "cannot record an event"); }
 
-    /// Waits for `end` and answers the microseconds between the two.
     double microseconds() const
     {
         checkCuda(cudaEventSynchronize(finished), "cannot wait for the kernel");
@@ -267,14 +244,11 @@ private:
     cudaEvent_t finished = nullptr;
 };
 
-/// The table of groups on the device: the set of packed keys, and beside it a record of
-/// accumulators per slot, plus the spare record at `capacity` for the sentinel key.
 class GroupTable
 {
 public:
     GroupTable() = default;
 
-    /// A table of at least `requested` slots, its records at their identities.
     GroupTable(size_t requested, const Shape & shape, rmm::cuda_stream_view stream)
     {
         set = std::make_unique<Set>(
@@ -305,7 +279,6 @@ public:
 
     TableRef ref() const { return {.set = set->ref(cuco::op::insert_and_find), .slots = slots, .capacity = capacity, .accumulators = accumulators}; }
 
-    /// How many more rows fit beside `groups` groups even were every one of them a new key.
     size_t room(size_t groups) const
     {
         if (!set)
@@ -314,7 +287,6 @@ public:
         return fits > groups ? fits - groups : 0;
     }
 
-    /// Takes over the groups of `from`, a smaller table, sentinel record included.
     void takeGroupsOf(const GroupTable & from, const Shape & shape, rmm::cuda_stream_view stream)
     {
         checkCuda(
@@ -338,8 +310,6 @@ private:
     Accumulators accumulators;
 };
 
-/// The two-pass path: the sort's buffers and the overflow list, grown to the largest chunk so
-/// far, and the buckets' partial groups, a shared table's worth per bucket.
 class BucketedPass
 {
 public:
@@ -354,8 +324,6 @@ public:
         , partial_keys(0, stream)
         , partial_records(0, stream)
     {
-        /// The block's own few shared variables take a little of the shared memory, so a table of
-        /// a whole 48 kilobytes would not launch.
         const size_t slot_bytes = sizeof(Key) + sizeof(uint64_t) * shape.values.size();
         shared_capacity = static_cast<uint32_t>(std::bit_floor((shared_table_bytes - 64) / slot_bytes));
         shared_bytes = slot_bytes * shared_capacity;
@@ -364,8 +332,6 @@ public:
         partial_records.resize(numPartials() * shape.values.size(), stream);
     }
 
-    /// Whether a chunk of `rows` rows can go this way beside `groups` groups: when the groups,
-    /// spread over the buckets, fill less than half of a bucket's table in shared memory.
     bool fits(size_t rows, size_t groups) const
     {
         return rows >= min_bucketed_rows && rows <= std::numeric_limits<uint32_t>::max() && groups <= numPartials() / 2;
@@ -373,8 +339,6 @@ public:
 
     size_t numPartials() const { return size_t{num_buckets} * shared_capacity; }
 
-    /// Sorts the chunk's rows into buckets and groups each bucket in shared memory, leaving the
-    /// buckets' partial groups and the overflow list for `partialsFrom` and `overflowRows`.
     void run(const Chunk & chunk, const Shape & shape, TableRef table, Counters counters, rmm::cuda_stream_view stream)
     {
         growBuffers(chunk.rows, stream);
@@ -412,7 +376,6 @@ public:
         checkLaunch("groups the buckets of a chunk");
     }
 
-    /// The partial groups from `offset` on, `count` of them.
     Partials partialsFrom(size_t offset, size_t count, const Shape & shape)
     {
         return {
@@ -422,7 +385,6 @@ public:
         };
     }
 
-    /// How many rows found no slot in their bucket's table, and the list of them.
     size_t numOverflowed(rmm::cuda_stream_view stream) const { return num_overflow.value(stream); }
     const uint32_t * overflowRows() const { return overflow.data(); }
 
@@ -456,8 +418,6 @@ private:
             sort_storage.resize(needed, stream);
     }
 
-    /// Slots of a bucket's table in shared memory: a power of two, with the records of that many
-    /// groups beside the keys.
     uint32_t shared_capacity = 0;
     size_t shared_bytes = 0;
 
@@ -472,14 +432,9 @@ private:
     rmm::device_uvector<uint64_t> partial_records;
 };
 
-/** Which path a chunk takes, by what each cost on this query: the direct kernel first, until it
-  * is measured, then the two passes on a small chunk until they are, then the cheaper of the two;
-  * and both afresh once the groups have doubled, since the cost of each path moves with them.
-  */
 class PathChoice
 {
 public:
-    /// Whether the next chunk should go in two passes, given the groups there are now.
     bool bucketed(size_t groups)
     {
         if (bucketed_cost && groups > 2 * groups_when_measured)
@@ -495,7 +450,6 @@ public:
         return *bucketed_cost < *direct_cost;
     }
 
-    /// Whether the two passes are yet to be measured, in which case they take a small chunk.
     bool measuringBucketed() const { return !bucketed_cost; }
 
     void sawDirect(double microseconds, size_t rows) { direct_cost = microseconds * 1000.0 / static_cast<double>(rows); }
@@ -507,7 +461,6 @@ public:
     }
 
 private:
-    /// Nanoseconds per row each path last took, and the groups there were when both were known.
     std::optional<double> direct_cost;
     std::optional<double> bucketed_cost;
     size_t groups_when_measured = 0;
@@ -544,7 +497,6 @@ struct RecordGroupBy::State
 
     size_t room() const { return table.room(groups); }
 
-    /// Makes room for at least `more` new groups, growing the table when it has less.
     void ensureRoom(size_t more = min_chunk_rows)
     {
         if (table.exists() && room() >= more)
@@ -562,10 +514,8 @@ struct RecordGroupBy::State
         table = std::move(larger);
     }
 
-    /// Reads back how many groups there are, which waits for everything queued so far.
     void countGroups() { groups = num_groups.value(computeStream()); }
 
-    /// Queues the direct kernel over the chunk and waits for it, adding its time to `microseconds`.
     void aggregateDirectly(const Chunk & chunk, double & microseconds)
     {
         const rmm::cuda_stream_view stream = computeStream();
@@ -579,10 +529,6 @@ struct RecordGroupBy::State
         microseconds += timer.microseconds();
     }
 
-    /// Groups the chunk in two passes: sorted into buckets and grouped in shared memory, then the
-    /// buckets' partial groups folded into the table, then whatever overflowed the buckets'
-    /// tables, directly; the last two in as many at a time as the table has room for, so that
-    /// the table is grown by the groups there are and not by the slots the buckets' tables have.
     void aggregateBucketed(Chunk chunk, double & microseconds)
     {
         const rmm::cuda_stream_view stream = computeStream();
@@ -620,9 +566,6 @@ struct RecordGroupBy::State
         }
     }
 
-    /// Groups rows from `offset` on - all of them in two passes when they are few groups' worth,
-    /// otherwise as many as the table has room for - and answers how many, adding the kernels'
-    /// own time to `microseconds`.
     size_t aggregateChunk(
         GPUSpan<DeviceFixedColumn> keys,
         GPUSpan<DeviceFixedColumn> value_views,

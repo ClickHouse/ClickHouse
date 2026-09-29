@@ -2,15 +2,9 @@
 
 #include <GPU/GroupByLayouts.cuh>
 
-/** The kernels of the `GROUP BY`: one that folds a chunk's rows straight into the table, the
-  * three of the two-pass path through buckets, and the ones that empty, grow and write out the
-  * table. Every kernel takes the table, the chunk and the counters as they are laid out in
-  * `GroupByLayouts.cuh`, and nothing else the host has.
-  */
 namespace DB::GPU::Grouping
 {
 
-/// Every slot's record, the spare one included, starts as the identity of its aggregate.
 __global__ void initRecords(Accumulators accumulators, size_t capacity, Identities identities)
 {
     const size_t stride = static_cast<size_t>(gridDim.x) * blockDim.x;
@@ -22,8 +16,6 @@ __global__ void initRecords(Accumulators accumulators, size_t capacity, Identiti
     }
 }
 
-/// A thread per row: the row's key finds or makes its slot, and the row's values fold into the
-/// slot's record.
 __global__ void aggregateRows(TableRef table, Chunk chunk, Counters counters)
 {
     const size_t stride = static_cast<size_t>(gridDim.x) * blockDim.x;
@@ -38,9 +30,6 @@ __global__ void aggregateRows(TableRef table, Chunk chunk, Counters counters)
     }
 }
 
-/// The first pass: each row's bucket, from the top bits of its key's hash, and its number, for the
-/// sort to pair up. Rows the filter drops and rows whose key is the sentinel go to the last
-/// bucket, whose block tells them apart.
 __global__ void bucketRows(Chunk chunk, uint8_t * buckets, uint32_t * indices)
 {
     const size_t stride = static_cast<size_t>(gridDim.x) * blockDim.x;
@@ -62,7 +51,6 @@ __global__ void bucketRows(Chunk chunk, uint8_t * buckets, uint32_t * indices)
     }
 }
 
-/// The first position at or after which the sorted buckets are `bucket` or more.
 __device__ inline size_t lowerBound(const uint8_t * sorted_buckets, size_t num_rows, uint32_t bucket)
 {
     size_t low = 0;
@@ -78,8 +66,6 @@ __device__ inline size_t lowerBound(const uint8_t * sorted_buckets, size_t num_r
     return low;
 }
 
-/// The buckets' side of the second pass: the sorted rows, a shared table's worth of slots per
-/// bucket to write the partial groups to, and the list of rows that found no slot.
 struct Buckets
 {
     const uint8_t * sorted_buckets = nullptr;
@@ -92,12 +78,6 @@ struct Buckets
     uint32_t * num_overflow = nullptr;
 };
 
-/// The second pass, a block per bucket. The rows of the bucket are grouped in a table in shared
-/// memory, whose keys come first and whose records follow, and the table is then written out as
-/// it is, empty slots and all, as the bucket's partial groups for `mergePartials`. A row whose key
-/// finds no slot within `max_probe` goes on the overflow list, for `aggregateRows` to take one by
-/// one. The last block also meets the rows the filter drops, which it drops, and the rows whose
-/// key is the sentinel, which it folds straight into the table's spare slot.
 __global__ void aggregateBuckets(Chunk chunk, Buckets buckets, TableRef table, Counters counters)
 {
     extern __shared__ uint64_t shared[];
@@ -128,7 +108,6 @@ __global__ void aggregateBuckets(Chunk chunk, Buckets buckets, TableRef table, C
     }
     __syncthreads();
 
-    /// The bucket took the top bits of the hash; the slot takes the bits below them.
     const uint32_t mask = buckets.shared_capacity - 1;
     const uint32_t shift = 64 - bucket_bits - static_cast<uint32_t>(__popc(mask));
 
@@ -181,7 +160,6 @@ __global__ void aggregateBuckets(Chunk chunk, Buckets buckets, TableRef table, C
     }
 }
 
-/// A run of the buckets' partial groups, empty slots included.
 struct Partials
 {
     const Key * keys = nullptr;
@@ -189,8 +167,6 @@ struct Partials
     size_t count = 0;
 };
 
-/// Folds the buckets' partial groups into the table: a partial group's record folds into its
-/// group's record the way a row's values would.
 __global__ void mergePartials(TableRef table, Partials partials, ValueLayouts values, Counters counters)
 {
     const size_t stride = static_cast<size_t>(gridDim.x) * blockDim.x;
@@ -211,8 +187,6 @@ __global__ void mergePartials(TableRef table, Partials partials, ValueLayouts va
     }
 }
 
-/// Files every occupied slot of an old table into a new, larger one and carries its accumulators
-/// over. The keys are distinct, so each lands in a slot of its own and plain stores do.
 __global__ void moveGroups(const Key * old_slots, size_t old_capacity, Accumulators from, TableRef to)
 {
     const size_t stride = static_cast<size_t>(gridDim.x) * blockDim.x;
@@ -229,7 +203,6 @@ __global__ void moveGroups(const Key * old_slots, size_t old_capacity, Accumulat
     }
 }
 
-/// The groups to write out: the occupied slots, and whether the spare slot is a group too.
 struct GroupList
 {
     const uint32_t * slots = nullptr;
@@ -237,8 +210,6 @@ struct GroupList
     bool with_sentinel = false;
 };
 
-/// A thread per group: unpacks the slot's key into the key columns and writes the record into the
-/// value columns, each in its output's width.
 __global__ void writeGroups(GroupList groups, TableRef table, OutputLayouts out)
 {
     const size_t num_groups = groups.num_regular + (groups.with_sentinel ? 1 : 0);

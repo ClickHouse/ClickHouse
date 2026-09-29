@@ -209,8 +209,6 @@ void ColumnUploadPipe::stageVariable(const IColumn & column)
 
     makeRoomFor(block_bytes);
 
-    /// The block's offsets are the ends of its rows within the block; the pipe's are within
-    /// everything it staged since `reset`.
     auto * to = reinterpret_cast<UInt64 *>(staged_offsets.grow(offsets.size() * sizeof(UInt64)));
     for (size_t row = 0; row < offsets.size(); ++row)
         to[row] = offsets[row] + staged_chars;
@@ -245,7 +243,6 @@ void ColumnUploadPipe::commitRaw(size_t bytes)
 
 void ColumnUploadPipe::sendStagedToDevice()
 {
-    /// What is in flight has been sent; what the buffers hold then is only kept until it lands.
     if (staging_bytes == 0 || in_flight)
         return;
 

@@ -10,19 +10,11 @@
 
 #include <limits>
 
-/** What the grouping kernels work on, as they see it: the table of groups, a chunk of rows, and
-  * the device-side operations over them - loading a value of any width, packing a row's keys into
-  * one word, folding a value into an accumulator, evaluating a `WHERE`. Nothing here touches the
-  * host; `GroupByKernels.cuh` builds the kernels out of it, and `RecordGroupBy.cu` drives them.
-  */
 namespace DB::GPU::Grouping
 {
 
-/// The keys of a row packed into one word, each key column at its own shift.
 using Key = uint64_t;
 
-/// Marks an empty slot of the set. A packed key shorter than eight bytes never equals it; one that
-/// fills all eight bytes may, and such rows go to the spare slot at `capacity`.
 constexpr Key key_sentinel = std::numeric_limits<Key>::max();
 
 using Set = cuco::static_set<
@@ -36,34 +28,17 @@ using Set = cuco::static_set<
 
 using InsertRef = decltype(std::declval<const Set &>().ref(cuco::op::insert_and_find));
 
-/// The set is kept at most this full, so that a probe ends within a few slots.
 constexpr double max_load = 0.6;
 
-/// The first table is this large, four megabytes of keys: within the L2 cache of a device, where a
-/// `GROUP BY` of a few hundred thousand groups stays for as long as it can.
 constexpr size_t min_capacity = 1UL << 19;
 
-/// Slots are numbered in 32 bits when the groups are written out.
 constexpr size_t max_capacity = size_t{std::numeric_limits<uint32_t>::max()} - 1;
 
-/// Rows go into the table as many at a time as could all be new keys and still fit, so that the
-/// table is sized by the groups it has rather than by the rows of a part; and at least this many,
-/// so that a nearly full table is grown rather than fed a few rows per kernel.
 constexpr size_t min_chunk_rows = 1UL << 18;
 
 constexpr unsigned threads_per_block = 256;
 constexpr size_t max_blocks = 32768;
 
-/** A chunk whose groups are few next to its rows may be grouped in two passes: the rows are
-  * sorted into buckets by their key, and a block per bucket groups its rows in a table in shared
-  * memory, then the buckets' groups are folded into the table on the device. Where a row went to
-  * the device's table once, a group of a bucket goes now.
-  *
-  * The sort is one pass of a byte, so the buckets are 256, and the last of them also takes the
-  * rows the filter drops and the rows whose key is the sentinel, which its block tells apart from
-  * its own. A shared table holds at most `max_probe` slots' worth of collisions, after which the
-  * row goes to the device's table as it would without the passes.
-  */
 constexpr uint32_t bucket_bits = 8;
 constexpr uint32_t num_buckets = 1u << bucket_bits;
 constexpr uint8_t last_bucket = num_buckets - 1;
@@ -73,9 +48,6 @@ constexpr size_t shared_table_bytes = 48UL * 1024;
 constexpr uint32_t max_probe = 32;
 constexpr uint64_t bucket_multiplier = 0x9E3779B97F4A7C15ULL;
 
-/// The accumulators of a table: for each of `capacity` slots of the set, and for the spare slot
-/// at `capacity` that takes rows whose key equals `key_sentinel`, a record of `num_values` words
-/// side by side, so that a row's aggregates land in one cache line.
 struct Accumulators
 {
     uint64_t * records = nullptr;
@@ -84,7 +56,6 @@ struct Accumulators
     __host__ __device__ __forceinline__ uint64_t * of(size_t slot) const { return records + slot * num_values; }
 };
 
-/// The table as the kernels see it.
 struct TableRef
 {
     InsertRef set;
@@ -93,7 +64,6 @@ struct TableRef
     Accumulators accumulators;
 };
 
-/// What the kernels count as they go: groups made, and whether the sentinel key was seen.
 struct Counters
 {
     uint32_t * num_groups = nullptr;
@@ -111,11 +81,9 @@ struct KeyLayouts
 {
     KeyLayout columns[max_group_by_keys];
     uint32_t count = 0;
-    /// The packed key fills all eight bytes, so a row's key can equal `key_sentinel`.
     bool may_equal_sentinel = false;
 };
 
-/// How a value folds into its accumulator: what it is added to or compared with, and how.
 enum class Fold : int
 {
     SumInt,
@@ -147,7 +115,6 @@ struct FilterColumnLayout
     GPUElementType type = GPUElementType::UInt8;
 };
 
-/// The columns a `WHERE` reads, and whether there is one at all.
 struct FilterLayouts
 {
     FilterColumnLayout columns[max_filter_columns];
@@ -155,8 +122,6 @@ struct FilterLayouts
     bool present = false;
 };
 
-/// The rows a kernel works on: the columns from the chunk's first row on, and either every row up
-/// to `rows`, or the rows that `order` lists, which have passed the filter already.
 struct Chunk
 {
     KeyLayouts keys;
@@ -167,21 +132,16 @@ struct Chunk
     size_t rows = 0;
 };
 
-/// What each accumulator of a record holds before any row is folded into it.
 struct Identities
 {
     uint64_t values[max_group_by_values];
     uint32_t count = 0;
 };
 
-/// How a group's accumulator is written into its output column.
 enum class Store : int
 {
-    /// All eight bytes as they are.
     Bits,
-    /// The low `size` bytes of the integer.
     Truncate,
-    /// A double narrowed to a float.
     Narrow,
 };
 
@@ -201,7 +161,6 @@ struct OutputLayouts
     uint32_t num_values = 0;
 };
 
-/// A value in a register of the predicate: an integer with or without a sign, a double, or a boolean.
 struct FilterValue
 {
     GPUFilterValueKind kind;
@@ -219,7 +178,6 @@ __device__ __forceinline__ uint64_t loadBits(const char * data, size_t row, uint
     }
 }
 
-/// An integer widened to 64 bits with its sign, or without one when it has none.
 __device__ __forceinline__ int64_t loadInteger(const char * data, size_t row, GPUElementType type)
 {
     switch (type)
@@ -250,9 +208,6 @@ __device__ __forceinline__ void storeBits(char * data, size_t row, uint32_t size
     }
 }
 
-/// A non-negative double orders as a signed integer of the same bits, and a negative one orders
-/// the other way as an unsigned integer, so a minimum or maximum is one integer atomic on the
-/// bits, chosen by the sign of the value.
 __device__ __forceinline__ void atomicMinDouble(uint64_t * accumulator, double value)
 {
     if (value >= 0)
@@ -269,8 +224,6 @@ __device__ __forceinline__ void atomicMaxDouble(uint64_t * accumulator, double v
         atomicMin(reinterpret_cast<unsigned long long *>(accumulator), static_cast<unsigned long long>(__double_as_longlong(value)));
 }
 
-/// A row's value as the bits of the accumulator it folds into: an integer widened to eight bytes,
-/// a float widened to a double.
 __device__ __forceinline__ uint64_t loadValueBits(const ValueLayout & value, size_t row)
 {
     switch (value.fold)
@@ -290,8 +243,6 @@ __device__ __forceinline__ uint64_t loadValueBits(const ValueLayout & value, siz
     return 0;
 }
 
-/// Folds `bits`, in the accumulator's representation, into the accumulator, which may be in
-/// shared memory as well as on the device.
 __device__ __forceinline__ void foldBits(Fold fold, uint64_t bits, uint64_t * accumulator)
 {
     switch (fold)
@@ -323,7 +274,6 @@ __device__ __forceinline__ void foldBits(Fold fold, uint64_t bits, uint64_t * ac
     }
 }
 
-/// Folds the row's values into the record.
 __device__ __forceinline__ void foldRow(const ValueLayouts & values, size_t row, uint64_t * record)
 {
     for (uint32_t i = 0; i < values.count; ++i)
@@ -355,8 +305,6 @@ __device__ __forceinline__ FilterValue loadFilterValue(const FilterColumnLayout 
     }
 }
 
-/// -1, 0 or 1 as `a` compares to `b`, and 2 when they are unordered, which only NaN is. Integers
-/// compare by their value whatever their signs; two floats compare as doubles.
 __device__ __forceinline__ int compareFilterValues(const FilterValue & a, const FilterValue & b)
 {
     if (a.kind == GPUFilterValueKind::Float || b.kind == GPUFilterValueKind::Float)
@@ -392,7 +340,6 @@ __device__ __forceinline__ bool isTrue(const FilterValue & value)
     return value.bits != 0;
 }
 
-/// Whether the row passes the `WHERE`.
 __device__ __forceinline__ bool passesFilter(const GPUFilterProgram & program, const FilterLayouts & filters, size_t row)
 {
     FilterValue registers[max_filter_registers];
@@ -448,13 +395,11 @@ __device__ __forceinline__ bool passesFilter(const GPUFilterProgram & program, c
     return isTrue(registers[program.result]);
 }
 
-/// Whether the chunk's row passes its `WHERE`; a row that comes in an order has already.
 __device__ __forceinline__ bool keeps(const Chunk & chunk, size_t row)
 {
     return chunk.order || !chunk.filters.present || passesFilter(chunk.filter, chunk.filters, row);
 }
 
-/// The slot of the key, made when it is new and counted then; the spare slot for the sentinel key.
 __device__ __forceinline__ size_t slotOf(TableRef & table, const KeyLayouts & keys, Key key, Counters counters)
 {
     if (keys.may_equal_sentinel && key == key_sentinel)

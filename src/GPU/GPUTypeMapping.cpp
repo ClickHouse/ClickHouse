@@ -178,9 +178,6 @@ bool canGroupByReduceOnDevice(
     if (key_types.size() > max_group_by_keys || argument_types.size() > max_group_by_values)
         return false;
 
-    /// A variable-width key - a `String` - takes the `GROUP BY` to cuDF's, which the keys need not
-    /// fit a word for, and which reduces integers only: it sums a `Float32` into a `Float32`, where
-    /// ClickHouse sums it into a `Float64`, and in no fixed order.
     const bool by_variable = std::any_of(key_types.begin(), key_types.end(), [](const auto & type) { return isStringKey(*type); });
     if (by_variable)
     {
@@ -205,8 +202,6 @@ bool canGroupByReduceOnDevice(
         return true;
     }
 
-    /// The device packs the keys of a row into one integer of `max_group_by_key_bytes`, which a
-    /// float could only join by its bytes, where ClickHouse groups by its value.
     size_t key_bytes = 0;
     for (const auto & key_type : key_types)
     {

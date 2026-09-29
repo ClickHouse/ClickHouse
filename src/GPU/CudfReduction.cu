@@ -112,8 +112,6 @@ struct CudfReduction::State
     const GPUElementType element_type;
     const GPUElementType result_type;
 
-    /// What cuDF is asked to leave the result in: a `sum` accumulates in the wider result type,
-    /// a `min` or `max` stays in the input's.
     const cudf::data_type output_type;
 
     const size_t output_size;

@@ -200,8 +200,6 @@ std::vector<ColumnUploadPipe> pipesFor(const DataTypes & types, size_t batch_row
     if (compressed)
         return pipes;
 
-    /// A batch of fixed-width values fills a slot of its size; a column without a fixed width
-    /// gets the largest.
     pipes.reserve(types.size());
     for (const auto & type : types)
     {
@@ -266,8 +264,6 @@ std::vector<DeviceFixedColumn> fixedColumnsOf(const std::vector<DeviceColumnView
     return columns;
 }
 
-/// How many rows of a variable-width column the bytes that have arrived cover: the rows whose end, in
-/// `offsets` after the first, is within `chars_bytes`.
 size_t rowsCoveredBy(const std::vector<UInt64> & offsets, size_t chars_bytes)
 {
     if (offsets.empty())
@@ -275,17 +271,10 @@ size_t rowsCoveredBy(const std::vector<UInt64> & offsets, size_t chars_bytes)
     return static_cast<size_t>(std::upper_bound(offsets.begin() + 1, offsets.end(), chars_bytes) - (offsets.begin() + 1));
 }
 
-/// nvcomp expands each block with one warp, so a call over few blocks leaves the device idle
-/// however large they are. Blocks are gathered until they expand to this much and are expanded in
-/// one call: a block holds a megabyte of values, so this is also how many warps the call keeps busy.
 constexpr size_t compressed_stage_bytes = 256UL * 1024 * 1024;
 
-/// How many filled staging buffers may wait for the device thread, per column: a part's end hands
-/// over every column's buffer at once, and the reading thread must not have to wait for the device
-/// to take them before it goes on to the next part.
 constexpr size_t queued_buffers_per_column = 2;
 
-/// How many rows the device thread groups before it looks at its queue again.
 constexpr size_t group_piece_rows = 4UL << 20;
 
 }
@@ -413,7 +402,6 @@ void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & val
     for (size_t i = 0; i < value_columns.size(); ++i)
         value_pipes[i].stage(*value_columns[i]);
 
-    /// A batch of variable-width keys is bounded by bytes, as a row of them has no fixed width.
     if (stagedRows() >= batch_rows || stagedVariableBytes() >= GPUAccumulator::max_stage_bytes)
         sendBatchToDevice();
 }
@@ -642,7 +630,6 @@ void GroupByGPUAccumulator::runDeviceThread()
 {
     try
     {
-        /// A buffer of blocks of another codec than those taken with it, kept for the next round.
         std::optional<DeviceWork> carried;
 
         while (true)
@@ -650,10 +637,8 @@ void GroupByGPUAccumulator::runDeviceThread()
             std::vector<DeviceWork> blocks;
             std::optional<DeviceWork> other;
 
-            flushPendingRaw(/*wait=*/false);
+            flushPendingRaw(false);
 
-            /// Only an idle thread waits for work: one with an expansion in flight, an upload
-            /// still landing or rows to group looks and goes on.
             const bool idle = expanding.empty() && raw_pending.empty() && !carried && !hasPieceToGroup();
             DeviceWork work;
             bool taken = false;
@@ -711,11 +696,11 @@ void GroupByGPUAccumulator::runDeviceThread()
                         break;
                     case DeviceWork::Kind::Finish:
                         finishExpansion();
-                        flushPendingRaw(/*wait=*/true);
+                        flushPendingRaw(true);
                         while (groupPiece())
                         {
                         }
-                        freeCopiedRaw(/*wait=*/true);
+                        freeCopiedRaw(true);
                         return;
                 }
                 continue;
@@ -730,9 +715,8 @@ void GroupByGPUAccumulator::runDeviceThread()
                 continue;
             }
 
-            /// Nothing to do until an upload lands.
             Stopwatch watch;
-            flushPendingRaw(/*wait=*/!raw_pending.empty());
+            flushPendingRaw(!raw_pending.empty());
             device_wait_microseconds.fetch_add(watch.elapsedMicroseconds(), std::memory_order_relaxed);
         }
     }
@@ -740,8 +724,8 @@ void GroupByGPUAccumulator::runDeviceThread()
     {
         try
         {
-            flushPendingRaw(/*wait=*/true);
-            freeCopiedRaw(/*wait=*/true);
+            flushPendingRaw(true);
+            freeCopiedRaw(true);
         }
         catch (...)
         {
@@ -768,10 +752,8 @@ void GroupByGPUAccumulator::appendRaw(DeviceWork && work)
 
 void GroupByGPUAccumulator::flushPendingRaw(bool wait)
 {
-    freeCopiedRaw(/*wait=*/false);
+    freeCopiedRaw(false);
 
-    /// The uploads run on one stream, so they land in the order they were queued, which is the
-    /// order of a column's runs.
     size_t landed = 0;
     for (; landed < raw_pending.size(); ++landed)
     {
@@ -781,8 +763,6 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
         else if (!work.uploaded->isComplete())
             break;
 
-        /// The buffer the run came in is freed on the copy stream, so it is kept until the copy
-        /// out of it has run.
         const size_t bytes = work.on_device.size();
         DeviceFixedColumnBuffer & column = readers[work.reader].device_columns[work.column_index];
         checkCuda(
@@ -790,7 +770,6 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
             "Cannot append {} plain bytes to a device column",
             bytes);
 
-        /// The offsets of a variable-width key are kept on the host as well, to tell how far its bytes go.
         if (const auto ordinal = variableOrdinalOfOffsetsColumn(work.column_index))
         {
             const std::string_view landed_offsets = work.staged.bytes();
@@ -858,8 +837,6 @@ void GroupByGPUAccumulator::finishExpansion()
 
     const char * expanded = decompressor.finish();
 
-    /// The runs are appended to their columns through the default stream, behind the kernels
-    /// queued over the last pieces. Each column's runs keep their order.
     size_t compressed_bytes = 0;
     size_t at = 0;
     for (DeviceWork & work : expanding)
@@ -914,7 +891,7 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The end of a part from reader {} on the GPU aggregation's device thread", reader_index);
 
     finishExpansion();
-    flushPendingRaw(/*wait=*/true);
+    flushPendingRaw(true);
 
     Reader & reader = readers[reader_index];
 
@@ -973,8 +950,6 @@ size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) c
         rows = std::min(rows, reader.device_columns[i].rows());
     }
 
-    /// A variable-width key's rows are those whose bytes have all arrived; its offsets land before its
-    /// bytes are counted, as they are appended on the host as well.
     for (size_t j = 0; j < variable_key_indices.size(); ++j)
         rows = std::min(rows, rowsCoveredBy(reader.variable_offsets[j], reader.device_columns[variable_key_indices[j]].bytes()));
 
@@ -1000,8 +975,6 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
     {
         if (i < group_keys.size() && group_keys[i] == GPUElementType::String)
         {
-            /// The column of offsets holds them from where the bytes on the device start, and the
-            /// rows grouped are viewed from their own first byte on, with offsets from 0.
             const std::vector<UInt64> & host_offsets = reader.variable_offsets[next_variable];
             const UInt64 first = host_offsets[reader.grouped_rows];
             const UInt64 last = host_offsets[up_to];
@@ -1091,8 +1064,6 @@ void GroupByGPUAccumulator::dropGroupedRows(Reader & reader)
         reader.device_columns[i].dropFront(reader.grouped_rows);
     }
 
-    /// A variable-width key drops the bytes of the grouped rows, and its offsets, which the first row left
-    /// starts from, are moved back by as many: on the device, and on the host.
     for (size_t j = 0; j < variable_key_indices.size(); ++j)
     {
         std::vector<UInt64> & offsets = reader.variable_offsets[j];

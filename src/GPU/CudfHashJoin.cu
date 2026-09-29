@@ -80,7 +80,6 @@ void CudfHashJoin::build(DeviceFixedColumn keys, GPUSpan<DeviceFixedColumn> payl
     }
     state->build_payloads = cudf::table_view(payload_columns);
 
-    /// An empty right table needs no hash table: every probe of it matches nothing.
     if (keys.rows == 0)
         return;
 
@@ -116,7 +115,6 @@ CudfHashJoinProbe::CudfHashJoinProbe(const CudfHashJoin & join, rmm::cuda_stream
     state = new State(*join.state, stream);
 }
 
-/// The matches are freed in the order of the probe's stream, which the caller keeps until after.
 CudfHashJoinProbe::~CudfHashJoinProbe()
 {
     delete state;
@@ -147,8 +145,6 @@ size_t CudfHashJoinProbe::probe(DeviceFixedColumn keys)
             "the device returned " + std::to_string(probe_side->size()) + " probe-side indices against "
             + std::to_string(build_side->size()) + " build-side ones");
 
-    /// The left block's own columns are indexed on the host, so only the right table's payload is
-    /// gathered here.
     if (!join.payload_element_types.empty() && !build_side->is_empty())
     {
         const cudf::column_view build_index_column(

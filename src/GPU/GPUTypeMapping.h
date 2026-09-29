@@ -36,10 +36,8 @@ bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result
 
 GPUElementType reducibleElementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation);
 
-/// Whether a `GROUP BY` key is a column of strings the device groups by: a plain `String`.
 bool isStringKey(const IDataType & type);
 
-/// The keys as the device groups by them: strings, and fixed-width integers.
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
 
 bool canGroupByReduceOnDevice(

@@ -203,8 +203,6 @@ JoinResultPtr GPUHashJoin::joinBlock(Block block)
 
     if (probe_rows != 0)
     {
-        /// The build normally finishes in `onBuildPhaseFinish`; a probe that comes first finishes it.
-        /// Once it is finished, the probes of different threads run at once.
         if (!hash_table->isReady())
         {
             std::lock_guard lock(device_mutex);
