@@ -78,7 +78,7 @@ private:
         /// prefix of the positions rather than a list of their own.
         size_t dag_position_count = 0;
         /// One entry per column of the input header, in header order.
-        std::vector<InputColumn> input_columns;
+        std::vector<InputColumnUsage> input_columns;
         /// Whether any output goes away, and whether removeUnusedActions would erase any node. The
         /// second answer depends on `remove_inputs`, since an unread input is only erased when inputs
         /// may go, so both answers are kept.

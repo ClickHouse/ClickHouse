@@ -121,10 +121,10 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
             && required_passthrough_indices[next_required_passthrough] == passthrough_index)
         {
             ++next_required_passthrough;
-            plan.input_columns[position] = IQueryPlanStep::InputColumn::PassesThroughNeeded;
+            plan.input_columns[position] = IQueryPlanStep::InputColumnUsage::PassesThroughNeeded;
         }
         else
-            plan.input_columns[position] = IQueryPlanStep::InputColumn::PassesThroughDropped;
+            plan.input_columns[position] = IQueryPlanStep::InputColumnUsage::PassesThroughDropped;
 
         ++passthrough_index;
     }
@@ -202,8 +202,8 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
     for (size_t position = 0; position < header_columns.size(); ++position)
         if (!header_columns.passesThrough(position))
             plan.input_columns[position] = surviving_nodes.contains(inputs[header_columns.read_by[position]])
-                ? IQueryPlanStep::InputColumn::ReadNeeded
-                : IQueryPlanStep::InputColumn::ReadDropped;
+                ? IQueryPlanStep::InputColumnUsage::ReadNeeded
+                : IQueryPlanStep::InputColumnUsage::ReadDropped;
 
     return plan;
 }
@@ -212,17 +212,17 @@ std::vector<size_t> FilterDAGOutputPruningPlan::droppedPassThroughPositions() co
 {
     std::vector<size_t> positions;
     for (size_t position = 0; position < input_columns.size(); ++position)
-        if (input_columns[position] == IQueryPlanStep::InputColumn::PassesThroughDropped)
+        if (input_columns[position] == IQueryPlanStep::InputColumnUsage::PassesThroughDropped)
             positions.push_back(position);
     return positions;
 }
 
 FilterDAGOutputPruningResult FilterDAGOutputPruningPlan::toResult() const
 {
-    using InputColumn = IQueryPlanStep::InputColumn;
+    using InputColumnUsage = IQueryPlanStep::InputColumnUsage;
 
-    const bool drops_a_passthrough = std::ranges::contains(input_columns, InputColumn::PassesThroughDropped);
-    const bool drops_an_input = std::ranges::contains(input_columns, InputColumn::ReadDropped);
+    const bool drops_a_passthrough = std::ranges::contains(input_columns, InputColumnUsage::PassesThroughDropped);
+    const bool drops_an_input = std::ranges::contains(input_columns, InputColumnUsage::ReadDropped);
 
     FilterDAGOutputPruningResult result;
 
@@ -235,7 +235,7 @@ FilterDAGOutputPruningResult FilterDAGOutputPruningPlan::toResult() const
     /// Only where inputs may be removed does the header below shrink to these.
     if (remove_inputs)
         for (size_t position = 0; position < input_columns.size(); ++position)
-            if (input_columns[position] == InputColumn::ReadNeeded || input_columns[position] == InputColumn::PassesThroughNeeded)
+            if (input_columns[position] == InputColumnUsage::ReadNeeded || input_columns[position] == InputColumnUsage::PassesThroughNeeded)
                 result.required_input_positions.push_back(position);
 
     return result;
