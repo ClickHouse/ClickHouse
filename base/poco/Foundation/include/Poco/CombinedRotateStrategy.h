@@ -180,7 +180,14 @@ private:
         if (!res.size)
             res.size = parseSize(rotation, pos); /// To handle the case when an interval is specified before a size
 
-        if (!res.size && !res.interval && !res.time && !parseNever(rotation))
+        if (parseNever(rotation))
+            return res;
+
+        while (pos < rotation.size() && Ascii::isSpace(rotation[pos]))
+            ++pos;
+
+        /// Reject leftovers, e.g. `garbage` in `100M,12:00,garbage`
+        if ((!res.size && !res.interval && !res.time) || pos != rotation.size())
             throw InvalidArgumentException(
                 "Invalid rotation format '" + std::string(rotation) +
                 "'. Expected formats: <size>[K|M|G], <interval>, [<size>,]<interval>, or 'never'.");
