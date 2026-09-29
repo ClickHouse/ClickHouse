@@ -200,6 +200,20 @@ void PartitionAggregateTransform::aggregateChunk(Chunk & chunk, MutableColumnPtr
             row_places[row] = places[group_data[row]];
     }
 
+    /// Until a partition has more than two rows, the number of rows of each is counted, up to three.
+    if (!has_group_of_more_than_two_rows)
+    {
+        group_num_rows.resize_fill(places.size(), 0);
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            auto & group_rows = group_num_rows[group_data[row]];
+            group_rows += group_rows < 3;
+            has_group_of_more_than_two_rows |= group_rows == 3;
+        }
+        if (has_group_of_more_than_two_rows)
+            PaddedPODArray<UInt8>().swap(group_num_rows);
+    }
+
     Columns argument_holders;
     auto arguments = getArguments(columns, in_groups, num_rows, permutation, argument_holders);
     for (size_t i = 0; i < functions.size(); ++i)
@@ -738,9 +752,9 @@ Chunk PartitionAggregateTransform::generate()
             return {};
 
         /// With two rows or less in each group, the results are taken for each row from the states, instead of
-        /// being taken for each group and then copied to the rows, which takes more memory. The rows of partitions
-        /// of one row have no group.
-        results_for_each_row = places.size() * 2 >= num_input_rows - total_single_row_groups;
+        /// being taken for each group and then copied to the rows, which takes more memory. Not with more rows in a
+        /// group, whose result would be taken for each of its rows. The rows of partitions of one row have no group.
+        results_for_each_row = !has_group_of_more_than_two_rows;
         if (!results_for_each_row)
         {
             for (size_t i = 0; i < functions.size(); ++i)
@@ -797,12 +811,12 @@ Chunk PartitionAggregateTransform::generate()
     const auto & group_data = assert_cast<const ColumnUInt32 &>(*groups).getData();
 
     const size_t num_single_rows = total_single_row_groups ? std::count(group_data.begin(), group_data.end(), single_row_group) : 0;
-    if (results_for_each_row || num_single_rows)
-    {
-        SingleRowStates single_row_states(*this);
-        if (num_single_rows)
-            single_row_states.aggregate(columns, group_data, num_single_rows);
+    SingleRowStates single_row_states(*this);
+    if (num_single_rows)
+        single_row_states.aggregate(columns, group_data, num_single_rows);
 
+    if (results_for_each_row)
+    {
         row_places.resize(num_rows);
         size_t single_row = 0;
         for (size_t row = 0; row < num_rows; ++row)
@@ -816,24 +830,51 @@ Chunk PartitionAggregateTransform::generate()
         return Chunk(std::move(columns), num_rows);
     }
 
-    for (const auto & result : results)
+    /// The rows of partitions of one row take their results from their states, and the other rows from the results
+    /// of their groups. The results of `-State` functions are then copied for each row, as in `WindowTransform`.
+    if (num_single_rows)
     {
+        row_places.resize(num_single_rows);
+        for (size_t row = 0; row < num_single_rows; ++row)
+            row_places[row] = single_row_states.place(row);
+    }
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        const auto & result = results[i];
         const auto * result_array = typeid_cast<const ColumnArray *>(result.get());
-        if (!result_array)
+        if (!num_single_rows && !result_array)
         {
             columns.push_back(result->index(*groups, 0));
             continue;
         }
-        /// `index` of an array takes each element on its own, this copies each array at once.
-        const auto & offsets = result_array->getOffsets();
-        size_t num_elements = 0;
-        for (size_t row = 0; row < num_rows; ++row)
-            num_elements += offsets[group_data[row]] - offsets[static_cast<ssize_t>(group_data[row]) - 1];
+
+        MutableColumnPtr single_row_results;
+        if (num_single_rows)
+        {
+            single_row_results = result->cloneEmpty();
+            insertResults(i, row_places.data(), num_single_rows, *single_row_results);
+        }
+
         auto column = result->cloneEmpty();
         column->reserve(num_rows);
-        assert_cast<ColumnArray &>(*column).getData().reserve(num_elements);
+        /// `index` of an array takes each element on its own, this copies each array at once.
+        if (result_array)
+        {
+            const auto & offsets = result_array->getOffsets();
+            size_t num_elements = single_row_results ? assert_cast<const ColumnArray &>(*single_row_results).getData().size() : 0;
+            for (size_t row = 0; row < num_rows; ++row)
+                if (group_data[row] != single_row_group)
+                    num_elements += offsets[group_data[row]] - offsets[static_cast<ssize_t>(group_data[row]) - 1];
+            assert_cast<ColumnArray &>(*column).getData().reserve(num_elements);
+        }
+        size_t single_row = 0;
         for (size_t row = 0; row < num_rows; ++row)
-            column->insertFrom(*result, group_data[row]);
+        {
+            if (group_data[row] == single_row_group)
+                column->insertFrom(*single_row_results, single_row++);
+            else
+                column->insertFrom(*result, group_data[row]);
+        }
         columns.push_back(std::move(column));
     }
     return Chunk(std::move(columns), num_rows);

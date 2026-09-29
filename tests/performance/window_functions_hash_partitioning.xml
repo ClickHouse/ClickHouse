@@ -50,6 +50,10 @@
     <query>SELECT v, length(groupArray(k100) OVER w) FROM t_window_hash WINDOW w AS (PARTITION BY k1000000) FORMAT Null</query>
     <query>SELECT v, length(groupArray(k100) OVER w) FROM t_window_hash WINDOW w AS (PARTITION BY k1000000) FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
 
+    <!-- Large partitions next to partitions of one row: the result of a large partition is taken once, and not for each of its rows. -->
+    <query>SELECT v, quantileExact(0.5)(v) OVER w FROM t_window_hash WINDOW w AS (PARTITION BY if(v % 2 = 0, k100, v)) FORMAT Null</query>
+    <query>SELECT v, quantileExact(0.5)(v) OVER w FROM t_window_hash WINDOW w AS (PARTITION BY if(v % 2 = 0, k100, v)) FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>
+
     <!-- Every column passes through the window: the sort moves all of them, the hashing only scatters them. -->
     <query>SELECT *, sum(v) OVER (PARTITION BY k10000) FROM t_window_hash FORMAT Null</query>
     <query>SELECT *, sum(v) OVER (PARTITION BY k10000) FROM t_window_hash FORMAT Null SETTINGS query_plan_window_functions_hash_partitioning = 1</query>

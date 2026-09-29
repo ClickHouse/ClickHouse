@@ -193,6 +193,9 @@ private:
     std::optional<TemporaryBlockStreamReaderHolder> spilled_reader;
 
     size_t num_input_rows = 0;
+    /// The number of rows of each group, up to three, while no group has more than two rows.
+    PaddedPODArray<UInt8> group_num_rows;
+    bool has_group_of_more_than_two_rows = false;
     /// The results of the partitions, if they are not taken for each row.
     Columns results;
     bool results_for_each_row = false;
