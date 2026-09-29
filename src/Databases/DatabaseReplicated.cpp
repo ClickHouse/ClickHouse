@@ -2714,8 +2714,13 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
 
+        /// Inner tables of a table created by `CREATE OR REPLACE` before 26.5 have no metadata node.
         for (const auto & name : replaced_inner_tables)
-            txn->addOp(zkutil::makeRemoveRequest(zookeeper_path + "/metadata/" + escapeForFileName(name), -1));
+        {
+            String inner_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(name);
+            if (zookeeper->exists(inner_metadata_zk_path))
+                txn->addOp(zkutil::makeRemoveRequest(inner_metadata_zk_path, -1));
+        }
 
         /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
         if (txn->isCreateOrReplaceQuery())
