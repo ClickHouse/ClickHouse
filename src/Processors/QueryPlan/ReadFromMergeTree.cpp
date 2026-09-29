@@ -35,6 +35,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -7040,6 +7041,17 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     SelectQueryInfo query_info;
     query_info.table_expression_modifiers.emplace(has_final, sample_size_ratio, sample_offset_ratio);
 
+    /// The limits are not serialized, and `ISource` falls back to an empty list, so without this the byte
+    /// limits and the read-speed and timeout checks would not be enforced for a read in a shipped plan
+    /// fragment (plan-based parallel replicas and `make_distributed_plan`). Derive them from the settings
+    /// that arrived with the query, the same way `resolveStorages` does for `ReadFromTableStep`. This is done
+    /// at deserialization rather than on the built pipeline, so it covers every execution path of a shipped
+    /// plan, and a subquery read that index analysis in `readFromParts` builds a set from is limited too.
+    /// The stage is not the initiator's, which keeps the minimal-speed limits to it.
+    auto storage_limits = std::make_shared<StorageLimitsList>();
+    storage_limits->emplace_back(buildStorageLimits(*ctx.context, SelectQueryOptions(QueryProcessingStage::FetchColumns)));
+    query_info.storage_limits = std::move(storage_limits);
+
     if (has_row_level_filter)
         query_info.row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
     if (has_prewhere_info)
@@ -7092,6 +7104,14 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     if (!merge_tree)
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} is not a MergeTree table", table_id.getNameForLogs());
+
+    /// A shipped plan is executed without the planner, which is what records the access info of a
+    /// locally planned read (`PlannerJoinTree.cpp`), so without this the worker's `system.query_log`
+    /// row names nothing it read. Only the receiver deserializes, so the initiator does not count its
+    /// own read twice. The columns are the read step's own: a plan states its access there, and that
+    /// can legitimately differ from the initiator's, as after `replaceVectorColumnWithDistanceColumn`.
+    if (ctx.context->hasQueryContext())
+        ctx.context->getQueryContext()->addQueryAccessInfo(storage_ptr->getStorageID(), column_names);
 
     MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
