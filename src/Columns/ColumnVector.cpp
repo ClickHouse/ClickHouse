@@ -876,80 +876,6 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 }
 )
 
-DECLARE_X86_ICELAKE_SPECIFIC_CODE(
-/// Compresses into a register and stores all 64 bytes: `vpcompress*` with a memory destination is microcoded on
-/// AMD Zen 4, 25x slower. The caller keeps at least 64 elements of room after `dst`.
-template <size_t ELEMENT_WIDTH>
-inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
-{
-    __m512i vsrc = _mm512_loadu_si512(src);
-    if constexpr (ELEMENT_WIDTH == 1)
-        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi8(static_cast<__mmask64>(mask), vsrc));
-    else if constexpr (ELEMENT_WIDTH == 2)
-        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi16(static_cast<__mmask32>(mask), vsrc));
-    else if constexpr (ELEMENT_WIDTH == 4)
-        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi32(static_cast<__mmask16>(mask), vsrc));
-    else if constexpr (ELEMENT_WIDTH == 8)
-        _mm512_storeu_si512(dst, _mm512_maskz_compress_epi64(static_cast<__mmask8>(mask), vsrc));
-}
-
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
-{
-    static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
-    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
-    static constexpr size_t ELEMENTS_PER_VEC = VEC_LEN / ELEMENT_WIDTH;
-    static constexpr UInt64 KMASK = 0xffffffffffffffff >> (64 - ELEMENTS_PER_VEC);
-
-    size_t current_offset = res_data.size();
-    size_t reserve_size = res_data.size();
-    size_t alloc_size = SIMD_ELEMENTS * 2;
-
-    while (filt_pos < filt_end_aligned)
-    {
-        /// to avoid calling resize too frequently, resize to reserve buffer.
-        if (reserve_size - current_offset < SIMD_ELEMENTS)
-        {
-            reserve_size += alloc_size;
-            res_data.resize(reserve_size);
-            alloc_size *= 2;
-        }
-
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-
-        if (0xffffffffffffffff == mask)
-        {
-            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
-                _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
-                        _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
-            current_offset += SIMD_ELEMENTS;
-        }
-        else
-        {
-            if (mask)
-            {
-                for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
-                {
-                    compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
-                            reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
-                    current_offset += std::popcount(mask & KMASK);
-                    /// prepare mask for next iter, if ELEMENTS_PER_VEC = 64, no next iter
-                    if constexpr (ELEMENTS_PER_VEC < 64)
-                    {
-                        mask >>= ELEMENTS_PER_VEC;
-                    }
-                }
-            }
-        }
-
-        filt_pos += SIMD_ELEMENTS;
-        data_pos += SIMD_ELEMENTS;
-    }
-    /// Resize to the real size.
-    res_data.resize_exact(current_offset);
-}
-)
-
 #if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
 namespace
 {
@@ -991,7 +917,7 @@ alignas(16) constexpr auto compress_table = []
     return table;
 }();
 
-/// The same loop as the AVX-512 version, with the compression done by a table-driven byte shuffle.
+/// Filters whole blocks of `SIMD_ELEMENTS` rows, compressing mixed blocks with a table-driven byte shuffle.
 template <typename T, typename Container, size_t SIMD_ELEMENTS>
 void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
@@ -1081,14 +1007,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     static constexpr size_t SIMD_ELEMENTS = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
-    [[maybe_unused]] static constexpr bool SIMD_COMPRESS_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
-#if USE_MULTITARGET_CODE
-    if (SIMD_COMPRESS_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
-        TargetSpecific::x86_64_icelake::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
-    else
-#endif
 #if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
-    if constexpr (SIMD_COMPRESS_CAPABLE)
+    if constexpr (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
         doFilterAlignedShuffle<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
