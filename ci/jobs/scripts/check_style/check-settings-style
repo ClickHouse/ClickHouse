@@ -70,7 +70,7 @@ rg "^\s*extern const .*Settings" --glob '*.cpp' --glob '*.h' \
     awk '{print substr($5, 0, length($5) -1) " " $4 " " $1}' >> "${SETTINGS_FILE}"
 
 # A non-const extern declaration is skipped by the checks below and hides wrong setting types
-rg "^\s*extern [A-Za-z]*Settings" --glob '*.cpp' --glob '*.h' \
+rg "^\s*extern [[:alnum:]_]*Settings" --glob '*.cpp' --glob '*.h' \
     "$ROOT_PATH/src" "$ROOT_PATH/base" "$ROOT_PATH/programs" "$ROOT_PATH/utils" | \
     grep -v "NOLINT" | while read -r line;
 do
