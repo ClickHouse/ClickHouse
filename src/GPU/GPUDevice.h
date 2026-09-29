@@ -5,6 +5,7 @@
 #if USE_GPU
 
 #include <GPU/GPUStreams.cuh>
+#include <GPU/GPUTypes.cuh>
 
 #include <Common/Exception.h>
 
@@ -22,6 +23,7 @@ namespace DB::ErrorCodes
 
 namespace DB::GPU
 {
+
 
 inline void clearDeviceError()
 {
