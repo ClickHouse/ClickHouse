@@ -13,10 +13,10 @@ Granules: 3/4
 Description: vector_similarity GRANULARITY 10000
 -- Additional WHERE clauses on partition key present (2 full parts selected), expect index usage
 Description: vector_similarity GRANULARITY 10000
--- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, index usage not expected
+-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, expect index usage
 7
 8
-0
+1
 The first 3 neighbours returned by vector index dont pass the attr2 >= 1008 filter. Hence no rows returned by the query...
 ... but there are results for the same query with postfilter multiplier = 2.0
 10
