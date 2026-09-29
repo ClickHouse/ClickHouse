@@ -409,8 +409,6 @@ ReadFromMergeTree * findReadingStep(
     return nullptr;
 }
 
-
-
 std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 {
     Stack stack;
