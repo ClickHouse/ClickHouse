@@ -265,7 +265,8 @@ ActionsDAG makeRowIndexDAG(ReadFromMergeTree * merge_tree, const Block & read_he
 /// sources` so that the columns the frontier defers are read for the rows the `LIMIT` returns only.
 ///
 /// The main branch is the original plan with fewer columns: every step is kept, with its own expressions
-/// and names, and `removeUnusedColumns` takes away what nothing below the `LIMIT` needs any more, top-down.
+/// and names, and `removeUnusedColumns` takes away what nothing below the `LIMIT` needs any more, each
+/// step once its children are built.
 /// A value that crosses the `LIMIT` keeps the name the plan gives it, and is kept by each step it passes.
 /// Where a step used to consume it, because what the step computed from it is now computed above the
 /// `LIMIT`, the step outputs it as well. Each lazily read source adds its row index above the read, which
@@ -423,9 +424,7 @@ public:
                 if (sort_key_nodes.contains(values[position]) || std::ranges::find(carried_values, values[position]) != carried_values.end())
                     required.push_back(position);
         }
-        prune(chain_top, required);
-
-        auto main_plan = assemble(chain_top, nodes);
+        auto main_plan = assemble(chain_top, required, nodes);
 
         /// Hand over exactly the sort keys, the crossing values and the row indexes; the sort then carries no
         /// more than that. What each column of the block holds is followed from here on, so that the
@@ -920,16 +919,42 @@ private:
         header_values[node] = std::move(values);
     }
 
-    /// Takes away, top-down, whatever the step above does not need of `node`'s output. The steps change only
-    /// here; the reads, which choose what they keep themselves, change in `assemble`.
-    void prune(QueryPlan::Node * node, const std::vector<size_t> & required)
+    bool isAddedColumn(const String & name) const { return added_names.contains(name); }
+
+    /// A pruned child as the step above it sees it: the columns of its former header that remain, in their
+    /// former order, and after them any other column it now has, which the step consumes - but not the
+    /// columns this rebuild adds, which the step passes through once it is pruned.
+    IQueryPlanStep::PrunedInput prunedInputOf(const Block & former_header, const Block & new_header) const
+    {
+        IQueryPlanStep::PrunedInput pruned;
+        Block header;
+        for (size_t position = 0; position < former_header.columns(); ++position)
+        {
+            if (const auto * column = new_header.findByName(former_header.getByPosition(position).name))
+                header.insert(*column);
+            else
+                pruned.dropped_positions.push_back(position);
+        }
+
+        for (const auto & column : new_header)
+            if (!former_header.has(column.name) && !isAddedColumn(column.name))
+                header.insert(column);
+
+        pruned.header = std::make_shared<const Block>(std::move(header));
+        return pruned;
+    }
+
+    /// Builds the main branch: prunes each step to what the step above needs of it, top-down, and
+    /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
+    /// the joins pass through, and prunes a step once its children are built, with their real headers.
+    QueryPlan assemble(QueryPlan::Node * node, const std::vector<size_t> & required, QueryPlan::Nodes & nodes)
     {
         if (const auto it = source_numbers.find(node); it != source_numbers.end())
-            return;
+            return assembleSource(node, it->second, nodes);
 
         auto * step = node->step.get();
-        std::vector<std::vector<size_t>> child_required;
 
+        std::vector<std::vector<size_t>> child_required;
         if (auto * runtime_filter = typeid_cast<BuildRuntimeFilterStep *>(step))
         {
             /// Passes its input through, so it needs what is needed above it, and its key.
@@ -939,87 +964,36 @@ private:
             child_required.emplace_back(positions.begin(), positions.end());
         }
         else
-        {
-            auto result = step->removeUnusedColumns(required, /*remove_inputs=*/true);
-            child_required = std::move(result.required_input_positions);
-        }
-
-        for (size_t child = 0; child < node->children.size(); ++child)
-            prune(node->children[child], child_required.at(child));
-    }
-
-    bool isAddedColumn(const String & name) const { return added_names.contains(name); }
-
-    /// Builds the main branch bottom-up from the pruned steps: splits the lazily read columns off the reads,
-    /// adds the row indexes, which the joins pass through, and brings each step's input in line with what its
-    /// child produces now.
-    QueryPlan assemble(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
-    {
-        if (const auto it = source_numbers.find(node); it != source_numbers.end())
-            return assembleSource(node, it->second, nodes);
+            child_required = step->getRequiredColumns(required).required_input_positions;
 
         std::vector<QueryPlanPtr> children;
-        for (auto * child : node->children)
-            children.emplace_back(std::make_unique<QueryPlan>(assemble(child, nodes)));
+        for (size_t child = 0; child < node->children.size(); ++child)
+            children.emplace_back(std::make_unique<QueryPlan>(assemble(node->children[child], child_required.at(child), nodes)));
 
-        auto * step = node->step.get();
-        if (auto * join = typeid_cast<JoinStepLogical *>(step))
-        {
-            /// Each side hands the join exactly the columns it reads, and then the ones this rebuild added below,
-            /// which the join passes through.
-            ColumnsWithTypeAndName passed_through[2];
-            for (size_t side = 0; side < 2; ++side)
-            {
-                auto & plan = *children[side];
-                const auto & header = *plan.getCurrentHeader();
-
-                Names names = join->getInputHeaders().at(side)->getNames();
-                for (const auto & column : header)
-                {
-                    if (!isAddedColumn(column.name))
-                        continue;
-                    names.push_back(column.name);
-                    passed_through[side].push_back(column);
-                }
-
-                if (header.getNames() != names)
-                {
-                    ActionsDAG projection(header.getColumnsWithTypeAndName());
-                    const auto inputs = projection.getInputs();
-                    auto & projection_outputs = projection.getOutputs();
-                    projection_outputs.clear();
-                    for (const auto & name : names)
-                        projection_outputs.push_back(inputs[header.getPositionByName(name)]);
-
-                    auto projection_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(projection));
-                    projection_step->setStepDescription("Discarding unused columns");
-                    plan.addStep(std::move(projection_step));
-                }
-            }
-
-            for (size_t side = 0; side < 2; ++side)
-                for (const auto & column : passed_through[side])
-                    join->addPassThroughColumn(column, side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
-
-            join->updateInputHeaders({children[0]->getCurrentHeader(), children[1]->getCurrentHeader()});
-        }
-        else if (typeid_cast<BuildRuntimeFilterStep *>(step))
+        if (typeid_cast<BuildRuntimeFilterStep *>(step))
         {
             step->updateInputHeader(children.front()->getCurrentHeader());
         }
         else
         {
-            /// A child that could not leave out everything the step no longer reads - a read keeps what its
-            /// PREWHERE needs - has its extra columns consumed here. The row indexes pass through.
-            const auto & header = *children.front()->getCurrentHeader();
-            const auto & expected = *step->getInputHeaders().front();
-            auto & dag = typeid_cast<ExpressionStep *>(step) ? typeid_cast<ExpressionStep &>(*step).getExpression()
-                                                             : typeid_cast<FilterStep &>(*step).getExpression();
-            for (const auto & column : header)
-                if (!expected.has(column.name) && !isAddedColumn(column.name))
-                    dag.addInput(column.name, column.type);
+            std::vector<IQueryPlanStep::PrunedInput> pruned;
+            for (size_t child = 0; child < children.size(); ++child)
+                pruned.push_back(prunedInputOf(*step->getInputHeaders()[child], *children[child]->getCurrentHeader()));
+            step->removeUnusedColumns(required, pruned);
 
-            step->updateInputHeader(children.front()->getCurrentHeader());
+            /// The columns this rebuild added below pass through: a join is told to, the other steps do by
+            /// themselves.
+            if (auto * join = typeid_cast<JoinStepLogical *>(step))
+            {
+                for (size_t side = 0; side < 2; ++side)
+                    for (const auto & column : *children[side]->getCurrentHeader())
+                        if (isAddedColumn(column.name))
+                            join->addPassThroughColumn(column, side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
+
+                join->updateInputHeaders({children[0]->getCurrentHeader(), children[1]->getCurrentHeader()});
+            }
+            else
+                step->updateInputHeader(children.front()->getCurrentHeader());
         }
 
         QueryPlan plan;
