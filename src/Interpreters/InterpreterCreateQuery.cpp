@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 
 #include <filesystem>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -994,12 +997,43 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(
-                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
+                std::optional<ProjectionDescription> projection;
+                try
+                {
+                    projection.emplace(
+                        ProjectionDescription::getProjectionFromAST(
+                            projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax));
+                }
+                catch (...)
+                {
+                    if (!is_restore_from_backup)
+                        throw;
+                    /// A backup can contain a projection preserved as unavailable on the source.
+                    /// Its output types are unknown until analysis succeeds, but a fresh RESTORE
+                    /// must still enforce codec settings before retaining the raw declaration.
+                    if (validate_projection_codecs)
+                    {
+                        const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
+                        if (declaration.columns)
+                            for (const auto & child : declaration.columns->children)
+                                if (const auto * column = child->as<const ASTColumnDeclaration>(); column && column->getCodec())
+                                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                                        column->getCodec(), {}, CodecValidationSettings(getContext()->getSettingsRef()));
+                    }
+                    /// Keep the declaration so it can be analyzed after the missing setting or
+                    /// dependency is restored. Type-sensitive validation runs at that point.
+                    properties.projections.addUnavailable(projection_ast->clone());
+                    tryLogCurrentException(
+                        __PRETTY_FUNCTION__,
+                        fmt::format(
+                            "Cannot analyze projection {} during RESTORE; preserving its declaration",
+                            projection_ast->formatForErrorMessage()));
+                    continue;
+                }
                 if (validate_projection_codecs)
                     ProjectionDescription::validateDeclaredColumnCodecs(
-                        projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
-                properties.projections.add(std::move(projection));
+                        *projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
+                properties.projections.add(std::move(*projection));
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
@@ -1890,37 +1924,37 @@ void checkProjectionColumnListReplicationCompatibility(
     else if (!create.columns_list && !create.as_table.empty() && !create.isView() && !create.is_dictionary
         && (!create.storage || !create.storage->engine || endsWith(create.storage->engine->name, "MergeTree")))
     {
-        /// Old ON CLUSTER formats expand AS source_table on the worker. Inspect the source's projections
-        /// now, while the initiator still has the setting that governs the copied definition.
+        /// Old ON CLUSTER formats expand AS source_table on each worker. The source need not exist
+        /// or be visible to this initiator, so only preflight it when it is available here; a
+        /// mandatory lookup would reject DDL that the workers could execute.
         const String source_database = context->resolveDatabase(create.as_database);
-        context->checkAccess(AccessType::SHOW_COLUMNS, source_database, create.as_table);
-        const auto source = DatabaseCatalog::instance().getTable({source_database, create.as_table}, context);
-        if (const auto * alias = source->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
-                StorageID{source_database, create.as_table}.getNameForLogs());
-
-        /// Without an explicit engine, the destination inherits the source's engine. Only a
-        /// MergeTree destination copies projections in getTablePropertiesAndNormalizeCreateQuery().
-        if ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree"))
+        if (context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_database, create.as_table))
         {
-            const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
-            has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
-            auto inspect_projection = [&](const ASTPtr & definition)
+            const auto source = DatabaseCatalog::instance().tryGetTable({source_database, create.as_table}, context);
+            const auto * alias = source ? source->as<StorageAlias>() : nullptr;
+            if (source && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
+                && ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree")))
             {
-                if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
-                    declaration && declaration->columns)
+                /// Without an explicit engine, the destination inherits the source's engine.
+                /// Only a MergeTree destination copies projections.
+                const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
+                has_unavailable_source_projection = source_metadata->getProjections().hasUnavailable();
+                auto inspect_projection = [&](const ASTPtr & definition)
                 {
-                    has_projection_column_list = true;
-                    has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
-                }
-            };
+                    if (const auto * declaration = definition ? definition->as<const ASTProjectionDeclaration>() : nullptr;
+                        declaration && declaration->columns)
+                    {
+                        has_projection_column_list = true;
+                        has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
+                    }
+                };
 
-            for (const auto & projection : source_metadata->getProjections())
-                inspect_projection(projection.definition_ast);
-            /// `ProjectionsDescription::clone` copies unavailable declarations too.
-            for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
-                inspect_projection(definition);
+                for (const auto & projection : source_metadata->getProjections())
+                    inspect_projection(projection.definition_ast);
+                /// `ProjectionsDescription::clone` copies unavailable declarations too.
+                for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
+                    inspect_projection(definition);
+            }
         }
     }
     /// `CREATE AS` has already normalized its query at this call site. Unavailable source declarations
@@ -2601,7 +2635,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto metadata_handle = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/true);
         auto metadata = *metadata_handle;
         for (const auto & definition : unavailable)
+        {
+            const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
+            if (metadata.projections.has(name)
+                || std::ranges::any_of(
+                    metadata.projections.getUnavailableDefinitions(),
+                    [&](const auto & existing) { return existing->template as<const ASTProjectionDeclaration &>().name == name; }))
+                continue;
             metadata.projections.addUnavailable(definition->clone());
+        }
         metadata.projections.preserveDeclarationOrder(properties.projections);
         storage->setInMemoryMetadata(metadata);
         /// `validateStorage` may have cached the pre-copy metadata in this query.

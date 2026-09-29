@@ -24,7 +24,13 @@ POSITIONAL_XML = "/etc/clickhouse-server/users.d/positional.xml"
 POSITIONAL = {"enable_positional_arguments_for_projections": 1}
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True, with_zookeeper=True)
+node = cluster.add_instance(
+    "node",
+    stay_alive=True,
+    with_zookeeper=True,
+    main_configs=["configs/backups_disk.xml"],
+    external_dirs=["/backups/"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -581,6 +587,60 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
+    # These declarations are unavailable because the dictionary is missing. ALTER must still
+    # protect the physical projection layout and the settings needed when they become available.
+    for table, setting in (
+        ("t37", "allow_part_offset_column_in_projections"),
+        ("t38", "allow_commit_order_projection"),
+        ("t38", "enable_block_number_column"),
+        ("t38", "enable_block_offset_column"),
+    ):
+        error = node.query_and_get_error(
+            f"ALTER TABLE dl.{table} MODIFY SETTING {setting} = 0"
+        )
+        assert setting in error and "unavailable projection" in error, error
+
+    error = node.query_and_get_error(
+        "ALTER TABLE dl.t38 RESET SETTING allow_commit_order_projection"
+    )
+    assert (
+        "allow_commit_order_projection" in error
+        and "unavailable projection" in error
+    ), error
+
+    for column in ("_part_offset", "_part_index", "_parent_part_offset"):
+        error = node.query_and_get_error(
+            f"ALTER TABLE dl.t37 ADD COLUMN {column} UInt64"
+        )
+        assert column in error and "unavailable projection" in error, error
+
+    error = node.query_and_get_error(
+        "ALTER TABLE dl.t39 MODIFY SETTING index_granularity_bytes = 0"
+    )
+    assert "adaptive granularity" in error and "unavailable projection" in error, error
+
+    backup = f"unavailable_projection_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE dl.t37 TO Disk('backups', '{backup}')")
+    node.query(
+        f"RESTORE TABLE dl.t37 AS dl.t37_restored FROM Disk('backups', '{backup}')"
+    )
+    assert projections("t37_restored") == "0"
+    assert declarations_on_disk("t37_restored") == 1
+
+    codec_backup = f"unavailable_projection_codec_{uuid.uuid4().hex}"
+    node.query(f"BACKUP TABLE dl.t6 TO Disk('backups', '{codec_backup}')")
+    error = node.query_and_get_error(
+        f"RESTORE TABLE dl.t6 AS dl.t6_restored FROM Disk('backups', '{codec_backup}')"
+    )
+    assert "suspicious" in error.lower(), error
+    assert node.query("EXISTS TABLE dl.t6_restored").strip() == "0"
+    node.query(
+        f"RESTORE TABLE dl.t6 AS dl.t6_restored FROM Disk('backups', '{codec_backup}')",
+        settings={"allow_suspicious_codecs": 1},
+    )
+    assert projections("t6_restored") == "0"
+    assert declarations_on_disk("t6_restored") == 1
+
     # `CREATE TABLE ... AS` copies unavailable projection declarations too. Reject them before
     # publishing the copied column list to replicated metadata or a format-1 DDL queue.
     error = node.query_and_get_error(
@@ -1022,6 +1082,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t") == "1"
     assert active_projection_parts("t") == "1"
     assert projections("t6") == "1"
+    assert projections("t6_restored") == "1"
     assert projections("t7") == "1"
     assert projections("t8") == "1"
     assert projections("t9") == "3"
@@ -1056,6 +1117,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t36") == "1"
     for table in (
         "t37",
+        "t37_restored",
         "t38",
         "t39",
         "t37_allowed_copy",

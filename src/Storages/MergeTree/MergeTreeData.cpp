@@ -60,52 +60,52 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Planner/TableExpressionData.h>
-#include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/QueryMetadataCache.h>
-#include <Functions/FunctionFactory.h>
-#include <Planner/CollectSets.h>
-#include <Planner/CollectTableExpressionData.h>
-#include <Planner/Planner.h>
-#include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/TableExpressionData.h>
+#include <Planner/Utils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
@@ -116,8 +116,6 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
-#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -128,26 +126,29 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <base/sleep.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
-#include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -158,13 +159,13 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -1502,6 +1503,104 @@ void MergeTreeData::checkProperties(
                 "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
                 "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
                 projection.name);
+    }
+
+    /// An unavailable declaration has no ProjectionDescription flags. Inspect its stored SELECT
+    /// outputs and settings before an ALTER disables a gate or adds a column that would change
+    /// the meaning of a virtual output when the declaration can be analyzed again. Do not reject
+    /// an unrelated ALTER merely because an existing, unavailable declaration was loaded with a
+    /// disabled gate.
+    if (!attach)
+    {
+        const auto newly_added_column
+            = [&](const String & name) { return !old_metadata.columns.has(name) && new_metadata.columns.has(name); };
+
+        for (const auto & definition : unavailable_projections)
+        {
+            const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
+            bool with_parent_part_offset = false;
+            bool with_block_number = false;
+            bool with_block_offset = false;
+            /// Projection indexes synthesize these outputs, so their raw declarations have no
+            /// SELECT list to inspect while they are unavailable.
+            if (declaration.index && declaration.type)
+            {
+                with_parent_part_offset = declaration.type->name == "basic";
+                with_block_number = declaration.type->name == "commit_order";
+                with_block_offset = with_block_number;
+            }
+            if (const auto * query = declaration.query ? declaration.query->as<const ASTProjectionSelectQuery>() : nullptr;
+                query && query->select())
+            {
+                for (const auto & output : query->select()->children)
+                {
+                    const String name = output->getAliasOrColumnName();
+                    with_parent_part_offset |= name == "_part_offset" || name.ends_with("._part_offset");
+                    with_block_number |= name == "_block_number" || name.ends_with("._block_number");
+                    with_block_offset |= name == "_block_offset" || name.ends_with("._block_offset");
+                }
+            }
+
+            with_parent_part_offset &= !old_metadata.columns.has("_part_index") && !old_metadata.columns.has("_part_offset")
+                && !old_metadata.columns.has("_parent_part_offset");
+
+            const auto gate_turned_off = [&](const auto & setting) { return !effective_settings[setting] && live_settings[setting]; };
+
+            if (with_parent_part_offset)
+            {
+                if (gate_turned_off(MergeTreeSetting::allow_part_offset_column_in_projections))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot disable allow_part_offset_column_in_projections while unavailable projection {} uses `_part_offset`",
+                        declaration.name);
+
+                if (newly_added_column("_part_offset") || newly_added_column("_part_index") || newly_added_column("_parent_part_offset"))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot add `_part_offset`, `_part_index`, or `_parent_part_offset` while unavailable projection {} "
+                        "stores the parent `_part_offset`",
+                        declaration.name);
+            }
+
+            if (with_block_number)
+            {
+                if (gate_turned_off(MergeTreeSetting::allow_commit_order_projection)
+                    || gate_turned_off(MergeTreeSetting::enable_block_number_column))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot disable allow_commit_order_projection or enable_block_number_column while unavailable projection {} "
+                        "uses `_block_number`",
+                        declaration.name);
+            }
+
+            if (with_block_offset)
+            {
+                if (gate_turned_off(MergeTreeSetting::allow_commit_order_projection)
+                    || gate_turned_off(MergeTreeSetting::enable_block_offset_column))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot disable allow_commit_order_projection or enable_block_offset_column while unavailable projection {} "
+                        "uses `_block_offset`",
+                        declaration.name);
+            }
+
+            bool has_granularity_override = false;
+            if (declaration.with_settings)
+                for (const auto & change : declaration.with_settings->changes)
+                    has_granularity_override |= change.name == "index_granularity" || change.name == "index_granularity_bytes";
+
+            const auto can_use_adaptive_granularity = [&](const MergeTreeSettings & settings)
+            {
+                return settings[MergeTreeSetting::index_granularity_bytes] != 0
+                    && (settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
+            };
+            if (has_granularity_override && can_use_adaptive_granularity(live_settings)
+                && !can_use_adaptive_granularity(effective_settings))
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot disable adaptive granularity while unavailable projection {} has index_granularity-related overrides",
+                    declaration.name);
+        }
     }
 
     const auto validate_complex_projection = [&](const std::string & projection_name, const std::vector<std::string> & forbid_columns)

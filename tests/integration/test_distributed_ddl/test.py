@@ -73,6 +73,31 @@ def test_default_database(test_cluster):
     )
 
 
+def test_legacy_create_as_source_only_on_worker(test_cluster):
+    initiator = test_cluster.instances["ch1"]
+    worker = test_cluster.instances["ch2"]
+    worker.query("DROP TABLE IF EXISTS default.legacy_worker_source SYNC")
+    worker.query("DROP TABLE IF EXISTS default.legacy_worker_copy SYNC")
+    worker.query(
+        "CREATE TABLE default.legacy_worker_source (a UInt64) "
+        "ENGINE = MergeTree ORDER BY a"
+    )
+    try:
+        assert initiator.query(
+            "EXISTS TABLE default.legacy_worker_source"
+        ).strip() == "0"
+        initiator.query(
+            "CREATE TABLE default.legacy_worker_copy ON CLUSTER worker_only "
+            "AS default.legacy_worker_source ENGINE = MergeTree ORDER BY a",
+            settings={"distributed_ddl_entry_format_version": 1},
+        )
+        assert worker.query("SHOW CREATE TABLE default.legacy_worker_copy")
+        assert initiator.query("EXISTS TABLE default.legacy_worker_copy").strip() == "0"
+    finally:
+        worker.query("DROP TABLE IF EXISTS default.legacy_worker_copy SYNC")
+        worker.query("DROP TABLE IF EXISTS default.legacy_worker_source SYNC")
+
+
 def test_create_view(test_cluster):
     instance = test_cluster.instances["ch3"]
     test_cluster.ddl_check_query(
