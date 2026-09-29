@@ -126,6 +126,10 @@ that [`allow_feature_tier`](/reference/settings/server-settings/settings/allow#a
 The `readonly` setting does not restrict `compatibility` in this way: it decides whether a query may set
 `compatibility` at all.
 
+`MergeTree` settings follow only the `compatibility` of the default profile, which gives the server-wide
+defaults of every table. There, a setting likewise keeps its current value when a `merge_tree_`-prefixed
+constraint of the default profile or `allow_feature_tier` refuses the previous default.
+
 ## Read-only mode {#read-only}
 
 Read-only mode is enabled by the `readonly` setting, which is not to be confused with the `readonly`

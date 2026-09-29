@@ -1905,3 +1905,16 @@ def test_compatibility_skips_settings_of_a_disabled_tier(start_cluster):
             assert instance.query(query, user=users[0]) == "0\t0\n"
 
         assert instance.query(query, user=users[0]) == "1\t0\n"
+
+
+def test_compatibility_skips_merge_tree_settings_refused_by_default_profile(start_cluster):
+    # `compatibility` 24.10 in the default profile gives both settings their old defaults, except where a
+    # constraint of the default profile refuses the old value: that setting keeps its current default.
+    assert (
+        instance_with_merge_tree_constraint.query(
+            "SELECT name, value = default FROM system.merge_tree_settings "
+            "WHERE name IN ('replicated_deduplication_window', 'replicated_deduplication_window_seconds') "
+            "ORDER BY name"
+        )
+        == "replicated_deduplication_window\t1\nreplicated_deduplication_window_seconds\t0\n"
+    )

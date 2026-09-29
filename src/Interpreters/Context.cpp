@@ -495,18 +495,18 @@ namespace
 {
 constexpr std::string_view COMPATIBILITY_SETTING_NAME = "compatibility";
 
-/// The `MergeTree` settings `compatibility` gives, except those of a tier `allow_feature_tier` disables.
-MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibility, const AccessControl & access_control)
+/// The `MergeTree` settings `compatibility` gives, except those `constraints` refuse, as for `Settings`.
+MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibility, const SettingsConstraints & constraints)
 {
     MergeTreeSettings from_compatibility;
     from_compatibility.applyCompatibilitySetting(compatibility);
-    if (!isAnyFeatureTierRestricted(access_control))
+    if (!constraints.restrictsCompatibility())
         return from_compatibility;
 
     MergeTreeSettings result;
     for (const auto & change : from_compatibility.changes())
     {
-        if (!getFeatureTierRestriction(access_control, change.name, result.getTier(change.name)))
+        if (constraints.allowsValueFromCompatibility(settingFullName<MergeTreeSettings>(change.name), change.value))
             result.set(change.name, change.value);
     }
     return result;
@@ -7798,6 +7798,8 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
 const MergeTreeSettings & Context::getMergeTreeSettings() const
 {
+    /// Before `shared->mutex`: elsewhere it is locked while the context mutex is held.
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfiles();
     std::lock_guard lock(shared->mutex);
 
     if (!shared->merge_tree_settings)
@@ -7805,7 +7807,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
         const auto & config = shared->getConfigRefWithLock(lock);
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], *shared->access_control);
+        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], constraints_and_profiles->constraints);
 
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
@@ -7816,6 +7818,8 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
 const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 {
+    /// Before `shared->mutex`: elsewhere it is locked while the context mutex is held.
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfiles();
     std::lock_guard lock(shared->mutex);
 
     if (!shared->replicated_merge_tree_settings)
@@ -7823,7 +7827,7 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
         const auto & config = shared->getConfigRefWithLock(lock);
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], *shared->access_control);
+        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], constraints_and_profiles->constraints);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
