@@ -41,8 +41,9 @@ private:
     /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
     /// when the buffer has nothing for the part). Returns nullopt if there is no more work.
     /// Outputs the warmup task size as it was before the cut, so that the caller can restore it
-    /// when the whole cut is dropped by the ranges refiner.
-    std::optional<MarkRanges> cutRangesToRead(size_t task_idx, MergeTreeReadTask * previous_task, size_t & marks_in_range_before_cut);
+    /// when the whole cut is dropped by the ranges refiner, and the request map of the task.
+    std::optional<MarkRanges> cutRangesToRead(
+        size_t task_idx, MergeTreeReadTask * previous_task, size_t & marks_in_range_before_cut, MarkRangesPtr & read_request_map);
 
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
@@ -68,6 +69,9 @@ private:
 
     mutable std::mutex mutex;
     std::vector<size_t> per_part_marks_in_range;
+    /// The ranges assigned to this replica for each part and not yet cut, as they were at the first cut after
+    /// the last assignment. Null until then.
+    std::vector<MarkRangesPtr> per_part_read_request_maps;
 };
 
 };

@@ -102,18 +102,22 @@ protected:
         std::vector<MarkRanges> patches_ranges,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
+    /// `read_request_map` is set when only a part of `read_info->read_request_map` goes to this reader, as the ranges the
+    /// coordinator of parallel replicas assigns to this replica. A reader reused for the task takes it.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        const MarkRangesPtr & read_request_map = nullptr) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        const MarkRangesPtr & read_request_map = nullptr) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 

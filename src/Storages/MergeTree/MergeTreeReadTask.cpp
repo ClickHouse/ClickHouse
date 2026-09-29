@@ -114,6 +114,14 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::updateRequestMap(const MarkRangesPtr & request_map)
+{
+    main->updateRequestMap(request_map);
+
+    for (auto & reader : prewhere)
+        reader->updateRequestMap(request_map);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -229,12 +237,19 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    const MarkRangesPtr & read_request_map)
 {
     Readers new_readers;
 
-    auto reader_settings = extras.reader_settings;
-    reader_settings.request_map = read_info->request_map;
+    /// The settings are copied only to carry a map, and there is one only with the reader executor.
+    std::optional<MergeTreeReaderSettings> settings_with_map;
+    if (const auto & map = read_request_map ? read_request_map : read_info->read_request_map)
+    {
+        settings_with_map = extras.reader_settings;
+        settings_with_map->request_map = map;
+    }
+    const auto & reader_settings = settings_with_map ? *settings_with_map : extras.reader_settings;
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
@@ -285,9 +300,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_patch_reader = [&](size_t part_idx)
     {
-        auto patch_reader_settings = extras.reader_settings;
-        if (!read_info->patch_request_maps.empty())
-            patch_reader_settings.request_map = read_info->patch_request_maps[part_idx];
+        std::optional<MergeTreeReaderSettings> patch_settings_with_map;
+        if (!read_info->patch_read_request_maps.empty())
+        {
+            patch_settings_with_map = extras.reader_settings;
+            patch_settings_with_map->request_map = read_info->patch_read_request_maps[part_idx];
+        }
 
         return createMergeTreeReader(
             read_info->patch_parts[part_idx].part,
@@ -299,7 +317,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
-            patch_reader_settings,
+            patch_settings_with_map ? *patch_settings_with_map : extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };

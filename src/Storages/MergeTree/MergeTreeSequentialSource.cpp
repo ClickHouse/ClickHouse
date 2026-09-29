@@ -155,12 +155,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
         patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
         patch_join_cache->init(ranges_in_patch_parts);
-
-        /// This source reads all its ranges with one set of readers, so its patch ranges are the maps of the patch readers.
-        auto info = std::make_shared<MergeTreeReadTaskInfo>(*read_task_info);
-        for (const auto & ranges : patch_ranges)
-            info->patch_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
-        read_task_info = std::move(info);
     }
 
     const auto & context = storage.getContext();
@@ -189,6 +183,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             addThrottler(read_settings.remote_throttler, context->getMergesThrottler());
             addThrottler(read_settings.local_throttler, context->getMergesThrottler());
             break;
+    }
+
+    if (read_settings.reader_executor.enabled)
+    {
+        /// This source reads all its ranges with one set of readers, so the ranges are the maps of its readers.
+        auto info = std::make_shared<MergeTreeReadTaskInfo>(*read_task_info);
+        info->read_request_map = std::make_shared<const MarkRanges>(mark_ranges);
+        for (const auto & ranges : patch_ranges)
+            info->patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
+        read_task_info = std::move(info);
     }
 
     MergeTreeReadTask::Extras extras =
@@ -349,8 +353,6 @@ Pipe createMergeTreeSequentialSource(
     info->merged_part_offsets = std::move(merged_part_offsets);
     info->part_index_in_query = data_part.part_index_in_query;
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
-    if (mark_ranges)
-        info->request_map = std::make_shared<const MarkRanges>(*mark_ranges);
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
     /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value

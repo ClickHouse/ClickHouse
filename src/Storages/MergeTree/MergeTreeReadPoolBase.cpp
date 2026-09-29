@@ -217,7 +217,9 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
-    read_task_info.request_map = std::make_shared<const MarkRanges>(part_with_ranges.ranges);
+    /// Only the reader executor uses the map, so without it there is none, and no reader copies or converts one.
+    if (reader_settings.read_settings.reader_executor.enabled)
+        read_task_info.read_request_map = std::make_shared<const MarkRanges>(part_with_ranges.ranges);
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, mutations_snapshot, getContext()
 #if CLICKHOUSE_CLOUD
         , getContext()->getAccess()->getEnabledMaskingPolicies()
@@ -363,10 +365,10 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     for (size_t i = 0; i < infos.size(); ++i)
     {
         auto & info = *infos[i];
-        if (info.patch_parts.empty())
+        if (info.patch_parts.empty() || !info.read_request_map)
             continue;
         for (auto & ranges : ranges_in_patch_parts.getRanges(parts_ranges[i].data_part, info.patch_parts, parts_ranges[i].ranges))
-            info.patch_request_maps.push_back(std::make_shared<const MarkRanges>(std::move(ranges)));
+            info.patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(std::move(ranges)));
     }
 
     per_part_infos.assign(infos.begin(), infos.end());
@@ -424,7 +426,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MarkRanges ranges,
     std::vector<MarkRanges> patches_ranges,
     MergeTreeReadTask * previous_task,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    const MarkRangesPtr & read_request_map) const
 {
     auto get_part_name = [](const auto & task_info) -> String
     {
@@ -453,17 +456,19 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
     if (!previous_task)
     {
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, read_request_map);
     }
     else if (get_part_name(previous_task->getInfo()) != get_part_name(*read_info))
     {
         extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, read_request_map);
     }
     else
     {
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges, patches_ranges);
+        if (read_request_map)
+            task_readers.updateRequestMap(read_request_map);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
@@ -473,11 +478,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MarkRanges ranges,
     MergeTreeReadTask * previous_task,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    const MarkRangesPtr & read_request_map) const
 {
     /// Patches are coordinator-only; the concrete part is present whenever patch_parts is non-empty.
     auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part_info->getDataPart(), read_info->patch_parts, ranges);
-    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater);
+    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater, read_request_map);
 }
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const

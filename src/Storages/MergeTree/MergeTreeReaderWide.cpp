@@ -78,6 +78,14 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
+void MergeTreeReaderWide::updateRequestMap(MarkRangesPtr request_map)
+{
+    IMergeTreeReader::updateRequestMap(request_map);
+    /// Announcing the map can load marks, which never happens under the `FileStreams` mutex.
+    for (auto * stream : streams.getAll())
+        stream->updateRequestMap(request_map);
+}
+
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     streams.clearPrefetched();
@@ -312,6 +320,16 @@ void MergeTreeReaderWide::FileStreams::release(const String & stream_name)
         }
     }
     /// Dropped outside the mutex: `~MergeTreeMarksLoader` waits for an in-flight marks load.
+}
+
+std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() const
+{
+    std::vector<MergeTreeReaderStream *> result;
+    std::lock_guard lock(mutex);
+    result.reserve(streams.size());
+    for (const auto & [_, stream] : streams)
+        result.push_back(stream.get());
+    return result;
 }
 
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const

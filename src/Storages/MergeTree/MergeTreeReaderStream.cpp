@@ -153,14 +153,23 @@ void MergeTreeReaderStream::init()
     initialized = true;
 }
 
+void MergeTreeReaderStream::updateRequestMap(MarkRangesPtr request_map_)
+{
+    if (request_map_ == request_map)
+        return;
+
+    request_map = std::move(request_map_);
+    if (initialized)
+        announceRequestMap();
+}
+
 void MergeTreeReaderStream::announceRequestMap()
 {
-    /// Only the reader executor uses the map, so the other read paths skip the conversion.
-    if (!settings.request_map || !settings.read_settings.reader_executor.enabled)
+    if (!request_map)
         return;
 
     ByteRangeSet file_ranges;
-    for (const auto & range : *settings.request_map)
+    for (const auto & range : *request_map)
     {
         const auto left = getLeftOffset(range.begin);
         if (!left)

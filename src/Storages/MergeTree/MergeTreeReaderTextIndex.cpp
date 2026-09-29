@@ -214,6 +214,13 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     }
 }
 
+void MergeTreeReaderTextIndex::updateRequestMap(MarkRangesPtr request_map)
+{
+    IMergeTreeReader::updateRequestMap(request_map);
+    if (fallback_reader)
+        fallback_reader->updateRequestMap(std::move(request_map));
+}
+
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);
