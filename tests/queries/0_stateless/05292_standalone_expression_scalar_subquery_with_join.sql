@@ -1,9 +1,10 @@
 -- Tags: zookeeper, no-replicated-database
 --       no-replicated-database: `DETACH DATABASE` / `ATTACH DATABASE`.
 
--- A scalar subquery with a JOIN in a TTL expression or in a CHECK constraint is executed when the table is
--- created, and again when the table is loaded, here by re-attaching the database. The tables are named with
--- their database, because a TTL expression is not analysed in the current database of the statement.
+-- A scalar subquery with a JOIN in a TTL expression, in a CHECK constraint, in the arguments of a table function
+-- and in the arguments of `cluster` in a view is executed when the table is created, and again when the table is
+-- loaded, here by re-attaching the database. The tables are named with their database, because a TTL expression
+-- is not analysed in the current database of the statement.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
@@ -36,6 +37,20 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_check_nested
 )
 ENGINE = MergeTree ORDER BY tuple();
 
+-- The arguments of a table function are evaluated with the global context.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_numbers AS numbers(assumeNotNull(
+    (SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe AS p, {CLICKHOUSE_DATABASE_1:Identifier}.t_build AS b WHERE p.k = b.k)));
+
+-- The dependencies of a view are found by evaluating the arguments of `cluster` with the global context.
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE t_dep (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE VIEW v_cluster (k UInt64) AS SELECT k FROM cluster(
+    (SELECT if(count() > 0, 'test_shard_localhost', '') FROM t_probe AS p, t_build AS b WHERE p.k = b.k), currentDatabase(), 't_dep');
+USE {CLICKHOUSE_DATABASE:Identifier};
+SET check_referential_table_dependencies = 1;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_dep; -- { serverError HAVE_DEPENDENT_OBJECTS }
+SET check_referential_table_dependencies = 0;
+
 -- A replicated table analyses its new TTL once more, when the replica applies the ALTER.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_replicated (d DateTime, x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_ttl_replicated', 'r1') ORDER BY tuple();
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_replicated
@@ -60,6 +75,7 @@ SELECT 't_ttl_where', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_wher
 SELECT 't_check', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_check;
 SELECT 't_check_nested', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_check_nested;
 SELECT 't_ttl_replicated', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_replicated;
+SELECT 't_numbers', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_numbers;
 
 -- When the table was created, the subquery of the TTL built a join runtime filter and the index analysis of its read used it.
 SYSTEM FLUSH LOGS query_log;

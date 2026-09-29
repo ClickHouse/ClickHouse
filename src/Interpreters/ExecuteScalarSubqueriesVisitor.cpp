@@ -23,10 +23,8 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/QueryScope.h>
 #include <Common/config_version.h>
 
 #include <array>
@@ -103,22 +101,8 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
         visit(*t, ast, data);
 }
 
-namespace
+static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
 {
-
-/// Threads reference their query context only weakly; the members are destroyed in reverse order, the interpreter first.
-struct ScalarSubqueryInterpreter
-{
-    ContextMutablePtr query_context;
-    QueryScope query_scope;
-    std::unique_ptr<InterpreterSelectQueryAnalyzer> interpreter;
-};
-
-}
-
-static std::unique_ptr<ScalarSubqueryInterpreter> getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
-{
-    auto result = std::make_unique<ScalarSubqueryInterpreter>();
     auto subquery_context = Context::createCopy(data.getContext());
     Settings subquery_settings = data.getContext()->getSettingsCopy();
     subquery_settings[Setting::max_result_rows] = 1;
@@ -170,26 +154,8 @@ static std::unique_ptr<ScalarSubqueryInterpreter> getQueryInterpreter(const ASTS
     /// `collectMaterializedCTEs` returns nothing for subquery options unless materialization is forced.
     options.forceMaterializeCTE();
 
-    /// A thread with no query (e.g. loading tables) is attached before the constructor, which already executes nested scalar subqueries.
-    if (!CurrentThread::getGroup())
-    {
-        if (subquery_context->hasQueryContext())
-            result->query_context = subquery_context->getQueryContext();
-        else
-        {
-            result->query_context = Context::createCopy(subquery_context);
-            result->query_context->makeQueryContext();
-        }
-        result->query_scope = QueryScope::create(result->query_context);
-    }
-
-    /// The read step takes the runtime filter lookup from its context, the build side and `__applyFilter` from the thread's query context.
-    if (auto thread_query_context = CurrentThread::tryGetQueryContext())
-        subquery_context->setRuntimeFilterLookup(thread_query_context->getRuntimeFilterLookup());
-
-    result->interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(
+    return std::make_unique<InterpreterSelectQueryAnalyzer>(
         subquery_select, subquery_context, options, subquery_context->getViewSource());
-    return result;
 }
 
 static bool subqueryUsesViewSource(const InterpreterSelectQueryAnalyzer & interpreter, const ContextPtr & context)
@@ -208,7 +174,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
-    std::unique_ptr<ScalarSubqueryInterpreter> subquery_interpreter;
+    std::unique_ptr<InterpreterSelectQueryAnalyzer> interpreter;
     bool hit = false;
     bool is_local = false;
 
@@ -247,8 +213,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 /// the original table and not the view, so in order to be able to check the global cache we need to first
                 /// make sure that the query doesn't use the view
                 /// Note in any case the scalar will end up cached in *data* so this won't be repeated inside this context
-                subquery_interpreter = getQueryInterpreter(subquery, data);
-                if (!subqueryUsesViewSource(*subquery_interpreter->interpreter, data.getContext()))
+                interpreter = getQueryInterpreter(subquery, data);
+                if (!subqueryUsesViewSource(*interpreter, data.getContext()))
                 {
                     scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
                     ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
@@ -260,9 +226,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
     if (!hit)
     {
-        if (!subquery_interpreter)
-            subquery_interpreter = getQueryInterpreter(subquery, data);
-        auto * interpreter = subquery_interpreter->interpreter.get();
+        if (!interpreter)
+            interpreter = getQueryInterpreter(subquery, data);
 
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
         is_local = subqueryUsesViewSource(*interpreter, data.getContext());
