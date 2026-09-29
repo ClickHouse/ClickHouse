@@ -48,24 +48,32 @@ OK
 99998	2
 99997	3
 OK
--- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs while the reader's
--- comparison does not, and Parquet min/max statistics legally omit 'nan', so neither the
--- per-row filter nor the row-group shortcut may be armed for them (see issue #116705)
+-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs, and Parquet min/max
+-- statistics legally omit 'nan', so the per-row filter is armed and must order 'nan' the same
+-- way, while the row-group shortcut must stay off (see issue #116705)
 nan
 100
 OK
+filter armed
 nan
 100
 OK
+filter armed
 nan
 65635
 OK
+filter armed
 100
 101
 OK
+filter armed
 65635
 65634
 OK
+filter armed
+filter not armed
+[[100], [101]] all of f3 skipped: True
+[[100], [101]] all of f3 skipped: False
 -- a statistic that cannot be decoded (here a negative Int64 read as UInt64) leaves the bound
 -- at the Range infinity sentinel, which is a Null Field and would be compared as a SQL NULL;
 -- an unbounded side can never prove exclusion, so the row group must not be skipped

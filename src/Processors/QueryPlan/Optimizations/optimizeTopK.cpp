@@ -68,17 +68,6 @@ static size_t tryTopKForFormatSource(
         || (sort_column_is_variable_length && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
         return 0;
 
-    /// `ORDER BY` sorts `nan` together with `NULL` (see `SortColumnDescription::nulls_direction`),
-    /// but the comparison functions behind `__topKFilter` do not: a `nan` can become the published
-    /// threshold and then reject every finite value, or be dropped under `NULLS FIRST`. That is a
-    /// pre-existing defect of the `MergeTree` path, tracked in
-    /// https://github.com/ClickHouse/ClickHouse/issues/116705. Formats add a second, independent
-    /// hazard: `nan` values are legally absent from Parquet min/max statistics, so a finite range
-    /// cannot prove that a row group holds no `nan` row that must sort first. Keep floating-point
-    /// sort keys off this path until both are `nan`-aware.
-    if (hasTypeThatCanContainFloat(sort_column.type))
-        return 0;
-
     /// The resolved sort column must be one of the source's outputs with an unchanged type: the
     /// source compares its own column against thresholds the sorting transforms above produce
     /// from that very column.

@@ -147,9 +147,9 @@ for query in "${default_queries[@]}"; do
         && echo "OK"
 done
 
-echo "-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs while the reader's"
-echo "-- comparison does not, and Parquet min/max statistics legally omit 'nan', so neither the"
-echo "-- per-row filter nor the row-group shortcut may be armed for them (see issue #116705)"
+echo "-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs, and Parquet min/max"
+echo "-- statistics legally omit 'nan', so the per-row filter is armed and must order 'nan' the same"
+echo "-- way, while the row-group shortcut must stay off (see issue #116705)"
 "${LOCAL[@]}" --query "
     INSERT INTO FUNCTION file('${DIR}/f1.parquet', Parquet)
     SELECT toFloat64(100 + number) AS f FROM numbers(65536)
@@ -170,13 +170,36 @@ float_queries=(
     "SELECT f FROM file('${DIR}/f{2,1}.parquet', Parquet) ORDER BY f LIMIT 2"
     "SELECT f FROM file('${DIR}/f{2,1}.parquet', Parquet) ORDER BY f DESC LIMIT 2"
 )
+# With no WHERE, the per-row filter is the only filter step the reader runs, so the rows passed
+# through a filter step show whether it was armed at all.
+filter_armed() {
+    "${LOCAL[@]}" "$@" --print-profile-events --format Null 2>&1 \
+        | awk '/ParquetRowsFilterExpression:/ { rows += $(NF-1) } END { print (rows > 0 ? "filter armed" : "filter not armed") }'
+}
 for query in "${float_queries[@]}"; do
     "${LOCAL[@]}" "${ON[@]}" --query "${query}"
     diff \
         <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
         <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
         && echo "OK"
+    filter_armed "${ON[@]}" --query "${query}"
 done
+filter_armed "${OFF[@]}" --query "${float_queries[0]}"
+# Once f1 sets the threshold no row of f3 can enter the top 2, and a float column gets no
+# statistics shortcut, so only the per-row filter can skip f3.
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/f3.parquet', Parquet)
+    SELECT toFloat64(1000000 + number) AS f FROM numbers(65536)
+    SETTINGS output_format_parquet_row_group_size = 65536, engine_file_truncate_on_insert = 1;
+"
+f3_skipped() {
+    "${LOCAL[@]}" "$@" --format JSON --query "SELECT f FROM file('${DIR}/f{1,3}.parquet', Parquet) ORDER BY f LIMIT 2" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print([list(r.values()) for r in d['data']], 'all of f3 skipped:', d['statistics']['rows_read'] <= 65536)"
+}
+f3_skipped "${ON[@]}"
+f3_skipped "${OFF[@]}"
 
 echo "-- a statistic that cannot be decoded (here a negative Int64 read as UInt64) leaves the bound"
 echo "-- at the Range infinity sentinel, which is a Null Field and would be compared as a SQL NULL;"
