@@ -70,16 +70,21 @@ SYSTEM FLUSH LOGS query_log;
 
 -- `both_collected_statistics` is what keeps this honest: without it two zeroes would compare equal and the
 -- test would pass while measuring nothing.
+-- One row per `log_comment`, the newest: a retry re-runs the queries into the same database, and the
+-- count below is exact, so older rows of the same run would make it fail (or pass) for the wrong reason.
 SELECT
     countIf(input_bytes > 0) = 2 AS both_collected_statistics,
     uniqExact(input_bytes) = 1 AS same_read_measured_either_way
 FROM
 (
-    SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes
+    SELECT
+        log_comment,
+        argMax(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], event_time_microseconds) AS input_bytes
     FROM system.query_log
     WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-      AND event_date >= yesterday()
+      AND event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
       AND log_comment IN ('coord_read_no_swap', 'coord_read_forced_swap')
+    GROUP BY log_comment
 )
 FORMAT TSVWithNames;
 
