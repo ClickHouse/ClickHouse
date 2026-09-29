@@ -255,7 +255,7 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
-    extern const SettingsBool allow_suspicious_indices;
+    extern const SettingsBool allow_suspicious_indexes;
     extern const SettingsBool allow_minmax_index_for_json;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
@@ -1114,7 +1114,7 @@ void MergeTreeData::checkProperties(
 
     bool allow_suspicious_indices = (*getSettings())[MergeTreeSetting::allow_suspicious_indices];
     if (local_context)
-        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
+        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indexes];
 
     bool allow_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
     if (local_context)

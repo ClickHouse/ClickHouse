@@ -1315,9 +1315,10 @@ Possible values:
     DECLARE(Bool, allow_suspicious_fixed_string_types, false, R"(
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_suspicious_indices, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
-)", 0, allow_suspicious_indexes, \
+)", 0, allow_suspicious_indices, \
+        {"26.10", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -2299,7 +2300,7 @@ If statistics are build and materialized for newly inserted parts. Even if disab
 Only build and store column statistics for newly inserted parts (see `materialize_statistics_on_insert`) for tables whose current size plus the block being written, does not exceed this value. `0` means no size limit.
 )", 0, \
         {"26.8", 0, 26843545600, "New setting."}) \
-    DECLARE_WITH_ALIAS(String, ignore_data_skipping_indices, "", R"(
+    DECLARE_WITH_ALIAS(String, ignore_data_skipping_indexes, "", R"(
 Ignores the skipping indexes specified if used by the query.
 
 Consider the following example:
@@ -2382,9 +2383,10 @@ Expression ((Projection + Before ORDER BY))
 ```
 
 Works with tables in the MergeTree family.
-)", 0, ignore_data_skipping_indexes) \
+)", 0, ignore_data_skipping_indices, \
+        {"26.10", "", "", "Added an alias for setting `ignore_data_skipping_indices`."}) \
     \
-    DECLARE_WITH_ALIAS(String, force_data_skipping_indices, "", R"(
+    DECLARE_WITH_ALIAS(String, force_data_skipping_indexes, "", R"(
 Disables query execution if passed data skipping indices wasn't used.
 
 Consider the following example:
@@ -2409,10 +2411,12 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
-)", 0, force_data_skipping_indexes) \
-    DECLARE_WITH_ALIAS(Bool, secondary_indices_enable_bulk_filtering, true, R"(
+)", 0, force_data_skipping_indices, \
+        {"26.10", "", "", "Added an alias for setting `force_data_skipping_indices`."}) \
+    DECLARE_WITH_ALIAS(Bool, secondary_indexes_enable_bulk_filtering, true, R"(
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
-)", 0, secondary_indexes_enable_bulk_filtering, \
+)", 0, secondary_indices_enable_bulk_filtering, \
+        {"26.10", true, true, "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}, \
         {"25.5", false, true, "A new algorithm for filtering by data skipping indices"}) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
