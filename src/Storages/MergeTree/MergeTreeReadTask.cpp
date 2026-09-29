@@ -497,18 +497,15 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     if (read_result.num_rows == 0)
         read_result.columns.clear();
 
-    const auto & sample_block = readers_chain.getSampleBlock();
-    const auto & read_sample_block = readers_chain.getReadSampleBlock();
-    if (read_sample_block.columns()) {}
-    
+    const auto & sample_block = readers_chain.getSampleBlock();   
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns got from MergeTreeRangeReader. "
                         "Have {} in sample block and {} columns in list",
                         toString(sample_block.columns()), toString(read_result.columns.size()));
 
-    /// TODO: check columns have the same types as in header.
+                        /// TODO: check columns have the same types as in header.
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
-
+    
     size_t num_read_rows = read_result.numReadRows();
     size_t num_read_bytes = read_result.numBytesRead();
 
@@ -516,7 +513,11 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     {
         size_predictor->updateFilteredRowsRation(read_result.numReadRows(), num_filtered_rows);
         if (!read_result.columns.empty())
-            size_predictor->update(sample_block, read_result.columns, read_result.num_rows);
+        {
+            //size_predictor->update(sample_block, read_result.columns, read_result.num_rows);
+            const auto & read_sample_block = readers_chain.getReadSampleBlock();
+            size_predictor->update(sample_block, read_result.columns, read_sample_block, read_result.num_rows);
+        }
     }
 
     Block block;

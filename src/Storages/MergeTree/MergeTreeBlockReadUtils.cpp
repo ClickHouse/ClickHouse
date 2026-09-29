@@ -318,6 +318,135 @@ void MergeTreeBlockSizePredictor::startBlock()
         info.size_bytes = 0;
 }
 
+void MergeTreeBlockSizePredictor::update(const Block & result_sample_block, const Columns & result_columns, const Block & read_sample_block, size_t num_rows, double decay)
+{
+    if (result_columns.size() != result_sample_block.columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
+                        "Have {} in result sample block and {} columns in list",
+                        toString(result_sample_block.columns()), toString(result_columns.size()));
+
+    /// Ensure every column that was actually read in any PREWHERE/main step stays
+    /// in the estimate set. Construction may already have them; this covers columns
+    /// that appear only on the read side after multi-step PREWHERE.
+    ///
+    /// Do not rebuild the set from result_sample_block alone (it may be filter-only
+    /// after unused-column pruning — #107596).
+    {
+        NameSet known;
+        known.reserve(dynamic_columns_infos.size());
+        for (const auto & info : dynamic_columns_infos)
+            known.insert(info.name);
+
+        for (size_t pos = 0; pos < read_sample_block.columns(); ++pos)
+        {
+            const auto & col = read_sample_block.getByPosition(pos);
+            if (known.contains(col.name))
+                continue;
+
+            /// Const filter columns etc.
+            if (col.column && typeid_cast<const ColumnConst *>(col.column.get()))
+                continue;
+
+            auto column_from_part = data_part->tryGetColumn(col.name);
+            if ((!column_from_part || !column_from_part->isSubcolumn())
+                && col.type && col.type->isValueRepresentedByNumber() /* or use column if present */)
+            {
+                /// Prefer the same fixed-size path as initialize() when possible.
+                /// read_sample_block often has empty columns; use type fixed size if available.
+            }
+
+            ColumnInfo info;
+            info.name = col.name;
+            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
+
+            ColumnSize column_size;
+            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
+                column_size = data_part->getSubcolumnSize(col.name);
+            else
+                column_size = data_part->getColumnSize(
+                    column_from_part ? column_from_part->getNameInStorage() : col.name);
+
+            info.bytes_per_row_global = column_size.data_uncompressed
+                ? static_cast<double>(column_size.data_uncompressed)
+                    / static_cast<double>(std::max<size_t>(number_of_rows_in_part, 1))
+                : 0.0;
+            info.bytes_per_row = info.bytes_per_row_global;
+
+            dynamic_columns_infos.push_back(std::move(info));
+            known.insert(col.name);
+        }
+    }
+
+    is_initialized_in_update = true;
+
+    if (num_rows < block_size_rows)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Updated block has less rows ({}) than previous one ({})",
+            num_rows,
+            block_size_rows);
+    }
+
+    const size_t diff_rows = num_rows - block_size_rows;
+
+    block_size_bytes = num_rows * fixed_columns_bytes_per_row;
+    bytes_per_row_current = static_cast<double>(fixed_columns_bytes_per_row);
+    block_size_rows = num_rows;
+
+    const double alpha = std::pow(1. - decay, diff_rows);
+    max_size_per_row_dynamic = 0;
+
+    for (auto & info : dynamic_columns_infos)
+    {
+        const bool in_result = result_sample_block.has(info.name);
+        const bool in_read = read_sample_block.has(info.name);
+
+        if (in_result)
+        {
+            const size_t pos = result_sample_block.getPositionByName(info.name);
+            const size_t new_size = result_columns[pos]->byteSize();
+            const size_t diff_size = new_size - info.size_bytes;
+
+            const double local_bytes_per_row
+                = static_cast<double>(diff_size)
+                / static_cast<double>(std::max<size_t>(diff_rows, 1));
+
+            info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
+
+            if (info.is_subcolumn)
+                info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
+
+            info.size_bytes = new_size;
+            block_size_bytes += new_size;
+        }
+        else if (in_read)
+        {
+            /// Read in some PREWHERE/main step but not in the final result header
+            /// (e.g. MCP after notEmpty(lower(MCP))). No live column — use part average.
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
+
+            const size_t synthetic_size
+                = static_cast<size_t>(info.bytes_per_row * static_cast<double>(num_rows));
+            info.size_bytes = synthetic_size;
+            block_size_bytes += synthetic_size;
+        }
+        else
+        {
+            /// Still tracked from construction; keep global floor.
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
+
+            const size_t synthetic_size
+                = static_cast<size_t>(info.bytes_per_row * static_cast<double>(num_rows));
+            info.size_bytes = synthetic_size;
+            block_size_bytes += synthetic_size;
+        }
+
+        bytes_per_row_current += info.bytes_per_row;
+        max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
+    }
+}
+
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
 {
