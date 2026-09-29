@@ -2688,6 +2688,34 @@ def test_catalog_commit_response_lost_keeps_committed_snapshot(started_cluster):
     assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
 
 
+def test_catalog_commit_superseded_keeps_committed_snapshot(started_cluster):
+    # Another writer commits on top of the new snapshot before the lost response is read back, so
+    # `main` no longer names it. The table still lists it, so the INSERT must succeed.
+    node = started_cluster.instances["node1"]
+    catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
+        started_cluster, node, f"test_commit_superseded_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_superseded")
+        node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_superseded")
+
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    successor = table.current_snapshot()
+    committed = table.snapshot_by_id(successor.parent_snapshot_id)
+    # The successor reuses the manifest list of the snapshot it was committed on top of.
+    assert committed is not None and committed.manifest_list == successor.manifest_list, (
+        "no other writer committed on top of the INSERT, so the read-back was not exercised"
+    )
+    assert _s3_uri_exists(started_cluster.minio_client, committed.manifest_list), (
+        f"manifest list {committed.manifest_list} of the committed snapshot was deleted"
+    )
+
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+
+
 def test_catalog_commit_unknown_keeps_files(started_cluster):
     # The commit outcome cannot be established, so the query fails and the staged files stay.
     node = started_cluster.instances["node1"]

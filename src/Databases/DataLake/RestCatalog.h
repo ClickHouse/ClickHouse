@@ -203,12 +203,10 @@ protected:
         const std::string & table_name,
         TableMetadata & result) const;
 
-    /// Snapshot id the table's `main` ref currently points at, or nullopt when it cannot be
-    /// determined. Reads only what the commit sets, so a caller can tell whether its own commit
-    /// took effect.
-    std::optional<Int64> readMainRefSnapshotId(const std::string & namespace_name, const std::string & table_name) const;
+    /// False as well when the table cannot be read back.
+    bool tableHasSnapshot(const std::string & namespace_name, const std::string & table_name, Int64 snapshot_id) const;
 
-    /// Returns normally when `new_snapshot_id` is confirmed to be the table's current snapshot;
+    /// Returns normally when the table is confirmed to contain `new_snapshot_id`;
     /// otherwise throws UNKNOWN_STATUS_OF_TRANSACTION so callers keep the files staged for it.
     void classifyAmbiguousCommit(
         const String & namespace_name, const String & table_name, Int64 new_snapshot_id, const Poco::Exception & original) const;

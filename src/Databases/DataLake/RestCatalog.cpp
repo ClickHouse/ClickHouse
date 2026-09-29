@@ -78,6 +78,7 @@ namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
     extern const char iceberg_catalog_commit_response_lost[];
+    extern const char iceberg_catalog_commit_superseded[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_transport_fail[];
     extern const char iceberg_catalog_commit_transport_net_fail[];
@@ -1999,11 +2000,11 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 
-std::optional<Int64> RestCatalog::readMainRefSnapshotId(const std::string & namespace_name, const std::string & table_name) const
+bool RestCatalog::tableHasSnapshot(const std::string & namespace_name, const std::string & table_name, Int64 snapshot_id) const
 {
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_fail,
     {
-        return std::nullopt;
+        return false;
     });
 
     const auto state_snapshot = state.get();
@@ -2015,7 +2016,7 @@ std::optional<Int64> RestCatalog::readMainRefSnapshotId(const std::string & name
         auto buf = createReadBuffer(
             *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
         if (buf->eof())
-            return std::nullopt;
+            return false;
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -2023,33 +2024,28 @@ std::optional<Int64> RestCatalog::readMainRefSnapshotId(const std::string & name
         Poco::JSON::Parser parser;
         const auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
         if (!object || !object->has("metadata"))
-            return std::nullopt;
+            return false;
 
         const auto metadata_object = object->get("metadata").extract<Poco::JSON::Object::Ptr>();
         if (!metadata_object)
-            return std::nullopt;
+            return false;
 
-        /// The `main` ref is what `updateMetadata` sets; `current-snapshot-id` is its equivalent
-        /// for catalogs that do not materialise `refs`.
-        if (metadata_object->has(DB::Iceberg::f_refs))
+        const auto snapshots = metadata_object->getArray(DB::Iceberg::f_snapshots);
+        if (!snapshots)
+            return false;
+
+        for (size_t i = 0; i < snapshots->size(); ++i)
         {
-            if (const auto refs = metadata_object->getObject(DB::Iceberg::f_refs); refs && refs->has(DB::Iceberg::f_main))
-            {
-                if (const auto main_ref = refs->getObject(DB::Iceberg::f_main);
-                    main_ref && main_ref->has(DB::Iceberg::f_metadata_snapshot_id))
-                    return main_ref->getValue<Int64>(DB::Iceberg::f_metadata_snapshot_id);
-            }
+            const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+            if (snapshot && snapshot->getValue<Int64>(DB::Iceberg::f_metadata_snapshot_id) == snapshot_id)
+                return true;
         }
-
-        if (metadata_object->has(DB::Iceberg::f_current_snapshot_id) && !metadata_object->isNull(DB::Iceberg::f_current_snapshot_id))
-            return metadata_object->getValue<Int64>(DB::Iceberg::f_current_snapshot_id);
-
-        return std::nullopt;
+        return false;
     }
     catch (...)
     {
-        LOG_DEBUG(log, "Could not read back the current snapshot of {}.{}: {}", namespace_name, table_name, DB::getCurrentExceptionMessage(false));
-        return std::nullopt;
+        LOG_DEBUG(log, "Could not read back the snapshots of {}.{}: {}", namespace_name, table_name, DB::getCurrentExceptionMessage(false));
+        return false;
     }
 }
 
@@ -2154,6 +2150,24 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             commit_read_settings,
             &commit_body_written);
 
+        /// Models another writer committing on top of this snapshot before the lost response is read back.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_superseded,
+        {
+            Poco::JSON::Object::Ptr successor = new Poco::JSON::Object(*new_snapshot);
+            successor->set(DB::Iceberg::f_metadata_snapshot_id, new_snapshot_id ^ 1);
+            successor->set(DB::Iceberg::f_parent_snapshot_id, new_snapshot_id);
+            if (new_snapshot->has(DB::Iceberg::f_metadata_sequence_number))
+                successor->set(
+                    DB::Iceberg::f_metadata_sequence_number, new_snapshot->getValue<Int64>(DB::Iceberg::f_metadata_sequence_number) + 1);
+            updateMetadata(namespace_name, table_name, "", successor);
+            throw DB::HTTPException(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR,
+                "Injected lost response",
+                "");
+        });
+
         fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
         {
             throw DB::HTTPException(
@@ -2217,10 +2231,10 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 void RestCatalog::classifyAmbiguousCommit(
     const String & namespace_name, const String & table_name, Int64 new_snapshot_id, const Poco::Exception & original) const
 {
+    /// Nothing else adds this random id (a retry reuses it only after a 409 proved the earlier attempt
+    /// did not apply), so finding it proves this commit took effect even if `main` has moved on since.
     /// One logical read: the HTTP transport already retries it with backoff.
-    const auto committed_snapshot_id = readMainRefSnapshotId(namespace_name, table_name);
-
-    if (committed_snapshot_id == new_snapshot_id)
+    if (tableHasSnapshot(namespace_name, table_name, new_snapshot_id))
     {
         LOG_INFO(
             log,
@@ -2231,8 +2245,8 @@ void RestCatalog::classifyAmbiguousCommit(
 
     throw DB::Exception(
         DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
-        "Cannot tell whether snapshot {} was committed to {}.{}: the request failed with \"{}\" and the table's current "
-        "snapshot could not be confirmed to be it. Files staged for this commit are kept because deleting them would "
+        "Cannot tell whether snapshot {} was committed to {}.{}: the request failed with \"{}\" and the table could not "
+        "be confirmed to contain it. Files staged for this commit are kept because deleting them would "
         "destroy the snapshot if it did take effect",
         new_snapshot_id, namespace_name, table_name, original.displayText());
 }
