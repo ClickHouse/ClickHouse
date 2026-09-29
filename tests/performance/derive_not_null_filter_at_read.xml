@@ -3,26 +3,39 @@
         <query_plan_join_swap_table>false</query_plan_join_swap_table>
     </settings>
 
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>t_random</value>
+                <value>t_clustered</value>
+                <value>t_sorted</value>
+                <value>t_hint_sorted</value>
+                <value>t_hint_minmax</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- 90% NULL is over the threshold for adding the filter. -->
     <create_query>CREATE TABLE t_random    (x Nullable(UInt64) STATISTICS(basic), p1 UInt64, p2 UInt64, p3 UInt64, p4 UInt64, p5 UInt64, p6 UInt64, p7 UInt64, p8 UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE t_clustered (x Nullable(UInt64) STATISTICS(basic), p1 UInt64, p2 UInt64, p3 UInt64, p4 UInt64, p5 UInt64, p6 UInt64, p7 UInt64, p8 UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE t_sorted    (x Nullable(UInt64) STATISTICS(basic), p1 UInt64, p2 UInt64, p3 UInt64, p4 UInt64, p5 UInt64, p6 UInt64, p7 UInt64, p8 UInt64) ENGINE = MergeTree ORDER BY x SETTINGS allow_nullable_key = 1</create_query>
+    <!-- 30% NULL is under the threshold for adding the filter. `indexHint` is added instead. -->
+    <create_query>CREATE TABLE t_hint_sorted    (x Nullable(UInt64) STATISTICS(basic), p1 UInt64, p2 UInt64, p3 UInt64, p4 UInt64, p5 UInt64, p6 UInt64, p7 UInt64, p8 UInt64) ENGINE = MergeTree ORDER BY x SETTINGS allow_nullable_key = 1</create_query>
+    <create_query>CREATE TABLE t_hint_minmax    (x Nullable(UInt64) STATISTICS(basic), p1 UInt64, p2 UInt64, p3 UInt64, p4 UInt64, p5 UInt64, p6 UInt64, p7 UInt64, p8 UInt64, INDEX idx_x x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE t_keys (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <fill_query>INSERT INTO t_random    SELECT if(cityHash64(number, 1) % 100 &lt; 90, NULL, number + 1), number + 1, number + 2, number + 3, number + 4, number + 5, number + 6, number + 7, number + 8 FROM numbers(20000000)</fill_query>
+    <!-- NULL in 1M-row clusters, so whole granules are NULL and can be skipped. -->
     <fill_query>INSERT INTO t_clustered SELECT if(((intDiv(number, 1000000) * 7) % 20) * 5 &lt; 90, NULL, number + 1), number + 1, number + 2, number + 3, number + 4, number + 5, number + 6, number + 7, number + 8 FROM numbers(20000000)</fill_query>
     <fill_query>INSERT INTO t_sorted    SELECT * FROM t_random</fill_query>
+    <fill_query>INSERT INTO t_hint_sorted    SELECT if(cityHash64(number, 1) % 100 &lt; 30, NULL, number + 1), number + 1, number + 2, number + 3, number + 4, number + 5, number + 6, number + 7, number + 8 FROM numbers(20000000)</fill_query>
+    <fill_query>INSERT INTO t_hint_minmax    SELECT if(((intDiv(number, 1000000) * 7) % 20) * 5 &lt; 30, NULL, number + 1), number + 1, number + 2, number + 3, number + 4, number + 5, number + 6, number + 7, number + 8 FROM numbers(20000000)</fill_query>
     <fill_query>INSERT INTO t_keys SELECT number + 1 FROM numbers(20000000)</fill_query>
 
-    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_keys AS t INNER JOIN t_random AS n ON t.k = n.x</query>
-    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_keys AS t INNER JOIN t_clustered AS n ON t.k = n.x</query>
-    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_keys AS t INNER JOIN t_sorted AS n ON t.k = n.x</query>
+    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_keys AS t INNER JOIN {table} AS n ON t.k = n.x</query>
+    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM {table} AS n INNER JOIN t_keys AS t ON n.x = t.k</query>
 
-    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_random AS n INNER JOIN t_keys AS t ON n.x = t.k</query>
-    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_clustered AS n INNER JOIN t_keys AS t ON n.x = t.k</query>
-    <query>SELECT count(), sum(n.x), sum(n.p1), sum(n.p2), sum(n.p3), sum(n.p4), sum(n.p5), sum(n.p6), sum(n.p7), sum(n.p8) FROM t_sorted AS n INNER JOIN t_keys AS t ON n.x = t.k</query>
-
-    <drop_query>DROP TABLE t_random</drop_query>
-    <drop_query>DROP TABLE t_clustered</drop_query>
-    <drop_query>DROP TABLE t_sorted</drop_query>
-    <drop_query>DROP TABLE t_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {table}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_keys</drop_query>
 </test>
