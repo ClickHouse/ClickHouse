@@ -62,6 +62,9 @@ TEST(ByteRangeSet, IntersectClipsAndShiftMoves)
     EXPECT_EQ(inside.totalBytes(), 15u);
 
     EXPECT_TRUE(s.intersect({20, 50}).empty());
+    EXPECT_TRUE(s.intersect({5, 0}).empty());     /// empty, inside [0, 10)
+    EXPECT_TRUE(s.intersect({10, 80}).empty());   /// touches [0, 10) and [90, 110) only
+    EXPECT_EQ(s.intersect({0, 200}).totalBytes(), s.totalBytes());
 }
 
 TEST(ByteRangeSet, DescribeShowsAllRangesOrBothEndsOfLongSets)

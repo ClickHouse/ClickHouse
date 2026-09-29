@@ -37,15 +37,13 @@ VectorWithMemoryTracking<ByteRange> ByteRangeSet::subtract(ByteRange range) cons
         return out;
     size_t cur = range.offset;
     size_t end = range.end();
-    for (const auto & i : intervals)
+    auto it = std::partition_point(
+        intervals.begin(), intervals.end(), [&](const ByteRange & interval) { return interval.end() <= cur; });
+    for (; it != intervals.end() && it->offset < end; ++it)
     {
-        if (i.end() <= cur)
-            continue;
-        if (i.offset >= end)
-            break;
-        if (i.offset > cur)
-            out.push_back({cur, i.offset - cur});
-        cur = std::max(cur, i.end());
+        if (it->offset > cur)
+            out.push_back({cur, it->offset - cur});
+        cur = std::max(cur, it->end());
         if (cur >= end)
             break;
     }
@@ -81,12 +79,15 @@ void ByteRangeSet::remove(ByteRange range)
 ByteRangeSet ByteRangeSet::intersect(ByteRange range) const
 {
     ByteRangeSet out;
-    for (const auto & i : intervals)
+    if (range.size == 0)
+        return out;
+    auto it = std::partition_point(
+        intervals.begin(), intervals.end(), [&](const ByteRange & interval) { return interval.end() <= range.offset; });
+    for (; it != intervals.end() && it->offset < range.end(); ++it)
     {
-        const size_t begin = std::max(i.offset, range.offset);
-        const size_t end = std::min(i.end(), range.end());
-        if (begin < end)
-            out.intervals.push_back({begin, end - begin});
+        const size_t begin = std::max(it->offset, range.offset);
+        const size_t end = std::min(it->end(), range.end());
+        out.intervals.push_back({begin, end - begin});
     }
     return out;
 }
