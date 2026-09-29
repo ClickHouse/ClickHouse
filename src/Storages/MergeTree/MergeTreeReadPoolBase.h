@@ -147,15 +147,17 @@ private:
     /// The narrowed maps of a part, kept so that its tasks share one map until it changes.
     struct PartMaps
     {
-        /// The ranges the refiner has dropped from the part so far.
-        MarkRanges dropped;
-        size_t version = 0;
-        /// The last map built: `map_base` without `dropped`.
+        /// The base of `map`: the map of the part, or with parallel replicas the current assignment. Held, not only
+        /// compared, so that the next assignment cannot reuse its address.
         MarkRangesPtr map_base;
-        size_t map_version = 0;
+        /// The ranges the refiner has dropped from the part so far, in the order it dropped them.
+        MarkRanges dropped;
+        /// The last map built: `map_base` without the first `dropped_in_map` entries of `dropped`.
+        size_t dropped_in_map = 0;
         MarkRangesPtr map;
-        /// The patch maps derived from `patch_maps_of`.
-        MarkRangesPtr patch_maps_of;
+        /// The last patch maps built, one for each of the part's patch parts in their own marks, and the map of the part
+        /// they come from.
+        MarkRangesPtr patch_maps_source;
         std::vector<MarkRangesPtr> patch_maps;
     };
 

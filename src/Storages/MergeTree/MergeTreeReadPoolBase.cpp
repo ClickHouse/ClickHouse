@@ -58,22 +58,9 @@ MarkRanges subtractMarkRanges(const MarkRanges & from, const MarkRanges & what)
     return result;
 }
 
-/// The union of `a` and `b`, both sorted by `begin` and disjoint, merged where they touch.
-MarkRanges uniteMarkRanges(const MarkRanges & a, const MarkRanges & b)
+bool beginsBefore(const MarkRange & lhs, const MarkRange & rhs)
 {
-    MarkRanges all;
-    std::merge(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(all),
-        [](const MarkRange & lhs, const MarkRange & rhs) { return lhs.begin < rhs.begin; });
-
-    MarkRanges result;
-    for (const auto & range : all)
-    {
-        if (!result.empty() && range.begin <= result.back().end)
-            result.back().end = std::max(result.back().end, range.end);
-        else
-            result.push_back(range);
-    }
-    return result;
+    return lhs.begin < rhs.begin;
 }
 
 }
@@ -578,15 +565,13 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
 
 void MergeTreeReadPoolBase::recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const
 {
-    auto by_begin = [](const MarkRange & lhs, const MarkRange & rhs) { return lhs.begin < rhs.begin; };
-    std::sort(cut.begin(), cut.end(), by_begin);
-    std::sort(refined.begin(), refined.end(), by_begin);
+    std::sort(cut.begin(), cut.end(), beginsBefore);
+    std::sort(refined.begin(), refined.end(), beginsBefore);
     auto dropped = subtractMarkRanges(cut, refined);
 
     std::lock_guard lock(part_maps_mutex);
     auto & part = part_maps[&info];
-    part.dropped = uniteMarkRanges(part.dropped, dropped);
-    ++part.version;
+    part.dropped.insert(part.dropped.end(), dropped.begin(), dropped.end());
 }
 
 MarkRangesPtr MergeTreeReadPoolBase::mapWithoutDroppedRanges(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & read_request_map) const
@@ -602,11 +587,20 @@ MarkRangesPtr MergeTreeReadPoolBase::mapWithoutDroppedRanges(const MergeTreeRead
         return base;
 
     auto & part = it->second;
-    if (part.map_base != base || part.map_version != part.version)
+    if (part.map_base != base)
     {
-        part.map = std::make_shared<const MarkRanges>(subtractMarkRanges(*base, part.dropped));
         part.map_base = base;
-        part.map_version = part.version;
+        part.map = base;
+        part.dropped_in_map = 0;
+    }
+
+    /// Cuts are refined in any order, so the entries not yet left out of the map are sorted before subtracting.
+    if (part.dropped.size() > part.dropped_in_map)
+    {
+        MarkRanges new_drops(part.dropped.begin() + part.dropped_in_map, part.dropped.end());
+        std::sort(new_drops.begin(), new_drops.end(), beginsBefore);
+        part.map = std::make_shared<const MarkRanges>(subtractMarkRanges(*part.map, new_drops));
+        part.dropped_in_map = part.dropped.size();
     }
     return part.map;
 }
@@ -619,7 +613,7 @@ std::vector<MarkRangesPtr> MergeTreeReadPoolBase::patchMapsFor(const MergeTreeRe
     {
         std::lock_guard lock(part_maps_mutex);
         auto it = part_maps.find(&info);
-        if (it != part_maps.end() && it->second.patch_maps_of == map)
+        if (it != part_maps.end() && it->second.patch_maps_source == map)
             return it->second.patch_maps;
     }
 
@@ -629,7 +623,7 @@ std::vector<MarkRangesPtr> MergeTreeReadPoolBase::patchMapsFor(const MergeTreeRe
 
     std::lock_guard lock(part_maps_mutex);
     auto & part = part_maps[&info];
-    part.patch_maps_of = map;
+    part.patch_maps_source = map;
     part.patch_maps = patch_maps;
     return patch_maps;
 }
