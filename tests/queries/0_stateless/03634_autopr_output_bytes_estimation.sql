@@ -7,6 +7,13 @@ SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, query_plan_
 -- External aggregation is not supported as of now
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
+-- Disable external sorting. When the randomized `max_bytes_before_external_sort` makes `query_43`
+-- spill, and the randomized `prefer_external_sort_block_bytes` is as low as 1, the merged sorted
+-- output comes out in blocks of 128 rows. The estimator samples those small blocks, which compress
+-- several times worse than full-size ones, so the `URL` output estimate grows from ~17 MB to ~60 MB,
+-- beyond the tolerance below.
+SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
+
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
 
