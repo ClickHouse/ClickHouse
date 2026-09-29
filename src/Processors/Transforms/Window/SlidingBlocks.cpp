@@ -1,33 +1,16 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-
-#include <ranges>
-
 namespace DB
 {
 
-namespace
-{
-
-Columns materializeColumns(Columns columns, const std::vector<bool> & should_materialize)
-{
-    for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
-        if (materialize)
-            column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
-
-    return columns;
-}
-
-}
-
-SlidingBlock & SlidingBlocks::add(Chunk chunk, const WindowTransformParams & params)
+SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
     return blocks.emplace_back(SlidingBlock{
         .input_columns = chunk.getColumns(),
-        .materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize),
+        .materialized_columns = std::move(materialized_columns),
         .rows_count = static_cast<int64_t>(chunk.getNumRows()),
         .block_number = next_block_number++,
+        .index = std::move(index),
         .result_columns = {},
     });
 }
