@@ -281,7 +281,7 @@ def test_select_one_context_appears_in_query_log(endpoint):
         peak = int(
             node.query(
                 "SELECT max(memory_usage) FROM system.query_log "
-                f"WHERE current_user = '{user}' AND type = 'QueryFinish'"
+                f"WHERE user = '{user}' AND type = 'QueryFinish'"
             )
         )
         assert peak >= PAYLOAD_SIZE, peak
