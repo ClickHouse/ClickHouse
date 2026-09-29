@@ -64,6 +64,7 @@ namespace Setting
 {
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsString filter;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsDouble limit;
@@ -71,12 +72,15 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsDouble offset;
+    extern const SettingsString order;
     extern const SettingsSeconds promql_range_query_cache_min_age;
     extern const SettingsSeconds promql_range_query_split_interval;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsString select;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsString sort;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -324,15 +328,18 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
 
         /// A query shorter than the split interval isn't split, nor is a query with too many steps, which fails as without splitting.
-        /// Result limits apply to the whole response, so a query with them isn't split either.
+        /// Settings that apply to the whole result, like result limits or `order`, don't let the query be split either.
         const auto & settings = getContext()->getSettingsRef();
         const auto split_interval_seconds = settings[Setting::promql_range_query_split_interval].totalSeconds();
         const Int128 split_interval = static_cast<Int128>(split_interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(time_scale);
         const Int128 length = static_cast<Int128>(evaluation_settings.end_time->value) - evaluation_settings.start_time->value;
         const Int64 step = evaluation_settings.step->value;
-        const bool has_result_limits = settings[Setting::max_result_rows] || settings[Setting::max_result_bytes]
-            || settings[Setting::limit] != 0 || settings[Setting::offset] != 0;
-        if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS && !has_result_limits
+        const bool has_whole_result_settings = settings[Setting::max_result_rows] || settings[Setting::max_result_bytes]
+            || settings[Setting::limit] != 0 || settings[Setting::offset] != 0
+            || !settings[Setting::select].value.empty() || !settings[Setting::order].value.empty()
+            || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty();
+        if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS
+            && !has_whole_result_settings
             && getNextChunkStart(evaluation_settings, split_interval, evaluation_settings.start_time->value)
             && !usesWholeEvaluationRange(*query_tree->getRoot()))
         {

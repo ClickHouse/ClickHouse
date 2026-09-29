@@ -210,9 +210,14 @@ HOURLY = 'count_values("hour", floor(vector(time() / 3600)))'
         # The `limit` parameter belongs to the API, so the setting `limit` comes from the user.
         (HOURLY, {"user": "range_split_limit"}),
         ("rate(node_cpu_seconds_total[5m])", {"max_result_bytes": 20000}),
+        # host3 is only in the chunk from H + 2h, so merging chunks in this order would repeat series.
+        ("node_load1", {"order": "tags DESC"}),
+        ("node_load1", {"sort": "-1"}),
+        ("sum by (mode) (rate(node_cpu_seconds_total[5m]))", {"select": "tags, arraySlice(samples, 1, 2) AS samples"}),
+        ("sum by (mode) (rate(node_cpu_seconds_total[5m]))", {"filter": "length(samples) > 100"}),
     ],
 )
-def test_result_limits_apply_to_whole_response(query, params):
+def test_whole_result_settings_disable_splitting(query, params):
     node.query("CREATE USER IF NOT EXISTS range_split_limit SETTINGS PROFILE 'default', limit = 3")
     node.query("GRANT SELECT ON *.* TO range_split_limit")
     expected = send_query_range(query, H, H + 6 * 3600, 60, params)
