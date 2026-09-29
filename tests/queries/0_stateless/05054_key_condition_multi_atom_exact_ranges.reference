@@ -1,8 +1,6 @@
 504
 1
-Condition: and((toUInt8(x) in [1, 1]), (x in [257, 257]))
-Granules: 2/1000
+x = 257	1	1	2	Condition: and((toUInt8(x) in [1, 1]), (x in [257, 257]))
 1
 1
-492
-492
+ts >= toDateTime('2026-01-20 12:00:00', 'UTC')	492	492	505

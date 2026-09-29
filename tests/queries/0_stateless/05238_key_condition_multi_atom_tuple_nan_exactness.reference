@@ -1,5 +1,4 @@
-Condition: and((t in [(5., 3), +Inf)), and((toUInt8(i) in [1, 1]), (i in [257, 257])))
-2
+i = 257 AND t >= (5., 3)	2	2	2	Condition: and((t in [(5., 3), +Inf)), and((toUInt8(i) in [1, 1]), (i in [257, 257])))
 2
 8
 05238 exact group	0
