@@ -6,6 +6,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/Stopwatch.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
@@ -34,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -70,9 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsUInt64 max_bytes_to_sort;
-    extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsSeconds max_execution_time;
-    extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_rows_in_join;
@@ -347,15 +347,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             || settings[Setting::limit] != 0 || settings[Setting::offset] != 0
             || !settings[Setting::select].value.empty() || !settings[Setting::order].value.empty()
             || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty();
-        /// A GROUP BY, sorting or JOIN limit would see one chunk at a time, and a read or time limit of the whole query would
+        /// A GROUP BY, sorting or JOIN limit would see one chunk at a time, and a read limit of the whole query would
         /// start again for each chunk, so they don't let the query be split either.
         const bool has_whole_query_limits = settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_sort]
             || settings[Setting::max_bytes_to_sort] || settings[Setting::max_rows_in_join] || settings[Setting::max_bytes_in_join]
             || settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
-            || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf]
-            || settings[Setting::max_execution_time].totalMicroseconds() != 0
-            || settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0
-            || settings[Setting::max_estimated_execution_time].totalMicroseconds() != 0;
+            || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf];
         if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS
             && !has_whole_result_settings && !has_whole_query_limits
             && getNextChunkStart(evaluation_settings, split_interval, evaluation_settings.start_time->value)
@@ -436,6 +433,11 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         && settings[Setting::distinct_overflow_mode] == OverflowMode::THROW;
     const Int64 cache_max_end_seconds = time(nullptr) - cache_min_age;
 
+    /// Each chunk is a separate query, so the time limit of the whole request is checked between them.
+    ExecutionSpeedLimits limits;
+    limits.max_execution_time = settings[Setting::max_execution_time];
+    Stopwatch watch;
+
     /// A series is written once with the samples of all chunks, so the results of all chunks are kept until the response is written.
     std::vector<Blocks> chunks;
     std::optional<Int64> chunk_start = evaluation_settings.start_time->value;
@@ -494,6 +496,9 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         }
 
         finishExecutedQuery(io, {});
+
+        if (!limits.checkTimeLimit(watch.elapsedNanoseconds(), settings[Setting::timeout_overflow_mode]))
+            break;
         chunk_start = next_chunk_start;
     }
 
