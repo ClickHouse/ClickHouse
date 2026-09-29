@@ -171,6 +171,15 @@ public:
     /// The answer of removeUnusedColumns when nothing changes: every input read, every output kept.
     RemoveUnusedColumnsResult keepEverything() const;
 
+    /// What one column of a step's input header is to the step once the unused columns are gone.
+    enum class InputColumn : uint8_t
+    {
+        ReadNeeded,           /// an input reads it, and what that input feeds is still needed
+        ReadDropped,          /// an input reads it, and nothing needs that input any more
+        PassesThroughNeeded,  /// no input reads it, and the caller asked for the column itself
+        PassesThroughDropped, /// no input reads it, and nobody asked for it
+    };
+
     /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
     /// required_output_positions must be a sorted vector of indices into the step's current output header.
     /// Each position uniquely identifies a column even when names are duplicated.

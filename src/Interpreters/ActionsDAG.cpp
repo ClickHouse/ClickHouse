@@ -1409,9 +1409,15 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
 {
     if (filter_column_name.empty())
         return;
-    const Node * filter_node = tryFindInOutputs(filter_column_name);
-    if (!filter_node)
-        return;
+
+    const auto it = std::ranges::find_if(outputs, [&](const Node * output) { return output->result_name == filter_column_name; });
+    if (it != outputs.end())
+        foldFilterPredicateThroughMaterialize(static_cast<size_t>(it - outputs.begin()));
+}
+
+void ActionsDAG::foldFilterPredicateThroughMaterialize(size_t filter_output_position)
+{
+    const Node * filter_node = outputs.at(filter_output_position);
 
     /// A prior optimizer pass may already have folded this filter. Replacing an
     /// existing const output with another const output makes the pass report a
@@ -1429,15 +1435,8 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     /// `removeUnusedActions` prunes the now-orphan subtree later
     const Node & new_const = addColumn(
         std::move(folded->column), filter_node->result_type,
-        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
-    for (auto & out : outputs)
-    {
-        if (out == filter_node)
-        {
-            out = &new_const;
-            break;
-        }
-    }
+        filter_node->result_name, folded->deterministic, folded->masked_secret);
+    outputs[filter_output_position] = &new_const;
 }
 
 void ActionsDAG::deduplicateSubtrees()

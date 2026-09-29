@@ -26,22 +26,20 @@ struct FilterDAGOutputPruningPlan
     /// caller counts in has the filter column erased from it, so its positions are shifted back over
     /// that column first, and the filter column is then added whether or not it was asked for.
     std::vector<size_t> required_dag_positions;
-    /// Input header positions of the pass-through columns to drop.
-    std::vector<size_t> dropped_passthrough_header_positions;
-    /// Input header positions read by the inputs that survive, sorted. Filled only where inputs may be
-    /// removed.
-    std::vector<size_t> required_input_positions;
-    /// Whether any DAG output goes away, whether the filter column flag flips, whether removeUnusedActions
-    /// would erase any node, and whether any input goes with it.
-    bool removes_any_output = false;
-    bool changes_filter_column_flag = false;
+    /// One entry per column of the input header, in header order.
+    std::vector<IQueryPlanStep::InputColumn> input_columns;
+    /// Whether the output header changes - a DAG output goes away, or the filter column is dropped from
+    /// it now - and whether removeUnusedActions would erase any node.
+    bool changes_output_header = false;
     bool removes_any_action = false;
-    bool removes_any_input = false;
     /// Whether the filter predicate folds to a constant through `materialize` once the filter column is
     /// dropped; the rest of the plan is worked out on the folded DAG.
     bool fold_filter_predicate = false;
-    String filter_column_name;
+    /// The position of the filter column in the DAG's outputs, before any is removed.
+    size_t filter_output_position = 0;
 
+    /// Input header positions of the pass-through columns nobody asked for.
+    std::vector<size_t> droppedPassThroughPositions() const;
     FilterDAGOutputPruningResult toResult() const;
 };
 

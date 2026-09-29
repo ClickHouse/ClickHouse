@@ -62,15 +62,6 @@ public:
 private:
     void updateOutputHeader() override;
 
-    /// What one column of the step's input header is to the step once the unused columns are gone.
-    enum class InputColumn : uint8_t
-    {
-        ReadAndNeeded,      /// an input reads it, and what that input feeds is still needed
-        ReadNotNeeded,      /// an input reads it, and nothing needs that input any more
-        PassesThroughNeeded, /// no input reads it, and the caller asked for the column itself
-        PassesThroughDropped, /// no input reads it, and nobody asked for it
-    };
-
     /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
     /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
     ///

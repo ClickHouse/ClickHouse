@@ -281,6 +281,8 @@ public:
     /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
     /// representation-observing parents elsewhere in the DAG are never touched
     void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
+    /// The same for the filter at `filter_output_position` of the outputs.
+    void foldFilterPredicateThroughMaterialize(size_t filter_output_position);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
