@@ -43,7 +43,7 @@ public:
 
     void appendPlain(std::string_view host_values) { values.append(host_values); }
 
-    void appendCompressed(Decompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks);
+    void appendCompressed(SyncDecompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks);
 
     char * grow(size_t bytes) { return values.grow(bytes); }
 
@@ -207,7 +207,7 @@ private:
 
     PinnedBuffer staged;
     std::vector<CompressedBlock> blocks;
-    Decompressor decompressor;
+    SyncDecompressor decompressor;
 
     size_t staged_bytes = 0;
 
