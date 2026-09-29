@@ -1600,14 +1600,7 @@ bool StorageReplicatedMergeTree::dropReplica(
         /// Then try to remove paths that are known to be flat (all children are leafs)
         Strings flat_nodes = {"flags", "queue"};
         if (table_settings && (*table_settings)[MergeTreeSetting::use_minimalistic_part_header_in_zookeeper])
-        {
             flat_nodes.emplace_back("parts");
-        }
-        else
-        {
-            /// A part in the old header format must not be seen without its `columns` and `checksums` children.
-            zookeeper->tryRemoveChildrenRecursive(fs::path(remote_replica_path) / "parts", /* probably flat */ true);
-        }
         for (const auto & node : flat_nodes)
         {
             bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(remote_replica_path) / node, /* probably flat */ true);

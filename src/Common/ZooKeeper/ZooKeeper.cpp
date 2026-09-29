@@ -1184,18 +1184,7 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
             {
                 if (probably_flat)
                 {
-                    /// It actually has children. Try to remove them in one request with the node, so it is never seen without them.
-                    Strings node_children;
-                    if (tryGetChildren(batch[i], node_children) == Coordination::Error::ZOK && node_children.size() < MULTI_BATCH_SIZE)
-                    {
-                        Coordination::Requests node_ops;
-                        for (const auto & node_child : node_children)
-                            node_ops.emplace_back(zkutil::makeRemoveRequest(fs::path(batch[i]) / node_child, -1));
-                        node_ops.emplace_back(zkutil::makeRemoveRequest(batch[i], -1));
-                        Coordination::Responses node_responses;
-                        if (tryMulti(node_ops, node_responses) == Coordination::Error::ZOK)
-                            continue;
-                    }
+                    /// It actually has children, let's remove them
                     tryRemoveChildrenRecursive(batch[i]);
                     tryRemove(batch[i]);
                 }
