@@ -142,6 +142,8 @@ void QueryGraph::buildColumnEquivalences()
         if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
             || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
+        if (null_supplying_subtree_relations.test(*lhs_rel) || null_supplying_subtree_relations.test(*rhs_rel))
+            continue;
 
         if (outer_join_conditions.contains(edge))
             continue;
@@ -365,20 +367,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     std::shared_ptr<DPJoinEntry> best_plan;
 
-    /// Only DPsub may plan a set of tables holding a semi or anti join; another algorithm would
-    /// turn the inner joins around it into semi/anti joins and quietly change the answer. It should
-    /// never come to that, but the damage would be wrong rows, so fail loudly rather than silently.
-    const bool semi_anti_in_graph
-        = query_graph.semi_anti_flattened
-        && std::ranges::any_of(
-               query_graph.conflict_ops, [](const auto & op) { return op.strictness != JoinStrictness::All; });
-
+    /// Only DPsub with a conflict detector may plan a graph that `join_kinds` does not describe (see
+    /// `requires_conflict_detector`); another algorithm would reorder its semi/anti and outer joins
+    /// as if they were inner joins and quietly change the answer. It should never come to that, but
+    /// the damage would be wrong rows, so fail loudly rather than silently.
     for (const auto & algorithm : enabled_algorithms)
     {
-        if (semi_anti_in_graph && algorithm != JoinOrderAlgorithm::DPSUB)
+        if (query_graph.requires_conflict_detector && algorithm != JoinOrderAlgorithm::DPSUB)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Join order algorithm {} cannot plan a join graph containing a semi/anti join operator, "
-                "only DPsub can. This graph should not have reached it.", toString(algorithm));
+                "Join order algorithm {} cannot plan a join graph that only DPsub with a conflict detector can reorder. "
+                "This graph should not have reached it.", toString(algorithm));
 
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)

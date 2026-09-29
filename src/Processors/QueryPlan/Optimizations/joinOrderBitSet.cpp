@@ -82,7 +82,7 @@ std::vector<JoinActionRef *> getApplicableExpressions(
             /// null-supplying relation is joined. That relation appears as a singleton
             /// on one side of the join step (enforced by isValidJoinOrder), so the
             /// predicate becomes applicable exactly at that step.
-            if (!joined_rels.test(pin_it->second))
+            if (!isSubsetOf(pin_it->second, joined_rels))
                 continue;
         }
 

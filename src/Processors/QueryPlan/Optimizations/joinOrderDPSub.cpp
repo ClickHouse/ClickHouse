@@ -160,12 +160,12 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         if (!edge)
             continue;
         dpsub_data.edge_source_mask[i] = toMask(edge.getSourceRelations());
-        /// ON-clause predicates of an outer join are pinned to the single null-supplying
-        /// relation; the pin becomes applicable exactly when that relation is joined.
+        /// ON-clause predicates of an outer join are pinned to its null-supplying side; the pin
+        /// becomes applicable exactly when that whole side is joined.
         if (auto pin_it = query_graph.outer_join_conditions.find(edge); pin_it != query_graph.outer_join_conditions.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = static_cast<UInt32>(1) << pin_it->second;
+            dpsub_data.edge_pin_mask[i] = toMask(pin_it->second);
         }
     }
 
@@ -596,15 +596,21 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// (`Left` <-> `Right`), the same equivalence the enumeration itself uses. Semi/anti joins keep
     /// their sides. Only done when both estimates are known.
     ///
-    /// Only for an `ALL` graph: the entries of an `ANY`/`SEMI`/`ANTI` graph read `All` here and get
-    /// the graph's strictness stamped on later, and turning such a join round changes its result
-    /// (`ANY LEFT` keeps one match per left row, `ANY RIGHT` one per right row). Whether it may be
-    /// swapped at all is decided afterwards by the swap in `optimizeJoin`, which knows the strictness.
+    /// Not for a graph whose joins get its strictness stamped on later: their entries read `All` here,
+    /// and turning such a join round changes its result (`ANY LEFT` keeps one match per left row,
+    /// `ANY RIGHT` one per right row). Whether it may be swapped at all is decided afterwards by the
+    /// swap in `optimizeJoin`, which knows the strictness. A semi/anti graph flattened for the
+    /// conflict detector is the exception: each semi/anti join is an operator of its own and its
+    /// entry carries its strictness (so it is left alone by the check below), while the rest are the
+    /// inner joins they read.
     ///
     /// On equal estimates keep the input with more relations on the left: the enumeration reaches a
     /// lone relation against the rest first, which would otherwise build the hash table from a whole
     /// subtree - the left-deep shape greedy produces avoids that.
-    const bool can_turn_round = query_graph.join_strictness == JoinStrictness::All
+    const bool entries_carry_strictness = query_graph.join_strictness == JoinStrictness::All
+        || (query_graph.semi_anti_flattened
+            && (query_graph.join_strictness == JoinStrictness::Semi || query_graph.join_strictness == JoinStrictness::Anti));
+    const bool can_turn_round = entries_carry_strictness
         && (isInner(entry.kind) || isCrossOrComma(entry.kind)
             || (entry.strictness == JoinStrictness::All && (isLeft(entry.kind) || isRight(entry.kind) || isFull(entry.kind))));
     if (!query_graph.join_swap_table && can_turn_round && left->estimated_rows && right->estimated_rows)
@@ -670,7 +676,9 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 
     /// Turn down a graph that only cross products hold together, before enumerating anything: DPsub
     /// cannot stitch its components, so the next algorithm in the chain plans the query instead.
-    if (dpsub_data.disconnected_graph)
+    /// Not a graph no other algorithm may plan: the conflict detector seeds a link for each cross
+    /// product (see `initDPTable`), and the acceptor reports such a join as `Cross`.
+    if (dpsub_data.disconnected_graph && !query_graph.requires_conflict_detector)
     {
         LOG_TRACE(log, "Join graph is disconnected apart from cross products, leaving it to the next algorithm");
         return nullptr;
