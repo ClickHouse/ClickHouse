@@ -1,0 +1,142 @@
+---
+title: 'GCP workload identity for ClickPipes'
+sidebarTitle: 'GCP workload identity'
+slug: /integrations/clickpipes/security/gcp-workload-identity
+description: 'Configure keyless access from ClickPipes to supported Google Cloud data sources using GCP workload identity.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', 'keyless authentication']
+---
+
+<Note>
+GCP workload identity authentication is in Private Preview and is currently available through OpenAPI and Terraform only. Contact ClickHouse Support to enable it for your organization.
+</Note>
+
+GCP workload identity lets ClickPipes access supported Google Cloud sources without storing a customer service account key. This guide shows you how to retrieve the ClickPipes-managed Google service account, grant it access to your source, and create a ClickPipe that uses short-lived credentials.
+
+## Before you begin {#before-you-begin}
+
+You need:
+
+- Private Preview access enabled for your ClickHouse Cloud organization.
+- A ClickHouse Cloud service running on GCP. Its ClickPipes deployment must also run on GCP.
+- A ClickHouse Cloud API key with permission to manage ClickPipes on the service.
+- Permission to grant IAM roles on the Google Cloud source resources.
+- For Terraform, a ClickHouse provider release that includes the `clickhouse_clickpipes_service_context` data source. Check the [provider changelog](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) before selecting a version.
+
+## How it works {#how-it-works}
+
+1. ClickPipes creates and manages a Google service account for your ClickHouse Cloud service.
+2. You retrieve that service account from the ClickPipes service context.
+3. You grant the service account access to your Google Cloud source resources.
+4. ClickPipes uses workload identity to obtain short-lived credentials for the service account and access the source.
+
+The service account is unique to the ClickHouse Cloud service. You control its access to your resources through Google Cloud IAM and can revoke that access at any time. Network connectivity, including private connectivity, is configured separately.
+
+## Retrieve the ClickPipes service account {#retrieve-service-account}
+
+Use OpenAPI or Terraform to retrieve the service context. Do not create the ClickPipe until the context reports that workload identity is supported and ready.
+
+<Tabs>
+<Tab title="OpenAPI" id="openapi">
+
+Set your API credentials and resource IDs:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+export ORG_ID=<your_organization_id>
+export SERVICE_ID=<your_service_id>
+```
+
+Get the service context:
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/context"
+```
+
+Once the identity is ready, the response includes the managed service account in `principal`:
+
+```json
+{
+  "result": {
+    "gcpWorkloadIdentity": {
+      "supported": true,
+      "ready": true,
+      "principal": "ch-example@clickpipes-production.iam.gserviceaccount.com"
+    }
+  }
+}
+```
+
+If the ClickHouse service has not used ClickPipes before, the response can initially report `ready: false` without a `principal`. Retry until `ready` is `true` and `principal` is populated.
+
+See the [service context API reference](/products/cloud/api-reference/clickpipes/click-pipes-service-context-get) for the complete response schema.
+
+</Tab>
+<Tab title="Terraform" id="terraform">
+
+Use the `clickhouse_clickpipes_service_context` data source:
+
+```hcl
+data "clickhouse_clickpipes_service_context" "service" {
+  service_id    = var.service_id
+  ready_timeout = "2m"
+}
+
+output "clickpipes_gcp_service_account" {
+  value = data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal
+}
+```
+
+By default, the data source fails when workload identity is unsupported. It waits up to `ready_timeout` for the identity to become ready and for `principal` to be populated. Set `wait_for_identity = false` only when you need a snapshot of the current capability state without waiting.
+
+</Tab>
+</Tabs>
+
+The service context fields have these meanings:
+
+| Field | Meaning |
+|-------|---------|
+| `supported` | The ClickPipes deployment supports GCP workload identity. |
+| `ready` | The managed identity and its impersonation configuration are ready. This field can be omitted when workload identity is unsupported. |
+| `principal` | The Google service account email to authorize on your source resources. This field can be omitted until the identity is ready. |
+
+## Grant access to the source {#grant-source-access}
+
+Use `serviceAccount:<principal>` as the IAM member, where `<principal>` is the email returned in the service context. Grant it only the roles required by your source:
+
+| Source | Required access |
+|--------|-----------------|
+| [BigQuery](/integrations/clickpipes/bigquery/overview#permissions) | `roles/bigquery.dataViewer` on the source datasets, `roles/bigquery.jobUser` on the project that runs jobs, and `roles/storage.objectAdmin` plus `roles/storage.bucketViewer` on the staging bucket. |
+| [Google Managed Service for Apache Kafka](/integrations/clickpipes/kafka/reference#gcp-workload-identity) | `roles/managedkafka.client` on the cluster project, plus the required Kafka topic and consumer group ACLs. |
+| [Google Cloud Storage](/integrations/clickpipes/object-storage/gcs/overview#permissions) | `roles/storage.objectViewer` on the source bucket. Unordered ingestion also requires `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the notification subscription. |
+| [Google Cloud Pub/Sub](/integrations/clickpipes/pubsub/auth#required-permissions) | A custom role containing the required Pub/Sub permissions, or `roles/pubsub.editor`, on the project where ClickPipes manages the subscription. |
+
+ClickPipes cannot create IAM bindings in your Google Cloud project. Create the grants before creating the ClickPipe. When managing the grants and ClickPipe in the same Terraform configuration, use `depends_on` to enforce this ordering.
+
+## Create the ClickPipe {#create-clickpipe}
+
+Set the source's authentication method to `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Do not configure a service account key, access key, connection string, or IAM role together with workload identity.
+
+See the programmatic examples for each source:
+
+- [Google Managed Kafka with Terraform](/integrations/clickpipes/programmatic-access/terraform#gcmk-workload-identity)
+- [Google Cloud Storage with Terraform](/integrations/clickpipes/programmatic-access/terraform#gcs-workload-identity)
+- [Google Cloud Pub/Sub with Terraform](/integrations/clickpipes/programmatic-access/terraform#pubsub)
+- [BigQuery with Terraform](/integrations/clickpipes/programmatic-access/terraform#bigquery-workload-identity)
+- [OpenAPI examples](/integrations/clickpipes/programmatic-access/openapi#creating-clickpipes)
+
+## Troubleshooting {#troubleshooting}
+
+<Accordion title="Workload identity is not supported">
+Confirm that Private Preview access is enabled and that both the ClickHouse Cloud service and its ClickPipes deployment run on GCP. Contact ClickHouse Support if the service meets these requirements but `supported` is `false`.
+</Accordion>
+
+<Accordion title="The identity is not ready">
+Identity provisioning may still be in progress. Retry the service context request, or increase `ready_timeout` when using Terraform. Do not create the ClickPipe until `ready` is `true` and `principal` is populated.
+</Accordion>
+
+<Accordion title="The source rejects access">
+Confirm that the IAM member is `serviceAccount:<principal>` using the exact principal from the service context. Verify that roles are granted at the correct project, dataset, bucket, subscription, or cluster scope. For Google Managed Kafka, also check the broker-side Kafka ACLs and TLS configuration.
+</Accordion>

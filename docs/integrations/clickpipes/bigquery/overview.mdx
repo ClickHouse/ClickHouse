@@ -81,11 +81,17 @@ ClickPipes authenticates to your Google Cloud project using a [service account k
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creating a service account key with BigQuery and Cloud Storage permissions" size="lg" border/>
 
+#### GCP workload identity (Private Preview) {#gcp-workload-identity}
+
+GCP workload identity lets ClickPipes authenticate as a ClickPipes-managed Google service account without storing your service account key. It requires a ClickHouse Cloud service and ClickPipes deployment running on GCP and is currently available through OpenAPI and Terraform only.
+
+Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve the managed service account from the ClickPipes service context. Grant it the [BigQuery and GCS roles](#permissions) below, and create the pipe with `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` authentication. Do not provide service account credentials with this authentication method. Workload identity currently supports snapshot replication for BigQuery ClickPipes.
+
 ### Permissions {#permissions}
 
 #### BigQuery {#bigquery}
 
-The service account needs these BigQuery roles:
+The service account used by ClickPipes, whether provided by you or managed through workload identity, needs these BigQuery roles:
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
