@@ -619,9 +619,6 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!context->getSettingsRef()[Setting::allow_experimental_gpu_aggregation])
         GPU_COMPRESSED_REFUSE("`allow_experimental_gpu_aggregation` is off");
 
-    if (!GPU::deviceProbeError().empty())
-        GPU_COMPRESSED_REFUSE("no usable device");
-
     if (!readIsOfWholeParts(*reading))
         return false;
 

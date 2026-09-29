@@ -30,7 +30,7 @@ struct CompressedPiece
     const char * device_compressed = nullptr;
     size_t compressed_bytes = 0;
     std::span<const CompressedBlock> blocks;
-    const DeviceEvent * uploaded = nullptr;
+    cudaEvent_t uploaded = nullptr;
 };
 
 /// One batched nvcomp call on the decompression stream, shared by both decompressors.
@@ -51,7 +51,7 @@ private:
     DeviceBuffer device_results{StreamRegistry::get().decompression};
     DeviceBuffer device_temp{StreamRegistry::get().decompression};
 
-    DeviceEvent expanded_event;
+    EventPtr expanded = createEvent();
     std::vector<size_t> expected_bytes;
 };
 
@@ -72,7 +72,7 @@ private:
 class AsyncDecompressor
 {
 public:
-    AsyncDecompressor() = default;
+    AsyncDecompressor();
     ~AsyncDecompressor();
 
     AsyncDecompressor(AsyncDecompressor && other) noexcept;
@@ -93,7 +93,7 @@ private:
     bool in_flight = false;
 
     DeviceBuffer values{StreamRegistry::get().decompression};
-    DeviceEvent values_copied_out;
+    cudaEvent_t values_copied_out = nullptr;
     bool values_in_use = false;
 };
 

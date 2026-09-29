@@ -3,7 +3,6 @@
 #if USE_GPU
 
 #include <limits>
-#include <mutex>
 #include <string_view>
 
 namespace DB::ErrorCodes
@@ -25,10 +24,9 @@ bool isClickHouseException(const std::exception & exception)
     return dynamic_cast<const Exception *>(&exception) != nullptr;
 }
 
-void initializeDevice()
+const StreamRegistry & StreamRegistry::get()
 {
-    static std::once_flag once;
-    std::call_once(once, []
+    static const StreamRegistry registry = []
     {
         int count = 0;
         checkCuda(cudaGetDeviceCount(&count), "Cannot count the CUDA devices");
@@ -47,14 +45,6 @@ void initializeDevice()
         checkCuda(
             cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &release_threshold),
             "Cannot tell the device's memory pool to keep freed memory");
-    });
-}
-
-const StreamRegistry & StreamRegistry::get()
-{
-    static const StreamRegistry registry = []
-    {
-        initializeDevice();
 
         cudaStream_t upload_stream = nullptr;
         cudaStream_t decompression_stream = nullptr;
@@ -70,27 +60,9 @@ const StreamRegistry & StreamRegistry::get()
     return registry;
 }
 
-void synchronizeDevice()
+void synchronizeStream(rmm::cuda_stream_view stream)
 {
-    checkCuda(cudaStreamSynchronize(StreamRegistry::get().compute), "Cannot wait for the device to finish");
-}
-
-const String & deviceProbeError()
-{
-    static const String error = []
-    {
-        try
-        {
-            initializeDevice();
-            return String{};
-        }
-        catch (const Exception & e)
-        {
-            return e.message();
-        }
-    }();
-
-    return error;
+    checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for a CUDA stream");
 }
 
 }

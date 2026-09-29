@@ -125,9 +125,11 @@ void SyncDecompressor::decompress(
     if (blocks.empty())
         return;
 
-    DeviceEvent destination_ready;
-    destination_ready.record(StreamRegistry::get().compute);
-    destination_ready.waitOn(StreamRegistry::get().decompression);
+    const EventPtr destination_ready = createEvent();
+    checkCuda(cudaEventRecord(destination_ready.get(), StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
+    checkCuda(
+        cudaStreamWaitEvent(StreamRegistry::get().decompression, destination_ready.get(), 0),
+        "Cannot make the decompression stream wait for the compute stream");
 
     device_compressed.clear();
     device_compressed.append(host_compressed.substr(0, compressed_total));
@@ -141,11 +143,16 @@ void SyncDecompressor::decompress(
     batch.waitAndCheck();
 }
 
+AsyncDecompressor::AsyncDecompressor()
+{
+    checkCuda(cudaEventCreateWithFlags(&values_copied_out, cudaEventDisableTiming), "Cannot create a CUDA event");
+}
+
 AsyncDecompressor::AsyncDecompressor(AsyncDecompressor && other) noexcept
     : batch(std::move(other.batch))
     , in_flight(std::exchange(other.in_flight, false))
     , values(std::move(other.values))
-    , values_copied_out(std::move(other.values_copied_out))
+    , values_copied_out(std::exchange(other.values_copied_out, nullptr))
     , values_in_use(std::exchange(other.values_in_use, false))
 {
 }
@@ -157,12 +164,15 @@ AsyncDecompressor::~AsyncDecompressor()
         if (in_flight)
             batch.wait();
         if (values_in_use)
-            values_copied_out.wait();
+            checkCuda(cudaEventSynchronize(values_copied_out), "Cannot wait for the expanded values to be copied out");
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    if (values_copied_out != nullptr)
+        cudaEventDestroy(values_copied_out);
 }
 
 void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces)
@@ -176,7 +186,9 @@ void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> 
     for (const CompressedPiece & piece : pieces)
         total += decompressedBytesOf(piece.blocks);
 
-    values_copied_out.waitOn(StreamRegistry::get().decompression);
+    checkCuda(
+        cudaStreamWaitEvent(StreamRegistry::get().decompression, values_copied_out, 0),
+        "Cannot make the decompression stream wait for the expanded values to be copied out");
     values.clear();
 
     batch.launch(codec, pieces, values.grow(total));
@@ -199,7 +211,7 @@ void AsyncDecompressor::release()
     if (!values_in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was released without being taken");
 
-    values_copied_out.record(StreamRegistry::get().compute);
+    checkCuda(cudaEventRecord(values_copied_out, StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
     values_in_use = false;
 }
 
@@ -231,7 +243,7 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         num_blocks += piece.blocks.size();
 
         if (piece.uploaded)
-            piece.uploaded->waitOn(stream);
+            checkCuda(cudaStreamWaitEvent(stream, piece.uploaded, 0), "Cannot make the decompression stream wait for an upload");
     }
 
     expected_bytes.clear();
@@ -239,7 +251,7 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
 
     if (num_blocks == 0)
     {
-        expanded_event.record(stream);
+        checkCuda(cudaEventRecord(expanded.get(), stream), "Cannot mark a point in the decompression stream");
         return;
     }
 
@@ -316,12 +328,12 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream),
         "Cannot copy the decompression statuses back");
 
-    expanded_event.record(stream);
+    checkCuda(cudaEventRecord(expanded.get(), stream), "Cannot mark a point in the decompression stream");
 }
 
 void DecompressionBatch::wait()
 {
-    expanded_event.wait();
+    checkCuda(cudaEventSynchronize(expanded.get()), "Cannot wait for a decompression");
 }
 
 void DecompressionBatch::waitAndCheck()

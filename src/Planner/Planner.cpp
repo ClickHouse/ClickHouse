@@ -33,7 +33,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/GPUAggregatingStep.h>
-#include <GPU/GPUDevice.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
@@ -1009,12 +1008,6 @@ void addAggregationStep(QueryPlan & query_plan,
         && canAggregateOnDevice(
             query_plan, query_node, aggregation_analysis_result, query_analysis_result, planner_context, aggregator_params))
     {
-        if (const String & probe_error = GPU::deviceProbeError(); !probe_error.empty())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot aggregate on a GPU, which `allow_experimental_gpu_aggregation` asks for: {}",
-                probe_error);
-
         query_plan.addStep(std::make_unique<GPUAggregatingStep>(
             query_plan.getCurrentHeader(),
             std::move(aggregator_params),

@@ -146,7 +146,7 @@ private:
         GPUCodec codec = GPUCodec::LZ4;
         PinnedBuffer staged;
         DeviceBuffer on_device;
-        std::optional<DeviceEvent> uploaded;
+        EventPtr uploaded;
         std::vector<CompressedBlock> blocks;
         size_t num_rows = 0;
     };
@@ -214,7 +214,7 @@ private:
     std::vector<ColumnUploadPipe> value_pipes;
 
     std::unique_ptr<RecordGroupBy> group_by;
-    std::unique_ptr<DeviceStream> variable_group_stream;
+    StreamPtr variable_group_stream;
     std::unique_ptr<CudfGroupBy> variable_group_by;
 
     std::optional<size_t> num_groups;
@@ -229,7 +229,7 @@ private:
     struct CopiedRaw
     {
         DeviceWork work;
-        DeviceEvent copied;
+        EventPtr copied;
     };
     std::vector<CopiedRaw> raw_in_flight;
 

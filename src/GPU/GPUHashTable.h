@@ -57,13 +57,13 @@ public:
 private:
     struct Probe
     {
-        DeviceStream stream;
+        StreamPtr stream = createStream();
         ColumnUploadPipe keys;
         CudfHashJoinProbe device;
 
         Probe(const CudfHashJoin & join, const IDataType & key_column_type, size_t key_stage_bytes)
-            : keys(key_column_type, key_stage_bytes, stream.get())
-            , device(join, stream.get())
+            : keys(key_column_type, key_stage_bytes, rmm::cuda_stream_view{stream.get()})
+            , device(join, rmm::cuda_stream_view{stream.get()})
         {
         }
     };

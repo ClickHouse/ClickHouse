@@ -140,7 +140,7 @@ void HashTable::finishBuild()
     onDevice(
         [&] { hash_join->build(keys, payloads); }, "Cannot build a hash table over {} rows of the right table on a GPU", build_rows);
 
-    synchronizeDevice();
+    synchronizeStream(StreamRegistry::get().compute);
 
     ready.store(true, std::memory_order_release);
 
@@ -224,7 +224,7 @@ HashTable::Matches HashTable::probe(const IColumn & key_column)
             to.push_back(matches.build_payload_columns[i].get());
         }
 
-        copyDeviceToHost(from, to, probe->stream.get());
+        copyDeviceToHost(from, to, rmm::cuda_stream_view{probe->stream.get()});
     }
 
     probe->keys.reset();

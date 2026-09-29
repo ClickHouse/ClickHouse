@@ -37,6 +37,20 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
+namespace
+{
+
+bool isComplete(cudaEvent_t event)
+{
+    const cudaError_t status = cudaEventQuery(event);
+    if (status == cudaErrorNotReady)
+        return false;
+    checkCuda(status, "Cannot ask whether the device has reached a point in its stream");
+    return true;
+}
+
+}
+
 GPUAccumulator::GPUAccumulator(
     const IDataType & argument_type,
     const IDataType & result_type_,
@@ -307,9 +321,9 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
             key_element_types.size());
     else
     {
-        variable_group_stream = std::make_unique<DeviceStream>();
+        variable_group_stream = createStream();
         variable_group_by = onDevice(
-            [&] { return std::make_unique<CudfGroupBy>(group_keys, values, variable_group_stream->get()); },
+            [&] { return std::make_unique<CudfGroupBy>(group_keys, values, rmm::cuda_stream_view{variable_group_stream.get()}); },
             "Cannot set up a `GROUP BY` over {} keys, {} of them of variable width, on the device",
             group_keys.size(),
             variable_key_indices.size());
@@ -576,8 +590,8 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
 
     work.on_device = DeviceBuffer(StreamRegistry::get().upload);
     work.on_device.append(work.staged.bytes());
-    work.uploaded.emplace();
-    work.uploaded->record(StreamRegistry::get().upload);
+    work.uploaded = createEvent();
+    checkCuda(cudaEventRecord(work.uploaded.get(), StreamRegistry::get().upload), "Cannot mark a point in the upload stream");
 
     column.staged = PinnedBuffer{};
     column.blocks = {};
@@ -759,8 +773,8 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
     {
         DeviceWork & work = raw_pending[landed];
         if (wait)
-            work.uploaded->wait();
-        else if (!work.uploaded->isComplete())
+            checkCuda(cudaEventSynchronize(work.uploaded.get()), "Cannot wait for an upload to the device");
+        else if (!isComplete(work.uploaded.get()))
             break;
 
         const size_t bytes = work.on_device.size();
@@ -783,8 +797,8 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
         }
 
         work.staged = PinnedBuffer{};
-        CopiedRaw copied{.work = std::move(work), .copied = DeviceEvent{}};
-        copied.copied.record(StreamRegistry::get().compute);
+        CopiedRaw copied{.work = std::move(work), .copied = createEvent()};
+        checkCuda(cudaEventRecord(copied.copied.get(), StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
         raw_in_flight.push_back(std::move(copied));
     }
 
@@ -796,12 +810,12 @@ void GroupByGPUAccumulator::freeCopiedRaw(bool wait)
     if (wait)
     {
         for (const CopiedRaw & copied : raw_in_flight)
-            copied.copied.wait();
+            checkCuda(cudaEventSynchronize(copied.copied.get()), "Cannot wait for plain bytes to be copied into a device column");
         raw_in_flight.clear();
         return;
     }
 
-    std::erase_if(raw_in_flight, [](const CopiedRaw & copied) { return copied.copied.isComplete(); });
+    std::erase_if(raw_in_flight, [](const CopiedRaw & copied) { return isComplete(copied.copied.get()); });
 }
 
 void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
@@ -822,7 +836,7 @@ void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
             .device_compressed = work.on_device.data(),
             .compressed_bytes = work.on_device.size(),
             .blocks = work.blocks,
-            .uploaded = &*work.uploaded,
+            .uploaded = work.uploaded.get(),
         });
     }
 
@@ -1041,17 +1055,17 @@ void GroupByGPUAccumulator::groupByVariable(
     const std::vector<DeviceColumnView> & keys, const std::vector<DeviceFixedColumn> & value_columns, size_t num_rows)
 {
     const rmm::cuda_stream_view compute = StreamRegistry::get().compute;
-    const rmm::cuda_stream_view grouping = variable_group_stream->get();
+    const rmm::cuda_stream_view grouping = rmm::cuda_stream_view{variable_group_stream.get()};
 
-    DeviceEvent filled;
-    filled.record(compute);
-    filled.waitOn(grouping);
+    const EventPtr filled = createEvent();
+    checkCuda(cudaEventRecord(filled.get(), compute), "Cannot mark a point in the compute stream");
+    checkCuda(cudaStreamWaitEvent(grouping, filled.get(), 0), "Cannot make the grouping stream wait for the compute stream");
 
     onDevice([&] { variable_group_by->addBatch(keys, value_columns); }, "Cannot group {} rows by variable-width keys on the device", num_rows);
 
-    DeviceEvent grouped;
-    grouped.record(grouping);
-    grouped.waitOn(compute);
+    const EventPtr grouped = createEvent();
+    checkCuda(cudaEventRecord(grouped.get(), grouping), "Cannot mark a point in the grouping stream");
+    checkCuda(cudaStreamWaitEvent(compute, grouped.get(), 0), "Cannot make the compute stream wait for the grouping stream");
 }
 
 void GroupByGPUAccumulator::dropGroupedRows(Reader & reader)
@@ -1189,7 +1203,7 @@ void GroupByGPUAccumulator::copyVariableGroupsTo(MutableColumns & key_columns, M
         to.push_back(value_columns[i].get());
     }
 
-    copyDeviceToHost(from, to, variable_group_stream->get());
+    copyDeviceToHost(from, to, rmm::cuda_stream_view{variable_group_stream.get()});
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
