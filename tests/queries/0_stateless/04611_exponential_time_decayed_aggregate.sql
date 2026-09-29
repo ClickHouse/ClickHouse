@@ -8,7 +8,7 @@ SELECT exponentialTimeDecaying(10)(1, toFloat64(0)); -- { serverError UNKNOWN_FU
 
 -- Boolean keywords enable and disable the experimental feature.
 SET allow_experimental_time_decay_aggregate_functions = true;
-SELECT tupleElement(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)), 'sign');
+SELECT tupleElement(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)), 'value_at_anchor');
 
 SET allow_experimental_time_decay_aggregate_functions = false;
 SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
