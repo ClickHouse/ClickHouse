@@ -3,8 +3,6 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
-#include <span>
-
 namespace DB
 {
 
@@ -47,11 +45,11 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
-    bool canGetRequiredColumns() const override { return true; }
-    RequiredInputPositions getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
+    bool canGetUnneededColumns() const override { return true; }
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
     /// Prevent future input removal by removeUnusedColumns.
     /// Used when extra columns were absorbed from a child step that cannot reduce its output
@@ -63,32 +61,29 @@ private:
     void updateOutputHeader() override;
 
     /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
-    /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
-    struct RequiredColumnsPlan
+    /// removeUnusedColumns and getUnneededColumns so their answers cannot differ.
+    struct UnneededColumnsPlan
     {
         /// Whether inputs may be removed at all, which prevent_input_removal says they may not.
         bool remove_inputs = false;
-        /// The positions the caller asked for, which are also the outputs that survive.
-        std::vector<size_t> required_output_positions;
+        /// The positions nobody needs, which are also the outputs that go away.
+        std::vector<size_t> unneeded_output_positions;
         /// How many of them index the DAG's outputs. The output header holds those first and the
-        /// pass-through columns after, and the positions are sorted, so the DAG outputs asked for are a
+        /// pass-through columns after, and the positions are sorted, so the unneeded DAG outputs are a
         /// prefix of the positions rather than a list of their own.
-        size_t dag_position_count = 0;
+        size_t unneeded_dag_position_count = 0;
         /// One entry per column of the input header, in header order.
         std::vector<InputColumnUsage> input_columns;
 
-        /// The DAG outputs the caller asked for, as positions in `getOutputs()`.
-        std::span<const size_t> requiredDAGPositions() const
-        {
-            return {required_output_positions.data(), dag_position_count};
-        }
+        /// The DAG outputs that remain, in their order.
+        ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
 
-        /// What the step needs of its child: the columns it reads and passes on, or all of them while
-        /// inputs may not be removed.
-        std::vector<size_t> requiredInputPositions() const;
+        /// What the step does not need of its child: the columns it neither reads nor passes on, or none
+        /// while inputs may not be removed.
+        std::vector<size_t> unneededInputPositions() const;
     };
 
-    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;
+    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
     bool prevent_input_removal = false;

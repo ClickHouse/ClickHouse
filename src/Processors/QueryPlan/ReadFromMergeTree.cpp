@@ -6444,12 +6444,14 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 }
 
 ReadFromMergeTree::RemoveUnusedColumnsResult
-ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & /*inputs*/)
+ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & /*inputs*/)
 {
     if (output_header == nullptr)
         return {};
 
     const size_t former_output_column_count = output_header->columns();
+    /// The read works out what it keeps, which can be more than it is asked for.
+    const auto required_output_positions = complementPositions(former_output_column_count, unneeded_output_positions);
 
     /// Positions in the final RFMT output that must be preserved for the parent step or FINAL.
     std::set<size_t> required_final_output_positions(required_output_positions.begin(), required_output_positions.end());

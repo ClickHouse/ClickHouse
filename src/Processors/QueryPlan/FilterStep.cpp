@@ -581,7 +581,7 @@ bool FilterStep::canRemoveUnusedColumns() const
     return true;
 }
 
-FilterDAGOutputPruningPlan FilterStep::analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const
+FilterDAGOutputPruningPlan FilterStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
@@ -590,6 +590,9 @@ FilterDAGOutputPruningPlan FilterStep::analyzeRequiredColumns(const std::vector<
         actions_dag.getInputs().size() <= getInputHeaders().at(0)->columns()
         && "There cannot be more DAG inputs than columns in the input header");
 
+    /// The analysis counts what it keeps, the filter column included whether or not anyone reads it, as
+    /// `ReadFromMergeTree` asks it to for PREWHERE.
+    ///
     /// When extra columns were absorbed from a child step that cannot reduce its output,
     /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
     return analyzeFilterDAGOutputPruning(
@@ -597,30 +600,34 @@ FilterDAGOutputPruningPlan FilterStep::analyzeRequiredColumns(const std::vector<
         filter_column_name,
         remove_filter_column,
         *input_headers.front(),
-        required_output_positions,
+        complementPositions(output_header->columns(), unneeded_output_positions),
         !prevent_input_removal);
 }
 
-FilterStep::RequiredInputPositions FilterStep::getRequiredColumns(const std::vector<size_t> & required_output_positions) const
+FilterStep::UnneededInputPositions FilterStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
-    const auto pruning = analyzeRequiredColumns(required_output_positions).toResult();
-    if (!pruning.input_positions_changed)
-        return allInputPositions();
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
 
-    return {pruning.required_input_positions};
+    std::vector<size_t> positions;
+    if (plan.remove_inputs)
+        for (size_t position = 0; position < plan.input_columns.size(); ++position)
+            if (plan.input_columns[position] == InputColumnUsage::ReadDropped || plan.input_columns[position] == InputColumnUsage::PassesThroughDropped)
+                positions.push_back(position);
+
+    return {std::move(positions)};
 }
 
 FilterStep::RemoveUnusedColumnsResult
-FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs)
+FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
 {
-    const auto plan = analyzeRequiredColumns(required_output_positions);
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
     const auto & pruned = inputs.at(0);
     const auto input_header = input_headers.front();
 
     applyFilterDAGOutputPruningToOutputs(actions_dag, remove_filter_column, plan);
 
     RemoveUnusedColumnsResult result;
-    result.dropped_output_positions = complementPositions(output_header->columns(), required_output_positions);
+    result.dropped_output_positions = unneeded_output_positions;
 
     const bool dag_changed = alignInputsWithPrunedChild(actions_dag, plan.input_columns, *input_header, pruned);
     result.step_changed = plan.changes_output_header || plan.fold_filter_predicate || dag_changed

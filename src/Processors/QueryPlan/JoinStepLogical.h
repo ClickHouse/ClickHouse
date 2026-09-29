@@ -200,11 +200,11 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
-    bool canGetRequiredColumns() const override { return true; }
-    RequiredInputPositions getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
+    bool canGetUnneededColumns() const override { return true; }
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
@@ -236,11 +236,11 @@ protected:
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
     /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
-    /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
-    struct RequiredColumnsPlan
+    /// removeUnusedColumns and getUnneededColumns so their answers cannot differ.
+    struct UnneededColumnsPlan
     {
-        /// What the join reads of each side.
-        RequiredInputPositions required_input_positions;
+        /// What the join does not need of each side.
+        UnneededInputPositions unneeded_input_positions;
 
         /// Set when no output is left and the step has to put its dummy column back.
         bool adds_dummy_output = false;
@@ -255,7 +255,7 @@ protected:
         std::vector<size_t> kept_output_positions;
     };
 
-    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;
+    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;

@@ -11,7 +11,6 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
-#include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -51,18 +50,6 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     if (!supportsDataflowStatisticsCollection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
     dataflow_cache_updater = std::move(updater);
-}
-
-IQueryPlanStep::RequiredInputPositions IQueryPlanStep::allInputPositions() const
-{
-    RequiredInputPositions result;
-    for (const auto & input_header : input_headers)
-    {
-        auto & positions = result.emplace_back(input_header->columns());
-        std::iota(positions.begin(), positions.end(), 0);
-    }
-
-    return result;
 }
 
 std::vector<size_t> IQueryPlanStep::complementPositions(size_t count, const std::vector<size_t> & positions)
@@ -131,15 +118,15 @@ bool IQueryPlanStep::alignInputsWithPrunedChild(
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult
-IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, const std::vector<PrunedInput> & /*inputs*/)
+IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & /*inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
-IQueryPlanStep::RequiredInputPositions
-IQueryPlanStep::getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/) const
+IQueryPlanStep::UnneededInputPositions
+IQueryPlanStep::getUnneededColumns(const std::vector<size_t> & /*unneeded_output_positions*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getRequiredColumns is not implemented for step {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getUnneededColumns is not implemented for step {}", getName());
 }
 
 bool IQueryPlanStep::canRemoveColumnsFromOutput() const

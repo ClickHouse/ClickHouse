@@ -438,25 +438,28 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
         && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
 }
 
-JoinStepLogical::RequiredColumnsPlan
-JoinStepLogical::analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const
+JoinStepLogical::UnneededColumnsPlan
+JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
     const auto & actions_dag = *expression_actions.getActionsDAG();
 
-    RequiredColumnsPlan plan;
+    UnneededColumnsPlan plan;
 
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
-    /// Build a set of required DAG output positions.
-    const std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
+    const std::set<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
     ActionsDAG::NodeRawConstPtrs kept_output_nodes;
     const auto & dag_outputs = actions_dag.getOutputs();
+    if (!unneeded_positions_set.empty() && *unneeded_positions_set.rbegin() >= dag_outputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unneeded output position {} is out of range for the {} outputs of the join",
+            *unneeded_positions_set.rbegin(), dag_outputs.size());
     for (size_t position = 0; position < dag_outputs.size(); ++position)
     {
         const auto * output_node = dag_outputs[position];
         /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
         /// output column, so it is kept even when it is not required.
-        if (required_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
+        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
         {
             kept_output_nodes.push_back(output_node);
             plan.kept_output_positions.push_back(position);
@@ -521,7 +524,7 @@ JoinStepLogical::analyzeRequiredColumns(const std::vector<size_t> & required_out
 
     if (!plan.removes_any_action && plan.kept_output_positions.size() == dag_outputs.size())
     {
-        plan.required_input_positions = allInputPositions();
+        plan.unneeded_input_positions.resize(input_headers.size());
         return plan;
     }
 
@@ -556,24 +559,24 @@ JoinStepLogical::analyzeRequiredColumns(const std::vector<size_t> & required_out
 
         std::vector<size_t> positions;
         for (size_t position = 0; position < is_required_input.size(); ++position)
-            if (is_required_input[position])
+            if (!is_required_input[position])
                 positions.push_back(position);
 
-        plan.required_input_positions.push_back(std::move(positions));
+        plan.unneeded_input_positions.push_back(std::move(positions));
     }
 
     return plan;
 }
 
-JoinStepLogical::RequiredInputPositions JoinStepLogical::getRequiredColumns(const std::vector<size_t> & required_output_positions) const
+JoinStepLogical::UnneededInputPositions JoinStepLogical::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
-    return analyzeRequiredColumns(required_output_positions).required_input_positions;
+    return analyzeUnneededColumns(unneeded_output_positions).unneeded_input_positions;
 }
 
 JoinStepLogical::RemoveUnusedColumnsResult
-JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs)
+JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
 {
-    const auto plan = analyzeRequiredColumns(required_output_positions);
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
 
     auto & actions_dag = *expression_actions.getActionsDAG();
     auto & dag_outputs = actions_dag.getOutputs();
@@ -631,8 +634,8 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output
         for (size_t position : pruned.dropped_positions)
             kept.at(position) = false;
 
-        for (size_t position : plan.required_input_positions.at(side))
-            if (!kept[position])
+        for (size_t position : pruned.dropped_positions)
+            if (!std::ranges::binary_search(plan.unneeded_input_positions.at(side), position))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "The {} side of the join dropped column {}, which the join reads",
                     side == 0 ? "left" : "right", old_header.getByPosition(position).name);
