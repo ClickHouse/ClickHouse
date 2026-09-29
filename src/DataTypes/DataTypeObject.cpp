@@ -88,15 +88,20 @@ DataTypeObject::DataTypeObject(
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
-    /// Check if regular expressions are valid.
+    /// Check if regular expressions are valid and keep them compiled: the loop below is
+    /// O(typed_paths * path_regexps_to_skip), so compiling there would make constructing
+    /// the type quadratic in the size of its own declaration.
+    std::vector<std::unique_ptr<re2::RE2>> compiled_regexps_to_skip;
+    compiled_regexps_to_skip.reserve(path_regexps_to_skip.size());
     for (const auto & regexp_str : path_regexps_to_skip)
     {
         re2::RE2::Options options;
         /// Don't log errors to stderr.
         options.set_log_errors(false);
-        auto regexp = re2::RE2(regexp_str, options);
-        if (!regexp.ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
+        auto regexp = std::make_unique<re2::RE2>(regexp_str, options);
+        if (!regexp->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp->error());
+        compiled_regexps_to_skip.push_back(std::move(regexp));
     }
 
     for (const auto & [typed_path, type] : typed_paths)
@@ -107,10 +112,10 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP path prefix '{}'", typed_path, type->getName(), path_to_skip);
         }
 
-        for (const auto & path_regex_to_skip : path_regexps_to_skip)
+        for (size_t i = 0; i != compiled_regexps_to_skip.size(); ++i)
         {
-            if (re2::RE2::FullMatch(typed_path, re2::RE2(path_regex_to_skip)))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
+            if (re2::RE2::FullMatch(typed_path, *compiled_regexps_to_skip[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regexps_to_skip[i]);
         }
     }
 }
