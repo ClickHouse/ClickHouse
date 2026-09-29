@@ -12,10 +12,10 @@ namespace DB
   *
   * Rerank request (`model` is required):
   *   POST /v2/rerank
-  *   {"model": "rerank-v3.5", "query": "capital of France", "documents": ["Paris is the capital of France.", "Berlin is in Germany."], "top_n": 1}
+  *   {"model": "rerank-v3.5", "query": "capital of France", "documents": ["Paris is the capital of France.", "Berlin is in Germany."]}
   *
   * Rerank response:
-  *   {"results": [{"index": 0, "relevance_score": 0.98}],
+  *   {"results": [{"index": 0, "relevance_score": 0.98}, {"index": 1, "relevance_score": 0.01}],
   *    "id": "...",
   *    "meta": {"api_version": {"version": "2"}, "billed_units": {"search_units": 1}}}
   *
@@ -26,9 +26,8 @@ namespace DB
   *
   * The v1 endpoint (`/v1/rerank`) accepts the same request and returns the same fields, so it works too.
   *
-  * `results` is sorted by descending `relevance_score` and holds exactly `top_n` entries (one per
-  * document when `top_n` is absent). `index` is the document's position in the request's `documents`
-  * array.
+  * `results` is sorted by descending `relevance_score` and holds one entry per document (`top_n` is never
+  * sent). `index` is the document's position in the request's `documents` array.
   */
 class CohereProvider : public IAIProvider
 {

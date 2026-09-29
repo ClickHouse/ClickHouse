@@ -3,12 +3,11 @@ Integration tests for AI function execution paths.
 
 Tests the row-processing loop against a mock OpenAI-compatible HTTP server
 for aiGenerate, aiClassify, aiFilter, aiExtract, aiTranslate, and (via a mock
-Cohere-shaped rerank endpoint) aiRerank.
+Cohere-shaped rerank endpoint) aiRelevance.
 """
 
 import json
 import os
-import re
 import typing
 import uuid
 
@@ -22,7 +21,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "node", user_configs=["configs/allow_experimental_ai_rerank.xml"]
+    "node", user_configs=["configs/allow_experimental_ai_relevance.xml"]
 )
 
 
@@ -281,7 +280,7 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
             f"api_key = 'test-key'"
         )
-        # aiRerank resolves `model` from the map, falling back to the named collection, so these
+        # aiRelevance resolves `model` from the map, falling back to the named collection, so these
         # collections define a default `model`.
         instance.query(
             f"CREATE NAMED COLLECTION ai_rerank AS "
@@ -308,13 +307,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_rerank_tokens_dup_index AS "
             f"provider = 'cohere', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v2/rerank_tokens_dup_index', "
-            f"model = 'test-rerank-model', "
-            f"api_key = 'test-key'"
-        )
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_rerank_ignore_top_n AS "
-            f"provider = 'cohere', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v2/rerank_ignore_top_n', "
             f"model = 'test-rerank-model', "
             f"api_key = 'test-key'"
         )
@@ -1848,8 +1840,8 @@ def test_function_name_header(started_cluster):
             "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed'))",
         ),
         (
-            "aiRerank",
-            "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank'))",
+            "aiRelevance",
+            "SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank'))",
         ),
     ]
     for name, query in cases:
@@ -2137,20 +2129,8 @@ def test_similarity_const_nullable_operand(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# aiRerank
+# aiRelevance
 # ---------------------------------------------------------------------------
-
-
-def parse_rerank_result(s):
-    """Parse a TabSeparated `Array(Tuple(index UInt32, relevance_score Float32))` cell like
-    `[(2,0.98),(1,0.01)]` into a list of `(index, score)` pairs."""
-    s = s.strip()
-    if not s or s == "[]":
-        return []
-    return [
-        (int(idx), float(score))
-        for idx, score in re.findall(r"\((\d+),([-\d.eE]+)\)", s)
-    ]
 
 
 def expected_rerank_score(query, document):
@@ -2163,61 +2143,131 @@ def expected_rerank_score(query, document):
     return round(len(q_words & d_words) / len(union), 4) if union else 0.0
 
 
-def test_rerank_basic(started_cluster):
-    """The provider's ranking is returned as-is: same order, `index` converted to 1-based, and each
-    index paired with its own score. The documents score distinctly (0.0, 1.0, 0.4), and the expected
-    order (2, 3, 1) is neither the input order nor its reverse."""
-    query = "capital of France"
-    documents = ["Berlin is in Germany", "capital of France", "the capital of Spain"]
-    result = instance.query(
-        f"SELECT aiRerank('{query}', {documents}, map('credentials', 'ai_rerank'))",
-    )
-    ranked = parse_rerank_result(result)
-    assert [idx for idx, _ in ranked] == [2, 3, 1]
-    for idx, score in ranked:
-        assert score == pytest.approx(expected_rerank_score(query, documents[idx - 1]), abs=1e-4)
+RELEVANCE_DOCUMENTS = [
+    "Berlin is in Germany",
+    "capital of France",
+    "the capital of Spain",
+    "Paris is the capital of France",
+    "Sourdough needs time and patience",
+]
 
 
-def test_rerank_top_n(started_cluster):
-    """`top_n` limits the number of returned results."""
-    result = instance.query(
-        "SELECT aiRerank('capital of France', "
-        "['a', 'Paris is the capital of France.', 'b', 'c'], "
-        "map('credentials', 'ai_rerank', 'top_n', '2'))",
-    )
-    assert len(parse_rerank_result(result)) == 2
-
-
-def test_rerank_top_n_larger_than_documents(started_cluster):
-    """A `top_n` above a row's document count is capped to it in the request, so all documents are
-    returned."""
-    result = instance.query(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank', 'top_n', '5'))",
-    )
-    assert len(parse_rerank_result(result)) == 2
-    assert json.loads(last_request()["body"])["top_n"] == 2
-
-
-def test_rerank_cte_candidate_retrieval(started_cluster):
-    """The realistic retrieval flow: a CTE pre-filters candidate rows from a table with a cheap
-    predicate, aiRerank ranks only those candidates and keeps the `top_n` best, and the surviving
-    candidates are returned as rows with their scores, mapped back through the 1-based `index`.
-
-    The table deliberately has no surrogate id column: the candidates are aggregated as whole-row
-    tuples, aiRerank ranks a projection of that same array (`arrayMap(t -> t.2, rows)`), and the
-    positional `index` maps back into it (`rows[r.index]`), recovering every original column.
-
-    The 'cooking' rows are deliberately more relevant to the query than the worst 'geography' row,
-    so their absence from the result proves only the CTE's candidates were ranked."""
-    instance.query("DROP TABLE IF EXISTS rerank_docs")
+def fill_relevance_docs(documents=RELEVANCE_DOCUMENTS):
+    """(Re)create `relevance_docs (id, text)` holding `documents` with 1-based ids."""
+    instance.query("DROP TABLE IF EXISTS relevance_docs")
     instance.query(
-        "CREATE TABLE rerank_docs (url String, category String, text String) ENGINE = Memory"
+        "CREATE TABLE relevance_docs (id UInt32, text String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        "INSERT INTO relevance_docs VALUES "
+        + ", ".join(f"({i + 1}, '{doc}')" for i, doc in enumerate(documents))
+    )
+
+
+def test_relevance_scores(started_cluster):
+    """Each row gets its own document's score, whatever position the provider ranked it at: the mock
+    returns results sorted by score, not in input order, so a mix-up of `index` would show here."""
+    query = "capital of France"
+    fill_relevance_docs()
+    result = instance.query(
+        f"SELECT id, aiRelevance('{query}', text, map('credentials', 'ai_rerank')) "
+        "FROM relevance_docs ORDER BY id"
+    )
+    rows = [line.split("\t") for line in result.strip().splitlines()]
+    assert [int(id_) for id_, _ in rows] == list(range(1, len(RELEVANCE_DOCUMENTS) + 1))
+    for id_, score in rows:
+        assert parse_nullable_float(score) == pytest.approx(
+            expected_rerank_score(query, RELEVANCE_DOCUMENTS[int(id_) - 1]), abs=1e-4
+        )
+
+
+def test_relevance_const_query_single_request(started_cluster):
+    """With a constant query, every document of the block shares one request, sent in row order."""
+    fill_relevance_docs()
+    qid = unique_query_id("relevance_const_query")
+    instance.query(
+        "SELECT aiRelevance('capital of France', text, map('credentials', 'ai_rerank')) "
+        "FROM relevance_docs SETTINGS max_threads = 1",
+        query_id=qid,
+    )
+    body = json.loads(last_request()["body"])
+    assert body["query"] == "capital of France"
+    assert body["documents"] == RELEVANCE_DOCUMENTS
+    assert "top_n" not in body
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == len(RELEVANCE_DOCUMENTS)
+    assert int(events["rows_skipped"]) == 0
+    # Cohere bills `search_units` and reports no tokens, so nothing is fed to the token quota tracker.
+    assert int(events["input_tokens"]) == 0
+    assert int(events["output_tokens"]) == 0
+    assert int(events["search_units"]) == 1
+
+
+def test_relevance_batching(started_cluster):
+    """`ai_function_rerank_max_batch_size` splits the documents of one query across HTTP calls."""
+    fill_relevance_docs()
+    qid = unique_query_id("relevance_batch")
+    instance.query(
+        "SELECT aiRelevance('capital of France', text, map('credentials', 'ai_rerank')) FROM relevance_docs",
+        settings={"ai_function_rerank_max_batch_size": 2, "max_threads": 1},
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    # 5 rows / batch of 2 -> ceil(5/2) = 3 HTTP calls.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 5
+    assert int(events["search_units"]) == 3  # mock bills 1 unit per call
+
+
+def test_relevance_groups_rows_by_query(started_cluster):
+    """Rows are scored against their own query: rows sharing a query share a request, and each
+    distinct query gets its own. Interleaved queries exercise the grouping."""
+    rows = [
+        ("capital of France", "Paris is the capital of France"),
+        ("capital of Spain", "the capital of Spain"),
+        ("capital of France", "Berlin is in Germany"),
+        ("capital of Spain", "capital of France"),
+        ("capital of France", "the capital of Spain"),
+    ]
+    instance.query("DROP TABLE IF EXISTS relevance_pairs")
+    instance.query(
+        "CREATE TABLE relevance_pairs (id UInt32, q String, d String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        "INSERT INTO relevance_pairs VALUES "
+        + ", ".join(f"({i}, '{q}', '{d}')" for i, (q, d) in enumerate(rows))
+    )
+    qid = unique_query_id("relevance_groups")
+    result = instance.query(
+        "SELECT id, aiRelevance(q, d, map('credentials', 'ai_rerank')) FROM relevance_pairs ORDER BY id "
+        "SETTINGS max_threads = 1",
+        query_id=qid,
+    )
+    for line, (q, d) in zip(result.strip().splitlines(), rows):
+        _, score = line.split("\t")
+        assert parse_nullable_float(score) == pytest.approx(expected_rerank_score(q, d), abs=1e-4)
+    assert int(get_profile_events(qid)["api_calls"]) == 2  # one per distinct query
+    instance.query("DROP TABLE relevance_pairs")
+
+
+def test_relevance_order_by_limit_across_blocks(started_cluster):
+    """The intended usage: `ORDER BY aiRelevance(...) DESC LIMIT n` over pre-filtered candidates.
+    Tiny blocks and batches spread the rows across many requests, and the global order must still be
+    correct, which relies on scores from different requests being comparable.
+
+    The 'cooking' rows are more relevant to the query than the worst 'geography' row, so their
+    absence from the result proves only the `WHERE` candidates were scored."""
+    instance.query("DROP TABLE IF EXISTS relevance_catalog")
+    instance.query(
+        "CREATE TABLE relevance_catalog (url String, category String, text String) "
+        "ENGINE = MergeTree ORDER BY url"
     )
     # Against the query 'capital of France' (word set {capital, of, france}), the mock's Jaccard
     # scores are: paris -> 0.5, berlin -> 0.25, eiffel -> 0.125, baguette -> 0.2222, sourdough -> 0.
     instance.query(
         """
-        INSERT INTO rerank_docs VALUES
+        INSERT INTO relevance_catalog VALUES
         ('https://example.com/paris', 'geography', 'Paris is the capital of France'),
         ('https://example.com/berlin', 'geography', 'Berlin is the capital of Germany'),
         ('https://example.com/eiffel', 'geography', 'The Eiffel Tower stands in France'),
@@ -2226,96 +2276,64 @@ def test_rerank_cte_candidate_retrieval(started_cluster):
         """
     )
     try:
+        qid = unique_query_id("relevance_order_by")
         result = instance.query(
             """
-            WITH candidates AS
-            (
-                SELECT url, text
-                FROM rerank_docs
-                WHERE category = 'geography'
-            )
-            SELECT urls[r.index] AS url, texts[r.index] AS text, r.relevance_score AS score
-            FROM
-            (
-                SELECT
-                    groupArray(url) AS urls,
-                    groupArray(text) AS texts,
-                    aiRerank('capital of France', texts, map('credentials', 'ai_rerank', 'top_n', '2')) AS ranked
-                FROM candidates
-            )
-            ARRAY JOIN ranked AS r
-            ORDER BY score DESC, url
-            """
+            SELECT url, aiRelevance('capital of France', text, map('credentials', 'ai_rerank')) AS score
+            FROM relevance_catalog
+            WHERE category = 'geography'
+            ORDER BY score DESC
+            LIMIT 2
+            """,
+            settings={"max_block_size": 1, "ai_function_rerank_max_batch_size": 1},
+            query_id=qid,
         )
-        rows = [
-            (url, text, float(score))
-            for url, text, score in (line.split("\t") for line in result.strip().splitlines())
-        ]
-        # top_n = 2 over the geography candidates only: paris and berlin, most relevant first.
-        assert [url for url, _, _ in rows] == [
+        rows = [line.split("\t") for line in result.strip().splitlines()]
+        assert [url for url, _ in rows] == [
             "https://example.com/paris",
             "https://example.com/berlin",
         ]
-        # baguette scores 0.2222 — above eiffel's 0.125 — but the CTE filtered it out before ranking.
-        assert "https://example.com/baguette" not in [url for url, _, _ in rows]
-        # Scores round-trip the 1-based index back to the original row's text.
-        for _, text, score in rows:
-            assert score == pytest.approx(
-                expected_rerank_score("capital of France", text), abs=1e-4
-            )
+        # Only the 3 'geography' candidates were scored, each in its own request.
+        events = get_profile_events(qid)
+        assert int(events["api_calls"]) == 3
+        assert int(events["rows_processed"]) == 3
     finally:
-        instance.query("DROP TABLE IF EXISTS rerank_docs")
+        instance.query("DROP TABLE IF EXISTS relevance_catalog")
 
 
-def test_rerank_multiple_rows_profile_events(started_cluster):
-    """Each row is one HTTP call: a row's documents are never batched with another row's, since
-    they must be ranked together against that row's own query."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
-    qid = unique_query_id("rerank_events")
-    instance.query(
-        "SELECT aiRerank(x, ['doc1', 'doc2'], map('credentials', 'ai_rerank')) FROM test_input",
-        query_id=qid,
-    )
-    events = get_profile_events(qid)
-    assert int(events["api_calls"]) == 3  # one call per row, no cross-row batching
-    assert int(events["rows_processed"]) == 3
-    assert int(events["rows_skipped"]) == 0
-    # Cohere bills `search_units` and reports no tokens, so nothing is fed to the token quota tracker.
-    assert int(events["input_tokens"]) == 0
-    assert int(events["output_tokens"]) == 0
-    assert int(events["search_units"]) == 3  # mock bills 1 unit per call
-
-
-def test_rerank_token_billing_profile_events(started_cluster):
+def test_relevance_token_billing_profile_events(started_cluster):
     """A Cohere-compatible endpoint that reports `input_tokens`/`output_tokens` in `meta.billed_units`
-    has them accumulated across rows. Mock bills `len(query) + sum(len(documents))` input tokens and
-    one output token per result."""
+    has them accumulated across requests. Mock bills `len(query) + sum(len(documents))` input tokens
+    and one output token per result."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('bb'), ('ccc')")
-    qid = unique_query_id("rerank_tokens")
+    qid = unique_query_id("relevance_tokens")
     instance.query(
-        "SELECT aiRerank(x, ['doc1', 'doc2'], map('credentials', 'ai_rerank_tokens')) FROM test_input",
+        "SELECT aiRelevance('q', x, map('credentials', 'ai_rerank_tokens')) FROM test_input",
+        settings={"ai_function_rerank_max_batch_size": 2, "max_threads": 1},
         query_id=qid,
     )
     events = get_profile_events(qid)
-    assert int(events["api_calls"]) == 3
-    assert int(events["input_tokens"]) == (1 + 8) + (2 + 8) + (3 + 8)
-    assert int(events["output_tokens"]) == 3 * 2
+    # Batches: ['a', 'bb'] and ['ccc'].
+    assert int(events["api_calls"]) == 2
+    assert int(events["input_tokens"]) == (1 + 1 + 2) + (1 + 3)
+    assert int(events["output_tokens"]) == 2 + 1
     assert int(events["rows_processed"]) == 3
 
 
-def test_rerank_input_token_quota_throw(started_cluster):
-    """Reported input tokens count towards `ai_function_max_input_tokens_per_query`: the first row's
-    call (1 + 8 tokens) exhausts a limit of 5, so the second row's call is never made."""
+def test_relevance_input_token_quota_throw(started_cluster):
+    """Reported input tokens count towards `ai_function_max_input_tokens_per_query`: the first batch
+    (1 + 1 tokens) exhausts a limit of 2, so the second batch is never sent."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
-    qid = unique_query_id("rerank_input_quota")
+    qid = unique_query_id("relevance_input_quota")
     error = instance.query_and_get_error(
-        "SELECT aiRerank(x, ['doc1', 'doc2'], map('credentials', 'ai_rerank_tokens')) FROM test_input",
+        "SELECT aiRelevance('q', x, map('credentials', 'ai_rerank_tokens')) FROM test_input",
         settings={
-            "ai_function_max_input_tokens_per_query": 5,
+            "ai_function_rerank_max_batch_size": 1,
+            "ai_function_max_input_tokens_per_query": 2,
             "ai_function_throw_on_quota_exceeded": 1,
+            "max_threads": 1,
         },
         query_id=qid,
     )
@@ -2323,38 +2341,39 @@ def test_rerank_input_token_quota_throw(started_cluster):
     assert "input token limit" in error
     events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
     assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 1 + 8
+    assert int(events["input_tokens"]) == 1 + 1
 
 
-def test_rerank_output_token_quota_skip(started_cluster):
+def test_relevance_output_token_quota_skip(started_cluster):
     """Reported output tokens count towards `ai_function_max_output_tokens_per_query`. With
-    `ai_function_throw_on_quota_exceeded = 0`, rows after the limit is hit are skipped as `[]`."""
+    `ai_function_throw_on_quota_exceeded = 0`, rows after the limit is hit are skipped as NULL."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
-    qid = unique_query_id("rerank_output_quota")
+    qid = unique_query_id("relevance_output_quota")
     result = instance.query(
-        "SELECT length(aiRerank(x, ['doc1', 'doc2'], map('credentials', 'ai_rerank_tokens'))) FROM test_input",
+        "SELECT aiRelevance('a', x, map('credentials', 'ai_rerank_tokens')) FROM test_input",
         settings={
-            "ai_function_max_output_tokens_per_query": 2,
+            "ai_function_rerank_max_batch_size": 1,
+            "ai_function_max_output_tokens_per_query": 1,
             "ai_function_throw_on_quota_exceeded": 0,
             "max_threads": 1,
         },
         query_id=qid,
     )
-    assert result.split() == ["2", "0", "0"]
+    assert [parse_nullable_float(v) for v in result.split()] == [1.0, None, None]
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 1
-    assert int(events["output_tokens"]) == 2
+    assert int(events["output_tokens"]) == 1
     assert int(events["rows_processed"]) == 1
     assert int(events["rows_skipped"]) == 2
 
 
-def test_rerank_malformed_response_records_tokens(started_cluster):
+def test_relevance_malformed_response_records_tokens(started_cluster):
     """A `200` body that was billed but fails validation still consumed tokens, so they must reach
     `system.query_log` and `AIQuotaTracker`."""
-    qid = unique_query_id("rerank_malformed_tokens")
+    qid = unique_query_id("relevance_malformed_tokens")
     error = instance.query_and_get_error(
-        "SELECT aiRerank('q', ['doc1', 'doc2'], map('credentials', 'ai_rerank_tokens_dup_index'))",
+        "SELECT aiRelevance('q', arrayJoin(['doc1', 'doc2']), map('credentials', 'ai_rerank_tokens_dup_index'))",
         settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
@@ -2366,78 +2385,37 @@ def test_rerank_malformed_response_records_tokens(started_cluster):
     assert int(events["search_units"]) == 1
 
 
-def test_rerank_multiple_rows_rank_own_documents(started_cluster):
-    """Each row is ranked against its own query, whether `documents` is a constant array shared by
-    every row or a per-row column."""
-    queries = ["capital of France", "capital of Spain", "Berlin"]
-    const_documents = ["Berlin is in Germany", "capital of France", "the capital of Spain"]
-
-    def expected_indices(query, documents):
-        scored = [(i + 1, expected_rerank_score(query, doc)) for i, doc in enumerate(documents)]
-        scored.sort(key=lambda item: (-item[1], item[0]))
-        return [idx for idx, _ in scored]
-
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query("INSERT INTO test_input VALUES " + ", ".join(f"('{q}')" for q in queries))
-
-    result = instance.query(
-        f"SELECT aiRerank(x, {const_documents}, map('credentials', 'ai_rerank')) FROM test_input "
-        "SETTINGS max_threads = 1",
+def test_relevance_null_and_empty_operands(started_cluster):
+    """A NULL or empty query or document has nothing to score: no HTTP call, result is NULL."""
+    instance.query("DROP TABLE IF EXISTS relevance_nullable")
+    instance.query(
+        "CREATE TABLE relevance_nullable (id UInt32, q Nullable(String), d Nullable(String)) "
+        "ENGINE = MergeTree ORDER BY id"
     )
-    rows = result.strip().splitlines()
-    assert len(rows) == len(queries)
-    for query, row in zip(queries, rows):
-        assert [idx for idx, _ in parse_rerank_result(row)] == expected_indices(query, const_documents)
-
-    # Per-row documents: the row's own query prepended to the shared list, so every row differs.
-    result = instance.query(
-        f"SELECT aiRerank(x, arrayConcat([x], {const_documents}), map('credentials', 'ai_rerank')) "
-        "FROM test_input SETTINGS max_threads = 1",
+    instance.query(
+        "INSERT INTO relevance_nullable VALUES "
+        "(1, NULL, 'a'), (2, 'a', NULL), (3, '', 'a'), (4, 'a', ''), (5, 'a', 'a')"
     )
-    rows = result.strip().splitlines()
-    assert len(rows) == len(queries)
-    for query, row in zip(queries, rows):
-        assert [idx for idx, _ in parse_rerank_result(row)] == expected_indices(
-            query, [query] + const_documents
-        )
-
-
-def test_rerank_null_query(started_cluster):
-    """A NULL query has nothing to rank against: no HTTP call, result is `[]`."""
-    instance.query("TRUNCATE TABLE test_input_nullable")
-    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('hi')")
-    qid = unique_query_id("rerank_null_query")
+    qid = unique_query_id("relevance_null")
     result = instance.query(
-        "SELECT aiRerank(x, ['a', 'b'], map('credentials', 'ai_rerank')) "
-        "FROM test_input_nullable ORDER BY x NULLS FIRST",
+        "SELECT aiRelevance(q, d, map('credentials', 'ai_rerank')) FROM relevance_nullable ORDER BY id",
         query_id=qid,
     )
-    rows = [parse_rerank_result(line) for line in result.strip().split("\n")]
-    assert rows[0] == []
-    assert len(rows[1]) == 2
+    assert [parse_nullable_float(v) for v in result.split()] == [None, None, None, None, 1.0]
+    assert json.loads(last_request()["body"])["documents"] == ["a"]
     events = get_profile_events(qid)
-    assert int(events["api_calls"]) == 1  # only the non-NULL row dispatched a request
+    assert int(events["api_calls"]) == 1  # only the complete row dispatched a request
+    assert int(events["rows_processed"]) == 1
+    assert int(events["rows_skipped"]) == 0
+    instance.query("DROP TABLE relevance_nullable")
 
 
-def test_rerank_empty_documents(started_cluster):
-    """An empty `documents` array has nothing to rank: no HTTP call, result is `[]`."""
-    qid = unique_query_id("rerank_empty_docs")
-    # `[]` alone resolves to `Array(Nothing)`, not `Array(String)`; cast explicitly, like the
-    # equivalent aiRedact/aiClassify empty-array cases in the stateless test.
-    result = instance.query(
-        "SELECT aiRerank('hi', CAST([], 'Array(String)'), map('credentials', 'ai_rerank'))",
-        query_id=qid,
-    )
-    assert parse_rerank_result(result) == []
-    assert int(get_profile_events(qid)["api_calls"]) == 0
-
-
-def test_rerank_empty_input_table(started_cluster):
+def test_relevance_empty_input_table(started_cluster):
     """Zero-row input must not make any API calls."""
     instance.query("TRUNCATE TABLE test_input")
-    qid = unique_query_id("rerank_zero_rows")
+    qid = unique_query_id("relevance_zero_rows")
     result = instance.query(
-        "SELECT aiRerank(x, ['a'], map('credentials', 'ai_rerank')) FROM test_input",
+        "SELECT aiRelevance('q', x, map('credentials', 'ai_rerank')) FROM test_input",
         query_id=qid,
     )
     assert result.strip() == ""
@@ -2446,115 +2424,100 @@ def test_rerank_empty_input_table(started_cluster):
     assert int(events["rows_processed"]) == 0
 
 
-def test_rerank_model_override_and_top_n_forwarded(started_cluster):
-    """`map('model', ...)` overrides the collection's default model on the actual request, and `top_n`
-    reaches the request body too."""
+def test_relevance_model_override_forwarded(started_cluster):
+    """`map('model', ...)` overrides the collection's default model on the actual request."""
     instance.query(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank', 'model', 'override-rerank-model', 'top_n', '1'))",
+        "SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank', 'model', 'override-rerank-model'))",
     )
     body = json.loads(last_request()["body"])
     assert body["model"] == "override-rerank-model"
-    assert body["top_n"] == 1
     assert body["query"] == "hi"
-    assert body["documents"] == ["a", "b"]
+    assert body["documents"] == ["a"]
 
 
-def test_rerank_model_from_named_collection_forwarded(started_cluster):
+def test_relevance_model_from_named_collection_forwarded(started_cluster):
     """With no `model` in the map, the named collection's `model` reaches the request body."""
-    instance.query(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank'))",
-    )
-    body = json.loads(last_request()["body"])
-    assert body["model"] == "test-rerank-model"
+    instance.query("SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank'))")
+    assert json.loads(last_request()["body"])["model"] == "test-rerank-model"
 
 
-def test_rerank_empty_model_override_forwarded(started_cluster):
+def test_relevance_empty_model_override_forwarded(started_cluster):
     """An explicitly empty `model` in the map overrides the collection's model and is sent as-is:
     whether a model is required is left to the provider's endpoint."""
-    instance.query(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank', 'model', ''))",
-    )
+    instance.query("SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank', 'model', ''))")
     assert json.loads(last_request()["body"])["model"] == ""
 
 
-def test_rerank_uses_default_credentials(started_cluster):
+def test_relevance_uses_default_credentials(started_cluster):
     """With no `credentials` in the call, `ai_function_rerank_default_credentials` is used end-to-end,
     including its default `model`."""
     result = instance.query(
-        "SELECT aiRerank('hi', ['a', 'b'])",
+        "SELECT aiRelevance('hi', 'hi')",
         settings={"ai_function_rerank_default_credentials": "ai_rerank"},
     )
-    assert len(parse_rerank_result(result)) == 2
+    assert parse_nullable_float(result) == 1.0
 
 
-def test_rerank_error_throw(started_cluster):
+def test_relevance_error_throw(started_cluster):
     """By default, a provider error propagates."""
     error = instance.query_and_get_error(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank_error'))",
+        "SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank_error'))",
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
-def test_rerank_error_graceful(started_cluster):
-    """With `ai_function_throw_on_error = 0`, a provider error yields `[]` and the row is skipped."""
-    qid = unique_query_id("rerank_error_graceful")
+def test_relevance_error_graceful(started_cluster):
+    """With `ai_function_throw_on_error = 0`, a failed request yields NULL for every row of its batch."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
+    qid = unique_query_id("relevance_error_graceful")
     result = instance.query(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank_error'))",
+        "SELECT aiRelevance('hi', x, map('credentials', 'ai_rerank_error')) FROM test_input",
         settings={"ai_function_throw_on_error": 0, "ai_function_max_retries": 0},
         query_id=qid,
     )
-    assert parse_rerank_result(result) == []
+    assert [parse_nullable_float(v) for v in result.split()] == [None, None]
     events = get_profile_events(qid)
     assert int(events["rows_processed"]) == 0
-    assert int(events["rows_skipped"]) == 1
+    assert int(events["rows_skipped"]) == 2
 
 
-def test_rerank_duplicate_index_rejected(started_cluster):
+def test_relevance_duplicate_index_rejected(started_cluster):
     """A malformed response with duplicate `index` values is rejected."""
     error = instance.query_and_get_error(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank_dup_index'))",
+        "SELECT aiRelevance('hi', arrayJoin(['a', 'b']), map('credentials', 'ai_rerank_dup_index'))",
         settings={"ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
-    assert "duplicates" in error or "duplicate" in error.lower()
+    assert "duplicates an earlier entry" in error
 
 
-def test_rerank_more_results_than_top_n_rejected(started_cluster):
-    """A malformed response with more results than the requested `top_n` is rejected."""
+def test_relevance_fewer_results_than_documents_rejected(started_cluster):
+    """The response must score every document: one missing is rejected rather than left NULL."""
     error = instance.query_and_get_error(
-        "SELECT aiRerank('hi', ['a', 'b', 'c'], map('credentials', 'ai_rerank_ignore_top_n', 'top_n', '2'))",
-        settings={"ai_function_max_retries": 0},
-    )
-    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
-    assert "has 3 entries, expected 2" in error
-
-
-def test_rerank_fewer_results_than_documents_rejected(started_cluster):
-    """Without `top_n`, the response must rank every document: one missing is rejected."""
-    error = instance.query_and_get_error(
-        "SELECT aiRerank('hi', ['a', 'b', 'c'], map('credentials', 'ai_rerank_drop_last'))",
+        "SELECT aiRelevance('hi', arrayJoin(['a', 'b', 'c']), map('credentials', 'ai_rerank_drop_last'))",
         settings={"ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
     assert "has 2 entries, expected 3" in error
 
 
-def test_rerank_missing_relevance_score_rejected(started_cluster):
+def test_relevance_missing_relevance_score_rejected(started_cluster):
     """A result without `relevance_score` is rejected rather than scored as 0."""
     error = instance.query_and_get_error(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_rerank_no_score'))",
+        "SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank_no_score'))",
         settings={"ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
     assert "missing 'relevance_score'" in error
 
 
-def test_rerank_openai_provider_rejected(started_cluster):
-    """The `openai` provider has no reranking endpoint, so a rerank call against one of its collections
-    fails with NOT_IMPLEMENTED before any request is sent. `ai_mock` already carries a `model`, which
-    aiRerank reads from the collection."""
+def test_relevance_openai_provider_rejected(started_cluster):
+    """The `openai` provider has no reranking endpoint, so a call against one of its collections fails
+    with NOT_IMPLEMENTED before any request is sent. `ai_mock` already carries a `model`, which
+    aiRelevance reads from the collection."""
     error = instance.query_and_get_error(
-        "SELECT aiRerank('hi', ['a', 'b'], map('credentials', 'ai_mock'))",
+        "SELECT aiRelevance('hi', 'a', map('credentials', 'ai_mock'))",
     )
     assert "NOT_IMPLEMENTED" in error
     assert "does not support reranking" in error

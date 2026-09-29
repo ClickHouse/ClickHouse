@@ -59,16 +59,15 @@ Endpoints:
       the url table function never retries, used to assert AI functions do not retry it either.
   POST /v1/embeddings_error          — always returns HTTP 500 (used for embedding errors)
   POST /v2/rerank                    — Cohere-shaped rerank response. Scores each document against
-      the query with a deterministic word-overlap (Jaccard) formula, sorts by descending score, and
-      truncates to `top_n` when given. `meta.billed_units.search_units` is fixed at 1.0.
+      the query with a deterministic word-overlap (Jaccard) formula, independently of the other
+      documents (like a real cross-encoder), and sorts by descending score.
+      `meta.billed_units.search_units` is fixed at 1.0.
   POST /v2/rerank_dup_index          — like `/v2/rerank` but every result reuses `index` 0,
       exercising the duplicate-index rejection path.
   POST /v2/rerank_error              — always returns HTTP 500 (used for rerank errors)
   POST /v2/rerank_tokens             — like `/v2/rerank`, for a Cohere-compatible endpoint that bills by
       tokens: `meta.billed_units` also carries `input_tokens` (`len(query) + sum(len(documents))`)
       and `output_tokens` (the number of results).
-  POST /v2/rerank_ignore_top_n       — like `/v2/rerank` but ignores `top_n`, always returning every
-      document, exercising the `top_n` rejection path.
   POST /v2/rerank_drop_last          — like `/v2/rerank` but drops the last result, so the response
       has fewer entries than requested.
   POST /v2/rerank_no_score           — like `/v2/rerank` but omits `relevance_score` from every result.
@@ -267,20 +266,16 @@ def make_rerank_response(
     *,
     duplicate_index=False,
     bill_tokens=False,
-    ignore_top_n=False,
     drop_last=False,
     omit_score=False,
 ):
     data = json.loads(body)
     query = data.get("query", "")
     documents = data.get("documents", [])
-    top_n = data.get("top_n")
 
     scored = [(i, rerank_score(query, doc)) for i, doc in enumerate(documents)]
     # Sort by descending score, breaking ties by index for a deterministic order.
     scored.sort(key=lambda item: (-item[1], item[0]))
-    if top_n and not ignore_top_n:
-        scored = scored[: int(top_n)]
     if drop_last:
         scored = scored[:-1]
 
@@ -536,10 +531,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v2/rerank_tokens":
             self._send_json(200, make_rerank_response(body, bill_tokens=True))
-            return
-
-        if parsed.path == "/v2/rerank_ignore_top_n":
-            self._send_json(200, make_rerank_response(body, ignore_top_n=True))
             return
 
         if parsed.path == "/v2/rerank_drop_last":

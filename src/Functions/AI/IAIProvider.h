@@ -132,32 +132,28 @@ struct AIEmbeddingResponse
 /** Parameters for a single AI reranking request.
   *
   * Rerank APIs score a list of documents against one query and return them ordered by relevance.
-  * Unlike embeddings, the documents of one request are ranked together and cannot be batched with
-  * another request's documents, so each processed row produces exactly one AIRerankRequest.
+  * The supported rerankers score each (query, document) pair independently of the other documents in
+  * the request, so `aiRelevance` batches the documents of many rows that share a query into one request.
   */
 struct AIRerankRequest
 {
     /// The query the documents are ranked against.
     String query;
 
-    /// Documents to rank. Zero-copy views into the row's `ColumnString`; the provider copies them into
+    /// Documents to rank. Zero-copy views into the input `ColumnString`; the provider copies them into
     /// the HTTP body. Response results reference these by their position in this vector.
     VectorWithMemoryTracking<std::string_view> documents;
 
     /// Model identifier as specified in the parameter map or the named collection (e.g. "rerank-v3.5").
     String model;
 
-    /// Number of results to return, most relevant first. 0 means all documents. Must not exceed the
-    /// number of `documents`: the provider expects exactly this many entries in its response.
-    UInt64 top_n = 0;
-
-    /// SQL name of the AI function that produced this request (currently always "aiRerank").
+    /// SQL name of the AI function that produced this request (currently always "aiRelevance").
     /// Emitted as the `X-ClickHouse-AI-Function` header.
     String function_name;
 };
 
-/// Response from a single reranking request. `results` is ordered by descending relevance and holds
-/// exactly `top_n` entries when set, or one per document otherwise.
+/// Response from a single reranking request. `results` holds exactly one entry per document, ordered by
+/// descending relevance.
 struct AIRerankResponse
 {
     struct Result

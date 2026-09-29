@@ -39,9 +39,6 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
         documents->add(String(document));
     root->set("documents", documents);
 
-    if (ai_rerank_request.top_n > 0)
-        root->set("top_n", static_cast<Int64>(ai_rerank_request.top_n)); /// Poco doesn't have UInt type
-
     std::ostringstream body_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
     root->stringify(body_stream);
     String body = std::move(body_stream).str();
@@ -101,14 +98,11 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
     if (!results)
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE, "AI rerank response is missing 'results' array");
 
-    /// `results` holds exactly `top_n` entries when set (the caller keeps it within the number of
-    /// documents), and one entry per document otherwise.
-    chassert(ai_rerank_request.top_n <= ai_rerank_request.documents.size());
-    const size_t expected_results = ai_rerank_request.top_n > 0 ? ai_rerank_request.top_n : ai_rerank_request.documents.size();
-    if (results->size() != expected_results)
+    /// Without `top_n`, `results` holds exactly one entry per document.
+    if (results->size() != ai_rerank_request.documents.size())
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-            "AI rerank response 'results' has {} entries, expected {} ({} documents sent, 'top_n' = {})",
-            results->size(), expected_results, ai_rerank_request.documents.size(), ai_rerank_request.top_n);
+            "AI rerank response 'results' has {} entries, expected {} (one per document sent)",
+            results->size(), ai_rerank_request.documents.size());
 
     /// Guards against a misbehaving provider returning an out-of-range or duplicate `index`.
     VectorWithMemoryTracking<bool> seen(ai_rerank_request.documents.size(), false);

@@ -56,8 +56,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 
 | Name | Default |
 |------|--------|
-| [compute_exact_num_defaults_for_sparse_columns](/reference/settings/merge-tree-settings/other#compute_exact_num_defaults_for_sparse_columns) | `1` |
-| [packed_skip_index_max_bytes](/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) | `1048576` |
 | [framing_output_format](/reference/settings/session-settings/other#framing_output_format) | `None` |
 | [enable_join_transitive_predicates](/reference/settings/session-settings/enable-join#enable_join_transitive_predicates) | `1` |
 | [geotoh3_argument_order](/reference/settings/session-settings/other#geotoh3_argument_order) | `lat_lon` |
@@ -95,6 +93,8 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_delta_kernel_rs](/reference/settings/session-settings/allow#allow_delta_kernel_rs) | `1` |
 | [allow_insert_into_iceberg](/reference/settings/session-settings/allow#allow_insert_into_iceberg) | `0` |
 | [cascades_aggregation_pushdown](/reference/settings/session-settings/other#cascades_aggregation_pushdown) | `1` |
+| [compute_exact_num_defaults_for_sparse_columns](/reference/settings/merge-tree-settings/other#compute_exact_num_defaults_for_sparse_columns) | `1` |
+| [packed_skip_index_max_bytes](/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) | `1048576` |
 
 ## Experimental settings {#experimental-settings}
 
@@ -117,6 +117,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [remote_fs_zero_copy_path_compatible_mode](/reference/settings/merge-tree-settings/remote-fs#remote_fs_zero_copy_path_compatible_mode) | `0` |
 | [remote_fs_zero_copy_zookeeper_path](/reference/settings/merge-tree-settings/remote-fs#remote_fs_zero_copy_zookeeper_path) | `/clickhouse/zero_copy` |
 | [remove_rolled_back_parts_immediately](/reference/settings/merge-tree-settings/remove#remove_rolled_back_parts_immediately) | `1` |
+| [unique_key_conflict_action](/reference/settings/merge-tree-settings/other#unique_key_conflict_action) | `overwrite` |
 | [use_reader_executor](/reference/settings/session-settings/use#use_reader_executor) | `0` |
 | [reader_executor_use_long_connections](/reference/settings/session-settings/reader-executor#reader_executor_use_long_connections) | `0` |
 | [reader_executor_min_bytes_for_seek](/reference/settings/session-settings/reader-executor#reader_executor_min_bytes_for_seek) | `2097152` |
@@ -143,10 +144,11 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [parallel_replicas_allow_merge_tables](/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_merge_tables) | `0` |
 | [distributed_index_analysis](/reference/settings/session-settings/distributed-index-analysis#distributed_index_analysis) | `0` |
 | [ai_function_rerank_default_credentials](/reference/settings/session-settings/ai-function#ai_function_rerank_default_credentials) | `` |
+| [ai_function_rerank_max_batch_size](/reference/settings/session-settings/ai-function#ai_function_rerank_max_batch_size) | `100` |
 | [enable_materialized_postgresql_table](/reference/settings/session-settings/enable#enable_materialized_postgresql_table) | `0` |
 | [enable_funnel_functions](/reference/settings/session-settings/enable#enable_funnel_functions) | `0` |
 | [allow_experimental_nlp_functions](/reference/settings/session-settings/allow-experimental#allow_experimental_nlp_functions) | `0` |
-| [allow_experimental_ai_rerank_function](/reference/settings/session-settings/allow-experimental#allow_experimental_ai_rerank_function) | `0` |
+| [allow_experimental_ai_relevance_function](/reference/settings/session-settings/allow-experimental#allow_experimental_ai_relevance_function) | `0` |
 | [allow_experimental_hash_functions](/reference/settings/session-settings/allow-experimental#allow_experimental_hash_functions) | `0` |
 | [unique_key_max_encoded_size](/reference/settings/session-settings/unique-key#unique_key_max_encoded_size) | `256` |
 | [unique_key_probe_implementation](/reference/settings/session-settings/unique-key#unique_key_probe_implementation) | `auto` |

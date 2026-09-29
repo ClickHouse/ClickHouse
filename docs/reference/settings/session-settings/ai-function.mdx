@@ -103,7 +103,17 @@ Timeout in seconds for individual HTTP requests made by AI functions (AI chat co
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "New setting"}]}]}/>
 
-Name of the named collection used by the reranking function (`aiRerank`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Like the text functions, `aiRerank` reads `model` from its parameter map, falling back to the named collection's `model`. Kept separate from `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` because a reranking endpoint differs from both a chat and an embeddings one. Only used by `aiRerank`, which requires `allow_experimental_ai_rerank_function`.
+Name of the named collection used by the reranking functions (`aiRelevance`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Like the text functions, `aiRelevance` reads `model` from its parameter map, falling back to the named collection's `model`. Kept separate from `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` because a reranking endpoint differs from both a chat and an embeddings one. Only used by `aiRelevance`, which requires `allow_experimental_ai_relevance_function`.
+
+## ai_function_rerank_max_batch_size {#ai_function_rerank_max_batch_size}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100"},{"label": "New setting"}]}]}/>
+
+Maximum number of documents to include in a single HTTP request made by the reranking functions (`aiRelevance`). Within a block, documents scored against the same query are grouped into batches of this size to reduce API call overhead. For example, 500 documents scored against one query with a batch size of 100 result in 5 HTTP requests. The default matches Cohere's billing, where one search unit covers one query with up to 100 documents.
 
 ## ai_function_retry_initial_delay_ms {#ai_function_retry_initial_delay_ms}
 
