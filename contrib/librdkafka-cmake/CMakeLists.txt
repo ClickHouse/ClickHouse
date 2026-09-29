@@ -32,7 +32,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_cert.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_cgrp.c"
-  "${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c"
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c" # compiled via the rdkafka_conf_sensitive.c wrapper below
   "${RDKAFKA_SOURCE_DIR}/rdkafka_coord.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_error.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_event.c"
@@ -86,7 +86,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_transport.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_txnmgr.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_zstd.c" # WITH_ZSTD
-  "${CMAKE_CURRENT_SOURCE_DIR}/rdkafka_conf_sensitive.c" # ClickHouse addition, see the comment in the file
+  "${CMAKE_CURRENT_SOURCE_DIR}/rdkafka_conf_sensitive.c" # ClickHouse wrapper compiling rdkafka_conf.c, see the comment in the file
   "${RDKAFKA_SOURCE_DIR}/rdlist.c"
   "${RDKAFKA_SOURCE_DIR}/rdlog.c"
   "${RDKAFKA_SOURCE_DIR}/rdmap.c"
