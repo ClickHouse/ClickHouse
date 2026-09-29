@@ -3,7 +3,7 @@
 
 -- A mutation entry keeps the real text of its commands, because the mutation is executed from it (on every
 -- replica, for replicated tables). `system.mutations.command` must still hide the credentials of the table
--- functions in the mutation subqueries, the way `system.query_log` does.
+-- functions in the mutation subqueries, the way the query log does.
 
 SET mutations_sync = 0;
 SET lightweight_deletes_sync = 0;
