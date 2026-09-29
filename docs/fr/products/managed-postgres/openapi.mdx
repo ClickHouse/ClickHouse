@@ -18,9 +18,7 @@ Vous connaissez déjà [OpenAPI] ? Récupérez vos [clés API] et accédez dire
 [référence de l’API ClickHouse Managed Postgres][pg-openapi]. Sinon, suivez ce guide pour une
 brève présentation.
 
-<div id="api-keys">
-  ## Clés API
-</div>
+## Clés API {#api-keys}
 
 L’utilisation de l’OpenAPI de ClickHouse nécessite une authentification ; consultez [clés API] pour savoir
 comment les créer. Utilisez-les ensuite comme identifiants d’authentification Basic, comme suit :
@@ -32,9 +30,7 @@ KEY_SECRET=mykeysecret
 curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
 ```
 
-<div id="organization-id">
-  ## ID de l’organisation
-</div>
+## ID de l’organisation {#organization-id}
 
 Ensuite, vous aurez besoin de l’ID de votre organisation.
 
@@ -79,28 +75,24 @@ ceci :
 }
 ```
 
-<div id="crud">
-  ## CRUD
-</div>
+## CRUD {#crud}
 
 Voyons le cycle de vie d’un service Postgres.
 
-<div id="create">
-  ### Créer
-</div>
+### Créer {#create}
 
 Commencez par en créer un nouveau
 à l’aide de l’[API de création]. Elle nécessite les propriétés suivantes dans le corps JSON
-de la requête :
+de la requête :
 
-* `name` : nom du nouveau service Postgres
-* `provider` : nom du fournisseur cloud
-* `region` : région du fournisseur dans laquelle déployer le
+* `name` : nom du nouveau service Postgres
+* `provider` : nom du fournisseur cloud : `aws` (ou `gcp` en [Private Preview](https://clickhouse.com/cloud/postgres#gcp-waitlist))
+* `region` : région du fournisseur dans laquelle déployer le
   service
-* `size` : taille de la VM
+* `size` : taille de la VM
 
 Consultez la documentation de l’[API de création] pour connaître les valeurs possibles de ces propriétés. De
-plus, nous allons spécifier Postgres 18 plutôt que la version par défaut, 17 :
+plus, nous allons spécifier Postgres 18 plutôt que la version par défaut, 17 :
 
 ```bash
 create_data='{
@@ -112,9 +104,9 @@ create_data='{
 }'
 ```
 
-Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type. Enregistrez la réponse : c’est la seule qui inclut l’identifiant d’authentification du service
+Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type. Enregistrez la réponse : c’est la seule qui inclut l’identifiant d’authentification du service
 (la réponse de [réinitialisation du mot de passe] le renvoie également lorsque la requête
-ne fournit pas de mot de passe) :
+ne fournit pas de mot de passe) :
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -124,7 +116,7 @@ echo "$pg_created" | jq
 ```
 
 En cas de réussite, une nouvelle instance sera créée et ses informations seront renvoyées,
-y compris les données de connexion :
+y compris les données de connexion :
 
 ```json
 {
@@ -150,9 +142,7 @@ y compris les données de connexion :
 }
 ```
 
-<div id="read">
-  ### Lecture
-</div>
+### Lecture {#read}
 
 Utilisez l’`id` de la réponse pour récupérer à nouveau le service :
 
@@ -192,9 +182,7 @@ postgres=#
 
 Tapez `\q` pour quitter [psql].
 
-<div id="update">
-  ### Mise à jour
-</div>
+### Mise à jour {#update}
 
 L’[API patch] permet de mettre à jour un sous-ensemble des propriétés d’un
 service Postgres géré via JSON Merge Patch [RFC 7396]. Les tags peuvent être particulièrement
@@ -271,9 +259,7 @@ les conséquences de cette modification :
 
   */}
 
-<div id="delete">
-  ### Supprimer
-</div>
+### Supprimer {#delete}
 
 Utilisez l’[API de suppression] pour supprimer un service Postgres.
 
@@ -298,24 +284,18 @@ En cas de succès, la réponse renverra le code d’état 200, par exemple :
 }
 ```
 
-<div id="monitoring">
-  ## Monitoring
-</div>
+## Monitoring {#monitoring}
 
 Deux points de terminaison compatibles avec Prometheus exposent des métriques de CPU, de mémoire, d’E/S, de connexion et de transaction pour les services ClickHouse Managed Postgres : l’un renvoie les métriques de tous les services de l’organisation, l’autre celles d’un seul service. Consultez la page [point de terminaison Prometheus] pour la configuration et la [référence des métriques] pour la liste complète des métriques.
 
-<div id="query-insights">
-  ## Query insights
-</div>
+## Query insights {#query-insights}
 
 La télémétrie par instruction qui alimente l’onglet [Query Insights] dans la console cloud
 est également accessible par programmation. Deux endpoints exposent les modèles de
 requête les plus lents d’un service : l’un répertorie tous les modèles classés par impact, l’autre
 renvoie un modèle précis avec ses exécutions récentes.
 
-<div id="list-slow-query-patterns">
-  ### Lister les modèles de requête lentes
-</div>
+### Lister les modèles de requête lentes {#list-slow-query-patterns}
 
 L’[API slow patterns] renvoie des métriques agrégées pour les modèles de requête les plus lents observés sur un intervalle de temps. Cet intervalle est obligatoire — transmettez
 `from_date` et `to_date` sous forme d’horodatages RFC 3339 :
@@ -373,9 +353,7 @@ Le `queryId` est le hachage signé sur 64 bits de l’instruction normalisée ; 
 souvent négatif. Renvoyez-le tel quel — y compris le `-` initial — pour récupérer un
 seul modèle de requête.
 
-<div id="get-slow-query-pattern">
-  ### Obtenir un modèle de requête lente
-</div>
+### Obtenir un modèle de requête lente {#get-slow-query-pattern}
 
 Fournissez un `queryId` issu de la réponse de la liste à la [slow pattern API] pour obtenir les métriques agrégées de ce modèle, ainsi que ses exécutions individuelles les plus récentes.
 Les champs `db_name`, `db_user` et `db_operation` qui identifient le modèle sont obligatoires :
@@ -432,9 +410,7 @@ CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes comp
 L&#39;exemple tronque les deux objets pour plus de concision ; l&#39;API renvoie le jeu complet
 de compteurs documenté dans [per-execution counters].
 
-<div id="server-logs">
-  ## Journaux du serveur
-</div>
+## Journaux du serveur {#server-logs}
 
 Les journaux du serveur PostgreSQL affichés dans la visionneuse de journaux de la console cloud sont également
 accessibles par programmation. L&#39;[API des journaux] renvoie des entrées de journal individuelles pour un

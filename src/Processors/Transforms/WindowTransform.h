@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 #include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>
@@ -27,7 +27,6 @@ struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
-    Columns cast_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;
