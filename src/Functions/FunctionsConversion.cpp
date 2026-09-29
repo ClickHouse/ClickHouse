@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
@@ -1087,7 +1088,22 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                 };
             }
 
-            from_type = assert_cast<const DataTypeTuple *>(decaying_type->getNestedType().get());
+            const auto & storage_type = decaying_type->getNestedType();
+            const auto & storage_tuple = assert_cast<const DataTypeTuple &>(*storage_type);
+            auto storage_wrapper = createTupleWrapper(storage_type, to_type);
+            return [wrapper = std::move(storage_wrapper), storage_type]
+                (ColumnsWithTypeAndName & arguments,
+                 const DataTypePtr & result_type,
+                 const ColumnNullable * nullable_source,
+                 size_t input_rows_count) -> ColumnPtr
+            {
+                ColumnsWithTypeAndName storage_arguments = arguments;
+                const auto & decaying_column
+                    = assert_cast<const ColumnExponentialTimeDecaying &>(*arguments[0].column);
+                storage_arguments[0].column = decaying_column.getStoragePtr();
+                storage_arguments[0].type = storage_type;
+                return wrapper(storage_arguments, result_type, nullable_source, input_rows_count);
+            };
         }
     }
 
@@ -3399,31 +3415,49 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         case TypeIndex::ExponentialTimeDecayingFloat64:
         {
             const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*to_type);
-            if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
+            const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get());
+            if (!from_tuple)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS ExponentialTimeDecaying can only be performed from a raw Tuple(value, timestamp[, decay_length])");
+
+            if (from_tuple->hasExplicitNames())
             {
-                const auto & logical_type = decaying_type.getLogicalTupleType();
-                const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
-                if (from_tuple->getElements().size() == logical_tuple.getElements().size())
-                {
-                    auto decay_logical_wrapper = createTupleWrapper(from_type, &logical_tuple);
-                    const Float64 decay_length = decaying_type.getDecayLength();
-                    return [logical_wrapper = std::move(decay_logical_wrapper), logical_type, decay_length]
-                        (ColumnsWithTypeAndName & arguments,
-                         const DataTypePtr &,
-                         const ColumnNullable * nullable_source,
-                         size_t input_rows_count) -> ColumnPtr
-                    {
-                        auto logical_column
-                            = logical_wrapper(arguments, logical_type, nullable_source, input_rows_count);
-                        return materializeExponentialTimeDecayingFloat64StorageColumn(
-                            *logical_column, decay_length, "CAST to ExponentialTimeDecayingFloat64");
-                    };
-                }
+                const auto & names = from_tuple->getElementNames();
+                if (names.size() == 3
+                    && names[0] == "sign"
+                    && names[1] == "signed_unit_time"
+                    && names[2] == "decay_length")
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Tuple(sign, signed_unit_time, decay_length) is not a representation of ExponentialTimeDecaying");
             }
 
-            return createTupleWrapper(
-                from_type,
-                assert_cast<const DataTypeTuple *>(decaying_type.getNestedType().get()));
+            DataTypePtr raw_type;
+            if (from_tuple->getElements().size() == 2)
+                raw_type = decaying_type.getNestedType();
+            else if (from_tuple->getElements().size() == 3)
+                raw_type = decaying_type.getLogicalTupleType();
+            else
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS ExponentialTimeDecaying expects raw Tuple(value, timestamp[, decay_length]), got {} elements",
+                    from_tuple->getElements().size());
+
+            const auto & raw_tuple = assert_cast<const DataTypeTuple &>(*raw_type);
+            auto raw_wrapper = createTupleWrapper(from_type, &raw_tuple);
+            const Float64 decay_length = decaying_type.getDecayLength();
+            return [wrapper = std::move(raw_wrapper), raw_type, decay_length]
+                (ColumnsWithTypeAndName & arguments,
+                 const DataTypePtr &,
+                 const ColumnNullable * nullable_source,
+                 size_t input_rows_count) -> ColumnPtr
+            {
+                auto raw_column
+                    = wrapper(arguments, raw_type, nullable_source, input_rows_count);
+                return materializeExponentialTimeDecayingFloat64StorageColumn(
+                    *raw_column, decay_length, "CAST to ExponentialTimeDecaying");
+            };
         }
         case TypeIndex::Map:
             return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
