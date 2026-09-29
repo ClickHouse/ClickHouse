@@ -58,8 +58,12 @@ int compareRangeOffset(
 
     if (!shifted_rhs)
         return offset_is_preceding ? 1 : -1;
-
-    return (lhs_value > *shifted_rhs) - (lhs_value < *shifted_rhs);
+    else if (lhs_value < *shifted_rhs)
+        return -1;
+    else if (lhs_value == *shifted_rhs)
+        return 0;
+    else
+        return 1;
 }
 
 // The same over a Nullable column: NULL sorts before every value and equals NULL.
