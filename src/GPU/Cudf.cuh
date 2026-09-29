@@ -3,6 +3,7 @@
 #include <GPU/GPUStreams.cuh>
 #include <GPU/GPUTypes.cuh>
 
+#include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
 #include <cudf/types.hpp>
 
@@ -11,6 +12,7 @@
 #include <cuda_runtime_api.h>
 
 #include <exception>
+#include <memory>
 #include <string>
 
 namespace DB::GPU
@@ -25,7 +27,7 @@ void initializeCudf();
 
 std::string describeForeign(const std::exception & exception);
 
-void keepForeignAlive();
+void releaseForeign(const std::exception & exception);
 
 template <typename Body>
 auto guarded(const std::string & doing, Body && body)
@@ -40,7 +42,7 @@ auto guarded(const std::string & doing, Body && body)
             throw;
 
         const std::string description = describeForeign(exception);
-        keepForeignAlive();
+        releaseForeign(exception);
         throwGPUError(doing + ": " + description);
     }
 }
@@ -60,6 +62,6 @@ void checkNoNulls(const cudf::column_view & column, const std::string & what);
 DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what);
 
 DeviceVariableColumn deviceViewOfVariable(
-    const cudf::column_view & column, const cudf::column_view & offsets, const std::string & what, rmm::cuda_stream_view stream);
+    const cudf::column_view & column, std::unique_ptr<cudf::column> & widened_offsets, const std::string & what, rmm::cuda_stream_view stream);
 
 }
