@@ -942,7 +942,7 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 )", 0, \
         {"26.1", 0, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."}) \
     DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
@@ -1620,8 +1620,23 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
         {"25.1", 0, 5, "A new setting"}) \
     DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
         Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
+
+This applies where a named tuple is rendered inside a single cell. A named tuple that is a column of the result is displayed split into subcolumns instead if `output_format_pretty_named_tuples_as_subcolumns` is enabled.
 )", 0, \
         {"25.12", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"}) \
+    DECLARE(Bool, output_format_pretty_named_tuples_as_subcolumns, true, R"(
+Display named Tuple columns in Pretty formats split into subcolumns, with the names of the elements in additional header lines. For example, `SELECT 'hello' AS x, (1 AS a, 'world' AS b) AS t` is displayed as:
+
+```
+   ┌─x─────┬─t─────────┐
+   ├───────┼─a─┬─b─────┤
+1. │ hello │ 1 │ world │
+   └───────┴───┴───────┘
+```
+
+Nested named tuples add one header line per level of nesting. The setting applies only to columns of the result whose type is a bare named `Tuple`: a named tuple nested inside another type (e.g. inside an `Array`, or inside a `Nullable` allowed by `enable_nullable_tuple_type`) or hidden behind a custom type name is rendered inside a single cell, according to `output_format_pretty_named_tuples_as_json`. In particular, a `Nullable(Tuple(...))` column keeps the single-cell rendering, so a `NULL` tuple stays distinguishable from a tuple of `NULL` elements.
+)", 0, \
+        {"26.10", false, true, "New setting to display named Tuple columns in Pretty formats split into subcolumns, with the names of the elements in additional header lines."}) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/reference/engines/table-engines/special/distributed) table when there is no distributed key.
 
