@@ -584,7 +584,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     }
 
     result.columns = storage_snapshot->getColumnsByNames(options, post_column_names);
-    // @jgsogo: Here I want to know the list of columns for our experiments
     return result;
 }
 
