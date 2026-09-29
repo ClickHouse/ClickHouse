@@ -64,14 +64,16 @@ namespace
         }
     }
 
-    void validateSQLFunction(ASTPtr function, const String & name)
+    /// A definition restored from a backup may predate the rules that the core is a lambda and that its
+    /// argument list is a plain tuple.
+    void validateSQLFunction(ASTPtr function, const String & name, bool is_restore)
     {
         ASTFunction * lambda_function = function->as<ASTFunction>();
 
         if (!lambda_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got: {}", function->formatForErrorMessage());
 
-        if (lambda_function->name != "lambda")
+        if (!is_restore && lambda_function->name != "lambda")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected lambda expression, got: {}", function->formatForErrorMessage());
 
         if (!lambda_function->arguments || lambda_function->arguments->children.size() != 2)
@@ -81,8 +83,8 @@ namespace
 
         const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
 
-        if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple"
-            || tuple_function_arguments->parameters)
+        if (!tuple_function_arguments || !tuple_function_arguments->arguments
+            || (!is_restore && (tuple_function_arguments->name != "tuple" || tuple_function_arguments->parameters)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
         UnorderedSetWithMemoryTracking<String> arguments;
@@ -155,7 +157,7 @@ UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
 {}
 
 /// Checks that a specified function can be registered, throws an exception if not.
-static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query, bool throw_if_exists)
+static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query, bool throw_if_exists, bool is_restore)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
@@ -170,7 +172,7 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
 
     if (const auto * create_sql_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(&create_function_query))
-        validateSQLFunction(create_sql_function_query->function_core, function_name);
+        validateSQLFunction(create_sql_function_query->function_core, function_name, is_restore);
 }
 
 static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
@@ -183,9 +185,9 @@ static void checkCanBeUnregistered(const ContextPtr & context, const String & fu
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
-bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
+bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists, bool is_restore)
 {
-    checkCanBeRegistered(current_context, function_name, *create_function_query, throw_if_exists);
+    checkCanBeRegistered(current_context, function_name, *create_function_query, throw_if_exists, is_restore);
     create_function_query = normalizeCreateFunctionQuery(*create_function_query, current_context);
 
     try
@@ -308,7 +310,7 @@ void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
     auto restore_context = restorer.getContext();
     for (const auto & [function_name, create_function_query] : restored_functions)
-        registerFunction(restore_context, function_name, create_function_query, throw_if_exists, replace_if_exists);
+        registerFunction(restore_context, function_name, create_function_query, throw_if_exists, replace_if_exists, /*is_restore=*/ true);
 }
 
 void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager)
