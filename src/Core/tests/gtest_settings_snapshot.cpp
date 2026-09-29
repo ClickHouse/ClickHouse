@@ -233,7 +233,7 @@ void checkConcurrentLastOwners(bool detach_states)
         /// Unlike the pinned-parent test, only these two owners survive until the concurrent writes.
     }
 
-    std::barrier start(2);
+    std::barrier<> start(2);
     auto mutate = [&](size_t index)
     {
         for (auto & pair : pairs)

@@ -31,7 +31,7 @@ void checkMaskedURIError(Apply && apply)
     }
     catch (const Exception & exception)
     {
-        const auto message = exception.message();
+        const auto & message = exception.message();
         EXPECT_EQ(exception.code(), ErrorCodes::BAD_ARGUMENTS);
         EXPECT_EQ(message.find(password), String::npos);
         EXPECT_NE(
