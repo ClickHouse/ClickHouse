@@ -437,13 +437,23 @@ ReadFromMergeTree * findReadingStep(
             }
             else
             {
-                /// A self-join: both sides read the coordinated table, so which side it is cannot be told
-                /// from the table. Fall back to the position, which is what encodes "the side the query
-                /// wrote first" whenever no swap happened. Being wrong here is harmless in the way that
-                /// matters: both sides read the *same* table, so the read is priced at the right table
-                /// either way, and it is a mismatched table - `lineitem` against `supplier` - that sends the
-                /// cost model orders of magnitude wrong. The reads are told apart by name downstream, where
-                /// the transplant pairs them.
+                /// A self-join. Only one of the two occurrences is coordinated - the replicas plan marks
+                /// `__table1` and leaves `__table2` alone for `t AS l JOIN t AS r`, the left-most table
+                /// expression being the one whose ranges the replicas split, while the other side is read
+                /// in full on each of them. Which plan node that is cannot be told from the table alone,
+                /// and not from the analyzer's name either: the replicas plan restarts its `__tableN`
+                /// numbering at 1, so a self-join is the one case where that renumbering permutes exactly
+                /// the two reads to be told apart (see `transplantAnalysisToAllReads`).
+                ///
+                /// So this keeps what the code did before, position: correct while no swap happened, and
+                /// carrying the same blind spot for a swapped `INNER` join as the rule this function
+                /// replaced. It can therefore still instrument the replicated occurrence rather than the
+                /// split one, and price a read whose filters prune differently - measured at about a factor
+                /// of two on a self-join whose sorting key is composite and whose filter is on a component
+                /// the join does not use. That is a narrower version of the bug fixed above rather than a
+                /// safe case, and it is left for a change of its own: the sound fix is to pair the
+                /// coordinated read with its single-node counterpart structurally instead of inferring the
+                /// side here at all.
                 const auto kind = join_step->getJoin()->getTableJoin().kind();
                 reading_step = reading_step->children[isRight(kind) ? 1 : 0];
             }
@@ -881,6 +891,7 @@ void considerEnablingParallelReplicas(
     ReadFromMergeTree * coordinated_read_in_replicas_plan = nullptr;
     for (auto * read : collectReadingStepsBelow(*plan_with_parallel_replicas->getRootNode()))
     {
+
         if (!read->isParallelReadingFromReplicas())
             continue;
         if (coordinated_read_in_replicas_plan)
