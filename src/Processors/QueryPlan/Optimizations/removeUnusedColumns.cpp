@@ -59,7 +59,7 @@ IQueryPlanStep::PrunedInput pruneNode(QueryPlan::Node & node, const std::vector<
     {
         const auto needed = step.getRequiredColumns(required_outputs);
         for (size_t child = 0; child < node.children.size(); ++child)
-            children.push_back(pruneNode(*node.children[child], needed.required_input_positions.at(child), changed));
+            children.push_back(pruneNode(*node.children[child], needed.at(child), changed));
     }
 
     auto result = step.removeUnusedColumns(required_outputs, children);

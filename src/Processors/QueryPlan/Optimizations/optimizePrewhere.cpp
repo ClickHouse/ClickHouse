@@ -369,7 +369,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         std::iota(all_positions.begin(), all_positions.end(), 0);
 
         const auto needed = parent_step->getRequiredColumns(all_positions);
-        auto source_result = source_step_with_filter->removeUnusedColumns(needed.required_input_positions.at(0), {});
+        auto source_result = source_step_with_filter->removeUnusedColumns(needed.at(0), {});
         parent_step->removeUnusedColumns(
             all_positions, {{std::move(source_result.dropped_output_positions), source_step_with_filter->getOutputHeader()}});
 #if defined(DEBUG_OR_SANITIZER_BUILD)

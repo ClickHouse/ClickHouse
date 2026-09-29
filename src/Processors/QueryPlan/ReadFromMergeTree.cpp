@@ -6439,7 +6439,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult
 ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & /*inputs*/)
 {
     if (output_header == nullptr)
-        return keepEverything();
+        return {};
 
     const size_t former_output_column_count = output_header->columns();
 
@@ -6528,7 +6528,7 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_outp
     }
 
     if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
-        return keepEverything();
+        return {};
 
     all_column_names = std::move(new_column_names);
 
@@ -6550,7 +6550,6 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_outp
 
     required_source_columns = all_column_names;
 
-    /// A read has no children to ask anything of.
     RemoveUnusedColumnsResult result;
     result.step_changed = true;
     result.dropped_output_positions = complementPositions(former_output_column_count, kept_output_positions);

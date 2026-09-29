@@ -53,13 +53,12 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::keepEverything() const
+IQueryPlanStep::RequiredInputPositions IQueryPlanStep::allInputPositions() const
 {
-    RemoveUnusedColumnsResult result;
-
+    RequiredInputPositions result;
     for (const auto & input_header : input_headers)
     {
-        auto & positions = result.required_input_positions.emplace_back(input_header->columns());
+        auto & positions = result.emplace_back(input_header->columns());
         std::iota(positions.begin(), positions.end(), 0);
     }
 
@@ -137,7 +136,7 @@ IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_outpu
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult
+IQueryPlanStep::RequiredInputPositions
 IQueryPlanStep::getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getRequiredColumns is not implemented for step {}", getName());

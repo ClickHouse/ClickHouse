@@ -145,19 +145,11 @@ public:
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
+    /// What removeUnusedColumns did. The default is the answer when nothing changes.
     struct RemoveUnusedColumnsResult
     {
-        /// Whether the step itself changed: its expressions, or the columns it outputs.
+        /// Whether the step itself changed: its expressions, its input headers, or the columns it outputs.
         bool step_changed = false;
-
-        /// Whether some child has to produce fewer columns than it does now. Implies `step_changed`, but
-        /// not the other way round: a step that may not remove its inputs can change all the same.
-        bool inputs_changed = false;
-
-        /// Per child, in the order of the children: the positions of the child's current output header
-        /// the step reads, sorted. Always one entry per child, and every position of a child whose
-        /// columns are all still read. An empty entry means the step reads nothing of that child.
-        std::vector<std::vector<size_t>> required_input_positions;
 
         /// The positions of the step's former output header that went away, sorted; empty when all of
         /// them remain. The new output header has the remaining columns first, in their former order, and
@@ -166,12 +158,14 @@ public:
         std::vector<size_t> dropped_output_positions;
     };
 
+    /// Per child, in the order of the children: the positions of the child's current output header a step
+    /// reads, sorted. Always one entry per child, and every position of a child whose columns are all
+    /// still read. An empty entry means the step reads nothing of that child.
+    using RequiredInputPositions = std::vector<std::vector<size_t>>;
+
     /// The sorted positions in `[0, count)` that are not in `positions`, which is sorted too: the dropped
     /// positions of the kept ones, and the other way round.
     static std::vector<size_t> complementPositions(size_t count, const std::vector<size_t> & positions);
-
-    /// The answer of removeUnusedColumns when nothing changes: every input read, every output kept.
-    RemoveUnusedColumnsResult keepEverything() const;
 
     /// What one column of a step's input header is to the step once the unused columns are gone.
     enum class InputColumnUsage : uint8_t
@@ -206,10 +200,9 @@ public:
     virtual RemoveUnusedColumnsResult removeUnusedColumns(
         const std::vector<size_t> & /*required_output_positions*/, const std::vector<PrunedInput> & /*inputs*/);
 
-    /// What removeUnusedColumns would need of each child for these outputs, as `required_input_positions`,
-    /// leaving the step untouched. The children are to be pruned to that before the step itself is. Requires
-    /// canGetRequiredColumns.
-    virtual RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/) const;
+    /// What removeUnusedColumns would need of each child for these outputs, leaving the step untouched. The
+    /// children are to be pruned to that before the step itself is. Requires canGetRequiredColumns.
+    virtual RequiredInputPositions getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/) const;
 
     /// Returns true if the step has implemented getRequiredColumns.
     virtual bool canGetRequiredColumns() const { return false; }
@@ -232,6 +225,9 @@ public:
     virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
+    /// Every position of every input header: what a step needs of its children when it drops nothing.
+    RequiredInputPositions allInputPositions() const;
+
     /// For a step with one child and one expression: brings the inputs of `dag`, whose outputs are pruned
     /// already, in line with the child's new header. An input reading a column the child keeps stays, also
     /// where nothing needs it any more, and one reading a column the child dropped goes. A column the child

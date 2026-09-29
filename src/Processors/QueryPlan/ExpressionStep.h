@@ -51,7 +51,7 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     bool canGetRequiredColumns() const override { return true; }
-    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
+    RequiredInputPositions getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
 
     /// Prevent future input removal by removeUnusedColumns.
     /// Used when extra columns were absorbed from a child step that cannot reduce its output
@@ -76,9 +76,6 @@ private:
         size_t dag_position_count = 0;
         /// One entry per column of the input header, in header order.
         std::vector<InputColumnUsage> input_columns;
-        /// Whether any output goes away, and whether any node would, the unread inputs included.
-        bool removes_any_output = false;
-        bool removes_any_action = false;
 
         /// The DAG outputs the caller asked for, as positions in `getOutputs()`.
         std::span<const size_t> requiredDAGPositions() const
@@ -88,7 +85,7 @@ private:
 
         /// What the step needs of its child: the columns it reads and passes on, or all of them while
         /// inputs may not be removed.
-        RemoveUnusedColumnsResult toResult(size_t output_count) const;
+        std::vector<size_t> requiredInputPositions() const;
     };
 
     RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;

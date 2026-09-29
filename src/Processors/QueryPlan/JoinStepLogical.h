@@ -204,7 +204,7 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     bool canGetRequiredColumns() const override { return true; }
-    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
+    RequiredInputPositions getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
@@ -228,7 +228,8 @@ protected:
     /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
     struct RequiredColumnsPlan
     {
-        RemoveUnusedColumnsResult result;
+        /// What the join reads of each side.
+        RequiredInputPositions required_input_positions;
 
         /// Set when no output is left and the step has to put its dummy column back.
         bool adds_dummy_output = false;
@@ -238,8 +239,7 @@ protected:
         /// Whether removeUnusedActions would erase any node.
         bool removes_any_action = false;
 
-        /// The DAG outputs that survive, as positions in `getOutputs()`; the complement of the result's
-        /// `dropped_output_positions`. The dummy column, when one is added, has no position of its own: it
+        /// The DAG outputs that survive, as positions in `getOutputs()`. The dummy column, when one is added, has no position of its own: it
         /// is appended after them. An output not in here goes away, and leaves `actions_after_join` with it.
         std::vector<size_t> kept_output_positions;
     };
