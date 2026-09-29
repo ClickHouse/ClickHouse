@@ -69,5 +69,11 @@
         SELECT s, s.size FROM string_size_read_planning_{serialization}
         PREWHERE id % 3 != 0 FORMAT Null
     </query>
+    <!-- Repeated size inputs must not repeat modern serialization inspection per part. -->
+    <query tag="String size planning with repeated size inputs">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND id % 3 != 0 AND position(s, 'x') = 1
+            AND s.size + id &gt; 0 FORMAT Null
+    </query>
     <drop_query>DROP TABLE IF EXISTS string_size_read_planning_{serialization}</drop_query>
 </test>
