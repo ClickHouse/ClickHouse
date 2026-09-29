@@ -95,9 +95,6 @@ private:
 };
 
 
-/// Moves one column from the host to the device: stages it in pinned memory and uploads it in batches.
-/// The implementations differ in where the column's data is decompressed:
-/// on the CPU before it reaches the pipe (`ColumnUploadPipe`) or on the device (`CompressedUploadPipe`).
 class IUploadPipe
 {
 public:
