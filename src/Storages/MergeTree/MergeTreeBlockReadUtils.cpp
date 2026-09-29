@@ -628,9 +628,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
     };
 
-    for (const auto & names : required_source_columns_by_step)
-        collectLegacyStringCompanions(names);
-    collectLegacyStringCompanions(column_to_read_after_prewhere);
+    /// Keep mutation read plans unchanged. An UPDATE can overwrite the parent String
+    /// while an injected size survives as a stale passthrough column, suppressing its
+    /// later read. Pairing is only safe here when there are no mutation steps.
+    if (mutation_steps.empty())
+    {
+        for (const auto & names : required_source_columns_by_step)
+            collectLegacyStringCompanions(names);
+        collectLegacyStringCompanions(column_to_read_after_prewhere);
+    }
 
     /// A legacy String and its virtual size share one stream. Request both at the earliest
     /// use of either; columns_from_previous_steps then prevents later readers from rereading it.
