@@ -53,13 +53,18 @@ namespace
     }
 
     Float64 extractConstantFactor(
-        const PrometheusQueryTree::Function * function_node, const SQLQueryPiece & arg, std::string_view factor_name)
+        const PrometheusQueryTree::Function * function_node, const SQLQueryPiece & arg, std::string_view factor_name,
+        const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
+        /// The factors are parameters of the aggregate function `timeSeriesDoubleExponentialSmoothingToGrid`, so they must be
+        /// known when the query is built. Supporting a scalar expression (e.g. `scalar(...)` or `time()`) needs the factors
+        /// to become arguments of the aggregate function, with one value per grid point, like the level of `quantile_over_time`.
         if (arg.store_method != StoreMethod::CONST_SCALAR)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Function '{}' currently requires a constant {} parameter", function_name, factor_name);
+                "Function '{}' currently requires a constant {}, but expression {} is not constant",
+                function_name, factor_name, getPromQLText(arg, context));
 
         const Float64 value = arg.scalar_value;
         if (!(value > 0 && value < 1))
@@ -84,8 +89,12 @@ SQLQueryPiece applyDoubleExponentialSmoothing(
 {
     checkArgumentTypes(function_node, arguments, context);
 
-    const Float64 smoothing_factor = extractConstantFactor(function_node, arguments[1], "smoothing factor");
-    const Float64 trend_factor = extractConstantFactor(function_node, arguments[2], "trend factor");
+    /// The factors are empty if the evaluation range is empty (e.g. a subquery window without steps), then so is the result.
+    if ((arguments[1].store_method == StoreMethod::EMPTY) || (arguments[2].store_method == StoreMethod::EMPTY))
+        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+    const Float64 smoothing_factor = extractConstantFactor(function_node, arguments[1], "smoothing factor", context);
+    const Float64 trend_factor = extractConstantFactor(function_node, arguments[2], "trend factor", context);
 
     std::vector<ASTPtr> extra_params;
     extra_params.push_back(make_intrusive<ASTLiteral>(smoothing_factor));

@@ -65,6 +65,17 @@ echo "-- Invalid factors are rejected (must be in the open interval (0, 1))."
 promql_client -q "double_exponential_smoothing(m[3m], 1.5, 0.5)" 2>&1 | grep -o "expects smoothing factor in the open interval (0, 1)" | head -1
 promql_client -q "double_exponential_smoothing(m[3m], 0.5, 0)" 2>&1 | grep -o "expects trend factor in the open interval (0, 1)" | head -1
 
+echo "-- Only constant factors are supported: other scalar expressions are rejected with NOT_IMPLEMENTED."
+out=$(promql_client -q "double_exponential_smoothing(m[3m], scalar(sum(vector(0.5))), 0.5)" 2>&1)
+echo "$out" | grep -o "currently requires a constant smoothing factor" | head -1
+echo "$out" | grep -o "NOT_IMPLEMENTED" | head -1
+out=$(promql_client -q "double_exponential_smoothing(m[3m], 0.5, scalar(sum(vector(0.5))))" 2>&1)
+echo "$out" | grep -o "currently requires a constant trend factor" | head -1
+echo "$out" | grep -o "NOT_IMPLEMENTED" | head -1
+
+echo "-- The subquery window (1699999990, 1700000000] contains no 1m step, so the result is empty (and not an error about the factors)."
+promql_client -q "max_over_time(double_exponential_smoothing(m[3m], 0.5, 0.5)[10s:1m])" 2>&1
+
 echo "-- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32."
 $CLICKHOUSE_CLIENT --enable_time_series_aggregate_functions 1 -q "
 SELECT

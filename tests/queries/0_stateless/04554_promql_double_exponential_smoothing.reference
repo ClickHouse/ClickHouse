@@ -11,5 +11,11 @@
 -- Invalid factors are rejected (must be in the open interval (0, 1)).
 expects smoothing factor in the open interval (0, 1)
 expects trend factor in the open interval (0, 1)
+-- Only constant factors are supported: other scalar expressions are rejected with NOT_IMPLEMENTED.
+currently requires a constant smoothing factor
+NOT_IMPLEMENTED
+currently requires a constant trend factor
+NOT_IMPLEMENTED
+-- The subquery window (1699999990, 1700000000] contains no 1m step, so the result is empty (and not an error about the factors).
 -- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32.
 1	Array(Nullable(Float64))	1
