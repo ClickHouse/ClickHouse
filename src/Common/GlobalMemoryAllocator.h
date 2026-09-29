@@ -21,13 +21,13 @@ struct GlobalMemoryAllocator
 
     T * allocate(size_t count)
     {
-        MemoryTrackerSwitcher scope(&total_memory_tracker, 0);
+        MemoryTrackerSwitcher scope(&total_memory_tracker);
         return std::allocator<T>{}.allocate(count);
     }
 
     void deallocate(T * ptr, size_t count) noexcept
     {
-        MemoryTrackerSwitcher scope(&total_memory_tracker, 0);
+        MemoryTrackerSwitcher scope(&total_memory_tracker);
         std::allocator<T>{}.deallocate(ptr, count);
     }
 

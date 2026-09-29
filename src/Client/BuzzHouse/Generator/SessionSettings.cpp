@@ -1582,7 +1582,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"parallel_replicas_for_cluster_engines", trueOrFalseSetting},
     {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalseSetting},
     {"parallel_replicas_index_analysis_only_on_coordinator", trueOrFalseSetting},
-    {"parallel_replicas_insert_select_local_pipeline", trueOrFalseSettingNoOracle},
     {"parallel_replicas_local_plan", trueOrFalseSetting},
     {"parallel_replicas_mark_segment_size", CHSetting(highRange, {}, false)},
     {"parallel_replicas_min_number_of_rows_per_replica", CHSetting(highRange, {}, false)},

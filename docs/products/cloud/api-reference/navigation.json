@@ -14,8 +14,10 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
         ]
       },
       {

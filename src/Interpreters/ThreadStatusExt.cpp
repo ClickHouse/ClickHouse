@@ -114,7 +114,7 @@ ThreadGroup::ThreadGroup()
 
 ThreadGroup::~ThreadGroup()
 {
-    MemoryTrackerSwitcher query_memory_scope(&memory_tracker, 0);
+    MemoryTrackerSwitcher query_memory_scope(&memory_tracker);
     String{}.swap(shared_data.query_for_logs);
 }
 

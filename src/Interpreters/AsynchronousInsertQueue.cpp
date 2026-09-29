@@ -131,11 +131,11 @@ static const NameSet settings_to_skip
 };
 
 /// Queue keys outlive the inserting query and can be destroyed by a different thread.
-static std::shared_ptr<const AsynchronousInsertQueue::InsertQuery> makeQueuedKey(const AsynchronousInsertQueue::InsertQuery & key)
+std::shared_ptr<const AsynchronousInsertQueue::InsertQuery> AsynchronousInsertQueue::InsertQuery::cloneForQueue() const
 {
     MemoryTrackerSwitcher key_memory_scope(&total_memory_tracker);
     return std::shared_ptr<const AsynchronousInsertQueue::InsertQuery>(
-        new AsynchronousInsertQueue::InsertQuery(key),
+        new AsynchronousInsertQueue::InsertQuery(*this),
         [](const AsynchronousInsertQueue::InsertQuery * value)
         {
             MemoryTrackerSwitcher cleanup_memory_scope(&total_memory_tracker);
@@ -490,7 +490,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     try
     {
         pool.scheduleOrThrowOnError(
-            [this, queued_key = makeQueuedKey(key), global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
+            [this, queued_key = key.cloneForQueue(), global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
             {
                 processData(
                     *queued_key,
@@ -719,7 +719,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         {
             try
             {
-                it->second = shard.queue.emplace(now + timeout_ms, Container{makeQueuedKey(key), std::make_unique<InsertData>(timeout_ms)});
+                it->second = shard.queue.emplace(now + timeout_ms, Container{key.cloneForQueue(), std::make_unique<InsertData>(timeout_ms)});
             }
             catch (...)
             {
@@ -1488,7 +1488,7 @@ catch (const Poco::Exception & e)
 }
 catch (const std::exception & e)
 {
-    finishWithException(key.query, data->entries, e);
+    finishWithException(key.query, data->entries, Exception(Exception::CreateFromSTDTag{}, e));
 }
 catch (...)
 {
