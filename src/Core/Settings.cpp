@@ -7598,7 +7598,7 @@ Use lazy materialization optimization for reading local Parquet files with the `
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
-        {"25.12", 10, 10000, "Increase the limit after performance improvement"}, \
+        {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
         {"25.11", 10, 100, "More optimal"}, \
         {"25.4", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"}) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
@@ -9239,11 +9239,6 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 )", 0, \
         {"25.8", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}) \
-    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
-Use local pipeline during distributed INSERT SELECT with parallel replicas
-)", 0, \
-        {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
-        {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", 0, \
@@ -10798,6 +10793,10 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
+        {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
+        {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
+        {"25.4", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1, \
         {"26.6", 1, 1, "Obsolete setting, the database engine in Cloud no longer depends on it."}, \
         {"24.10", 1, 1, "A setting for ClickHouse Cloud"}) \
