@@ -12,13 +12,11 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
+#include <limits>
 #include <optional>
 #include <ranges>
-#include <type_traits>
-
 
 namespace DB
 {
@@ -32,19 +30,23 @@ namespace ErrorCodes
 namespace
 {
 
-/// The value moved by the offset, empty when it leaves the type's range; floats go to Inf instead.
+/// The value moved by the offset, empty when it leaves the type's range.
 template <typename T>
 std::optional<T> shift(T value, T offset, bool preceding)
 {
-    if constexpr (std::is_floating_point_v<T>)
+    if (preceding)
     {
-        return preceding ? value - offset : value + offset;
+        if (value < std::numeric_limits<T>::lowest() + offset)
+            return std::nullopt;
+
+        return value - offset;
     }
     else
     {
-        T result{};
-        const bool overflow = preceding ? common::subOverflow(value, offset, result) : common::addOverflow(value, offset, result);
-        return overflow ? std::nullopt : std::optional(result);
+        if (value > std::numeric_limits<T>::max() - offset)
+            return std::nullopt;
+
+        return value + offset;
     }
 }
 
@@ -151,17 +153,18 @@ std::vector<size_t> findPositions(const Block & header, const SortDescription & 
 
 std::vector<bool> markColumnsToMaterialize(
     const Block & header,
-    const WindowDescription & window_description,
+    const SortDescription & partition_by,
+    const SortDescription & order_by,
     const std::vector<WindowFunctionDescription> & functions)
 {
     std::vector<bool> should_materialize(header.columns(), false);
 
     /// Compared across blocks to find the partition end.
-    for (const auto & column : window_description.partition_by)
+    for (const auto & column : partition_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
     /// Compared across blocks for peer groups, and cast to a concrete ColumnVector by the RANGE comparator.
-    for (const auto & column : window_description.order_by)
+    for (const auto & column : order_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
     /// Fed to aggregate functions, which cannot take wrapped columns.
@@ -230,12 +233,12 @@ WindowTransformParams WindowTransformParams::create(
     const std::vector<WindowFunctionDescription> & functions)
 {
     auto header = materializeHeader(input_header);
-    auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
+    auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
+    auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
-    auto should_materialize = markColumnsToMaterialize(header, description, functions);
 
     return WindowTransformParams{
         std::move(header),
