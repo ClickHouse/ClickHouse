@@ -500,7 +500,8 @@ public:
                     break;
             }
 
-            if (enable_extended_results_for_datetime_functions)
+            const DataTypePtr & type_arg1 = arguments[0].type;
+            if (enable_extended_results_for_datetime_functions && (isDate32(type_arg1) || isDateTime64(type_arg1)))
             {
                 if (result_type == ResultType::Date)
                     result_type = ResultType::Date32;
