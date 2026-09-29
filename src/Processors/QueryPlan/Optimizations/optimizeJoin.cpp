@@ -957,6 +957,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
     query_graph.semi_anti_flattened = query_graph_builder.context->allow_semi_anti_flattening;
+    query_graph.join_strictness = join_strictness;
     for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
     {
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))

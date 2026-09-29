@@ -109,6 +109,11 @@ struct QueryGraph
     /// the query pinned it. Only when it is empty may a join's inputs be put round the cheaper way.
     std::optional<bool> join_swap_table;
 
+    /// The strictness `chooseJoinOrder` stamps onto every join of this graph (unless a conflict
+    /// detector reordered a semi/anti join, which keeps its own). DP entries are built as `All`
+    /// whatever it is, so an `ANY`/`SEMI`/`ANTI` graph is only recognisable from here.
+    JoinStrictness join_strictness = JoinStrictness::All;
+
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
     /// The relation may be joined (as a singleton side) only against a set that contains all

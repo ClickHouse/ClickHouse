@@ -534,11 +534,17 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// (`Left` <-> `Right`), the same equivalence the enumeration itself uses. Semi/anti joins keep
     /// their sides. Only done when both estimates are known.
     ///
+    /// Only for an `ALL` graph: the entries of an `ANY`/`SEMI`/`ANTI` graph read `All` here and get
+    /// the graph's strictness stamped on later, and turning such a join round changes its result
+    /// (`ANY LEFT` keeps one match per left row, `ANY RIGHT` one per right row). Whether it may be
+    /// swapped at all is decided afterwards by the swap in `optimizeJoin`, which knows the strictness.
+    ///
     /// On equal estimates keep the input with more relations on the left: the enumeration reaches a
     /// lone relation against the rest first, which would otherwise build the hash table from a whole
     /// subtree - the left-deep shape greedy produces avoids that.
-    const bool can_turn_round = isInner(entry.kind) || isCrossOrComma(entry.kind)
-        || (entry.strictness == JoinStrictness::All && (isLeft(entry.kind) || isRight(entry.kind) || isFull(entry.kind)));
+    const bool can_turn_round = query_graph.join_strictness == JoinStrictness::All
+        && (isInner(entry.kind) || isCrossOrComma(entry.kind)
+            || (entry.strictness == JoinStrictness::All && (isLeft(entry.kind) || isRight(entry.kind) || isFull(entry.kind))));
     if (!query_graph.join_swap_table && can_turn_round && left->estimated_rows && right->estimated_rows)
     {
         const bool left_is_smaller = *left->estimated_rows < *right->estimated_rows;
