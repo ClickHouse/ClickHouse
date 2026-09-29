@@ -74,10 +74,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "asynchronous_metrics_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "asynchronous_metrics_enable_heavy_metrics", path: "/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
         { name: "asynchronous_metrics_keeper_metrics_only", path: "/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
+        { name: "asynchronous_metrics_key_values_mode", path: "/asynchronous-metrics#asynchronous_metrics_key_values_mode", default: "key_values" },
         { name: "asynchronous_metrics_update_period_s", path: "/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
       ],
       children: []
@@ -176,10 +177,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "database_catalog_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "database_catalog_drop_error_cooldown_sec", path: "/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
         { name: "database_catalog_drop_table_concurrency", path: "/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
+        { name: "database_catalog_shutdown_table_concurrency", path: "/database-catalog#database_catalog_shutdown_table_concurrency", default: "0" },
         { name: "database_catalog_unused_dir_cleanup_period_sec", path: "/database-catalog#database_catalog_unused_dir_cleanup_period_sec", default: "86400" },
         { name: "database_catalog_unused_dir_hide_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
         { name: "database_catalog_unused_dir_rm_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
@@ -197,12 +199,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "default_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "default_database", path: "/default#default_database", default: "default" },
         { name: "default_password_type", path: "/default#default_password_type", default: "sha256_password" },
         { name: "default_profile", path: "/default#default_profile", default: "default" },
-        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" }
+        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" },
+        { name: "default_session_user", path: "/default#default_session_user", default: "default" }
       ],
       children: []
     },
@@ -310,10 +313,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 2,
+      count: 5,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
-        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" }
+        { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
+        { name: "enable_silk_runtime", path: "/enable#enable_silk_runtime", default: "0" },
+        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
+        { name: "enable_write_through_distributed_cache", path: "/enable#enable_write_through_distributed_cache", default: "0" }
       ],
       children: []
     },
@@ -356,8 +362,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "http_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
@@ -512,15 +519,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       ],
       children: []
     },
-    {
-      label: "license_*",
-      count: 2,
-      settings: [
-        { name: "license_file", path: "/license#license_file", default: '""' },
-        { name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }
-      ],
-      children: []
-    },
+    { label: "license_*", count: 1, settings: [{ name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }], children: [] },
     {
       label: "listen_*",
       count: 4,
@@ -572,7 +571,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 25,
+      count: 27,
       settings: [
         { name: "max_active_parts_loading_thread_pool_size", path: "/max#max_active_parts_loading_thread_pool_size", default: "64" },
         { name: "max_authentication_methods_per_user", path: "/max#max_authentication_methods_per_user", default: "100" },
@@ -583,6 +582,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_fetch_partition_thread_pool_size", path: "/max#max_fetch_partition_thread_pool_size", default: "64" },
         { name: "max_held_snapshots", path: "/max#max_held_snapshots", default: "0" },
         { name: "max_http_index_page_size", path: "/max#max_http_index_page_size", default: "10485760" },
+        { name: "max_iceberg_manifest_decode_thread_pool_free_size", path: "/max#max_iceberg_manifest_decode_thread_pool_free_size", default: "0" },
+        { name: "max_iceberg_manifest_decode_thread_pool_size", path: "/max#max_iceberg_manifest_decode_thread_pool_size", default: "100" },
         { name: "max_keep_alive_requests", path: "/max#max_keep_alive_requests", default: "10000" },
         { name: "max_materialized_views_count_for_table", path: "/max#max_materialized_views_count_for_table", default: "0" },
         { name: "max_merges_bandwidth_for_server", path: "/max#max_merges_bandwidth_for_server", default: "0" },
@@ -804,8 +805,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "min_allocation_size_to_log_stack_trace", path: "/min#min_allocation_size_to_log_stack_trace", default: "0" },
         { name: "min_allocation_size_to_throw_on_memory_limit", path: "/min#min_allocation_size_to_throw_on_memory_limit", default: "0" },
         { name: "min_os_cpu_wait_time_ratio_to_drop_connection", path: "/min#min_os_cpu_wait_time_ratio_to_drop_connection", default: "0" }
       ],
@@ -999,6 +1001,16 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "reader_executor_*",
+      count: 3,
+      settings: [
+        { name: "reader_executor_memory_pressure_critical_level_pct", path: "/reader-executor#reader_executor_memory_pressure_critical_level_pct", default: "95" },
+        { name: "reader_executor_memory_pressure_elevated_level_pct", path: "/reader-executor#reader_executor_memory_pressure_elevated_level_pct", default: "75" },
+        { name: "reader_executor_memory_pressure_high_level_pct", path: "/reader-executor#reader_executor_memory_pressure_high_level_pct", default: "90" }
+      ],
+      children: []
+    },
+    {
       label: "remote_*",
       count: 2,
       settings: [
@@ -1052,7 +1064,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 3,
       settings: [
         { name: "shutdown_wait_backups_and_restores", path: "/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
-        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "5" },
+        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "120" },
         { name: "shutdown_wait_unfinished_queries", path: "/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
       ],
       children: []
@@ -1311,7 +1323,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Other",
-      count: 120,
+      count: 121,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
@@ -1323,8 +1335,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
         { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
         { name: "compression", path: "/other#compression" },
-        { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
         { name: "config-file", path: "/other#config-file", default: "config.xml" },
+        { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
         { name: "core_dump", path: "/other#core_dump" },
         { name: "crash_log", path: "/other#crash_log" },
         { name: "create_union_system_log_tables", path: "/other#create_union_system_log_tables" },
@@ -1348,6 +1360,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "hdfs.libhdfs3_conf", path: "/other#hdfs.libhdfs3_conf", default: '""' },
         { name: "hsts_max_age", path: "/other#hsts_max_age" },
         { name: "iceberg_background_schedule_pool_size", path: "/other#iceberg_background_schedule_pool_size", default: "10" },
+        { name: "iceberg_manifest_decode_thread_pool_queue_size", path: "/other#iceberg_manifest_decode_thread_pool_queue_size", default: "10000" },
         { name: "ignore_empty_sql_security_in_create_view_query", path: "/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
         { name: "include_from", path: "/other#include_from", default: '""' },
         { name: "insert_deduplication_version", path: "/other#insert_deduplication_version", default: "new_unified_hash" },
@@ -1380,7 +1393,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.client.certificateFile", path: "/other#openssl.client.certificatefile", default: '""' },
         { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
         { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
-        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "0" },
+        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "1" },
         { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
         { name: "openSSL.client.invalidCertificateHandler.name", path: "/other#openssl.client.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
         { name: "openSSL.client.loadDefaultCAFile", path: "/other#openssl.client.loaddefaultcafile", default: "1" },
@@ -1531,7 +1544,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "件の設定" : "件の設定"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
 
     return (
       <div key={key} className="min-w-max">

@@ -9,8 +9,9 @@ BAD_ARGUMENTS
 === the same BACKUP composite with only mutating methods is accepted ===
 ['POST']
 === it is not served over GET or HEAD ===
-There is no handle
+404
 0
+404
 === the same URL over POST does reach query execution ===
 routed
 === a composite of read-only statements needs no mutating method ===

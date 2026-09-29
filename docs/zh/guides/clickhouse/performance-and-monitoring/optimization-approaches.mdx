@@ -1,0 +1,304 @@
+---
+slug: /optimize/optimization-approaches
+sidebarTitle: '选择优化策略'
+sidebar_label: '选择优化策略'
+sidebar_position: 4
+title: '选择优化策略'
+description: '根据慢速 ClickHouse 查询的相关信息评估合适的优化策略'
+doc_type: '指南'
+keywords: ['查询优化', '数据类型', '排序键', 'materialized views', '投影']
+---
+
+import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
+
+利用[查询日志](/zh/reference/system-tables/query_log)、受控比较和[查询计划](/zh/reference/statements/explain)提供的证据，评估能够解决已测得瓶颈的优化方法。
+
+<div id="before-you-begin">
+  ## 开始之前
+</div>
+
+请先建立可复现的基准，并对性能瓶颈提出假设。如果尚未确定瓶颈，请先参阅[诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)和[定位查询瓶颈](/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)。
+
+本指南中的示例使用 `nyc_taxi.trips_small_inferred` 表。若要完全按照示例运行，如尚未创建并加载该表，请执行以下操作：
+
+<Accordion title="设置示例数据集">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+<div id="choose-an-approach">
+  ## 选择优化方向
+</div>
+
+根据收集到的证据确定优化的切入点。优先选择能解决问题且针对性最弱的改动：
+
+| 证据                               | 首先尝试                                                 | 预期效果              |
+| -------------------------------- | ---------------------------------------------------- | ----------------- |
+| 查询读取了宽列或不需要的列                    | [减少读取的数据](#reduce-the-data-read)                     | 读取字节数、内存使用量和处理工作量 |
+| 选择性过滤器仍读取了许多 [parts 或粒度](/zh/parts) | [使数据布局与查询相匹配](#align-the-data-layout-with-the-query) | 读取的行数和粒度数         |
+| 重复的转换或聚合操作在查询中占主导地位              | [预先计算可重复的工作](#precompute-repeatable-work)            | 查询时执行的计算量         |
+
+如果证据不属于上述任何类别，请回到查询计划，而不是强行套用某种优化方向。
+
+<div id="reduce-the-data-read">
+  ## 减少数据读取量
+</div>
+
+* **适用场景：** 查询读取了宽列或不需要的列。
+* **更改：** 减少查询读取的列大小或列数。
+* **验证：** 在相同条件下比较 `read_bytes`、内存使用量和耗时。
+
+ClickHouse 仅读取查询所需的列，但仍需读取、解压并处理选中的数据。请检查所选列及其类型。[Schema inference](/zh/concepts/features/interfaces/schema-inference) 提供了实用的起点，但推断出的类型可能比生产数据实际所需的类型更宽或限制更少。
+
+<div id="review-column-types">
+  ### 审查列类型
+</div>
+
+<span id="choose-precise-types" />
+
+**选择合适的精确类型**
+
+选择既能满足工作负载所需范围和精度，又不会存储不必要数据的类型。对于这类值，应使用数值和日期类型，而非通用的 [`String`](/zh/reference/data-types/string)；并选择能安全表示预期范围的最小[有符号或无符号数值类型](/zh/reference/data-types/int-uint)。对于时间列，请使用 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)，除非需要 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 提供的更大范围或小数精度。
+
+<span id="use-nullable-columns-deliberately" />
+
+**谨慎使用可空列**
+
+[`Nullable`](/zh/reference/data-types/nullable) 列除存储值外，还会存储单独的空值掩码，ClickHouse 也必须读取和处理该掩码。仅当区分空值与该类型的默认值具有实际意义时，才应使用它。如果可以保证某列始终包含值，使用不可为空的类型可避免这部分额外开销。
+
+在更改列之前，应检查源数据和摄取路径，不要假设当前观察到的非空数据会始终保持非空。[优化实战示例](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable) 演示了如何识别包含空值的列，以及如何衡量更改 schema 的影响。
+
+<span id="use-dictionary-encoding-for-repeated-values" />
+
+**对重复值使用字典编码**
+
+[`LowCardinality`](/zh/reference/data-types/lowcardinality) 使用字典编码，对于状态值、国家/地区代码等字符串列，以及其他不同值数量远少于行数的维度，通常非常有效。约 10,000 个不同值可作为识别候选列的参考起点，而非固定限制。应避免将其用于标识符和其他大多唯一的列，并在更改类型前后比较测量结果。
+
+有关更详细的指导，请参阅[选择数据类型](/zh/best-practices/select-data-types)。
+
+<div id="read-only-the-required-columns">
+  ### 仅读取所需列
+</div>
+
+ClickHouse 按列存储数据，因此减少选择的列数可直接减少读取的数据量。请列出所需列，不要使用 `SELECT *`，尤其是对于宽表，或查询仅返回每行少量字段时。
+
+使用 [`system.query_log`](/zh/reference/system-tables/query_log) 中的 `read_bytes`，比较缩小所选列范围前后读取的数据量。如果 `read_bytes` 仍然较高，请检查查询计划，查看是否有仍需读取额外列的表达式、过滤器、联接或嵌套查询。
+
+例如，如果仪表板只需要上车时间、支付类型和总金额，请选择这些列，而非完整行：
+
+```sql
+SELECT
+    pickup_datetime,
+    payment_type,
+    total_amount
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+LIMIT 1000;
+```
+
+将此查询与使用相同过滤器和限制条件的 `SELECT *` 查询进行比较。返回的行数不变，但 `read_bytes` 应反映出读取的列更少。
+
+<div id="align-the-data-layout-with-the-query">
+  ## 让数据布局与查询相匹配
+</div>
+
+* **适用场景：**选择性过滤器仍会读取大量 parts 或粒度。
+* **调整：**使物理布局与频繁执行的查询所使用的过滤器相匹配。
+* **验证：**比较 [`EXPLAIN indexes = 1`](/zh/reference/statements/explain) 选中的 parts 和粒度，然后检查 `read_rows`、`read_bytes` 和耗时。
+
+<div id="start-with-the-ordering-key">
+  ### 从排序键入手
+</div>
+
+对于 [`MergeTree` 家族表](/zh/reference/engines/table-engines/mergetree-family/)，排序键决定行在磁盘上的排列方式。默认情况下，它还作为定义[稀疏主索引](/zh/primary-indexes)的主键。与 OLTP 数据库中的主键不同，ClickHouse 主键不保证唯一性。其性能优势在于，ClickHouse 可以跳过无法满足查询&#39;过滤条件的粒度。
+
+应优先选择经常用于高选择性过滤的列，并考虑它们在键中的顺序。将相关值聚集在一起也有助于提高压缩率。当查询的分组或排序顺序与该键一致时，ClickHouse 可能会对 `GROUP BY` 或 `ORDER BY` 使用按序优化。
+
+在测试不同排序键的前后，比较 `EXPLAIN indexes = 1` 选中的 parts 和粒度。同时，在相同条件下比较 `read_rows`、`read_bytes` 和耗时。有关详细的选择建议，请参阅[选择主键](/zh/best-practices/choosing-a-primary-key)。
+
+示例表使用 `ORDER BY ()`，因此以下高选择性日期过滤器没有可用于跳过粒度的排序键：
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count()
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  在 ClickHouse 25.9 及更高版本中，这些设置可确保 `EXPLAIN` 显示所使用的索引，以及这些索引排除的 parts 和粒度。
+</Note>
+
+将此输出作为基准。要完成比较，请按照实操示例中的[应用排序键更改](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-ordering-key-change)，创建一个排序键包含 `pickup_datetime` 的表，然后对该表运行相同的 `EXPLAIN`。在使用耗时或内存指标评估整体变更前，计划的主键部分应显示选中的粒度更少。
+
+<Tip>
+  [`PREWHERE`](/zh/optimize/prewhere) 可在不改变已处理行数的情况下减少读取的列值。启用 `optimize_move_to_prewhere` (默认启用) 后，ClickHouse 会自动将符合条件的筛选条件从 `WHERE` 移至 `PREWHERE`。手动添加 `PREWHERE` 前，请先检查计划；衡量其效果时，请同时使用 `read_bytes` 和 `read_rows`。
+</Tip>
+
+<div id="evaluate-additional-indexing-and-data-layout-options">
+  ### 评估其他索引和数据布局方案
+</div>
+
+如果排序键无法高效支持某个重要的访问模式，请评估以下更专用的方案。
+
+<span id="partition-for-data-management-and-pruning" />
+
+**通过分区实现数据管理和剪枝**
+
+[分区](/zh/best-practices/choosing-a-partitioning-key)主要是一种数据管理机制，用于保留、移动和删除等操作。当过滤条件允许 ClickHouse 排除整个分区时，分区可以减少查询工作量，但不应作为加速查询的首选机制。
+
+例如，当保留策略也按月管理时，按月分区可以支持删除整月数据。仅当分区键符合数据生命周期要求或与已充分了解的访问模式相匹配时，才考虑使用分区。分区键的基数应保持较低：高基数键会产生大量无法跨分区合并的 parts，并可能降低性能。使用 `EXPLAIN indexes = 1` 确认查询确实会剪枝分区。
+
+<span id="add-a-data-skipping-index-for-a-localized-filter" />
+
+**为局部过滤条件添加数据跳过索引**
+
+[数据跳过索引](/zh/best-practices/use-data-skipping-indices-where-appropriate)会存储元数据，使 ClickHouse 能够避免读取不可能匹配过滤条件的块。当排序键无法支持某个重要过滤条件，且匹配值在块内足够集中时，它最为有用。
+
+例如，当大多数块不包含要查找的值时，布隆过滤器索引可帮助进行等值查找。应先评估数据类型和排序键，再使用跳过索引。很少能排除块的索引会增加存储和评估开销，却无法显著减少工作量。使用具有代表性的数据测试索引类型和粒度，然后使用 `EXPLAIN indexes = 1` 比较选中的数据粒度，并检查 `read_rows`、`read_bytes` 和耗时。
+
+<span id="use-projections-selectively" />
+
+**选择性使用投影**
+
+[投影](/zh/data-modeling/projections)会与表一同存储替代的数据布局。它们可以提供另一种排序键或预计算结果，ClickHouse 可以选择适用的投影，而无需在查询中直接引用它。
+
+例如，按 `payment_type` 排序的投影可以支持基表排序无法支持的常用过滤条件。对于基表排序无法高效支持的重要访问模式，应仅使用少量投影。
+
+投影会存储额外的索引或列数据，并增加插入和合并时的工作量；全列投影会复制其存储的列。大量使用投影还可能增加查询时选择最优投影所需的工作量。对于具有许多不同访问模式的大型部署，使用较少的投影或独立的专用表通常更易于运维。在这些机制之间进行选择时，请参阅[materialized views 与投影](/zh/managing-data/materialized-views-versus-projections)。
+
+为按支付类型和接载时间过滤的查询添加替代排序，同时仍查询源表：
+
+```sql
+ALTER TABLE nyc_taxi.trips_small_inferred
+ADD PROJECTION trips_by_payment_type
+(
+    SELECT
+        payment_type,
+        pickup_datetime,
+        trip_distance,
+        total_amount
+    ORDER BY (payment_type, pickup_datetime)
+);
+
+ALTER TABLE nyc_taxi.trips_small_inferred
+MATERIALIZE PROJECTION trips_by_payment_type;
+```
+
+对投影进行物化会填充现有数据；后续插入会自动维护该投影。针对原始表重复执行有代表性的查询，并使用 `EXPLAIN projections = 1` 确认 ClickHouse 是否选择了该投影，以及是否读取了更少的行或字节。将此模式广泛应用前，还应评估插入和存储开销。
+
+<div id="precompute-repeatable-work">
+  ## 预计算重复性工作
+</div>
+
+* **适用场景：** 相同的转换或聚合反复占据大部分查询时间。
+* **变更：** 将重复性计算移至摄取阶段、按计划刷新或专用数据布局中。
+* **验证：** 确认查询读取更小的结果集，并在查询时执行更少计算，同时摄取或刷新带来的工作量仍在可接受范围内。
+
+请根据结果的维护和访问方式进行选择。这些选项并不互斥：
+
+| 如果您需要               | 首选                                                     |
+| ------------------- | ------------------------------------------------------ |
+| 随数据到达自动更新的结果        | [增量materialized view](#incremental-materialized-view)  |
+| 可接受一定时效延迟的定期重新计算    | [可刷新materialized view](#refreshable-materialized-view) |
+| 独立的 schema、排序键或生命周期 | [专用表](#purpose-built-table)                            |
+
+每个部分均包含基础实现、主要运维权衡，以及验证结果的方法。
+
+<div id="incremental-materialized-view">
+  ### 增量materialized view
+</div>
+
+当需要让重复执行的过滤、转换或聚合随数据到达持续保持最新时，请使用[增量materialized view](/zh/materialized-view/incremental-materialized-view)。它会处理每个新插入的块，并将转换后的结果写入目标表。代价是增加摄取工作，并需要显式定义目标表。
+
+例如，若 dashboard 需要反复按天统计行程数，可从较小的聚合表中读取数据，而无需针对每个请求都对源数据进行分组：
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_day
+(
+    pickup_date Date,
+    trip_count UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY pickup_date;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_day_mv
+TO nyc_taxi.trips_by_day
+AS SELECT
+    toDate(assumeNotNull(pickup_datetime)) AS pickup_date,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime IS NOT NULL
+GROUP BY pickup_date;
+```
+
+按 `pickup_date` 分组并使用 `sum(trip_count)` 查询目标表，以便在查询时合并等待后台合并的行。该视图仅处理新插入的数据，因此需要单独回填现有源数据。将耗时和读取行数与原始聚合进行比较，以验证变更，然后确认额外的插入开销可以接受。
+
+<div id="refreshable-materialized-view">
+  ### 可刷新materialized view
+</div>
+
+当可以接受结果略有陈旧，且能够以适当的时间间隔重新计算完整结果时，请使用[可刷新materialized view](/zh/materialized-view/refreshable-materialized-view)。它会按计划重新执行查询。需要权衡的是结果的新鲜度与每次刷新的成本。
+
+例如，报表可以每小时按付款类型重新汇总行程总计：
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_payment_type
+(
+    payment_type Int64,
+    trip_count UInt64
+)
+ENGINE = MergeTree
+ORDER BY payment_type;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_payment_type_mv
+REFRESH EVERY 1 HOUR
+TO nyc_taxi.trips_by_payment_type
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+GROUP BY payment_type;
+```
+
+报表读取预计算结果，而 ClickHouse 会按计划刷新完整结果。将其查询耗时与原始聚合进行比较，以验证变更；然后检查 [`system.view_refreshes`](/zh/reference/system-tables/view_refreshes)，确认刷新耗时、状态和频率是否适合该工作负载。
+
+<div id="purpose-built-table">
+  ### 专用表
+</div>
+
+当某个独立工作负载需要显著不同的 schema、排序键或生命周期时，请使用专用表。它能让你明确控制物理设计，相比维护大量 projections，也可能更清晰易懂。代价是需要额外的存储空间和管道管理。当源数据和新鲜度要求允许时，也可将重复的 联接 或转换移入摄取管道。有关详细的设计指导，请参阅[使用 materialized views](/zh/best-practices/use-materialized-views)和[数据反规范化](/zh/data-modeling/denormalization)。
+
+例如，创建一个更窄的表，并按适合 dashboard 的方式排序，以便按支付类型和上车时间过滤行程：
+
+```sql
+CREATE TABLE nyc_taxi.trips_for_payment_dashboard
+ENGINE = MergeTree
+ORDER BY (payment_type, pickup_datetime)
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    assumeNotNull(source.pickup_datetime) AS pickup_datetime,
+    trip_distance,
+    total_amount
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+  AND source.pickup_datetime IS NOT NULL;
+```
+
+此示例会排除排序键值为 null 的数据，并将这两个目标列中的 `Nullable` 移除。请确认这种处理方式符合工作负载的数据要求。仪表板必须显式查询此表，摄取管道也必须确保其保持最新。请通过比较读取的行数和字节数、内存使用量及耗时与源表查询来验证此更改。决策时还应考虑额外的存储和管道维护成本。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+评估变更时，应在可比条件下重复进行原始测量。确认该变更减少了预期工作量，而不会将瓶颈转移到其他环节。
+
+继续阅读[优化实例详解](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example)，了解如何以原始基线为参照，测量 schema 和排序键变更的效果。

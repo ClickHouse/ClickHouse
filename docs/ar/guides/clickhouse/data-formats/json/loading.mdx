@@ -11,7 +11,7 @@ doc_type: 'guide'
 توضّح الأمثلة التالية بصورة مبسطة جدًا كيفية تحميل بيانات JSON المنظَّمة وشبه المنظَّمة. أما إذا كنت تتعامل مع JSON أكثر تعقيدًا، بما في ذلك البُنى المتداخلة، فراجع دليل [**Designing JSON schema**](/ar/guides/clickhouse/data-formats/json/schema).
 
 <div id="loading-structured-json">
-  ## تحميل JSON المنظَّم
+  ## تحميل JSON المهيكل
 </div>
 
 في هذا القسم، نفترض أن بيانات JSON بتنسيق [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON المحدَّد بسطر جديد)، المعروف بـ [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) في ClickHouse، وأنها ذات بنية منتظمة، أي أن أسماء الأعمدة وأنواعها ثابتة. يُعدّ `NDJSON` التنسيق المفضَّل لتحميل JSON نظرًا لإيجازه واستخدامه الفعّال للمساحة، غير أن تنسيقات أخرى مدعومة أيضًا لكلٍّ من [الإدخال والإخراج](/ar/reference/formats/JSON/JSON).
@@ -35,7 +35,7 @@ doc_type: 'guide'
 
 في هذه الحالة البسيطة، البنية ثابتة، وأسماء الأعمدة معروفة، وأنواعها محددة بدقة.
 
-على الرغم من أن ClickHouse يدعم البيانات شبه المنظمة عبر نوع JSON، إذ يمكن أن تكون أسماء المفاتيح وأنواعها ديناميكية، فإن ذلك غير ضروري في هذه الحالة.
+على الرغم من أن ClickHouse يدعم البيانات شبه مهيكل عبر نوع JSON، إذ يمكن أن تكون أسماء المفاتيح وأنواعها ديناميكية، فإن ذلك غير ضروري في هذه الحالة.
 
 <Info>
   **فضّل المخططات الثابتة كلما أمكن**
@@ -68,11 +68,11 @@ ORDER BY (project, date)
   اخترنا هنا مفتاح ترتيب باستخدام عبارة `ORDER BY`. لمزيد من التفاصيل حول مفاتيح الترتيب وكيفية اختيارها، راجع [هذا القسم](/ar/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
 </Info>
 
-يمكن لـ ClickHouse تحميل بيانات JSON بعدة صيغ، مع استنتاج النوع تلقائيًا من الامتداد والمحتويات. يمكننا قراءة ملفات JSON للجدول أعلاه باستخدام [دالة S3](/ar/reference/functions/table-functions/s3):
+يمكن لـ ClickHouse تحميل بيانات JSON بعدة تنسيقات، مع استنتاج النوع تلقائيًا من الامتداد والمحتويات. يمكننا قراءة ملفات JSON للجدول أعلاه باستخدام [دالة S3](/ar/reference/functions/table-functions/s3):
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -84,10 +84,10 @@ LIMIT 1
 1 row in set. Elapsed: 1.232 sec.
 ```
 
-لاحظ أننا لسنا مضطرين إلى تحديد صيغة الملف. بدلاً من ذلك، نستخدم glob pattern لقراءة جميع ملفات `*.json.gz` في الـ bucket. يستنتج ClickHouse تلقائياً أن الصيغة هي `JSONEachRow` (ndjson) انطلاقاً من امتداد الملف ومحتوياته. يمكن تحديد الصيغة يدوياً عبر دوال المعاملات إذا تعذّر على ClickHouse اكتشافها.
+لاحظ أننا لسنا مضطرين إلى تحديد تنسيق الملف. بدلاً من ذلك، نستخدم glob pattern لقراءة جميع ملفات `*.json.gz` في الـ bucket. يستنتج ClickHouse تلقائياً أن التنسيق هو `JSONEachRow` (ndjson) انطلاقاً من امتداد الملف ومحتوياته. يمكن تحديد التنسيق يدوياً عبر دوال المعاملات إذا تعذّر على ClickHouse اكتشافها.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 لإدراج الصفوف الموجودة في هذه الملفات، يمكننا استخدام [`INSERT INTO SELECT`](/ar/reference/statements/insert-into#inserting-the-results-of-select):
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -139,7 +139,7 @@ FORMAT JSONEachRow
 
 يتعامل ClickHouse مع ذلك من خلال نوع [`JSON`](/ar/reference/data-types/newjson) مخصص.
 
-تأمل المثال التالي من نسخة موسعة من مجموعة بيانات [Python PyPI dataset](https://clickpy.clickhouse.com/) أعلاه. هنا أضفنا عمود `tags` عشوائيًا يحتوي على أزواج مفتاح-قيمة عشوائية.
+تأمل المثال التالي من نسخة موسعة من مجموعة بيانات [بايثون PyPI dataset](https://clickpy.clickhouse.com/) أعلاه. هنا أضفنا عمود `tags` عشوائيًا يحتوي على أزواج مفتاح-قيمة عشوائية.
 
 ```json
 {
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 نملأ الجدول بالطريقة نفسها المستخدمة مع مجموعة البيانات الأصلية:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response

@@ -1,0 +1,3 @@
+foo
+CREATE VIEW [db].v1 (`objects` String) AS SELECT \'foo\' AS objects WHERE \'foo\' IN (SELECT s FROM [db].objects WHERE s IN ([db].objects))
+foo

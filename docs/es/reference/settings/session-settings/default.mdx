@@ -13,6 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="default_format">
+  ## default_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para el formato predeterminado cuando la consulta no incluye una cláusula FORMAT."}]}]} />
+
+Especifica el formato del resultado de la consulta cuando esta no incluye una cláusula `FORMAT` y no se aplica ninguna otra sobrescritura de formato.
+
 <div id="default_materialized_view_sql_security">
   ## default_materialized_view_sql_security
 </div>

@@ -1,0 +1,10 @@
+query runs	8000
+Nullable key	8000
+LowCardinality key	8000
+LowCardinality(Nullable) key	8000
+Array key	8000
+empty input	0
+inner sorted gather moved up	1
+rewrite off keeps the gather below	1
+window values distributed	1636374373430204823
+window values local	1636374373430204823
