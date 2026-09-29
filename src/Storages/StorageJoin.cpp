@@ -641,7 +641,7 @@ Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
-[Row policies](/reference/statements/create/row-policy) are not supported for `Join`-engine tables. A `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so `CREATE ROW POLICY` on such a table is rejected, and if a policy still applies to the table, for example a database-wide `ON db.*` policy, `JOIN` and `joinGet` queries against the table fail with `NOT_IMPLEMENTED`.
+A [row policy](/reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
 
 The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
 

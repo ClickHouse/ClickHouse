@@ -23,8 +23,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -161,8 +161,8 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
     /// The hash table is read as is, so a row policy on the table cannot be applied here any more than in a JOIN.
     auto row_policy_filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Row policies are not supported for table {} with the Join engine", storage_id.getNameForLogs());
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use {} because a row policy is applied on table {} with the Join engine", function_name, storage_id.getNameForLogs());
 
     return std::make_unique<ExecutableFunctionJoinGet>(function_name, context, table_lock, storage_join, result_columns);
 }

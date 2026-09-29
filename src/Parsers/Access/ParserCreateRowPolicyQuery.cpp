@@ -494,7 +494,7 @@ This works while the query is shipped as text, which is the default. With [`seri
 
 ## Join tables {#join-tables}
 
-A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered, and `CREATE ROW POLICY` on such a table is rejected with `BAD_ARGUMENTS`. A policy that still applies to a `Join` table, because it is a database-wide `ON db.*` policy or was created before the table, filters a direct `SELECT` from the table, but `JOIN` and `joinGet` queries against the table fail with `NOT_IMPLEMENTED`.
+A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered there. A policy on such a table, including a database-wide `ON db.*` policy, filters a plain `SELECT` from the table, but while it applies, `JOIN` and `joinGet` queries against the table fail with `ACCESS_DENIED`.
 
 ## ON CLUSTER Clause {#on-cluster-clause}
 

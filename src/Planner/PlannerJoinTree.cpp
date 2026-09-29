@@ -194,7 +194,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int NOT_IMPLEMENTED;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -3274,8 +3274,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
     if (prepared_join.storage_join && right_table_has_row_policy)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Row policies are not supported for table {} with the Join engine",
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot join table {} with the Join engine because a row policy is applied on it",
             prepared_join.storage_join->getStorageID().getNameForLogs());
 
     bool allow_storage_join = !right_table_has_row_policy

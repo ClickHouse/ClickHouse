@@ -40,10 +40,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -287,8 +287,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
             if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
                 if (typeid_cast<StorageJoin *>(storage.get()))
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Row policies are not supported for table {} with the Join engine", joined_table_id.getNameForLogs());
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Cannot join table {} with the Join engine because a row policy is applied on it", joined_table_id.getNameForLogs());
                 storage = nullptr;
             }
         }
