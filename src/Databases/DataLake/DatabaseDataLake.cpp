@@ -909,22 +909,11 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
     if (!table_metadata && !catalog_storage_type && catalog->createNamespaceIfNotExists(DataLake::parseTableName(name).first, /* location */ ""))
         table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
 
-    DataLake::DataLakeTableFormat table_format;
-    DatabaseDataLakeStorageType storage_type;
-    if (table_metadata)
-    {
-        table_format = catalog->getTableFormat(*table_metadata);
-        storage_type = table_metadata->getStorageType();
-    }
-    else if (catalog_storage_type)
-    {
-        table_format = catalog->getTableFormat(DataLake::TableMetadata());
-        storage_type = *catalog_storage_type;
-    }
-    else
-    {
+    if (!table_metadata && !catalog_storage_type)
         throw cannotTellNewTableLocation(name);
-    }
+
+    const auto table_format = table_metadata ? catalog->getTableFormat(*table_metadata) : catalog->getTableFormat(DataLake::TableMetadata());
+    const auto storage_type = table_metadata ? table_metadata->getStorageType() : *catalog_storage_type;
 
     if (table_format == DataLake::DataLakeTableFormat::ICEBERG)
     {
