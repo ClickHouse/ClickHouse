@@ -19,11 +19,11 @@ select x from tab order by x limit 100000 format Null settings read_in_order_use
 
 system flush logs query_log, processors_profile_log;
 
--- The read-ahead window must stay unarmed while the merge keeps asking the *same* front
--- source for more blocks: asking it again after its first block is not an advance past a
--- source. Assert that both parts engage the virtual row (two `VirtualRowTransform`), that
--- exactly one `MergeTreeSelect` delivers the limit (the front part, at least two blocks),
--- and that the other reads nothing at all.
+-- A source deferred behind its virtual row is read only once the merge reaches its key. Here
+-- the merge keeps asking the *same* front source for more blocks and never gets there. Assert
+-- that both parts engage the virtual row (two `VirtualRowTransform`), that exactly one
+-- `MergeTreeSelect` delivers the limit (the front part, at least two blocks), and that the
+-- other reads nothing at all.
 WITH
     (
         SELECT query_id

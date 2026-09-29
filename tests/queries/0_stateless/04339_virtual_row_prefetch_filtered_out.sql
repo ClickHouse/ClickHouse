@@ -1,13 +1,9 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings
 
--- Regression test for the read-ahead window used with `read_in_order_use_virtual_row`.
--- Sources deferred behind a virtual row are prefetched within a bounded window. When a
--- prefetched source is completely filtered out upstream it finishes without ever delivering
--- a real chunk, so `consume` is never called for it and the merge must still release its
--- read-ahead slot (see `MergingSortedAlgorithm::onSourceExhausted`). Otherwise the window
--- stops refilling after `max_threads` such sources and the merge silently degrades to
--- reading one part at a time. Here the leading parts the merge has to walk through are all
--- filtered out, exercising that path; the query must stay correct.
+-- Sources deferred behind a virtual row that are completely filtered out upstream finish
+-- without ever delivering a real chunk, so `consume` is never called for them: the merge has
+-- to drop them from its queue and move on to the next source. Here the leading parts the merge
+-- has to walk through are all filtered out, exercising that path; the query must stay correct.
 
 DROP TABLE IF EXISTS t_vrow_filtered;
 
@@ -16,8 +12,7 @@ CREATE TABLE t_vrow_filtered (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY a;
 SYSTEM STOP MERGES t_vrow_filtered;
 
 -- 8 parts with disjoint, increasing key ranges, so the merge needs them strictly in part
--- order. The first 6 parts (well past `max_threads = 2`) are fully filtered out by
--- `WHERE b = 1`, so each is reached while still prefetched and finishes without data.
+-- order. The first 6 parts are fully filtered out by `WHERE b = 1`, so each finishes without data.
 INSERT INTO t_vrow_filtered SELECT number + 0 * 100000, 0 FROM numbers(100000);
 INSERT INTO t_vrow_filtered SELECT number + 1 * 100000, 0 FROM numbers(100000);
 INSERT INTO t_vrow_filtered SELECT number + 2 * 100000, 0 FROM numbers(100000);

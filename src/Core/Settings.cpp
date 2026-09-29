@@ -4794,7 +4794,7 @@ Possible values:
 )", 0, \
         {"26.9", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."}) \
     DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read.
 )", 0, \
         {"26.8", false, true, "Enable the virtual row optimization by default. When reading in order of the primary key over many parts, it lets `MergingSortedTransform` reprioritize sources using primary key values from the sparse index, so parts that are not relevant for the query are not read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel. This significantly reduces peak memory consumption (see https://github.com/ClickHouse/ClickHouse/issues/52624)."}, \
         {"24.11", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."}) \

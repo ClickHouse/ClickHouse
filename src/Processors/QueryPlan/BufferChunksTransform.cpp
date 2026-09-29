@@ -36,9 +36,9 @@ IProcessor::Status BufferChunksTransform::prepare()
     }
 
     /// Do not read ahead while the downstream merge may have deferred this source
-    /// after seeing its virtual row. Resume only when data is actually demanded —
-    /// either right away (the source is not deferred) or when the merge releases
-    /// the deferred source (see `IMergingTransformBase` and `topUpPrefetch`).
+    /// after seeing its virtual row. Resume only when data is actually demanded:
+    /// either right away (the source is not deferred) or when the merge reaches
+    /// the key of the virtual row (see `IMergingTransformBase::prepareInitializeInputs`).
     if (wait_for_demand_after_virtual_row)
     {
         if (!output.canPush())

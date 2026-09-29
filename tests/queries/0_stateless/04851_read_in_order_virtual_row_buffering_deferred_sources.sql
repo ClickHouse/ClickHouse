@@ -10,16 +10,15 @@
 -- must not defeat the deferral of the sources behind virtual rows: after delivering a
 -- virtual row, `BufferChunksTransform` must not read ahead into its buffer until the
 -- merge actually demands data from that source. Otherwise every deferred source would
--- read speculatively regardless of the read-ahead window, inflating reads and peak
--- memory on filtered `LIMIT` queries.
+-- read speculatively, inflating reads and peak memory on filtered `LIMIT` queries.
 
 create table tab (x UInt64, v UInt8) engine = MergeTree order by x;
 
 system stop merges tab;
 
 -- Eight disjoint parts: the merge answers `ORDER BY x LIMIT 99000` from the first part
--- alone and never advances past a source, so no read-ahead is issued and the seven
--- deferred sources must stay completely unread even though buffering is enabled.
+-- alone and never reaches another source, so the seven deferred sources must stay
+-- completely unread even though buffering is enabled.
 insert into tab select number + 0 * 100000, 1 from numbers(100000);
 insert into tab select number + 1 * 100000, 1 from numbers(100000);
 insert into tab select number + 2 * 100000, 1 from numbers(100000);
