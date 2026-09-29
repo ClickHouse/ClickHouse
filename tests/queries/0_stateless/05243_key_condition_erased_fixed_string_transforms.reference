@@ -1,38 +1,30 @@
-0: full FixedString
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-0: Variant
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-0: full Dynamic
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-0: shared Dynamic
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-1
-1
-1: full FixedString
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-1: Variant
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-1: full Dynamic
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-1: shared Dynamic
-['5630','563000','56300000']
-['5630','563000','56300000']
-2
-1
-1
-3
-1
+s <= toFixedString('V0', 2)	3	3	5
+s = toFixedString('V0', 2)	3	3	5
+s != toFixedString('V0', 2)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	2	2	5
+s <= CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s = CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s != CAST(toFixedString('V0', 2) AS Dynamic)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	2	2	5
+s <= CAST('V0' AS Dynamic)	1	1	1
+s = CAST('V0' AS Variant(String, UInt64))	1	1	2
+s <= toFixedString('V0', 2)	3	3	5
+s = toFixedString('V0', 2)	3	3	5
+s != toFixedString('V0', 2)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	2	2	5
+s <= CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s = CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s != CAST(toFixedString('V0', 2) AS Dynamic)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	2	2	5
+s <= CAST('V0' AS Dynamic)	1	1	1
+s = CAST('V0' AS Variant(String, UInt64))	1	1	2
+s = CAST(toFixedString('V0', 3) AS Dynamic)	3	3	4
+n = toFixedString('123', 3)	1	1	2

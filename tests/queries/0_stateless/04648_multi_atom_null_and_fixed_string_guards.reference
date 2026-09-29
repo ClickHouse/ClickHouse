@@ -1,22 +1,12 @@
-bare key <=> NULL
-1
-Granules: 2/4
-wrapped key <=> NULL
-1
-Granules: 4/4
-wrapped key IS NULL
-1
-Granules: 4/4
-FixedString constant vs String key
-1
-1
-1
-2
-FixedString constant vs wide FixedString key
-1
-Granules: 1/3
-padded FixedString constant matches a family of String keys
-3
-3
-3
-2
+d IS NOT DISTINCT FROM NULL	1	1	2
+toDate(d) IS NOT DISTINCT FROM NULL	1	1	4
+toDate(d) IS NULL	1	1	4
+s = toFixedString('abc', 8)	1	1	3
+toFixedString('abc', 8) = s	1	1	3
+s IS NOT DISTINCT FROM toFixedString('abc', 8)	1	1	3
+s != toFixedString('abc', 8)	2	2	3
+s = toFixedString('abc', 8)	1	1	1
+s = toFixedString('abc', 8)	3	3	5
+toFixedString('abc', 8) = s	3	3	5
+s IS NOT DISTINCT FROM toFixedString('abc', 8)	3	3	5
+s != toFixedString('abc', 8)	2	2	5
