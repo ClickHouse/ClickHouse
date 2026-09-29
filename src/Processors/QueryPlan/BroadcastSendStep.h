@@ -11,7 +11,6 @@ namespace DB
 class BroadcastSendStep final : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     BroadcastSendStep(SharedHeader input_header_, const String & exchange_id_, size_t num_buckets_)
         : exchange_id(exchange_id_)
         , num_buckets(num_buckets_)

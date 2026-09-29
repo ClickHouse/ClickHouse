@@ -11,7 +11,6 @@ namespace DB
 class ShuffleSendStep final : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     /// `hash_cast_types` (one entry per key, optional) selects a type to cast each key to
     /// before hashing, used to align buckets across both sides of a shuffle join.
     ShuffleSendStep(SharedHeader input_header_, const String & exchange_id_, Names key_names_, size_t num_buckets_, DataTypes hash_cast_types_ = {})

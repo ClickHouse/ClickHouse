@@ -15,7 +15,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class LazyFinalKeyAnalysisStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     LazyFinalKeyAnalysisStep(
         SharedHeader input_header_,
         FutureSetPtr future_set_,

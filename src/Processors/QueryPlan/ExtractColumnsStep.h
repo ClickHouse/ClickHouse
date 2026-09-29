@@ -8,7 +8,6 @@ namespace DB
 class ExtractColumnsStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
 
     explicit ExtractColumnsStep(SharedHeader input_header_, const NamesAndTypesList & requested_columns_);
     String getName() const override { return "ExtractColumns"; }

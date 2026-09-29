@@ -72,7 +72,6 @@ using FileLazyMaterializingRowsPtr = std::shared_ptr<FileLazyMaterializingRows>;
 class LazilyReadFromFile final : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     LazilyReadFromFile(
         SharedHeader header,
         std::shared_ptr<StorageFile> storage_,

@@ -193,7 +193,6 @@ private:
 class ReadFromStorageLogStep : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromStorageLogStep(
         const Names & column_names_,
         ContextPtr local_context_,

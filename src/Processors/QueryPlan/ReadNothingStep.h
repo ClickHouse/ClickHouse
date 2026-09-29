@@ -8,7 +8,6 @@ namespace DB
 class ReadNothingStep : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit ReadNothingStep(SharedHeader output_header);
 
     String getName() const override { return "ReadNothing"; }

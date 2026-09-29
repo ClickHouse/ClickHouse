@@ -9,7 +9,6 @@ namespace DB
 class BlocksMarshallingStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit BlocksMarshallingStep(const SharedHeader & input_header_);
 
     String getName() const override { return "BlocksMarshalling"; }

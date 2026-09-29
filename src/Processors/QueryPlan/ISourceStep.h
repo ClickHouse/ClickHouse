@@ -8,7 +8,6 @@ namespace DB
 class ISourceStep : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit ISourceStep(SharedHeader output_header_);
 
     ISourceStep(const ISourceStep &) = default;

@@ -13,7 +13,6 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class RollupStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     RollupStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
 
     String getName() const override { return "Rollup"; }

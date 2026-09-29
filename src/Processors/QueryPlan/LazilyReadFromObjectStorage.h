@@ -63,7 +63,6 @@ using ObjectStorageLazyMaterializingRowsPtr = std::shared_ptr<ObjectStorageLazyM
 class LazilyReadFromObjectStorage final : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     LazilyReadFromObjectStorage(
         SharedHeader header,
         const StorageID & storage_id_,

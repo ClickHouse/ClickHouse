@@ -13,7 +13,6 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class MergingAggregatedStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     MergingAggregatedStep(
         const SharedHeader & input_header_,
         Aggregator::Params params_,

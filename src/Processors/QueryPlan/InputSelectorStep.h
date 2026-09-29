@@ -10,7 +10,6 @@ namespace DB
 class InputSelectorStep : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     InputSelectorStep(SharedHeader signal_header, SharedHeader data_header);
 
     String getName() const override { return "InputSelector"; }

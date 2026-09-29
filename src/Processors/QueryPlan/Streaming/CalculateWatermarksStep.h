@@ -16,7 +16,6 @@ class CalculateWatermarksStep : public ITransformingStep
     void updateOutputHeader() override;
 
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     CalculateWatermarksStep(SharedHeader input_header_, WatermarkSettingsPtr watermark_settings_, Field initial_watermark_, ContextPtr context_);
 
     String getName() const override { return "CalculateWatermarks"; }

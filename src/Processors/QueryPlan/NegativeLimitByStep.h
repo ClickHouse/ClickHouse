@@ -9,7 +9,6 @@ namespace DB
 class NegativeLimitByStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit NegativeLimitByStep(
             const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_);

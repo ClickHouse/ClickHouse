@@ -7,7 +7,6 @@ namespace DB
 class ExtremesStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit ExtremesStep(const SharedHeader & input_header_);
 
     String getName() const override { return "Extremes"; }

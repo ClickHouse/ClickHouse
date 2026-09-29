@@ -13,7 +13,6 @@ using ILazyMaterializingRowsPtr = std::shared_ptr<ILazyMaterializingRows>;
 class JoinLazyColumnsStep final : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     JoinLazyColumnsStep(
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,

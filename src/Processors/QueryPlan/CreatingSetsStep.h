@@ -16,7 +16,6 @@ struct QueryPlanOptimizationSettings;
 class CreatingSetStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     CreatingSetStep(
         const SharedHeader & input_header_,
         SetAndKeyPtr set_and_key_,
@@ -57,7 +56,6 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit CreatingSetsStep(SharedHeaders input_headers_);
 
     String getName() const override { return "CreatingSets"; }
@@ -75,7 +73,6 @@ private:
 class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     DelayedCreatingSetsStep(
         SharedHeader input_header,
         PreparedSets::Subqueries subqueries_,

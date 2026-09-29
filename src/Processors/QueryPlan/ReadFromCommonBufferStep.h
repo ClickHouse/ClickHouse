@@ -14,7 +14,6 @@ using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
 class ReadFromCommonBufferStep : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromCommonBufferStep(
         const SharedHeader & header_,
         ChunkBufferPtr chunk_buffer_,

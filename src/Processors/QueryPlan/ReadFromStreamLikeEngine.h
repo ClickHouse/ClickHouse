@@ -9,7 +9,6 @@ namespace DB
 class ReadFromStreamLikeEngine : public ISourceStep, protected WithContext
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromStreamLikeEngine(
         const Names & column_names_,
         const StorageSnapshotPtr & storage_snapshot_,

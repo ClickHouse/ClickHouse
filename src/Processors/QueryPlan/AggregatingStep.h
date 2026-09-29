@@ -32,7 +32,6 @@ class AggregatingProjectionStep;
 class AggregatingStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
 
     enum class AggregatingStage : size_t
     {
@@ -202,7 +201,6 @@ private:
 class AggregatingProjectionStep : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     AggregatingProjectionStep(
         SharedHeaders input_headers_,
         Aggregator::Params params_,

@@ -11,7 +11,6 @@ namespace DB
 class BuildRuntimeFilterStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     BuildRuntimeFilterStep(
         const SharedHeader & input_header_,
         String filter_column_name_,

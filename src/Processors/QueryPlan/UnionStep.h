@@ -8,7 +8,6 @@ namespace DB
 class UnionStep : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     /// `max_threads` is used to limit the number of threads for the result pipeline.
     /// `allow_narrowing` opts this step into the `max_streams_for_union_step` cap from
     /// `BuildQueryPipelineSettings`. Set it for a step that unites the branches a query asks for -

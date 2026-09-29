@@ -9,7 +9,6 @@ namespace DB
 class IntersectOrExceptStep : public IQueryPlanStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     using Operator = ASTSelectIntersectExceptQuery::Operator;
 
     /// max_threads is used to limit the number of threads for result pipeline.

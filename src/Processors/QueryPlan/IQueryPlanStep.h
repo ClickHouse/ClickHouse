@@ -176,14 +176,13 @@ public:
     virtual bool hasCorrelatedExpressions() const;
 
     /// Calls `visitor` for every `ActionsDAG` this step owns, so a caller can inspect the
-    /// expressions of a plan without knowing the step types.
+    /// expressions of a plan without knowing the step types. Most steps own none and inherit this.
     ///
-    /// Pure so that a new step has to say which expressions it holds. A step that owns none writes
-    /// an empty body; the alternative, a default that reports nothing, silently hid the DAGs of
-    /// `TotalsHavingStep`, `FillingStep` and `IEJoinStep` and left the subqueries they consume
-    /// unattributed.
+    /// A step that holds an expression and does not override this reports nothing rather than
+    /// failing, which is how the DAGs of `TotalsHavingStep`, `FillingStep` and `IEJoinStep` went
+    /// unnoticed: the subqueries they consume were captured but never attributed to them.
     using ActionsDAGVisitor = std::function<void(const ActionsDAG &)>;
-    virtual void forEachActionsDAG(const ActionsDAGVisitor & visitor) const = 0;
+    virtual void forEachActionsDAG(const ActionsDAGVisitor & /*visitor*/) const {}
 
     /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
     /// and no statistics are collected. A step that returns true must also attach a

@@ -11,7 +11,6 @@ namespace DB
 class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_);
 
     String getName() const override { return "ReadFromLocalReplica"; }

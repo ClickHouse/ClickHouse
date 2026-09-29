@@ -43,7 +43,6 @@ public:
 class ReadFromSystemOneStep final : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     ReadFromSystemOneStep(
         const Names & column_names_,
         const StorageSnapshotPtr & storage_snapshot_

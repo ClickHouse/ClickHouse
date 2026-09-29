@@ -9,7 +9,6 @@ namespace DB
 class GatherReceiveStep : public ISourceStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     GatherReceiveStep(SharedHeader header_, const String & exchange_id_, size_t num_buckets_,
                       std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
         : ISourceStep(std::move(header_))

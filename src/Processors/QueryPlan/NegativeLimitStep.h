@@ -9,7 +9,6 @@ namespace DB
 class NegativeLimitStep : public ITransformingStep
 {
 public:
-    void forEachActionsDAG(const ActionsDAGVisitor &) const override {}
     NegativeLimitStep(
         const SharedHeader & input_header_,
         UInt64 limit_, UInt64 offset_,
