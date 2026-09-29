@@ -3628,6 +3628,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
+    /// A masking policy rewrites, for this user only, the values the cached verdicts were computed on.
+    const bool table_has_masking_policy = data.hasEnabledMaskingPolicies(context_);
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -3665,7 +3668,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
+        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && !table_has_masking_policy
+            && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 res_parts,
                 query_info_,
@@ -4122,14 +4126,15 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     SelectQueryInfo probe_query_info = query_info;
     probe_query_info.filter_actions_dag = nullptr;
 
-    /// The cache key (table, part, condition) cannot express the rows a unique key hides, nor the value of
-    /// a non-deterministic virtual column, which can change while the key stays the same.
+    /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking
+    /// policy rewrites for this user, nor the value of a non-deterministic virtual column, which can change while
+    /// the key stays the same.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
-        /// A follower must keep every part the coordinator may assign to it.
         && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
         /// A TopK read keys its PREWHERE entries on the whole filter too, which this probe does not carry.
         && !top_k_filter_info
         && !storage_snapshot->metadata->hasUniqueKey()
+        && !data.hasEnabledMaskingPolicies(context)
         && !filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info)
         && MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
             probe_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
