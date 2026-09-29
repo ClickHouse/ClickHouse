@@ -535,8 +535,14 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     collectRequiredSourceColumns(mutation_steps);
     collectRequiredSourceColumns(prewhere_actions.steps);
 
+    /// Modern size subcolumns can occur in several step inputs and the main read list.
+    /// Cache their classification per task, since they never enter legacy_string_companions.
+    std::unordered_set<String> string_sizes_with_separate_stream;
     auto isLegacyStringSize = [&](const String & name, const String & parent_name)
     {
+        if (string_sizes_with_separate_stream.contains(name))
+            return false;
+
         /// Nullable preserves the String size subcolumn, wrapping its UInt64 type.
         /// Only unwrap for classification; keep the original columns and null maps when reading.
         auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
@@ -571,7 +577,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             });
 
             if (has_separate_size_stream)
+            {
+                string_sizes_with_separate_stream.insert(name);
                 return false;
+            }
         }
 
         return true;
