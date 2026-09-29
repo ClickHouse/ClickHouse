@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-`rcfg` makes as many attempts per action as its `retry` field asks, stops retrying once
-`max_total_wait_time_ms` is used up, does not queue an action again while its previous copy is still
-waiting to be applied, and rejects a negative `retry` before running any action.
+`rcfg` makes as many attempts per action as its `retry` field asks (one retry when it is absent),
+never waits past `max_total_wait_time_ms`, does not queue an action again while its previous copy is
+still waiting to be applied, and rejects a negative `retry` before running any action.
 """
 
 import json
@@ -50,15 +50,26 @@ def attempts_logged(member_id):
     return int(node.count_in_log(f"(Add server {member_id}) to be applied, attempt"))
 
 
-def attempts_logged_since(member_id, before, reported):
-    # The server log is written asynchronously, so the last lines can appear after rcfg returns.
+def errors_logged(member_id):
+    return int(
+        node.count_in_log(f"configuration update (Add server {member_id}) to happen")
+    )
+
+
+def attempts_logged_since(member_id, before):
+    # The log is written asynchronously but in order; the command's error comes after its attempts.
+    attempts_before, errors_before = before
     deadline = time.monotonic() + 30
-    while (
-        attempts_logged(member_id) - before < reported and time.monotonic() < deadline
-    ):
+    while errors_logged(member_id) <= errors_before and time.monotonic() < deadline:
         time.sleep(0.5)
-    time.sleep(1)
-    return attempts_logged(member_id) - before
+    return attempts_logged(member_id) - attempts_before
+
+
+def waits_logged(member_id):
+    lines = node.grep_in_log(
+        f"(Add server {member_id}) to be applied, will wait for", only_latest=True
+    )
+    return [int(ms) for ms in re.findall(r"will wait for (\d+) ms", lines)]
 
 
 def queue_events(member_id):
@@ -74,21 +85,12 @@ def queue_events(member_id):
 
 
 def add_unreachable_member(member_id, retry, **limits):
-    before = attempts_logged(member_id)
+    action = {"add_members": [{"id": member_id, "endpoint": UNREACHABLE_ENDPOINT}]}
+    if retry is not None:
+        action["retry"] = retry
+    before = (attempts_logged(member_id), errors_logged(member_id))
     start = time.monotonic()
-    result = send_rcfg(
-        {
-            **limits,
-            "actions": [
-                {
-                    "add_members": [
-                        {"id": member_id, "endpoint": UNREACHABLE_ENDPOINT}
-                    ],
-                    "retry": retry,
-                }
-            ],
-        }
-    )
+    result = send_rcfg({**limits, "actions": [action]})
     return result, time.monotonic() - start, before
 
 
@@ -125,7 +127,7 @@ def test_retry_count_is_honored(started_cluster):
     result, elapsed, before = add_unreachable_member(
         3, retry=3, max_action_wait_time_ms=1000
     )
-    attempts = attempts_logged_since(3, before, reported=4)
+    attempts = attempts_logged_since(3, before)
     assert result["status"] == "error", result
     assert "with retries count 3, attempts made 4" in result["message"], (
         result,
@@ -139,7 +141,7 @@ def test_retry_count_is_honored(started_cluster):
     result, elapsed, before = add_unreachable_member(
         4, retry=0, max_action_wait_time_ms=1000
     )
-    attempts = attempts_logged_since(4, before, reported=1)
+    attempts = attempts_logged_since(4, before)
     assert result["status"] == "error", result
     assert "with retries count 0, attempts made 1" in result["message"], (
         result,
@@ -151,7 +153,7 @@ def test_retry_count_is_honored(started_cluster):
     result, elapsed, before = add_unreachable_member(
         8, retry=3, max_action_wait_time_ms=250
     )
-    attempts = attempts_logged_since(8, before, reported=4)
+    attempts = attempts_logged_since(8, before)
     assert result["status"] == "error", result
     assert "with retries count 3, attempts made 4" in result["message"], (
         result,
@@ -162,8 +164,22 @@ def test_retry_count_is_honored(started_cluster):
     # An attempt waits max_action_wait_time_ms, also when that is less than a second.
     assert elapsed < 3, (result, elapsed, attempts)
 
+    result, elapsed, before = add_unreachable_member(
+        9, retry=None, max_action_wait_time_ms=250
+    )
+    attempts = attempts_logged_since(9, before)
+    assert result["status"] == "error", result
+    # Without `retry`, an action is retried once.
+    assert "with retries count 1, attempts made 2" in result["message"], (
+        result,
+        elapsed,
+        attempts,
+    )
+    assert attempts == 2, (result, elapsed, attempts)
+
 
 def test_retries_stop_at_max_total_wait_time(started_cluster):
+    waits_before = len(waits_logged(5))
     result, elapsed, before = add_unreachable_member(
         5, retry=100, max_action_wait_time_ms=1000, max_total_wait_time_ms=2500
     )
@@ -172,15 +188,18 @@ def test_retries_stop_at_max_total_wait_time(started_cluster):
     assert m, (result, elapsed)
     made = int(m.group(1))
     assert 2 <= made <= 4, (result, elapsed)
-    attempts = attempts_logged_since(5, before, reported=made)
+    attempts = attempts_logged_since(5, before)
     assert attempts == made, (result, elapsed, attempts)
     # Making all 101 attempts would take about 101 seconds.
     assert elapsed < 30, (result, elapsed, attempts)
+    # The last attempt waits only for what is left of max_total_wait_time_ms.
+    waits = waits_logged(5)[waits_before:]
+    assert len(waits) == made and sum(waits) <= 2500, (result, elapsed, waits)
 
     result, elapsed, before = add_unreachable_member(
         6, retry=100, max_action_wait_time_ms=0
     )
-    attempts = attempts_logged_since(6, before, reported=1)
+    attempts = attempts_logged_since(6, before)
     assert result["status"] == "error", result
     assert "with retries count 100, attempts made 1" in result["message"], (
         result,
@@ -199,7 +218,7 @@ def test_retries_do_not_pile_up_in_the_update_queue(started_cluster):
     result, elapsed, before = add_unreachable_member(
         7, retry=10, max_action_wait_time_ms=1000
     )
-    attempts = attempts_logged_since(7, before, reported=11)
+    attempts = attempts_logged_since(7, before)
     events = queue_events(7)[events_before:]
     pushes = events.count("pushed")
     accepts = events.count("accepted")
