@@ -748,8 +748,11 @@ TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
 
     /// The cost of the batch must not scale with the number of unrelated uncommitted nodes.
     /// Allow generous noise: ten times the baseline or 20 ms, whichever is larger.
+    /// Not checked under sanitizers: their runtime makes a timing this short unreliable.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
     EXPECT_LE(backlog_us, std::max<UInt64>(base_us * 10, 20000))
         << "preprocessing slowed down from " << base_us << " us to " << backlog_us << " us with " << backlog << " uncommitted nodes";
+#endif
 }
 
 /// Uncommitted children must be visible to RemoveRecursive, and must stop being visible once the
