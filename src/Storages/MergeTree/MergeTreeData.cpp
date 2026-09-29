@@ -3486,9 +3486,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
     PartLoadingTreeNodes parts_to_add;
 
-    /// Collect the nodes still to load. Only an already-indexed *active* part shadows its subtree;
-    /// a not-yet-indexed node is a load candidate and an already-indexed *non-active* node is
-    /// descended through to reach descendants it no longer shadows. Caller must hold `lockParts()`.
+    /// Only an already-indexed active part shadows its subtree. Must be called with the parts lock held.
     std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
     {
         auto it = data_parts_by_info.find(node->info);
@@ -3511,9 +3509,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
-    /// Iterate by index and copy the `shared_ptr`: `seed` appends committed children to
-    /// `parts_to_add` below via `emplace_back`, so a range-based loop or a reference into the
-    /// vector would be a use-after-reallocation bug when it grows.
+    /// `seed` appends to `parts_to_add` inside the loop, so iterators and references into it do not stay valid.
     /// NOLINTNEXTLINE(modernize-loop-convert)
     for (size_t i = 0; i < parts_to_add.size(); ++i)
     {
@@ -3524,10 +3520,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        /// Committing a broken or rolled-back (`Outdated`) part would reset it to `PreActive` and
-        /// re-activate it. Skip it and re-seed its children instead so a descendant already indexed
-        /// non-active by an earlier refresh is descended through rather than dropped. Mirrors the
-        /// `!is_active_part` orphan promotion in `loadDataPartsFromDisk`.
+        /// A part loaded `Outdated` (e.g. rolled back) must not be committed: that would reset it to `PreActive`.
         if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
             if (res.is_broken)
@@ -3539,38 +3532,39 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
                 for (const auto & [_, child] : my_part->children)
                     seed(child);
             }
-            continue;
         }
-
-        try
+        else
         {
-            unique_key_dense_index_ops->ensureValidDenseIndex(res.part, /*storage_is_writable=*/false);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log,
-                fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
-            if (res.part->getState() == DataPartState::PreActive)
+            try
             {
-                removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
-                /// This removal skips `removePartsFinally`, so it owes the reclaim itself:
-                /// a link to a part in neither Active nor Outdated throws on every later read.
-                dropUniqueKeyBitmaps({res.part});
+                unique_key_dense_index_ops->ensureValidDenseIndex(res.part, /*storage_is_writable=*/false);
             }
-            continue;
-        }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
+                if (res.part->getState() == DataPartState::PreActive)
+                {
+                    removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
+                    /// This removal skips `removePartsFinally`, so it owes the reclaim itself:
+                    /// a link to a part in neither Active nor Outdated throws on every later read.
+                    dropUniqueKeyBitmaps({res.part});
+                }
+                continue;
+            }
 
-        {
-            auto part_lock = lockParts();
-            Transaction transaction(*this, nullptr);
-            preparePartForCommit(res.part, transaction, part_lock, false, false);
-            transaction.commit(part_lock);
-        }
+            {
+                auto part_lock = lockParts();
+                Transaction transaction(*this, nullptr);
+                preparePartForCommit(res.part, transaction, part_lock, false, false);
+                transaction.commit(part_lock);
+            }
 
-        bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
-        have_non_adaptive_parts |= !is_adaptive;
-        have_lightweight_in_parts |= res.part->hasLightweightDelete();
-        have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
+            bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
+            have_non_adaptive_parts |= !is_adaptive;
+            have_lightweight_in_parts |= res.part->hasLightweightDelete();
+            have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
+        }
     }
 
     has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
