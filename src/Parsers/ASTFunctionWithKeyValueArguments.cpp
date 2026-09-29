@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
@@ -118,7 +119,8 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(HTTP(url 'http://example.com/' format 'TSV' headers(header(name 'API-KEY' value '[HIDDEN]'))))
         /// The query is logged before the dictionary source rejects unknown keys, so a malformed
         /// definition must not leak either: inside `headers` only `header(...)` entries are kept
-        /// (they hide their own values when formatted), inside `header` only `name` is kept.
+        /// (they hide their own values when formatted), inside `header` only a `name` that is a literal or
+        /// an identifier is kept (a function is rejected only later, after the query is logged).
         /// Anything but a list of pairs is hidden as a whole, whatever produced the AST.
         bool hide_all = !second_with_brackets || !second->as<ASTExpressionList>();
         ASTPtr masked;
@@ -136,7 +138,8 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
                 bool keep = first == "headers"
                     ? pair->first == "header" && pair->second_with_brackets
-                    : pair->first == "name" && !pair->second_with_brackets;
+                    : pair->first == "name" && !pair->second_with_brackets
+                        && (pair->second->as<ASTLiteral>() || pair->second->as<ASTIdentifier>());
                 if (!keep)
                 {
                     pair->second_with_brackets = false;
