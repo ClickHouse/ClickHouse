@@ -100,7 +100,9 @@ bool FormatFilterInfo::hasFilter() const
 {
     /// Any of these can reduce the number of rows emitted by the reader pipeline.
     /// Count-from-files cache must not be populated when they are present.
-    return filter_actions_dag != nullptr || row_level_filter != nullptr || prewhere_info != nullptr;
+    /// `top_k_filter` is the `ORDER BY ... LIMIT` dynamic filter: it drops rows inside the reader,
+    /// so the emitted count is not the file's row count.
+    return filter_actions_dag != nullptr || row_level_filter != nullptr || prewhere_info != nullptr || top_k_filter != nullptr;
 }
 
 namespace
