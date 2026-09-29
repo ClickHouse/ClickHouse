@@ -1,6 +1,6 @@
 -- The values of custom HTTP headers of an `HTTP` dictionary source often carry credentials,
 -- so they must be hidden in `SHOW CREATE DICTIONARY`, `system.tables` and `system.query_log`,
--- the same way as the password. The header names stay visible.
+-- the same way as the password. They are hidden as a whole, header names included.
 
 SET format_display_secrets_in_show_and_select = 0;
 
@@ -20,14 +20,13 @@ LIFETIME(0) LAYOUT(FLAT());
 
 SHOW CREATE DICTIONARY d_05141;
 
-SELECT create_table_query LIKE concat('%', 'SEKRIT', '%'), create_table_query LIKE '%NAME \'API-KEY\' VALUE \'[HIDDEN]\'%', create_table_query LIKE '%NAME \'X-Other\' VALUE \'[HIDDEN]\'%'
+SELECT create_table_query LIKE concat('%', 'SEKRIT', '%'), create_table_query LIKE '%API-KEY%', create_table_query LIKE '%HEADERS (\'[HIDDEN]\')%'
 FROM system.tables WHERE database = currentDatabase() AND name = 'd_05141';
 
 DROP DICTIONARY d_05141;
 
--- The query is logged before the dictionary source rejects unknown keys, so malformed header
--- definitions must not leak either: inside `header` only `name` is kept, inside `headers` only
--- `header(...)` entries are kept.
+-- The query is logged before the dictionary source validates its structure, so malformed header
+-- definitions must not leak either.
 CREATE DICTIONARY d_05141_typo (id UInt64, v String) PRIMARY KEY id
 SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name 'API-KEY' vaule 'SEKRIT_TYPO'))))
 LIFETIME(0) LAYOUT(FLAT());
@@ -40,6 +39,9 @@ LIFETIME(0) LAYOUT(FLAT());
 CREATE DICTIONARY d_05141_func (id UInt64, v String) PRIMARY KEY id
 SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name concat('X-', 'SEKRIT_FUNC') value 'SEKRIT_FUNC_VALUE'))))
 LIFETIME(0) LAYOUT(FLAT()); -- { serverError INCORRECT_DICTIONARY_DEFINITION }
+CREATE DICTIONARY d_05141_array (id UInt64, v String) PRIMARY KEY id
+SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name ['SEKRIT_ARRAY']))))
+LIFETIME(0) LAYOUT(FLAT()); -- { serverError BAD_ARGUMENTS }
 CREATE DICTIONARY d_05141_nobr (id UInt64, v String) PRIMARY KEY id
 SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header 'SEKRIT_NOBR')))
 LIFETIME(0) LAYOUT(FLAT());

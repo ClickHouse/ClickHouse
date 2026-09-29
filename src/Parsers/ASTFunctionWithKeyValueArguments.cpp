@@ -1,8 +1,6 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
@@ -22,12 +20,16 @@ namespace
 {
     /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
     /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
-    /// not accepted from a `CREATE DICTIONARY` query in the first place).
+    /// not accepted from a `CREATE DICTIONARY` query in the first place), and the custom HTTP headers
+    /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
+    /// names included: the query is logged before the dictionary source validates its structure,
+    /// so a malformed definition must not leak either.
     bool isSecretKey(const String & key)
     {
         return key == "password"
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
-            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem";
+            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
+            || key == "headers" || key == "header";
     }
 }
 
@@ -71,7 +73,8 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
 
     /// A value in brackets is parser-produced as an `ASTExpressionList` of `ASTPair`, e.g. `headers(header(...))`.
-    /// `formatImpl` relies on this shape to hide secrets, so malformed `clickhouse_json` fails with `BAD_ARGUMENTS`.
+    /// Any other shape would be formatted as SQL that cannot be parsed back (e.g. in the dictionary metadata),
+    /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS`.
     if (second_with_brackets)
     {
         const auto * list = child->as<ASTExpressionList>();
@@ -111,48 +114,6 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         maskURIPassword(&temp_buf.str());
         ostr << temp_buf.str();
     }
-    else if (!settings.show_secrets && (first == "headers" || first == "header"))
-    {
-        /// Hide the values of HTTP headers in the definition of a dictionary, keeping their names.
-        /// They often carry credentials (e.g. API tokens), so all of them are hidden, the same way
-        /// as the `url` table function hides header values:
-        /// SOURCE(HTTP(url 'http://example.com/' format 'TSV' headers(header(name 'API-KEY' value '[HIDDEN]'))))
-        /// The query is logged before the dictionary source rejects unknown keys, so a malformed
-        /// definition must not leak either: inside `headers` only `header(...)` entries are kept
-        /// (they hide their own values when formatted), inside `header` only a `name` that is a literal or
-        /// an identifier is kept (a function is rejected only later, after the query is logged).
-        /// Anything but a list of pairs is hidden as a whole, whatever produced the AST.
-        bool hide_all = !second_with_brackets || !second->as<ASTExpressionList>();
-        ASTPtr masked;
-        if (!hide_all)
-        {
-            masked = second->clone();
-            for (auto & child : masked->children)
-            {
-                auto * pair = child->as<ASTPair>();
-                if (!pair)
-                {
-                    hide_all = true;
-                    break;
-                }
-
-                bool keep = first == "headers"
-                    ? pair->first == "header" && pair->second_with_brackets
-                    : pair->first == "name" && !pair->second_with_brackets
-                        && (pair->second->as<ASTLiteral>() || pair->second->as<ASTIdentifier>());
-                if (!keep)
-                {
-                    pair->second_with_brackets = false;
-                    pair->replace(pair->second, make_intrusive<ASTLiteral>("[HIDDEN]"));
-                }
-            }
-        }
-
-        if (hide_all)
-            ostr << "'[HIDDEN]'";
-        else
-            masked->format(ostr, settings, state, frame);
-    }
     else
     {
         second->format(ostr, settings, state, frame);
@@ -165,9 +126,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    /// `headers` is checked too, not only `header`: a malformed `headers(...)` without any `header(...)`
-    /// entry is still masked when formatted and must be masked in the query logs as well.
-    return isSecretKey(first) || first == "headers" || first == "header" || second->hasSecretParts();
+    return isSecretKey(first) || second->hasSecretParts();
 }
 
 

@@ -22,7 +22,7 @@ JSON=$(to_json "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.d_05142 (id UInt64, v S
     SOURCE(HTTP(url 'http://localhost:11111/x.tsv' format 'TabSeparated' headers(header(name 'API-KEY' value 'SEKRIT_JSON_VALID'))))
     LIFETIME(0) LAYOUT(FLAT())")
 ${CLICKHOUSE_CLIENT_JSON} --query "$JSON"
-${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'HEADERS.*\\)\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142' SETTINGS format_display_secrets_in_show_and_select = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'HEADERS.*\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142' SETTINGS format_display_secrets_in_show_and_select = 0"
 
 # The SQL parser lower-cases the keys, but a JSON AST can spell them in any case; the secret keys must
 # be recognized anyway.
@@ -35,7 +35,7 @@ do
     JSON=${JSON//\"first\":\"$key\"/\"first\":\"${key^^}\"}
 done
 ${CLICKHOUSE_CLIENT_JSON} --query "$JSON"
-${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'CREDENTIALS.*\\)\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142_case' SETTINGS format_display_secrets_in_show_and_select = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT extract(create_table_query, 'CREDENTIALS.*\\)\\)\\)') FROM system.tables WHERE database = currentDatabase() AND name = 'd_05142_case' SETTINGS format_display_secrets_in_show_and_select = 0"
 
 # `header` and `headers` in brackets with a literal instead of a list of pairs are rejected.
 for key in header headers
