@@ -231,27 +231,8 @@ size_t CudfGroupBy::finalize()
     if (!state->merged)
         return 0;
 
-    const rmm::cuda_stream_view stream = state->stream;
-    const cudf::table_view groups = state->merged->view();
-
-    for (size_t i = 0; i < state->keys.size(); ++i)
-    {
-        if (state->keys[i] != GPUElementType::String)
-        {
-            state->variable_offsets.emplace_back();
-            continue;
-        }
-
-        const cudf::strings_column_view strings(groups.column(static_cast<cudf::size_type>(i)));
-        if (strings.offset() != 0)
-            throwGPUError("the device returned the strings of key " + std::to_string(i) + " as a slice");
-
-        state->variable_offsets.push_back(guarded(
-            "widening the offsets of key " + std::to_string(i),
-            [&] { return cudf::cast(strings.offsets(), cudf::data_type{cudf::type_id::INT64}, stream); }));
-    }
-
-    return static_cast<size_t>(groups.num_rows());
+    state->variable_offsets.resize(state->keys.size());
+    return static_cast<size_t>(state->merged->num_rows());
 }
 
 DeviceColumnView CudfGroupBy::key(size_t index) const
@@ -274,7 +255,7 @@ DeviceColumnView CudfGroupBy::key(size_t index) const
                 return DeviceVariableColumn{};
             return deviceViewOfVariable(
                 state->merged->view().column(static_cast<cudf::size_type>(index)),
-                state->variable_offsets[index]->view(),
+                state->variable_offsets[index],
                 "a key of the groups",
                 state->stream.value());
     }

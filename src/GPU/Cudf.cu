@@ -1,6 +1,7 @@
 #include <GPU/Cudf.cuh>
 
 #include <cudf/strings/strings_column_view.hpp>
+#include <cudf/unary.hpp>
 #include <cudf/utilities/default_stream.hpp>
 
 #include <rmm/mr/cuda_async_view_memory_resource.hpp>
@@ -12,8 +13,9 @@
 #include <exception>
 #include <limits>
 #include <mutex>
+#include <new>
+#include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace DB::GPU
 {
@@ -30,13 +32,14 @@ std::string typeNameOf(const std::exception & exception)
     return name;
 }
 
-std::vector<std::exception_ptr> & foreignExceptions()
-{
-    static std::vector<std::exception_ptr> kept;
-    return kept;
-}
+extern const char libstdcxx_empty_string_rep[] __asm__("_ZNSs4_Rep20_S_empty_rep_storageE");
 
-std::mutex foreign_exceptions_mutex;
+struct LibstdcxxStringRep
+{
+    size_t length;
+    size_t capacity;
+    int refcount;
+};
 
 }
 
@@ -55,10 +58,24 @@ std::string describeForeign(const std::exception & exception)
     return type + ": " + (message ? message : "");
 }
 
-void keepForeignAlive()
+void releaseForeign(const std::exception & exception)
 {
-    std::lock_guard lock(foreign_exceptions_mutex);
-    foreignExceptions().push_back(std::current_exception());
+    if (!dropCaughtExceptionDestructor())
+        return;
+
+    if (!dynamic_cast<const std::logic_error *>(&exception) && !dynamic_cast<const std::runtime_error *>(&exception))
+        return;
+
+    const char * message = *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
+    if (!message)
+        return;
+
+    auto * rep = const_cast<LibstdcxxStringRep *>(reinterpret_cast<const LibstdcxxStringRep *>(message) - 1);
+    if (reinterpret_cast<const char *>(rep) == libstdcxx_empty_string_rep)
+        return;
+
+    if (__atomic_fetch_add(&rep->refcount, -1, __ATOMIC_ACQ_REL) <= 0)
+        ::operator delete(rep);
 }
 
 void checkCuda(cudaError_t status, const std::string & what)
@@ -184,7 +201,7 @@ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType 
 }
 
 DeviceVariableColumn deviceViewOfVariable(
-    const cudf::column_view & column, const cudf::column_view & offsets, const std::string & what, rmm::cuda_stream_view stream)
+    const cudf::column_view & column, std::unique_ptr<cudf::column> & widened_offsets, const std::string & what, rmm::cuda_stream_view stream)
 {
     checkNoNulls(column, what);
 
@@ -194,10 +211,30 @@ DeviceVariableColumn deviceViewOfVariable(
     if (column.offset() != 0)
         throwGPUError("the device returned " + what + " as a slice at offset " + std::to_string(column.offset()));
 
-    if (offsets.type().id() != cudf::type_id::INT64 || offsets.size() != column.size() + 1)
-        throwGPUError("the offsets of " + what + " are not the column's rows and one more, as `INT64`");
+    widened_offsets.reset();
+    if (column.size() == 0)
+        return {};
 
     const cudf::strings_column_view strings(column);
+    cudf::column_view offsets = strings.offsets();
+
+    switch (offsets.type().id())
+    {
+        case cudf::type_id::INT64:
+            break;
+        case cudf::type_id::INT32:
+            widened_offsets = guarded(
+                "widening the offsets of " + what, [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
+            offsets = widened_offsets->view();
+            break;
+        default:
+            throwGPUError("the offsets of " + what + " are of cuDF type " + std::to_string(static_cast<int32_t>(offsets.type().id())));
+    }
+
+    if (offsets.size() != column.size() + 1)
+        throwGPUError(
+            "the device returned " + std::to_string(offsets.size()) + " offsets of " + what + " of " + std::to_string(column.size())
+            + " rows");
 
     return {
         .offsets = offsets.data<uint64_t>(),

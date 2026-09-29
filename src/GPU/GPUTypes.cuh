@@ -13,6 +13,8 @@ namespace DB::GPU
 
 bool isClickHouseException(const std::exception & exception);
 
+bool dropCaughtExceptionDestructor();
+
 template <typename T>
 struct GPUSpan
 {
