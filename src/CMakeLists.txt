@@ -116,10 +116,6 @@ if (ENABLE_GPU)
     add_subdirectory (GPU)
 
     add_headers_and_sources(dbms GPU)
-
-    set_source_files_properties (GPU/GPUForeignException.cpp PROPERTIES
-        COMPILE_DEFINITIONS "_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS"
-        COMPILE_OPTIONS "-isystem;${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi/src")
 endif ()
 
 if (ENABLE_EXAMPLES)

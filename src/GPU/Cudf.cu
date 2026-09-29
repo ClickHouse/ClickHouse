@@ -13,8 +13,6 @@
 #include <exception>
 #include <limits>
 #include <mutex>
-#include <new>
-#include <stdexcept>
 #include <string>
 
 namespace DB::GPU
@@ -32,15 +30,6 @@ std::string typeNameOf(const std::exception & exception)
     return name;
 }
 
-extern const char libstdcxx_empty_string_rep[] __asm__("_ZNSs4_Rep20_S_empty_rep_storageE");
-
-struct LibstdcxxStringRep
-{
-    size_t length;
-    size_t capacity;
-    int refcount;
-};
-
 }
 
 std::string describeForeign(const std::exception & exception)
@@ -56,26 +45,6 @@ std::string describeForeign(const std::exception & exception)
 
     const char * message = *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
     return type + ": " + (message ? message : "");
-}
-
-void releaseForeign(const std::exception & exception)
-{
-    if (!dropCaughtExceptionDestructor())
-        return;
-
-    if (!dynamic_cast<const std::logic_error *>(&exception) && !dynamic_cast<const std::runtime_error *>(&exception))
-        return;
-
-    const char * message = *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
-    if (!message)
-        return;
-
-    auto * rep = const_cast<LibstdcxxStringRep *>(reinterpret_cast<const LibstdcxxStringRep *>(message) - 1);
-    if (reinterpret_cast<const char *>(rep) == libstdcxx_empty_string_rep)
-        return;
-
-    if (__atomic_fetch_add(&rep->refcount, -1, __ATOMIC_ACQ_REL) <= 0)
-        ::operator delete(rep);
 }
 
 void checkCuda(cudaError_t status, const std::string & what)
