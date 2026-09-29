@@ -135,7 +135,7 @@ SELECT 'mixed alter', count(), sum(b) FROM mem_mixed_alter;
 SELECT 'mixed alter bytes', total_bytes < 100000 FROM system.tables WHERE database = currentDatabase() AND name = 'mem_mixed_alter';
 DROP TABLE mem_mixed_alter;
 
--- A rejected ALTER does not apply its settings; an accepted one removes the oldest rows beyond `max_rows_to_keep`.
+-- A rejected ALTER does not apply its settings; an accepted one removes the oldest rows beyond `max_rows_to_keep`, now and on later inserts.
 CREATE TEMPORARY TABLE tmp_mixed (a UInt8, e UInt8 ALIAS 7) ENGINE = Memory;
 INSERT INTO tmp_mixed SELECT 1;
 INSERT INTO tmp_mixed SELECT 2;
@@ -144,6 +144,8 @@ ALTER TABLE tmp_mixed DROP COLUMN a, MODIFY SETTING max_rows_to_keep = 1; -- { s
 SELECT 'rejected mixed alter', count(), sum(a) FROM tmp_mixed;
 ALTER TABLE tmp_mixed ADD COLUMN b UInt8, MODIFY SETTING max_rows_to_keep = 1;
 SELECT 'accepted mixed alter', count(), sum(a) FROM tmp_mixed;
+INSERT INTO tmp_mixed (a) SELECT 4;
+SELECT 'insert after mixed alter', count(), sum(a) FROM tmp_mixed;
 DROP TEMPORARY TABLE tmp_mixed;
 
 -- A restored column that the table does not have is not kept: the restored rows keep their count, and a column added
@@ -175,3 +177,14 @@ SELECT 'empty tuple restored', count() FROM mem_empty_tuple;
 RESTORE TABLE mem_empty_tuple FROM Memory('05295_empty_tuple_backup') FORMAT Null; -- { serverError CANNOT_RESTORE_TABLE }
 SELECT 'empty tuple restore into a non-empty table', count() FROM mem_empty_tuple;
 DROP TABLE mem_empty_tuple;
+
+-- BACKUP checks that the table definition and the data have the same stored columns: ALIAS and EPHEMERAL columns are
+-- not stored, MATERIALIZED and Nested ones are.
+DROP TABLE IF EXISTS mem_column_kinds;
+CREATE TABLE mem_column_kinds (k UInt8, m UInt8 MATERIALIZED k + 1, al UInt8 ALIAS k + 2, ep UInt8 EPHEMERAL, n Nested(x UInt8)) ENGINE = Memory;
+INSERT INTO mem_column_kinds (k, `n.x`) VALUES (1, [5]);
+BACKUP TABLE mem_column_kinds TO Memory('05295_column_kinds_backup') FORMAT Null;
+DROP TABLE mem_column_kinds SYNC;
+RESTORE TABLE mem_column_kinds FROM Memory('05295_column_kinds_backup') FORMAT Null;
+SELECT 'column kinds restored', k, m, al, n.x FROM mem_column_kinds;
+DROP TABLE mem_column_kinds;

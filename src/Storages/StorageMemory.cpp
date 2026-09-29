@@ -31,6 +31,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -79,6 +80,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int UNFINISHED;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 namespace FailPoints
@@ -736,6 +738,30 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
         auto metadata_handle = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         metadata_snapshot = metadata_handle;
         current_data = data.get();
+    }
+    /// The collector writes the table definition before it collects the data, so an `ALTER` in between would make them differ.
+    if (const auto create_query = backup_entries_collector.getTableCreateQuery(data_path_in_backup))
+    {
+        const auto & create = create_query->as<const ASTCreateQuery &>();
+        if (create.columns_list && create.columns_list->columns)
+        {
+            NameSet definition_names;
+            for (const auto & child : create.columns_list->columns->children)
+            {
+                const auto & declaration = child->as<const ASTColumnDeclaration &>();
+                if (declaration.default_specifier != ColumnDefaultSpecifier::Alias
+                    && declaration.default_specifier != ColumnDefaultSpecifier::Ephemeral)
+                    definition_names.insert(declaration.name);
+            }
+            NameSet data_names;
+            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+                data_names.insert(column.name);
+            if (definition_names != data_names)
+                throw Exception(
+                    ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                    "Columns of table {} were changed by an ALTER during the backup, retry the backup",
+                    getStorageID().getNameForLogs());
+        }
     }
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),

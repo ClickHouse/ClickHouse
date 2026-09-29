@@ -20,6 +20,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
@@ -63,6 +64,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char backup_pause_before_collecting_table_data[];
 }
 
 
@@ -185,6 +191,8 @@ BackupEntries BackupEntriesCollector::run()
 
     /// Make backup entries for the data of the found tables.
     setStage(Stage::EXTRACTING_DATA_FROM_TABLES);
+
+    FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_collecting_table_data);
 
     {
         auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorForTablesDataMicroseconds);
@@ -886,7 +894,14 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
+        create_table_queries_by_data_path[table_info.data_path_in_backup.string()] = new_create_query;
     }
+}
+
+ASTPtr BackupEntriesCollector::getTableCreateQuery(const String & data_path_in_backup) const
+{
+    auto it = create_table_queries_by_data_path.find(data_path_in_backup);
+    return it != create_table_queries_by_data_path.end() ? it->second : nullptr;
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTablesData()

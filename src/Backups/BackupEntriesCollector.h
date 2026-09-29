@@ -53,6 +53,10 @@ public:
     ContextPtr getContext() const { return context; }
     const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
+    /// Returns the definition written to the backup for the table whose data goes to `data_path_in_backup`, or nullptr.
+    /// Implementations of IStorage::backupData() can check with it that their data matches the definition.
+    ASTPtr getTableCreateQuery(const String & data_path_in_backup) const;
+
     /// Returns all access entities which can be put into a backup.
     std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
 
@@ -247,6 +251,7 @@ private:
 
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::unordered_map<QualifiedTableName, TableInfo> table_infos;
+    std::unordered_map<String, ASTPtr> create_table_queries_by_data_path;
     std::vector<std::pair<String, String>> previous_databases_metadata;
     std::vector<std::pair<QualifiedTableName, String>> previous_tables_metadata;
 

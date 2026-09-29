@@ -42,7 +42,9 @@ mixed alter	100000	0
 mixed alter bytes	1
 rejected mixed alter	3	6
 accepted mixed alter	1	3
+insert after mixed alter	1	4
 restored column the table lacks	2	0	0
 empty tuple rows	3	0
 empty tuple restored	3
 empty tuple restore into a non-empty table	3
+column kinds restored	1	2	3	[5]
