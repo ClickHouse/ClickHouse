@@ -68,9 +68,14 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsDouble limit;
+    extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsUInt64 max_rows_to_sort;
     extern const SettingsDouble offset;
     extern const SettingsString order;
     extern const SettingsSeconds promql_range_query_cache_min_age;
@@ -338,8 +343,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             || settings[Setting::limit] != 0 || settings[Setting::offset] != 0
             || !settings[Setting::select].value.empty() || !settings[Setting::order].value.empty()
             || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty();
+        /// A GROUP BY, sorting or JOIN limit would see one chunk at a time, so it doesn't let the query be split either.
+        const bool has_whole_query_limits = settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_sort]
+            || settings[Setting::max_bytes_to_sort] || settings[Setting::max_rows_in_join] || settings[Setting::max_bytes_in_join];
         if (split_interval > 0 && split_interval <= length && step > 0 && length / step < MAX_RANGE_QUERY_STEPS
-            && !has_whole_result_settings
+            && !has_whole_result_settings && !has_whole_query_limits
             && getNextChunkStart(evaluation_settings, split_interval, evaluation_settings.start_time->value)
             && !usesWholeEvaluationRange(*query_tree->getRoot()))
         {

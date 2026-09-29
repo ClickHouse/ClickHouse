@@ -227,6 +227,30 @@ def test_whole_result_settings_disable_splitting(query, params):
     assert (response.status_code, response.text) == (expected.status_code, expected.text)
 
 
+# Every step has its own series, so each chunk has 60 series and the whole range 361.
+PER_STEP = 'count_values("v", vector(time()))'
+
+
+@pytest.mark.parametrize(
+    "query, params",
+    [
+        (PER_STEP, {"max_rows_to_group_by": 100}),
+        (PER_STEP, {"max_rows_to_group_by": 30, "group_by_overflow_mode": "any", "max_block_size": 10}),
+        (PER_STEP, {"max_rows_to_sort": 100}),
+        (PER_STEP, {"max_rows_to_sort": 30, "sort_overflow_mode": "break", "max_block_size": 10}),
+        (PER_STEP, {"max_bytes_to_sort": 20000}),
+        (f"{PER_STEP} + {PER_STEP}", {"max_rows_in_join": 100}),
+        (f"{PER_STEP} + {PER_STEP}", {"max_bytes_in_join": 20000}),
+    ],
+)
+def test_group_by_sort_and_join_limits_disable_splitting(query, params):
+    expected = send_query_range(query, H, H + 6 * 3600, 60, params)
+
+    split_params = {**params, "promql_range_query_split_interval": INTERVAL}
+    response = send_query_range(query, H, H + 6 * 3600, 60, split_params)
+    assert (response.status_code, response.text) == (expected.status_code, expected.text)
+
+
 @pytest.mark.parametrize(
     "overflow_mode",
     [
