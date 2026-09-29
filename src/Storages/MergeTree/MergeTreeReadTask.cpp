@@ -497,7 +497,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     if (read_result.num_rows == 0)
         read_result.columns.clear();
 
-    const auto & sample_block = readers_chain.getSampleBlock();   
+    const auto & sample_block = readers_chain.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns got from MergeTreeRangeReader. "
                         "Have {} in sample block and {} columns in list",
