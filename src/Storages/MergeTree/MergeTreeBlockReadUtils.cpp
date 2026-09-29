@@ -628,10 +628,14 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
     };
 
-    /// Keep mutation read plans unchanged. An UPDATE can overwrite the parent String
-    /// while an injected size survives as a stale passthrough column, suppressing its
-    /// later read. Pairing is only safe here when there are no mutation steps.
-    if (mutation_steps.empty())
+    /// An on-fly `UPDATE` can overwrite the parent `String` while an injected size
+    /// survives as a stale passthrough column. Keep those mutation read plans unchanged.
+    /// A pure `_row_exists` filter only removes rows and is safe for companion pairing.
+    if (std::all_of(mutation_steps.begin(), mutation_steps.end(), [](const auto & step)
+    {
+        return step->type == PrewhereExprStep::Filter
+            && !step->actions && step->filter_column_name == RowExistsColumn::name;
+    }))
     {
         for (const auto & names : required_source_columns_by_step)
             collectLegacyStringCompanions(names);
