@@ -95,13 +95,11 @@ private:
 /// Select parts in which every value of some column ttl has expired, so that the merge drops the column
 /// as a whole instead of rewriting the part - the column counterpart of `TTLPartDropMergeSelector`.
 /// Parts are selected one by one: a merge of a single part that only drops such columns keeps the files
-/// of the other columns (see `MergeTask`). Like `TTLPartDropMergeSelector`, it is not postponed by
-/// `merge_with_ttl_timeout`: the merge drops the column together with its TTL info, so the part is not
-/// selected again.
+/// of the other columns (see `MergeTask`).
 class TTLColumnDropMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLColumnDropMergeSelector(time_t current_time_);
+    explicit TTLColumnDropMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
 private:
     /// Returns the earliest time at which every value of some unfinished column TTL of the part has expired.

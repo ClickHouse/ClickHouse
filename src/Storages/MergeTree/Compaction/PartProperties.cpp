@@ -16,28 +16,6 @@ std::string astToString(ASTPtr ast_ptr)
     return ast_ptr->formatWithSecretsOneLine();
 }
 
-/// The earliest time at which every value of some unfinished column TTL of the table has expired in the part.
-/// Only the column TTLs that the table still has are considered: the TTL info of a column whose TTL has been
-/// removed is never finished by a merge, so it would make `TTLColumnDropMergeSelector`, which is not postponed
-/// by `merge_with_ttl_timeout`, select the part again and again.
-time_t getMinimalMaxNonFinishedColumnTTL(const StorageMetadataPtr & metadata_snapshot, const MergeTreeDataPartPtr & part)
-{
-    time_t min_ttl = 0;
-
-    for (const auto & [column, _] : metadata_snapshot->getColumnTTLs())
-    {
-        auto it = part->ttl_infos.columns_ttl.find(column);
-        if (it == part->ttl_infos.columns_ttl.end())
-            continue;
-
-        const auto & info = it->second;
-        if (info.initialized() && !info.finished() && info.max && (!min_ttl || info.max < min_ttl))
-            min_ttl = info.max;
-    }
-
-    return min_ttl;
-}
-
 std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)
 {
     if (!metadata_snapshot->hasAnyTTL())
@@ -50,7 +28,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
-        .column_min_max_ttl = getMinimalMaxNonFinishedColumnTTL(metadata_snapshot, part),
+        .column_min_max_ttl = part->ttl_infos.getMinimalMaxNonFinishedColumnTTL(),
     };
 }
 

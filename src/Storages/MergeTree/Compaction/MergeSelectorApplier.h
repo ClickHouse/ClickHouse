@@ -21,11 +21,6 @@ struct MergeSelectorChoice
 
     /// If this merges down to a single part in a partition
     bool final = false;
-
-    /// A `TTLDelete` merge chosen by `TTLColumnDropMergeSelector`. Like `TTLDrop`, it does not postpone
-    /// the other TTL merges of the partition by `merge_with_ttl_timeout`. It keeps `MergeType::TTLDelete`
-    /// because older replicas cannot parse a new `MergeType` from the replication log.
-    bool ttl_column_drop = false;
 };
 using MergeSelectorChoices = std::vector<MergeSelectorChoice>;
 
