@@ -8,6 +8,10 @@
 20
 --- range query, promql_exact_rate = 1: the previous sample is used inside the range ---
 [(1699999960,10),(1699999980,10),(1700000000,10)]
+--- promql_exact_rate = 1: the sample before the window of the first grid point is read and used ---
+0.25
+0.25
+[(1700000000,10),(1700000020,10)]
 --- range query, promql_exact_rate = 0 ---
 [(1699999960,20)]
 --- promql dialect ---

@@ -115,6 +115,25 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
+            if (exact_rate)
+            {
+                /// In the exact mode the buckets cover more than the window (see `getBucketsWindow`), so a bucket can be
+                /// partly in the window: each sample is added on its own, with its own timestamp, to leave the window exactly.
+                samples.forEachSample([this](TimestampType timestamp, ValueType value)
+                {
+                    Summary summary;
+                    summary.first_timestamp = timestamp;
+                    summary.first_value = value;
+                    summary.last_timestamp = timestamp;
+                    summary.last_value = value;
+                    summary.count = 1;
+                    /// The sample is in a bucket, so its timestamp converted to the scale of the grid can't overflow.
+                    const GridScaleTimestampType grid_timestamp{static_cast<Int64>(timestamp) * column_to_grid_multiplier};
+                    sliding_sum.add(std::move(summary), grid_timestamp);
+                });
+                return;
+            }
+
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
@@ -291,21 +310,46 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
 
     /// `exact_rate` comes from the optional fifth parameter, so it is a part of the function's type.
-    /// It only changes how the result is calculated, the state is the same in both modes.
+    /// The exact mode also keeps the samples before each window in the state (see `getBucketsWindow`), so the states
+    /// of the two modes differ.
     AggregateFunctionTimeseriesExtrapolatedValue(const DataTypes & argument_types_, const Array & parameters_,
         GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, typename Traits::GridScaleIntervalType grid_step_,
         typename Traits::GridScaleIntervalType window_, UInt32 grid_scale_, UInt32 column_timestamp_scale_, bool exact_rate_)
-        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, window_, grid_scale_, column_timestamp_scale_)
+        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, getBucketsWindow(window_, exact_rate_), grid_scale_, column_timestamp_scale_)
+        , aggregator_window(window_)
         , exact_rate(exact_rate_)
     {
     }
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return Aggregator{Base::window, Base::grid_ticks_per_second, Base::column_to_grid_multiplier, exact_rate};
+        return Aggregator{aggregator_window, Base::grid_ticks_per_second, Base::column_to_grid_multiplier, exact_rate};
+    }
+
+    /// See `AggregateFunctionTimeseriesBase::getAggregatorWindow`.
+    typename Traits::GridScaleIntervalType getAggregatorWindow() const
+    {
+        return aggregator_window;
     }
 
 private:
+    /// The exact mode measures from the last sample before the window if it is not older than `window` before the window's
+    /// start, so the buckets must hold the samples in `[grid_timestamp - 2 * window, grid_timestamp]`: the base class gets
+    /// the window `2 * window + 1` for its buckets, while the aggregator keeps `window` (see `getAggregatorWindow`).
+    static typename Traits::GridScaleIntervalType getBucketsWindow(typename Traits::GridScaleIntervalType window, bool exact_rate)
+    {
+        /// A negative window is rejected by the base class.
+        const Int64 window_value = static_cast<Int64>(window);
+        if (!exact_rate || window_value <= 0)
+            return window;
+        /// A window this big covers every timestamp anyway.
+        static constexpr Int64 max_window = std::numeric_limits<Int64>::max();
+        if (window_value > (max_window - 1) / 2)
+            return max_window;
+        return 2 * window_value + 1;
+    }
+
+    const typename Traits::GridScaleIntervalType aggregator_window;
     const bool exact_rate;
 };
 

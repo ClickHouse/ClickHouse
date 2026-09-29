@@ -12,6 +12,11 @@ namespace DB::PrometheusQueryToSQL
 /// Examples: rate(), idelta(), last_over_time().
 bool isFunctionOverRange(std::string_view function_name);
 
+/// Returns whether the specified range vector is the argument of a function over range calculated without extrapolation
+/// (see setting `promql_exact_rate`). Such a function also uses the last sample before each window, if it is not older
+/// than the window before the window's start, so the range vector must include one more window of samples.
+bool needsSamplesBeforeWindow(const Node * range_vector_node, const ConverterContext & context);
+
 /// Applies a prometheus function taking a range vector.
 SQLQueryPiece applyFunctionOverRange(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);

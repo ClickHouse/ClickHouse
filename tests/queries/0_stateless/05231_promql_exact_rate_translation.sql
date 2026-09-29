@@ -11,7 +11,8 @@ DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries;
 
 INSERT INTO ts (metric_name, tags, samples) VALUES
-    ('up', map('instance', 'host1'), [(toDateTime64(1699999940, 3), 10.0), (toDateTime64(1699999960, 3), 20.0), (toDateTime64(1700000000, 3), 30.0)]);
+    ('up', map('instance', 'host1'), [(toDateTime64(1699999940, 3), 10.0), (toDateTime64(1699999960, 3), 20.0), (toDateTime64(1700000000, 3), 30.0)]),
+    ('counter', map('instance', 'host1'), [(toDateTime64(1699999950, 3), 10.0), (toDateTime64(1700000000, 3), 20.0)]);
 
 SELECT '--- instant query, default extrapolation ---';
 SELECT value FROM prometheusQuery(ts, 'rate(up[80s])', 1700000000);
@@ -26,6 +27,11 @@ SELECT value FROM prometheusQuery(ts, 'delta(up[80s])', 1700000000);
 
 SELECT '--- range query, promql_exact_rate = 1: the previous sample is used inside the range ---';
 SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[40s])', 1699999960, 1700000000, 20);
+
+SELECT '--- promql_exact_rate = 1: the sample before the window of the first grid point is read and used ---';
+SELECT value FROM prometheusQuery(ts, 'rate(counter[40s]) @ 1700000000', 1700000000);
+SELECT value FROM prometheusQuery(ts, 'rate(counter[40s] @ 1700000000)', 1700000100);
+SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(counter[40s])', 1700000000, 1700000020, 20);
 
 SELECT '--- range query, promql_exact_rate = 0 ---';
 SET promql_exact_rate = 0;

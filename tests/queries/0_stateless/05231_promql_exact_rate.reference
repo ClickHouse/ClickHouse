@@ -19,6 +19,11 @@
 [NULL,10,10]
 --- Counter reset across window boundaries ---
 [NULL,10,15]
+--- The sample before the window of the first grid point: used only in the exact mode ---
+[NULL]
+[0.25]
+--- The sample before the window when the step is greater than the window ---
+[NULL,15,NULL]
 --- DateTime64 timestamps ---
 [0.25]
 --- The setting promql_exact_rate does not affect the aggregate functions used directly ---

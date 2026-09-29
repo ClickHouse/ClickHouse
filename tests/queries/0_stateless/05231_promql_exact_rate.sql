@@ -30,6 +30,13 @@ SELECT timeSeriesDeltaToGrid(100, 120, 10, 10, 1)([100, 110, 120]::Array(UInt32)
 SELECT '--- Counter reset across window boundaries ---';
 SELECT timeSeriesIncreaseToGrid(100, 120, 10, 10, 1)([100, 110, 120]::Array(UInt32), [100, 10, 25]::Array(Float64));
 
+SELECT '--- The sample before the window of the first grid point: used only in the exact mode ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));
+
+SELECT '--- The sample before the window when the step is greater than the window ---';
+SELECT timeSeriesIncreaseToGrid(100, 200, 50, 20, 1)([100, 125, 150, 200]::Array(UInt32), [10, 25, 40, 60]::Array(Float64));
+
 SELECT '--- DateTime64 timestamps ---';
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(DateTime64(3)), [10, 20]::Array(Float64));
 

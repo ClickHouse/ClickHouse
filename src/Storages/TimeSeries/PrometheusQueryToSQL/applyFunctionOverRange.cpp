@@ -238,6 +238,24 @@ bool isFunctionOverRange(std::string_view function_name)
 }
 
 
+bool needsSamplesBeforeWindow(const Node * range_vector_node, const ConverterContext & context)
+{
+    if (!context.exact_rate || (range_vector_node->result_type != ResultType::RANGE_VECTOR))
+        return false;
+
+    /// Skip the offset and @ modifiers applied to the range vector to find the function taking it.
+    const Node * parent = range_vector_node->parent;
+    while (parent && (parent->result_type == ResultType::RANGE_VECTOR))
+        parent = parent->parent;
+
+    if (!parent || (parent->node_type != NodeType::Function))
+        return false;
+
+    const auto * impl_info = getImplInfo(static_cast<const PrometheusQueryTree::Function *>(parent)->function_name);
+    return impl_info && impl_info->supports_exact_rate;
+}
+
+
 SQLQueryPiece applyFunctionOverRange(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
