@@ -732,6 +732,22 @@ honoured by rewriting the part, so the merges that clear expired columns are
 still assigned when this setting is enabled. Such a merge rewrites the part
 anyway, and therefore also removes the rows that have expired in it.
 
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite \/ ignore \/ abort)"}]}]}/>
+
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 

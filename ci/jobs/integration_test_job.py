@@ -34,7 +34,8 @@ repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
 # Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
-# rather than imported so this script does not depend on the test helpers' imports.
+# rather than imported so this script does not depend on the test helpers' imports;
+# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
 RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
 
 
@@ -697,7 +698,8 @@ TIMEOUT_ERROR_PATTERNS = [
 # `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
 # for the rest of the module through no fault of its own. Unlike the substrings below it
 # already carries its own proof, which is why the FAIL path trusts it without further
-# context. Must stay in step with the constant of the same name in the harness.
+# context. Must stay in step with the constant of the same name in the harness - pinned by
+# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
 LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
 
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [

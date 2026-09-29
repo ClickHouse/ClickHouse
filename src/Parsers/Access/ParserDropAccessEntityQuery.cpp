@@ -4,6 +4,8 @@
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -85,7 +87,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
         if_exists = true;
 
-    Strings names;
+    boost::intrusive_ptr<ASTUserNamesWithHost> names;
     boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     std::shared_ptr<MaskingPolicyName> masking_policy_name;
     String storage_name;
@@ -93,8 +95,10 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     if ((type == AccessEntityType::USER) || (type == AccessEntityType::ROLE))
     {
-        if (!parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
+        ASTPtr names_list;
+        if (!ParserUserNamesWithHost(/*allow_query_parameter=*/ true, /*parse_host_pattern=*/ false).parse(pos, names_list, expected))
             return false;
+        names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_list);
     }
     else if (type == AccessEntityType::ROW_POLICY)
     {
@@ -114,8 +118,12 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else
     {
-        if (!parseIdentifiersOrStringLiterals(pos, expected, names))
+        Strings string_names;
+        if (!parseIdentifiersOrStringLiterals(pos, expected, string_names))
             return false;
+        names = make_intrusive<ASTUserNamesWithHost>();
+        for (auto & string_name : string_names)
+            names->children.push_back(make_intrusive<ASTUserNameWithHost>(string_name));
     }
 
     if (ParserKeyword{Keyword::FROM}.ignore(pos, expected))
@@ -134,6 +142,9 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->row_policy_names = std::move(row_policy_names);
     query->masking_policy_name = std::move(masking_policy_name);
     query->storage_name = std::move(storage_name);
+
+    if (query->names && query->names->hasQueryParameters())
+        query->children.push_back(query->names);
 
     return true;
 }

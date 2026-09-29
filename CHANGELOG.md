@@ -1,7 +1,7 @@
 ### Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
 ### Table of Contents
-**[ClickHouse release v26.9, FIXME](#269)**<br/>
+**[ClickHouse release v26.9, 2026-09-21](#269)**<br/>
 **[ClickHouse release v26.8 LTS, 2026-08-27](#268)**<br/>
 **[ClickHouse release v26.7, 2026-07-22](#267)**<br/>
 **[ClickHouse release v26.6, 2026-06-25](#266)**<br/>
@@ -22,7 +22,7 @@
 
 # 2026 Changelog
 
-### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
+### <a id="269"></a> ClickHouse release 26.9, 2026-09-21. [Presentation](https://presentations.clickhouse.com/2026-release-26.9/), [Video](https://www.youtube.com/watch?v=wLrTlU5LLWI)
 
 #### Backward Incompatible Change
 * The analyzer can no longer be disabled: the `enable_analyzer` setting (and its old name `allow_experimental_analyzer`) is obsolete, an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. The analyzer has been the default since 24.3, and the query analysis used before it is no longer supported. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than 26.9. [#118629](https://github.com/ClickHouse/ClickHouse/pull/118629) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

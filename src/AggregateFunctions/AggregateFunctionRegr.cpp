@@ -446,12 +446,12 @@ public:
             /// Merging the two sets of flags into a temporary buffer vectorizes better
             /// than fusing both flags into the accumulation loop.
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            data.template addManyConditional<false>(x_ptr, y_ptr, final_flags.get(), row_begin, row_end);
+            data.template addManyConditional<false>(x_ptr + row_begin, y_ptr + row_begin, final_flags.get(), 0, span);
         }
         else
         {

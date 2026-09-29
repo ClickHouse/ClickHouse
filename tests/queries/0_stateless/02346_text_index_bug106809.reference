@@ -18,3 +18,12 @@ Single non-intersecting part with is_deleted: the direct text-index read must st
 0
 1
 0
+Nullable sorting key: lazy FINAL falls back to a regular FINAL read here too
+1
+1
+1
+1
+Sorting key mixing ASC and DESC columns: lazy FINAL falls back to a regular FINAL read here too
+1
+1
+1

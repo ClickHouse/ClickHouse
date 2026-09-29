@@ -1878,6 +1878,7 @@ protected:
 
 DistributedQueryCancellation::DistributedQueryCancellation()
     : wakeup(std::make_shared<WakeupFd>())
+    , cancelled_wakeup(std::make_shared<WakeupFd>())
 {
 }
 
@@ -1895,6 +1896,7 @@ void DistributedQueryCancellation::cancel()
     cancelled_by_pipeline = true;
     cancelled = true;
     notifyStageWakeup(wakeup);
+    notifyStageWakeup(cancelled_wakeup);
 }
 
 bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
@@ -1916,6 +1918,7 @@ bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
         driving_source_reports = !execution_finished;
     }
     notifyStageWakeup(wakeup);
+    notifyStageWakeup(cancelled_wakeup);
     return driving_source_reports;
 }
 
@@ -1923,6 +1926,12 @@ void DistributedQueryCancellation::markExecutionFinished()
 {
     std::lock_guard lock(mutex);
     execution_finished = true;
+}
+
+bool DistributedQueryCancellation::isExecutionFinished() const
+{
+    std::lock_guard lock(mutex);
+    return execution_finished;
 }
 
 std::exception_ptr DistributedQueryCancellation::getFailure() const

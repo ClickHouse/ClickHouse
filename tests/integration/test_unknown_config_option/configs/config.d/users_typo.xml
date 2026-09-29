@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Typo of `users_config` (missing `o`). The unknown-key check must reject it
+         instead of silently accepting it via a blanket `users_*` prefix allowlist. -->
+    <users_cnfig>users.xml</users_cnfig>
+</clickhouse>
