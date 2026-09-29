@@ -133,7 +133,7 @@ When creating a client instance, the following connection settings can be adjust
 | **session_id**?: string                                                  | Optional ClickHouse Session ID to send with every request.                          | -                       | -                                                                                          |
 | **keep_alive**?: `{ **enabled**?: boolean }`                             | Enabled by default in both Node.js and Web versions.                                | -                       | -                                                                                          |
 | **http_headers**?: `Record<string, string>`                              | Additional HTTP headers for outgoing ClickHouse requests.                           | -                       | [Reverse proxy with authentication docs](/integrations/language-clients/js/index#reverse-proxy-with-authentication)        |
-| **roles**?: string \|  string[]                                          | ClickHouse role names to attach to the outgoing requests.                         | -                       | [Using roles with the HTTP interface](/concepts/features/interfaces/http#setting-role-with-query-parameters) |
+| **roles**?: string \|  string[]                                          | ClickHouse role names to attach to the outgoing requests.                         | -                       | [Using roles with the HTTP interface](/concepts/features/connect-to-clickhouse/protocols/http/index#setting-role-with-query-parameters) |
 
 #### Node.js-specific configuration parameters {#nodejs-specific-configuration-parameters}
 

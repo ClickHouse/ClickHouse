@@ -142,7 +142,7 @@ while let Some(row) = cursor.next().await? { .. }
 * Convenient `fetch_one::<Row>()` and `fetch_all::<Row>()` methods can be used to get a first row or all rows, correspondingly.
 * `sql::Identifier` can be used to bind table names.
 
-NB: as the entire response is streamed, cursors can return an error even after producing some rows. If this happens in your use case, you could try `query(...).with_option("wait_end_of_query", "1")` in order to enable response buffering on the server-side. [More details](/concepts/features/interfaces/http#response-buffering). The `buffer_size` option can be useful, too.
+NB: as the entire response is streamed, cursors can return an error even after producing some rows. If this happens in your use case, you could try `query(...).with_option("wait_end_of_query", "1")` in order to enable response buffering on the server-side. [More details](/concepts/features/connect-to-clickhouse/protocols/http/index#response-buffering). The `buffer_size` option can be useful, too.
 
 <Warning>
 Use `wait_end_of_query` with caution when selecting rows, as it can will to higher memory consumption on the server side and will likely decrease the overall performance.
@@ -168,7 +168,7 @@ insert.end().await?;
 
 * If `end()` isn't called, the `INSERT` is aborted.
 * Rows are being sent progressively as a stream to spread the network load.
-* ClickHouse inserts batches atomically only if all rows fit in the same partition and their number is less [`max_insert_block_size`](/reference/settings/session-settings#max_insert_block_size).
+* ClickHouse inserts batches atomically only if all rows fit in the same partition and their number is less [`max_insert_block_size`](/reference/settings/session-settings/max-insert#max_insert_block_size).
 
 ### Async insert (server-side batching) {#async-insert-server-side-batching}
 

@@ -83,7 +83,7 @@ Note that you will have to manually change the destination column to the desired
 
 #### Supported Avro data types {#supported-avro-data-types}
 
-ClickPipes supports all Avro Primitive and Complex types, and all Avro Logical types except `local-timestamp-millis` and `local_timestamp-micros`.  Avro `record` types are converted to Tuple, `array` types to Array, and `map` to Map (string keys only).  In general the conversions listed [here](/concepts/features/interfaces/schema-inference#avro) are available.  We recommend using exact type matching for Avro numeric types, as ClickPipes does not check for overflow or precision loss on type conversion. Alternatively, all Avro types can be inserted into a `String` column, and will be represented as a valid JSON string in that case.
+ClickPipes supports all Avro Primitive and Complex types, and all Avro Logical types except `local-timestamp-millis` and `local_timestamp-micros`.  Avro `record` types are converted to Tuple, `array` types to Array, and `map` to Map (string keys only).  In general the conversions listed [here](/concepts/features/operations/insert/schema-inference#avro) are available.  We recommend using exact type matching for Avro numeric types, as ClickPipes does not check for overflow or precision loss on type conversion. Alternatively, all Avro types can be inserted into a `String` column, and will be represented as a valid JSON string in that case.
 
 #### Nullable types and Avro unions {#nullable-types-and-avro-unions}
 
