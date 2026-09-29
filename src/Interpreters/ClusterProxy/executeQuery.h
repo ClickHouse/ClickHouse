@@ -97,8 +97,7 @@ bool isInitiatorOnlySettingName(std::string_view name);
 /// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 
-/// The temporary tables of `context` that `query` names, to send along with a query that a remote server
-/// resolves on its own. A temporary table the query does not name is not sent.
+/// The temporary tables of `context` whose names occur as identifiers in `query`, to send with it to remote servers.
 Tables getExternalTablesUsedInQuery(const ASTPtr & query, const ContextPtr & context);
 
 /// Update settings for Distributed query.
