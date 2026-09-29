@@ -77,6 +77,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -176,6 +177,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     client_configuration.google_adc_client_id = auth_settings[S3AuthSetting::google_adc_client_id];
     client_configuration.google_adc_client_secret = auth_settings[S3AuthSetting::google_adc_client_secret];
     client_configuration.google_adc_refresh_token = auth_settings[S3AuthSetting::google_adc_refresh_token];
+    client_configuration.google_service_account_key = auth_settings[S3AuthSetting::google_service_account_key];
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
@@ -225,9 +227,10 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     {
         credentials_configuration.anonymous_fallback_for_server_credentials = true;
 
-        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
+        const bool has_explicit_gcp_adc = (!client_configuration.google_adc_client_id.empty()
             && !client_configuration.google_adc_client_secret.empty()
-            && !client_configuration.google_adc_refresh_token.empty();
+            && !client_configuration.google_adc_refresh_token.empty())
+            || !client_configuration.google_service_account_key.empty();
         if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
             client_configuration.http_client.clear();
     }
