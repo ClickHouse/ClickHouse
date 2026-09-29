@@ -1,6 +1,7 @@
 #include <Processors/Transforms/WindowTransform.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 #include <Functions/FunctionHelpers.h>
@@ -10,6 +11,7 @@
 #include <Common/Arena.h>
 
 #include <algorithm>
+#include <ranges>
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 template <>
@@ -42,6 +44,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+Columns materializeColumns(Columns columns, const std::vector<bool> & should_materialize)
+{
+    for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
+        if (materialize)
+            column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
+
+    return columns;
+}
+
+}
+
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
@@ -50,6 +66,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     , params(WindowTransformParams::create(*input_header_, window_description_, functions))
     , input(inputs.front())
     , output(outputs.front())
+    , indexes(params)
 {
     initWorkspaces(functions);
 }
@@ -101,122 +118,6 @@ WindowTransform::~WindowTransform()
     }
 }
 
-void WindowTransform::advancePartitionEnd()
-{
-    if (partition_ended)
-    {
-        return;
-    }
-
-    const RowNumber end = blocks.end();
-
-    // If we're at the total end of data, we must end the partition. This is one
-    // of the few places in calculations where we need special handling for end
-    // of data, other places will work as usual based on
-    // `partition_ended` = true, because end of data is logically the same as
-    // any other end of partition.
-    // We must check this first, because other calculations might not be valid
-    // when we're at the end of data.
-    if (input_is_finished)
-    {
-        partition_ended = true;
-        // We receive empty chunk at the end of data, so the partition_end must
-        // be already at the end of data.
-        chassert(partition_end == end);
-        return;
-    }
-
-    // If we got to the end of the block already, but we are going to get more
-    // input data, wait for it.
-    if (partition_end == end)
-    {
-        return;
-    }
-
-    // We process one block at a time, but we can process each block many times,
-    // if it contains multiple partitions. The `partition_end` is a
-    // past-the-end pointer, so it must be already in the "next" block we haven't
-    // processed yet. This is also the last block we have.
-    // The exception to this rule is end of data, for which we checked above.
-    chassert(end.block == partition_end.block + 1);
-
-    // Try to advance the partition end pointer.
-    const size_t partition_by_columns = params.partition_by_indices.size();
-    if (partition_by_columns == 0)
-    {
-        // No PARTITION BY. All input is one partition, which will end when the
-        // input ends.
-        partition_end = end;
-        return;
-    }
-
-    // Check for partition end.
-    // The partition ends when the PARTITION BY columns change. We need
-    // some reference columns for comparison. We might have already
-    // dropped the blocks where the partition starts, but any other row in the
-    // partition will do. We can't use frame_start or frame_end or current_row (the next row
-    // for which we are calculating the window functions), because they all might be
-    // past the end of the partition. prev_frame_start is suitable, because it
-    // is a pointer to the first row of the previous frame that must have been
-    // valid, or to the first row of the partition, and we make sure not to drop
-    // its block.
-    chassert(partition_start <= prev_frame_start);
-    // The frame start should be inside the prospective partition, except the
-    // case when it still has no rows.
-    chassert(prev_frame_start < partition_end || partition_start == partition_end);
-    chassert(blocks.begin().block <= prev_frame_start.block);
-    const auto block_rows = blocks.blockAt(partition_end.block).rows_count;
-
-    // First, check whether the first unprocessed row already belongs to the next partition, by
-    // comparing it against the reference row (prev_frame_start, which may live in another block, so
-    // we can't fold it into the equal-range scan below).
-    {
-        size_t i = 0;
-        for (; i < partition_by_columns; ++i)
-        {
-            const auto * reference_column
-                = blocks.blockAt(prev_frame_start.block).materialized_columns[params.partition_by_indices[i]].get();
-            const auto * compared_column
-                = blocks.blockAt(partition_end.block).materialized_columns[params.partition_by_indices[i]].get();
-
-            if (compared_column->compareAt(partition_end.row,
-                    prev_frame_start.row, *reference_column,
-                    1 /* nan_direction_hint */) != 0)
-            {
-                break;
-            }
-        }
-
-        if (i < partition_by_columns)
-        {
-            partition_ended = true;
-            return;
-        }
-    }
-
-    // partition_end.row matches the reference on all PARTITION BY keys, so the partition extends over
-    // the contiguous run of rows equal to it. The input is sorted by PARTITION BY, so we find that
-    // run's end within this block with a fast equal-range scan.
-    const Int64 partition_end_row = getEqualRangeEndAssumeSorted(
-        blocks.blockAt(partition_end.block).materialized_columns, params.partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
-
-    if (partition_end_row < block_rows)
-    {
-        // Found the partition boundary inside this block.
-        partition_end.row = partition_end_row;
-        partition_ended = true;
-        return;
-    }
-
-    // The partition runs to the end of this block, go to the next.
-    ++partition_end.block;
-    partition_end.row = 0;
-
-    // Went until the end of data and didn't find the new partition.
-    chassert(!partition_ended && partition_end == blocks.end());
-}
-
-
 void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
@@ -226,25 +127,25 @@ void WindowTransform::advanceFrameStartRowsOffset()
     if (!moved_row && offset < 0)
     {
         // Walking back ran off the start of the stored blocks, so the logical
-        // position is before partition_start, which may itself point to a
+        // position is before the partition start, which may itself point to a
         // block that has already been freed.
-        frame_start = partition_start;
+        frame_start = partition.bounds().start;
         frame_started = true;
         return;
     }
 
-    if (!moved_row || partition_end <= *moved_row)
+    if (!moved_row || partition.bounds().end <= *moved_row)
     {
         // A FOLLOWING frame start ran into the end of partition.
-        frame_start = partition_end;
-        frame_started = partition_ended;
+        frame_start = partition.bounds().end;
+        frame_started = partition.bounds().fully_visible;
         return;
     }
 
-    if (*moved_row <= partition_start)
+    if (*moved_row <= partition.bounds().start)
     {
         // Got to the beginning of partition and can't go further back.
-        frame_start = partition_start;
+        frame_start = partition.bounds().start;
         frame_started = true;
         return;
     }
@@ -257,6 +158,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
 void WindowTransform::advanceFrameStartRangeOffset()
 {
+    const RowNumber partition_end = partition.bounds().end;
     // See the comment for advanceFrameEndRangeOffset().
     const int direction = params.window_description.order_by[0].direction;
     const bool preceding = params.window_description.frame.begin_preceding
@@ -280,7 +182,7 @@ void WindowTransform::advanceFrameStartRangeOffset()
         }
     }
 
-    frame_started = partition_ended;
+    frame_started = partition.bounds().fully_visible;
 }
 
 void WindowTransform::advanceFrameStart()
@@ -297,15 +199,15 @@ void WindowTransform::advanceFrameStart()
         case WindowFrame::BoundaryType::Unbounded:
             // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
             // the new partition starts.
-            // partition_start is in the first group.
+            // The partition start is in the first group.
             frame_start_group_number = 1;
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Current:
             // CURRENT ROW differs between frame types only in how the peer
             // groups are accounted.
-            chassert(partition_start <= peer_group_start);
-            chassert(peer_group_start < partition_end);
+            chassert(partition.bounds().start <= peer_group_start);
+            chassert(peer_group_start < partition.bounds().end);
             chassert(peer_group_start <= current_row);
             frame_start = peer_group_start;
             // peer_group_start is in the current group.
@@ -341,12 +243,12 @@ void WindowTransform::advanceFrameStart()
         // input to locate the target peer group. Then the frame is not started
         // yet and the partition cannot have ended -- the main loop waits for
         // more data and retries.
-        chassert(frame_started || !partition_ended);
+        chassert(frame_started || !partition.bounds().fully_visible);
     }
 
-    chassert(partition_start <= frame_start);
-    chassert(frame_start <= partition_end);
-    if (partition_ended && frame_start == partition_end)
+    chassert(partition.bounds().start <= frame_start);
+    chassert(frame_start <= partition.bounds().end);
+    if (partition.bounds().fully_visible && frame_start == partition.bounds().end)
     {
         // Check that if the start of frame (e.g. FOLLOWING) runs into the end
         // of partition, it is marked as valid -- we can't advance it any
@@ -368,12 +270,13 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
 
 void WindowTransform::advanceFrameEndCurrentRow()
 {
+    const RowNumber partition_end = partition.bounds().end;
     // We only process one block here, and frame_end must be already in it: if
     // we didn't find the end in the previous block, frame_end is now the first
     // row of the current block. We need this knowledge to write a simpler loop
     // (only loop over rows and not over blocks), that should hopefully be more
     // efficient.
-    // partition_end is either in this new block or past-the-end.
+    // The partition end is either in this new block or past-the-end.
     chassert(frame_end.block  == partition_end.block
         || frame_end.block + 1 == partition_end.block);
 
@@ -381,8 +284,8 @@ void WindowTransform::advanceFrameEndCurrentRow()
     {
         // The case when we get a new block and find out that the partition has
         // ended.
-        chassert(partition_ended);
-        frame_ended = partition_ended;
+        chassert(partition.bounds().fully_visible);
+        frame_ended = partition.bounds().fully_visible;
         return;
     }
 
@@ -469,14 +372,14 @@ void WindowTransform::advanceFrameEndCurrentRow()
 
     // Got to the end of partition (frame ended as well then) or end of data.
     chassert(frame_end == partition_end);
-    frame_ended = partition_ended;
+    frame_ended = partition.bounds().fully_visible;
 }
 
 void WindowTransform::advanceFrameEndUnbounded()
 {
     // The UNBOUNDED FOLLOWING frame ends when the partition ends.
-    frame_end = partition_end;
-    frame_ended = partition_ended;
+    frame_end = partition.bounds().end;
+    frame_ended = partition.bounds().fully_visible;
 }
 
 void WindowTransform::advanceFrameEndRowsOffset()
@@ -489,26 +392,26 @@ void WindowTransform::advanceFrameEndRowsOffset()
     if (!moved_row && offset < 0)
     {
         // Walking back ran off the start of the stored blocks, so the logical
-        // position is before partition_start, which may itself point to a
+        // position is before the partition start, which may itself point to a
         // block that has already been freed.
-        frame_end = partition_start;
+        frame_end = partition.bounds().start;
         frame_ended = true;
         return;
     }
 
-    if (!moved_row || partition_end <= *moved_row)
+    if (!moved_row || partition.bounds().end <= *moved_row)
     {
         // Clamp to the end of partition. It might not have ended yet, in which
         // case wait for more data.
-        frame_end = partition_end;
-        frame_ended = partition_ended;
+        frame_end = partition.bounds().end;
+        frame_ended = partition.bounds().fully_visible;
         return;
     }
 
-    if (*moved_row <= partition_start)
+    if (*moved_row <= partition.bounds().start)
     {
         // Clamp to the start of partition.
-        frame_end = partition_start;
+        frame_end = partition.bounds().start;
         frame_ended = true;
         return;
     }
@@ -520,6 +423,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
 
 void WindowTransform::advanceFrameEndRangeOffset()
 {
+    const RowNumber partition_end = partition.bounds().end;
     // PRECEDING/FOLLOWING change direction for DESC order.
     // See CD 9075-2:201?(E) 7.14 <window clause> p. 429.
     const int direction = params.window_description.order_by[0].direction;
@@ -545,11 +449,12 @@ void WindowTransform::advanceFrameEndRangeOffset()
         }
     }
 
-    frame_ended = partition_ended;
+    frame_ended = partition.bounds().fully_visible;
 }
 
 RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
 {
+    const RowNumber partition_end = partition.bounds().end;
     need_more_data = false;
 
     if (start == partition_end)
@@ -611,7 +516,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
     // We broke out because the group either reaches a partition boundary that sits on a block edge,
     // or extends past the rows we can currently resolve. If the partition has ended, the group ends
     // at the partition end.
-    if (partition_ended)
+    if (partition.bounds().fully_visible)
         return partition_end;
 
     // The partition has not ended and we ran past the buffered rows wait for more input.
@@ -622,6 +527,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
 
 bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const
 {
+    const RowNumber partition_end = partition.bounds().end;
     chassert(target_group >= 1);
 
     while (group_counter < target_group)
@@ -661,7 +567,7 @@ void WindowTransform::advanceFrameStartGroupsOffset()
     if (target_group <= 1)
     {
         // The target peer group is at or before the first group: clamp to the partition start.
-        frame_start = partition_start;
+        frame_start = partition.bounds().start;
         frame_start_group_number = 1;
         frame_started = true;
         return;
@@ -743,8 +649,8 @@ void WindowTransform::updateAggregationState()
     chassert(prev_frame_start <= prev_frame_end);
     chassert(prev_frame_start <= frame_start);
     chassert(prev_frame_end <= frame_end);
-    chassert(partition_start <= frame_start);
-    chassert(frame_end <= partition_end);
+    chassert(partition.bounds().start <= frame_start);
+    chassert(frame_end <= partition.bounds().end);
 
     // We might have to reset aggregation state and/or add some rows to it.
     // Figure out what to do.
@@ -829,7 +735,7 @@ void WindowTransform::updateAggregationState()
 
 void WindowTransform::writeOutCurrentRow()
 {
-    chassert(current_row < partition_end);
+    chassert(current_row < partition.bounds().end);
     chassert(current_row.block >= blocks.begin().block);
 
     // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
@@ -878,7 +784,11 @@ void WindowTransform::writeOutCurrentRow()
 
 void WindowTransform::addInputBlock(Chunk chunk)
 {
-    auto & block = blocks.add(std::move(chunk), params);
+    auto rows_count = static_cast<int64_t>(chunk.getNumRows());
+    auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
+    auto index = indexes.calculate(materialized_columns, rows_count);
+    auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
+    partition.advance(block);
 
     // Initialize output columns.
     for (auto & ws : workspaces)
@@ -890,21 +800,20 @@ void WindowTransform::addInputBlock(Chunk chunk)
 
 void WindowTransform::computeReadyRows()
 {
-    // First, advance the partition end.
     for (;;)
     {
-        advancePartitionEnd();
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
-        chassert(partition_ended || partition_end == blocks.end());
-        if (partition_ended && partition_end == blocks.end())
+        const RowNumber partition_end = partition.bounds().end;
+        chassert(partition.bounds().fully_visible || partition_end == blocks.end());
+        if (partition.bounds().fully_visible && partition_end == blocks.end())
         {
             chassert(input_is_finished);
         }
 
         // After that, try to calculate window functions for each next row.
         // We can continue until the end of partition or current end of data,
-        // which is precisely the definition of `partition_end`.
+        // which is precisely the definition of the known end of the partition.
         while (current_row < partition_end)
         {
             // We now know that the current row is valid, so we can update the
@@ -923,7 +832,7 @@ void WindowTransform::computeReadyRows()
             {
                 // Wait for more input data to find the start of frame.
                 chassert(!input_is_finished);
-                chassert(!partition_ended);
+                chassert(!partition.bounds().fully_visible);
                 return;
             }
 
@@ -942,7 +851,7 @@ void WindowTransform::computeReadyRows()
             {
                 // Wait for more input data to find the end of frame.
                 chassert(!input_is_finished);
-                chassert(!partition_ended);
+                chassert(!partition.bounds().fully_visible);
                 return;
             }
 
@@ -999,7 +908,7 @@ void WindowTransform::computeReadyRows()
             return;
         }
 
-        if (!partition_ended)
+        if (!partition.bounds().fully_visible)
         {
             // Wait for more input data to find the end of partition.
             // Assert that we processed all the data we currently have, and that
@@ -1015,9 +924,10 @@ void WindowTransform::computeReadyRows()
 
 void WindowTransform::startNextPartition()
 {
-    partition_start = partition_end;
-    partition_end = blocks.next(partition_end);
-    partition_ended = false;
+    const RowNumber partition_start = partition.bounds().end;
+    partition.beginAt(partition_start);
+    for (int64_t block_number = partition_start.block; !partition.bounds().fully_visible && block_number < blocks.end().block; ++block_number)
+        partition.advance(blocks.blockAt(block_number));
     // We have to reset the frame and other pointers when the new partition
     // starts.
     frame_start = partition_start;
@@ -1170,6 +1080,10 @@ void WindowTransform::work()
 
         addInputBlock(std::move(chunk));
     }
+    else
+    {
+        partition.finish();
+    }
 
     computeReadyRows();
     releaseUnusedBlocks();
@@ -1180,9 +1094,8 @@ void WindowTransform::releaseUnusedBlocks()
     // We don't really have to keep the entire partition, and it can be big, so
     // we want to drop the starting blocks to save memory. We can drop the old
     // blocks if we already returned them as output, and the frame and the
-    // current row are already past them. We also need to keep the previous
-    // frame start because we use it as the partition etalon. It is always less
-    // than the current frame start, so we don't have to check the latter. Note
+    // current row are already past them. The previous frame start is never
+    // after the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     // We also keep the start of the current peer group: it can lag behind the
