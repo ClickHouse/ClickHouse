@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- A distributed FINAL read splits into primary-key-range layers; with more layers than tasks,
 -- each task carries several lanes in its `read_bucket` parameter. The optimizer clones the read
 -- step when it extracts the best plan, and the clone must keep both the coordinator-computed

@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace
@@ -34,6 +35,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
         return "Waiting for covered parts to be removed first";
+    case DB::DataPartRemovalState::PINNED_BY_DELETE_BITMAP:
+        return "Holds the only copy of another part's delete bitmap";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
     case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
@@ -155,10 +158,17 @@ void StorageSystemParts::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
-    all_parts = info.getParts(all_parts_state, has_state_column);
+    QueryStatusPtr query_status = context->getProcessListElement();
+
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
@@ -339,7 +349,7 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->default_codec_is_approximate ? "UNKNOWN" : part->default_codec->getCodecDesc()->formatForLogging());
+            columns[res_index++]->insert(part->default_codec_is_approximate ? "UNKNOWN" : part->default_codec->getCodecDescription()->formatForLogging());
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
@@ -363,7 +373,7 @@ void StorageSystemParts::processNextStorage(
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version};
         };
 
         auto current_version_info = part->version->getInfo();

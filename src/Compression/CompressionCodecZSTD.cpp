@@ -24,7 +24,7 @@ uint8_t CompressionCodecZSTD::getMethodByte() const
 
 void CompressionCodecZSTD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -77,7 +77,7 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_)
 {
 }
 
-ASTPtr CompressionCodecZSTD::getCodecDesc() const
+ASTPtr CompressionCodecZSTD::getCodecDescription() const
 {
     ASTs arguments{make_intrusive<ASTLiteral>(static_cast<UInt64>(level))};
     if (enable_long_range)

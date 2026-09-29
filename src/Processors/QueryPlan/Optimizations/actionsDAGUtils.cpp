@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -656,7 +657,17 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    return node->function_base->isInjective({});
+    if (node->function_base->isInjective({}))
+        return true;
+
+    const auto & name = node->function_base->getName();
+    if (node->children.size() != 2 || (name != "plus" && name != "minus"))
+        return false;
+
+    const auto & left = *node->children[0];
+    const auto & right = *node->children[1];
+    return plusMinusWithConstantsIsInjective(
+        {left.column, left.result_type, left.result_name}, {right.column, right.result_type, right.result_name}, node->result_type);
 }
 
 NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)

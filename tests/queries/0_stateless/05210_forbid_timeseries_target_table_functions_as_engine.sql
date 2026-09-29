@@ -17,6 +17,7 @@ SELECT count() FROM timeSeriesTags(ts_05210);
 CREATE TABLE p_data_05210 AS timeSeriesData(ts_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE p_samples_05210 AS timeSeriesSamples(ts_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE p_tags_05210 AS timeSeriesTags(ts_05210); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE p_metric_families_05210 AS timeSeriesMetricFamilies(ts_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE p_metrics_05210 AS timeSeriesMetrics(ts_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE p_cols_05210 (id Tuple(UInt64, LowCardinality(UUID)), timestamp DateTime64(3), value Float64)
     AS timeSeriesData(ts_05210); -- { serverError BAD_ARGUMENTS }

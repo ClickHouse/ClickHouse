@@ -1,8 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/PackedStringRef.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -113,7 +111,6 @@ public:
 
     size_t size() const { return entries.size(); }
     bool empty() const { return entries.empty(); }
-    size_t allocatedBytes() const { return entries.capacity() * sizeof(RoaringishEntry); }
     std::vector<RoaringishEntry> & getEntries() { return entries; }
     const std::vector<RoaringishEntry> & getEntries() const { return entries; }
 
@@ -121,7 +118,5 @@ private:
     std::vector<RoaringishEntry> entries;
     bool sorted = true;
 };
-
-using TokenToPositionListMap = HashMap<PackedStringRef, PositionListBuilder>;
 
 }
