@@ -55,12 +55,22 @@ public:
     /// session back to the pool early must skip the early release for these requests.
     bool isSessionCloseRequested() const { return session_close; }
 
+    /// Hands the session back to the pool from inside a handler that writes its response before
+    /// returning (e.g. `DoPut` with `WriteMetadata`). Runs the same prepared-statement expiration
+    /// refresh as `CallCompleted` and releases the session, so the refresh stays ordered before any
+    /// next request can acquire the session; `CallCompleted` then skips its own refresh and release.
+    /// No-op for session-less requests and for requests with `x-clickhouse-session-close`, which must
+    /// keep the session acquired until `CallCompleted` runs `Session::closeSession`.
+    void completeSessionEarly();
+
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
 
     std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
 
 private:
+    void refreshAndReleaseSession();
+
     std::shared_ptr<Session> session;
     std::string token;
     std::string username;
@@ -68,6 +78,7 @@ private:
     const std::string session_id;
     const bool session_close;
     const std::chrono::steady_clock::duration session_timeout;
+    bool session_completed = false;
 };
 
 class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory

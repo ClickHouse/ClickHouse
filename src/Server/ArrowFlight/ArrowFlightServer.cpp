@@ -1159,21 +1159,22 @@ arrow::Status ArrowFlightServer::DoPut(
         const auto & request = reader->descriptor();
         LOG_INFO(log, "DoPut is called for descriptor {}", request.ToString());
 
-        const auto & auth = AuthMiddleware::get(context);
+        auto & auth = AuthMiddleware::get(context);
         auto session = auth.getSession();
 
         /// `writer->WriteMetadata` puts the app metadata on the wire while this handler is still running, and
         /// `AuthMiddleware::CallCompleted` -- the only other place that releases the session -- runs just after the
         /// handler returns. Every other Flight RPC writes its response only after the handler returns, so a client
         /// that reacts to a successful response by sending the next request on the same session would race with the
-        /// release and can hit `SESSION_IS_LOCKED` on `DoPut` alone. Release before writing to close that window;
-        /// `Session::releaseSessionID` is idempotent, so the `CallCompleted` release becomes a no-op. A request that
-        /// carries `x-clickhouse-session-close` must keep the session acquired until `CallCompleted` runs
+        /// release and can hit `SESSION_IS_LOCKED` on `DoPut` alone. Release before writing to close that window.
+        /// `AuthMiddleware::completeSessionEarly` runs the prepared-statement expiration refresh together with the
+        /// release, so the refresh stays ordered before the next request on this session can start, and
+        /// `CallCompleted` skips its own refresh and release. A request that carries
+        /// `x-clickhouse-session-close` must keep the session acquired until `CallCompleted` runs
         /// `Session::closeSession`, which would be skipped once the session has been handed back.
         auto release_session_before_response = [&]
         {
-            if (!auth.isSessionCloseRequested())
-                session->releaseSessionID();
+            auth.completeSessionEarly();
         };
 
         /// DoPut with CommandPreparedStatementQuery is parameter binding only (no execution).
