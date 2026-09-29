@@ -1489,7 +1489,9 @@ bool StorageKeeperMap::isPathUsedByAnotherTable() const
     Strings tables;
     if (getClient()->tryGetChildren(zk_tables_path, tables) != Coordination::Error::ZOK)
         return false;
-    return std::ranges::any_of(tables, [&](const String & table) { return table != table_unique_id; });
+    /// A registration is the table UUID followed by the server UUID.
+    const String uuid = toString(getStorageID().uuid);
+    return std::ranges::any_of(tables, [&](const String & table) { return !table.starts_with(uuid); });
 }
 
 UInt64 StorageKeeperMap::keysLimit() const

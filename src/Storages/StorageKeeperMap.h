@@ -80,7 +80,7 @@ public:
     const std::string & dataPath() const;
     std::string fullPathForKey(std::string_view key) const;
 
-    /// Whether another table, on any server, is registered on the same Keeper path: then `drop` keeps the data.
+    /// Whether a table with another UUID, not a replica of this one, uses the same Keeper path: then `drop` keeps the data.
     bool isPathUsedByAnotherTable() const;
 
     UInt64 keysLimit() const;
