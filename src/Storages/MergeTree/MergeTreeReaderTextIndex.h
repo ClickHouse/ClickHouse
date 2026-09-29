@@ -79,7 +79,12 @@ private:
     void classifyVirtualColumns();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows, PostingList & range_posting);
+    /// Returns the postings folded by the index analysis for the query of the column, if they answer it
+    /// completely (no postings of the query are read per mark), and nullptr otherwise.
+    const PostingList * getFoldedPostings(size_t column_idx) const;
+    /// Fills rows [row_offset, row_offset + num_rows) from `postings` of the whole part.
+    void fillColumnFromPostings(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
+    void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
 
     /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
     /// default expression (the original search predicate) on the physical columns.
@@ -139,6 +144,7 @@ private:
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
     TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
+    const PostingList empty_postings;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.
