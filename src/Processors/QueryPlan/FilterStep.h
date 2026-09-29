@@ -118,7 +118,7 @@ public:
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     bool canGetRequiredColumns() const override { return true; }
-    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
+    RequiredInputPositions getRequiredColumns(const std::vector<size_t> & required_output_positions) const override;
     bool canRemoveColumnsFromOutput() const override;
 
     void setPreventInputRemoval() { prevent_input_removal = true; }
@@ -131,13 +131,7 @@ private:
 
     /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
     /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
-    struct RequiredColumnsPlan
-    {
-        RemoveUnusedColumnsResult result;
-        FilterDAGOutputPruningPlan pruning;
-    };
-
-    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;
+    FilterDAGOutputPruningPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions) const;
 
     ActionsDAG actions_dag;
     String filter_column_name;
