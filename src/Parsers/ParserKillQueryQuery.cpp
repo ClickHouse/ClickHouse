@@ -73,8 +73,7 @@ void registerStatementKillQuery(StatementFactory & factory)
         .description = R"DOCS_MD(
 This page describes the `KILL QUERY` and `KILL MUTATION` statements.
 
-By default, `KILL QUERY` throws when its `WHERE` expression leaves no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when its `WHERE` expression matches zero rows in `system.mutations`.
-To disable this behavior, set [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) to `false`.
+By default, an empty match returns without an exception. To make `KILL QUERY` throw when its `WHERE` expression leaves no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throw when its `WHERE` expression matches zero rows in `system.mutations`, set [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) to `true`.
 `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 ## KILL QUERY {#kill-query}
@@ -136,9 +135,9 @@ Read-only users can only stop their own queries.
 
 A user who has not been granted `SELECT` on `system.processes` can still cancel their own query by naming it:
 `KILL QUERY WHERE query_id = '<id>'`. For a user who holds neither that grant nor `KILL QUERY`, an id that is
-not running as them cancels nothing and returns no rows rather than reporting an error — unless
-[`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) is enabled (the default), which reports
-the no-op as an exception; a user who holds `KILL QUERY` gets the usual error for an id that is not their own.
+not running as them cancels nothing and returns no rows rather than reporting an error, unless
+[`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) is enabled, which reports
+the no-op as an exception; a user who holds `KILL QUERY` but not that `SELECT` is refused for want of the `SELECT`.
 Any other `WHERE` condition, and `ON CLUSTER`, keep requiring the grants described above.
 
 By default, the asynchronous version of queries is used (`ASYNC`), which does not wait for confirmation that queries have stopped.

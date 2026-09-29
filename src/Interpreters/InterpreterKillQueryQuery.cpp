@@ -325,8 +325,9 @@ public:
 BlockIO InterpreterKillQueryQuery::execute()
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
-    const bool kill_throw_if_noop
-        = getContext()->getSettingsRef()[Setting::kill_throw_if_noop] && !getContext()->isDDLOrOnClusterInternal();
+    /// `KILL ... TEST` is a dry run: it returns the preview (possibly empty) instead of throwing.
+    const bool throw_if_noop
+        = getContext()->getSettingsRef()[Setting::kill_throw_if_noop] && !getContext()->isDDLOrOnClusterInternal() && !query.test;
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -355,7 +356,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             : getSelectResult("query_id, user, query", "system.processes");
         if (processes_block.empty())
         {
-            if (kill_throw_if_noop)
+            if (throw_if_noop)
                 throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
             return res_io;
         }
@@ -364,7 +365,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         QueryDescriptors queries_to_stop = reduced
             ? selfKillDescriptors(processes_block, *self_kill)
             : extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
-        if (queries_to_stop.empty() && kill_throw_if_noop)
+        if (queries_to_stop.empty() && throw_if_noop)
             throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
 
         auto header = processes_block.cloneEmpty();
@@ -400,7 +401,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         Block mutations_block = getSelectResult("database, table, mutation_id, command", "system.mutations");
         if (mutations_block.empty())
         {
-            if (kill_throw_if_noop)
+            if (throw_if_noop)
                 throw Exception(ErrorCodes::NOTHING_TO_KILL, "No mutation to kill");
             return res_io;
         }
@@ -584,6 +585,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE (" + where_expression->formatWithSecretsOneLine() + ")";
 
+    /// This internal SELECT itself shows up in `system.processes` (under the fresh query id set below, not the
+    /// outer `KILL`'s), so a broad predicate like `WHERE user = currentUser()` would otherwise match it too and
+    /// the `KILL` would try to cancel the very read that is producing its own kill list. The outer `KILL`
+    /// statement's row is excluded separately, by `extractQueriesExceptMeAndCheckAccess` / `ownRunningQueryBlock`.
     if (table == "system.processes")
         select_query += where_expression ? " AND query_id != currentQueryID()" : " WHERE query_id != currentQueryID()";
 

@@ -289,14 +289,14 @@ drop_victim "repl_$ID"
 echo "-- 19. kill_throw_if_noop on (the default) reports the reduced path no-op as an exception"
 # `$U1` holds both grants since section 6, so `$U2` names an id run by `$U5` here.
 start_victim "$U5" "noop_$ID"
-OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'noop_$ID' ASYNC" 2>&1)
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'noop_$ID' ASYNC SETTINGS kill_throw_if_noop=true" 2>&1)
 noop_throw "$OUT"
 echo "victim: $(running "noop_$ID")"
 drop_victim "noop_$ID"
-OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'absent2_$ID' ASYNC" 2>&1)
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'absent2_$ID' ASYNC SETTINGS kill_throw_if_noop=true" 2>&1)
 noop_throw "$OUT"
 OUT=$($CLICKHOUSE_CLIENT --user "$U2" --query_id "self2_$ID" -q \
-    "KILL QUERY WHERE query_id = 'self2_$ID' ASYNC" 2>&1)
+    "KILL QUERY WHERE query_id = 'self2_$ID' ASYNC SETTINGS kill_throw_if_noop=true" 2>&1)
 noop_throw "$OUT"
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $U5, $U6, $A1, ${A1}_renamed, $A2, ${A2}_new"
