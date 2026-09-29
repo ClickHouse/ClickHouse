@@ -1582,14 +1582,19 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
 }
 )
 
-/* For each 8-bit mask of non-zero bytes of the first filter, `combine_filters_expand_table` holds a `pshufb` control
- * that moves the next bytes of the second filter to the set positions and zeroes the rest.
+/* For each 8-bit mask of non-zero bytes of the first filter, `combine_filters_expand_table` holds a byte shuffle control
+ * that moves the next bytes of the second filter to the set positions. The control byte 0x80 yields zero for both
+ * `pshufb` (high bit set) and `tbl` (index out of range), also after adding up to 8 to it.
  *
  * Do not replace this with `_pdep_u64`: it is microcoded on AMD Zen 1 and Zen 2, where it is slower than the scalar loop.
  *
- * Both filters are `PaddedPODArray`, so loading 8 bytes at `second_begin` is safe near the end.
+ * The shuffle has no portable spelling: `__builtin_shufflevector` needs constant indices, and a per-lane
+ * `source[control[i]]` loop becomes `pshufb` only in isolation, never `tbl`. As a fallback, that loop is ~2x slower
+ * than the scalar loop (the table layout also assumes little-endian).
+ *
+ * Both filters are `PaddedPODArray`, so loading 16 bytes at `second_begin` is safe near the end.
  */
-#if defined(__SSSE3__)
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
 static constexpr auto combine_filters_expand_table = []
 {
     std::array<UInt64, 256> table{};
@@ -1604,24 +1609,33 @@ static constexpr auto combine_filters_expand_table = []
 
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
-    constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
-    const __m128i zero16 = _mm_setzero_si128();
+    using UInt8x16 = UInt8 __attribute__((vector_size(16)));
+    using UInt64x2 = UInt64 __attribute__((vector_size(16)));
 
-    while (first_begin + XMM_VEC_SIZE_IN_BYTES <= first_end)
+    while (first_begin + 64 <= first_end)
     {
-        __m128i src = _mm_loadu_si128(reinterpret_cast<const __m128i *>(first_begin));
-        UInt32 mask = static_cast<UInt32>(_mm_movemask_epi8(_mm_cmpeq_epi8(src, zero16))) ^ 0xFFFF;
+        UInt64 mask = bytes64MaskToBits64Mask(first_begin);
+        for (size_t i = 0; i < 4; ++i, mask >>= 16)
+        {
+            UInt64 low = mask & 0xFF;
+            UInt64 high = (mask >> 8) & 0xFF;
+            /// The second half takes its bytes after the ones taken by the first half.
+            UInt64x2 control = {
+                combine_filters_expand_table[low],
+                combine_filters_expand_table[high] + static_cast<UInt64>(std::popcount(low)) * 0x0101010101010101ULL};
 
-        __m128i low = _mm_shuffle_epi8(
-            _mm_loadl_epi64(reinterpret_cast<const __m128i *>(second_begin)),
-            _mm_cvtsi64_si128(static_cast<Int64>(combine_filters_expand_table[mask & 0xFF])));
-        __m128i high = _mm_shuffle_epi8(
-            _mm_loadl_epi64(reinterpret_cast<const __m128i *>(second_begin + std::popcount(mask & 0xFF))),
-            _mm_cvtsi64_si128(static_cast<Int64>(combine_filters_expand_table[mask >> 8])));
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(first_begin), _mm_unpacklo_epi64(low, high));
+            UInt8x16 source;
+            memcpy(&source, second_begin, sizeof(source));
+#if defined(__SSSE3__)
+            auto result = _mm_shuffle_epi8(std::bit_cast<__m128i>(source), std::bit_cast<__m128i>(control));
+#else
+            auto result = vqtbl1q_u8(std::bit_cast<uint8x16_t>(source), std::bit_cast<uint8x16_t>(control));
+#endif
+            memcpy(first_begin, &result, sizeof(result));
 
-        first_begin += XMM_VEC_SIZE_IN_BYTES;
-        second_begin += std::popcount(mask);
+            first_begin += 16;
+            second_begin += std::popcount(mask & 0xFFFF);
+        }
     }
 
     for (/* empty */; first_begin < first_end; ++first_begin)
@@ -1684,7 +1698,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     else
 #endif
     {
-#if defined(__SSSE3__)
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
         combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
 #else
         for (auto & val : first_data)
