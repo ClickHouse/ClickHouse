@@ -24,6 +24,9 @@ Fail-close: the downgrade to OK happens only on PR runs, on an explicit
 job status exactly as the fuzzer set it and only appends a note that triage
 was unavailable.
 
+PRs authored by an agent that already triages its own failures are skipped
+(`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
+
 The agent backend mirrors `copilot_review_job.py`: `codex` by default,
 `copilot` via `AI_FUZZ_TRIAGE_BACKEND=copilot`. Set `AI_FUZZ_TRIAGE=0` to
 disable triage entirely.
@@ -64,6 +67,13 @@ AGENT_TIMEOUT_SEC = 2400
 
 VERDICTS = ("related", "unrelated", "uncertain")
 ISSUE_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$")
+
+# Agents that already analyse a failing job on their own PRs. A second pass adds
+# nothing and would race the first one into filing a duplicate issue. Compared
+# lowercased, since GitHub logins are case-insensitive. A subset of
+# `label_external_contributors.INTERNAL_BOTS`: the other bots there do no
+# triage of their own and still want this one.
+SELF_TRIAGING_AUTHORS = {"groeneai", "oranjeai"}
 
 # Per-failure info is a stack trace plus context; enough to triage, small
 # enough to leave room for the instructions.
@@ -604,6 +614,13 @@ def triage_and_apply(
             print("AI fuzz triage: local run, skipping")
             return
         pr_mode = bool(info.pr_number)
+        # Only on the PR itself: after the merge the author is whoever merged it,
+        # and a post-merge regression still needs its tracking issue.
+        if pr_mode and (info.user_name or "").lower() in SELF_TRIAGING_AUTHORS:
+            print(
+                f"AI fuzz triage: PR by self-triaging agent '{info.user_name}', skipping"
+            )
+            return
         TRIAGE_DIR.mkdir(parents=True, exist_ok=True)
         fingerprint = failure_fingerprint(failures)
         print(f"AI fuzz triage: failure fingerprint {fingerprint or '(none)'}")
