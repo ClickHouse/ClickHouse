@@ -159,3 +159,19 @@ ALTER TABLE mem_restored ADD COLUMN a UInt64;
 SELECT 'restored column the table lacks', count(), sum(k), sum(a) FROM mem_restored;
 DROP TABLE mem_backup_src;
 DROP TABLE mem_restored;
+
+-- Rows whose only stored column is an empty `Tuple()` take no bytes: BACKUP keeps them, and RESTORE does not see
+-- the table as empty.
+DROP TABLE IF EXISTS mem_empty_tuple;
+CREATE TABLE mem_empty_tuple (a UInt8) ENGINE = Memory;
+INSERT INTO mem_empty_tuple VALUES (1), (2), (3);
+ALTER TABLE mem_empty_tuple ADD COLUMN e Tuple();
+ALTER TABLE mem_empty_tuple DROP COLUMN a;
+SELECT 'empty tuple rows', total_rows, total_bytes FROM system.tables WHERE database = currentDatabase() AND name = 'mem_empty_tuple';
+BACKUP TABLE mem_empty_tuple TO Memory('05295_empty_tuple_backup') FORMAT Null;
+DROP TABLE mem_empty_tuple SYNC;
+RESTORE TABLE mem_empty_tuple FROM Memory('05295_empty_tuple_backup') FORMAT Null;
+SELECT 'empty tuple restored', count() FROM mem_empty_tuple;
+RESTORE TABLE mem_empty_tuple FROM Memory('05295_empty_tuple_backup') FORMAT Null; -- { serverError CANNOT_RESTORE_TABLE }
+SELECT 'empty tuple restore into a non-empty table', count() FROM mem_empty_tuple;
+DROP TABLE mem_empty_tuple;

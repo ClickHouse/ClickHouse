@@ -715,7 +715,7 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (totalBytes(backup_entries_collector.getContext()) == 0)
+    if (totalRows(backup_entries_collector.getContext()) == 0)
     {
         bool skip_empty_entry = true;
         fiu_do_on(FailPoints::backup_add_empty_memory_table, { skip_empty_entry = false; });
@@ -752,7 +752,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    if (!restorer.isNonEmptyTableAllowed() && data.get()->bytes)
+    if (!restorer.isNonEmptyTableAllowed() && data.get()->rows)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     /// The blocks in the backup have the column names of its `columns.txt`. When they are the names of this
