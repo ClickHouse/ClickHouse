@@ -1547,9 +1547,36 @@ void MergeTreeData::checkMetadataProperties(
 void MergeTreeData::checkCopiedUnavailableProjections(
     const StorageInMemoryMetadata & metadata, ContextPtr local_context) const
 {
+    /// The copied declarations are kept unavailable in the published metadata, but CREATE must
+    /// still check the requirements they would have when their analysis setting is re-enabled.
+    /// Analyze them only in this temporary copy; the real table retains their original ASTs.
+    auto checked_metadata = metadata;
+    auto analysis_context = Context::createCopy(local_context);
+    analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
+    for (const auto & definition : metadata.projections.getUnavailableDefinitions())
+    {
+        const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
+        try
+        {
+            auto projection = ProjectionDescription::getProjectionFromAST(
+                definition,
+                metadata.columns,
+                &metadata.partition_key,
+                analysis_context,
+                LoadingStrictnessLevel::ATTACH);
+            checked_metadata.projections.remove(declaration.name, /*if_exists=*/false);
+            checked_metadata.projections.add(std::move(projection));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("Cannot copy unavailable projection {} without validating its destination requirements", backQuote(declaration.name));
+            throw;
+        }
+    }
+
     checkProperties(
-        metadata,
-        metadata,
+        checked_metadata,
+        checked_metadata,
         /*attach=*/false,
         /*allow_empty_sorting_key=*/false,
         allow_nullable_key,

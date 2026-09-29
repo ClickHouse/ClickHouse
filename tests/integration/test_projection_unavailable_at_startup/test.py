@@ -451,6 +451,36 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         settings=POSITIONAL,
     )
 
+    # A missing dictionary makes these sorting projections unavailable on restart. After the
+    # dictionary is recreated, CREATE AS can analyze a temporary copy and check the destination's
+    # requirements without making the published declarations available before another restart.
+    node.query("CREATE TABLE dl.projection_lookup_source (id UInt64, value UInt64) ENGINE = Memory")
+    dictionary_ddl = (
+        "CREATE DICTIONARY dl.projection_lookup (id UInt64, value UInt64 DEFAULT 0) "
+        "PRIMARY KEY id SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() "
+        "DB 'dl' TABLE 'projection_lookup_source')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    node.query(dictionary_ddl)
+    node.query(
+        "CREATE TABLE dl.t37 (a UInt64, "
+        "PROJECTION pp (SELECT a, _part_offset, "
+        "dictGet('dl.projection_lookup', 'value', a) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a SETTINGS allow_part_offset_column_in_projections = 1"
+    )
+    node.query(
+        "CREATE TABLE dl.t38 (a UInt64, "
+        "PROJECTION pp (SELECT a, _block_number, _block_offset, "
+        "dictGet('dl.projection_lookup', 'value', a) AS d ORDER BY a)) "
+        "ENGINE = MergeTree ORDER BY a "
+        "SETTINGS allow_commit_order_projection = 1, "
+        "enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(
+        "CREATE TABLE dl.t39 (a UInt64, "
+        "PROJECTION pp (SELECT a, dictGet('dl.projection_lookup', 'value', a) AS d ORDER BY a) "
+        "WITH SETTINGS (index_granularity = 1024)) ENGINE = MergeTree ORDER BY a"
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -497,9 +527,13 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t34") == "1"
     assert projections("t35") == "1"
     assert projections("t36") == "1"
+    assert projections("t37") == "1"
+    assert projections("t38") == "1"
+    assert projections("t39") == "1"
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6")
 
     node.exec_in_container(["rm", "-f", POSITIONAL_XML])
+    node.query("DROP DICTIONARY dl.projection_lookup SETTINGS check_table_dependencies = 0")
     node.restart_clickhouse()
 
     # The skip fired, the server still started, and reads still work. This is also the in-range control
@@ -541,6 +575,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t34") == "0"
     assert projections("t35") == "0"
     assert projections("t36") == "0"
+    assert projections("t37") == "0"
+    assert projections("t38") == "0"
+    assert projections("t39") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -619,6 +656,79 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         "AND name IN ('t6_unique_copy', 't9_limit_copy', "
         "'t6_unique_attach', 't9_limit_attach')"
     ).strip() == "0"
+
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t37_missing_dictionary_copy AS dl.t37 ENGINE = MergeTree ORDER BY a "
+        "SETTINGS allow_part_offset_column_in_projections = 0"
+    )
+    assert "Cannot copy unavailable projection `pp` without validating its destination requirements" in error
+    assert "Dictionary" in error
+    node.query(dictionary_ddl)
+    assert projections("t37") == "0"
+
+    for destination, source, settings, expected in (
+        (
+            "t37_rejected_copy",
+            "t37",
+            "allow_part_offset_column_in_projections = 0",
+            "allow_part_offset_column_in_projections",
+        ),
+        (
+            "t38_rejected_copy",
+            "t38",
+            "allow_commit_order_projection = 0, "
+            "enable_block_number_column = 1, enable_block_offset_column = 1",
+            "allow_commit_order_projection",
+        ),
+        (
+            "t38_missing_block_number_copy",
+            "t38",
+            "allow_commit_order_projection = 1, "
+            "enable_block_number_column = 0, enable_block_offset_column = 1",
+            "enable_block_number_column",
+        ),
+        (
+            "t38_missing_block_offset_copy",
+            "t38",
+            "allow_commit_order_projection = 1, "
+            "enable_block_number_column = 1, enable_block_offset_column = 0",
+            "enable_block_offset_column",
+        ),
+        (
+            "t39_rejected_copy",
+            "t39",
+            "index_granularity_bytes = 0",
+            "parent table uses fixed granularity",
+        ),
+    ):
+        error = node.query_and_get_error(
+            f"CREATE TABLE dl.{destination} AS dl.{source} "
+            f"ENGINE = MergeTree ORDER BY a SETTINGS {settings}"
+        )
+        assert expected in error, error
+        assert node.query(
+            "SELECT count() FROM system.tables WHERE database = 'dl' "
+            f"AND name = '{destination}'"
+        ).strip() == "0"
+
+    # The same declarations remain copyable when the destination can support them.
+    for destination, source, settings in (
+        ("t37_allowed_copy", "t37", "allow_part_offset_column_in_projections = 1"),
+        (
+            "t38_allowed_copy",
+            "t38",
+            "allow_commit_order_projection = 1, "
+            "enable_block_number_column = 1, enable_block_offset_column = 1",
+        ),
+        ("t39_allowed_copy", "t39", "index_granularity_bytes = 10485760"),
+    ):
+        node.query(
+            f"CREATE TABLE dl.{destination} AS dl.{source} "
+            f"ENGINE = MergeTree ORDER BY a SETTINGS {settings}"
+        )
+        assert projections(destination) == "0"
+        assert declarations_on_disk(destination) == 1
+
     node.query(
         f"ATTACH TABLE dl.t6_valid_attach UUID '{uuid.uuid4()}' "
         "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1 AS dl.t6"
@@ -944,6 +1054,15 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t34") == "1"
     assert projections("t35") == "1"
     assert projections("t36") == "1"
+    for table in (
+        "t37",
+        "t38",
+        "t39",
+        "t37_allowed_copy",
+        "t38_allowed_copy",
+        "t39_allowed_copy",
+    ):
+        assert projections(table) == "1"
     assert active_projection_parts("t6") == "0"
     assert projections("t6_local_copy") == "1"
 
